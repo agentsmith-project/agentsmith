@@ -1,0 +1,70 @@
+{
+  "common": {
+    "create": "Create",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "workspace": "Workspace",
+    "project": "Project"
+  },
+  "overview": {
+    "title": "Overview",
+    "description": "Project overview and statistics"
+  },
+  "chat": {
+    "title": "Chat",
+    "newChat": "New Chat",
+    "sendMessage": "Send message",
+    "typeMessage": "Type a message..."
+  },
+  "workbench": {
+    "title": "Workbench",
+    "sources": "Sources",
+    "threads": "Threads"
+  },
+  "agents": {
+    "title": "Agents",
+    "createAgent": "Create Agent",
+    "agentName": "Agent Name",
+    "status": "Status"
+  },
+  "endpoints": {
+    "title": "Endpoints",
+    "createEndpoint": "Create Endpoint",
+    "endpointName": "Endpoint Name"
+  },
+  "userdata": {
+    "title": "UserData",
+    "uploadFile": "Upload File"
+  },
+  "members": {
+    "title": "Members",
+    "addMember": "Add Member",
+    "role": "Role"
+  },
+  "audit": {
+    "title": "Audit",
+    "logs": "Audit Logs"
+  },
+  "usage": {
+    "title": "Usage",
+    "statistics": "Statistics"
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General"
+  }
+}

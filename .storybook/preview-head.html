@@ -1,0 +1,10 @@
+import '@storybook/msw-addon';
+import { http, HttpResponse } from 'msw';
+
+// MSW handlers for Storybook
+export const mswHandlers = [
+  // Health check
+  http.get('/api/health', () => {
+    return HttpResponse.json({ status: 'ok' });
+  }),
+];

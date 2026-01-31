@@ -1,0 +1,118 @@
+/**
+ * Endpoint API Endpoints
+ *
+ * Typed API functions for endpoint operations.
+ */
+
+import type { Endpoint, EndpointACL, PaginationParams, PaginatedResponse } from '../types';
+import type { ApiClient } from '../client';
+
+export interface CreateEndpointRequest {
+  name: string;
+  description?: string;
+  openai_model: string;
+  type: 'openai' | 'anthropic' | 'custom';
+  base_url: string;
+  limits?: {
+    max_requests_per_minute?: number;
+    max_requests_per_day?: number;
+    max_tokens_per_day?: number;
+    timeout_seconds?: number;
+  };
+}
+
+export interface UpdateEndpointRequest {
+  name?: string;
+  description?: string;
+  openai_model?: string;
+  base_url?: string;
+  status?: 'active' | 'disabled';
+  limits?: {
+    max_requests_per_minute?: number;
+    max_requests_per_day?: number;
+    max_tokens_per_day?: number;
+    timeout_seconds?: number;
+  };
+}
+
+export class EndpointAPI {
+  constructor(private client: ApiClient) {}
+
+  /**
+   * List endpoints in a project
+   */
+  async list(workspaceId: string, projectId: string, params?: PaginationParams): Promise<PaginatedResponse<Endpoint>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
+    if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
+    if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
+
+    const query = searchParams.toString();
+    return this.client.get<PaginatedResponse<Endpoint>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints${query ? `?${query}` : ''}`
+    );
+  }
+
+  /**
+   * Get an endpoint by ID
+   */
+  async get(workspaceId: string, projectId: string, endpointId: string): Promise<Endpoint> {
+    return this.client.get<Endpoint>(`/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}`);
+  }
+
+  /**
+   * Create a new endpoint
+   */
+  async create(workspaceId: string, projectId: string, data: CreateEndpointRequest): Promise<Endpoint> {
+    return this.client.post<Endpoint>(`/workspaces/${workspaceId}/projects/${projectId}/endpoints`, data);
+  }
+
+  /**
+   * Update an endpoint
+   */
+  async update(workspaceId: string, projectId: string, endpointId: string, data: UpdateEndpointRequest): Promise<Endpoint> {
+    return this.client.put<Endpoint>(`/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}`, data);
+  }
+
+  /**
+   * Delete an endpoint
+   */
+  async delete(workspaceId: string, projectId: string, endpointId: string): Promise<void> {
+    return this.client.delete<void>(`/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}`);
+  }
+
+  /**
+   * Get ACL for an endpoint
+   */
+  async getACL(workspaceId: string, projectId: string, endpointId: string): Promise<EndpointACL> {
+    return this.client.get<EndpointACL>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/acl`
+    );
+  }
+
+  /**
+   * Add user to deny list
+   */
+  async addDeny(
+    workspaceId: string,
+    projectId: string,
+    endpointId: string,
+    userId: string,
+    reason?: string
+  ): Promise<void> {
+    return this.client.post<void>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/acl/deny`,
+      { user_id: userId, reason }
+    );
+  }
+
+  /**
+   * Remove user from deny list
+   */
+  async removeDeny(workspaceId: string, projectId: string, endpointId: string, userId: string): Promise<void> {
+    return this.client.delete<void>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/acl/deny/${userId}`
+    );
+  }
+}

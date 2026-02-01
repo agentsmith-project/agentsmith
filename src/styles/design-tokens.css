@@ -1,0 +1,27 @@
+/* src/styles/design-tokens.css */
+@layer base {
+  :root {
+    /* SURFACES (from design doc colors) */
+    --background: 191 191 191;      /* #191919 - base */
+    --surface: 31 31 31;            /* #1f1f1f - container low */
+    --surface-high: 37 37 37;       /* #252525 - container high */
+    --surface-hover: 42 42 42;      /* #2a2a2a - container highest */
+
+    /* TEXT (from design doc) */
+    --foreground: 255 255 255;      /* #ffffff - primary */
+    --foreground-secondary: 198 198 201;  /* #c6c6c9 - secondary */
+    --foreground-muted: 140 140 140;       /* #8c8c8c - tertiary */
+
+    /* BORDER (from design doc) */
+    --border: 51 51 51;              /* #333 */
+    --border-subtle: 38 38 38;      /* #262626 */
+
+    /* ACCENT (from design doc gradient) */
+    --accent: 135 169 255;          /* #87a9ff - interactive blue */
+
+    /* SEMANTIC COLORS (from design doc) */
+    --success: 61 219 133;           /* #3ddb85 */
+    --warning: 255 185 92;          /* #ffb95c */
+    --error: 255 180 171;           /* #ffb4ab */
+  }
+}

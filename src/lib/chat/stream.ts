@@ -85,7 +85,7 @@ export async function postChatStream(
 ): Promise<Response> {
   const { token, workspaceId, projectId, sessionId, body, signal } = args;
 
-  return fetch(`${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages:stream`, {
+  return fetch(`${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

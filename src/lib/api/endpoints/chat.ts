@@ -23,6 +23,7 @@ export interface CreateMessageRequest {
   role: 'user';
   content: string;
   attachments?: string[];
+  parent_id?: string | null;
 }
 
 export interface UpdateSessionRequest {
@@ -222,7 +223,7 @@ export class ChatAPI {
     data: InitAttachmentRequest,
   ): Promise<InitAttachmentResponse> {
     return this.client.post<InitAttachmentResponse>(
-      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments:init`,
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments/init`,
       data,
     );
   }
@@ -235,7 +236,7 @@ export class ChatAPI {
     data?: CompleteAttachmentRequest,
   ): Promise<Attachment> {
     return this.client.post<Attachment>(
-      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments/${attachmentId}:complete`,
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments/${attachmentId}/complete`,
       data || {},
     );
   }
@@ -258,7 +259,7 @@ export class ChatAPI {
     attachmentId: string,
   ): Promise<Attachment> {
     return this.client.post<Attachment>(
-      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments/${attachmentId}:retry`,
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments/${attachmentId}/retry`,
       {},
     );
   }

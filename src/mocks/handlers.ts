@@ -545,7 +545,7 @@ export const handlers = [
       role: body.role,
       content: body.content,
       created_at: new Date().toISOString(),
-      parent_id: prev?.id || null,
+      parent_id: body.parent_id ?? prev?.id ?? null,
     };
     chatMessageFixtures.push(newMessage);
     const sidx = chatSessionFixtures.findIndex((s) => s.id === sessionId);
@@ -586,21 +586,13 @@ export const handlers = [
       revision_index: revisionIndex,
     };
 
-    // Mark all subsequent messages as stale (v1 simplification)
-    for (const m of chatMessageFixtures as any[]) {
-      if (m.session_id !== sessionId) continue;
-      if (m.created_at && m.created_at > original.created_at) {
-        m.is_stale = true;
-      }
-    }
-
     chatMessageFixtures.push(revision);
     const sidx = chatSessionFixtures.findIndex((s) => s.id === sessionId);
     if (sidx !== -1) chatSessionFixtures[sidx].updated_at = now;
     return HttpResponse.json(revision);
   }),
 
-  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/messages:stream', async ({ params, request }) => {
+  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/messages/stream', async ({ params, request }) => {
     const sessionId = getId(params, 'session');
     const body: any = await request.json().catch(() => ({}));
 
@@ -609,14 +601,21 @@ export const handlers = [
 
     const fromMessageId = body.from_message_id as string | undefined;
     const branchLeafMessageId = body.branch_leaf_message_id as string | undefined;
+    const fromMessage = fromMessageId ? (chatMessageFixtures as any[]).find((m) => m.id === fromMessageId) : null;
+    const parentForFrom = fromMessage?.parent_id
+      ? (chatMessageFixtures as any[]).find((m) => m.id === fromMessage.parent_id)
+      : null;
     const prompt =
       body?.input?.content ||
-      (fromMessageId ? chatMessageFixtures.find((m: any) => m.id === fromMessageId)?.content : '') ||
+      (fromMessage?.role === 'assistant' ? parentForFrom?.content : fromMessage?.content) ||
       '';
 
     const answer = `**Echo** (mock)\n\n${prompt}\n\n- streaming: ok\n- gfm: ok\n`;
 
-    const vg = `vg_${fromMessageId || branchLeafMessageId || sessionId}`;
+    const sourceMessage = fromMessageId ? (chatMessageFixtures as any[]).find((m) => m.id === fromMessageId) : null;
+    const sourceParentId = sourceMessage?.parent_id || null;
+    const baseGroupId = sourceMessage?.variant_group_id || (sourceParentId ? `vg_${sourceParentId}` : undefined);
+    const vg = baseGroupId || `vg_${fromMessageId || branchLeafMessageId || sessionId}`;
     const existingVariants = (chatMessageFixtures as any[]).filter((m) => m.session_id === sessionId && m.variant_group_id === vg);
     const variantIndex = existingVariants.length;
     const assistantMessageId = `msg_${Date.now() + 1}`;
@@ -642,7 +641,7 @@ export const handlers = [
               role: 'assistant',
               content: answer,
               created_at: new Date().toISOString(),
-              parent_id: branchLeafMessageId || fromMessageId || null,
+              parent_id: sourceMessage?.role === 'assistant' ? sourceParentId : (branchLeafMessageId || fromMessageId || null),
               variant_group_id: vg,
               variant_index: variantIndex,
               is_stale: false,
@@ -676,7 +675,7 @@ export const handlers = [
     });
   }),
 
-  http.post('/api/workspaces/:ws/projects/:prj/chat/streams/:stream_id:cancel', () => {
+  http.post('/api/workspaces/:ws/projects/:prj/chat/streams/:stream_id/cancel', () => {
     return HttpResponse.json({ success: true });
   }),
 
@@ -686,7 +685,7 @@ export const handlers = [
     return HttpResponse.json({ items: attachments, total: attachments.length });
   }),
 
-  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments:init', async ({ params, request }) => {
+  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments/init', async ({ params, request }) => {
     const sessionId = getId(params, 'session');
     const body: any = await request.json().catch(() => ({}));
     const attId = `att_${Date.now()}`;
@@ -718,7 +717,7 @@ export const handlers = [
     return HttpResponse.json({ success: true });
   }),
 
-  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments/:att:complete', ({ params }) => {
+  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments/:att/complete', ({ params }) => {
     const sessionId = getId(params, 'session');
     const attId = getId(params, 'att');
     const idx = attachmentFixtures.findIndex((a) => a.id === attId && a.session_id === sessionId);
@@ -737,7 +736,7 @@ export const handlers = [
     return HttpResponse.json({ success: true });
   }),
 
-  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments/:att:retry', ({ params }) => {
+  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments/:att/retry', ({ params }) => {
     const sessionId = getId(params, 'session');
     const attId = getId(params, 'att');
     const idx = attachmentFixtures.findIndex((a) => a.id === attId && a.session_id === sessionId);

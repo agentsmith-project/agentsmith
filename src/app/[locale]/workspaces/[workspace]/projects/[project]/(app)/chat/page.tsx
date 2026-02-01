@@ -19,8 +19,9 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
-import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
+import type { Attachment, ChatSession, Endpoint } from '@/lib/api/types';
 import { makeClientId } from '@/lib/chat/ids';
+import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
 import { postChatStream, streamSseJson } from '@/lib/chat/stream';
 import { createThrottle } from '@/lib/chat/throttle';
 
@@ -45,13 +46,14 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [composerBySession, setComposerBySession] = useState<Record<string, string>>({});
-  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [activeVariantIndexByGroup, setActiveVariantIndexByGroup] = useState<Record<string, number>>({});
+  const lastVariantTailRef = useRef<Map<string, string>>(new Map());
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [streamStatus, setStreamStatus] = useState<'idle' | 'connecting' | 'streaming' | 'stopped' | 'error'>('idle');
-  const [streamingAssistant, setStreamingAssistant] = useState<{ messageId: string; content: string } | null>(null);
+  const [streamingAssistant, setStreamingAssistant] = useState<{ messageId?: string | null; content: string; mode: 'append' | 'replace' } | null>(null);
 
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
@@ -99,6 +101,38 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const messages = messagesData?.items ?? [];
 
+  const visibleLeafId = useMemo(() => {
+    if (messages.length === 0) return null;
+    const groups = buildVariantGroups(messages);
+    const { chain } = buildVisibleChain(messages, groups, activeVariantIndexByGroup);
+    const last = chain[chain.length - 1];
+    return last?.id ?? null;
+  }, [messages, activeVariantIndexByGroup]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const groups = buildVariantGroups(messages);
+    const nextMap = new Map(lastVariantTailRef.current);
+    const updates: Record<string, number> = {};
+
+    for (const [groupId, list] of groups.groups.entries()) {
+      if (list.length === 0) continue;
+      const last = list[list.length - 1];
+      const lastId = last.id;
+      const prevId = lastVariantTailRef.current.get(groupId);
+      nextMap.set(groupId, lastId);
+      if (!Object.prototype.hasOwnProperty.call(activeVariantIndexByGroup, groupId) || (prevId && prevId !== lastId)) {
+        const idx = last.variant_index ?? last.revision_index ?? list.length - 1;
+        updates[groupId] = idx;
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      setActiveVariantIndexByGroup((prev) => ({ ...prev, ...updates }));
+    }
+    lastVariantTailRef.current = nextMap;
+  }, [messages, activeVariantIndexByGroup]);
+
   const { data: attachmentsData } = useQuery({
     queryKey: ['chat', 'attachments', workspaceId, projectId, currentSessionId],
     queryFn: () => {
@@ -127,7 +161,7 @@ export default function ChatPage({ params }: ChatPageProps) {
     onSuccess: (data: ChatSession) => {
       setCurrentSessionId(data.id);
       setSearchQuery('');
-      setEditingMessage(null);
+      setEditingMessageId(null);
       queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
     },
   });
@@ -150,11 +184,12 @@ export default function ChatPage({ params }: ChatPageProps) {
   });
 
   const createMessageMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; content: string; attachments?: string[] }) =>
+    mutationFn: async (args: { sessionId: string; content: string; attachments?: string[]; parent_id?: string | null }) =>
       chatAPI.createMessage(workspaceId, projectId, args.sessionId, {
         role: 'user',
         content: args.content,
         attachments: args.attachments,
+        parent_id: args.parent_id ?? null,
       }),
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, vars.sessionId] });
@@ -225,6 +260,7 @@ export default function ChatPage({ params }: ChatPageProps) {
     input?: { role: 'user'; content: string; attachments?: string[] };
     fromMessageId?: string;
     branchLeafMessageId?: string;
+    mode?: 'append' | 'replace';
   }) => {
     stopStreaming();
     setStreamStatus('connecting');
@@ -233,10 +269,13 @@ export default function ChatPage({ params }: ChatPageProps) {
     abortRef.current = controller;
 
     const assistantMessageId = makeClientId('msg_asst');
-    setStreamingAssistant({ messageId: assistantMessageId, content: '' });
+    const mode = args.mode ?? (args.fromMessageId ? 'replace' : 'append');
+    setStreamingAssistant({ messageId: args.fromMessageId ?? null, content: '', mode });
 
     const throttler = createThrottle<string>(40, (next) => {
-      setStreamingAssistant((prev) => (prev ? { ...prev, content: next } : { messageId: assistantMessageId, content: next }));
+      setStreamingAssistant((prev) =>
+        prev ? { ...prev, content: next } : { messageId: assistantMessageId, content: next, mode }
+      );
     });
 
     try {
@@ -306,36 +345,23 @@ export default function ChatPage({ params }: ChatPageProps) {
     const hasBlocking = attachments.some((a) => a.upload_status !== 'ready');
     if (hasBlocking) return;
 
-    if (editingMessage) {
-      const edited = await editMessageMutation.mutateAsync({
-        sessionId: currentSessionId,
-        messageId: editingMessage.id,
-        content,
-      });
-      setEditingMessage(null);
-      setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
-      await runStream({
-        sessionId: currentSessionId,
-        model: activeSession.model,
-        endpointId: activeSession.endpoint_id,
-        fromMessageId: edited.id,
-      });
-      return;
-    }
+    if (editingMessageId) return;
 
     const userMsg = await createMessageMutation.mutateAsync({
       sessionId: currentSessionId,
       content,
       attachments: readyAttachmentIds,
+      parent_id: visibleLeafId,
     });
     setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
-    await runStream({
-      sessionId: currentSessionId,
-      model: activeSession.model,
-      endpointId: activeSession.endpoint_id,
-      branchLeafMessageId: userMsg.id,
-      input: { role: 'user', content, attachments: readyAttachmentIds },
-    });
+      await runStream({
+        sessionId: currentSessionId,
+        model: activeSession.model,
+        endpointId: activeSession.endpoint_id,
+        branchLeafMessageId: userMsg.id,
+        input: { role: 'user', content, attachments: readyAttachmentIds },
+        mode: 'append',
+      });
   };
 
   const onPickFiles = () => fileInputRef.current?.click();
@@ -370,7 +396,7 @@ export default function ChatPage({ params }: ChatPageProps) {
         onCreate={() => createSessionMutation.mutate()}
         onSelect={(id) => {
           setCurrentSessionId(id);
-          setEditingMessage(null);
+          setEditingMessageId(null);
         }}
         onRename={(id, title) => updateSessionMutation.mutate({ sessionId: id, data: { title } })}
         onToggleStar={(id, next) => updateSessionMutation.mutate({ sessionId: id, data: { starred: next } })}
@@ -415,14 +441,31 @@ export default function ChatPage({ params }: ChatPageProps) {
             <MessageList
               messages={messages}
               activeVariantIndexByGroup={activeVariantIndexByGroup}
+              editingMessageId={editingMessageId}
               onSelectVariant={(groupId, nextIndex) => setActiveVariantIndexByGroup((prev) => ({ ...prev, [groupId]: nextIndex }))}
               onEdit={(m) => {
                 if (disabled) return;
                 if (m.role !== 'user') return;
-                setEditingMessage(m);
-                if (!currentSessionId) return;
-                setComposerBySession((prev) => ({ ...prev, [currentSessionId]: m.content }));
+                setEditingMessageId(m.id);
               }}
+              onEditCommit={async (m, nextContent) => {
+                if (disabled) return;
+                if (!currentSessionId) return;
+                const edited = await editMessageMutation.mutateAsync({
+                  sessionId: currentSessionId,
+                  messageId: m.id,
+                  content: nextContent,
+                });
+                setEditingMessageId(null);
+                await runStream({
+                  sessionId: currentSessionId,
+                  model: activeSession?.model,
+                  endpointId: activeSession?.endpoint_id,
+                  fromMessageId: edited.id,
+                  mode: 'append',
+                });
+              }}
+              onEditCancel={() => setEditingMessageId(null)}
               onRegenerate={async (m) => {
                 if (disabled) return;
                 if (!activeSession || !currentSessionId) return;
@@ -431,11 +474,12 @@ export default function ChatPage({ params }: ChatPageProps) {
                   model: activeSession.model,
                   endpointId: activeSession.endpoint_id,
                   fromMessageId: m.id,
+                  mode: 'replace',
                 });
               }}
               disabled={disabled}
               footer={
-                streamingAssistant ? (
+                streamingAssistant && streamingAssistant.mode === 'append' ? (
                   <div className="px-4 py-2">
                     <div className="flex justify-start">
                       <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
@@ -448,6 +492,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                   </div>
                 ) : null
               }
+              streamingAssistant={streamingAssistant}
             />
           )}
         </div>
@@ -462,13 +507,9 @@ export default function ChatPage({ params }: ChatPageProps) {
           }}
           onSend={handleSend}
           onStop={stopStreaming}
-          mode={editingMessage ? 'edit' : 'compose'}
-          onCancelEdit={() => {
-            setEditingMessage(null);
-            if (currentSessionId) setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
-          }}
+          mode="compose"
           onPickFiles={() => {
-            if (editingMessage) {
+            if (editingMessageId) {
               toast.info('Attachments are disabled while editing.');
               return;
             }
@@ -488,7 +529,8 @@ export default function ChatPage({ params }: ChatPageProps) {
             createMessageMutation.isPending ||
             editMessageMutation.isPending ||
             initAttachmentMutation.isPending ||
-            disabled
+            disabled ||
+            !!editingMessageId
           }
           streaming={disabled}
         />

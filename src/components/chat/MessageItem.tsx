@@ -1,14 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { Copy, Pencil, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Copy, Pencil, RotateCcw, ChevronLeft, ChevronRight, Check, X } from 'lucide-react';
 
 import type { ChatMessage } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import { Markdown } from '@/components/chat/Markdown';
-import { getVariantMeta } from '@/lib/chat/branch';
+import { type VariantGroups, getVariantMeta } from '@/lib/chat/branch';
 
 export const MessageItem = React.memo(function MessageItem({
   message,
@@ -16,15 +16,23 @@ export const MessageItem = React.memo(function MessageItem({
   activeVariantIndexByGroup,
   onSelectVariant,
   onEdit,
+  onEditCommit,
+  onEditCancel,
+  isEditing,
   onRegenerate,
+  streamingOverride,
   disabled,
 }: {
   message: ChatMessage;
-  variantGroups: Map<string, ChatMessage[]>;
+  variantGroups: VariantGroups;
   activeVariantIndexByGroup: Record<string, number>;
   onSelectVariant: (groupId: string, nextIndex: number) => void;
   onEdit: (message: ChatMessage) => void;
+  onEditCommit: (message: ChatMessage, nextContent: string) => void;
+  onEditCancel: () => void;
+  isEditing: boolean;
   onRegenerate: (message: ChatMessage) => void;
+  streamingOverride?: string | null;
   disabled: boolean;
 }) {
   const isUser = message.role === 'user';
@@ -32,6 +40,11 @@ export const MessageItem = React.memo(function MessageItem({
 
   const variantMeta = getVariantMeta(message, variantGroups);
   const activeVariantIndex = variantMeta ? (activeVariantIndexByGroup[variantMeta.groupId] ?? variantMeta.index) : null;
+  const [draft, setDraft] = React.useState(message.content);
+
+  React.useEffect(() => {
+    if (isEditing) setDraft(message.content);
+  }, [isEditing, message.content]);
 
   const handleCopy = async () => {
     try {
@@ -56,11 +69,26 @@ export const MessageItem = React.memo(function MessageItem({
         )}
 
         <div className="space-y-2">
-          <Markdown content={message.content} />
+          {isEditing ? (
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={Math.max(3, Math.min(10, draft.split('\n').length + 1))}
+              className={cn(
+                'w-full resize-none rounded-md border border-subtle bg-surface-high px-3 py-2 text-sm text-primary',
+                'placeholder:text-tertiary',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+              )}
+            />
+          ) : streamingOverride ? (
+            <Markdown content={streamingOverride || '…'} />
+          ) : (
+            <Markdown content={message.content} />
+          )}
         </div>
 
         <div className={cn('mt-2 flex items-center gap-1 justify-end')}>
-          {isUser && (
+          {isUser && !isEditing && (
             <Button
               type="button"
               variant="ghost"
@@ -73,6 +101,32 @@ export const MessageItem = React.memo(function MessageItem({
             >
               <Pencil className="w-4 h-4" />
             </Button>
+          )}
+          {isUser && isEditing && (
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => onEditCommit(message, draft)}
+                disabled={disabled || draft.trim().length === 0}
+                aria-label="Save"
+              >
+                <Check className="w-4 h-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={onEditCancel}
+                disabled={disabled}
+                aria-label="Cancel"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
           )}
           {isAssistant && (
             <Button
@@ -88,7 +142,7 @@ export const MessageItem = React.memo(function MessageItem({
               <RotateCcw className="w-4 h-4" />
             </Button>
           )}
-          {variantMeta && (
+          {variantMeta && !isEditing && (
             <div className="flex items-center gap-1 ml-1">
               <Button
                 type="button"
@@ -136,4 +190,3 @@ export const MessageItem = React.memo(function MessageItem({
     </div>
   );
 });
-

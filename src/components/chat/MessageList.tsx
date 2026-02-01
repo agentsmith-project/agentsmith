@@ -4,62 +4,49 @@ import * as React from 'react';
 import { Virtuoso } from 'react-virtuoso';
 
 import type { ChatMessage } from '@/lib/api/types';
-import { groupAssistantVariants, sortMessagesByTime } from '@/lib/chat/branch';
+import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
 
 import { MessageItem } from './MessageItem';
-
-function filterByVariants(messages: ChatMessage[], activeVariantIndexByGroup: Record<string, number>) {
-  const groups = groupAssistantVariants(messages);
-  const result: ChatMessage[] = [];
-  for (const m of messages) {
-    if (m.role !== 'assistant' || !m.variant_group_id) {
-      result.push(m);
-      continue;
-    }
-    const list = groups.get(m.variant_group_id) || [];
-    if (list.length <= 1) {
-      result.push(m);
-      continue;
-    }
-    const desired = activeVariantIndexByGroup[m.variant_group_id];
-    const fallback = list[list.length - 1];
-    const chosen = list.find((x) => (x.variant_index ?? 0) === desired) || fallback;
-    if (m.id === chosen.id) result.push(m);
-  }
-  return { items: result, groups };
-}
 
 export function MessageList({
   messages,
   activeVariantIndexByGroup,
+  editingMessageId,
   onSelectVariant,
   onEdit,
+  onEditCommit,
+  onEditCancel,
   onRegenerate,
   footer,
+  streamingAssistant,
   disabled,
 }: {
   messages: ChatMessage[];
   activeVariantIndexByGroup: Record<string, number>;
+  editingMessageId: string | null;
   onSelectVariant: (groupId: string, nextIndex: number) => void;
   onEdit: (message: ChatMessage) => void;
+  onEditCommit: (message: ChatMessage, nextContent: string) => void;
+  onEditCancel: () => void;
   onRegenerate: (message: ChatMessage) => void;
   footer?: React.ReactNode;
+  streamingAssistant?: { messageId?: string | null; content: string; mode: 'append' | 'replace' } | null;
   disabled: boolean;
 }) {
-  const ordered = React.useMemo(() => sortMessagesByTime(messages), [messages]);
-  const { items, groups } = React.useMemo(
-    () => filterByVariants(ordered, activeVariantIndexByGroup),
-    [ordered, activeVariantIndexByGroup],
+  const groups = React.useMemo(() => buildVariantGroups(messages), [messages]);
+  const { chain } = React.useMemo(
+    () => buildVisibleChain(messages, groups, activeVariantIndexByGroup),
+    [messages, groups, activeVariantIndexByGroup],
   );
 
-  if (items.length === 0) {
+  if (chain.length === 0) {
     return <div className="text-tertiary text-sm px-4 py-6">Start a conversation…</div>;
   }
 
   return (
     <Virtuoso
       style={{ height: '100%' }}
-      data={items}
+      data={chain}
       followOutput="smooth"
       itemContent={(_idx, m) => (
         <div className="px-4 py-2">
@@ -69,7 +56,15 @@ export function MessageList({
             activeVariantIndexByGroup={activeVariantIndexByGroup}
             onSelectVariant={onSelectVariant}
             onEdit={onEdit}
+            onEditCommit={onEditCommit}
+            onEditCancel={onEditCancel}
+            isEditing={editingMessageId === m.id}
             onRegenerate={onRegenerate}
+            streamingOverride={
+              streamingAssistant && streamingAssistant.mode === 'replace' && streamingAssistant.messageId === m.id
+                ? streamingAssistant.content
+                : null
+            }
             disabled={disabled}
           />
         </div>
@@ -80,4 +75,3 @@ export function MessageList({
     />
   );
 }
-

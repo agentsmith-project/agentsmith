@@ -61,9 +61,16 @@ export function ThreadItem({
         isActive ? 'bg-hover' : 'hover:bg-hover',
       )}
     >
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
         className={cn(
           'w-full text-left px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm',
         )}
@@ -167,8 +174,7 @@ export function ThreadItem({
             </DropdownMenu>
           </div>
         </div>
-      </button>
+      </div>
     </div>
   );
 }
-

@@ -4,10 +4,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Topbar } from '@/components/app-shell/Topbar';
-import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
+import { useAuthStore } from '@/lib/stores/authStore';
 import { Logo } from '@/components/app-shell/Logo';
 import {
   DropdownMenu,
@@ -25,8 +25,7 @@ const mockWorkspaces = [
 export default function LoginPage() {
   const router = useRouter();
   const params = useParams();
-  const { mockLogin, isAuthenticated, currentProject, currentWorkspace } = useAuthStore();
-  const hydrated = useAuthStoreHydration();
+  const { mockLogin } = useAuthStore();
 
   const [workspaceId, setWorkspaceId] = useState('ws_default');
   const [userEmail, setUserEmail] = useState('');
@@ -38,18 +37,6 @@ export default function LoginPage() {
 
   // If already authenticated and has a workspace, redirect to appropriate page
   // Don't redirect if on login page (user might be selecting workspace)
-  useEffect(() => {
-    if (!hydrated) return;
-    if (isAuthenticated && currentProject) {
-      setIsLoggingIn(false);
-      router.replace(`/${locale}/workspaces/${currentProject.workspace_id}/projects/${currentProject.id}/overview`);
-    } else if (isAuthenticated && currentWorkspace) {
-      setIsLoggingIn(false);
-      router.replace(`/${locale}/workspaces/${currentWorkspace.id}/projects`);
-    }
-    // If no workspace selected, stay on current page (workspace selection will handle it)
-  }, [hydrated, isAuthenticated, currentProject, currentWorkspace, locale, router]);
-
   const handleQuickLogin = async () => {
     if (!userEmail.trim()) {
       return;

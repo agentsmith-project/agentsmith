@@ -9,7 +9,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper, flexRender } from '@tanstack/react-table';
-import { Users, UserPlus, Shield, User } from 'lucide-react';
+import { Users, UserPlus, Shield } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -25,6 +25,7 @@ interface Member {
   role: string;
   status: 'active' | 'pending' | 'inactive';
   joined?: string;
+  avatar?: string;
 }
 
 const columnHelper = createColumnHelper<Member>();
@@ -72,11 +73,14 @@ const memberColumns = [
   }),
   columnHelper.accessor('joined', {
     header: 'Joined',
-    cell: (info) => (
-      <span className="text-foreground-secondary text-sm">
-        {info.getValue() ? new Date(info.getValue()).toLocaleDateString() : '-'}
-      </span>
-    ),
+    cell: (info) => {
+      const value = info.getValue();
+      return (
+        <span className="text-foreground-secondary text-sm">
+          {value ? new Date(value).toLocaleDateString() : '-'}
+        </span>
+      );
+    },
   }),
   columnHelper.accessor('status', {
     header: 'Status',

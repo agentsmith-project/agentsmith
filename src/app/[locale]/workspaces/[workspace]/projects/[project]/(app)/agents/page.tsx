@@ -6,10 +6,10 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper, flexRender } from '@tanstack/react-table';
-import { Bot, Plus, Edit, Trash2, Power, PowerOff } from 'lucide-react';
+import { Bot, Plus, Trash2 } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, AgentAPI } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
@@ -110,7 +110,9 @@ const agentColumns = [
   }),
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let updateAgentMutation: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let deleteAgentMutation: any;
 
 export default function AgentsPage({ params }: AgentsPageProps) {

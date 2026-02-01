@@ -53,11 +53,13 @@ export function ProtectedRoute({
 
   useEffect(() => {
     // In development with E2E tests, check if mock auth is being set up
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hasMockAuthSetup = typeof window !== 'undefined' && !!(window as any).__MBOS_AUTH_SETUP__;
 
     if (hasMockAuthSetup && !bypassAuth && !isAuthenticated) {
       // Poll for mock auth to be set up (E2E testing scenario)
       const checkMockAuth = () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const store = (window as any).__MBOS_AUTH_STORE__;
         if (store && store.getState) {
           const state = store.getState();

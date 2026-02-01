@@ -22,6 +22,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       // Expose store globally for testing (development only)
       if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).__MBOS_AUTH_STORE__ = useAuthStore;
       }
     }

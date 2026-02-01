@@ -4,7 +4,7 @@ import { Plus, File } from 'lucide-react';
 import { useState } from 'react';
 
 export function SourcesPanel() {
-  const [sources, setSources] = useState([
+  const [sources] = useState([
     { id: '1', name: 'Document.pdf' },
     { id: '2', name: 'Notes.txt' },
   ]);

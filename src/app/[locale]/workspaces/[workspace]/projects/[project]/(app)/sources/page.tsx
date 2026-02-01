@@ -6,6 +6,7 @@ import { createColumnHelper } from '@tanstack/react-table';
 import { File, Plus } from 'lucide-react';
 import { useMemo } from 'react';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const columnHelper = createColumnHelper<any>();
 
 const sourceColumns = [
@@ -85,6 +86,7 @@ function formatBytes(bytes: number): string {
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function createTable(options: any) {
   return options;
 }

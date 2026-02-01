@@ -9,7 +9,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper, flexRender } from '@tanstack/react-table';
-import { Server, Plus, Edit, Trash2, Globe } from 'lucide-react';
+import { Server, Plus, Trash2, Globe } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, EndpointAPI } from '@/lib/api';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
@@ -26,7 +26,7 @@ interface Endpoint {
   base_url: string;
   openai_model: string;
   type: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'disabled';
   rate_limit?: number;
 }
 
@@ -88,7 +88,7 @@ const endpointColumns = [
   }),
   columnHelper.accessor('status', {
     header: 'Status',
-    cell: (info) => <StatusBadge status={info.getValue() === 'active' ? 'active' : 'error'} />,
+    cell: (info) => <StatusBadge status={info.getValue() === 'active' ? 'active' : 'paused'} />,
   }),
   columnHelper.display({
     id: 'actions',
@@ -107,6 +107,7 @@ const endpointColumns = [
   }),
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let deleteEndpointMutation: any;
 
 export default function EndpointsPage({ params }: EndpointsPageProps) {

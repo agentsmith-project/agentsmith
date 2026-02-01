@@ -36,6 +36,7 @@ export default function WorkspaceSelectPage() {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function WorkspaceCard({ workspace, onSelect }: { workspace: any; onSelect: () => void }) {
   return (
     <div

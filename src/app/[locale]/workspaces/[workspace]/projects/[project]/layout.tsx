@@ -43,17 +43,17 @@ export default function ProjectLayout({
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="h-screen bg-background flex flex-col overflow-hidden">
         {/* Topbar */}
         <Topbar />
 
         {/* Main Content */}
-        <div className="flex-1 flex">
+        <div className="flex-1 flex overflow-hidden">
           {/* Sidebar */}
           <AppShellSidebar currentValue={currentPage} onChange={handleSidebarChange} />
 
           {/* Page Content */}
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-y-auto">
             {children}
           </main>
         </div>

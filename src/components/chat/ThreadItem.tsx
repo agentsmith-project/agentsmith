@@ -1,0 +1,174 @@
+'use client';
+
+import * as React from 'react';
+import { MoreHorizontal, Pin, Star, Trash2 } from 'lucide-react';
+
+import type { ChatSession } from '@/lib/api/types';
+import { cn } from '@/lib/utils';
+
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+function formatRelative(ts?: string) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString();
+}
+
+export function ThreadItem({
+  session,
+  isActive,
+  onSelect,
+  onRename,
+  onToggleStar,
+  onTogglePin,
+  onDelete,
+}: {
+  session: ChatSession;
+  isActive: boolean;
+  onSelect: () => void;
+  onRename: (title: string) => void;
+  onToggleStar: (next: boolean) => void;
+  onTogglePin: (next: boolean) => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draftTitle, setDraftTitle] = React.useState(session.title || '');
+
+  React.useEffect(() => {
+    setDraftTitle(session.title || '');
+  }, [session.title]);
+
+  const commitRename = () => {
+    const title = draftTitle.trim();
+    setEditing(false);
+    if (!title) return;
+    if (title === (session.title || '')) return;
+    onRename(title);
+  };
+
+  return (
+    <div
+      className={cn(
+        'rounded-sm transition-colors duration-200 group',
+        isActive ? 'bg-hover' : 'hover:bg-hover',
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className={cn(
+          'w-full text-left px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm',
+        )}
+      >
+        <div className="flex items-start gap-2">
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <Star className={cn('w-4 h-4', session.starred ? 'text-accent' : 'text-icon-default')} />
+            {session.pinned && <Pin className="w-4 h-4 text-icon-default" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            {editing ? (
+              <input
+                value={draftTitle}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitRename();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setEditing(false);
+                    setDraftTitle(session.title || '');
+                  }
+                }}
+                onBlur={commitRename}
+                autoFocus
+                className={cn(
+                  'w-full bg-transparent text-sm text-foreground',
+                  'border border-subtle rounded-sm px-2 py-1',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+                )}
+              />
+            ) : (
+              <div className={cn('text-sm truncate', isActive ? 'text-foreground' : 'text-primary')}>
+                {session.title || 'Untitled'}
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-xs text-tertiary mt-0.5">
+              <span className="truncate">{formatRelative(session.updated_at)}</span>
+              <span className="text-tertiary/70">·</span>
+              <span>{session.message_count ?? 0}</span>
+            </div>
+          </div>
+
+          <div className="flex-shrink-0">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity',
+                    'text-icon-default hover:text-foreground',
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="Thread actions"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="right" align="start">
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setEditing(true);
+                  }}
+                >
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    onToggleStar(!session.starred);
+                  }}
+                >
+                  <Star className="w-4 h-4" />
+                  {session.starred ? 'Unstar' : 'Star'}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    onTogglePin(!session.pinned);
+                  }}
+                >
+                  <Pin className="w-4 h-4" />
+                  {session.pinned ? 'Unpin' : 'Pin'}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-error"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    onDelete();
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </button>
+    </div>
+  );
+}
+

@@ -9,17 +9,54 @@ import type {
   ChatSession,
   ChatMessage,
   Attachment,
+  PaginatedResponse,
+  PaginationParams,
 } from '../types';
 
 export interface CreateSessionRequest {
-  end_user_id?: string;
-  agent_id?: string;
   title?: string;
+  model?: string;
+  endpoint_id?: string;
 }
 
 export interface CreateMessageRequest {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user';
   content: string;
+  attachments?: string[];
+}
+
+export interface UpdateSessionRequest {
+  title?: string;
+  pinned?: boolean;
+  starred?: boolean;
+  model?: string;
+  endpoint_id?: string;
+}
+
+export interface EditMessageRequest {
+  content: string;
+}
+
+export interface RegenerateRequest {
+  from_message_id: string;
+  model?: string;
+  endpoint_id?: string;
+}
+
+export interface InitAttachmentRequest {
+  file_name: string;
+  file_type: string;
+  file_size: number;
+}
+
+export interface InitAttachmentResponse {
+  attachment: Attachment;
+  upload_url?: string;
+}
+
+export interface CompleteAttachmentRequest {
+  etag?: string;
+  size?: number;
 }
 
 export class ChatAPI {
@@ -30,10 +67,17 @@ export class ChatAPI {
    */
   async getSessions(
     workspaceId: string,
-    projectId: string
-  ): Promise<{ items: ChatSession[]; total: number }> {
-    return this.client.get<{ items: ChatSession[]; total: number }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions`
+    projectId: string,
+    params?: PaginationParams,
+  ): Promise<PaginatedResponse<ChatSession>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
+    if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
+    if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
+    const query = searchParams.toString();
+    return this.client.get<PaginatedResponse<ChatSession>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions${query ? `?${query}` : ''}`,
     );
   }
 
@@ -65,15 +109,47 @@ export class ChatAPI {
   }
 
   /**
+   * Update a chat session (rename, pin/star, model switch)
+   */
+  async updateSession(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    data: UpdateSessionRequest,
+  ): Promise<ChatSession> {
+    return this.client.patch<ChatSession>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}`,
+      data,
+    );
+  }
+
+  /**
+   * Delete a chat session
+   */
+  async deleteSession(workspaceId: string, projectId: string, sessionId: string): Promise<{ success: true }> {
+    return this.client.delete<{ success: true }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}`,
+    );
+  }
+
+  /**
    * Get messages for a session
    */
   async getMessages(
     workspaceId: string,
     projectId: string,
-    sessionId: string
-  ): Promise<{ items: ChatMessage[]; total: number }> {
-    return this.client.get<{ items: ChatMessage[]; total: number }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages`
+    sessionId: string,
+    params?: PaginationParams,
+  ): Promise<PaginatedResponse<ChatMessage>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
+    if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
+    if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
+    const query = searchParams.toString();
+
+    return this.client.get<PaginatedResponse<ChatMessage>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages${query ? `?${query}` : ''}`,
     );
   }
 
@@ -93,15 +169,97 @@ export class ChatAPI {
   }
 
   /**
+   * Edit a message (creates a new revision; backend keeps old message)
+   */
+  async editMessage(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    messageId: string,
+    data: EditMessageRequest,
+  ): Promise<ChatMessage> {
+    return this.client.patch<ChatMessage>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages/${messageId}`,
+      data,
+    );
+  }
+
+  /**
+   * Start regenerate (may return stream id; streaming handled via fetch)
+   */
+  async regenerate(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    data: RegenerateRequest,
+  ): Promise<{ stream_id?: string }> {
+    return this.client.post<{ stream_id?: string }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/regenerate`,
+      data,
+    );
+  }
+
+  /**
    * Get attachments for a session
    */
   async getAttachments(
     workspaceId: string,
     projectId: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<{ items: Attachment[]; total: number }> {
     return this.client.get<{ items: Attachment[]; total: number }>(
       `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments`
+    );
+  }
+
+  /**
+   * Init attachment (returns upload URL if using direct/edge proxy upload)
+   */
+  async initAttachment(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    data: InitAttachmentRequest,
+  ): Promise<InitAttachmentResponse> {
+    return this.client.post<InitAttachmentResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments:init`,
+      data,
+    );
+  }
+
+  async completeAttachment(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    attachmentId: string,
+    data?: CompleteAttachmentRequest,
+  ): Promise<Attachment> {
+    return this.client.post<Attachment>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments/${attachmentId}:complete`,
+      data || {},
+    );
+  }
+
+  async deleteAttachment(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    attachmentId: string,
+  ): Promise<{ success: true }> {
+    return this.client.delete<{ success: true }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments/${attachmentId}`,
+    );
+  }
+
+  async retryAttachment(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    attachmentId: string,
+  ): Promise<Attachment> {
+    return this.client.post<Attachment>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/attachments/${attachmentId}:retry`,
+      {},
     );
   }
 }

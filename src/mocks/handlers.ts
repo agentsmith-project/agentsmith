@@ -459,8 +459,12 @@ export const handlers = [
   // Chat
   // ============================================================
 
-  http.get('/api/workspaces/:ws/projects/:prj/chat/sessions', () => {
-    return HttpResponse.json({ items: chatSessionFixtures, total: chatSessionFixtures.length });
+  http.get('/api/workspaces/:ws/projects/:prj/chat/sessions', ({ params, request }) => {
+    const url = new URL(request.url);
+    const { page, pageSize } = getPagination(url);
+    const projectId = getId(params, 'prj');
+    const sessions = chatSessionFixtures.filter((s) => s.project_id === projectId);
+    return HttpResponse.json(paginated(sessions, page, pageSize));
   }),
 
   http.get('/api/workspaces/:ws/projects/:prj/chat/sessions/:session', ({ params }) => {
@@ -472,14 +476,17 @@ export const handlers = [
     return HttpResponse.json(session);
   }),
 
-  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions', async ({ params }) => {
+  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions', async ({ params, request }) => {
     const projectId = getId(params, 'prj');
+    const body: any = await request.json().catch(() => ({}));
     const newSession = {
       id: `chat_${Date.now()}`,
       project_id: projectId,
-      title: 'New Chat',
-      model: 'gpt-4o',
-      endpoint_id: 'endpoint_001',
+      title: body?.title || 'New Chat',
+      model: body?.model || 'gpt-4o',
+      endpoint_id: body?.endpoint_id || 'endpoint_001',
+      pinned: false,
+      starred: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       message_count: 0,
@@ -489,29 +496,259 @@ export const handlers = [
     return HttpResponse.json(newSession, { status: 201 });
   }),
 
-  http.get('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/messages', ({ params }) => {
+  http.patch('/api/workspaces/:ws/projects/:prj/chat/sessions/:session', async ({ params, request }) => {
+    const sessionId = getId(params, 'session');
+    const body: any = await request.json().catch(() => ({}));
+    const idx = chatSessionFixtures.findIndex((s) => s.id === sessionId);
+    if (idx === -1) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Session not found' }, { status: 404 });
+    }
+    chatSessionFixtures[idx] = {
+      ...chatSessionFixtures[idx],
+      ...body,
+      updated_at: new Date().toISOString(),
+    };
+    return HttpResponse.json(chatSessionFixtures[idx]);
+  }),
+
+  http.delete('/api/workspaces/:ws/projects/:prj/chat/sessions/:session', ({ params }) => {
+    const sessionId = getId(params, 'session');
+    const idx = chatSessionFixtures.findIndex((s) => s.id === sessionId);
+    if (idx === -1) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Session not found' }, { status: 404 });
+    }
+    chatSessionFixtures.splice(idx, 1);
+    for (let i = chatMessageFixtures.length - 1; i >= 0; i--) {
+      if (chatMessageFixtures[i].session_id === sessionId) chatMessageFixtures.splice(i, 1);
+    }
+    for (let i = attachmentFixtures.length - 1; i >= 0; i--) {
+      if (attachmentFixtures[i].session_id === sessionId) attachmentFixtures.splice(i, 1);
+    }
+    return HttpResponse.json({ success: true });
+  }),
+
+  http.get('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/messages', ({ params, request }) => {
+    const url = new URL(request.url);
+    const { page, pageSize } = getPagination(url);
     const sessionId = getId(params, 'session');
     const messages = chatMessageFixtures.filter((m) => m.session_id === sessionId);
-    return HttpResponse.json({ items: messages, total: messages.length });
+    return HttpResponse.json(paginated(messages, page, pageSize));
   }),
 
   http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/messages', async ({ params, request }) => {
     const body: any = await request.json();
-    const newMessage = {
+    const sessionId = getId(params, 'session');
+    const prev = [...chatMessageFixtures].reverse().find((m) => m.session_id === sessionId);
+    const newMessage: any = {
       id: `msg_${Date.now()}`,
-      session_id: getId(params, 'session'),
+      session_id: sessionId,
       role: body.role,
       content: body.content,
       created_at: new Date().toISOString(),
+      parent_id: prev?.id || null,
     };
     chatMessageFixtures.push(newMessage);
+    const sidx = chatSessionFixtures.findIndex((s) => s.id === sessionId);
+    if (sidx !== -1) {
+      chatSessionFixtures[sidx].updated_at = new Date().toISOString();
+      chatSessionFixtures[sidx].message_count += 1;
+    }
     return HttpResponse.json(newMessage, { status: 201 });
+  }),
+
+  http.patch('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/messages/:message', async ({ params, request }) => {
+    const sessionId = getId(params, 'session');
+    const messageId = getId(params, 'message');
+    const body: any = await request.json().catch(() => ({}));
+    const original = chatMessageFixtures.find((m) => m.id === messageId && m.session_id === sessionId);
+    if (!original) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Message not found' }, { status: 404 });
+    }
+    const logicalId = original.logical_id || `log_${messageId}`;
+    const revisionIndex =
+      Math.max(
+        0,
+        ...chatMessageFixtures
+          .filter((m: any) => m.session_id === sessionId && m.logical_id === logicalId)
+          .map((m: any) => m.revision_index ?? 0),
+      ) + 1;
+    const now = new Date().toISOString();
+
+    const revision: any = {
+      id: `msg_${Date.now()}`,
+      session_id: sessionId,
+      role: original.role,
+      content: body.content,
+      created_at: now,
+      parent_id: original.parent_id ?? null,
+      logical_id: logicalId,
+      revision_of: original.id,
+      revision_index: revisionIndex,
+    };
+
+    // Mark all subsequent messages as stale (v1 simplification)
+    for (const m of chatMessageFixtures as any[]) {
+      if (m.session_id !== sessionId) continue;
+      if (m.created_at && m.created_at > original.created_at) {
+        m.is_stale = true;
+      }
+    }
+
+    chatMessageFixtures.push(revision);
+    const sidx = chatSessionFixtures.findIndex((s) => s.id === sessionId);
+    if (sidx !== -1) chatSessionFixtures[sidx].updated_at = now;
+    return HttpResponse.json(revision);
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/messages:stream', async ({ params, request }) => {
+    const sessionId = getId(params, 'session');
+    const body: any = await request.json().catch(() => ({}));
+
+    const encoder = new TextEncoder();
+    const streamId = `str_${Date.now()}`;
+
+    const fromMessageId = body.from_message_id as string | undefined;
+    const branchLeafMessageId = body.branch_leaf_message_id as string | undefined;
+    const prompt =
+      body?.input?.content ||
+      (fromMessageId ? chatMessageFixtures.find((m: any) => m.id === fromMessageId)?.content : '') ||
+      '';
+
+    const answer = `**Echo** (mock)\n\n${prompt}\n\n- streaming: ok\n- gfm: ok\n`;
+
+    const vg = `vg_${fromMessageId || branchLeafMessageId || sessionId}`;
+    const existingVariants = (chatMessageFixtures as any[]).filter((m) => m.session_id === sessionId && m.variant_group_id === vg);
+    const variantIndex = existingVariants.length;
+    const assistantMessageId = `msg_${Date.now() + 1}`;
+
+    const sse = new ReadableStream({
+      start(controller) {
+        const send = (event: string, data: any) => {
+          controller.enqueue(encoder.encode(`event: ${event}\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        };
+
+        send('meta', { stream_id: streamId, session_id: sessionId, model: body.model, endpoint_id: body.endpoint_id });
+
+        const chunkSize = 10;
+        let idx = 0;
+
+        const tick = () => {
+          if (idx >= answer.length) {
+            // Persist assistant message (final content)
+            (chatMessageFixtures as any[]).push({
+              id: assistantMessageId,
+              session_id: sessionId,
+              role: 'assistant',
+              content: answer,
+              created_at: new Date().toISOString(),
+              parent_id: branchLeafMessageId || fromMessageId || null,
+              variant_group_id: vg,
+              variant_index: variantIndex,
+              is_stale: false,
+            });
+            const sidx = chatSessionFixtures.findIndex((s) => s.id === sessionId);
+            if (sidx !== -1) {
+              chatSessionFixtures[sidx].updated_at = new Date().toISOString();
+              chatSessionFixtures[sidx].message_count += 1;
+            }
+            send('done', { message_id: assistantMessageId, finish_reason: 'stop', tokens: 120 });
+            controller.close();
+            return;
+          }
+          const delta = answer.slice(idx, idx + chunkSize);
+          idx += chunkSize;
+          send('delta', { message_id: assistantMessageId, variant_group_id: vg, variant_index: variantIndex, delta });
+          setTimeout(tick, 40);
+        };
+
+        tick();
+      },
+    });
+
+    return new HttpResponse(sse, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    });
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/chat/streams/:stream_id:cancel', () => {
+    return HttpResponse.json({ success: true });
   }),
 
   http.get('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments', ({ params }) => {
     const sessionId = getId(params, 'session');
     const attachments = attachmentFixtures.filter((a) => a.session_id === sessionId);
     return HttpResponse.json({ items: attachments, total: attachments.length });
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments:init', async ({ params, request }) => {
+    const sessionId = getId(params, 'session');
+    const body: any = await request.json().catch(() => ({}));
+    const attId = `att_${Date.now()}`;
+    const att: any = {
+      id: attId,
+      session_id: sessionId,
+      file_name: body.file_name,
+      file_type: body.file_type,
+      file_size: body.file_size,
+      upload_status: 'uploading',
+      created_at: new Date().toISOString(),
+    };
+    attachmentFixtures.push(att);
+    return HttpResponse.json(
+      {
+        attachment: att,
+        upload_url: `/api/workspaces/${getId(params, 'ws')}/projects/${getId(params, 'prj')}/chat/sessions/${sessionId}/attachments/${attId}/upload`,
+      },
+      { status: 201 },
+    );
+  }),
+
+  http.put('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments/:att/upload', ({ params }) => {
+    const sessionId = getId(params, 'session');
+    const attId = getId(params, 'att');
+    const idx = attachmentFixtures.findIndex((a) => a.id === attId && a.session_id === sessionId);
+    if (idx === -1) return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Attachment not found' }, { status: 404 });
+    attachmentFixtures[idx].upload_status = 'processing';
+    return HttpResponse.json({ success: true });
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments/:att:complete', ({ params }) => {
+    const sessionId = getId(params, 'session');
+    const attId = getId(params, 'att');
+    const idx = attachmentFixtures.findIndex((a) => a.id === attId && a.session_id === sessionId);
+    if (idx === -1) return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Attachment not found' }, { status: 404 });
+    attachmentFixtures[idx].upload_status = 'ready';
+    attachmentFixtures[idx].error_message = undefined;
+    return HttpResponse.json(attachmentFixtures[idx]);
+  }),
+
+  http.delete('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments/:att', ({ params }) => {
+    const sessionId = getId(params, 'session');
+    const attId = getId(params, 'att');
+    const idx = attachmentFixtures.findIndex((a) => a.id === attId && a.session_id === sessionId);
+    if (idx === -1) return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Attachment not found' }, { status: 404 });
+    attachmentFixtures.splice(idx, 1);
+    return HttpResponse.json({ success: true });
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/chat/sessions/:session/attachments/:att:retry', ({ params }) => {
+    const sessionId = getId(params, 'session');
+    const attId = getId(params, 'att');
+    const idx = attachmentFixtures.findIndex((a) => a.id === attId && a.session_id === sessionId);
+    if (idx === -1) return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Attachment not found' }, { status: 404 });
+    attachmentFixtures[idx].upload_status = 'processing';
+    attachmentFixtures[idx].error_message = undefined;
+    setTimeout(() => {
+      const again = attachmentFixtures.find((a) => a.id === attId && a.session_id === sessionId);
+      if (again) again.upload_status = 'ready';
+    }, 600);
+    return HttpResponse.json(attachmentFixtures[idx]);
   }),
 
   // ============================================================

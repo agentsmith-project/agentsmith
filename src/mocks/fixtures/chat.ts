@@ -12,6 +12,8 @@ export interface ChatSession {
   title: string;
   model: string;
   endpoint_id: string;
+  pinned?: boolean;
+  starred?: boolean;
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -32,8 +34,9 @@ export interface Attachment {
   file_name: string;
   file_type: string;
   file_size: number;
-  upload_status: 'uploading' | 'ready' | 'failed';
+  upload_status: 'uploading' | 'processing' | 'ready' | 'failed';
   created_at: string;
+  error_message?: string;
 }
 
 export const chatSessionFixtures: ChatSession[] = [
@@ -43,6 +46,7 @@ export const chatSessionFixtures: ChatSession[] = [
     title: 'GPT-4o Chat',
     model: 'gpt-4o',
     endpoint_id: 'endpoint_001',
+    starred: true,
     created_at: '2026-01-28T10:00:00Z',
     updated_at: '2026-01-28T14:30:00Z',
     message_count: 15,
@@ -54,6 +58,7 @@ export const chatSessionFixtures: ChatSession[] = [
     title: 'Claude Discussion',
     model: 'claude-3.5-sonnet',
     endpoint_id: 'endpoint_002',
+    pinned: true,
     created_at: '2026-01-28T11:30:00Z',
     updated_at: '2026-01-28T13:45:00Z',
     message_count: 8,
@@ -194,5 +199,6 @@ export const attachmentFixtures: Attachment[] = [
     file_size: 12500,
     upload_status: 'failed',
     created_at: '2026-01-27T16:30:00Z',
+    error_message: 'Upload failed: network error',
   },
 ];

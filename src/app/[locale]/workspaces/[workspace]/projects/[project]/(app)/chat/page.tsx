@@ -1,19 +1,35 @@
 /**
- * Chat Page
+ * Chat Page (v1)
  *
- * Three-column layout for AI chat interactions:
- * - Left: Session list
- * - Center: Chat messages and input
- * - Right: Session info and attachments
+ * Two-pane layout:
+ * - Left: Threads list
+ * - Right: Chat window (header + messages + composer)
+ *
+ * Style must follow `文档/UXUI/2026-01-31-视觉设计系统-v1.md`.
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, MessageSquare, Settings, Paperclip } from 'lucide-react';
+import * as React from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MessageSquare } from 'lucide-react';
+
 import { useAuthStore } from '@/lib/stores/authStore';
-import { getApiClient, ChatAPI } from '@/lib/api';
+import { getApiClient } from '@/lib/api';
+import { ChatAPI } from '@/lib/api/endpoints/chat';
+import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
+import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
+import { makeClientId } from '@/lib/chat/ids';
+import { postChatStream, streamSseJson } from '@/lib/chat/stream';
+import { createThrottle } from '@/lib/chat/throttle';
+
+import { toast } from '@/components/ui/toast';
+import { ThreadsPane } from '@/components/chat/ThreadsPane';
+import { ChatHeader } from '@/components/chat/ChatHeader';
+import { MessageList } from '@/components/chat/MessageList';
+import { Composer } from '@/components/chat/Composer';
+import { Markdown } from '@/components/chat/Markdown';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -21,86 +37,318 @@ interface ChatPageProps {
 
 export default function ChatPage({ params }: ChatPageProps) {
   const queryClient = useQueryClient();
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [inputMessage, setInputMessage] = useState('');
+
+  const currentProject = useAuthStore((s) => s.currentProject);
+  const token = useAuthStore((s) => s.token);
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
 
-  // Get current project from auth store
-  const currentProject = useAuthStore((state) => state.currentProject);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [composerBySession, setComposerBySession] = useState<Record<string, string>>({});
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [activeVariantIndexByGroup, setActiveVariantIndexByGroup] = useState<Record<string, number>>({});
 
-  // Await params in useEffect (not in a hook that would be conditional)
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const [streamStatus, setStreamStatus] = useState<'idle' | 'connecting' | 'streaming' | 'stopped' | 'error'>('idle');
+  const [streamingAssistant, setStreamingAssistant] = useState<{ messageId: string; content: string } | null>(null);
+
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
   }, [params]);
 
-  // Create API client (memoized would be better but this works for now)
-  const chatAPI = new ChatAPI(getApiClient());
-
-  // Workspace and project IDs - use defaults if not resolved yet
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
 
-  // Fetch chat sessions - enabled when we have valid IDs
+  const apiClient = useMemo(() => getApiClient(), []);
+  const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
+  const endpointAPI = useMemo(() => new EndpointAPI(apiClient), [apiClient]);
+
   const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
     queryKey: ['chat', 'sessions', workspaceId, projectId],
-    queryFn: () => chatAPI.getSessions(workspaceId, projectId),
+    queryFn: () => chatAPI.getSessions(workspaceId, projectId, { page: 1, page_size: 1000 }),
     enabled: !!workspaceId && !!projectId,
   });
 
-  // Fetch current session messages
+  const sessions = useMemo(() => sessionsData?.items ?? [], [sessionsData]);
+
+  useEffect(() => {
+    if (!currentSessionId && sessions.length > 0) {
+      setCurrentSessionId(sessions[0].id);
+    }
+  }, [currentSessionId, sessions]);
+
+  const activeSession = sessions.find((s) => s.id === currentSessionId) ?? null;
+
+  const { data: endpointsData } = useQuery({
+    queryKey: ['endpoints', workspaceId, projectId],
+    queryFn: () => endpointAPI.list(workspaceId, projectId, { page: 1, page_size: 500 }),
+    enabled: !!workspaceId && !!projectId,
+  });
+
+  const endpoints = endpointsData?.items ?? [];
+
   const { data: messagesData, isLoading: messagesLoading } = useQuery({
     queryKey: ['chat', 'messages', workspaceId, projectId, currentSessionId],
     queryFn: () => {
-      if (!currentSessionId) return { items: [], total: 0 };
-      return chatAPI.getMessages(workspaceId, projectId, currentSessionId);
+      if (!currentSessionId) return { items: [], total: 0, page: 1, page_size: 500, has_more: false };
+      return chatAPI.getMessages(workspaceId, projectId, currentSessionId, { page: 1, page_size: 500 });
     },
-    enabled: !!currentSessionId,
+    enabled: !!currentSessionId && !!workspaceId && !!projectId,
   });
 
-  // Create new session mutation
+  const messages = messagesData?.items ?? [];
+
+  const { data: attachmentsData } = useQuery({
+    queryKey: ['chat', 'attachments', workspaceId, projectId, currentSessionId],
+    queryFn: () => {
+      if (!currentSessionId) return { items: [], total: 0 };
+      return chatAPI.getAttachments(workspaceId, projectId, currentSessionId);
+    },
+    enabled: !!currentSessionId && !!workspaceId && !!projectId,
+    refetchInterval: (query) => {
+      const data = query.state.data as { items: Attachment[]; total: number } | undefined;
+      const items = data?.items ?? [];
+      return items.some((a) => a.upload_status === 'uploading' || a.upload_status === 'processing') ? 2000 : false;
+    },
+  });
+
+  const attachments = attachmentsData?.items ?? [];
+
   const createSessionMutation = useMutation({
-    mutationFn: () => chatAPI.createSession(workspaceId, projectId),
-    onSuccess: (data) => {
+    mutationFn: async () => {
+      const firstActive = endpoints.find((e) => e.status === 'active') || null;
+      return chatAPI.createSession(
+        workspaceId,
+        projectId,
+        firstActive ? { endpoint_id: firstActive.id, model: firstActive.openai_model } : {},
+      );
+    },
+    onSuccess: (data: ChatSession) => {
       setCurrentSessionId(data.id);
+      setSearchQuery('');
+      setEditingMessage(null);
       queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
     },
   });
 
-  // Send message mutation
-  const sendMessageMutation = useMutation({
-    mutationFn: (content: string) => {
-      if (!currentSessionId) throw new Error('No active session');
-      return chatAPI.createMessage(workspaceId, projectId, currentSessionId, {
-        role: 'user',
-        content,
-      });
-    },
-    onSuccess: () => {
-      setInputMessage('');
-      queryClient.invalidateQueries({
-        queryKey: ['chat', 'messages', workspaceId, projectId, currentSessionId],
-      });
+  const updateSessionMutation = useMutation({
+    mutationFn: async (args: {
+      sessionId: string;
+      data: Partial<Pick<ChatSession, 'title' | 'model' | 'endpoint_id' | 'pinned' | 'starred'>>;
+    }) => chatAPI.updateSession(workspaceId, projectId, args.sessionId, args.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] }),
+  });
+
+  const deleteSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => chatAPI.deleteSession(workspaceId, projectId, sessionId),
+    onSuccess: (_data, sessionId) => {
+      if (currentSessionId === sessionId) setCurrentSessionId(null);
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, sessionId] });
     },
   });
 
-  const handleSendMessage = () => {
-    if (inputMessage.trim() && !sendMessageMutation.isPending) {
-      sendMessageMutation.mutate(inputMessage);
+  const createMessageMutation = useMutation({
+    mutationFn: async (args: { sessionId: string; content: string; attachments?: string[] }) =>
+      chatAPI.createMessage(workspaceId, projectId, args.sessionId, {
+        role: 'user',
+        content: args.content,
+        attachments: args.attachments,
+      }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, vars.sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+    },
+  });
+
+  const editMessageMutation = useMutation({
+    mutationFn: async (args: { sessionId: string; messageId: string; content: string }) =>
+      chatAPI.editMessage(workspaceId, projectId, args.sessionId, args.messageId, { content: args.content }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, vars.sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+    },
+  });
+
+  const initAttachmentMutation = useMutation({
+    mutationFn: async (args: { sessionId: string; file: File }) => {
+      const res = await chatAPI.initAttachment(workspaceId, projectId, args.sessionId, {
+        file_name: args.file.name,
+        file_type: args.file.type || 'application/octet-stream',
+        file_size: args.file.size,
+      });
+      return { ...res, sessionId: args.sessionId, file: args.file };
+    },
+    onSuccess: async ({ attachment, upload_url, sessionId, file }) => {
+      queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, sessionId] });
+      if (!upload_url) return;
+      try {
+        const put = await fetch(upload_url, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        });
+        if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+        await chatAPI.completeAttachment(workspaceId, projectId, sessionId, attachment.id, {});
+        queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, sessionId] });
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Upload failed');
+      }
+    },
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: async (args: { sessionId: string; attachmentId: string }) =>
+      chatAPI.deleteAttachment(workspaceId, projectId, args.sessionId, args.attachmentId),
+    onSuccess: (_data, vars) =>
+      queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, vars.sessionId] }),
+  });
+
+  const retryAttachmentMutation = useMutation({
+    mutationFn: async (args: { sessionId: string; attachmentId: string }) =>
+      chatAPI.retryAttachment(workspaceId, projectId, args.sessionId, args.attachmentId),
+    onSuccess: (_data, vars) =>
+      queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, vars.sessionId] }),
+  });
+
+  const stopStreaming = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreamStatus('stopped');
+  };
+
+  const runStream = async (args: {
+    sessionId: string;
+    model: string;
+    endpointId: string;
+    input?: { role: 'user'; content: string; attachments?: string[] };
+    fromMessageId?: string;
+    branchLeafMessageId?: string;
+  }) => {
+    stopStreaming();
+    setStreamStatus('connecting');
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const assistantMessageId = makeClientId('msg_asst');
+    setStreamingAssistant({ messageId: assistantMessageId, content: '' });
+
+    const throttler = createThrottle<string>(40, (next) => {
+      setStreamingAssistant((prev) => (prev ? { ...prev, content: next } : { messageId: assistantMessageId, content: next }));
+    });
+
+    try {
+      const res = await postChatStream({
+        token,
+        workspaceId,
+        projectId,
+        sessionId: args.sessionId,
+        body: {
+          model: args.model,
+          endpoint_id: args.endpointId,
+          branch_leaf_message_id: args.branchLeafMessageId,
+          from_message_id: args.fromMessageId,
+          input: args.input,
+        },
+        signal: controller.signal,
+      });
+
+      setStreamStatus('streaming');
+      let content = '';
+
+      for await (const ev of streamSseJson(res, controller.signal)) {
+        if (controller.signal.aborted) break;
+        if (ev.event === 'delta') {
+          const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
+          const delta = data && typeof data.delta === 'string' ? data.delta : null;
+          if (delta) {
+            content += delta;
+            throttler.push(content);
+          }
+        } else if (ev.event === 'error') {
+          const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
+          const message = data && typeof data.message === 'string' ? data.message : 'Stream error';
+          throw new Error(message);
+        } else if (ev.event === 'done') {
+          break;
+        }
+      }
+
+      throttler.flush();
+      setStreamStatus('idle');
+      setStreamingAssistant(null);
+
+      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+    } catch (e: unknown) {
+      if (controller.signal.aborted) {
+        setStreamStatus('stopped');
+        return;
+      }
+      setStreamStatus('error');
+      toast.error(e instanceof Error ? e.message : 'Streaming failed');
+    } finally {
+      abortRef.current = null;
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
+  const handleSend = async () => {
+    if (!currentSessionId) return;
+    if (!activeSession) return;
+
+    const composerValue = composerBySession[currentSessionId] || '';
+    const content = composerValue.trim();
+    if (!content) return;
+
+    const readyAttachmentIds = attachments.filter((a) => a.upload_status === 'ready').map((a) => a.id);
+    const hasBlocking = attachments.some((a) => a.upload_status !== 'ready');
+    if (hasBlocking) return;
+
+    if (editingMessage) {
+      const edited = await editMessageMutation.mutateAsync({
+        sessionId: currentSessionId,
+        messageId: editingMessage.id,
+        content,
+      });
+      setEditingMessage(null);
+      setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
+      await runStream({
+        sessionId: currentSessionId,
+        model: activeSession.model,
+        endpointId: activeSession.endpoint_id,
+        fromMessageId: edited.id,
+      });
+      return;
+    }
+
+    const userMsg = await createMessageMutation.mutateAsync({
+      sessionId: currentSessionId,
+      content,
+      attachments: readyAttachmentIds,
+    });
+    setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
+    await runStream({
+      sessionId: currentSessionId,
+      model: activeSession.model,
+      endpointId: activeSession.endpoint_id,
+      branchLeafMessageId: userMsg.id,
+      input: { role: 'user', content, attachments: readyAttachmentIds },
+    });
+  };
+
+  const onPickFiles = () => fileInputRef.current?.click();
+  const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!currentSessionId) return;
+    if (files.length === 0) return;
+    for (const f of files) {
+      await initAttachmentMutation.mutateAsync({ sessionId: currentSessionId, file: f });
     }
   };
 
-  const sessions = sessionsData?.items || [];
-  const messages = messagesData?.items || [];
-  const currentSession = sessions.find((s) => s.id === currentSessionId);
-
-  // Show loading state while params are being resolved
   if (!resolvedParams || !currentProject) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -109,187 +357,142 @@ export default function ChatPage({ params }: ChatPageProps) {
     );
   }
 
-  return (
-    <div className="flex h-full">
-      {/* Left Panel - Session List */}
-      <div className="w-80 border-r border-subtle bg-surface">
-        <div className="p-4 border-b border-border">
-          <button
-            onClick={() => createSessionMutation.mutate()}
-            disabled={createSessionMutation.isPending}
-            className="w-full flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors disabled:opacity-50"
-          >
-            <Plus className="w-4 h-4" />
-            New Chat
-          </button>
-        </div>
-        <div className="p-2 overflow-y-auto h-[calc(100%-60px)]">
-          {sessionsLoading ? (
-            <div className="text-sm text-tertiary text-center py-4">Loading sessions...</div>
-          ) : sessions.length === 0 ? (
-            <div className="text-sm text-tertiary text-center py-4">No sessions yet</div>
-          ) : (
-            <div className="space-y-1">
-              {sessions.map((session) => (
-                <button
-                  key={session.id}
-                  onClick={() => setCurrentSessionId(session.id)}
-                  className={`w-full text-left px-3 h-10 rounded-sm transition-colors ${
-                    currentSessionId === session.id
-                      ? 'bg-hover text-foreground'
-                      : 'hover:bg-hover text-primary'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className={`w-4 h-4 flex-shrink-0 ${currentSessionId === session.id ? 'text-accent' : 'text-icon-default'}`} />
-                    <div className="truncate text-sm">{session.title || 'New Chat'}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+  const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
+  const disabled = streamStatus === 'connecting' || streamStatus === 'streaming';
 
-      {/* Center Panel - Chat Messages */}
-      <div className="flex-1 flex flex-col bg-background">
-        {currentSession ? (
-          <>
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {messagesLoading ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-tertiary">Loading messages...</div>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
-                    <p className="text-tertiary">Start a conversation...</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4 max-w-3xl mx-auto">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-[80%] rounded-md px-4 py-2 border ${
-                          message.role === 'user'
-                            ? 'bg-hover text-foreground border-subtle'
-                            : 'bg-surface-high text-primary border-subtle'
-                        }`}
-                      >
-                        <div className="text-sm whitespace-pre-wrap">{message.content}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {sendMessageMutation.isPending && (
+  return (
+    <div className="h-full flex overflow-hidden">
+      <ThreadsPane
+        sessions={sessions}
+        activeSessionId={currentSessionId}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        onCreate={() => createSessionMutation.mutate()}
+        onSelect={(id) => {
+          setCurrentSessionId(id);
+          setEditingMessage(null);
+        }}
+        onRename={(id, title) => updateSessionMutation.mutate({ sessionId: id, data: { title } })}
+        onToggleStar={(id, next) => updateSessionMutation.mutate({ sessionId: id, data: { starred: next } })}
+        onTogglePin={(id, next) => updateSessionMutation.mutate({ sessionId: id, data: { pinned: next } })}
+        onDelete={(id) => {
+          if (!window.confirm('Delete this thread?')) return;
+          deleteSessionMutation.mutate(id);
+        }}
+        isCreating={createSessionMutation.isPending}
+        isLoading={sessionsLoading}
+      />
+
+      <section className="flex-1 flex flex-col bg-background overflow-hidden">
+        <ChatHeader
+          session={activeSession}
+          endpoints={endpoints}
+          streamStatus={streamStatus}
+          onRename={(title) => {
+            if (!activeSession) return;
+            updateSessionMutation.mutate({ sessionId: activeSession.id, data: { title } });
+          }}
+          onSelectEndpoint={(e: Endpoint) => {
+            if (!activeSession) return;
+            updateSessionMutation.mutate({ sessionId: activeSession.id, data: { endpoint_id: e.id, model: e.openai_model } });
+          }}
+        />
+
+        <div className="flex-1 min-h-0">
+          {!currentSessionId ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="text-center px-6">
+                <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
+                <div className="text-foreground font-medium mb-1">No active thread</div>
+                <div className="text-tertiary text-sm">Create a new chat to start.</div>
+              </div>
+            </div>
+          ) : messagesLoading ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="text-tertiary">Loading...</div>
+            </div>
+          ) : (
+            <MessageList
+              messages={messages}
+              activeVariantIndexByGroup={activeVariantIndexByGroup}
+              onSelectVariant={(groupId, nextIndex) => setActiveVariantIndexByGroup((prev) => ({ ...prev, [groupId]: nextIndex }))}
+              onEdit={(m) => {
+                if (disabled) return;
+                if (m.role !== 'user') return;
+                setEditingMessage(m);
+                if (!currentSessionId) return;
+                setComposerBySession((prev) => ({ ...prev, [currentSessionId]: m.content }));
+              }}
+              onRegenerate={async (m) => {
+                if (disabled) return;
+                if (!activeSession || !currentSessionId) return;
+                await runStream({
+                  sessionId: currentSessionId,
+                  model: activeSession.model,
+                  endpointId: activeSession.endpoint_id,
+                  fromMessageId: m.id,
+                });
+              }}
+              disabled={disabled}
+              footer={
+                streamingAssistant ? (
+                  <div className="px-4 py-2">
                     <div className="flex justify-start">
-                      <div className="bg-surface-high text-tertiary rounded-md px-4 py-2 border border-subtle">
-                        <div className="flex gap-1">
-                          <span className="w-2 h-2 bg-current rounded-full animate-bounce" />
-                          <span className="w-2 h-2 bg-current rounded-full animate-bounce delay-100" />
-                          <span className="w-2 h-2 bg-current rounded-full animate-bounce delay-200" />
+                      <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
+                        <div className="text-xs text-tertiary mb-1">Assistant</div>
+                        <div className="space-y-2">
+                          <Markdown content={streamingAssistant.content || '…'} />
                         </div>
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                ) : null
+              }
+            />
+          )}
+        </div>
 
-            {/* Input */}
-            <div className="border-t border-border p-4">
-              <div className="max-w-3xl mx-auto">
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="p-2 text-icon-default hover:text-foreground transition-colors"
-                    title="Attach file"
-                  >
-                    <Paperclip className="w-5 h-5" />
-                  </button>
-                  <textarea
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    onKeyDown={handleKeyPress}
-                    placeholder="Type a message..."
-                    rows={1}
-                    className="flex-1 resize-none rounded-sm border border-subtle bg-surface-high px-3 py-2 text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
-                    disabled={sendMessageMutation.isPending}
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={!inputMessage.trim() || sendMessageMutation.isPending}
-                    className="px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors disabled:opacity-50"
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <MessageSquare className="w-16 h-16 mx-auto mb-4 text-tertiary" />
-              <h2 className="text-lg font-semibold text-foreground mb-2">No active session</h2>
-              <p className="text-tertiary mb-4">Create a new chat to start talking</p>
-              <button
-                onClick={() => createSessionMutation.mutate()}
-                disabled={createSessionMutation.isPending}
-                className="px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors disabled:opacity-50"
-              >
-                New Chat
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePicked} />
 
-      {/* Right Panel - Session Info */}
-      <div className="w-72 border-l border-subtle bg-surface">
-        {currentSession ? (
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-foreground">Session Info</h3>
-              <button className="p-1 text-icon-default hover:text-foreground transition-colors">
-                <Settings className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div>
-                <div className="text-tertiary">Title</div>
-                <div className="font-medium text-primary">{currentSession.title || 'New Chat'}</div>
-              </div>
-              <div>
-                <div className="text-tertiary">Created</div>
-                <div className="text-primary">{new Date(currentSession.created_at).toLocaleString()}</div>
-              </div>
-              <div>
-                <div className="text-tertiary">Messages</div>
-                <div className="text-primary">{messages.length}</div>
-              </div>
-            </div>
-
-            <div className="mt-6 pt-6 border-t border-border">
-              <h4 className="font-semibold text-foreground mb-3">Attachments</h4>
-              <div className="text-sm text-tertiary">
-                No attachments yet
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="p-4">
-            <div className="text-sm text-tertiary text-center">
-              Select or create a session to view details
-            </div>
-          </div>
-        )}
-      </div>
+        <Composer
+          value={composerValue}
+          onChange={(v) => {
+            if (!currentSessionId) return;
+            setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
+          }}
+          onSend={handleSend}
+          onStop={stopStreaming}
+          mode={editingMessage ? 'edit' : 'compose'}
+          onCancelEdit={() => {
+            setEditingMessage(null);
+            if (currentSessionId) setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
+          }}
+          onPickFiles={() => {
+            if (editingMessage) {
+              toast.info('Attachments are disabled while editing.');
+              return;
+            }
+            onPickFiles();
+          }}
+          attachments={attachments}
+          onRemoveAttachment={(id) => {
+            if (!currentSessionId) return;
+            deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
+          }}
+          onRetryAttachment={(id) => {
+            if (!currentSessionId) return;
+            retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
+          }}
+          disabled={
+            !currentSessionId ||
+            createMessageMutation.isPending ||
+            editMessageMutation.isPending ||
+            initAttachmentMutation.isPending ||
+            disabled
+          }
+          streaming={disabled}
+        />
+      </section>
     </div>
   );
 }

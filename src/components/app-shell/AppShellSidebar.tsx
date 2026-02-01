@@ -126,23 +126,6 @@ export function AppShellSidebar({
           );
         })}
       </nav>
-
-      <div className="mt-auto px-2 py-3 border-t border-subtle">
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          className={cn(
-            'w-full h-10 rounded-sm flex items-center transition-colors duration-200',
-            'text-primary hover:bg-hover hover:text-foreground',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
-            collapsed ? 'justify-center' : 'gap-3 px-3',
-          )}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <PanelLeftOpen className="w-5 h-5 text-icon-default" /> : <PanelLeftClose className="w-5 h-5 text-icon-default" />}
-          <span className={cn('text-sm', collapsed && 'hidden')}>Collapse</span>
-        </button>
-      </div>
     </aside>
   );
 }

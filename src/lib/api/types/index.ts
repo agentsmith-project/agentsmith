@@ -142,6 +142,8 @@ export interface ChatSession {
   title: string;
   model: string;
   endpoint_id: string;
+  pinned?: boolean;
+  starred?: boolean;
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -149,13 +151,22 @@ export interface ChatSession {
 }
 
 export interface ChatMessage {
-  id?: string;
-  session_id?: string;
+  id: string;
+  session_id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  created_at?: string;
+  created_at: string;
   tokens?: number;
   finish_reason?: string | null;
+
+  // ===== Branch model (v1) =====
+  parent_id?: string | null;
+  logical_id?: string;
+  revision_of?: string | null;
+  revision_index?: number;
+  variant_group_id?: string;
+  variant_index?: number;
+  is_stale?: boolean;
 }
 
 export interface ChatRequest {
@@ -187,8 +198,9 @@ export interface Attachment {
   file_name: string;
   file_type: string;
   file_size: number;
-  upload_status: 'uploading' | 'ready' | 'failed';
+  upload_status: 'uploading' | 'processing' | 'ready' | 'failed';
   created_at: string;
+  error_message?: string;
 }
 
 // ============================================================

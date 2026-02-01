@@ -3,21 +3,14 @@
 import * as React from 'react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { AppShellSidebar } from '@/components/app-shell/AppShellSidebar';
-import { useState } from 'react';
 
 export default function AppShellPage() {
-  const [currentValue, setCurrentValue] = useState('overview');
-  const [_currentMode, _setCurrentMode] = useState<'chat' | 'workbench'>('chat');
 
   return (
     <div className="flex flex-col h-screen">
       <Topbar />
       <div className="flex flex-1 overflow-hidden">
-        <AppShellSidebar
-          _currentMode="chat"
-          currentValue={currentValue}
-          onChange={setCurrentValue}
-        />
+        <AppShellSidebar />
         <main className="flex-1 overflow-auto p-6">
           <div className="max-w-4xl mx-auto space-y-6">
             <div>
@@ -29,8 +22,7 @@ export default function AppShellPage() {
               <div className="bg-surface border border-subtle rounded-lg p-6">
                 <h2 className="text-lg font-semibold text-primary mb-4">State</h2>
                 <div className="space-y-2 text-sm">
-                  <p><span className="text-secondary">Current Value:</span> {currentValue}</p>
-                  <p><span className="text-secondary">Current Mode:</span> chat</p>
+                  <p><span className="text-secondary">Context:</span> Workspace/Project-aware</p>
                 </div>
               </div>
 

@@ -6,16 +6,88 @@
 
 'use client';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileSearch, Clock } from 'lucide-react';
+import { useReactTable, getCoreRowModel, createColumnHelper, flexRender } from '@tanstack/react-table';
+import { FileSearch, Clock, User, FileText } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
+import { PageLoading, EmptyState } from '@/components/ui/loading';
+import { StatusBadge } from '@/components/ui/status-badge';
 
 interface AuditPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
+
+interface AuditEvent {
+  id: string;
+  timestamp: string;
+  actor_type: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  result: 'ok' | 'error';
+  details?: string;
+}
+
+const columnHelper = createColumnHelper<AuditEvent>();
+
+const auditColumns = [
+  columnHelper.accessor('timestamp', {
+    header: 'Timestamp',
+    cell: (info) => (
+      <div className="flex items-center gap-2">
+        <Clock className="w-4 h-4 text-foreground-secondary flex-shrink-0" />
+        <span className="text-foreground-secondary text-sm">
+          {new Date(info.getValue()).toLocaleString()}
+        </span>
+      </div>
+    ),
+  }),
+  columnHelper.accessor('actor_type', {
+    header: 'User',
+    cell: (info) => (
+      <div className="flex items-center gap-2">
+        <User className="w-4 h-4 text-foreground-secondary flex-shrink-0" />
+        <span className="text-foreground text-sm">
+          {info.getValue()}
+        </span>
+      </div>
+    ),
+  }),
+  columnHelper.accessor('action', {
+    header: 'Action',
+    cell: (info) => (
+      <span className="text-foreground text-sm font-medium">
+        {info.getValue()}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('resource_type', {
+    header: 'Resource',
+    cell: (info) => (
+      <div className="flex items-center gap-2">
+        <FileText className="w-4 h-4 text-foreground-secondary flex-shrink-0" />
+        <span className="text-foreground-secondary text-sm">
+          {info.getValue()}:{info.row.original.resource_id}
+        </span>
+      </div>
+    ),
+  }),
+  columnHelper.accessor('result', {
+    header: 'Status',
+    cell: (info) => (
+      <StatusBadge status={info.getValue() === 'ok' ? 'success' : 'error'} />
+    ),
+  }),
+  columnHelper.accessor('details', {
+    header: 'Details',
+    cell: (info) => (
+      <span className="text-foreground-secondary text-sm truncate max-w-[200px] block">
+        {info.getValue() || '-'}
+      </span>
+    ),
+  }),
+];
 
 export default function AuditPage({ params }: AuditPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
@@ -39,10 +111,16 @@ export default function AuditPage({ params }: AuditPageProps) {
 
   const events = auditData?.items || [];
 
+  const table = useReactTable({
+    data: events,
+    columns: auditColumns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   if (!resolvedParams || !currentProject) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-muted-foreground">Loading...</div>
+        <div className="text-foreground-secondary">Loading...</div>
       </div>
     );
   }
@@ -50,43 +128,56 @@ export default function AuditPage({ params }: AuditPageProps) {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Audit Logs</h1>
-        <p className="text-muted-foreground">Track all activity within the project</p>
+        <h1 className="text-2xl font-semibold text-foreground">Audit Logs</h1>
+        <p className="text-sm text-foreground-secondary mt-1">Track all activity within the project</p>
       </div>
 
       {auditLoading ? (
-        <div className="text-center py-12 text-muted-foreground">Loading audit logs...</div>
+        <PageLoading />
       ) : events.length === 0 ? (
-        <div className="text-center py-12">
-          <FileSearch className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-          <h2 className="text-lg font-semibold mb-2">No audit events</h2>
-          <p className="text-muted-foreground">Audit logs will appear here once activity occurs</p>
-        </div>
+        <EmptyState
+          icon={FileSearch}
+          title="No audit events"
+          description="Audit logs will appear here once activity occurs"
+        />
       ) : (
-        <div className="space-y-2">
-          {events.map((event: any) => (
-            <div key={event.id} className="flex items-start gap-4 p-4 rounded-lg border bg-card">
-              <Clock className="w-5 h-5 text-muted-foreground mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium">{event.actor_type}</span>
-                  <span className="text-muted-foreground">•</span>
-                  <span className="text-sm">{event.action}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded ${
-                    event.result === 'ok' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                  }`}>
-                    {event.result}
-                  </span>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {event.resource_type}:{event.resource_id}
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {new Date(event.timestamp).toLocaleString()}
-                </div>
-              </div>
-            </div>
-          ))}
+        <div className="rounded-lg overflow-hidden border border-border bg-surface shadow-sm">
+          <table className="w-full border-collapse">
+            <thead className="bg-surface-high">
+              {table.getHeaderGroups().map(headerGroup => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map(header => (
+                    <th
+                      key={header.id}
+                      className="px-4 py-4 text-left text-sm font-medium text-foreground-secondary"
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.map(row => (
+                <tr
+                  key={row.id}
+                  className="hover:bg-surface-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 border-b border-border last:border-b-0"
+                >
+                  {row.getVisibleCells().map(cell => (
+                    <td
+                      key={cell.id}
+                      className="px-4 py-4 text-sm text-foreground"
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

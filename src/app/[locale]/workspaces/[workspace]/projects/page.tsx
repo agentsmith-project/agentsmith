@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { FolderOpen, Plus } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
-import { useAuthStore } from '@/lib/stores/authStore';
+import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import type { Project } from '@/lib/stores/authStore';
 
 interface ProjectsPageProps {
@@ -23,6 +23,8 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const projects = useAuthStore((state) => state.projects);
   const setProject = useAuthStore((state) => state.setProject);
   const currentWorkspace = useAuthStore((state) => state.currentWorkspace);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hydrated = useAuthStoreHydration();
 
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, locale: p.locale }));
@@ -33,7 +35,8 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
     router.push(`/${resolvedParams?.locale || 'en-US'}/workspaces/${resolvedParams?.workspace || 'ws1'}/projects/${project.id}/overview`);
   };
 
-  if (!resolvedParams) {
+  // Wait for params to resolve and auth to hydrate
+  if (!resolvedParams || !hydrated) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-tertiary">Loading...</div>
@@ -59,7 +62,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
           </button>
         </div>
 
-        {projects.length === 0 ? (
+        {!isAuthenticated || projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
             <h2 className="text-xl font-semibold text-primary mb-2">No projects yet</h2>

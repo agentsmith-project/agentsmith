@@ -36,20 +36,17 @@ export default async function LocaleLayout({
     messages = {};
   }
 
+  // NOTE: No <html> or <body> tags here - they are in the root layout
   return (
-    <html lang={locale} className="dark" suppressHydrationWarning>
-      <body className="font-sans antialiased" suppressHydrationWarning>
-        <AuthProvider>
-          <MSWProvider>
-            <QueryProvider>
-              <NextIntlClientProvider locale={locale} messages={messages}>
-                {children}
-              </NextIntlClientProvider>
-              <ToastContainer />
-            </QueryProvider>
-          </MSWProvider>
-        </AuthProvider>
-      </body>
-    </html>
+    <AuthProvider>
+      <MSWProvider>
+        <QueryProvider>
+          <NextIntlClientProvider locale={locale} messages={messages}>
+            {children}
+          </NextIntlClientProvider>
+          <ToastContainer />
+        </QueryProvider>
+      </MSWProvider>
+    </AuthProvider>
   );
 }

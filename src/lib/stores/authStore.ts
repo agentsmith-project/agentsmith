@@ -119,6 +119,33 @@ const mockProjects: Project[] = [
 
 const isServer = typeof window === 'undefined';
 
+// Custom storage that handles SSR
+const customStorage = {
+  getItem: (name: string) => {
+    if (!isServer) {
+      const item = localStorage.getItem(name);
+      if (item) {
+        try {
+          return JSON.parse(item);
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  },
+  setItem: (name: string, value: unknown) => {
+    if (!isServer) {
+      localStorage.setItem(name, JSON.stringify(value));
+    }
+  },
+  removeItem: (name: string) => {
+    if (!isServer) {
+      localStorage.removeItem(name);
+    }
+  },
+};
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
@@ -191,6 +218,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'mbos-auth',
+      storage: customStorage,
       partialize: (state) => ({
         user: state.user,
         token: state.token,
@@ -200,7 +228,6 @@ export const useAuthStore = create<AuthState>()(
         workspaces: state.workspaces,
         projects: state.projects,
       }),
-      skipHydration: true,
     }
   )
 );

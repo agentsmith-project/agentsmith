@@ -12,7 +12,10 @@ let worker: ReturnType<typeof setupWorker> | null = null;
 export function initMSW() {
   if (typeof window !== 'undefined' && !worker) {
     worker = setupWorker(...handlers);
-    return worker.start();
+    return worker.start({
+      // Suppress warnings for development-related unhandled requests
+      onUnhandledRequest: 'bypass',
+    });
   }
   return Promise.resolve();
 }

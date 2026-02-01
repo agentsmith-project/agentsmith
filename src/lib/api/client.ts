@@ -86,8 +86,13 @@ export interface ApiClient {
 
 /**
  * API Base URL configuration
+ *
+ * When using MSW (development), use relative paths so MSW can intercept requests.
+ * Otherwise, use the configured backend URL.
  */
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000';
+export const API_BASE = process.env.NEXT_PUBLIC_USE_MSW === 'true'
+  ? '/api'  // Use relative path for MSW interception
+  : (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000');
 
 /**
  * Create API client instance

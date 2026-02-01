@@ -4,6 +4,7 @@
  * Quick navigation cards for main project features.
  */
 
+import Link from 'next/link';
 import { MessageSquare, Wrench, Bot, Server, Users, BarChart3, Settings, ChevronRight } from 'lucide-react';
 
 export interface NavItem {
@@ -93,7 +94,7 @@ export function ProjectNavigation({ basePath, items, columns = 3 }: ProjectNavig
       {navItems.map((item) => {
         const Icon = item.icon;
         return (
-          <a
+          <Link
             key={item.label}
             href={`${basePath}${item.href}`}
             className="bg-panel border border-subtle rounded-xl p-5 hover:bg-hover transition-all duration-200 group"
@@ -112,7 +113,7 @@ export function ProjectNavigation({ basePath, items, columns = 3 }: ProjectNavig
               </div>
               <ChevronRight className="w-5 h-5 text-tertiary group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
             </div>
-          </a>
+          </Link>
         );
       })}
     </div>

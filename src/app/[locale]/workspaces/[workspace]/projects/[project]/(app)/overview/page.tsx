@@ -17,7 +17,8 @@ export default function OverviewPage() {
   const params = useParams();
   const workspaceId = params.workspace as string;
   const projectId = params.project as string;
-  const basePath = `/workspaces/${workspaceId}/projects/${projectId}`;
+  const locale = (params.locale as string) || 'en-US';
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const apiClient = getApiClient();
   const usageAPI = new UsageAPI(apiClient);

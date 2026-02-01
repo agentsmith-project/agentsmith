@@ -7,8 +7,8 @@
 
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { useIsAuthenticated, useHasPermission, useHasAllPermissions } from '@/lib/hooks/use-permissions';
 
 interface ProtectedRouteProps {
@@ -23,6 +23,7 @@ export function ProtectedRoute({
   requirePermission,
 }: ProtectedRouteProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const isAuthenticated = useIsAuthenticated();
 
   // Check permission if specified - must call hooks unconditionally
@@ -43,12 +44,51 @@ export function ProtectedRoute({
   const isDev = process.env.NODE_ENV === 'development';
   const bypassAuth = isDev && process.env.NEXT_PUBLIC_BYPASS_AUTH === 'true';
 
+  // Extract locale from pathname for login redirect
+  const loginPath = useMemo(() => {
+    const segments = pathname.split('/');
+    const locale = segments[1] || 'en-US'; // Default to en-US if no locale in path
+    return `/${locale}/login`;
+  }, [pathname]);
+
   useEffect(() => {
-    if (!bypassAuth && !isAuthenticated) {
-      // Redirect to login
-      router.push('/login');
+    // In development with E2E tests, check if mock auth is being set up
+    const hasMockAuthSetup = typeof window !== 'undefined' && !!(window as any).__MBOS_AUTH_SETUP__;
+
+    if (hasMockAuthSetup && !bypassAuth && !isAuthenticated) {
+      // Poll for mock auth to be set up (E2E testing scenario)
+      const checkMockAuth = () => {
+        const store = (window as any).__MBOS_AUTH_STORE__;
+        if (store && store.getState) {
+          const state = store.getState();
+          if (state.isAuthenticated) {
+            console.log('[ProtectedRoute] Mock auth detected, isAuthenticated:', state.isAuthenticated);
+            return true;
+          }
+        }
+        return false;
+      };
+
+      // Poll for mock auth for up to 2 seconds
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        if (checkMockAuth() || attempts > 40) {
+          clearInterval(interval);
+          console.log('[ProtectedRoute] Mock auth check complete, attempts:', attempts, 'found:', checkMockAuth());
+          // If still not authenticated after waiting, redirect to login
+          if (!checkMockAuth()) {
+            router.push(loginPath);
+          }
+        }
+      }, 50);
+
+      return () => clearInterval(interval);
+    } else if (!bypassAuth && !isAuthenticated) {
+      // Normal redirect to login (production or non-E2E dev)
+      router.push(loginPath);
     }
-  }, [isAuthenticated, router, bypassAuth]);
+  }, [isAuthenticated, router, bypassAuth, loginPath]);
 
   // Show loading state while checking permissions
   if (!bypassAuth && !isAuthenticated) {

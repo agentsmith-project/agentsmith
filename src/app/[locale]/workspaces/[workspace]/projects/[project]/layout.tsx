@@ -7,7 +7,8 @@
 
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useMemo } from 'react';
+import { useParams, useRouter, usePathname } from 'next/navigation';
 import { AppShellSidebar } from '@/components/app-shell/AppShellSidebar';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -17,6 +18,29 @@ export default function ProjectLayout({
 }: {
   children: ReactNode;
 }) {
+  const params = useParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const locale = (params?.locale as string) || 'en-US';
+  const workspaceId = params?.workspace as string;
+  const projectId = params?.project as string;
+
+  // Get current page from URL path using usePathname (works on both server and client)
+  const currentPage = useMemo(() => {
+    const pathSegments = pathname.split('/');
+    // Path format: /locale/workspaces/workspaceId/projects/projectId/page
+    const pageIndex = pathSegments.findIndex(s => s === projectId);
+    if (pageIndex >= 0 && pageIndex + 1 < pathSegments.length) {
+      return pathSegments[pageIndex + 1];
+    }
+    return 'overview';
+  }, [pathname, projectId]);
+
+  const handleSidebarChange = (pageId: string) => {
+    const newPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/${pageId}`;
+    router.push(newPath);
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background flex flex-col">
@@ -26,7 +50,7 @@ export default function ProjectLayout({
         {/* Main Content */}
         <div className="flex-1 flex">
           {/* Sidebar */}
-          <AppShellSidebar currentValue="" onChange={() => {}} />
+          <AppShellSidebar currentValue={currentPage} onChange={handleSidebarChange} />
 
           {/* Page Content */}
           <main className="flex-1 overflow-auto">

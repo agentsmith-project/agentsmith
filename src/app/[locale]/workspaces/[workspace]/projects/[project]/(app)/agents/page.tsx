@@ -6,22 +6,116 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useReactTable, getCoreRowModel, createColumnHelper, flexRender } from '@tanstack/react-table';
 import { Bot, Plus, Edit, Trash2, Power, PowerOff } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, AgentAPI } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
+import { StatusBadge } from '@/components/ui/status-badge';
 
 interface AgentsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
 
+interface Agent {
+  id: string;
+  name: string;
+  description?: string;
+  model?: string;
+  temperature?: number;
+  status: 'enabled' | 'disabled';
+  presence: string;
+  mode: string;
+}
+
+const columnHelper = createColumnHelper<Agent>();
+
+const agentColumns = [
+  columnHelper.accessor('name', {
+    header: 'Name',
+    cell: (info) => (
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded bg-surface-high flex items-center justify-center">
+          <Bot className="w-4 h-4 text-foreground-secondary" />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-foreground font-medium">{info.getValue()}</span>
+          {info.row.original.description && (
+            <span className="text-xs text-foreground-secondary line-clamp-1">
+              {info.row.original.description}
+            </span>
+          )}
+        </div>
+      </div>
+    ),
+  }),
+  columnHelper.accessor('model', {
+    header: 'Model',
+    cell: (info) => (
+      <span className="text-foreground-secondary text-sm font-mono">
+        {info.getValue() || '-'}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('temperature', {
+    header: 'Temp',
+    cell: (info) => (
+      <span className="text-foreground-secondary text-sm">
+        {info.getValue() ?? '-'}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('mode', {
+    header: 'Mode',
+    cell: (info) => (
+      <span className="text-foreground-secondary text-sm capitalize">
+        {info.getValue()}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('status', {
+    header: 'Status',
+    cell: (info) => <StatusBadge status={info.getValue() === 'enabled' ? 'active' : 'paused'} />,
+  }),
+  columnHelper.display({
+    id: 'actions',
+    header: '',
+    cell: (info) => (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => {
+            const row = info.row.original;
+            updateAgentMutation.mutate({
+              agentId: row.id,
+              data: { status: row.status === 'enabled' ? 'disabled' : 'enabled' },
+            });
+          }}
+          disabled={updateAgentMutation.isPending}
+          className="px-3 py-1.5 text-xs rounded bg-surface hover:bg-surface-high transition-colors disabled:opacity-50 border border-border"
+        >
+          {info.row.original.status === 'enabled' ? 'Disable' : 'Enable'}
+        </button>
+        <button
+          onClick={() => deleteAgentMutation.mutate(info.row.original.id)}
+          disabled={deleteAgentMutation.isPending}
+          className="p-1.5 text-error hover:bg-error/10 rounded transition-colors disabled:opacity-50"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    ),
+  }),
+];
+
+let updateAgentMutation: any;
+let deleteAgentMutation: any;
+
 export default function AgentsPage({ params }: AgentsPageProps) {
   const queryClient = useQueryClient();
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
-  const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [newAgentName, setNewAgentName] = useState('');
 
   const currentProject = useAuthStore((state) => state.currentProject);
@@ -58,11 +152,10 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     },
   });
 
-  const updateAgentMutation = useMutation({
+  updateAgentMutation = useMutation({
     mutationFn: ({ agentId, data }: { agentId: string; data: { name?: string; status?: 'enabled' | 'disabled' } }) =>
       agentAPI.update(workspaceId, projectId, agentId, data),
     onSuccess: () => {
-      setEditingAgent(null);
       queryClient.invalidateQueries({ queryKey: ['agents', workspaceId, projectId] });
       toast.success('Agent updated successfully');
     },
@@ -71,7 +164,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     },
   });
 
-  const deleteAgentMutation = useMutation({
+  deleteAgentMutation = useMutation({
     mutationFn: (agentId: string) => agentAPI.delete(workspaceId, projectId, agentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents', workspaceId, projectId] });
@@ -84,6 +177,12 @@ export default function AgentsPage({ params }: AgentsPageProps) {
 
   const agents = agentsData?.items || [];
 
+  const table = useReactTable({
+    data: agents,
+    columns: agentColumns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   if (!resolvedParams || !currentProject) {
     return <PageLoading />;
   }
@@ -91,7 +190,10 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Agents</h1>
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Agents</h1>
+          <p className="text-sm text-foreground-secondary mt-1">Manage AI agents within the project</p>
+        </div>
         <button
           onClick={() => createAgentMutation.mutate({ name: newAgentName || 'New Agent' })}
           disabled={createAgentMutation.isPending}
@@ -115,82 +217,43 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           }}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {agents.map((agent) => (
-            <div key={agent.id} className="p-4 rounded-lg border bg-card">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Bot className="w-5 h-5" />
-                  {editingAgent === agent.id ? (
-                    <input
-                      type="text"
-                      defaultValue={agent.name}
-                      onBlur={(e) => {
-                        if (e.target.value && e.target.value !== agent.name) {
-                          updateAgentMutation.mutate({ agentId: agent.id, data: { name: e.target.value } });
-                        }
-                        setEditingAgent(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.currentTarget.blur();
-                        } else if (e.key === 'Escape') {
-                          setEditingAgent(null);
-                        }
-                      }}
-                      autoFocus
-                      className="bg-background border border-border rounded px-2 py-1 text-sm"
-                    />
-                  ) : (
-                    <h3 className="font-semibold">{agent.name}</h3>
-                  )}
-                </div>
-                <button
-                  onClick={() => setEditingAgent(agent.id)}
-                  className="p-1 text-muted-foreground hover:text-foreground"
+        <div className="rounded-lg overflow-hidden border border-border bg-surface shadow-sm">
+          <table className="w-full border-collapse">
+            <thead className="bg-surface-high">
+              {table.getHeaderGroups().map(headerGroup => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map(header => (
+                    <th
+                      key={header.id}
+                      className="px-4 py-4 text-left text-sm font-medium text-foreground-secondary"
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.map(row => (
+                <tr
+                  key={row.id}
+                  className="hover:bg-surface-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 border-b border-border last:border-b-0"
                 >
-                  <Edit className="w-4 h-4" />
-                </button>
-              </div>
-
-              {agent.description && (
-                <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{agent.description}</p>
-              )}
-
-              <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
-                <div className="flex items-center gap-1">
-                  {agent.status === 'enabled' ? (
-                    <Power className="w-3 h-3 text-green-500" />
-                  ) : (
-                    <PowerOff className="w-3 h-3 text-gray-500" />
-                  )}
-                  <span className="capitalize">{agent.status}</span>
-                </div>
-                <div className="capitalize">{agent.presence}</div>
-                <div className="capitalize">{agent.mode}</div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => updateAgentMutation.mutate({
-                    agentId: agent.id,
-                    data: { status: agent.status === 'enabled' ? 'disabled' : 'enabled' },
-                  })}
-                  disabled={updateAgentMutation.isPending}
-                  className="flex-1 px-3 py-1.5 text-sm rounded-md bg-secondary hover:bg-secondary/80 transition-colors disabled:opacity-50"
-                >
-                  {agent.status === 'enabled' ? 'Disable' : 'Enable'}
-                </button>
-                <button
-                  onClick={() => deleteAgentMutation.mutate(agent.id)}
-                  disabled={deleteAgentMutation.isPending}
-                  className="p-1.5 text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
+                  {row.getVisibleCells().map(cell => (
+                    <td
+                      key={cell.id}
+                      className="px-4 py-4 text-sm text-foreground"
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

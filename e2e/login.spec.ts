@@ -269,4 +269,33 @@ test.describe('Full User Journey', () => {
     await page.goto('/en-US/workspaces/ws_default/projects/proj_001/overview');
     await expect(page.locator('h1').filter({ hasText: 'Overview' })).toBeVisible();
   });
+
+  test('should complete two-step login flow', async ({ page }) => {
+    // 1. Navigate to login page
+    await page.goto('/en-US/login');
+
+    // 2. Fill in email
+    await page.locator('input[placeholder*="user@example.com"]').fill('user@test.com');
+
+    // 3. Click Quick Login
+    await page.getByText('Quick Login').click();
+
+    // 4. Should navigate to workspace selection
+    await page.waitForURL(/\/login\/workspace/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/en-US\/login\/workspace/);
+
+    // 5. Check workspace selection page is displayed
+    await expect(page.getByText('Select your workspace')).toBeVisible();
+    await expect(page.getByText('Choose a workspace to continue')).toBeVisible();
+
+    // 6. Select workspace
+    await page.getByText('Default Workspace').click();
+
+    // 7. Should land on projects page
+    await page.waitForURL(/\/workspaces\/ws_default\/projects/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/en-US\/workspaces\/ws_default\/projects/);
+
+    // 8. Verify projects page is loaded
+    await expect(page.locator('h1').filter({ hasText: 'Projects' })).toBeVisible();
+  });
 });

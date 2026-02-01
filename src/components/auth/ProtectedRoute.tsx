@@ -83,7 +83,7 @@ export function ProtectedRoute({
           console.log('[ProtectedRoute] Mock auth check complete, attempts:', attempts, 'found:', checkMockAuth());
           // If still not authenticated after waiting, redirect to login
           if (!checkMockAuth()) {
-            router.push(loginPath);
+            router.replace(loginPath);
           }
         }
       }, 50);
@@ -91,7 +91,7 @@ export function ProtectedRoute({
       return () => clearInterval(interval);
     } else if (!bypassAuth && !isAuthenticated) {
       // Normal redirect to login (production or non-E2E dev)
-      router.push(loginPath);
+      router.replace(loginPath);
     }
   }, [hydrated, isAuthenticated, router, bypassAuth, loginPath]);
 

@@ -70,7 +70,10 @@ const initialData: AuthData = {
   user: null,
   token: null,
   isAuthenticated: false,
-  hydrated: false,
+  // Treat the client as "hydrated enough" by default so routes can
+  // redirect unauthenticated users instead of getting stuck on Loading.
+  // Persist rehydration will still overwrite auth fields if present.
+  hydrated: typeof window !== 'undefined',
   currentWorkspace: null,
   currentProject: null,
   workspaces: [],

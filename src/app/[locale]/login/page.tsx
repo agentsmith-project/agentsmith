@@ -47,7 +47,9 @@ export default function LoginPage() {
     setIsLoggingIn(true);
     try {
       mockLogin(workspaceId, userEmail, _userName);
-      // Note: redirect will happen via useEffect when isAuthenticated updates
+      // Redirect to workspace selection page
+      const redirectPath = `/${locale}/login/workspace`;
+      router.push(redirectPath);
     } catch (error) {
       console.error('Login failed:', error);
       setIsLoggingIn(false);

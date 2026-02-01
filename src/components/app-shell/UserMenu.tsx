@@ -73,7 +73,7 @@ export function UserMenu({
       {/* Avatar Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 hover:bg-hover rounded-full p-1 pr-3 transition-colors duration-200"
+        className="flex items-center gap-2 hover:bg-hover rounded-full p-1 pr-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
       >
         <Avatar className="w-8 h-8">
           {user?.avatar ? (
@@ -99,7 +99,7 @@ export function UserMenu({
           />
 
           {/* Menu */}
-          <div className="absolute right-0 z-20 mt-2 w-56 bg-surface border border-subtle rounded-lg shadow-lg">
+          <div className="absolute right-0 z-20 mt-2 w-56 bg-surface border border-subtle rounded-lg shadow-sm">
             {/* User Info */}
             <div className="px-4 py-3 border-b border-subtle">
               <p className="text-sm font-medium text-primary truncate">
@@ -116,7 +116,7 @@ export function UserMenu({
                 <button
                   key={item.id}
                   onClick={() => handleClick(item.id)}
-                  className="w-full px-4 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-3 transition-colors duration-150"
+                  className="w-full px-4 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
                 >
                   <item.icon className="w-4 h-4 flex-shrink-0" />
                   <span>{item.label}</span>
@@ -127,7 +127,7 @@ export function UserMenu({
 
               <button
                 onClick={() => handleClick('logout')}
-                className="w-full px-4 py-2 text-left text-sm text-error hover:bg-hover hover:text-error flex items-center gap-3 transition-colors duration-150"
+                className="w-full px-4 py-2 text-left text-sm text-error hover:bg-hover hover:text-error flex items-center gap-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
               >
                 <LogOut className="w-4 h-4 flex-shrink-0" />
                 <span>Logout</span>

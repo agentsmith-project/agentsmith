@@ -17,7 +17,7 @@ export function SourcesPanel() {
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         <button
-          className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-foreground-secondary hover:bg-surface-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-foreground-secondary hover:bg-surface-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 min-h-[44px]"
           onClick={() => {}}
         >
           <Plus className="w-4 h-4" />

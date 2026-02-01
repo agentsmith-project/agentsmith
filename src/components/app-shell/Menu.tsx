@@ -26,7 +26,7 @@ export function Menu({ items, value, onChange, className = '' }: MenuProps) {
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 hover:bg-hover rounded-lg text-sm text-secondary hover:text-primary transition-all duration-200"
+        className="flex items-center gap-2 px-3 py-2 hover:bg-hover rounded-lg text-sm text-secondary hover:text-primary transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
       >
         {selectedItem?.icon && (
           <selectedItem.icon className="w-4 h-4" />
@@ -52,7 +52,7 @@ export function Menu({ items, value, onChange, className = '' }: MenuProps) {
           />
 
           {/* Menu */}
-          <div className="absolute z-20 mt-1 w-full min-w-[200px] bg-surface border border-subtle rounded-lg shadow-lg py-1 max-h-[400px] overflow-y-auto">
+          <div className="absolute z-20 mt-1 w-full min-w-[200px] bg-surface border border-subtle rounded-lg shadow-sm py-1 max-h-[400px] overflow-y-auto">
             {items.map((item) => {
               const Icon = item.icon;
               const isSelected = value === item.id;
@@ -69,7 +69,7 @@ export function Menu({ items, value, onChange, className = '' }: MenuProps) {
                   }}
                   disabled={isDisabled}
                   className={`
-                    w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors duration-150
+                    w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50
                     ${isSelected
                       ? 'bg-hover text-primary'
                       : 'text-secondary hover:bg-hover hover:text-primary'

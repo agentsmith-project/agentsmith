@@ -1,5 +1,4 @@
 import { flexRender, Table as TanStackTable } from '@tanstack/react-table';
-import { cn } from '@/lib/utils';
 
 interface DataTableProps<TData> {
   table: TanStackTable<TData>;

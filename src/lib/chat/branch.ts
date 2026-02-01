@@ -1,7 +1,13 @@
 import type { ChatMessage } from '@/lib/api/types';
 
+export type VariantGroup = {
+  id: string;
+  kind: 'assistant' | 'user';
+  items: ChatMessage[];
+};
+
 export type VariantGroups = {
-  groups: Map<string, ChatMessage[]>;
+  groups: Map<string, VariantGroup>;
   messageToGroupId: Map<string, string>;
   groupBaseTime: Map<string, number>;
 };
@@ -12,8 +18,23 @@ function parseTime(value?: string) {
   return Number.isNaN(t) ? 0 : t;
 }
 
+function groupSortKey(message: ChatMessage) {
+  return message.variant_index ?? message.revision_index ?? 0;
+}
+
+function resolveGroupId(message: ChatMessage, hasRevisions: Set<string>) {
+  if (message.variant_group_id) return { id: message.variant_group_id, kind: 'assistant' as const };
+  if (message.logical_id) return { id: message.logical_id, kind: 'user' as const };
+  if (message.revision_of) return { id: `log_${message.revision_of}`, kind: 'user' as const };
+  if (hasRevisions.has(message.id)) return { id: `log_${message.id}`, kind: 'user' as const };
+  if (message.role === 'assistant' && message.parent_id) {
+    return { id: `asst_${message.parent_id}`, kind: 'assistant' as const };
+  }
+  return null;
+}
+
 export function buildVariantGroups(messages: ChatMessage[]): VariantGroups {
-  const groups = new Map<string, ChatMessage[]>();
+  const groups = new Map<string, VariantGroup>();
   const messageToGroupId = new Map<string, string>();
   const groupBaseTime = new Map<string, number>();
 
@@ -23,53 +44,25 @@ export function buildVariantGroups(messages: ChatMessage[]): VariantGroups {
   }
 
   for (const m of messages) {
-    if (m.variant_group_id) {
-      const key = m.variant_group_id;
-      const list = groups.get(key) || [];
-      list.push(m);
-      groups.set(key, list);
-      messageToGroupId.set(m.id, key);
-      continue;
-    }
-
-    if (m.logical_id) {
-      const key = m.logical_id;
-      const list = groups.get(key) || [];
-      list.push(m);
-      groups.set(key, list);
-      messageToGroupId.set(m.id, key);
-      continue;
-    }
-
-    if (m.revision_of) {
-      const key = `log_${m.revision_of}`;
-      const list = groups.get(key) || [];
-      list.push(m);
-      groups.set(key, list);
-      messageToGroupId.set(m.id, key);
-      continue;
-    }
-
-    if (hasRevisions.has(m.id)) {
-      const key = `log_${m.id}`;
-      const list = groups.get(key) || [];
-      list.push(m);
-      groups.set(key, list);
-      messageToGroupId.set(m.id, key);
-    }
+    const groupMeta = resolveGroupId(m, hasRevisions);
+    if (!groupMeta) continue;
+    const existing = groups.get(groupMeta.id) || { id: groupMeta.id, kind: groupMeta.kind, items: [] };
+    existing.items.push(m);
+    groups.set(groupMeta.id, existing);
+    messageToGroupId.set(m.id, groupMeta.id);
   }
 
-  for (const [key, list] of groups) {
-    list.sort((a, b) => {
-      const ai = a.variant_index ?? a.revision_index ?? 0;
-      const bi = b.variant_index ?? b.revision_index ?? 0;
+  for (const [key, group] of groups) {
+    group.items.sort((a, b) => {
+      const ai = groupSortKey(a);
+      const bi = groupSortKey(b);
       if (ai !== bi) return ai - bi;
       return parseTime(a.created_at) - parseTime(b.created_at);
     });
-    groups.set(key, list);
+    groups.set(key, group);
 
-    if (list.length > 1) {
-      const base = Math.min(...list.map((m) => parseTime(m.created_at)));
+    if (group.items.length > 1) {
+      const base = Math.min(...group.items.map((m) => parseTime(m.created_at)));
       groupBaseTime.set(key, base);
     }
   }
@@ -77,31 +70,16 @@ export function buildVariantGroups(messages: ChatMessage[]): VariantGroups {
   return { groups, messageToGroupId, groupBaseTime };
 }
 
-export function sortMessagesForDisplay(
-  messages: ChatMessage[],
-  groups: VariantGroups,
-) {
-  const { groupBaseTime, messageToGroupId } = groups;
-  return [...messages].sort((a, b) => {
-    const ga = messageToGroupId.get(a.id);
-    const gb = messageToGroupId.get(b.id);
-    const ta = ga && groupBaseTime.has(ga) ? groupBaseTime.get(ga)! : parseTime(a.created_at);
-    const tb = gb && groupBaseTime.has(gb) ? groupBaseTime.get(gb)! : parseTime(b.created_at);
-    if (ta !== tb) return ta - tb;
-    return parseTime(a.created_at) - parseTime(b.created_at);
-  });
-}
-
 export function selectVariantMessage(
   groupId: string,
   groups: VariantGroups,
   activeVariantIndexByGroup: Record<string, number>,
 ) {
-  const list = groups.groups.get(groupId) || [];
-  if (list.length === 0) return null;
+  const group = groups.groups.get(groupId);
+  if (!group || group.items.length === 0) return null;
   const desired = activeVariantIndexByGroup[groupId];
-  const fallback = list[list.length - 1];
-  return list.find((m) => (m.variant_index ?? m.revision_index ?? 0) === desired) || fallback;
+  const fallback = group.items[group.items.length - 1];
+  return group.items.find((m) => groupSortKey(m) === desired) || fallback;
 }
 
 export function buildVisibleChain(
@@ -151,7 +129,9 @@ export function buildVisibleChain(
 
   const isLeaf = (m: ChatMessage) => !(childrenMap.get(m.id) || []).length;
   const leaves = validMessages.filter(isLeaf);
-  const leaf = leaves.sort((a, b) => parseTime(a.created_at) - parseTime(b.created_at)).pop() || validMessages[validMessages.length - 1];
+  const leaf =
+    leaves.sort((a, b) => parseTime(a.created_at) - parseTime(b.created_at)).pop() ||
+    validMessages[validMessages.length - 1];
 
   const chain: ChatMessage[] = [];
   let cursor: ChatMessage | undefined = leaf;
@@ -170,15 +150,15 @@ export function getVariantMeta(
 ) {
   const groupId = variantGroups.messageToGroupId.get(message.id);
   if (!groupId) return null;
-  const list = variantGroups.groups.get(groupId) || [];
-  if (list.length <= 1) return null;
+  const group = variantGroups.groups.get(groupId);
+  if (!group || group.items.length <= 1) return null;
 
-  const index = list.findIndex((m) => m.id === message.id);
-  const fallbackIndex = message.variant_index ?? message.revision_index ?? 0;
+  const index = group.items.findIndex((m) => m.id === message.id);
+  const fallbackIndex = groupSortKey(message);
   return {
     groupId,
     index: index >= 0 ? index : fallbackIndex,
-    total: list.length,
-    list,
+    total: group.items.length,
+    list: group.items,
   };
 }

@@ -115,14 +115,14 @@ export default function ChatPage({ params }: ChatPageProps) {
     const nextMap = new Map(lastVariantTailRef.current);
     const updates: Record<string, number> = {};
 
-    for (const [groupId, list] of groups.groups.entries()) {
-      if (list.length === 0) continue;
-      const last = list[list.length - 1];
+    for (const [groupId, group] of groups.groups.entries()) {
+      if (group.items.length === 0) continue;
+      const last = group.items[group.items.length - 1];
       const lastId = last.id;
       const prevId = lastVariantTailRef.current.get(groupId);
       nextMap.set(groupId, lastId);
       if (!Object.prototype.hasOwnProperty.call(activeVariantIndexByGroup, groupId) || (prevId && prevId !== lastId)) {
-        const idx = last.variant_index ?? last.revision_index ?? list.length - 1;
+        const idx = last.variant_index ?? last.revision_index ?? group.items.length - 1;
         updates[groupId] = idx;
       }
     }

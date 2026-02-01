@@ -7,7 +7,7 @@ import { UserMenu } from './UserMenu';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Globe, FolderKanban, ChevronDown } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 
 interface TopbarProps {
   className?: string;
@@ -16,13 +16,16 @@ interface TopbarProps {
 export function Topbar({ className = '' }: TopbarProps) {
   const { currentWorkspace, currentProject, workspaces, projects, user } = useAuthStore();
   const router = useRouter();
+  const params = useParams();
+  const locale = (params?.locale as string) || 'en-US';
 
   const handleWorkspaceChange = (workspaceId: string) => {
-    router.push(`/en-US/workspaces/${workspaceId}/projects`);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects`);
   };
 
   const handleProjectChange = (projectId: string) => {
-    router.push(`/en-US/workspaces/${currentWorkspace?.id}/projects/${projectId}/overview`);
+    if (!currentWorkspace?.id) return;
+    router.push(`/${locale}/workspaces/${currentWorkspace.id}/projects/${projectId}/overview`);
   };
 
   const handleProfile = () => {

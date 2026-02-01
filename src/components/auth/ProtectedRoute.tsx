@@ -10,6 +10,7 @@
 import { useEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useIsAuthenticated, useHasPermission, useHasAllPermissions } from '@/lib/hooks/use-permissions';
+import { useAuthStore } from '@/lib/stores/authStore';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -25,6 +26,7 @@ export function ProtectedRoute({
   const router = useRouter();
   const pathname = usePathname();
   const isAuthenticated = useIsAuthenticated();
+  const hydrated = useAuthStore((s) => s.hydrated);
 
   // Check permission if specified - must call hooks unconditionally
   const hasAllPermissionsResult = useHasAllPermissions(requirePermission && Array.isArray(requirePermission) ? requirePermission : []);
@@ -52,6 +54,7 @@ export function ProtectedRoute({
   }, [pathname]);
 
   useEffect(() => {
+    if (!hydrated) return;
     // In development with E2E tests, check if mock auth is being set up
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hasMockAuthSetup = typeof window !== 'undefined' && !!(window as any).__MBOS_AUTH_SETUP__;
@@ -90,10 +93,10 @@ export function ProtectedRoute({
       // Normal redirect to login (production or non-E2E dev)
       router.push(loginPath);
     }
-  }, [isAuthenticated, router, bypassAuth, loginPath]);
+  }, [hydrated, isAuthenticated, router, bypassAuth, loginPath]);
 
   // Show loading state while checking permissions
-  if (!bypassAuth && !isAuthenticated) {
+  if (!hydrated || (!bypassAuth && !isAuthenticated)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">

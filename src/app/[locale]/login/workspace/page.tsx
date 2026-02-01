@@ -1,20 +1,22 @@
 'use client';
 
 import { useAuthStore } from '@/lib/stores/authStore';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Building2, FolderKanban } from 'lucide-react';
 import { useEffect } from 'react';
 
 export default function WorkspaceSelectPage() {
   const router = useRouter();
+  const params = useParams();
+  const locale = (params?.locale as string) || 'en-US';
   const { workspaces, projects, setWorkspace, setProject, currentWorkspace } = useAuthStore();
 
   // If already has a workspace, redirect to projects
   useEffect(() => {
     if (currentWorkspace) {
-      router.push(`/en-US/workspaces/${currentWorkspace.id}/projects`);
+      router.push(`/${locale}/workspaces/${currentWorkspace.id}/projects`);
     }
-  }, [currentWorkspace, router]);
+  }, [currentWorkspace, router, locale]);
 
   const handleWorkspaceSelect = (workspaceId: string) => {
     const workspace = workspaces?.find(ws => ws.id === workspaceId);
@@ -26,7 +28,7 @@ export default function WorkspaceSelectPage() {
         setProject(firstProject);
       }
     }
-    router.push(`/en-US/workspaces/${workspaceId}/projects`);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects`);
   };
 
   return (

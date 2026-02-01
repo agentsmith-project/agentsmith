@@ -6,7 +6,7 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { useEffect, useState } from 'react';
 import type { Locale } from '@/lib/i18n/config';
 
@@ -43,6 +43,7 @@ interface AuthData {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  hydrated: boolean;
   currentWorkspace: Workspace | null;
   currentProject: Project | null;
   workspaces: Workspace[];
@@ -69,6 +70,7 @@ const initialData: AuthData = {
   user: null,
   token: null,
   isAuthenticated: false,
+  hydrated: false,
   currentWorkspace: null,
   currentProject: null,
   workspaces: [],
@@ -116,35 +118,6 @@ const mockProjects: Project[] = [
 // ============================================================
 // Store
 // ============================================================
-
-const isServer = typeof window === 'undefined';
-
-// Custom storage that handles SSR
-const customStorage = {
-  getItem: (name: string) => {
-    if (!isServer) {
-      const item = localStorage.getItem(name);
-      if (item) {
-        try {
-          return JSON.parse(item);
-        } catch {
-          return null;
-        }
-      }
-    }
-    return null;
-  },
-  setItem: (name: string, value: unknown) => {
-    if (!isServer) {
-      localStorage.setItem(name, JSON.stringify(value));
-    }
-  },
-  removeItem: (name: string) => {
-    if (!isServer) {
-      localStorage.removeItem(name);
-    }
-  },
-};
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -205,6 +178,7 @@ export const useAuthStore = create<AuthState>()(
           user,
           token,
           isAuthenticated: true,
+          hydrated: true,
           currentWorkspace: null, // Will be set on workspace selection page
           currentProject: null, // Will be set on projects page
           workspaces: mockWorkspaces,
@@ -218,7 +192,15 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'mbos-auth',
-      storage: customStorage,
+      storage: createJSONStorage(() => localStorage),
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          // If hydration fails, we still mark hydrated to avoid redirect loops.
+          useAuthStore.setState({ hydrated: true });
+          return;
+        }
+        useAuthStore.setState({ hydrated: true });
+      },
       partialize: (state) => ({
         user: state.user,
         token: state.token,
@@ -237,10 +219,10 @@ export const useAuthStore = create<AuthState>()(
 // ============================================================
 
 export const useAuthStoreHydration = () => {
-  const [hydrated, setHydrated] = useState(!isServer);
+  const [hydrated, setHydrated] = useState(typeof window !== 'undefined');
 
   useEffect(() => {
-    if (!isServer) {
+    if (typeof window !== 'undefined') {
       setHydrated(true);
     }
   }, []);

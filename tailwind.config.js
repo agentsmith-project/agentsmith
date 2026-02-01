@@ -12,6 +12,7 @@ module.exports = {
     extend: {
       colors: {
         background: "var(--background)",
+        foreground: "var(--foreground)",
         surface: "var(--surface)",
         panel: "var(--surface-high)",
         hover: "var(--surface-hover)",

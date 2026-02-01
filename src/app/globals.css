@@ -5,58 +5,78 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  /* DESIGN TOKENS (from design doc) */
-  /* SURFACES */
-  --background: 191 191 191;      /* #191919 - base */
-  --surface: 31 31 31;            /* #1f1f1f - container low */
-  --surface-high: 37 37 37;       /* #252525 - container high */
-  --surface-hover: 42 42 42;      /* #2a2a2a - container highest */
+@layer base {
+  :root {
+    /* Custom design variables are imported from design-tokens.css */
 
-  /* TEXT */
-  --foreground: 255 255 255;      /* #ffffff - primary */
-  --foreground-secondary: 198 198 201;  /* #c6c6c9 - secondary */
-  --foreground-muted: 140 140 140;       /* #8c8c8c - tertiary */
+    /* DESIGN TOKENS (from design doc) */
+    /* SURFACES */
+    --background: 191 191 191;      /* #191919 - base */
+    --surface: 31 31 31;            /* #1f1f1f - container low */
+    --surface-high: 37 37 37;       /* #252525 - container high */
+    --surface-hover: 42 42 42;      /* #2a2a2a - container highest */
 
-  /* BORDER */
-  --border: 51 51 51;              /* #333 */
-  --border-subtle: 38 38 38;      /* #262626 */
+    /* TEXT */
+    --foreground: 255 255 255;      /* #ffffff - primary */
+    --foreground-secondary: 198 198 201;  /* #c6c6c9 - secondary */
+    --foreground-muted: 140 140 140;       /* #8c8c8c - tertiary */
 
-  /* ACCENT */
-  --accent: 135 169 255;          /* #87a9ff - interactive blue */
-  --accent-gradient: linear-gradient(90deg, #4fa0ff, #3186ff);
+    /* BORDER */
+    --border: 51 51 51;              /* #333 */
+    --border-subtle: 38 38 38;      /* #262626 */
 
-  /* SEMANTIC COLORS */
-  --success: 61 219 133;           /* #3ddb85 */
-  --warning: 255 185 92;          /* #ffb95c */
-  --error: 255 180 171;           /* #ffb4ab */
+    /* ACCENT */
+    --accent: 135 169 255;          /* #87a9ff - interactive blue */
+    --accent-gradient: linear-gradient(90deg, #4fa0ff, #3186ff);
 
-  /* Legacy aliases (for gradual migration) */
-  --bg-base: #191919;
-  --bg-panel: #1f1f1f;
-  --bg-surface: #252525;
-  --bg-hover: #2a2a2a;
-  --text-primary: #ffffff;
-  --text-secondary: #c6c6c9;
-  --text-tertiary: #8c8c8c;
-  --accent-blue: #87a9ff;
-  --color-success: #3ddb85;
-  --color-info: #4fa0ff;
-  --color-error: #ffb4ab;
-  --color-warning: #ffb95c;
+    /* SEMANTIC COLORS */
+    --success: 61 219 133;           /* #3ddb85 */
+    --warning: 255 185 92;          /* #ffb95c */
+    --error: 255 180 171;           /* #ffb4ab */
 
-  /* Radius */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 24px;
+    /* Legacy aliases (for gradual migration) */
+    --bg-base: #191919;
+    --bg-panel: #1f1f1f;
+    --bg-surface: #252525;
+    --bg-hover: #2a2a2a;
+    --text-primary: #ffffff;
+    --text-secondary: #c6c6c9;
+    --text-tertiary: #8c8c8c;
+    --accent-blue: #87a9ff;
+    --color-success: #3ddb85;
+    --color-info: #4fa0ff;
+    --color-error: #ffb4ab;
+    --color-warning: #ffb95c;
 
-  /* Spacing */
-  --spacing-xs: 8px;
-  --spacing-sm: 16px;
-  --spacing-md: 24px;
-  --spacing-lg: 32px;
+    /* Radius */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 24px;
+
+    /* Spacing */
+    --spacing-xs: 8px;
+    --spacing-sm: 16px;
+    --spacing-md: 24px;
+    --spacing-lg: 32px;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Focus visible styles for accessibility */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent;
+    --tw-ring-opacity: 0.5;
+  }
 }
 
+/* Reset styles outside of @layer */
 * {
   box-sizing: border-box;
   padding: 0;
@@ -71,8 +91,6 @@ body {
 
 body {
   font-family: 'Inter', 'Noto Sans SC', sans-serif;
-  background-color: rgb(var(--background));
-  color: rgb(var(--foreground));
   font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -96,12 +114,6 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--foreground-muted));
-}
-
-/* Focus visible styles */
-:focus-visible {
-  outline: 2px solid rgb(var(--accent));
-  outline-offset: 2px;
 }
 
 /* Utility classes */

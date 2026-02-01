@@ -8,18 +8,110 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Server, Plus, Edit, Trash2 } from 'lucide-react';
+import { useReactTable, getCoreRowModel, createColumnHelper, flexRender } from '@tanstack/react-table';
+import { Server, Plus, Edit, Trash2, Globe } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, EndpointAPI } from '@/lib/api';
+import { PageLoading, EmptyState } from '@/components/ui/loading';
+import { StatusBadge } from '@/components/ui/status-badge';
 
 interface EndpointsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
 
+interface Endpoint {
+  id: string;
+  name: string;
+  description?: string;
+  base_url: string;
+  openai_model: string;
+  type: string;
+  status: 'active' | 'inactive';
+  rate_limit?: number;
+}
+
+const columnHelper = createColumnHelper<Endpoint>();
+
+const endpointColumns = [
+  columnHelper.accessor('name', {
+    header: 'Name',
+    cell: (info) => (
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded bg-surface-high flex items-center justify-center">
+          <Server className="w-4 h-4 text-foreground-secondary" />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-foreground font-medium">{info.getValue()}</span>
+          {info.row.original.description && (
+            <span className="text-xs text-foreground-secondary line-clamp-1">
+              {info.row.original.description}
+            </span>
+          )}
+        </div>
+      </div>
+    ),
+  }),
+  columnHelper.accessor('base_url', {
+    header: 'URL',
+    cell: (info) => (
+      <div className="flex items-center gap-2">
+        <Globe className="w-4 h-4 text-foreground-secondary flex-shrink-0" />
+        <span className="text-foreground-secondary text-sm font-mono truncate max-w-[200px]">
+          {info.getValue()}
+        </span>
+      </div>
+    ),
+  }),
+  columnHelper.accessor('type', {
+    header: 'Type',
+    cell: (info) => (
+      <span className="text-foreground-secondary text-sm capitalize">
+        {info.getValue()}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('openai_model', {
+    header: 'Model',
+    cell: (info) => (
+      <span className="text-foreground-secondary text-sm font-mono">
+        {info.getValue()}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('rate_limit', {
+    header: 'Rate Limit',
+    cell: (info) => (
+      <span className="text-foreground-secondary text-sm">
+        {info.getValue() ? `${info.getValue()}/min` : '-'}
+      </span>
+    ),
+  }),
+  columnHelper.accessor('status', {
+    header: 'Status',
+    cell: (info) => <StatusBadge status={info.getValue() === 'active' ? 'active' : 'error'} />,
+  }),
+  columnHelper.display({
+    id: 'actions',
+    header: '',
+    cell: (info) => (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => deleteEndpointMutation.mutate(info.row.original.id)}
+          disabled={deleteEndpointMutation.isPending}
+          className="p-1.5 text-error hover:bg-error/10 rounded transition-colors disabled:opacity-50"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    ),
+  }),
+];
+
+let deleteEndpointMutation: any;
+
 export default function EndpointsPage({ params }: EndpointsPageProps) {
   const queryClient = useQueryClient();
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
-  const [editingEndpoint, setEditingEndpoint] = useState<string | null>(null);
 
   const currentProject = useAuthStore((state) => state.currentProject);
 
@@ -38,7 +130,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     enabled: !!workspaceId && !!projectId,
   });
 
-  const deleteEndpointMutation = useMutation({
+  deleteEndpointMutation = useMutation({
     mutationFn: (endpointId: string) => endpointAPI.delete(workspaceId, projectId, endpointId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['endpoints', workspaceId, projectId] });
@@ -47,10 +139,16 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
 
   const endpoints = endpointsData?.items || [];
 
+  const table = useReactTable({
+    data: endpoints,
+    columns: endpointColumns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   if (!resolvedParams || !currentProject) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-muted-foreground">Loading...</div>
+        <div className="text-foreground-secondary">Loading...</div>
       </div>
     );
   }
@@ -58,7 +156,10 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Endpoints</h1>
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Endpoints</h1>
+          <p className="text-sm text-foreground-secondary mt-1">Manage LLM endpoints within the project</p>
+        </div>
         <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
           <Plus className="w-4 h-4" />
           New Endpoint
@@ -66,66 +167,55 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
       </div>
 
       {endpointsLoading ? (
-        <div className="text-center py-12 text-muted-foreground">Loading endpoints...</div>
+        <PageLoading />
       ) : endpoints.length === 0 ? (
-        <div className="text-center py-12">
-          <Server className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-          <h2 className="text-lg font-semibold mb-2">No endpoints yet</h2>
-          <p className="text-muted-foreground">Add your first LLM endpoint to get started</p>
-        </div>
+        <EmptyState
+          icon={Server}
+          title="No endpoints yet"
+          description="Add your first LLM endpoint to get started"
+          action={{
+            label: 'Add Endpoint',
+            onClick: () => {},
+          }}
+        />
       ) : (
-        <div className="space-y-4">
-          {endpoints.map((endpoint) => (
-            <div key={endpoint.id} className="p-4 rounded-lg border bg-card">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <Server className="w-5 h-5 text-muted-foreground" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      {editingEndpoint === endpoint.id ? (
-                        <input
-                          type="text"
-                          defaultValue={endpoint.name}
-                          className="bg-background border border-border rounded px-2 py-1"
-                          autoFocus
-                        />
-                      ) : (
-                        <h3 className="font-semibold">{endpoint.name}</h3>
+        <div className="rounded-lg overflow-hidden border border-border bg-surface shadow-sm">
+          <table className="w-full border-collapse">
+            <thead className="bg-surface-high">
+              {table.getHeaderGroups().map(headerGroup => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map(header => (
+                    <th
+                      key={header.id}
+                      className="px-4 py-4 text-left text-sm font-medium text-foreground-secondary"
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
                       )}
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        endpoint.status === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
-                      }`}>
-                        {endpoint.status}
-                      </span>
-                    </div>
-                    {endpoint.description && (
-                      <p className="text-sm text-muted-foreground mt-1">{endpoint.description}</p>
-                    )}
-                    <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                      <div>Model: <code className="bg-background px-1 rounded">{endpoint.openai_model}</code></div>
-                      <div className="capitalize">{endpoint.type}</div>
-                      <div className="truncate max-w-xs">{endpoint.base_url}</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setEditingEndpoint(endpoint.id)}
-                    className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-accent transition-colors"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => deleteEndpointMutation.mutate(endpoint.id)}
-                    disabled={deleteEndpointMutation.isPending}
-                    className="p-1.5 text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.map(row => (
+                <tr
+                  key={row.id}
+                  className="hover:bg-surface-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 border-b border-border last:border-b-0"
+                >
+                  {row.getVisibleCells().map(cell => (
+                    <td
+                      key={cell.id}
+                      className="px-4 py-4 text-sm text-foreground"
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

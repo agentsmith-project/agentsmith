@@ -78,7 +78,7 @@ export default function LoginPage() {
           </div>
 
           {/* Login Card */}
-          <div className="bg-surface border border-subtle rounded-xl p-8 shadow-lg">
+          <div className="bg-surface border border-subtle rounded-xl p-8 shadow-sm">
             <h2 className="text-xl font-semibold text-primary mb-6">
               Sign in
             </h2>

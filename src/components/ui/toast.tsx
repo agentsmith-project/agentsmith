@@ -70,7 +70,7 @@ export function ToastContainer() {
         return (
           <div
             key={toast.id}
-            className={`flex items-start gap-3 p-4 rounded-lg border shadow-lg ${colors[toast.type]}`}
+            className={`flex items-start gap-3 p-4 rounded-lg border shadow-sm ${colors[toast.type]}`}
           >
             <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <p className="flex-1 text-sm">{toast.message}</p>

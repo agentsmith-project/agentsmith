@@ -43,7 +43,6 @@ interface AuthData {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
-  hydrated: boolean;
   currentWorkspace: Workspace | null;
   currentProject: Project | null;
   workspaces: Workspace[];
@@ -70,10 +69,6 @@ const initialData: AuthData = {
   user: null,
   token: null,
   isAuthenticated: false,
-  // Treat the client as "hydrated enough" by default so routes can
-  // redirect unauthenticated users instead of getting stuck on Loading.
-  // Persist rehydration will still overwrite auth fields if present.
-  hydrated: typeof window !== 'undefined',
   currentWorkspace: null,
   currentProject: null,
   workspaces: [],
@@ -181,7 +176,6 @@ export const useAuthStore = create<AuthState>()(
           user,
           token,
           isAuthenticated: true,
-          hydrated: true,
           currentWorkspace: null, // Will be set on workspace selection page
           currentProject: null, // Will be set on projects page
           workspaces: mockWorkspaces,
@@ -196,14 +190,6 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'mbos-auth',
       storage: createJSONStorage(() => localStorage),
-      onRehydrateStorage: () => (state, error) => {
-        if (error) {
-          // If hydration fails, we still mark hydrated to avoid redirect loops.
-          useAuthStore.setState({ hydrated: true });
-          return;
-        }
-        useAuthStore.setState({ hydrated: true });
-      },
       partialize: (state) => ({
         user: state.user,
         token: state.token,
@@ -222,12 +208,19 @@ export const useAuthStore = create<AuthState>()(
 // ============================================================
 
 export const useAuthStoreHydration = () => {
-  const [hydrated, setHydrated] = useState(typeof window !== 'undefined');
+  const [hydrated, setHydrated] = useState(() => {
+    const persistApi = (useAuthStore as unknown as { persist?: { hasHydrated?: () => boolean } }).persist;
+    return persistApi?.hasHydrated ? persistApi.hasHydrated() : typeof window !== 'undefined';
+  });
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setHydrated(true);
+    const persistApi = (useAuthStore as unknown as { persist?: { onFinishHydration?: (fn: () => void) => () => void } }).persist;
+    if (persistApi?.onFinishHydration) {
+      const unsub = persistApi.onFinishHydration(() => setHydrated(true));
+      return () => unsub?.();
     }
+    setHydrated(true);
+    return;
   }, []);
 
   return hydrated;

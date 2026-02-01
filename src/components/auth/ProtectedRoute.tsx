@@ -10,7 +10,7 @@
 import { useEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useIsAuthenticated, useHasPermission, useHasAllPermissions } from '@/lib/hooks/use-permissions';
-import { useAuthStore } from '@/lib/stores/authStore';
+import { useAuthStoreHydration } from '@/lib/stores/authStore';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -26,7 +26,7 @@ export function ProtectedRoute({
   const router = useRouter();
   const pathname = usePathname();
   const isAuthenticated = useIsAuthenticated();
-  const hydrated = useAuthStore((s) => s.hydrated);
+  const hydrated = useAuthStoreHydration();
 
   // Check permission if specified - must call hooks unconditionally
   const hasAllPermissionsResult = useHasAllPermissions(requirePermission && Array.isArray(requirePermission) ? requirePermission : []);

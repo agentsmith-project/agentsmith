@@ -1,6 +1,7 @@
 export * from './avatar';
 export * from './button';
 export * from './card';
+export * from './data-table';
 export * from './dropdown-menu';
 export * from './error-state';
 export * from './input';

@@ -95,7 +95,7 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
   if (!resolvedParams || !currentProject) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-muted-foreground">Loading...</div>
+        <div className="text-tertiary">Loading...</div>
       </div>
     );
   }
@@ -104,42 +104,42 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
     switch (status) {
       case 'ready':
       case 'completed':
-        return <CheckCircle className="w-4 h-4 text-green-500" />;
+        return <CheckCircle className="w-4 h-4 text-success" />;
       case 'processing':
       case 'started':
-        return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+        return <Loader2 className="w-4 h-4 text-accent animate-spin" />;
       case 'failed':
-        return <XCircle className="w-4 h-4 text-red-500" />;
+        return <XCircle className="w-4 h-4 text-error" />;
       case 'attached':
-        return <AlertCircle className="w-4 h-4 text-yellow-500" />;
+        return <AlertCircle className="w-4 h-4 text-warning" />;
       default:
-        return <Clock className="w-4 h-4 text-muted-foreground" />;
+        return <Clock className="w-4 h-4 text-tertiary" />;
     }
   };
 
   return (
     <div className="flex h-full">
       {/* Left Panel - Source Files */}
-      <div className="w-72 border-r border-border bg-card">
+      <div className="w-72 border-r border-subtle bg-surface">
         <div className="p-4 border-b border-border">
-          <h2 className="font-semibold">Source Files</h2>
+          <h2 className="font-semibold text-foreground">Source Files</h2>
         </div>
         <div className="p-2 overflow-y-auto h-[calc(100%-60px)]">
           {sourcesLoading ? (
-            <div className="text-sm text-muted-foreground text-center py-4">Loading sources...</div>
+            <div className="text-sm text-tertiary text-center py-4">Loading sources...</div>
           ) : sources.length === 0 ? (
-            <div className="text-sm text-muted-foreground text-center py-4">No source files</div>
+            <div className="text-sm text-tertiary text-center py-4">No source files</div>
           ) : (
             <div className="space-y-1">
               {sources.map((source: any) => (
                 <div
                   key={source.id}
-                  className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer"
+                  className="flex items-center gap-2 px-3 py-2 rounded-sm hover:bg-hover cursor-pointer"
                 >
-                  <FileText className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                  <FileText className="w-4 h-4 flex-shrink-0 text-icon-default" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm truncate">{source.file_name}</div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-sm text-primary truncate">{source.file_name}</div>
+                    <div className="text-xs text-tertiary">
                       {(source.file_size / 1024).toFixed(1)} KB
                     </div>
                   </div>
@@ -154,7 +154,7 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
       {/* Center Panel - Threads */}
       <div className="flex-1 flex flex-col bg-background">
         <div className="p-4 border-b border-border flex items-center justify-between">
-          <h2 className="font-semibold">Agent Threads</h2>
+          <h2 className="font-semibold text-foreground">Agent Threads</h2>
           <button
             onClick={() => createThreadMutation.mutate({
               end_user_id: 'usr-demo',
@@ -162,7 +162,7 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
               title: 'New Thread',
             })}
             disabled={createThreadMutation.isPending}
-            className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 text-sm"
+            className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors disabled:opacity-50 text-sm"
           >
             <Plus className="w-4 h-4" />
             New Thread
@@ -172,13 +172,13 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
         <div className="flex-1 overflow-y-auto p-4">
           {threadsLoading ? (
             <div className="flex items-center justify-center h-full">
-              <div className="text-muted-foreground">Loading threads...</div>
+              <div className="text-tertiary">Loading threads...</div>
             </div>
           ) : threads.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <MessageSquare className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">No threads yet. Create one to start.</p>
+                <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
+                <p className="text-tertiary">No threads yet. Create one to start.</p>
               </div>
             </div>
           ) : (
@@ -189,15 +189,15 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
                   onClick={() => setCurrentThreadId(thread.id)}
                   className={`p-4 rounded-lg border transition-colors cursor-pointer ${
                     currentThreadId === thread.id
-                      ? 'bg-accent border-accent-foreground'
-                      : 'bg-card border-border hover:border-accent-foreground'
+                      ? 'bg-surface-high border-accent/50'
+                      : 'bg-surface border-border hover:bg-hover'
                   }`}
                 >
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-medium truncate">{thread.title || 'Untitled Thread'}</h3>
+                    <h3 className="font-medium text-foreground truncate">{thread.title || 'Untitled Thread'}</h3>
                     {getStatusIcon(thread.status)}
                   </div>
-                  <div className="text-sm text-muted-foreground">
+                  <div className="text-sm text-tertiary">
                     <div>Agent: {thread.current_agent_id}</div>
                     <div>User: {thread.end_user_id}</div>
                   </div>
@@ -209,47 +209,47 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
       </div>
 
       {/* Right Panel - Thread Details */}
-      <div className="w-80 border-l border-border bg-card">
+      <div className="w-80 border-l border-subtle bg-surface">
         {currentThread ? (
           <div className="h-full flex flex-col">
             <div className="p-4 border-b border-border">
-              <h3 className="font-semibold mb-2">{currentThread.title || 'Thread Details'}</h3>
-              <div className="text-sm text-muted-foreground space-y-1">
+              <h3 className="font-semibold text-foreground mb-2">{currentThread.title || 'Thread Details'}</h3>
+              <div className="text-sm text-tertiary space-y-1">
                 <div>Status: {currentThread.status}</div>
                 <div>Agent: {currentThread.current_agent_id}</div>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              <h4 className="font-semibold mb-3">Turns</h4>
+              <h4 className="font-semibold text-foreground mb-3">Turns</h4>
               {turnsLoading ? (
-                <div className="text-sm text-muted-foreground text-center py-4">Loading turns...</div>
+                <div className="text-sm text-tertiary text-center py-4">Loading turns...</div>
               ) : turns.length === 0 ? (
-                <div className="text-sm text-muted-foreground text-center py-4">No turns yet</div>
+                <div className="text-sm text-tertiary text-center py-4">No turns yet</div>
               ) : (
                 <div className="space-y-3">
                   {turns.map((turn: any) => (
-                    <div key={turn.id} className="p-3 rounded-md bg-background">
+                    <div key={turn.id} className="p-3 rounded-md bg-surface-high border border-subtle">
                       <div className="flex items-center gap-2 mb-2">
                         {getStatusIcon(turn.status)}
-                        <span className="text-sm font-medium capitalize">{turn.status}</span>
+                        <span className="text-sm font-medium text-primary capitalize">{turn.status}</span>
                       </div>
                       {turn.input_message && (
                         <div className="text-sm mb-2">
-                          <div className="text-muted-foreground mb-1">Input:</div>
-                          <div className="line-clamp-2">{turn.input_message}</div>
+                          <div className="text-tertiary mb-1">Input:</div>
+                          <div className="text-primary line-clamp-2">{turn.input_message}</div>
                         </div>
                       )}
                       {turn.output_message && (
                         <div className="text-sm">
-                          <div className="text-muted-foreground mb-1">Output:</div>
-                          <div className="line-clamp-3">{turn.output_message}</div>
+                          <div className="text-tertiary mb-1">Output:</div>
+                          <div className="text-primary line-clamp-3">{turn.output_message}</div>
                         </div>
                       )}
                       {turn.error_message && (
-                        <div className="text-sm text-red-500 mt-2">
-                          <div className="text-red-400 mb-1">Error:</div>
-                          <div>{turn.error_message}</div>
+                        <div className="text-sm text-error mt-2">
+                          <div className="text-error mb-1">Error:</div>
+                          <div className="text-primary">{turn.error_message}</div>
                         </div>
                       )}
                     </div>
@@ -260,7 +260,7 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
           </div>
         ) : (
           <div className="p-4">
-            <div className="text-sm text-muted-foreground text-center">
+            <div className="text-sm text-tertiary text-center">
               Select a thread to view details
             </div>
           </div>

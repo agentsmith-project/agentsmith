@@ -1,6 +1,13 @@
 import * as React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { LogOut, User, Settings, Languages, type LucideIcon } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface UserMenuItem {
   id: string;
@@ -38,8 +45,6 @@ export function UserMenu({
   onLogout,
   className = '',
 }: UserMenuProps) {
-  const [isOpen, setIsOpen] = React.useState(false);
-
   const handleClick = (itemId: string) => {
     switch (itemId) {
       case 'profile':
@@ -55,7 +60,6 @@ export function UserMenu({
         onLogout?.();
         break;
     }
-    setIsOpen(false);
   };
 
   // Get initials from name
@@ -70,72 +74,59 @@ export function UserMenu({
 
   return (
     <div className={`relative ${className}`}>
-      {/* Avatar Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 hover:bg-hover rounded-full p-1 pr-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-      >
-        <Avatar className="w-8 h-8">
-          {user?.avatar ? (
-            <AvatarImage src={user.avatar} alt={user.name} />
-          ) : (
-            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white text-xs">
-              {user ? getInitials(user.name) : '?'}
-            </AvatarFallback>
-          )}
-        </Avatar>
-        <span className="hidden sm:block text-sm text-primary max-w-[100px] truncate">
-          {user?.name || 'User'}
-        </span>
-      </button>
-
-      {/* Dropdown */}
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setIsOpen(false)}
-          />
-
-          {/* Menu */}
-          <div className="absolute right-0 z-20 mt-2 w-56 bg-surface border border-subtle rounded-lg shadow-sm">
-            {/* User Info */}
-            <div className="px-4 py-3 border-b border-subtle">
-              <p className="text-sm font-medium text-primary truncate">
-                {user?.name || 'User'}
-              </p>
-              <p className="text-xs text-secondary truncate">
-                {user?.email || ''}
-              </p>
-            </div>
-
-            {/* Menu Items */}
-            <div className="py-1">
-              {defaultItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleClick(item.id)}
-                  className="w-full px-4 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="flex items-center gap-2 hover:bg-hover rounded-full p-1 pr-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+          >
+            <Avatar className="w-8 h-8">
+              {user?.avatar ? (
+                <AvatarImage src={user.avatar} alt={user.name} />
+              ) : (
+                <AvatarFallback
+                  className="text-foreground text-xs"
+                  style={{ backgroundImage: 'var(--ai-gradient)' }}
                 >
-                  <item.icon className="w-4 h-4 flex-shrink-0" />
-                  <span>{item.label}</span>
-                </button>
-              ))}
+                  {user ? getInitials(user.name) : '?'}
+                </AvatarFallback>
+              )}
+            </Avatar>
+            <span className="hidden sm:block text-sm text-foreground max-w-[120px] truncate">
+              {user?.name || 'User'}
+            </span>
+          </button>
+        </DropdownMenuTrigger>
 
-              <div className="my-1 border-t border-subtle" />
-
-              <button
-                onClick={() => handleClick('logout')}
-                className="w-full px-4 py-2 text-left text-sm text-error hover:bg-hover hover:text-error flex items-center gap-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-              >
-                <LogOut className="w-4 h-4 flex-shrink-0" />
-                <span>Logout</span>
-              </button>
-            </div>
+        <DropdownMenuContent align="end" className="w-64 p-2">
+          <div className="px-2 py-2">
+            <p className="text-sm font-medium text-foreground truncate">{user?.name || 'User'}</p>
+            <p className="text-xs text-tertiary truncate">{user?.email || ''}</p>
           </div>
-        </>
-      )}
+
+          <DropdownMenuSeparator />
+
+          {defaultItems.map((item) => (
+            <DropdownMenuItem
+              key={item.id}
+              onSelect={() => handleClick(item.id)}
+              className="gap-3"
+            >
+              <item.icon className="w-4 h-4 text-icon-default" />
+              <span>{item.label}</span>
+            </DropdownMenuItem>
+          ))}
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem
+            onSelect={() => handleClick('logout')}
+            className="gap-3 text-error hover:text-error focus:text-error"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Logout</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

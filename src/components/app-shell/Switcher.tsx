@@ -24,12 +24,12 @@ export function Switcher({
   return (
     <div className={`relative ${className}`}>
       {/* Label */}
-      <span className="text-sm text-secondary">{label}</span>
+      <span className="text-sm text-tertiary">{label}</span>
 
       {/* Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-surface hover:bg-hover border border-subtle rounded-lg text-sm text-primary transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="flex items-center gap-2 px-3 h-10 bg-surface-high hover:bg-hover border border-subtle rounded-sm text-sm text-primary transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
       >
         {selectedOption?.label || label}
         <ChevronsUpDown className="w-4 h-4 text-tertiary" />
@@ -45,7 +45,7 @@ export function Switcher({
           />
 
           {/* Menu */}
-          <div className="absolute z-20 mt-1 w-full min-w-[160px] bg-surface border border-subtle rounded-lg shadow-sm py-1">
+          <div className="absolute z-20 mt-1 w-full min-w-[160px] bg-surface-high border border-subtle rounded-md shadow-float py-1">
             {options.map((option) => (
               <button
                 key={option.value}
@@ -56,8 +56,8 @@ export function Switcher({
                 className={cn(
                   "w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                   value === option.value
-                    ? "bg-hover text-primary"
-                    : "text-secondary hover:bg-hover hover:text-primary",
+                    ? "bg-hover text-foreground"
+                    : "text-primary hover:bg-hover hover:text-foreground",
                 )}
               >
                 {option.label}

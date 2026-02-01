@@ -17,21 +17,21 @@ export function SourcesPanel() {
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         <button
-          className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-foreground-secondary hover:bg-surface-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 min-h-[44px]"
+          className="w-full flex items-center gap-2 px-3 h-10 rounded-sm text-sm text-primary hover:bg-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
           onClick={() => {}}
         >
           <Plus className="w-4 h-4" />
           Add Source
         </button>
 
-        {sources.map(source => (
+        {sources.map((source) => (
           <div
             key={source.id}
-            className="px-3 py-2 rounded hover:bg-surface-hover cursor-pointer transition-colors duration-200"
+            className="px-3 h-10 rounded-sm hover:bg-hover cursor-pointer transition-colors duration-200 flex items-center"
           >
             <div className="flex items-center gap-2">
-              <File className="w-4 h-4 text-foreground-muted" />
-              <span className="text-sm text-foreground truncate">{source.name}</span>
+              <File className="w-4 h-4 text-icon-default" />
+              <span className="text-sm text-primary truncate">{source.name}</span>
             </div>
           </div>
         ))}

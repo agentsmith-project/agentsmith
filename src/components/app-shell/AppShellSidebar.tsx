@@ -15,6 +15,8 @@ import {
   Users,
   Settings as SettingsIcon,
   FolderKanban,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 
 interface AppShellSidebarProps {
@@ -46,17 +48,55 @@ export function AppShellSidebar({
 }: AppShellSidebarProps) {
   const { currentProject } = useAuthStore();
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = React.useState(false);
 
   const menuItems = currentProject ? PROJECT_MENU_ITEMS : WORKSPACE_MENU_ITEMS;
 
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem('mbos.sidebar.collapsed');
+      if (raw === '1') setCollapsed(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('mbos.sidebar.collapsed', next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
   return (
     <aside
-      className={cn('w-60 border-r border-border-subtle bg-surface flex flex-col', className)}
-      style={{
-        backgroundColor: 'var(--color-v3-surface-left-nav)',
-        borderRightColor: 'var(--color-v3-surface-left-nav-border)',
-      }}
+      className={cn(
+        collapsed ? 'w-[72px]' : 'w-[260px]',
+        'border-r border-subtle bg-panel flex flex-col transition-[width] duration-200',
+        className,
+      )}
     >
+      <div className={cn('px-2 py-2', collapsed ? 'flex justify-center' : 'flex justify-end')}>
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          className={cn(
+            'h-10 w-10 rounded-sm flex items-center justify-center transition-colors duration-200',
+            'text-icon-default hover:bg-hover hover:text-foreground',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+          )}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+        </button>
+      </div>
+
       <nav className="flex-1 px-2 py-4 space-y-1">
         {menuItems.map((item) => {
           const isActive = pathname?.includes(item.href);
@@ -64,24 +104,45 @@ export function AppShellSidebar({
             <Link
               key={item.href}
               href={item.href}
-              className="relative flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-all duration-200 hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-              style={{
-                color: isActive ? 'var(--color-v3-text)' : 'var(--color-v3-text-var)',
-                backgroundColor: isActive ? 'var(--color-v3-nav-item-active)' : undefined,
-              }}
+              title={collapsed ? item.label : undefined}
+              className={cn(
+                'relative flex items-center h-10 rounded-sm text-sm transition-colors duration-200',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+                collapsed ? 'justify-center px-0' : 'gap-3 px-3',
+                isActive
+                  ? 'bg-hover text-foreground'
+                  : 'text-primary hover:bg-hover hover:text-foreground',
+              )}
             >
-              <item.icon className="w-5 h-5" />
-              <span>{item.label}</span>
+              <item.icon className={cn('w-5 h-5', isActive ? 'text-accent' : 'text-icon-default')} />
+              <span className={cn('truncate', collapsed && 'hidden')}>{item.label}</span>
               {isActive && (
                 <div
                   className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full"
-                  style={{ backgroundColor: 'var(--color-v3-text-link)' }}
+                  style={{ backgroundColor: 'rgb(var(--accent))' }}
                 />
               )}
             </Link>
           );
         })}
       </nav>
+
+      <div className="mt-auto px-2 py-3 border-t border-subtle">
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          className={cn(
+            'w-full h-10 rounded-sm flex items-center transition-colors duration-200',
+            'text-primary hover:bg-hover hover:text-foreground',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+            collapsed ? 'justify-center' : 'gap-3 px-3',
+          )}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <PanelLeftOpen className="w-5 h-5 text-icon-default" /> : <PanelLeftClose className="w-5 h-5 text-icon-default" />}
+          <span className={cn('text-sm', collapsed && 'hidden')}>Collapse</span>
+        </button>
+      </div>
     </aside>
   );
 }

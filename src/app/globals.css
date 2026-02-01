@@ -1,63 +1,52 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    /* Custom design variables are imported from design-tokens.css */
+    /*
+      MBOS v1 Visual Design System (Google AI Studio-like)
+      Source of truth: 文档/UXUI/2026-01-31-视觉设计系统-v1.md
 
-    /* DESIGN TOKENS (from design doc) */
-    /* SURFACES */
-    --background: 191 191 191;      /* #191919 - base */
-    --surface: 31 31 31;            /* #1f1f1f - container low */
-    --surface-high: 37 37 37;       /* #252525 - container high */
-    --surface-hover: 42 42 42;      /* #2a2a2a - container highest */
+      Tokens are RGB triplets to support alpha via:
+        rgb(var(--token) / <alpha>)
+    */
 
-    /* TEXT */
-    --foreground: 255 255 255;      /* #ffffff - primary */
-    --foreground-secondary: 198 198 201;  /* #c6c6c9 - secondary */
-    --foreground-muted: 140 140 140;       /* #8c8c8c - tertiary */
+    /* Background hierarchy */
+    --bg-base: 20 19 19;          /* #141313 */
+    --bg-sidebar: 25 25 25;       /* #191919 */
+    --bg-surface: 30 31 32;       /* #1E1F20 */
+    --bg-surface-high: 40 42 44;  /* #282A2C */
+    --bg-hover: 50 50 50;         /* #323232 */
 
-    /* BORDER */
-    --border: 51 51 51;              /* #333 */
-    --border-subtle: 38 38 38;      /* #262626 */
+    /* Borders */
+    --border: 51 51 51;           /* #333333 */
+    --border-subtle: 38 38 38;    /* #262626 */
 
-    /* ACCENT */
-    --accent: 135 169 255;          /* #87a9ff - interactive blue */
-    --accent-gradient: linear-gradient(90deg, #4fa0ff, #3186ff);
+    /* Typography colors */
+    --text-strong: 255 255 255;   /* #FFFFFF */
+    --text-primary: 212 212 212;  /* #D4D4D4 */
+    --text-secondary: 212 212 212;/* #D4D4D4 (same as primary by default) */
+    --text-tertiary: 140 140 140; /* #8C8C8C */
+    --icon-default: 196 198 207;  /* #C4C6CF */
 
-    /* SEMANTIC COLORS */
-    --success: 61 219 133;           /* #3ddb85 */
-    --warning: 255 185 92;          /* #ffb95c */
-    --error: 255 180 171;           /* #ffb4ab */
-
-    /* Legacy aliases (for gradual migration) */
-    --bg-base: #191919;
-    --bg-panel: #1f1f1f;
-    --bg-surface: #252525;
-    --bg-hover: #2a2a2a;
-    --text-primary: #ffffff;
-    --text-secondary: #c6c6c9;
-    --text-tertiary: #8c8c8c;
-    --accent-blue: #87a9ff;
-    --color-success: #3ddb85;
-    --color-info: #4fa0ff;
-    --color-error: #ffb4ab;
-    --color-warning: #ffb95c;
+    /* Brand & semantic */
+    --accent: 135 169 255;        /* #87A9FF */
+    --ai-gradient: linear-gradient(90deg, #B1C5FF, #076EFF);
+    --success: 61 219 133;        /* #3DDB85 */
+    --error: 244 67 54;           /* #F44336 */
+    --warning: 255 185 92;        /* #FFB95C (备用) */
 
     /* Radius */
     --radius-sm: 8px;
     --radius-md: 12px;
-    --radius-lg: 24px;
+    --radius-lg: 16px;
 
     /* Spacing */
     --spacing-xs: 8px;
-    --spacing-sm: 16px;
-    --spacing-md: 24px;
-    --spacing-lg: 32px;
+    --spacing-sm: 12px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
   }
 
   * {
@@ -65,8 +54,13 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-primary;
+    font-family: Inter, "Noto Sans SC", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
     font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /* Focus visible styles for accessibility */
@@ -89,14 +83,6 @@ body {
   overflow-x: hidden;
 }
 
-body {
-  font-family: 'Inter', 'Noto Sans SC', sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
@@ -104,16 +90,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgb(var(--background));
+  background: rgb(var(--bg-base));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--surface-hover));
+  background: rgb(var(--bg-hover));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--foreground-muted));
+  background: rgb(var(--text-tertiary));
 }
 
 /* Utility classes */

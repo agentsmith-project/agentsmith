@@ -26,16 +26,16 @@ export function Menu({ items, value, onChange, className = '' }: MenuProps) {
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 hover:bg-hover rounded-lg text-sm text-secondary hover:text-primary transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="flex items-center gap-2 px-3 h-10 hover:bg-hover rounded-sm text-sm text-primary hover:text-foreground transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
       >
         {selectedItem?.icon && (
-          <selectedItem.icon className="w-4 h-4" />
+          <selectedItem.icon className="w-4 h-4 text-icon-default" />
         )}
         <span className="max-w-[120px] truncate">
           {selectedItem?.label || 'Select...'}
         </span>
         {selectedItem?.badge && (
-          <span className="ml-1 px-1.5 py-0.5 bg-surface border border-subtle rounded text-xs text-tertiary">
+          <span className="ml-1 px-1.5 py-0.5 bg-surface-high border border-subtle rounded-sm text-xs text-tertiary">
             {selectedItem.badge}
           </span>
         )}
@@ -52,7 +52,7 @@ export function Menu({ items, value, onChange, className = '' }: MenuProps) {
           />
 
           {/* Menu */}
-          <div className="absolute z-20 mt-1 w-full min-w-[200px] bg-surface border border-subtle rounded-lg shadow-sm py-1 max-h-[400px] overflow-y-auto">
+          <div className="absolute z-20 mt-1 w-full min-w-[200px] bg-surface-high border border-subtle rounded-md shadow-float py-1 max-h-[400px] overflow-y-auto">
             {items.map((item) => {
               const Icon = item.icon;
               const isSelected = value === item.id;
@@ -71,8 +71,8 @@ export function Menu({ items, value, onChange, className = '' }: MenuProps) {
                   className={`
                     w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50
                     ${isSelected
-                      ? 'bg-hover text-primary'
-                      : 'text-secondary hover:bg-hover hover:text-primary'
+                      ? 'bg-hover text-foreground'
+                      : 'text-primary hover:bg-hover hover:text-foreground'
                     }
                     ${isDisabled
                       ? 'opacity-50 cursor-not-allowed'
@@ -80,10 +80,10 @@ export function Menu({ items, value, onChange, className = '' }: MenuProps) {
                     }
                   `}
                 >
-                  {Icon && <Icon className="w-4 h-4 flex-shrink-0" />}
+                  {Icon && <Icon className="w-4 h-4 flex-shrink-0 text-icon-default" />}
                   <span className="truncate">{item.label}</span>
                   {item.badge && (
-                    <span className="ml-auto px-1.5 py-0.5 bg-surface border border-subtle rounded text-xs text-tertiary flex-shrink-0">
+                    <span className="ml-auto px-1.5 py-0.5 bg-surface-high border border-subtle rounded-sm text-xs text-tertiary flex-shrink-0">
                       {item.badge}
                     </span>
                   )}

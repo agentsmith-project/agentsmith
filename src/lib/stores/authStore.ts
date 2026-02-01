@@ -205,8 +205,8 @@ export const useAuthStore = create<AuthState>()(
           user,
           token,
           isAuthenticated: true,
-          currentWorkspace: workspace,
-          currentProject: workspaceProjects[0] || null,
+          currentWorkspace: null, // Will be set on workspace selection page
+          currentProject: null, // Will be set on projects page
           workspaces: mockWorkspaces,
           projects: workspaceProjects,
         });

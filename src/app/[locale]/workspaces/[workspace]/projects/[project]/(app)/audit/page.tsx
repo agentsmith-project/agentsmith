@@ -8,11 +8,12 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useReactTable, getCoreRowModel, createColumnHelper, flexRender } from '@tanstack/react-table';
+import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { FileSearch, Clock, User, FileText } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { DataTable } from '@/components/ui/data-table';
 
 interface AuditPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -36,8 +37,8 @@ const auditColumns = [
     header: 'Timestamp',
     cell: (info) => (
       <div className="flex items-center gap-2">
-        <Clock className="w-4 h-4 text-foreground-secondary flex-shrink-0" />
-        <span className="text-foreground-secondary text-sm">
+        <Clock className="w-4 h-4 text-icon-default flex-shrink-0" />
+        <span className="text-tertiary text-sm">
           {new Date(info.getValue()).toLocaleString()}
         </span>
       </div>
@@ -47,8 +48,8 @@ const auditColumns = [
     header: 'User',
     cell: (info) => (
       <div className="flex items-center gap-2">
-        <User className="w-4 h-4 text-foreground-secondary flex-shrink-0" />
-        <span className="text-foreground text-sm">
+        <User className="w-4 h-4 text-icon-default flex-shrink-0" />
+        <span className="text-primary text-sm">
           {info.getValue()}
         </span>
       </div>
@@ -57,7 +58,7 @@ const auditColumns = [
   columnHelper.accessor('action', {
     header: 'Action',
     cell: (info) => (
-      <span className="text-foreground text-sm font-medium">
+      <span className="text-primary text-sm font-medium">
         {info.getValue()}
       </span>
     ),
@@ -66,8 +67,8 @@ const auditColumns = [
     header: 'Resource',
     cell: (info) => (
       <div className="flex items-center gap-2">
-        <FileText className="w-4 h-4 text-foreground-secondary flex-shrink-0" />
-        <span className="text-foreground-secondary text-sm">
+        <FileText className="w-4 h-4 text-icon-default flex-shrink-0" />
+        <span className="text-tertiary text-sm">
           {info.getValue()}:{info.row.original.resource_id}
         </span>
       </div>
@@ -82,7 +83,7 @@ const auditColumns = [
   columnHelper.accessor('details', {
     header: 'Details',
     cell: (info) => (
-      <span className="text-foreground-secondary text-sm truncate max-w-[200px] block">
+      <span className="text-tertiary text-sm truncate max-w-[200px] block">
         {info.getValue() || '-'}
       </span>
     ),
@@ -120,7 +121,7 @@ export default function AuditPage({ params }: AuditPageProps) {
   if (!resolvedParams || !currentProject) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-foreground-secondary">Loading...</div>
+        <div className="text-tertiary">Loading...</div>
       </div>
     );
   }
@@ -129,7 +130,7 @@ export default function AuditPage({ params }: AuditPageProps) {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-foreground">Audit Logs</h1>
-        <p className="text-sm text-foreground-secondary mt-1">Track all activity within the project</p>
+        <p className="text-sm text-tertiary mt-1">Track all activity within the project</p>
       </div>
 
       {auditLoading ? (
@@ -141,44 +142,7 @@ export default function AuditPage({ params }: AuditPageProps) {
           description="Audit logs will appear here once activity occurs"
         />
       ) : (
-        <div className="rounded-lg overflow-hidden border border-border bg-surface shadow-sm">
-          <table className="w-full border-collapse">
-            <thead className="bg-surface-high">
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map(header => (
-                    <th
-                      key={header.id}
-                      className="px-4 py-4 text-left text-sm font-medium text-foreground-secondary"
-                    >
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map(row => (
-                <tr
-                  key={row.id}
-                  className="hover:bg-surface-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 border-b border-border last:border-b-0"
-                >
-                  {row.getVisibleCells().map(cell => (
-                    <td
-                      key={cell.id}
-                      className="px-4 py-4 text-sm text-foreground"
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable table={table} />
       )}
     </div>
   );

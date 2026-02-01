@@ -8,12 +8,13 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useReactTable, getCoreRowModel, createColumnHelper, flexRender } from '@tanstack/react-table';
+import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { Server, Plus, Trash2, Globe } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, EndpointAPI } from '@/lib/api';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { DataTable } from '@/components/ui/data-table';
 
 interface EndpointsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -37,13 +38,13 @@ const endpointColumns = [
     header: 'Name',
     cell: (info) => (
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded bg-surface-high flex items-center justify-center">
-          <Server className="w-4 h-4 text-foreground-secondary" />
+        <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
+          <Server className="w-4 h-4 text-icon-default" />
         </div>
         <div className="flex flex-col">
           <span className="text-foreground font-medium">{info.getValue()}</span>
           {info.row.original.description && (
-            <span className="text-xs text-foreground-secondary line-clamp-1">
+            <span className="text-xs text-tertiary line-clamp-1">
               {info.row.original.description}
             </span>
           )}
@@ -55,8 +56,8 @@ const endpointColumns = [
     header: 'URL',
     cell: (info) => (
       <div className="flex items-center gap-2">
-        <Globe className="w-4 h-4 text-foreground-secondary flex-shrink-0" />
-        <span className="text-foreground-secondary text-sm font-mono truncate max-w-[200px]">
+        <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
+        <span className="text-tertiary text-sm font-mono truncate max-w-[200px]">
           {info.getValue()}
         </span>
       </div>
@@ -65,7 +66,7 @@ const endpointColumns = [
   columnHelper.accessor('type', {
     header: 'Type',
     cell: (info) => (
-      <span className="text-foreground-secondary text-sm capitalize">
+      <span className="text-tertiary text-sm capitalize">
         {info.getValue()}
       </span>
     ),
@@ -73,7 +74,7 @@ const endpointColumns = [
   columnHelper.accessor('openai_model', {
     header: 'Model',
     cell: (info) => (
-      <span className="text-foreground-secondary text-sm font-mono">
+      <span className="text-tertiary text-sm font-mono">
         {info.getValue()}
       </span>
     ),
@@ -81,7 +82,7 @@ const endpointColumns = [
   columnHelper.accessor('rate_limit', {
     header: 'Rate Limit',
     cell: (info) => (
-      <span className="text-foreground-secondary text-sm">
+      <span className="text-tertiary text-sm">
         {info.getValue() ? `${info.getValue()}/min` : '-'}
       </span>
     ),
@@ -98,7 +99,7 @@ const endpointColumns = [
         <button
           onClick={() => deleteEndpointMutation.mutate(info.row.original.id)}
           disabled={deleteEndpointMutation.isPending}
-          className="p-1.5 text-error hover:bg-error/10 rounded transition-colors disabled:opacity-50"
+          className="p-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
         >
           <Trash2 className="w-4 h-4" />
         </button>
@@ -149,7 +150,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   if (!resolvedParams || !currentProject) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-foreground-secondary">Loading...</div>
+        <div className="text-tertiary">Loading...</div>
       </div>
     );
   }
@@ -159,9 +160,9 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Endpoints</h1>
-          <p className="text-sm text-foreground-secondary mt-1">Manage LLM endpoints within the project</p>
+          <p className="text-sm text-tertiary mt-1">Manage LLM endpoints within the project</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
+        <button className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors">
           <Plus className="w-4 h-4" />
           New Endpoint
         </button>
@@ -180,44 +181,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
           }}
         />
       ) : (
-        <div className="rounded-lg overflow-hidden border border-border bg-surface shadow-sm">
-          <table className="w-full border-collapse">
-            <thead className="bg-surface-high">
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map(header => (
-                    <th
-                      key={header.id}
-                      className="px-4 py-4 text-left text-sm font-medium text-foreground-secondary"
-                    >
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map(row => (
-                <tr
-                  key={row.id}
-                  className="hover:bg-surface-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 border-b border-border last:border-b-0"
-                >
-                  {row.getVisibleCells().map(cell => (
-                    <td
-                      key={cell.id}
-                      className="px-4 py-4 text-sm text-foreground"
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable table={table} />
       )}
     </div>
   );

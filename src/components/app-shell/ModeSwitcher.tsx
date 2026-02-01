@@ -21,7 +21,7 @@ const modes: Array<{
 
 export function ModeSwitcher({ value, onChange, className = '' }: ModeSwitcherProps) {
   return (
-    <div className={`inline-flex items-center bg-surface border border-subtle rounded-lg p-1 ${className}`}>
+    <div className={`inline-flex items-center bg-surface-high border border-subtle rounded-sm p-1 ${className}`}>
       {modes.map((mode) => {
         const Icon = mode.icon;
         const isActive = value === mode.value;
@@ -31,14 +31,11 @@ export function ModeSwitcher({ value, onChange, className = '' }: ModeSwitcherPr
             key={mode.value}
             onClick={() => onChange(mode.value)}
             className={`
-              flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200
-              ${isActive
-                ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm'
-                : 'text-secondary hover:text-primary hover:bg-hover'
-              }
+              flex items-center gap-2 px-4 h-9 rounded-sm text-sm font-medium transition-colors duration-200
+              ${isActive ? 'bg-hover text-foreground' : 'text-primary hover:bg-hover hover:text-foreground'}
             `}
           >
-            <Icon className="w-4 h-4" />
+            <Icon className={`w-4 h-4 ${isActive ? 'text-accent' : 'text-icon-default'}`} />
             <span>{mode.label}</span>
           </button>
         );

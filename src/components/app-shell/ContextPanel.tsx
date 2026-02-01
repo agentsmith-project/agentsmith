@@ -1,13 +1,18 @@
 'use client';
 
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, MenuItem } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { useState } from 'react';
 
 function ParameterSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-xs text-foreground-secondary">{label}</label>
+        <label className="text-xs text-tertiary">{label}</label>
         <span className="text-xs font-mono text-foreground">{value.toFixed(1)}</span>
       </div>
       <input
@@ -18,7 +23,7 @@ function ParameterSlider({ label, value, onChange }: { label: string; value: num
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         className="w-full h-1 bg-surface-high rounded-full appearance-none cursor-pointer"
-        style={{ accentColor: 'var(--color-accent)' }}
+        style={{ accentColor: 'rgb(var(--accent))' }}
       />
     </div>
   );
@@ -37,22 +42,24 @@ export function ContextPanel() {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <section>
-          <h3 className="text-xs font-medium text-foreground-muted uppercase tracking-wide mb-3">
+          <h3 className="text-xs font-medium text-tertiary uppercase tracking-wide mb-3">
             Model
           </h3>
           <DropdownMenu>
-            <DropdownMenuTrigger className="w-full px-3 py-2 rounded bg-surface-high border border-border text-sm text-foreground hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
+            <DropdownMenuTrigger className="w-full px-3 py-2 rounded-sm bg-surface-high border border-subtle text-sm text-primary hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
               {selectedModel}
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-surface border border-border rounded-md w-full">
-              <MenuItem onClick={() => setSelectedModel('gpt-4')}>gpt-4</MenuItem>
-              <MenuItem onClick={() => setSelectedModel('gpt-3.5-turbo')}>gpt-3.5-turbo</MenuItem>
+            <DropdownMenuContent className="w-full">
+              <DropdownMenuItem onSelect={() => setSelectedModel('gpt-4')}>gpt-4</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setSelectedModel('gpt-3.5-turbo')}>
+                gpt-3.5-turbo
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </section>
 
         <section>
-          <h3 className="text-xs font-medium text-foreground-muted uppercase tracking-wide mb-3">
+          <h3 className="text-xs font-medium text-tertiary uppercase tracking-wide mb-3">
             Parameters
           </h3>
           <div className="space-y-4">

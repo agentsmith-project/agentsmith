@@ -1,74 +1,58 @@
-# Design System Reference
+# Frontend Design System (MBOS v1)
 
-**重要：所有 UI 设计必须严格遵循以下视觉设计系统文档**
+唯一权威文档：`文档/UXUI/2026-01-31-视觉设计系统-v1.md`
 
-## 权威设计文档
+本文件是“代码侧落地摘要”，用于帮助开发者把 UI 设计系统稳定落到 Tailwind + CSS tokens 上。
 
-- **视觉设计系统**: `/home/percy/works/mygithub/mbos-server/文档/UXUI/2026-01-31-视觉设计系统-v1.md`
+## Tokens（source of truth）
 
-## 关键设计原则
-
-1. **内容优先 (Content-First)**: 界面极度克制，将视觉重心完全让给内容
-2. **暗色调沉浸感 (Dark Mode Immersion)**: 使用"软暗色"而非纯黑
-3. **功能性极简 (Functional Minimalism)**: 所有线条、背景色、阴影都为"区分功能区域/状态"服务
-4. **三栏工作区**: Sources / Canvas / Context 是主体验
-5. **状态可解释**: queued/processing/managed/backoff 等必须一眼看懂
-6. **可复制性**: ID、error_code、request_id 一键复制
-
-## CSS Tokens（核心）
+Tokens 定义在 `mbos_frontend/src/app/globals.css`（使用 RGB triplets，支持 alpha）。
 
 ```css
-/* Surfaces - Dark mode primary */
---bg-base: #191919;           /* App background */
---bg-panel: #1f1f1f;          /* Navigation, cards */
---bg-surface: #252525;        /* Dialogs, inputs */
---bg-hover: #2a2a2a;          /* Hover, selected */
+--bg-base: 20 19 19;          /* #141313 */
+--bg-sidebar: 25 25 25;       /* #191919 */
+--bg-surface: 30 31 32;       /* #1E1F20 */
+--bg-surface-high: 40 42 44;  /* #282A2C */
+--bg-hover: 50 50 50;         /* #323232 */
 
-/* Typography */
---text-primary: #ffffff;
---text-secondary: #c6c6c9;
---text-tertiary: #8c8c8c;
+--border: 51 51 51;           /* #333333 */
+--border-subtle: 38 38 38;    /* #262626 */
 
-/* Accents */
---accent-blue: #87a9ff;
---accent-gradient: linear-gradient(90deg, #4fa0ff, #3186ff);
+--text-strong: 255 255 255;   /* #FFFFFF */
+--text-primary: 212 212 212;  /* #D4D4D4 */
+--text-tertiary: 140 140 140; /* #8C8C8C */
+--icon-default: 196 198 207;  /* #C4C6CF */
 
-/* Functional */
---color-success: #3ddb85;     /* completed/ready/enabled/online */
---color-info: #4fa0ff;        /* running/started/managed */
---color-error: #ffb4ab;
---color-warning: #ffb95c;
-
-/* Radius */
---radius-sm: 8px;
---radius-md: 12px;
---radius-lg: 24px;
-
-/* Spacing - 4px multiples */
---spacing-xs: 8px;
---spacing-sm: 16px;
---spacing-md: 24px;
---spacing-lg: 32px;
+--accent: 135 169 255;        /* #87A9FF */
+--ai-gradient: linear-gradient(90deg, #B1C5FF, #076EFF);
+--success: 61 219 133;        /* #3DDB85 */
+--error: 244 67 54;           /* #F44336 */
 ```
 
-## 字体规范
+## Tailwind token classes
 
-- 英文/数字: `Inter` 或 `Roboto`
-- 中文: `Noto Sans SC`
-- 等宽 (ID/error_code): `JetBrains Mono`
-- 正文: 16px
-- 密集表格: 13-14px
+`mbos_frontend/tailwind.config.js` 映射到以下常用类：
 
-## 布局规范
+- 背景：`bg-background` / `bg-panel` / `bg-surface` / `bg-surface-high` / `bg-hover`
+- 文本：`text-foreground`（白）/ `text-primary` / `text-tertiary` / `text-icon-default`
+- 语义：`text-accent` / `text-success` / `text-error` / `text-warning`
+- 边框：`border-border` / `border-subtle`
+- 浮层阴影（仅 Dropdown/Dialog/Toast）：`shadow-float`
 
-- **三栏布局**: 左栏 240px / 中栏 Flex / 右栏 300px
-- **列表项高度**: 约 40px
-- **间距**: Padding 16px 或 24px，列表项 gap 8px，模块 gap 24px
-- **尽量不用分割线**: 优先用间距与背景微差分区
+## Typography
 
-## 组件规范
+- 默认正文：14px（已在 `globals.css` 固定）
+- 标题：24px / 16px（页面标题/卡片标题）
+- 字体：Inter + Noto Sans SC；等宽：JetBrains Mono（通过 `next/font` 注入变量）
 
-- **卡片**: 背景 #1f1f1f/#252525，圆角 12px 或 16px
-- **输入区**: 大圆角胶囊 24px，背景 #2a2a2a
-- **按钮**: 主按钮圆角 8px，图标按钮透明背景
-- **Focus**: 所有输入/按钮必须有可见 focus ring
+## Layout
+
+- Sidebar 固定宽度：260px
+- Sidebar item 高度：40px
+- 间距基数：4px（常用 8/12/16/24/32）
+
+## Style guardrails
+
+- 不使用高饱和色块按钮（蓝色只用于 link / icon / highlight）
+- 渐变只用于 AI 标识（例如 Logo/Avatar 等“AI 特征”位置）
+- 阴影极少使用：只在浮层组件出现

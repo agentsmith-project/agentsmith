@@ -7,14 +7,15 @@ export interface StatusBadgeProps extends React.HTMLAttributes<HTMLSpanElement> 
 }
 
 export function StatusBadge({ status, children, className, ...props }: StatusBadgeProps) {
-  const baseStyles = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium transition-colors duration-200';
+  const baseStyles =
+    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors duration-200 border';
 
   const statusStyles = {
-    active: 'bg-success/20 text-success',
-    success: 'bg-success/20 text-success',
-    paused: 'bg-warning/20 text-warning',
-    warning: 'bg-warning/20 text-warning',
-    error: 'bg-error/20 text-error',
+    active: 'bg-success/15 text-success border-success/30',
+    success: 'bg-success/15 text-success border-success/30',
+    paused: 'bg-warning/15 text-warning border-warning/30',
+    warning: 'bg-warning/15 text-warning border-warning/30',
+    error: 'bg-error/10 text-error border-error/30',
   };
 
   return (

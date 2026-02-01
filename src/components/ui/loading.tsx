@@ -5,6 +5,7 @@
  */
 
 import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface LoadingSpinnerProps {
   size?: 'sm' | 'md' | 'lg';
@@ -20,8 +21,8 @@ export function LoadingSpinner({ size = 'md', text }: LoadingSpinnerProps) {
 
   return (
     <div className="flex flex-col items-center justify-center gap-3">
-      <Loader2 className={`animate-spin ${sizeClasses[size]} text-muted-foreground`} />
-      {text && <p className="text-sm text-muted-foreground">{text}</p>}
+      <Loader2 className={`animate-spin ${sizeClasses[size]} text-tertiary`} />
+      {text && <p className="text-sm text-tertiary">{text}</p>}
     </div>
   );
 }
@@ -36,7 +37,7 @@ export function PageLoading({ title: _title = 'Loading...', description }: PageL
     <div className="flex items-center justify-center min-h-[400px]">
       <div className="text-center">
         <LoadingSpinner size="lg" />
-        {description && <p className="text-muted-foreground mt-4">{description}</p>}
+        {description && <p className="text-tertiary mt-4">{description}</p>}
       </div>
     </div>
   );
@@ -55,16 +56,13 @@ interface EmptyStateProps {
 export function EmptyState({ icon: Icon, title, description, action }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-8">
-      {Icon && <Icon className="w-16 h-16 text-muted-foreground mb-4" />}
-      <h2 className="text-lg font-semibold mb-2">{title}</h2>
-      {description && <p className="text-muted-foreground mb-6 max-w-md">{description}</p>}
+      {Icon && <Icon className="w-16 h-16 text-tertiary mb-4" />}
+      <h2 className="text-lg font-semibold text-foreground mb-2">{title}</h2>
+      {description && <p className="text-tertiary mb-6 max-w-md">{description}</p>}
       {action && (
-        <button
-          onClick={action.onClick}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-        >
+        <Button variant="action" onClick={action.onClick}>
           {action.label}
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -384,21 +384,21 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
   });
 
   // =========================================================================
-  // 12. UserData Page
+  // 12. Sources Page (formerly UserData)
   // =========================================================================
 
-  test.describe('UserData Page', () => {
-    test('should display userdata capabilities', async ({ authenticatedPage }) => {
-      await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/userdata`);
+  test.describe('Sources Page', () => {
+    test('should display sources capabilities', async ({ authenticatedPage }) => {
+      await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/sources`);
 
-      await expect(authenticatedPage.getByText('UserData').first()).toBeVisible();
+      await expect(authenticatedPage.getByText('Sources').first()).toBeVisible();
     });
 
-    test('should show quota information', async ({ authenticatedPage }) => {
-      await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/userdata`);
+    test('should show add source button', async ({ authenticatedPage }) => {
+      await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/sources`);
 
-      // Should have upload button and file management UI
-      await expect(authenticatedPage.getByText(/Upload Files/i)).toBeVisible();
+      // Should have add source button
+      await expect(authenticatedPage.getByText(/Add Source/i)).toBeVisible();
     });
   });
 
@@ -418,7 +418,7 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
         { path: 'audit', title: 'Audit', useButton: true },
         { path: 'usage', title: 'Usage', useButton: true },
         { path: 'settings', title: 'Settings', useButton: true },
-        { path: 'userdata', title: 'UserData', useButton: true },
+        { path: 'sources', title: 'Sources', useButton: true },
       ];
 
       for (const pageDef of pages) {

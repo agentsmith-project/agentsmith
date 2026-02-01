@@ -1,6 +1,8 @@
 # UI/UX Redesign Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use @superpowers:executing-plans to implement this plan task-by-task.
+> NOTE: This document is historical. Current source of truth:
+> - `文档/UXUI/2026-01-31-视觉设计系统-v1.md`
+> - `mbos_frontend/DESIGN_SYSTEM.md`
 
 **Goal:** Implement complete UI/UX redesign aligning with Google NotebookLM style and the visual design system, including workspace/project navigation flow, TanStack Table integration, and strict adherence to design tokens.
 
@@ -23,71 +25,11 @@
 
 ## Phase 1: Design System Foundation
 
-### Task 1: Create Design Tokens CSS File
+### Task 1: Design Tokens Location
 
-**Files:**
-- Create: `src/styles/design-tokens.css`
-
-**Step 1: Create design-tokens.css with semantic CSS variables**
-
-Create file with exact semantic mapping to design document colors:
-
-```css
-/* src/styles/design-tokens.css */
-@layer base {
-  :root {
-    /* ============================================
-       SURFACES (from design doc colors)
-       ============================================ */
-    --background: 191 191 191;      /* #191919 - base */
-    --surface: 31 31 31;            /* #1f1f1f - container low */
-    --surface-high: 37 37 37;       /* #252525 - container high */
-    --surface-hover: 42 42 42;      /* #2a2a2a - container highest */
-
-    /* ============================================
-       TEXT (from design doc)
-       ============================================ */
-    --foreground: 255 255 255;      /* #ffffff - primary */
-    --foreground-secondary: 198 198 201;  /* #c6c6c9 - secondary */
-    --foreground-muted: 140 140 140;       /* #8c8c8c - tertiary */
-
-    /* ============================================
-       BORDER (from design doc)
-       ============================================ */
-    --border: 51 51 51;              /* #333 */
-    --border-subtle: 38 38 38;      /* #262626 */
-
-    /* ============================================
-       ACCENT (from design doc gradient)
-       ============================================ */
-    --accent: 135 169 255;          /* #87a9ff - interactive blue */
-
-    /* ============================================
-       SEMANTIC COLORS (from design doc)
-       ============================================ */
-    --success: 61 219 133;           /* #3ddb85 */
-    --warning: 255 185 92;          /* #ffb95c */
-    --error: 255 180 171;           /* #ffb4ab */
-  }
-}
-```
-
-**Step 2: Import design-tokens.css in globals.css**
-
-Add import at top of `src/app/globals.css`:
-
-```css
-@import './design-tokens.css';
-```
-
-**Step 3: Commit**
-
-```bash
-git add src/styles/design-tokens.css src/app/globals.css
-git commit -m "feat: add semantic design tokens CSS variables"
-```
-
----
+**Current implementation:**
+- Tokens are defined in `mbos_frontend/src/app/globals.css` (RGB triplets + semantic names).
+- Tailwind mapping lives in `mbos_frontend/tailwind.config.js`.
 
 ### Task 2: Update Tailwind Configuration
 

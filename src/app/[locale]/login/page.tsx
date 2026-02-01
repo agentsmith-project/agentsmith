@@ -9,6 +9,13 @@ import { useRouter, useParams } from 'next/navigation';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { Logo } from '@/components/app-shell/Logo';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Globe, ChevronDown } from 'lucide-react';
 
 const mockWorkspaces = [
   { value: 'ws_default', label: 'Default Workspace' },
@@ -18,7 +25,7 @@ const mockWorkspaces = [
 export default function LoginPage() {
   const router = useRouter();
   const params = useParams();
-  const { mockLogin, isAuthenticated, currentProject } = useAuthStore();
+  const { mockLogin, isAuthenticated, currentProject, currentWorkspace } = useAuthStore();
 
   const [workspaceId, setWorkspaceId] = useState('ws_default');
   const [userEmail, setUserEmail] = useState('');
@@ -28,16 +35,18 @@ export default function LoginPage() {
   // Get locale from params
   const locale = (params?.locale as string) || 'en-US';
 
-  // If already authenticated and has a project, redirect to overview
+  // If already authenticated and has a workspace, redirect to appropriate page
+  // Don't redirect if on login page (user might be selecting workspace)
   useEffect(() => {
     if (isAuthenticated && currentProject) {
       setIsLoggingIn(false);
-      router.push(`/${locale}/workspaces/${workspaceId}/projects/${currentProject.id}/overview`);
-    } else if (isAuthenticated) {
+      router.push(`/${locale}/workspaces/${currentWorkspace?.id || workspaceId}/projects/${currentProject.id}/overview`);
+    } else if (isAuthenticated && currentWorkspace) {
       setIsLoggingIn(false);
-      router.push(`/${locale}/workspaces/${workspaceId}/projects`);
+      router.push(`/${locale}/workspaces/${currentWorkspace.id}/projects`);
     }
-  }, [isAuthenticated, currentProject, workspaceId, locale, router]);
+    // If no workspace selected, stay on current page (workspace selection will handle it)
+  }, [isAuthenticated, currentProject, currentWorkspace, workspaceId, locale, router]);
 
   const handleQuickLogin = async () => {
     if (!userEmail.trim()) {
@@ -69,23 +78,23 @@ export default function LoginPage() {
             <div className="flex justify-center">
               <Logo className="scale-150" />
             </div>
-            <h1 className="text-3xl font-bold text-primary">
+            <h1 className="text-2xl font-semibold text-foreground">
               Welcome to MBOS
             </h1>
-            <p className="text-secondary">
+            <p className="text-tertiary">
               Intelligent Agent Platform
             </p>
           </div>
 
           {/* Login Card */}
-          <div className="bg-surface border border-subtle rounded-xl p-8 shadow-sm">
-            <h2 className="text-xl font-semibold text-primary mb-6">
+          <div className="bg-surface border border-border rounded-md p-8">
+            <h2 className="text-lg font-semibold text-foreground mb-6">
               Sign in
             </h2>
 
             {/* Keycloak Login Button */}
             <button
-              className="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-medium rounded-lg transition-all duration-200 mb-4"
+              className="w-full h-10 px-4 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200 mb-4"
               onClick={() => console.log('Keycloak login not configured')}
             >
               Login with Keycloak
@@ -103,7 +112,7 @@ export default function LoginPage() {
 
             {/* Mock Development Login */}
             <div className="space-y-4">
-              <div className="bg-panel border border-subtle rounded-lg p-4">
+              <div className="bg-surface-high border border-subtle rounded-md p-4">
                 <p className="text-sm text-tertiary mb-4 text-center">
                   Development Mode Only
                 </p>
@@ -113,17 +122,32 @@ export default function LoginPage() {
                   <label className="block text-sm font-medium text-secondary mb-2">
                     Workspace
                   </label>
-                  <select
-                    value={workspaceId}
-                    onChange={(e) => setWorkspaceId(e.target.value)}
-                    className="w-full px-3 py-2 bg-hover border border-subtle rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-accent"
-                  >
-                    {mockWorkspaces.map((ws) => (
-                      <option key={ws.value} value={ws.value}>
-                        {ws.label}
-                      </option>
-                    ))}
-                  </select>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="w-full h-10 px-3 bg-surface-high border border-subtle rounded-sm text-primary flex items-center gap-2 justify-between hover:bg-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
+                          <span className="truncate text-sm">
+                            {mockWorkspaces.find((ws) => ws.value === workspaceId)?.label || 'Select workspace'}
+                          </span>
+                        </span>
+                        <ChevronDown className="w-4 h-4 text-tertiary flex-shrink-0" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                      {mockWorkspaces.map((ws) => (
+                        <DropdownMenuItem
+                          key={ws.value}
+                          onSelect={() => setWorkspaceId(ws.value)}
+                        >
+                          {ws.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
                 {/* User Email */}
@@ -136,7 +160,7 @@ export default function LoginPage() {
                     value={userEmail}
                     onChange={(e) => setUserEmail(e.target.value)}
                     placeholder="user@example.com"
-                    className="w-full px-3 py-2 bg-hover border border-subtle rounded-lg text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent"
+                    className="w-full px-3 py-2 bg-surface-high border border-subtle rounded-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
                   />
                 </div>
 
@@ -144,7 +168,7 @@ export default function LoginPage() {
                 <button
                   onClick={handleQuickLogin}
                   disabled={isLoggingIn || !userEmail.trim()}
-                  className="w-full py-3 px-4 bg-surface border border-subtle hover:bg-hover text-primary font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full h-10 px-4 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoggingIn ? 'Signing in...' : 'Quick Login'}
                 </button>

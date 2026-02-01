@@ -1,5 +1,5 @@
 /**
- * UserData Page Tests
+ * Sources Page Tests (formerly UserData)
  */
 
 import { test as base, expect } from '@playwright/test';
@@ -53,16 +53,16 @@ async function navigateWithAuth(page: typeof base['page']['object'], url: string
   await page.waitForLoadState('networkidle');
 }
 
-test.describe('UserData Page', () => {
-  test('should display userdata capabilities', async ({ authenticatedPage }) => {
-    await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/userdata`);
+test.describe('Sources Page', () => {
+  test('should display sources capabilities', async ({ authenticatedPage }) => {
+    await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/sources`);
 
-    await expect(authenticatedPage.getByText('UserData').first()).toBeVisible();
+    await expect(authenticatedPage.getByText('Sources').first()).toBeVisible();
   });
 
-  test('should show upload files button', async ({ authenticatedPage }) => {
-    await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/userdata`);
+  test('should show add source button', async ({ authenticatedPage }) => {
+    await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/sources`);
 
-    await expect(authenticatedPage.getByText(/Upload Files/i)).toBeVisible();
+    await expect(authenticatedPage.getByText(/Add Source/i)).toBeVisible();
   });
 });

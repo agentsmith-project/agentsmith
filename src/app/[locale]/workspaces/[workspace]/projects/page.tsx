@@ -96,7 +96,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   if (!resolvedParams || !hydrated) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-foreground-secondary">Loading...</div>
+        <div className="text-tertiary">Loading...</div>
       </div>
     );
   }
@@ -109,16 +109,16 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-semibold text-foreground mb-2">Projects</h1>
-          <p className="text-foreground-secondary">
+          <p className="text-tertiary">
             Workspace: {currentWorkspace?.name || resolvedParams.workspace}
           </p>
         </div>
 
         {!isAuthenticated || projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
-            <FolderOpen className="w-16 h-16 text-foreground-secondary mb-4" />
+            <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
             <h2 className="text-xl font-semibold text-foreground mb-2">No projects yet</h2>
-            <p className="text-foreground-secondary">Create your first project to get started</p>
+            <p className="text-tertiary">Create your first project to get started</p>
           </div>
         ) : (
           <div className="space-y-8">
@@ -151,18 +151,18 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                 <div className="flex items-center gap-3">
                   {/* Search */}
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-secondary" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-icon-default" />
                     <input
                       type="text"
                       placeholder="Search projects..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9 pr-4 py-2 w-64 bg-surface border border-border rounded-md text-sm text-foreground placeholder:text-foreground-secondary focus:outline-none focus:ring-2 focus:ring-accent/50"
+                      className="pl-9 pr-4 py-2 w-64 bg-surface-high border border-subtle rounded-sm text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
                     />
                   </div>
 
                   {/* New Project Button */}
-                  <button className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent/90 text-white font-medium rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50">
+                  <button className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50">
                     <Plus className="w-4 h-4" />
                     New Project
                   </button>
@@ -195,19 +195,19 @@ function ProjectCard({
   return (
     <div
       onClick={onClick}
-      className="relative group bg-surface border border-border rounded-md p-5 transition-all duration-200 hover:bg-surface-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+      className="relative group bg-surface border border-border rounded-md p-5 transition-colors duration-200 hover:bg-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
     >
       <button
         onClick={onTogglePin}
-        className="absolute top-4 right-4 p-1.5 rounded hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+        className="absolute top-4 right-4 p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
         aria-label="Unpin project"
       >
-        <Pin className="w-4 h-4 text-foreground-secondary" />
+        <Pin className="w-4 h-4 text-icon-default" />
       </button>
 
       <div className="flex items-start gap-4 mb-4">
-        <div className="w-10 h-10 rounded-lg bg-surface-high flex items-center justify-center">
-          <FolderOpen className="w-5 h-5 text-foreground-secondary" />
+        <div className="w-10 h-10 rounded-sm bg-surface-high flex items-center justify-center">
+          <FolderOpen className="w-5 h-5 text-icon-default" />
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-base font-semibold text-foreground mb-1 truncate">
@@ -215,11 +215,11 @@ function ProjectCard({
           </h3>
           <div className="flex items-center gap-2 text-sm">
             {project.visibility === 'public' ? (
-              <Globe className="w-3.5 h-3.5 text-foreground-secondary" />
+              <Globe className="w-3.5 h-3.5 text-icon-default" />
             ) : (
-              <Lock className="w-3.5 h-3.5 text-foreground-secondary" />
+              <Lock className="w-3.5 h-3.5 text-icon-default" />
             )}
-            <span className="capitalize text-foreground-secondary">
+            <span className="capitalize text-tertiary">
               {project.visibility}
             </span>
           </div>
@@ -227,7 +227,7 @@ function ProjectCard({
       </div>
 
       <div className="flex items-center justify-between pt-4 border-t border-border">
-        <span className="text-xs font-medium text-foreground-secondary capitalize">
+        <span className="text-xs font-medium text-tertiary uppercase tracking-wide">
           {project.role}
         </span>
         <StatusBadge status={project.status === 'active' ? 'active' : 'paused'}>
@@ -256,10 +256,10 @@ function ProjectsTable({
         cell: ({ row }) => (
           <button
             onClick={(e) => onTogglePin(row.original.id, e)}
-            className="p-1.5 rounded hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+            className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
             aria-label="Pin project"
           >
-            <PinOff className="w-4 h-4 text-foreground-secondary" />
+            <PinOff className="w-4 h-4 text-icon-default" />
           </button>
         ),
       }),
@@ -267,8 +267,8 @@ function ProjectsTable({
         header: 'Name',
         cell: (info) => (
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded bg-surface-high flex items-center justify-center">
-              <FolderOpen className="w-4 h-4 text-foreground-secondary" />
+            <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
+              <FolderOpen className="w-4 h-4 text-icon-default" />
             </div>
             <span className="font-medium text-foreground">{info.getValue()}</span>
           </div>
@@ -280,13 +280,13 @@ function ProjectsTable({
           <div className="flex items-center gap-2">
             {info.getValue() === 'public' ? (
               <>
-                <Globe className="w-4 h-4 text-foreground-secondary" />
-                <span className="capitalize text-foreground">Public</span>
+                <Globe className="w-4 h-4 text-icon-default" />
+                <span className="capitalize text-primary">Public</span>
               </>
             ) : (
               <>
-                <Lock className="w-4 h-4 text-foreground-secondary" />
-                <span className="capitalize text-foreground">Private</span>
+                <Lock className="w-4 h-4 text-icon-default" />
+                <span className="capitalize text-primary">Private</span>
               </>
             )}
           </div>
@@ -295,7 +295,7 @@ function ProjectsTable({
       columnHelper.accessor('role', {
         header: 'Your Role',
         cell: (info) => (
-          <span className="capitalize text-foreground">{info.getValue()}</span>
+          <span className="capitalize text-primary">{info.getValue()}</span>
         ),
       }),
       columnHelper.accessor('status', {
@@ -313,19 +313,19 @@ function ProjectsTable({
           <div className="flex items-center gap-1">
             <button
               onClick={() => onProjectClick(row.original)}
-              className="p-1.5 rounded hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+              className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
               aria-label="Open project"
             >
-              <Eye className="w-4 h-4 text-foreground-secondary" />
+              <Eye className="w-4 h-4 text-icon-default" />
             </button>
             <button
-              className="p-1.5 rounded hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+              className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
               aria-label="Project settings"
             >
-              <Settings className="w-4 h-4 text-foreground-secondary" />
+              <Settings className="w-4 h-4 text-icon-default" />
             </button>
-            <button className="p-1.5 rounded hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50">
-              <MoreVertical className="w-4 h-4 text-foreground-secondary" />
+            <button className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50">
+              <MoreVertical className="w-4 h-4 text-icon-default" />
             </button>
           </div>
         ),
@@ -343,7 +343,7 @@ function ProjectsTable({
   if (projects.length === 0) {
     return (
       <div className="text-center py-12 bg-surface border border-border rounded-md">
-        <p className="text-foreground-secondary">No projects found</p>
+        <p className="text-tertiary">No projects found</p>
       </div>
     );
   }

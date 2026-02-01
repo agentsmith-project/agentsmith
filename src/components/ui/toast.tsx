@@ -51,11 +51,11 @@ const icons = {
   info: Info,
 };
 
-const colors = {
-  success: 'bg-green-500/20 text-green-400 border-green-500/50',
-  error: 'bg-red-500/20 text-red-400 border-red-500/50',
-  warning: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50',
-  info: 'bg-blue-500/20 text-blue-400 border-blue-500/50',
+const typeStyles: Record<ToastType, { iconClass: string; barClass: string }> = {
+  success: { iconClass: 'text-success', barClass: 'border-l-success/70' },
+  error: { iconClass: 'text-error', barClass: 'border-l-error/70' },
+  warning: { iconClass: 'text-warning', barClass: 'border-l-warning/70' },
+  info: { iconClass: 'text-accent', barClass: 'border-l-accent/70' },
 };
 
 export function ToastContainer() {
@@ -67,16 +67,21 @@ export function ToastContainer() {
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
       {toasts.map((toast) => {
         const Icon = icons[toast.type];
+        const styles = typeStyles[toast.type];
         return (
           <div
             key={toast.id}
-            className={`flex items-start gap-3 p-4 rounded-lg border shadow-sm ${colors[toast.type]}`}
+            className={[
+              'flex items-start gap-3 p-4 rounded-md border border-subtle bg-surface-high shadow-float',
+              'border-l-2',
+              styles.barClass,
+            ].join(' ')}
           >
-            <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <p className="flex-1 text-sm">{toast.message}</p>
+            <Icon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${styles.iconClass}`} />
+            <p className="flex-1 text-sm text-primary">{toast.message}</p>
             <button
               onClick={() => removeToast(toast.id)}
-              className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+              className="flex-shrink-0 text-tertiary hover:text-foreground transition-colors"
             >
               <X className="w-4 h-4" />
             </button>

@@ -2,21 +2,23 @@ import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-sm text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-accent text-foreground hover:bg-accent/90",
-        destructive: "bg-error text-foreground hover:bg-error/90",
-        outline: "border border-border bg-background hover:bg-surface-hover hover:text-foreground",
-        secondary: "bg-surface text-foreground-secondary hover:bg-surface-hover",
-        ghost: "hover:bg-surface-hover",
-        link: "text-accent underline-offset-4 hover:underline",
+        // Default follows the design doc: "Action button" is a dark surface, not a blue fill.
+        default: "bg-surface-high text-foreground border border-subtle hover:bg-hover",
+        action: "bg-surface-high text-foreground border border-subtle hover:bg-hover",
+        outline: "border border-border bg-transparent text-primary hover:bg-hover hover:text-foreground",
+        secondary: "bg-surface text-primary border border-subtle hover:bg-hover hover:text-foreground",
+        ghost: "bg-transparent text-primary hover:bg-hover hover:text-foreground",
+        link: "bg-transparent text-accent underline-offset-4 hover:underline",
+        destructive: "bg-transparent text-error hover:bg-error/10",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-3",
-        lg: "h-11 rounded-md px-8",
+        default: "h-10 px-4",
+        sm: "h-9 px-3",
+        lg: "h-11 px-6",
         icon: "h-10 w-10",
       },
     },

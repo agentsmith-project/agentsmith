@@ -97,21 +97,21 @@ export function ProjectNavigation({ basePath, items, columns = 3 }: ProjectNavig
           <Link
             key={item.label}
             href={`${basePath}${item.href}`}
-            className="bg-panel border border-subtle rounded-xl p-5 hover:bg-hover transition-all duration-200 group"
+            className="bg-surface border border-border rounded-md p-5 hover:bg-surface-high transition-colors duration-200 group"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-hover flex items-center justify-center group-hover:bg-primary group-hover:text-primary transition-colors">
-                  <Icon className="w-5 h-5 text-secondary group-hover:text-primary" />
+                <div className="w-10 h-10 rounded-sm bg-surface-high flex items-center justify-center group-hover:bg-hover transition-colors">
+                  <Icon className="w-5 h-5 text-icon-default group-hover:text-accent" />
                 </div>
                 <div>
-                  <div className="text-primary font-medium">{item.label}</div>
+                  <div className="text-foreground font-medium">{item.label}</div>
                   {item.description && (
                     <div className="text-xs text-tertiary mt-0.5">{item.description}</div>
                   )}
                 </div>
               </div>
-              <ChevronRight className="w-5 h-5 text-tertiary group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+              <ChevronRight className="w-5 h-5 text-tertiary group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
             </div>
           </Link>
         );

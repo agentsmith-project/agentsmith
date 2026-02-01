@@ -78,42 +78,14 @@ async function mockLogin(page: Page, workspaceId: string, email: string, name?: 
 }
 
 test.describe('Homepage', () => {
-  test('should display homepage with login buttons', async ({ page }) => {
-    await page.goto('/');
-
-    // Check title
-    await expect(page).toHaveTitle(/MBOS/);
-
-    // Check main heading
-    await expect(page.getByText('MBOS Frontend')).toBeVisible();
-    await expect(page.getByText('Intelligent Agent Platform')).toBeVisible();
-
-    // Check login buttons exist
-    const englishLoginBtn = page.getByText('English Login');
-    const chineseLoginBtn = page.getByText('中文登录');
-
-    await expect(englishLoginBtn).toBeVisible();
-    await expect(chineseLoginBtn).toBeVisible();
-
-    // Verify button has gradient background
-    const bgImage = await englishLoginBtn.evaluate(el => getComputedStyle(el).backgroundImage);
-    expect(bgImage).toContain('linear-gradient');
-    expect(bgImage).toContain('rgb');
-  });
-
-  test('should navigate to English login page', async ({ page }) => {
-    await page.goto('/');
-    await page.getByText('English Login').click();
-
-    await expect(page).toHaveURL(/\/en-US\/login/);
+  test('should display English login page', async ({ page }) => {
+    await page.goto('/en-US/login');
     await expect(page.getByText('Welcome to MBOS')).toBeVisible();
+    await expect(page.getByText('Intelligent Agent Platform')).toBeVisible();
   });
 
-  test('should navigate to Chinese login page', async ({ page }) => {
-    await page.goto('/');
-    await page.getByText('中文登录').click();
-
-    await expect(page).toHaveURL(/\/zh-CN\/login/);
+  test('should display Chinese login page', async ({ page }) => {
+    await page.goto('/zh-CN/login');
     await expect(page.getByText('Welcome to MBOS')).toBeVisible();
   });
 });
@@ -170,7 +142,7 @@ test.describe('Login Page', () => {
     await expect(loginBtn).toBeEnabled();
   });
 
-  test('should login successfully and redirect to projects page', async ({ page }) => {
+  test('should login successfully and redirect to workspace selection', async ({ page }) => {
     const emailInput = page.locator('input[placeholder*="user@example.com"]');
     const loginBtn = page.getByText('Quick Login');
 
@@ -180,9 +152,10 @@ test.describe('Login Page', () => {
     // Click login
     await loginBtn.click();
 
-    // Should redirect to projects page
-    await page.waitForURL(/\/en-US\/workspaces\/ws_default\/projects/, { timeout: 5000 });
-    await expect(page).toHaveURL(/\/en-US\/workspaces\/ws_default\/projects/);
+    // Should redirect to workspace selection page
+    await page.waitForURL(/\/en-US\/login\/workspace/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/en-US\/login\/workspace/);
+    await expect(page.getByText('Select your workspace')).toBeVisible();
   });
 });
 
@@ -240,32 +213,26 @@ test.describe('Overview Page', () => {
 
 test.describe('Full User Journey', () => {
   test('should complete full login and navigation flow', async ({ page }) => {
-    // 1. Start at homepage
-    await page.goto('/');
-    await expect(page.getByText('MBOS Frontend')).toBeVisible();
+    // 1. Start at login page
+    await page.goto('/en-US/login');
+    await expect(page.getByText('Welcome to MBOS')).toBeVisible();
 
-    // 2. Click English Login
-    await page.getByText('English Login').click();
-    await expect(page).toHaveURL(/\/en-US\/login/);
-
-    // 3. Login with email
+    // 2. Login with email
     await page.locator('input[placeholder*="user@example.com"]').fill('user@test.com');
     await page.getByText('Quick Login').click();
 
-    // Wait for the auth to be set (Quick Login redirects or sets state)
-    await page.waitForTimeout(1000);
+    // 3. Should navigate to workspace selection
+    await page.waitForURL(/\/login\/workspace/, { timeout: 5000 });
+    await expect(page.getByText('Select your workspace')).toBeVisible();
 
-    // 4. Set up mock authentication
-    await mockLogin(page, 'ws_default', 'user@test.com', 'Test User');
+    // 4. Select workspace
+    await page.getByText('Default Workspace').click();
 
-    // After mockLogin reload, navigate to projects page
-    await page.goto('/en-US/workspaces/ws_default/projects', { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('domcontentloaded');
-
-    // Check for Projects heading
+    // 5. Should land on projects page
+    await page.waitForURL(/\/workspaces\/ws_default\/projects/, { timeout: 5000 });
     await expect(page.locator('h1').filter({ hasText: 'Projects' })).toBeVisible();
 
-    // 5. Navigate to overview
+    // 6. Navigate to overview
     await page.goto('/en-US/workspaces/ws_default/projects/proj_001/overview');
     await expect(page.locator('h1').filter({ hasText: 'Overview' })).toBeVisible();
   });

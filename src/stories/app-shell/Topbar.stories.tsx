@@ -35,10 +35,13 @@ export const LoggedOut: Story = {
         <div className="flex items-center justify-between w-full bg-panel border-b border-subtle h-14 px-4">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ backgroundImage: 'var(--ai-gradient)' }}
+              >
                 <span className="text-lg font-bold text-white">M</span>
               </div>
-              <span className="text-lg font-semibold text-primary">MBOS</span>
+              <span className="text-lg font-semibold text-foreground">MBOS</span>
             </div>
           </div>
           <div className="flex items-center gap-4">

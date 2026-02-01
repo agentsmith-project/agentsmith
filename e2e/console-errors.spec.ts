@@ -181,7 +181,7 @@ test.describe('Console Errors & Warnings Detection', () => {
       { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`, name: 'Audit' },
       { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/usage`, name: 'Usage' },
       { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/settings`, name: 'Settings' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/userdata`, name: 'UserData' },
+      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/sources`, name: 'Sources' },
     ];
 
     const allErrors: Record<string, string[]> = {};
@@ -340,7 +340,7 @@ test.describe('Console Errors & Warnings Detection', () => {
       `/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`,
       `/en-US/workspaces/${workspaceId}/projects/${projectId}/usage`,
       `/en-US/workspaces/${workspaceId}/projects/${projectId}/settings`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/userdata`,
+      `/en-US/workspaces/${workspaceId}/projects/${projectId}/sources`,
     ];
 
     for (const pagePath of pages) {

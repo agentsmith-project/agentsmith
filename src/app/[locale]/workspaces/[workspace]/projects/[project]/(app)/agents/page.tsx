@@ -8,13 +8,14 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useReactTable, getCoreRowModel, createColumnHelper, flexRender } from '@tanstack/react-table';
+import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { Bot, Plus, Trash2 } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, AgentAPI } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { DataTable } from '@/components/ui/data-table';
 
 interface AgentsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -38,13 +39,13 @@ const agentColumns = [
     header: 'Name',
     cell: (info) => (
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded bg-surface-high flex items-center justify-center">
-          <Bot className="w-4 h-4 text-foreground-secondary" />
+        <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
+          <Bot className="w-4 h-4 text-icon-default" />
         </div>
         <div className="flex flex-col">
           <span className="text-foreground font-medium">{info.getValue()}</span>
           {info.row.original.description && (
-            <span className="text-xs text-foreground-secondary line-clamp-1">
+            <span className="text-xs text-tertiary line-clamp-1">
               {info.row.original.description}
             </span>
           )}
@@ -55,7 +56,7 @@ const agentColumns = [
   columnHelper.accessor('model', {
     header: 'Model',
     cell: (info) => (
-      <span className="text-foreground-secondary text-sm font-mono">
+      <span className="text-tertiary text-sm font-mono">
         {info.getValue() || '-'}
       </span>
     ),
@@ -63,7 +64,7 @@ const agentColumns = [
   columnHelper.accessor('temperature', {
     header: 'Temp',
     cell: (info) => (
-      <span className="text-foreground-secondary text-sm">
+      <span className="text-tertiary text-sm">
         {info.getValue() ?? '-'}
       </span>
     ),
@@ -71,7 +72,7 @@ const agentColumns = [
   columnHelper.accessor('mode', {
     header: 'Mode',
     cell: (info) => (
-      <span className="text-foreground-secondary text-sm capitalize">
+      <span className="text-tertiary text-sm capitalize">
         {info.getValue()}
       </span>
     ),
@@ -94,14 +95,14 @@ const agentColumns = [
             });
           }}
           disabled={updateAgentMutation.isPending}
-          className="px-3 py-1.5 text-xs rounded bg-surface hover:bg-surface-high transition-colors disabled:opacity-50 border border-border"
+          className="px-3 py-1.5 text-xs rounded-sm bg-surface-high hover:bg-hover transition-colors disabled:opacity-50 border border-subtle text-primary"
         >
           {info.row.original.status === 'enabled' ? 'Disable' : 'Enable'}
         </button>
         <button
           onClick={() => deleteAgentMutation.mutate(info.row.original.id)}
           disabled={deleteAgentMutation.isPending}
-          className="p-1.5 text-error hover:bg-error/10 rounded transition-colors disabled:opacity-50"
+          className="p-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
         >
           <Trash2 className="w-4 h-4" />
         </button>
@@ -194,12 +195,12 @@ export default function AgentsPage({ params }: AgentsPageProps) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Agents</h1>
-          <p className="text-sm text-foreground-secondary mt-1">Manage AI agents within the project</p>
+          <p className="text-sm text-tertiary mt-1">Manage AI agents within the project</p>
         </div>
         <button
           onClick={() => createAgentMutation.mutate({ name: newAgentName || 'New Agent' })}
           disabled={createAgentMutation.isPending}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors disabled:opacity-50"
         >
           <Plus className="w-4 h-4" />
           New Agent
@@ -219,44 +220,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           }}
         />
       ) : (
-        <div className="rounded-lg overflow-hidden border border-border bg-surface shadow-sm">
-          <table className="w-full border-collapse">
-            <thead className="bg-surface-high">
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map(header => (
-                    <th
-                      key={header.id}
-                      className="px-4 py-4 text-left text-sm font-medium text-foreground-secondary"
-                    >
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map(row => (
-                <tr
-                  key={row.id}
-                  className="hover:bg-surface-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 border-b border-border last:border-b-0"
-                >
-                  {row.getVisibleCells().map(cell => (
-                    <td
-                      key={cell.id}
-                      className="px-4 py-4 text-sm text-foreground"
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable table={table} />
       )}
     </div>
   );

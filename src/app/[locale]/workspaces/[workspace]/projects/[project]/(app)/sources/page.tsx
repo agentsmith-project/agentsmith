@@ -16,12 +16,12 @@ const sourceColumns = [
       const source = info.row.original;
       return (
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-surface-high flex items-center justify-center">
-            <File className="w-4 h-4 text-foreground-secondary" />
+          <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
+            <File className="w-4 h-4 text-icon-default" />
           </div>
           <div>
             <span className="text-foreground block">{source.name}</span>
-            <span className="text-foreground-muted text-xs">{source.type}</span>
+            <span className="text-tertiary text-xs">{source.type}</span>
           </div>
         </div>
       );
@@ -30,7 +30,7 @@ const sourceColumns = [
   columnHelper.accessor('size', {
     header: 'Size',
     cell: (info) => (
-      <span className="text-foreground-secondary text-sm font-mono">
+      <span className="text-tertiary text-sm font-mono">
         {formatBytes(info.getValue())}
       </span>
     ),
@@ -38,7 +38,7 @@ const sourceColumns = [
   columnHelper.accessor('uploadedAt', {
     header: 'Uploaded',
     cell: (info) => (
-      <span className="text-foreground-secondary text-sm">
+      <span className="text-tertiary text-sm">
         {new Date(info.getValue()).toLocaleDateString()}
       </span>
     ),
@@ -67,8 +67,7 @@ export default function SourcesPage() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-foreground">Sources</h1>
-        <button className="flex items-center gap-2 px-4 py-2 rounded-lg text-white font-medium"
-                style={{ background: 'var(--color-gemini-product-gradient)', borderRadius: 'var(--radius-sm)' }}>
+        <button className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors">
           <Plus className="w-4 h-4" />
           Add Source
         </button>

@@ -639,3 +639,7 @@ Key tokens used:
 ---
 
 **Document Status:** ✅ Design Complete, Ready for Implementation Planning
+# NOTE: This document is historical and may contain outdated sizes/tokens.
+# Current source of truth:
+# - `文档/UXUI/2026-01-31-视觉设计系统-v1.md`
+# - `mbos_frontend/DESIGN_SYSTEM.md`

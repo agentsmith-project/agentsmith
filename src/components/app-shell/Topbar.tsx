@@ -5,7 +5,7 @@ import { Bell } from 'lucide-react';
 import { Logo } from './Logo';
 import { UserMenu } from './UserMenu';
 import { useAuthStore } from '@/lib/stores/authStore';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, MenuItem } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Globe, FolderKanban, ChevronDown } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -47,54 +47,62 @@ export function Topbar({ className = '' }: TopbarProps) {
 
   return (
     <header className={`h-14 flex items-center justify-between px-4 bg-panel border-b border-subtle ${className}`}>
-      {/* Left Side */}
-      <div className="flex items-center gap-4">
-        <Logo className="w-8 h-8" />
-
-        {/* Workspace Switcher */}
-        <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
-            <Globe className="w-4 h-4 text-secondary" />
-            <span className="text-sm text-primary">{currentWorkspace?.name || 'Select Workspace'}</span>
-            <ChevronDown className="w-4 h-4 text-foreground-muted" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="bg-surface border border-border rounded-md" align="start">
-            {workspaces?.map(ws => (
-              <MenuItem key={ws.id} onClick={() => handleWorkspaceChange(ws.id)}>
-                {ws.name}
-              </MenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {/* Left: Brand */}
+      <div className="flex items-center gap-3">
+        <Logo />
       </div>
 
-      {/* Right Side */}
-      <div className="flex items-center gap-4">
-        {/* Project Switcher */}
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            disabled={!currentProject}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors ${
-              currentProject
-                ? 'hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50'
-                : 'text-foreground-muted cursor-not-allowed'
-            }`}
-          >
-            <FolderKanban className="w-4 h-4" />
-            <span className="text-sm">{currentProject?.name || 'No project'}</span>
-            {currentProject && <ChevronDown className="w-4 h-4" />}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="bg-surface border border-border rounded-md" align="end">
-            {projects?.map(proj => (
-              <MenuItem key={proj.id} onClick={() => handleProjectChange(proj.id)}>
-                {proj.name}
-              </MenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {/* Center: Workspace / Project (breadcrumb-like) */}
+      <div className="flex-1 min-w-0 px-3">
+        <div className="flex items-center gap-2 min-w-0">
+          {/* Workspace Switcher */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="max-w-[340px] flex items-center gap-2 px-3 h-10 rounded-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
+              <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
+              <span className="text-sm text-foreground truncate">
+                {currentWorkspace?.name || 'Select Workspace'}
+              </span>
+              <ChevronDown className="w-4 h-4 text-tertiary flex-shrink-0" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {workspaces?.map((ws) => (
+                <DropdownMenuItem key={ws.id} onSelect={() => handleWorkspaceChange(ws.id)}>
+                  {ws.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
+          {currentProject && (
+            <>
+              <span className="text-tertiary">/</span>
+
+              {/* Project Switcher */}
+              <DropdownMenu>
+                <DropdownMenuTrigger className="max-w-[420px] flex items-center gap-2 px-3 h-10 rounded-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
+                  <FolderKanban className="w-4 h-4 text-icon-default flex-shrink-0" />
+                  <span className="text-sm text-primary truncate">
+                    {currentProject.name}
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-tertiary flex-shrink-0" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {projects?.map((proj) => (
+                    <DropdownMenuItem key={proj.id} onSelect={() => handleProjectChange(proj.id)}>
+                      {proj.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Right: Controls */}
+      <div className="flex items-center gap-4">
         {/* Notification Bell (optional v1.5) */}
-        <button className="relative p-2 hover:bg-hover rounded-lg text-secondary hover:text-primary transition-all duration-200">
+        <button className="relative p-2 hover:bg-hover rounded-md text-icon-default hover:text-foreground transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
           <Bell className="w-5 h-5" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-error rounded-full border-2 border-panel" />
         </button>

@@ -65,7 +65,7 @@ test.describe('Navigation Between Pages', () => {
       { path: 'audit', title: 'Audit' },
       { path: 'usage', title: 'Usage' },
       { path: 'settings', title: 'Settings' },
-      { path: 'userdata', title: 'UserData' },
+      { path: 'sources', title: 'Sources' },
     ];
 
     for (const pageDef of pages) {

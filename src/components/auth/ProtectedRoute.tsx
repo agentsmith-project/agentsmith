@@ -11,6 +11,7 @@ import { useEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useIsAuthenticated, useHasPermission, useHasAllPermissions } from '@/lib/hooks/use-permissions';
 import { useAuthStoreHydration } from '@/lib/stores/authStore';
+import { useRef } from 'react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -27,6 +28,8 @@ export function ProtectedRoute({
   const pathname = usePathname();
   const isAuthenticated = useIsAuthenticated();
   const hydrated = useAuthStoreHydration();
+  const latestAuthRef = useRef(isAuthenticated);
+  latestAuthRef.current = isAuthenticated;
 
   // Check permission if specified - must call hooks unconditionally
   const hasAllPermissionsResult = useHasAllPermissions(requirePermission && Array.isArray(requirePermission) ? requirePermission : []);
@@ -90,8 +93,14 @@ export function ProtectedRoute({
 
       return () => clearInterval(interval);
     } else if (!bypassAuth && !isAuthenticated) {
-      // Normal redirect to login (production or non-E2E dev)
-      router.replace(loginPath);
+      // Normal redirect to login (production or non-E2E dev).
+      // Delay a tick to avoid hydration race causing redirect loops.
+      const t = window.setTimeout(() => {
+        if (!bypassAuth && !latestAuthRef.current) {
+          router.replace(loginPath);
+        }
+      }, 60);
+      return () => window.clearTimeout(t);
     }
   }, [hydrated, isAuthenticated, router, bypassAuth, loginPath]);
 

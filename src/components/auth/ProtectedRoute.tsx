@@ -7,11 +7,10 @@
 
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useIsAuthenticated, useHasPermission, useHasAllPermissions } from '@/lib/hooks/use-permissions';
 import { useAuthStoreHydration } from '@/lib/stores/authStore';
-import { useRef } from 'react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -31,19 +30,31 @@ export function ProtectedRoute({
   const latestAuthRef = useRef(isAuthenticated);
   latestAuthRef.current = isAuthenticated;
 
-  // Check permission if specified - must call hooks unconditionally
-  const hasAllPermissionsResult = useHasAllPermissions(requirePermission && Array.isArray(requirePermission) ? requirePermission : []);
-  const hasSinglePermissionResult = useHasPermission(requirePermission && typeof requirePermission === 'string' ? requirePermission : '');
+  // Memoize permission requirements to ensure stable references
+  const permissionArray = useMemo(() => {
+    return requirePermission && Array.isArray(requirePermission) ? requirePermission : [];
+  }, [requirePermission]);
+  
+  const permissionString = useMemo(() => {
+    return requirePermission && typeof requirePermission === 'string' ? requirePermission : '';
+  }, [requirePermission]);
+
+  // Check permissions using stable hooks
+  const hasAllPermissionsResult = useHasAllPermissions(permissionArray);
+  const hasSinglePermissionResult = useHasPermission(permissionString);
 
   // Determine hasPermission based on requirePermission type
-  let hasPermission = true;
-  if (requirePermission && isAuthenticated) {
-    if (Array.isArray(requirePermission)) {
-      hasPermission = hasAllPermissionsResult;
-    } else {
-      hasPermission = hasSinglePermissionResult;
+  const hasPermission = useMemo(() => {
+    if (!requirePermission || !isAuthenticated) {
+      return true;
     }
-  }
+    
+    if (Array.isArray(requirePermission)) {
+      return hasAllPermissionsResult;
+    } else {
+      return hasSinglePermissionResult;
+    }
+  }, [requirePermission, isAuthenticated, hasAllPermissionsResult, hasSinglePermissionResult]);
 
   // Mock development check - bypass auth in dev if needed
   const isDev = process.env.NODE_ENV === 'development';

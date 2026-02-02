@@ -12,6 +12,9 @@ import { Activity, AlertCircle, Clock, Wifi } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { UsageAPI, AuditAPI } from '@/lib/api';
 import { getApiClient } from '@/lib/api';
+import { validateUsageKPI } from '@/lib/api/validators';
+import { formatNumber } from '@/lib/utils/formatters';
+import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 
 export default function OverviewPage() {
   const params = useParams();
@@ -20,14 +23,20 @@ export default function OverviewPage() {
   const locale = (params.locale as string) || 'en-US';
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
+  // Sync auth store from URL parameters
+  useSyncAuthFromUrl();
+
   const apiClient = getApiClient();
   const usageAPI = new UsageAPI(apiClient);
   const auditAPI = new AuditAPI(apiClient);
 
-  // Fetch KPI data
+  // Fetch KPI data with validation
   const { data: kpiData } = useQuery({
     queryKey: ['usage', 'kpi', workspaceId, projectId],
-    queryFn: () => usageAPI.getKPI(workspaceId, projectId),
+    queryFn: async () => {
+      const data = await usageAPI.getKPI(workspaceId, projectId);
+      return validateUsageKPI(data);
+    },
   });
 
   // Fetch recent activity
@@ -36,22 +45,10 @@ export default function OverviewPage() {
     queryFn: () => auditAPI.list(workspaceId, projectId, { page: 1, page_size: 5 }),
   });
 
-  // Mock KPI data if not loaded
+  // Use validated KPI data with safe defaults
   const kpi = kpiData || {
-    total_requests: 4523,
-    total_errors: 23,
-    total_tokens: 2456000,
-    active_agents: 4,
-    online_agents: 2,
-    queued_turns: 12,
-    running_turns: 5,
-  };
-
-  // Format numbers
-  const formatNumber = (num: number): string => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-    return num.toString();
+    requests_today: 0,
+    errors_today: 0,
   };
 
   // Activity timeline items (will be replaced with real audit data)
@@ -76,26 +73,36 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           icon={Activity}
-          label="Total Turns"
-          value={formatNumber(kpi.total_requests)}
-          trend={{ value: '+12%', direction: 'up' }}
+          label="Requests Today"
+          value={formatNumber(kpi.requests_today)}
+          trend={kpi.requests_yesterday !== undefined ? {
+            value: `${((kpi.requests_today - kpi.requests_yesterday) / kpi.requests_yesterday * 100).toFixed(1)}%`,
+            direction: kpi.requests_today >= kpi.requests_yesterday ? 'up' : 'down',
+          } : undefined}
         />
         <KPICard
           icon={AlertCircle}
-          label="Errors"
-          value={kpi.total_errors.toString()}
-          trend={{ value: '-5%', direction: 'down' }}
+          label="Errors Today"
+          value={formatNumber(kpi.errors_today)}
+          trend={kpi.errors_yesterday !== undefined ? {
+            value: `${((kpi.errors_today - kpi.errors_yesterday) / kpi.errors_yesterday * 100).toFixed(1)}%`,
+            direction: kpi.errors_today >= kpi.errors_yesterday ? 'up' : 'down',
+          } : undefined}
         />
-        <KPICard
-          icon={Clock}
-          label="Queued Turns"
-          value={kpi.queued_turns.toString()}
-        />
-        <KPICard
-          icon={Wifi}
-          label="Online Agents"
-          value={`${kpi.online_agents}/${kpi.active_agents}`}
-        />
+        {kpi.tokens_today !== undefined && (
+          <KPICard
+            icon={Clock}
+            label="Tokens Today"
+            value={formatNumber(kpi.tokens_today)}
+          />
+        )}
+        {kpi.userdata_bytes !== undefined && (
+          <KPICard
+            icon={Wifi}
+            label="UserData Storage"
+            value={formatNumber(kpi.userdata_bytes)}
+          />
+        )}
       </div>
 
       {/* Project Navigation */}

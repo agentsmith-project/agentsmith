@@ -17,6 +17,8 @@ import {
   FolderKanban,
   PanelLeftClose,
   PanelLeftOpen,
+  Shield,
+  BarChart3,
 } from 'lucide-react';
 
 interface AppShellSidebarProps {
@@ -33,6 +35,8 @@ const PROJECT_MENU_ITEMS = [
   { icon: Bot, label: 'Agents', href: 'agents' },
   { icon: Server, label: 'Endpoints', href: 'endpoints' },
   { icon: Users, label: 'Members', href: 'members' },
+  { icon: Shield, label: 'Audit', href: 'audit' },
+  { icon: BarChart3, label: 'Usage', href: 'usage' },
   { icon: SettingsIcon, label: 'Settings', href: 'settings' },
 ];
 

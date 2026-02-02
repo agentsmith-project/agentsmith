@@ -32,6 +32,8 @@ import { Topbar } from '@/components/app-shell/Topbar';
 import { useAuthStore, useAuthStoreHydration, type Project as AuthProject } from '@/lib/stores/authStore';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
+import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
+import { Button } from '@/components/ui/button';
 
 type Project = AuthProject & { pinned: boolean };
 
@@ -44,10 +46,14 @@ const columnHelper = createColumnHelper<Project>();
 export default function ProjectsPage({ params }: ProjectsPageProps) {
   const router = useRouter();
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; locale: string } | null>(null);
-  const allProjects = useAuthStore((state) => state.projects);
-  const setProject = useAuthStore((state) => state.setProject);
-  const currentWorkspace = useAuthStore((state) => state.currentWorkspace);
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const { 
+    projects: allProjects, 
+    setProject, 
+    currentWorkspace,
+    workspaces,
+    setWorkspace,
+    isAuthenticated,
+  } = useAuthStore();
   const hydrated = useAuthStoreHydration();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,16 +63,29 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
     params.then((p) => setResolvedParams({ workspace: p.workspace, locale: p.locale }));
   }, [params]);
 
-  // Initialize projects with pinned status
+  // Sync auth store from URL parameters
+  useSyncAuthFromUrl();
+
+  // Initialize projects with pinned status (filter by current workspace)
   useEffect(() => {
-    if (hydrated && allProjects.length > 0) {
-      const projectsWithPin = allProjects.map((p) => ({
+    if (hydrated && allProjects.length > 0 && currentWorkspace) {
+      // Filter projects for current workspace
+      const workspaceProjects = allProjects.filter((p) => p.workspace_id === currentWorkspace.id);
+      const projectsWithPin = workspaceProjects.map((p) => ({
         ...p,
         pinned: p.id === 'proj_001', // Pin first project by default for demo
       })) as Project[];
       setProjects(projectsWithPin);
+    } else if (hydrated && allProjects.length > 0 && !currentWorkspace && resolvedParams) {
+      // Fallback: if workspace not set yet, filter by URL param
+      const workspaceProjects = allProjects.filter((p) => p.workspace_id === resolvedParams.workspace);
+      const projectsWithPin = workspaceProjects.map((p) => ({
+        ...p,
+        pinned: p.id === 'proj_001',
+      })) as Project[];
+      setProjects(projectsWithPin);
     }
-  }, [hydrated, allProjects]);
+  }, [hydrated, allProjects, currentWorkspace, resolvedParams]);
 
   const handleProjectClick = (project: Project) => {
     setProject(project);
@@ -118,7 +137,11 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
           <div className="flex flex-col items-center justify-center py-20">
             <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
             <h2 className="text-xl font-semibold text-foreground mb-2">No projects yet</h2>
-            <p className="text-tertiary">Create your first project to get started</p>
+            <p className="text-tertiary mb-6">Create your first project to get started</p>
+            <Button variant="action">
+              <Plus className="w-4 h-4" />
+              New Project
+            </Button>
           </div>
         ) : (
           <div className="space-y-8">
@@ -162,10 +185,10 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                   </div>
 
                   {/* New Project Button */}
-                  <button className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50">
+                  <Button variant="action">
                     <Plus className="w-4 h-4" />
                     New Project
-                  </button>
+                  </Button>
                 </div>
               </div>
 

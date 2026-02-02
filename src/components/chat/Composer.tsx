@@ -25,6 +25,7 @@ export function Composer({
   onRetryAttachment,
   disabled,
   streaming,
+  autoFocus,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -38,9 +39,16 @@ export function Composer({
   onRetryAttachment: (attachmentId: string) => void;
   disabled: boolean;
   streaming: boolean;
+  autoFocus?: boolean;
 }) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const blocked = hasBlockingAttachment(attachments);
+
+  React.useEffect(() => {
+    if (!autoFocus) return;
+    if (disabled || streaming) return;
+    textareaRef.current?.focus({ preventScroll: true });
+  }, [autoFocus, disabled, streaming]);
 
   const canSend = !disabled && !streaming && !blocked && value.trim().length > 0;
   const canStop = streaming;
@@ -54,7 +62,10 @@ export function Composer({
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (canSend) onSend();
+      if (canSend) {
+        onSend();
+        textareaRef.current?.focus({ preventScroll: true });
+      }
     }
   };
 

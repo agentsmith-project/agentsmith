@@ -165,11 +165,43 @@ export function parseSSEError(event: MessageEvent): APIError | null {
 /**
  * Format error for toast notification
  */
-export function formatErrorForToast(error: APIError | Error): string {
+export function formatErrorForToast(error: APIError | Error, t?: (key: string) => string): string {
   if (error instanceof APIError) {
     return error.getUserMessage();
   }
+  if (t) {
+    return error.message || t('unknown_error');
+  }
   return error.message || 'An unexpected error occurred';
+}
+
+/**
+ * Handle error and show toast (non-hook version for use in callbacks)
+ * This can be used in React Query onError callbacks where hooks can't be used
+ */
+export function handleErrorForToast(error: unknown, context?: string): void {
+  // Use synchronous imports - toast and ApiError are already available
+  // This avoids async issues in callbacks
+  const { toast } = require('@/components/ui/toast');
+  const { ApiError } = require('./client');
+  
+  if (error instanceof ApiError) {
+    const message = formatErrorForToast(error);
+    toast.error(message);
+    if (context) {
+      console.error(`[${context}]`, error);
+    }
+  } else if (error instanceof Error) {
+    toast.error(error.message || 'An unexpected error occurred');
+    if (context) {
+      console.error(`[${context}]`, error);
+    }
+  } else {
+    toast.error('An unexpected error occurred');
+    if (context) {
+      console.error(`[${context}]`, error);
+    }
+  }
 }
 
 /**

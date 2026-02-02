@@ -14,3 +14,10 @@ export * from './usage';
 export * from './user-keys';
 export * from './chat';
 export * from './workbench';
+
+// Re-export Recipe fixtures
+export {
+  recipeFixtures,
+  recipeMessageFixtures,
+  artifactFixtures,
+} from './workbench';

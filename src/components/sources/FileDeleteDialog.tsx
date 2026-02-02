@@ -1,0 +1,82 @@
+'use client';
+import * as React from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+
+export interface FileDeleteDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (deleteAIReady: boolean) => void;
+  filename: string;
+  hasAIReady: boolean;
+  deleting?: boolean;
+}
+
+export function FileDeleteDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  filename,
+  hasAIReady,
+  deleting = false,
+}: FileDeleteDialogProps) {
+  const [deleteAIReady, setDeleteAIReady] = React.useState(true);
+
+  const handleConfirm = () => {
+    onConfirm(deleteAIReady);
+  };
+
+  const handleClose = () => {
+    if (!deleting) {
+      setDeleteAIReady(true);
+      onOpenChange(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>Delete File</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete <strong>{filename}</strong>?
+          </DialogDescription>
+        </DialogHeader>
+
+        {hasAIReady && (
+          <div className="flex items-center gap-2 py-4">
+            <Checkbox
+              id="delete-ai-ready"
+              checked={deleteAIReady}
+              onCheckedChange={(checked) => setDeleteAIReady(checked === true)}
+              disabled={deleting}
+            />
+            <label
+              htmlFor="delete-ai-ready"
+              className="text-sm text-foreground cursor-pointer"
+            >
+              Also delete AIReady artifacts
+            </label>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={handleConfirm} disabled={deleting}>
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

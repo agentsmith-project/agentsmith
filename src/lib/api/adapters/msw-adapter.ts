@@ -66,7 +66,18 @@ export class MSWApiClient implements ApiClient {
       const url = `${API_BASE}${path}`;
       const response = await fetch(url, init);
 
-      const data = await response.json();
+      let data: any;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        // If JSON parsing fails, create error from response text
+        const text = await response.text().catch(() => 'Unable to read response');
+        throw new ApiError(
+          'INVALID_RESPONSE',
+          `Failed to parse response: ${text}`,
+          undefined,
+        );
+      }
 
       if (!response.ok) {
         throw new ApiError(
@@ -81,7 +92,9 @@ export class MSWApiClient implements ApiClient {
       if (error instanceof ApiError) {
         throw error;
       }
-      throw new ApiError('MSW_ERROR', 'MSW request failed - ensure MSW is running');
+      // Preserve original error information
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new ApiError('MSW_ERROR', `MSW request failed: ${errorMessage}`);
     }
   }
 

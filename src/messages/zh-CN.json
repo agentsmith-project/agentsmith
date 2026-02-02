@@ -14,7 +14,8 @@
     "confirm_destructive": "确定要执行此操作吗？",
     "loading": "加载中...",
     "empty": "暂无数据",
-    "retry": "重试"
+    "retry": "重试",
+    "refreshed_data": "数据已刷新"
   },
   "nav": {
     "overview": "概览",
@@ -26,7 +27,11 @@
     "members": "成员",
     "audit": "审计",
     "usage": "用量",
-    "settings": "设置"
+    "settings": "设置",
+    "go_to_projects": "前往项目列表",
+    "view_all_projects": "查看所有项目",
+    "view_all_workspaces": "查看所有工作空间",
+    "no_workspaces": "暂无工作空间"
   },
   "auth": {
     "login": "登录",
@@ -52,9 +57,92 @@
     "approval_required": "需要审批"
   },
   "sources": {
-    "title": "我的文件",
+    "title": "文件",
     "upload": "上传",
+    "upload_files": "上传文件",
     "search_placeholder": "搜索文件...",
+    "filter": {
+      "status": {
+        "all": "全部",
+        "not_ready": "未就绪",
+        "preparing": "准备中",
+        "ready": "就绪",
+        "failed": "失败",
+        "cancelled": "已取消"
+      },
+      "ai_ready": {
+        "all": "全部文件",
+        "only": "仅 AIReady"
+      },
+      "sort": {
+        "updated_at": "更新时间",
+        "file_size": "文件大小",
+        "status": "状态"
+      }
+    },
+    "status": {
+      "idle": "未就绪",
+      "preparing": "准备中",
+      "ready": "就绪",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "ai_ready": {
+      "start": "启动 AIReady",
+      "cancel": "取消 AIReady",
+      "retry": "重试",
+      "progress": "处理中...",
+      "queued": "排队中",
+      "error": "错误：{message}"
+    },
+    "quota": {
+      "storage": "存储",
+      "docdb": "文档数据库",
+      "vectordb": "向量数据库",
+      "used": "已使用",
+      "limit": "限制",
+      "exceeded": "配额超限"
+    },
+    "batch": {
+      "selected": "已选择 {count} 个",
+      "start_ai_ready": "启动 AIReady",
+      "cancel_ai_ready": "取消 AIReady"
+    },
+    "table": {
+      "filename": "文件名",
+      "size": "大小",
+      "updated_at": "更新时间",
+      "ai_ready_status": "AIReady 状态",
+      "usage": "占用",
+      "actions": "操作"
+    },
+    "delete": {
+      "title": "删除文件",
+      "message": "确定要删除此文件吗？",
+      "delete_ai_ready": "同时删除 AIReady 产物",
+      "confirm": "删除",
+      "cancelling": "删除中..."
+    },
+    "upload_dialog": {
+      "title": "上传文件",
+      "description": "选择要上传的文件或拖拽文件到此处",
+      "drag_drop": "拖拽文件到此处，或点击选择",
+      "select_files": "选择文件",
+      "uploading": "上传中...",
+      "upload_success": "上传成功",
+      "upload_button": "上传 {count} 个文件"
+    },
+    "empty": {
+      "title": "暂无文件",
+      "cta": "上传第一个文件",
+      "description": "上传第一个文件开始使用"
+    },
+    "error": {
+      "upload_failed": "上传失败",
+      "process_failed": "处理失败",
+      "quota_exceeded": "配额超限，无法启动 AIReady。",
+      "delete_failed": "删除失败"
+    },
     "filter_status_all": "全部",
     "filter_status_ready": "就绪",
     "filter_status_processing": "处理中",
@@ -107,7 +195,70 @@
     "sse_disconnected": "已断开",
     "thread_info_id": "线程 ID",
     "thread_info_status": "状态",
-    "thread_info_user": "最终用户"
+    "thread_info_user": "最终用户",
+    "recipe": {
+      "title": "Recipe",
+      "new": "新建 Recipe",
+      "create": "创建 Recipe",
+      "create_title": "Recipe 标题",
+      "select_agent": "选择 Agent",
+      "agent_fixed_notice": "创建后 Agent 不可更改",
+      "history_immutable_notice": "对话历史不可修改",
+      "leave": "离开 Recipe",
+      "leave_tooltip": "返回 Workbench 列表，Recipe 将继续在后台运行",
+      "delete": "删除 Recipe",
+      "delete_confirm_message": "确定要删除此 Recipe 吗？此操作不可撤销。所有消息和生成物将被永久删除。",
+      "delete_cancel": "取消",
+      "status": {
+        "active": "活跃",
+        "closed": "已关闭",
+        "archived": "已归档"
+      }
+    },
+    "attached_sources": {
+      "title": "已附加来源",
+      "subtitle": "附加到此 Recipe 的文件",
+      "add": "添加来源",
+      "remove": "移除",
+      "empty": "未附加任何来源",
+      "empty_description": "从您的文件库中添加 AIReady 文件，为 Agent 提供上下文",
+      "select_dialog": {
+        "title": "添加来源到 Recipe",
+        "description": "从您的文件库中选择 AIReady 文件作为上下文",
+        "search_placeholder": "搜索您的文件...",
+        "confirm": "添加选中",
+        "no_files": "您的文件库中暂无可用文件",
+        "from_library": "来自您的文件库"
+      },
+      "tooltip": {
+        "attached_file": "此文件已附加到此 Recipe 作为上下文",
+        "remove_file": "从 Recipe 中移除（文件仍保留在您的文件库中）"
+      }
+    },
+    "conversation": {
+      "title": "对话",
+      "input_placeholder": "输入消息...",
+      "send": "发送",
+      "empty": "开始对话",
+      "empty_description": "发送消息开始",
+      "agent_offline": "Agent 离线",
+      "agent_disabled": "Agent 已禁用"
+    },
+    "artifacts": {
+      "title": "生成物",
+      "empty": "暂无生成物",
+      "empty_description": "开始对话以生成内容",
+      "save_to_library": "保存到文件库",
+      "download": "下载",
+      "view_full": "查看完整",
+      "copy": "复制",
+      "filter": {
+        "all": "全部",
+        "text": "文本",
+        "image": "图片",
+        "other": "其他"
+      }
+    }
   },
   "agents": {
     "title": "智能体",
@@ -167,39 +318,67 @@
     "join_requests_approve_all": "批准全部 ({count})"
   },
   "audit": {
-    "title": "审计日志",
-    "filter_time_range": "时间范围",
-    "filter_actor_type": "操作者类型",
-    "filter_result": "结果",
-    "filter_action": "操作",
-    "timestamp": "时间",
-    "actor": "操作者",
-    "action": "操作",
-    "resource": "资源",
-    "result": "结果",
-    "request_id": "请求 ID",
-    "error_code": "错误码",
-    "detail_title": "事件详情"
+    "title": "审计",
+    "subtitle": "审计事件与合规日志",
+    "filters": {
+      "time_range": "时间范围",
+      "action": "操作",
+      "actor_type": "操作者类型",
+      "actor_id": "操作者 ID",
+      "end_user_id": "最终用户 ID",
+      "resource_type": "资源类型",
+      "resource_id": "资源 ID",
+      "result": "结果"
+    },
+    "table": {
+      "timestamp": "时间戳",
+      "action": "操作",
+      "actor": "操作者",
+      "end_user": "最终用户",
+      "resource": "资源",
+      "result": "结果",
+      "request_id": "请求 ID",
+      "error_code": "错误码"
+    },
+    "detail": {
+      "title": "审计事件详情",
+      "metadata": "元数据",
+      "copy_json": "复制 JSON"
+    },
+    "empty": {
+      "title": "未找到审计事件",
+      "description": "尝试调整筛选条件或选择不同的时间范围"
+    }
   },
   "usage": {
-    "title": "用量统计",
-    "kpi_requests": "请求数",
-    "kpi_errors": "错误数",
-    "kpi_tokens": "Token 数",
-    "kpi_bytes_in": "接收字节",
-    "kpi_bytes_out": "发送字节",
-    "filter_time_range": "时间范围",
-    "filter_resource_type": "资源类型",
-    "filter_agent": "智能体",
-    "filter_end_user": "最终用户",
-    "chart_by_resource": "按资源统计",
-    "chart_over_time": "时间趋势",
-    "table_time_bucket": "时间",
-    "table_type": "类型",
-    "table_resource": "资源",
-    "table_requests": "请求数",
-    "table_duration_p95": "P95 延迟",
-    "table_tokens": "Token 数"
+    "title": "用量",
+    "subtitle": "用量统计与资源消耗",
+    "kpi": {
+      "requests_today": "今日请求数",
+      "errors_today": "今日错误数",
+      "tokens_today": "今日 Token 数",
+      "userdata_bytes": "UserData 存储"
+    },
+    "filters": {
+      "time_range": "时间范围",
+      "resource_type": "资源类型",
+      "agent_id": "智能体 ID",
+      "end_user_id": "最终用户 ID"
+    },
+    "table": {
+      "time_bucket": "时间桶",
+      "resource_type": "资源类型",
+      "resource_id": "资源 ID",
+      "requests": "请求数",
+      "duration_p95": "P95 延迟",
+      "bytes_in": "接收字节",
+      "bytes_out": "发送字节",
+      "tokens": "Token 数"
+    },
+    "empty": {
+      "title": "未找到用量数据",
+      "description": "尝试调整筛选条件或选择不同的时间范围"
+    }
   },
   "settings": {
     "title": "项目设置",
@@ -238,6 +417,14 @@
     "note": "备注（可选）"
   },
   "errors": {
+    "unknown_error": "发生未知错误",
+    "network_error": "网络连接失败",
+    "timeout": "请求超时",
+    "unauthorized": "未授权",
+    "forbidden": "权限被拒绝",
+    "not_found": "资源未找到",
+    "validation_error": "输入无效",
+    "rate_limit": "请求过于频繁",
     "permission_denied_title": "权限不足",
     "permission_denied_hint": "您没有权限访问此资源。",
     "rate_limited_title": "请求过于频繁",
@@ -250,5 +437,145 @@
     "endpoint_disabled_hint": "此端点已被禁用。",
     "request_id": "请求 ID",
     "error_code": "错误码"
+  },
+  "members": {
+    "title": "成员",
+    "invite_member": "邀请成员",
+    "description": "管理项目成员、权限和配额",
+    "table": {
+      "user": "用户",
+      "role": "角色",
+      "status": "状态",
+      "joined": "加入时间",
+      "actions": "操作",
+      "no_members": "暂无成员",
+      "no_members_description": "邀请成员加入您的项目"
+    },
+    "permissions": {
+      "title": "权限配置",
+      "template_mode": "模板模式",
+      "advanced_mode": "高级模式",
+      "template": {
+        "owner": "所有者",
+        "admin": "管理员",
+        "developer": "开发者",
+        "user": "用户",
+        "custom": "自定义"
+      },
+      "changes_preview": "变更预览",
+      "added": "已添加",
+      "removed": "已移除",
+      "high_risk_warning": "高风险权限变更",
+      "update_success": "权限更新成功",
+      "select_template": "选择模板",
+      "customized": "已自定义",
+      "search_permissions": "搜索权限...",
+      "selected_count": "已选择: {count} 个权限",
+      "copy_json": "复制 JSON",
+      "reset_to_template": "重置为模板",
+      "save_changes": "保存更改",
+      "cancel": "取消",
+      "template_description": {
+        "owner": "所有者拥有所有项目资源和设置的完全访问权限。",
+        "admin": "管理员拥有除项目删除外的完全访问权限。可以管理成员和策略。",
+        "developer": "开发者可以创建配方、管理源文件和签发代理密钥。无法管理成员或策略。",
+        "user": "用户具有只读访问权限，可以创建配方。仅限于基本操作。"
+      },
+      "custom_mode": "自定义权限模式。切换到高级模式以编辑单个权限。",
+      "no_permissions_found": "未找到匹配 \"{query}\" 的权限",
+      "high_risk_description": "您即将授予以下高风险权限：",
+      "high_risk_confirm": "这些权限具有重大影响。您确定要继续吗？",
+      "confirm_save": "确认并保存"
+    },
+    "quota": {
+      "title": "配额覆盖",
+      "description": "默认配额继承自项目策略。在下方为此用户覆盖特定配额。",
+      "use_default": "使用默认值",
+      "override": "覆盖",
+      "reset_all": "重置全部",
+      "update_success": "配额覆盖更新成功",
+      "coming_soon": "配额编辑器即将推出...",
+      "cancel": "取消",
+      "save_changes": "保存更改"
+    },
+    "acl": {
+      "title": "资源 ACL",
+      "description": "为知识库和端点配置资源级权限。",
+      "endpoint": {
+        "deny": "拒绝访问",
+        "remove_deny": "移除拒绝",
+        "reason_required": "必须填写原因"
+      },
+      "kb": {
+        "edit_permissions": "编辑权限"
+      },
+      "update_success": "资源 ACL 更新成功",
+      "coming_soon": "资源 ACL 编辑器即将推出...",
+      "cancel": "取消"
+    },
+    "history": {
+      "title": "变更历史",
+      "view_history": "查看变更历史",
+      "permissions_updated": "权限已更新",
+      "quota_updated": "配额覆盖",
+      "acl_updated": "资源 ACL 已更新"
+    },
+    "actions": {
+      "edit_permissions_quota": "编辑权限和配额",
+      "view_history": "查看变更历史",
+      "remove_member": "移除成员"
+    },
+    "tabs": {
+      "members": "成员",
+      "requests": "加入申请",
+      "templates": "权限模板"
+    },
+    "no_permission_to_view": "您没有权限查看成员",
+    "requests": {
+      "coming_soon": "加入申请即将推出..."
+    },
+    "templates": {
+      "coming_soon": "权限模板即将推出...",
+      "title": "权限模板",
+      "description": "管理角色的默认权限模板。",
+      "create_template": "创建模板",
+      "view_details": "查看详情",
+      "edit": "编辑",
+      "default": "默认",
+      "readonly": "只读",
+      "permissions_count": "{count} 个权限",
+      "permissions_list": "权限列表",
+      "default_templates": {
+        "owner": "所有者",
+        "owner_description": "所有权限（包括 project:delete）",
+        "admin": "管理员",
+        "admin_description": "除 project:delete 外的所有权限",
+        "developer": "开发者",
+        "developer_description": "代理密钥、UserData、AgentThread",
+        "user": "用户",
+        "user_description": "只读 + AgentThread + UserData（受限）"
+      }
+    },
+    "join_requests": {
+      "title": "加入申请",
+      "pending_requests": "待处理申请",
+      "reviewed_requests": "已处理申请",
+      "approve": "批准",
+      "reject": "拒绝",
+      "reason": "申请原因",
+      "requested_at": "申请时间",
+      "reviewed_at": "处理时间",
+      "status": {
+        "pending": "待处理",
+        "approved": "已批准",
+        "rejected": "已拒绝"
+      },
+      "empty": {
+        "title": "暂无加入申请",
+        "description": "没有待处理或已处理的加入申请"
+      },
+      "approve_success": "加入申请已批准",
+      "reject_success": "加入申请已拒绝"
+    }
   }
 }

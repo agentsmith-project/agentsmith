@@ -21,7 +21,7 @@ import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
 import type { Attachment, ChatSession, Endpoint } from '@/lib/api/types';
 import { makeClientId } from '@/lib/chat/ids';
-import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
+import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
 import { postChatStream, streamSseJson } from '@/lib/chat/stream';
 import { createThrottle } from '@/lib/chat/throttle';
 
@@ -49,11 +49,21 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [activeVariantIndexByGroup, setActiveVariantIndexByGroup] = useState<Record<string, number>>({});
   const lastVariantTailRef = useRef<Map<string, string>>(new Map());
+  const manualVariantGroupsRef = useRef<Set<string>>(new Set());
+  const pendingAutoGroupRef = useRef<string | null>(null);
+  const [suppressAutoScroll, setSuppressAutoScroll] = useState(false);
+  const suppressTimerRef = useRef<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [streamStatus, setStreamStatus] = useState<'idle' | 'connecting' | 'streaming' | 'stopped' | 'error'>('idle');
-  const [streamingAssistant, setStreamingAssistant] = useState<{ messageId?: string | null; content: string; mode: 'append' | 'replace' } | null>(null);
+  const [streamingAssistant, setStreamingAssistant] = useState<{
+    messageId?: string | null;
+    content: string;
+    mode: 'append' | 'replace';
+    startedAt: number;
+    lastTokenAt: number;
+  } | null>(null);
 
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
@@ -110,7 +120,19 @@ export default function ChatPage({ params }: ChatPageProps) {
   }, [messages, activeVariantIndexByGroup]);
 
   useEffect(() => {
+    manualVariantGroupsRef.current.clear();
+    pendingAutoGroupRef.current = null;
+    lastVariantTailRef.current = new Map();
+    setSuppressAutoScroll(false);
+    if (suppressTimerRef.current) {
+      window.clearTimeout(suppressTimerRef.current);
+      suppressTimerRef.current = null;
+    }
+  }, [currentSessionId]);
+
+  useEffect(() => {
     if (messages.length === 0) return;
+    if (streamStatus !== 'idle') return;
     const groups = buildVariantGroups(messages);
     const nextMap = new Map(lastVariantTailRef.current);
     const updates: Record<string, number> = {};
@@ -121,7 +143,15 @@ export default function ChatPage({ params }: ChatPageProps) {
       const lastId = last.id;
       const prevId = lastVariantTailRef.current.get(groupId);
       nextMap.set(groupId, lastId);
-      if (!Object.prototype.hasOwnProperty.call(activeVariantIndexByGroup, groupId) || (prevId && prevId !== lastId)) {
+
+      const shouldAuto =
+        pendingAutoGroupRef.current === groupId ||
+        !manualVariantGroupsRef.current.has(groupId);
+
+      if (
+        shouldAuto &&
+        (!Object.prototype.hasOwnProperty.call(activeVariantIndexByGroup, groupId) || (prevId && prevId !== lastId))
+      ) {
         const idx = last.variant_index ?? last.revision_index ?? group.items.length - 1;
         updates[groupId] = idx;
       }
@@ -130,8 +160,9 @@ export default function ChatPage({ params }: ChatPageProps) {
     if (Object.keys(updates).length > 0) {
       setActiveVariantIndexByGroup((prev) => ({ ...prev, ...updates }));
     }
+    if (pendingAutoGroupRef.current) pendingAutoGroupRef.current = null;
     lastVariantTailRef.current = nextMap;
-  }, [messages, activeVariantIndexByGroup]);
+  }, [messages, activeVariantIndexByGroup, streamStatus]);
 
   const { data: attachmentsData } = useQuery({
     queryKey: ['chat', 'attachments', workspaceId, projectId, currentSessionId],
@@ -270,11 +301,12 @@ export default function ChatPage({ params }: ChatPageProps) {
 
     const assistantMessageId = makeClientId('msg_asst');
     const mode = args.mode ?? (args.fromMessageId ? 'replace' : 'append');
-    setStreamingAssistant({ messageId: args.fromMessageId ?? null, content: '', mode });
+    const now = Date.now();
+    setStreamingAssistant({ messageId: args.fromMessageId ?? null, content: '', mode, startedAt: now, lastTokenAt: now });
 
     const throttler = createThrottle<string>(40, (next) => {
       setStreamingAssistant((prev) =>
-        prev ? { ...prev, content: next } : { messageId: assistantMessageId, content: next, mode }
+        prev ? { ...prev, content: next, lastTokenAt: Date.now() } : { messageId: assistantMessageId, content: next, mode, startedAt: Date.now(), lastTokenAt: Date.now() }
       );
     });
 
@@ -442,7 +474,13 @@ export default function ChatPage({ params }: ChatPageProps) {
               messages={messages}
               activeVariantIndexByGroup={activeVariantIndexByGroup}
               editingMessageId={editingMessageId}
-              onSelectVariant={(groupId, nextIndex) => setActiveVariantIndexByGroup((prev) => ({ ...prev, [groupId]: nextIndex }))}
+              onSelectVariant={(groupId, nextIndex) => {
+                manualVariantGroupsRef.current.add(groupId);
+                setSuppressAutoScroll(true);
+                if (suppressTimerRef.current) window.clearTimeout(suppressTimerRef.current);
+                suppressTimerRef.current = window.setTimeout(() => setSuppressAutoScroll(false), 1500);
+                setActiveVariantIndexByGroup((prev) => ({ ...prev, [groupId]: nextIndex }));
+              }}
               onEdit={(m) => {
                 if (disabled) return;
                 if (m.role !== 'user') return;
@@ -456,6 +494,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                   messageId: m.id,
                   content: nextContent,
                 });
+                pendingAutoGroupRef.current = edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null);
                 setEditingMessageId(null);
                 await runStream({
                   sessionId: currentSessionId,
@@ -469,6 +508,10 @@ export default function ChatPage({ params }: ChatPageProps) {
               onRegenerate={async (m) => {
                 if (disabled) return;
                 if (!activeSession || !currentSessionId) return;
+                if (messages.length) {
+                  const groups = buildVariantGroups(messages);
+                  pendingAutoGroupRef.current = getGroupIdForMessageId(groups, m.id);
+                }
                 await runStream({
                   sessionId: currentSessionId,
                   model: activeSession.model,
@@ -493,6 +536,8 @@ export default function ChatPage({ params }: ChatPageProps) {
                 ) : null
               }
               streamingAssistant={streamingAssistant}
+              followOutput={streamingAssistant?.mode !== 'replace'}
+              suppressAutoScroll={suppressAutoScroll}
             />
           )}
         </div>
@@ -508,6 +553,7 @@ export default function ChatPage({ params }: ChatPageProps) {
           onSend={handleSend}
           onStop={stopStreaming}
           mode="compose"
+          autoFocus={!editingMessageId && streamStatus === 'idle'}
           onPickFiles={() => {
             if (editingMessageId) {
               toast.info('Attachments are disabled while editing.');

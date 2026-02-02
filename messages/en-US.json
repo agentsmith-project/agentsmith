@@ -4,67 +4,575 @@
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
-    "edit": "Edit",
+    "close": "Close",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "search": "Search",
+    "filter": "Filter",
+    "refresh": "Refresh",
     "confirm": "Confirm",
-    "back": "Back",
-    "next": "Next",
+    "confirm_destructive": "Are you sure?",
     "loading": "Loading...",
-    "error": "Error",
-    "success": "Success"
+    "empty": "No data",
+    "retry": "Retry",
+    "refreshed_data": "Data refreshed"
+  },
+  "nav": {
+    "overview": "Overview",
+    "chat": "Chat",
+    "workbench": "Workbench",
+    "sources": "Sources",
+    "agents": "Agents",
+    "endpoints": "Endpoints",
+    "members": "Members",
+    "audit": "Audit",
+    "usage": "Usage",
+    "settings": "Settings",
+    "go_to_projects": "Go to Projects",
+    "view_all_projects": "View All Projects",
+    "no_workspaces": "No workspaces"
   },
   "auth": {
     "login": "Login",
     "logout": "Logout",
-    "email": "Email",
-    "password": "Password",
-    "workspace": "Workspace",
-    "project": "Project"
+    "login_with_keycloak": "Login with Keycloak",
+    "dev_mode": "Development Mode",
+    "select_workspace": "Select Workspace",
+    "enter_user": "Enter User ID or Email",
+    "quick_login": "Quick Login"
   },
-  "overview": {
-    "title": "Overview",
-    "description": "Project overview and statistics"
+  "workspace": {
+    "select": "Select Workspace",
+    "switch": "Switch Workspace"
+  },
+  "project": {
+    "select": "Select Project",
+    "switch": "Switch Project",
+    "create": "Create Project",
+    "visibility": "Visibility",
+    "public": "Public",
+    "private": "Private",
+    "join_policy": "Join Policy",
+    "approval_required": "Approval Required"
+  },
+  "sources": {
+    "title": "Sources",
+    "upload": "Upload",
+    "upload_files": "Upload Files",
+    "search_placeholder": "Search files...",
+    "filter": {
+      "status": {
+        "all": "All",
+        "not_ready": "Not Ready",
+        "preparing": "Preparing",
+        "ready": "Ready",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "ai_ready": {
+        "all": "All Files",
+        "only": "AIReady Only"
+      },
+      "sort": {
+        "updated_at": "Updated",
+        "file_size": "Size",
+        "status": "Status"
+      }
+    },
+    "status": {
+      "idle": "Not Ready",
+      "preparing": "Preparing",
+      "ready": "Ready",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "ai_ready": {
+      "start": "Start AIReady",
+      "cancel": "Cancel AIReady",
+      "retry": "Retry",
+      "progress": "Processing...",
+      "queued": "Queued",
+      "error": "Error: {message}"
+    },
+    "quota": {
+      "storage": "Storage",
+      "docdb": "DocDB",
+      "vectordb": "VectorDB",
+      "used": "Used",
+      "limit": "Limit",
+      "exceeded": "Quota Exceeded"
+    },
+    "batch": {
+      "selected": "{count} selected",
+      "start_ai_ready": "Start AIReady",
+      "cancel_ai_ready": "Cancel AIReady"
+    },
+    "table": {
+      "filename": "Filename",
+      "size": "Size",
+      "updated_at": "Updated",
+      "ai_ready_status": "AIReady Status",
+      "usage": "Usage",
+      "actions": "Actions"
+    },
+    "delete": {
+      "title": "Delete File",
+      "message": "Are you sure you want to delete this file?",
+      "delete_ai_ready": "Also delete AIReady artifacts",
+      "confirm": "Delete",
+      "cancelling": "Deleting..."
+    },
+    "upload_dialog": {
+      "title": "Upload Files",
+      "description": "Select files to upload or drag and drop them here",
+      "drag_drop": "Drag and drop files here, or click to select",
+      "select_files": "Select Files",
+      "uploading": "Uploading...",
+      "upload_success": "Uploaded successfully",
+      "upload_button": "Upload {count} file(s)"
+    },
+    "empty": {
+      "title": "No files yet",
+      "cta": "Upload your first file",
+      "description": "Upload your first file to get started"
+    },
+    "error": {
+      "upload_failed": "Upload failed",
+      "process_failed": "Processing failed",
+      "quota_exceeded": "Quota exceeded. Cannot start AIReady.",
+      "delete_failed": "Delete failed"
+    },
+    "filter_status_all": "All",
+    "filter_status_ready": "Ready",
+    "filter_status_processing": "Processing",
+    "filter_status_failed": "Failed",
+    "status_queued": "Queued",
+    "status_processing": "Processing",
+    "status_ready": "Ready",
+    "status_failed": "Failed",
+    "action_attach": "Attach",
+    "action_detach": "Detach",
+    "action_clear_attachments": "Clear Attachments",
+    "action_retry": "Retry",
+    "action_delete": "Delete",
+    "empty_title": "No files yet",
+    "empty_cta": "Upload your first file",
+    "error_upload_failed": "Upload failed",
+    "error_process_failed": "Processing failed"
   },
   "chat": {
     "title": "Chat",
-    "newChat": "New Chat",
-    "sendMessage": "Send message",
-    "typeMessage": "Type a message..."
+    "model_select": "Select Model",
+    "model_empty": "No models available",
+    "send": "Send",
+    "stop_generating": "Stop Generating",
+    "attachments_title": "Attachments",
+    "attachments_clear": "Clear Attachments",
+    "new_thread": "New Chat",
+    "threads_title": "Chats",
+    "threads_today": "Today",
+    "threads_yesterday": "Yesterday",
+    "threads_days_ago": "{days} days ago"
   },
   "workbench": {
     "title": "Workbench",
-    "sources": "Sources",
-    "threads": "Threads"
+    "thread_new": "New Thread",
+    "thread_close": "Close Thread",
+    "thread_status_active": "Active",
+    "thread_status_closed": "Closed",
+    "thread_status_revoked": "Revoked",
+    "agent_current": "Current Agent",
+    "agent_change": "Change Agent",
+    "turn_status_queued": "Queued",
+    "turn_status_running": "Running",
+    "turn_status_completed": "Completed",
+    "turn_status_cancelled": "Cancelled",
+    "turn_status_failed": "Failed",
+    "turn_cancel": "Cancel Turn",
+    "sse_connected": "Connected",
+    "sse_reconnecting": "Reconnecting...",
+    "sse_disconnected": "Disconnected",
+    "thread_info_id": "Thread ID",
+    "thread_info_status": "Status",
+    "thread_info_user": "End User",
+    "recipe": {
+      "title": "Recipe",
+      "new": "New Recipe",
+      "create": "Create Recipe",
+      "create_title": "Recipe Title",
+      "select_agent": "Select Agent",
+      "agent_fixed_notice": "Agent cannot be changed after creation",
+      "history_immutable_notice": "Conversation history cannot be modified",
+      "leave": "Leave Recipe",
+      "leave_tooltip": "Return to Workbench list. Recipe will continue running in the background.",
+      "delete": "Delete Recipe",
+      "delete_confirm_message": "Are you sure you want to delete this recipe? This action cannot be undone. All messages and artifacts will be permanently deleted.",
+      "delete_cancel": "Cancel",
+      "status": {
+        "active": "Active",
+        "closed": "Closed",
+        "archived": "Archived"
+      }
+    },
+    "attached_sources": {
+      "title": "Attached Sources",
+      "subtitle": "Files attached to this recipe",
+      "add": "Add Sources",
+      "remove": "Remove",
+      "empty": "No sources attached",
+      "empty_description": "Add AIReady files from your library to provide context for the agent",
+      "select_dialog": {
+        "title": "Add Sources to Recipe",
+        "description": "Choose AIReady files from your library to add as context",
+        "search_placeholder": "Search your files...",
+        "confirm": "Add Selected",
+        "no_files": "No ready files available in your library",
+        "from_library": "From your Sources library"
+      },
+      "tooltip": {
+        "attached_file": "This file is attached to this recipe as context",
+        "remove_file": "Remove from recipe (file remains in your library)"
+      }
+    },
+    "conversation": {
+      "title": "Conversation",
+      "input_placeholder": "Type your message...",
+      "send": "Send",
+      "empty": "Start a conversation",
+      "empty_description": "Send a message to begin",
+      "agent_offline": "Agent is offline",
+      "agent_disabled": "Agent is disabled"
+    },
+    "artifacts": {
+      "title": "Artifacts",
+      "empty": "No artifacts yet",
+      "empty_description": "Start a conversation to generate artifacts",
+      "save_to_library": "Save to Library",
+      "download": "Download",
+      "view_full": "View Full",
+      "copy": "Copy",
+      "filter": {
+        "all": "All",
+        "text": "Text",
+        "image": "Image",
+        "other": "Other"
+      }
+    }
   },
   "agents": {
     "title": "Agents",
-    "createAgent": "Create Agent",
-    "agentName": "Agent Name",
-    "status": "Status"
+    "create": "Create Agent",
+    "mode_external": "External",
+    "mode_internal": "Internal",
+    "presence_online": "Online",
+    "presence_offline": "Offline",
+    "presence_managed": "Managed",
+    "status_enabled": "Enabled",
+    "status_disabled": "Disabled",
+    "keys_title": "Agent Service Keys",
+    "keys_create": "Issue Key",
+    "keys_revoke": "Revoke",
+    "keys_suspend": "Suspend",
+    "keys_resume": "Resume",
+    "diagnostics_backoff": "Backing off",
+    "detail_title": "Agent Details",
+    "detail_general": "General",
+    "detail_keys": "Keys",
+    "detail_diagnostics": "Diagnostics",
+    "detail_config": "Config"
   },
   "endpoints": {
     "title": "Endpoints",
-    "createEndpoint": "Create Endpoint",
-    "endpointName": "Endpoint Name"
-  },
-  "userdata": {
-    "title": "UserData",
-    "uploadFile": "Upload File"
+    "create": "Create Endpoint",
+    "status_active": "Active",
+    "status_disabled": "Disabled",
+    "action_disable": "Disable",
+    "action_enable": "Enable",
+    "action_rotate_credential": "Rotate Credential",
+    "action_delete": "Delete",
+    "acl_title": "Access Control",
+    "acl_deny_list": "Deny List",
+    "acl_add_deny": "Add Deny",
+    "acl_remove_deny": "Remove",
+    "detail_limits": "Limits",
+    "detail_credential": "Credential"
   },
   "members": {
     "title": "Members",
-    "addMember": "Add Member",
-    "role": "Role"
+    "join_requests_title": "Join Requests",
+    "action_block": "Block",
+    "action_unblock": "Unblock",
+    "action_remove": "Remove",
+    "action_update_permissions": "Update Permissions",
+    "role_owner": "Owner",
+    "role_admin": "Admin",
+    "role_developer": "Developer",
+    "role_user": "User",
+    "role_custom": "Custom ({count} permissions)",
+    "status_active": "Active",
+    "status_blocked": "Blocked",
+    "status_removed": "Removed",
+    "join_requests_approve": "Approve",
+    "join_requests_reject": "Reject",
+    "join_requests_approve_all": "Approve All ({count})"
   },
   "audit": {
     "title": "Audit",
-    "logs": "Audit Logs"
+    "subtitle": "Audit events and compliance logs",
+    "filters": {
+      "time_range": "Time Range",
+      "action": "Action",
+      "actor_type": "Actor Type",
+      "actor_id": "Actor ID",
+      "end_user_id": "End User ID",
+      "resource_type": "Resource Type",
+      "resource_id": "Resource ID",
+      "result": "Result"
+    },
+    "table": {
+      "timestamp": "Timestamp",
+      "action": "Action",
+      "actor": "Actor",
+      "end_user": "End User",
+      "resource": "Resource",
+      "result": "Result",
+      "request_id": "Request ID",
+      "error_code": "Error Code"
+    },
+    "detail": {
+      "title": "Audit Event Details",
+      "metadata": "Metadata",
+      "copy_json": "Copy JSON"
+    },
+    "empty": {
+      "title": "No audit events found",
+      "description": "Try adjusting your filters or select a different time range"
+    }
   },
   "usage": {
     "title": "Usage",
-    "statistics": "Statistics"
+    "subtitle": "Usage statistics and resource consumption",
+    "kpi": {
+      "requests_today": "Requests Today",
+      "errors_today": "Errors Today",
+      "tokens_today": "Tokens Today",
+      "userdata_bytes": "UserData Storage"
+    },
+    "filters": {
+      "time_range": "Time Range",
+      "resource_type": "Resource Type",
+      "agent_id": "Agent ID",
+      "end_user_id": "End User ID"
+    },
+    "table": {
+      "time_bucket": "Time Bucket",
+      "resource_type": "Resource Type",
+      "resource_id": "Resource ID",
+      "requests": "Requests",
+      "duration_p95": "Duration P95",
+      "bytes_in": "Bytes In",
+      "bytes_out": "Bytes Out",
+      "tokens": "Tokens"
+    },
+    "empty": {
+      "title": "No usage data found",
+      "description": "Try adjusting your filters or select a different time range"
+    }
   },
   "settings": {
-    "title": "Settings",
-    "general": "General"
+    "title": "Project Settings",
+    "config_title": "Project Config",
+    "policy_title": "Project Policy",
+    "confirm_warning": "Policy changes affect all project members immediately.",
+    "confirm_save": "Save Policy",
+    "confirm_message": "This policy change will take effect immediately and affect all project members. Ongoing requests may be affected (403/429/queued).",
+    "project_name": "Project Name",
+    "description": "Description",
+    "visibility": "Visibility",
+    "join_policy": "Join Policy",
+    "tags": "Tags",
+    "policy_capabilities": "Capabilities",
+    "policy_turns": "Turns",
+    "policy_guardrails": "Agent Invoke Guardrails",
+    "policy_internal": "Internal Agents",
+    "policy_endpoints": "Endpoints Limits",
+    "policy_advanced": "Advanced (JSON)"
+  },
+  "user_keys": {
+    "title": "User API Keys",
+    "create": "Create API Key",
+    "create_success_title": "API Key Created",
+    "create_success_hint": "Save this key now! You won't be able to see it again.",
+    "revoke": "Revoke",
+    "revoke_confirm_title": "Revoke API Key",
+    "revoke_confirm_hint": "Revoking this key will immediately invalidate it. All applications using this key will stop working.",
+    "key_id": "Key ID",
+    "prefix": "Key Prefix",
+    "created": "Created",
+    "last_used": "Last Used",
+    "expires": "Expires",
+    "expiration_never": "Never",
+    "expiration_days": "{days} days",
+    "note": "Note (optional)"
+  },
+  "errors": {
+    "unknown_error": "An unexpected error occurred",
+    "network_error": "Network connection failed",
+    "timeout": "Request timed out",
+    "unauthorized": "You are not authorized",
+    "forbidden": "Permission denied",
+    "not_found": "Resource not found",
+    "validation_error": "Invalid input",
+    "rate_limit": "Too many requests",
+    "permission_denied_title": "Permission Denied",
+    "permission_denied_hint": "You don't have permission to access this resource.",
+    "rate_limited_title": "Rate Limited",
+    "rate_limited_hint": "Too many requests. Please try again later.",
+    "quota_exceeded_title": "Quota Exceeded",
+    "quota_exceeded_hint": "You have exceeded your quota.",
+    "model_not_found_title": "Model Not Found",
+    "model_not_found_hint": "The requested model is not available.",
+    "endpoint_disabled_title": "Endpoint Disabled",
+    "endpoint_disabled_hint": "This endpoint has been disabled.",
+    "request_id": "Request ID",
+    "error_code": "Error Code"
+  },
+  "members": {
+    "title": "Members",
+    "invite_member": "Invite Member",
+    "description": "Manage project members, permissions, and quotas",
+    "no_permission_to_view": "You don't have permission to view members",
+    "table": {
+      "user": "User",
+      "role": "Role",
+      "status": "Status",
+      "joined": "Joined",
+      "actions": "Actions",
+      "no_members": "No members yet",
+      "no_members_description": "Invite members to join your project"
+    },
+    "tabs": {
+      "members": "Members",
+      "requests": "Join Requests",
+      "templates": "Permission Templates"
+    },
+    "permissions": {
+      "title": "Permissions Configuration",
+      "template_mode": "Template Mode",
+      "advanced_mode": "Advanced Mode",
+      "template": {
+        "owner": "Owner",
+        "admin": "Admin",
+        "developer": "Developer",
+        "user": "User",
+        "custom": "Custom"
+      },
+      "changes_preview": "Changes Preview",
+      "added": "Added",
+      "removed": "Removed",
+      "high_risk_warning": "High-Risk Permission Change",
+      "update_success": "Permissions updated successfully",
+      "select_template": "Select Template",
+      "customized": "Customized",
+      "search_permissions": "Search permissions...",
+      "selected_count": "Selected: {count} permissions",
+      "copy_json": "Copy JSON",
+      "reset_to_template": "Reset to Template",
+      "save_changes": "Save Changes",
+      "cancel": "Cancel",
+      "template_description": {
+        "owner": "Owner has full access to all project resources and settings.",
+        "admin": "Admin has full access except project deletion. Can manage members and policies.",
+        "developer": "Developer can create recipes, manage sources, and issue agent keys. Cannot manage members or policies.",
+        "user": "User has read-only access and can create recipes. Limited to basic operations."
+      },
+      "custom_mode": "Custom permissions mode. Switch to Advanced Mode to edit individual permissions.",
+      "no_permissions_found": "No permissions found matching \"{query}\"",
+      "high_risk_description": "You are about to grant the following high-risk permissions:",
+      "high_risk_confirm": "These permissions have significant impact. Are you sure you want to continue?",
+      "confirm_save": "Confirm & Save"
+    },
+    "quota": {
+      "title": "Quota Overrides",
+      "description": "Default quotas are inherited from project policy. Override specific quotas for this user below.",
+      "use_default": "Use Default",
+      "override": "Override",
+      "reset_all": "Reset All",
+      "update_success": "Quota overrides updated successfully",
+      "coming_soon": "Quota editor coming soon..."
+    },
+    "acl": {
+      "title": "Resource ACL",
+      "description": "Configure resource-level permissions for Knowledge Bases and Endpoints.",
+      "endpoint": {
+        "deny": "Deny Access",
+        "remove_deny": "Remove Deny",
+        "reason_required": "Reason is required"
+      },
+      "kb": {
+        "edit_permissions": "Edit Permissions"
+      },
+      "update_success": "Resource ACL updated successfully",
+      "coming_soon": "Resource ACL editor coming soon...",
+      "cancel": "Cancel"
+    },
+    "history": {
+      "title": "Change History",
+      "view_history": "View Change History",
+      "permissions_updated": "Permissions updated",
+      "quota_updated": "Quota override",
+      "acl_updated": "Resource ACL updated"
+    },
+    "actions": {
+      "edit_permissions_quota": "Edit Permissions & Quota",
+      "view_history": "View Change History",
+      "remove_member": "Remove Member"
+    },
+    "requests": {
+      "coming_soon": "Join requests coming soon..."
+    },
+    "templates": {
+      "coming_soon": "Permission templates coming soon...",
+      "title": "Permission Templates",
+      "description": "Manage default permission templates for roles.",
+      "create_template": "Create Template",
+      "view_details": "View Details",
+      "edit": "Edit",
+      "default": "Default",
+      "readonly": "Read-only",
+      "permissions_count": "{count} permissions",
+      "permissions_list": "Permissions",
+      "default_templates": {
+        "owner": "Owner",
+        "owner_description": "All permissions (including project:delete)",
+        "admin": "Admin",
+        "admin_description": "All permissions except project:delete",
+        "developer": "Developer",
+        "developer_description": "Agent keys, UserData, AgentThread",
+        "user": "User",
+        "user_description": "Read-only + AgentThread + UserData (limited)"
+      }
+    },
+    "join_requests": {
+      "title": "Join Requests",
+      "pending_requests": "Pending Requests",
+      "reviewed_requests": "Reviewed Requests",
+      "approve": "Approve",
+      "reject": "Reject",
+      "reason": "Reason",
+      "requested_at": "Requested",
+      "reviewed_at": "Reviewed",
+      "status": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
+      "empty": {
+        "title": "No join requests",
+        "description": "No pending or reviewed join requests"
+      },
+      "approve_success": "Join request approved successfully",
+      "reject_success": "Join request rejected successfully"
+    }
   }
 }

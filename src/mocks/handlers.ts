@@ -25,6 +25,9 @@ import {
   sourceFileFixtures,
   agentThreadFixtures,
   turnFixtures,
+  recipeFixtures,
+  recipeMessageFixtures,
+  artifactFixtures,
   usageKPI,
 } from './fixtures';
 
@@ -377,8 +380,7 @@ export const handlers = [
 
   // Join Requests
   http.get('/api/workspaces/:ws/projects/:prj/join-requests', () => {
-    const pending = joinRequestFixtures.filter((j) => j.status === 'pending');
-    return HttpResponse.json({ items: pending, total: pending.length });
+    return HttpResponse.json({ items: joinRequestFixtures, total: joinRequestFixtures.length });
   }),
 
   http.post('/api/workspaces/:ws/projects/:prj/join-requests/:join/approve', ({ params }) => {
@@ -390,6 +392,119 @@ export const handlers = [
       joinRequestFixtures[index].reviewed_by = 'user_001';
     }
     return HttpResponse.json({ success: true });
+  }),
+
+  // Member Permissions
+  http.get('/api/workspaces/:ws/projects/:prj/members/:member/permissions', ({ params }) => {
+    const memberId = getId(params, 'member');
+    const projectId = getId(params, 'prj');
+    const membership = projectMembershipFixtures.find(
+      (m) => m.project_id === projectId && m.user_id === memberId
+    );
+    if (!membership) {
+      return HttpResponse.json({ error: 'Member not found' }, { status: 404 });
+    }
+    return HttpResponse.json({
+      platform_permissions: membership.permissions,
+      resource_permissions: {},
+    });
+  }),
+
+  http.patch('/api/workspaces/:ws/projects/:prj/members/:member/permissions', async ({ params, request }) => {
+    const memberId = getId(params, 'member');
+    const projectId = getId(params, 'prj');
+    const body: any = await request.json();
+    const index = projectMembershipFixtures.findIndex(
+      (m) => m.project_id === projectId && m.user_id === memberId
+    );
+    if (index !== -1) {
+      if (body.permissions) {
+        projectMembershipFixtures[index].permissions = body.permissions;
+      }
+      if (body.template) {
+        // Apply template permissions
+        const { ROLE_TEMPLATES } = require('@/lib/constants/permissions');
+        projectMembershipFixtures[index].permissions = [...ROLE_TEMPLATES[body.template]];
+        projectMembershipFixtures[index].role = body.template;
+      }
+    }
+    return HttpResponse.json({ success: true });
+  }),
+
+  // Member Quota Overrides
+  http.get('/api/workspaces/:ws/projects/:prj/members/:member/quota-overrides', ({ params }) => {
+    // Return empty quota overrides for now
+    return HttpResponse.json({});
+  }),
+
+  http.patch('/api/workspaces/:ws/projects/:prj/members/:member/quota-overrides', async ({ params, request }) => {
+    // Store quota overrides (in a real implementation, this would be persisted)
+    const body: any = await request.json();
+    return HttpResponse.json({ success: true });
+  }),
+
+  // Resource ACL
+  http.get('/api/workspaces/:ws/projects/:prj/resources/:type/:id/acl', ({ params }) => {
+    const resourceType = getId(params, 'type');
+    const resourceId = getId(params, 'id');
+    return HttpResponse.json({
+      resource_type: resourceType,
+      resource_id: resourceId,
+      allow: [],
+      deny: [],
+    });
+  }),
+
+  http.patch('/api/workspaces/:ws/projects/:prj/resources/:type/:id/acl', async ({ params, request }) => {
+    // Store ACL changes (in a real implementation, this would be persisted)
+    const body: any = await request.json();
+    return HttpResponse.json({ success: true });
+  }),
+
+  // Permission Templates
+  http.get('/api/workspaces/:ws/projects/:prj/permission-templates', () => {
+    const { ROLE_TEMPLATES } = require('@/lib/constants/permissions');
+    const templates = [
+      {
+        id: 'owner',
+        name: 'Owner',
+        description: 'Full access to all project resources',
+        permissions: ROLE_TEMPLATES.owner,
+        is_default: true,
+        is_readonly: true,
+      },
+      {
+        id: 'admin',
+        name: 'Admin',
+        description: 'Full access except project deletion',
+        permissions: ROLE_TEMPLATES.admin,
+        is_default: true,
+        is_readonly: true,
+      },
+      {
+        id: 'developer',
+        name: 'Developer',
+        description: 'Can develop and issue agent keys',
+        permissions: ROLE_TEMPLATES.developer,
+        is_default: true,
+        is_readonly: true,
+      },
+      {
+        id: 'user',
+        name: 'User',
+        description: 'Read-only and basic operations',
+        permissions: ROLE_TEMPLATES.user,
+        is_default: true,
+        is_readonly: true,
+      },
+    ];
+    return HttpResponse.json({ items: templates });
+  }),
+
+  // Member Change History
+  http.get('/api/workspaces/:ws/projects/:prj/members/:member/change-history', ({ params }) => {
+    // Return empty change history for now
+    return HttpResponse.json({ items: [] });
   }),
 
   http.post('/api/workspaces/:ws/projects/:prj/join-requests/:join/reject', ({ params }) => {
@@ -407,20 +522,135 @@ export const handlers = [
   // Audit & Usage
   // ============================================================
 
-  http.get('/api/workspaces/:ws/projects/:prj/audit', ({ request }) => {
+  http.get('/api/workspaces/:ws/projects/:prj/audit', ({ params, request }) => {
     const url = new URL(request.url);
     const { page, pageSize } = getPagination(url);
-    return HttpResponse.json(paginated(auditEventFixtures, page, pageSize));
+    const projectId = getId(params, 'prj');
+    
+    // Filter by project_id
+    let filtered = auditEventFixtures.filter((e) => e.project_id === projectId);
+    
+    // Apply filters
+    const startTime = url.searchParams.get('start_time');
+    const endTime = url.searchParams.get('end_time');
+    const action = url.searchParams.get('action');
+    const actorType = url.searchParams.get('actor_type');
+    const actorId = url.searchParams.get('actor_id');
+    const endUserId = url.searchParams.get('end_user_id');
+    const resourceType = url.searchParams.get('resource_type');
+    const resourceId = url.searchParams.get('resource_id');
+    const result = url.searchParams.get('result');
+    
+    if (startTime) {
+      filtered = filtered.filter((e) => e.timestamp >= startTime);
+    }
+    if (endTime) {
+      filtered = filtered.filter((e) => e.timestamp <= endTime);
+    }
+    if (action) {
+      filtered = filtered.filter((e) => e.action === action);
+    }
+    if (actorType) {
+      filtered = filtered.filter((e) => e.actor_type === actorType);
+    }
+    if (actorId) {
+      filtered = filtered.filter((e) => e.actor_id.includes(actorId));
+    }
+    if (endUserId) {
+      filtered = filtered.filter((e) => e.end_user_id === endUserId);
+    }
+    if (resourceType) {
+      filtered = filtered.filter((e) => e.resource_type === resourceType);
+    }
+    if (resourceId) {
+      filtered = filtered.filter((e) => e.resource_id?.includes(resourceId));
+    }
+    if (result) {
+      filtered = filtered.filter((e) => e.result === result);
+    }
+    
+    // Sort by timestamp (default desc)
+    const sortOrder = url.searchParams.get('sort_order') || 'desc';
+    filtered.sort((a, b) => {
+      const aTime = new Date(a.timestamp).getTime();
+      const bTime = new Date(b.timestamp).getTime();
+      return sortOrder === 'asc' ? aTime - bTime : bTime - aTime;
+    });
+    
+    return HttpResponse.json(paginated(filtered, page, pageSize));
   }),
 
-  http.get('/api/workspaces/:ws/projects/:prj/usage/kpi', () => {
-    return HttpResponse.json(usageKPI);
+  http.get('/api/workspaces/:ws/projects/:prj/usage/kpi', ({ params, request }) => {
+    const url = new URL(request.url);
+    const projectId = getId(params, 'prj');
+    
+    // Filter usage records by project and calculate KPI
+    const filtered = usageRecordFixtures.filter((r) => r.project_id === projectId);
+    const startTime = url.searchParams.get('start_time');
+    const endTime = url.searchParams.get('end_time');
+    
+    let kpiData = { ...usageKPI };
+    
+    if (startTime && endTime) {
+      // Calculate from filtered records
+      const timeFiltered = filtered.filter((r) => {
+        const bucketTime = new Date(r.time_bucket).getTime();
+        return bucketTime >= new Date(startTime).getTime() && bucketTime <= new Date(endTime).getTime();
+      });
+      
+      kpiData.requests_today = timeFiltered.reduce((sum, r) => sum + r.requests, 0);
+      kpiData.tokens_today = timeFiltered.reduce((sum, r) => sum + (r.tokens || 0), 0);
+    }
+    
+    return HttpResponse.json(kpiData);
   }),
 
-  http.get('/api/workspaces/:ws/projects/:prj/usage/records', ({ request }) => {
+  http.get('/api/workspaces/:ws/projects/:prj/usage', ({ params, request }) => {
     const url = new URL(request.url);
     const { page, pageSize } = getPagination(url);
-    return HttpResponse.json(paginated(usageRecordFixtures, page, pageSize));
+    const projectId = getId(params, 'prj');
+    
+    // Filter by project_id
+    let filtered = usageRecordFixtures.filter((r) => r.project_id === projectId);
+    
+    // Apply filters
+    const startTime = url.searchParams.get('start_time');
+    const endTime = url.searchParams.get('end_time');
+    const resourceType = url.searchParams.get('resource_type');
+    const agentId = url.searchParams.get('agent_id');
+    const endUserId = url.searchParams.get('end_user_id');
+    
+    if (startTime) {
+      filtered = filtered.filter((r) => {
+        const bucketTime = new Date(r.time_bucket).getTime();
+        return bucketTime >= new Date(startTime).getTime();
+      });
+    }
+    if (endTime) {
+      filtered = filtered.filter((r) => {
+        const bucketTime = new Date(r.time_bucket).getTime();
+        return bucketTime <= new Date(endTime).getTime();
+      });
+    }
+    if (resourceType) {
+      filtered = filtered.filter((r) => r.resource_type === resourceType);
+    }
+    if (agentId) {
+      filtered = filtered.filter((r) => r.agent_id === agentId);
+    }
+    if (endUserId) {
+      filtered = filtered.filter((r) => r.end_user_id === endUserId);
+    }
+    
+    // Sort by time_bucket (default desc)
+    const sortOrder = url.searchParams.get('sort_order') || 'desc';
+    filtered.sort((a, b) => {
+      const aTime = new Date(a.time_bucket).getTime();
+      const bTime = new Date(b.time_bucket).getTime();
+      return sortOrder === 'asc' ? aTime - bTime : bTime - aTime;
+    });
+    
+    return HttpResponse.json(paginated(filtered, page, pageSize));
   }),
 
   // ============================================================
@@ -805,6 +1035,255 @@ export const handlers = [
     };
     turnFixtures.push(newTurn);
     return HttpResponse.json(newTurn, { status: 201 });
+  }),
+
+  // ============================================================
+  // Recipes
+  // ============================================================
+
+  http.get('/api/workspaces/:ws/projects/:prj/recipes', ({ params, request }) => {
+    const url = new URL(request.url);
+    const { page, pageSize } = getPagination(url);
+    const projectId = getId(params, 'prj');
+    const filtered = recipeFixtures.filter((r) => r.project_id === projectId);
+    return HttpResponse.json(paginated(filtered, page, pageSize));
+  }),
+
+  http.get('/api/workspaces/:ws/projects/:prj/recipes/:recipe', ({ params }) => {
+    const recipeId = getId(params, 'recipe');
+    const projectId = getId(params, 'prj');
+    // Find recipe by ID and also filter by project to ensure it belongs to the project
+    const recipe = recipeFixtures.find((r) => r.id === recipeId && r.project_id === projectId);
+    if (!recipe) {
+      // Debug: log available recipes for troubleshooting
+      console.log('[MSW] Recipe not found:', { recipeId, projectId, availableRecipes: recipeFixtures.map(r => ({ id: r.id, project_id: r.project_id })) });
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Recipe not found' }, { status: 404 });
+    }
+    return HttpResponse.json(recipe);
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/recipes', async ({ params, request }) => {
+    const body: any = await request.json();
+    const projectId = getId(params, 'prj');
+    const workspaceId = getId(params, 'ws');
+    const agent = agentFixtures.find((a) => a.id === body.agent_id);
+    const recipeId = `recipe_${Date.now()}`;
+    const now = new Date().toISOString();
+    const newRecipe = {
+      id: recipeId,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      owner_user_id: 'user_001',
+      title: body.title,
+      agent_id: body.agent_id,
+      agent_name: agent?.name || 'Unknown Agent',
+      status: 'active' as const,
+      attached_source_ids: body.initial_source_ids || [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    };
+    recipeFixtures.push(newRecipe);
+    // Debug: log created recipe
+    console.log('[MSW] Created recipe:', { recipeId, projectId, workspaceId, totalRecipes: recipeFixtures.length });
+    return HttpResponse.json(newRecipe, { status: 201 });
+  }),
+
+  http.patch('/api/workspaces/:ws/projects/:prj/recipes/:recipe', async ({ params, request }) => {
+    const recipeId = getId(params, 'recipe');
+    const body: any = await request.json();
+    const index = recipeFixtures.findIndex((r) => r.id === recipeId);
+    if (index === -1) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Recipe not found' }, { status: 404 });
+    }
+    recipeFixtures[index] = {
+      ...recipeFixtures[index],
+      ...body,
+      updated_at: new Date().toISOString(),
+      last_activity_at: body.status ? new Date().toISOString() : recipeFixtures[index].last_activity_at,
+    };
+    return HttpResponse.json(recipeFixtures[index]);
+  }),
+
+  http.delete('/api/workspaces/:ws/projects/:prj/recipes/:recipe', ({ params }) => {
+    const recipeId = getId(params, 'recipe');
+    const index = recipeFixtures.findIndex((r) => r.id === recipeId);
+    if (index === -1) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Recipe not found' }, { status: 404 });
+    }
+    recipeFixtures.splice(index, 1);
+    // Also remove related messages and artifacts
+    const messageIndices: number[] = [];
+    recipeMessageFixtures.forEach((m, i) => {
+      if (m.recipe_id === recipeId) messageIndices.push(i);
+    });
+    messageIndices.reverse().forEach((i) => recipeMessageFixtures.splice(i, 1));
+    const artifactIndices: number[] = [];
+    artifactFixtures.forEach((a, i) => {
+      if (a.recipe_id === recipeId) artifactIndices.push(i);
+    });
+    artifactIndices.reverse().forEach((i) => artifactFixtures.splice(i, 1));
+    return HttpResponse.json({ success: true });
+  }),
+
+  // Recipe Sources
+  http.post('/api/workspaces/:ws/projects/:prj/recipes/:recipe/sources', async ({ params, request }) => {
+    const recipeId = getId(params, 'recipe');
+    const body: any = await request.json();
+    const index = recipeFixtures.findIndex((r) => r.id === recipeId);
+    if (index === -1) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Recipe not found' }, { status: 404 });
+    }
+    const sourceIds = body.source_ids || [];
+    recipeFixtures[index].attached_source_ids = [
+      ...new Set([...recipeFixtures[index].attached_source_ids, ...sourceIds]),
+    ];
+    recipeFixtures[index].updated_at = new Date().toISOString();
+    return HttpResponse.json(recipeFixtures[index]);
+  }),
+
+  http.delete('/api/workspaces/:ws/projects/:prj/recipes/:recipe/sources/:source', ({ params }) => {
+    const recipeId = getId(params, 'recipe');
+    const sourceId = getId(params, 'source');
+    const index = recipeFixtures.findIndex((r) => r.id === recipeId);
+    if (index === -1) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Recipe not found' }, { status: 404 });
+    }
+    recipeFixtures[index].attached_source_ids = recipeFixtures[index].attached_source_ids.filter(
+      (id) => id !== sourceId,
+    );
+    recipeFixtures[index].updated_at = new Date().toISOString();
+    return HttpResponse.json(recipeFixtures[index]);
+  }),
+
+  // Recipe Messages
+  http.get('/api/workspaces/:ws/projects/:prj/recipes/:recipe/messages', ({ params }) => {
+    const recipeId = getId(params, 'recipe');
+    const messages = recipeMessageFixtures.filter((m) => m.recipe_id === recipeId);
+    return HttpResponse.json(messages);
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/recipes/:recipe/messages', async ({ params, request }) => {
+    const recipeId = getId(params, 'recipe');
+    const body: any = await request.json();
+    const newMessage = {
+      id: `msg_${Date.now()}`,
+      recipe_id: recipeId,
+      role: 'user' as const,
+      content: body.content,
+      created_at: new Date().toISOString(),
+    };
+    recipeMessageFixtures.push(newMessage);
+    
+    // Update recipe last_activity_at
+    const recipeIndex = recipeFixtures.findIndex((r) => r.id === recipeId);
+    if (recipeIndex !== -1) {
+      recipeFixtures[recipeIndex].last_activity_at = new Date().toISOString();
+      recipeFixtures[recipeIndex].updated_at = new Date().toISOString();
+    }
+
+    // Simulate agent response after a delay
+    setTimeout(() => {
+      const agentMessage: RecipeMessage = {
+        id: `msg_${Date.now() + 1}`,
+        recipe_id: recipeId,
+        role: 'agent',
+        content: `This is a mock response to: "${body.content}"\n\nThe agent has processed your request and generated this response.`,
+        created_at: new Date().toISOString(),
+      };
+      recipeMessageFixtures.push(agentMessage);
+      
+      // Update recipe again
+      if (recipeIndex !== -1) {
+        recipeFixtures[recipeIndex].last_activity_at = new Date().toISOString();
+      }
+    }, 1000);
+
+    return HttpResponse.json(newMessage, { status: 201 });
+  }),
+
+  // Recipe Artifacts
+  http.get('/api/workspaces/:ws/projects/:prj/recipes/:recipe/artifacts', ({ params }) => {
+    const recipeId = getId(params, 'recipe');
+    const artifacts = artifactFixtures.filter((a) => a.recipe_id === recipeId);
+    return HttpResponse.json(artifacts);
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/recipes/:recipe/artifacts/:artifact/save', async ({ params, request }) => {
+    const artifactId = getId(params, 'artifact');
+    const body: any = await request.json();
+    const artifact = artifactFixtures.find((a) => a.id === artifactId);
+    if (!artifact) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Artifact not found' }, { status: 404 });
+    }
+    // Create a new source file from artifact
+    // Note: This creates a SourceFile in workbench fixtures format
+    const newSource = {
+      id: `src_${Date.now()}`,
+      project_id: getId(params, 'prj'),
+      file_name: body.filename || artifact.title || `artifact-${artifactId}`,
+      file_type: artifact.type === 'image' ? 'image/png' : 'text/plain',
+      file_size: artifact.file_size || 0,
+      status: 'ready' as const,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    sourceFileFixtures.push(newSource);
+    
+    // Return in the format expected by SourceFile type
+    const sourceFileResponse = {
+      id: newSource.id,
+      workspace_id: getId(params, 'ws'),
+      project_id: newSource.project_id,
+      owner_user_id: 'user_001',
+      filename: newSource.file_name,
+      file_type: newSource.file_type,
+      file_size: newSource.file_size,
+      upload_status: 'ready' as const,
+      created_at: newSource.created_at,
+    };
+    return HttpResponse.json(sourceFileResponse, { status: 201 });
+  }),
+
+  http.get('/api/workspaces/:ws/projects/:prj/recipes/:recipe/artifacts/:artifact/download', ({ params }) => {
+    const artifactId = getId(params, 'artifact');
+    const artifact = artifactFixtures.find((a) => a.id === artifactId);
+    if (!artifact) {
+      return new Response('Artifact not found', { status: 404 });
+    }
+    // Return a mock blob
+    const content = artifact.content || 'Mock artifact content';
+    const blob = new Blob([content], { type: artifact.mime_type || 'text/plain' });
+    return new Response(blob);
+  }),
+
+  // Recipe SSE Events (mock)
+  http.get('/api/workspaces/:ws/projects/:prj/recipes/:recipe/events', ({ params }) => {
+    const recipeId = getId(params, 'recipe');
+    // Return a simple SSE stream that sends a connection event
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`event: connected\ndata: ${JSON.stringify({ recipe_id: recipeId })}\n\n`));
+        // Keep connection open
+        setTimeout(() => {
+          // Send periodic heartbeat
+          const interval = setInterval(() => {
+            controller.enqueue(encoder.encode(`event: heartbeat\ndata: ${JSON.stringify({ timestamp: new Date().toISOString() })}\n\n`));
+          }, 30000);
+          // Cleanup on close
+          return () => clearInterval(interval);
+        }, 100);
+      },
+    });
+    return new HttpResponse(stream, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    });
   }),
 ];
 

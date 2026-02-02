@@ -256,22 +256,29 @@ export interface SSEEvent {
 
 export interface AuditEvent {
   id: string;
-  timestamp: string;
+  timestamp: string; // ISO 8601
+  workspace_id: string;
+  project_id: string;
   actor_type: 'user' | 'agent' | 'plugin';
   actor_id: string;
   action: string;
-  resource_type: string;
-  resource_id: string;
+  resource_type?: string;
+  resource_id?: string;
+  end_user_id?: string;
   result: 'ok' | 'error';
   error_code?: string;
+  error_message?: string;
   request_id: string;
-  metadata?: Record<string, unknown>;
+  metadata_json: Record<string, unknown>; // 重命名 metadata -> metadata_json
 }
 
 export interface UsageRecord {
-  time_bucket: string; // ISO datetime
+  id: string; // 聚合记录的 ID
+  time_bucket: string; // YYYY-MM-DD or YYYY-MM-DD HH:mm
+  workspace_id: string;
+  project_id: string;
   resource_type: string;
-  resource_id: string;
+  resource_id?: string;
   agent_id?: string;
   end_user_id?: string;
   requests: number;
@@ -279,6 +286,40 @@ export interface UsageRecord {
   bytes_in?: number;
   bytes_out?: number;
   tokens?: number;
+}
+
+export interface UsageKPI {
+  requests_today: number;
+  errors_today: number;
+  tokens_today?: number;
+  userdata_bytes?: number;
+  requests_yesterday?: number; // 可选，用于趋势
+  errors_yesterday?: number;
+}
+
+export interface AuditListParams extends PaginationParams {
+  start_time: string; // ISO 8601, 必选
+  end_time: string; // ISO 8601, 必选
+  action?: string;
+  actor_type?: 'user' | 'agent' | 'plugin';
+  actor_id?: string;
+  end_user_id?: string;
+  resource_type?: string;
+  resource_id?: string;
+  result?: 'ok' | 'error';
+  sort_by?: 'timestamp';
+  sort_order?: 'asc' | 'desc';
+}
+
+export interface UsageListParams extends PaginationParams {
+  start_time: string; // ISO 8601, 必选
+  end_time: string; // ISO 8601, 必选
+  resource_type?: string;
+  agent_id?: string;
+  end_user_id?: string;
+  group_by?: 'day' | 'hour';
+  sort_by?: 'time_bucket' | 'resource_type' | 'requests';
+  sort_order?: 'asc' | 'desc';
 }
 
 // ============================================================
@@ -297,6 +338,78 @@ export interface UserAPIKey {
 }
 
 // ============================================================
+// Sources (File Management & AIReady)
+// ============================================================
+
+export type AIReadyStatus = 'idle' | 'preparing' | 'ready' | 'failed' | 'cancelled';
+
+export interface SourceFile {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  owner_user_id: string;
+  filename: string;
+  file_type: string; // MIME type
+  file_size: number; // bytes
+  object_ref: {
+    bucket: string;
+    key: string;
+    etag?: string;
+    version?: string;
+  };
+  version: number; // version number (incremental)
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601
+}
+
+export interface AIReadyJob {
+  id: string;
+  source_file_id: string;
+  status: AIReadyStatus;
+  progress?: number; // 0-100, optional
+  error_message?: string; // failure reason
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIReadyUsage {
+  docdb_bytes: number;
+  vectordb_bytes: number;
+  chunks_count: number;
+  embedding_tokens?: number;
+}
+
+export interface SourceFileWithAIReady extends SourceFile {
+  ai_ready?: AIReadyJob;
+  ai_ready_usage?: AIReadyUsage;
+}
+
+export interface QuotaSummary {
+  storage: {
+    used: number; // bytes
+    limit: number; // bytes
+  };
+  docdb: {
+    used: number; // bytes
+    limit: number; // bytes
+  };
+  vectordb: {
+    used: number; // bytes
+    limit: number; // bytes
+  };
+}
+
+export interface SourcesListParams extends PaginationParams {
+  search?: string;
+  status?: AIReadyStatus | 'all';
+  ai_ready_only?: boolean;
+  sort_by?: 'updated_at' | 'file_size' | 'status';
+  sort_order?: 'asc' | 'desc';
+}
+
+export interface SourcesListResponse extends PaginatedResponse<SourceFileWithAIReady> {}
+
+// ============================================================
 // Error Types
 // ============================================================
 
@@ -305,4 +418,84 @@ export interface ErrorResponse {
   message: string;
   request_id: string;
   details?: Record<string, unknown>;
+}
+
+// ============================================================
+// Members & Permissions
+// ============================================================
+
+export interface MemberPermissions {
+  platform_permissions: string[];
+  resource_permissions?: {
+    kb?: string[];
+    endpoint?: string[];
+  };
+}
+
+export interface QuotaOverride {
+  userdata?: {
+    storage?: {
+      bytes_per_end_user?: number;
+      objects_per_end_user?: number;
+      max_object_bytes?: number;
+    };
+    docdb?: {
+      max_collections_per_scope?: number;
+      max_document_bytes?: number;
+      query_timeout_ms?: number;
+      page_size_max?: number;
+    };
+    vectordb?: {
+      max_indexes_per_scope?: number;
+      top_k_max?: number;
+      upsert_records_max?: number;
+    };
+  };
+  endpoints?: {
+    requests_per_day_per_end_user?: number;
+    requests_per_min_per_end_user?: number;
+  };
+  openai_chat?: {
+    requests_per_day_per_end_user?: number;
+    requests_per_min_per_end_user?: number;
+  };
+}
+
+export interface ResourceACL {
+  resource_type: 'kb' | 'endpoint';
+  resource_id: string;
+  allow: Array<{
+    subject_type: 'user';
+    subject_id: string;
+    permissions: string[];
+  }>;
+  deny: Array<{
+    subject_type: 'user';
+    subject_id: string;
+    permissions: string[];
+    reason?: string;
+    updated_at?: string;
+  }>;
+}
+
+export interface PermissionTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  permissions: string[];
+  is_default: boolean;
+  is_readonly: boolean;
+}
+
+export interface ChangeHistoryEntry {
+  id: string;
+  timestamp: string;
+  actor_id: string;
+  actor_email: string;
+  change_type: 'permissions' | 'quota' | 'acl' | 'role';
+  changes: {
+    added?: string[];
+    removed?: string[];
+    updated?: Record<string, { from: any; to: any }>;
+  };
 }

@@ -30,6 +30,7 @@ export function ChatHeader({
 }) {
   const [editing, setEditing] = React.useState(false);
   const [draftTitle, setDraftTitle] = React.useState(session?.title || '');
+  const [modelOpen, setModelOpen] = React.useState(false);
 
   React.useEffect(() => {
     setDraftTitle(session?.title || '');
@@ -112,7 +113,7 @@ export function ChatHeader({
       </div>
 
       <div className="flex items-center gap-2">
-        <DropdownMenu>
+        <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
               <span className="max-w-[220px] truncate">
@@ -136,6 +137,7 @@ export function ChatHeader({
                     data-disabled={disabled ? '' : undefined}
                     onSelect={(ev) => {
                       ev.preventDefault();
+                      setModelOpen(false);
                       if (disabled) return;
                       onSelectEndpoint(e);
                     }}
@@ -158,4 +160,3 @@ export function ChatHeader({
     </div>
   );
 }
-

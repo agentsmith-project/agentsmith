@@ -21,6 +21,8 @@ export const MessageItem = React.memo(function MessageItem({
   isEditing,
   onRegenerate,
   streamingOverride,
+  streamingMeta,
+  branchBadge,
   disabled,
 }: {
   message: ChatMessage;
@@ -33,6 +35,8 @@ export const MessageItem = React.memo(function MessageItem({
   isEditing: boolean;
   onRegenerate: (message: ChatMessage) => void;
   streamingOverride?: string | null;
+  streamingMeta?: { startedAt: number; lastTokenAt: number } | null;
+  branchBadge?: { groupId: string; index: number; total: number } | null;
   disabled: boolean;
 }) {
   const isUser = message.role === 'user';
@@ -41,10 +45,22 @@ export const MessageItem = React.memo(function MessageItem({
   const variantMeta = getVariantMeta(message, variantGroups);
   const activeVariantIndex = variantMeta ? (activeVariantIndexByGroup[variantMeta.groupId] ?? variantMeta.index) : null;
   const [draft, setDraft] = React.useState(message.content);
+  const [showDiff, setShowDiff] = React.useState(false);
 
   React.useEffect(() => {
     if (isEditing) setDraft(message.content);
+    if (!isEditing) setShowDiff(false);
   }, [isEditing, message.content]);
+
+  const [nowTick, setNowTick] = React.useState(Date.now());
+  React.useEffect(() => {
+    if (!streamingMeta) return;
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [streamingMeta]);
+
+  const isStalled =
+    streamingMeta ? nowTick - streamingMeta.lastTokenAt > 1500 : false;
 
   const handleCopy = async () => {
     try {
@@ -67,27 +83,78 @@ export const MessageItem = React.memo(function MessageItem({
         {message.is_stale && (
           <div className="text-[11px] text-tertiary mb-1">Older branch</div>
         )}
+        {streamingOverride && (
+          <div className="text-[11px] text-tertiary mb-1 flex items-center gap-2">
+            <span>Regenerating…</span>
+            {isStalled && (
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse" />
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse [animation-delay:120ms]" />
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse [animation-delay:240ms]" />
+              </span>
+            )}
+          </div>
+        )}
 
-        <div className="space-y-2">
+        <div className={cn('space-y-2', streamingOverride && 'min-h-[44px]')}>
           {isEditing ? (
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={Math.max(3, Math.min(10, draft.split('\n').length + 1))}
-              className={cn(
-                'w-full resize-none rounded-md border border-subtle bg-surface-high px-3 py-2 text-sm text-primary',
-                'placeholder:text-tertiary',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+            <div className="space-y-2">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={Math.max(3, Math.min(10, draft.split('\n').length + 1))}
+                className={cn(
+                  'w-full resize-none rounded-md border border-subtle bg-surface-high px-3 py-2 text-sm text-primary',
+                  'placeholder:text-tertiary',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+                )}
+              />
+              <div className="flex items-center justify-between text-[11px] text-tertiary">
+                <span>Preview changes</span>
+                <button
+                  type="button"
+                  onClick={() => setShowDiff((v) => !v)}
+                  className="underline decoration-dashed"
+                >
+                  {showDiff ? 'Hide diff' : 'Show diff'}
+                </button>
+              </div>
+              {showDiff && (
+                <div className="rounded-sm border border-subtle bg-surface-high/60 p-2 text-[11px] text-tertiary">
+                  <div className="mb-1 text-tertiary">Original</div>
+                  <div className="whitespace-pre-wrap text-tertiary line-through/30">
+                    {message.content}
+                  </div>
+                  <div className="mt-2 mb-1 text-tertiary">Edited</div>
+                  <div className="whitespace-pre-wrap text-primary">
+                    {draft}
+                  </div>
+                </div>
               )}
-            />
+            </div>
           ) : streamingOverride ? (
-            <Markdown content={streamingOverride || '…'} />
+            <div className="min-h-[48px]">
+              {streamingOverride.trim().length === 0 ? (
+                <div className="space-y-2">
+                  <div className="h-3 w-2/3 rounded-sm bg-surface-high/60 animate-pulse" />
+                  <div className="h-3 w-1/2 rounded-sm bg-surface-high/60 animate-pulse" />
+                  <div className="h-3 w-1/3 rounded-sm bg-surface-high/60 animate-pulse" />
+                </div>
+              ) : (
+                <Markdown content={streamingOverride || '…'} />
+              )}
+            </div>
           ) : (
             <Markdown content={message.content} />
           )}
         </div>
 
         <div className={cn('mt-2 flex items-center gap-1 justify-end')}>
+          {branchBadge && (
+            <div className="mr-auto text-[11px] text-tertiary">
+              Branch {branchBadge.index + 1}/{branchBadge.total}
+            </div>
+          )}
           {isUser && !isEditing && (
             <Button
               type="button"

@@ -1,10 +1,11 @@
 /**
  * Workbench Fixtures
  *
- * Mock agent thread, turn, and source file data for development and testing.
+ * Mock agent thread, turn, source file, and recipe data for development and testing.
  */
 
 import type { AgentThread, Turn, TurnEvent } from '@/lib/api/types';
+import type { Recipe, RecipeMessage, Artifact } from '@/lib/types/recipe';
 
 export interface SourceFile {
   id: string;
@@ -271,5 +272,96 @@ export const turnEventFixtures: TurnEvent[] = [
       error_message: 'Agent did not respond within the timeout period',
     },
     timestamp: '2026-01-27T17:50:00Z',
+  },
+];
+
+// ============================================================
+// Recipe Fixtures
+// ============================================================
+
+export const recipeFixtures: Recipe[] = [
+  {
+    id: 'recipe_001',
+    workspace_id: 'ws_001',
+    project_id: 'proj_001',
+    owner_user_id: 'user_001',
+    title: 'Product Documentation Analysis',
+    agent_id: 'agent_001',
+    agent_name: 'AgentA',
+    status: 'active',
+    attached_source_ids: ['src_001', 'src_002'],
+    created_at: '2026-01-28T10:00:00Z',
+    updated_at: '2026-01-28T14:30:00Z',
+    last_activity_at: '2026-01-28T14:30:00Z',
+  },
+  {
+    id: 'recipe_002',
+    workspace_id: 'ws_001',
+    project_id: 'proj_001',
+    owner_user_id: 'user_001',
+    title: 'API Reference Guide',
+    agent_id: 'agent_002',
+    agent_name: 'AgentB',
+    status: 'active',
+    attached_source_ids: ['src_003'],
+    created_at: '2026-01-28T11:15:00Z',
+    updated_at: '2026-01-28T13:45:00Z',
+    last_activity_at: '2026-01-28T13:45:00Z',
+  },
+];
+
+export const recipeMessageFixtures: RecipeMessage[] = [
+  {
+    id: 'msg_recipe_001_001',
+    recipe_id: 'recipe_001',
+    role: 'user',
+    content: 'Analyze the product specifications and create a summary',
+    created_at: '2026-01-28T10:05:00Z',
+    referenced_source_ids: ['src_001'],
+  },
+  {
+    id: 'msg_recipe_001_002',
+    recipe_id: 'recipe_001',
+    role: 'agent',
+    content: 'Based on the product specifications document, here is a comprehensive summary:\n\n**Key Features:**\n- Advanced AI capabilities\n- Real-time processing\n- Scalable architecture\n\n**Technical Specifications:**\n- Supports multiple data formats\n- High-performance processing engine\n- Enterprise-grade security',
+    created_at: '2026-01-28T10:08:00Z',
+    referenced_source_ids: ['src_001'],
+  },
+  {
+    id: 'msg_recipe_001_003',
+    recipe_id: 'recipe_001',
+    role: 'user',
+    content: 'Can you create a visual diagram of the architecture?',
+    created_at: '2026-01-28T10:15:00Z',
+  },
+  {
+    id: 'msg_recipe_002_001',
+    recipe_id: 'recipe_002',
+    role: 'user',
+    content: 'Generate API documentation from the reference file',
+    created_at: '2026-01-28T11:20:00Z',
+    referenced_source_ids: ['src_003'],
+  },
+];
+
+export const artifactFixtures: Artifact[] = [
+  {
+    id: 'art_001',
+    recipe_id: 'recipe_001',
+    turn_id: 'turn_001',
+    type: 'text',
+    title: 'Product Summary',
+    content: '**Product Summary**\n\nKey features and technical specifications extracted from the product documentation...',
+    created_at: '2026-01-28T10:08:00Z',
+  },
+  {
+    id: 'art_002',
+    recipe_id: 'recipe_001',
+    turn_id: 'turn_001',
+    type: 'image',
+    title: 'Architecture Diagram',
+    content: 'https://example.com/images/architecture-diagram.png',
+    thumbnail_url: 'https://example.com/images/architecture-diagram-thumb.png',
+    created_at: '2026-01-28T10:20:00Z',
   },
 ];

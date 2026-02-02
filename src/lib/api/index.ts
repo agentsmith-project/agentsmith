@@ -44,6 +44,8 @@ export {
   UsageAPI,
   UserAPIKeyService,
   ChatAPI,
+  SourcesAPI,
+  RecipeAPI,
 } from './endpoints';
 
 export type {
@@ -60,6 +62,15 @@ export type {
   CreateUserKeyRequest,
   CreateSessionRequest,
   CreateMessageRequest,
+  Recipe,
+  RecipeMessage,
+  Artifact,
+  CreateRecipeRequest,
+  UpdateRecipeRequest,
+  SendMessageRequest,
+  SaveArtifactRequest,
+  RecipeListParams,
+  RecipeListResponse,
 } from './endpoints';
 
 // Adapters (for advanced usage)

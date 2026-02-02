@@ -38,7 +38,17 @@ export interface Project {
   status: 'active' | 'disabled';
 }
 
+// ============================================================
+// Constants
+// ============================================================
+
+// Stable empty array reference to avoid creating new arrays on each selector call
+const EMPTY_PERMISSIONS: string[] = Object.freeze([]) as string[];
+
+// ============================================================
 // Data-only state (without actions)
+// ============================================================
+
 interface AuthData {
   user: User | null;
   token: string | null;
@@ -54,6 +64,7 @@ export interface AuthState extends AuthData {
   setAuth: (user: User, token: string) => void;
   setWorkspace: (workspace: Workspace) => void;
   setProject: (project: Project) => void;
+  setProjects: (projects: Project[]) => void; // Update projects list for current workspace
   clearAuth: () => void;
 
   // Mock actions (development only)
@@ -145,6 +156,12 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
+      setProjects: (projects: Project[]) => {
+        set({
+          projects,
+        });
+      },
+
       clearAuth: () => {
         set(initialData);
       },
@@ -156,11 +173,6 @@ export const useAuthStore = create<AuthState>()(
           console.error(`Workspace ${workspaceId} not found`);
           return;
         }
-
-        // Get projects for this workspace
-        const workspaceProjects = mockProjects.filter(
-          (p) => p.workspace_id === workspaceId
-        );
 
         const user: User = {
           id: 'user_' + Math.random().toString(36).substring(2, 10),
@@ -179,7 +191,7 @@ export const useAuthStore = create<AuthState>()(
           currentWorkspace: null, // Will be set on workspace selection page
           currentProject: null, // Will be set on projects page
           workspaces: mockWorkspaces,
-          projects: workspaceProjects,
+          projects: mockProjects, // Store ALL projects, components will filter by workspace
         });
       },
 
@@ -227,25 +239,62 @@ export const useAuthStoreHydration = () => {
 };
 
 // ============================================================
-// Selectors
+// Selectors - Stable references for permission checking
 // ============================================================
 
+/**
+ * Get current user permissions with stable empty array reference
+ * This selector ensures we always return the same empty array reference
+ * when there are no permissions, preventing unnecessary re-renders.
+ */
+export const selectCurrentPermissions = (state: AuthState): readonly string[] => {
+  return state.currentProject?.permissions ?? EMPTY_PERMISSIONS;
+};
+
+/**
+ * Check if user has a specific permission
+ * This is a selector factory that returns a stable selector function.
+ */
+export const selectHasPermission = (permission: string) => {
+  // Return a stable selector function
+  return (state: AuthState): boolean => {
+    const permissions = selectCurrentPermissions(state);
+    if (permissions.length === 0) return false;
+    return permissions.includes('*') || permissions.includes(permission);
+  };
+};
+
+/**
+ * Check if user has any of the specified permissions
+ * This is a selector factory that returns a stable selector function.
+ */
+export const selectHasAnyPermission = (permissions: readonly string[]) => {
+  // Return a stable selector function
+  return (state: AuthState): boolean => {
+    if (permissions.length === 0) return false;
+    const userPermissions = selectCurrentPermissions(state);
+    if (userPermissions.length === 0) return false;
+    if (userPermissions.includes('*')) return true;
+    return permissions.some((p) => userPermissions.includes(p));
+  };
+};
+
+/**
+ * Check if user has all of the specified permissions
+ * This is a selector factory that returns a stable selector function.
+ */
+export const selectHasAllPermissions = (permissions: readonly string[]) => {
+  // Return a stable selector function
+  return (state: AuthState): boolean => {
+    if (permissions.length === 0) return false;
+    const userPermissions = selectCurrentPermissions(state);
+    if (userPermissions.length === 0) return false;
+    if (userPermissions.includes('*')) return true;
+    return permissions.every((p) => userPermissions.includes(p));
+  };
+};
+
+// Legacy selectors for backward compatibility
 export const selectCurrentUser = (state: AuthState) => state.user;
-
 export const selectCurrentWorkspace = (state: AuthState) => state.currentWorkspace;
-
 export const selectCurrentProject = (state: AuthState) => state.currentProject;
-
-export const selectCurrentPermissions = (state: AuthState) => {
-  return state.currentProject?.permissions || [];
-};
-
-export const selectHasPermission = (permission: string) => (state: AuthState) => {
-  const permissions = selectCurrentPermissions(state);
-  return permissions.includes('*') || permissions.includes(permission);
-};
-
-export const selectHasAnyPermission = (permissions: string[]) => (state: AuthState) => {
-  const userPermissions = selectCurrentPermissions(state);
-  return permissions.some((p) => userPermissions.includes(p));
-};

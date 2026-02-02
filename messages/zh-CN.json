@@ -4,67 +4,577 @@
     "save": "保存",
     "cancel": "取消",
     "delete": "删除",
-    "edit": "编辑",
+    "close": "关闭",
+    "copy": "复制",
+    "copied": "已复制！",
+    "search": "搜索",
+    "filter": "筛选",
+    "refresh": "刷新",
     "confirm": "确认",
-    "back": "返回",
-    "next": "下一步",
+    "confirm_destructive": "确定要执行此操作吗？",
     "loading": "加载中...",
-    "error": "错误",
-    "success": "成功"
+    "empty": "暂无数据",
+    "retry": "重试",
+    "refreshed_data": "数据已刷新"
+  },
+  "nav": {
+    "overview": "概览",
+    "chat": "聊天",
+    "workbench": "工作台",
+    "sources": "文件",
+    "agents": "智能体",
+    "endpoints": "端点",
+    "members": "成员",
+    "audit": "审计",
+    "usage": "用量",
+    "settings": "设置",
+    "go_to_projects": "前往项目列表",
+    "view_all_projects": "查看所有项目",
+    "no_workspaces": "暂无工作空间"
   },
   "auth": {
     "login": "登录",
-    "logout": "登出",
-    "email": "邮箱",
-    "password": "密码",
-    "workspace": "工作空间",
-    "project": "项目"
+    "logout": "退出登录",
+    "login_with_keycloak": "使用 Keycloak 登录",
+    "dev_mode": "开发模式",
+    "select_workspace": "选择工作空间",
+    "enter_user": "输入用户 ID 或邮箱",
+    "quick_login": "快速登录"
   },
-  "overview": {
-    "title": "概览",
-    "description": "项目概览和统计"
+  "workspace": {
+    "select": "选择工作空间",
+    "switch": "切换工作空间"
+  },
+  "project": {
+    "select": "选择项目",
+    "switch": "切换项目",
+    "create": "创建项目",
+    "visibility": "可见性",
+    "public": "公开",
+    "private": "私有",
+    "join_policy": "加入策略",
+    "approval_required": "需要审批"
+  },
+  "sources": {
+    "title": "文件",
+    "upload": "上传",
+    "upload_files": "上传文件",
+    "search_placeholder": "搜索文件...",
+    "filter": {
+      "status": {
+        "all": "全部",
+        "not_ready": "未就绪",
+        "preparing": "准备中",
+        "ready": "就绪",
+        "failed": "失败",
+        "cancelled": "已取消"
+      },
+      "ai_ready": {
+        "all": "全部文件",
+        "only": "仅 AIReady"
+      },
+      "sort": {
+        "updated_at": "更新时间",
+        "file_size": "文件大小",
+        "status": "状态"
+      }
+    },
+    "status": {
+      "idle": "未就绪",
+      "preparing": "准备中",
+      "ready": "就绪",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "ai_ready": {
+      "start": "启动 AIReady",
+      "cancel": "取消 AIReady",
+      "retry": "重试",
+      "progress": "处理中...",
+      "queued": "排队中",
+      "error": "错误：{message}"
+    },
+    "quota": {
+      "storage": "存储",
+      "docdb": "文档数据库",
+      "vectordb": "向量数据库",
+      "used": "已使用",
+      "limit": "限制",
+      "exceeded": "配额超限"
+    },
+    "batch": {
+      "selected": "已选择 {count} 个",
+      "start_ai_ready": "启动 AIReady",
+      "cancel_ai_ready": "取消 AIReady"
+    },
+    "table": {
+      "filename": "文件名",
+      "size": "大小",
+      "updated_at": "更新时间",
+      "ai_ready_status": "AIReady 状态",
+      "usage": "占用",
+      "actions": "操作"
+    },
+    "delete": {
+      "title": "删除文件",
+      "message": "确定要删除此文件吗？",
+      "delete_ai_ready": "同时删除 AIReady 产物",
+      "confirm": "删除",
+      "cancelling": "删除中..."
+    },
+    "upload_dialog": {
+      "title": "上传文件",
+      "description": "选择要上传的文件或拖拽文件到此处",
+      "drag_drop": "拖拽文件到此处，或点击选择",
+      "select_files": "选择文件",
+      "uploading": "上传中...",
+      "upload_success": "上传成功",
+      "upload_button": "上传 {count} 个文件"
+    },
+    "empty": {
+      "title": "暂无文件",
+      "cta": "上传第一个文件",
+      "description": "上传第一个文件开始使用"
+    },
+    "error": {
+      "upload_failed": "上传失败",
+      "process_failed": "处理失败",
+      "quota_exceeded": "配额超限，无法启动 AIReady。",
+      "delete_failed": "删除失败"
+    },
+    "filter_status_all": "全部",
+    "filter_status_ready": "就绪",
+    "filter_status_processing": "处理中",
+    "filter_status_failed": "失败",
+    "status_queued": "队列中",
+    "status_processing": "处理中",
+    "status_ready": "就绪",
+    "status_failed": "失败",
+    "action_attach": "附加",
+    "action_detach": "移除",
+    "action_clear_attachments": "清空附件",
+    "action_retry": "重试",
+    "action_delete": "删除",
+    "empty_title": "暂无文件",
+    "empty_cta": "上传第一个文件",
+    "error_upload_failed": "上传失败",
+    "error_process_failed": "处理失败"
   },
   "chat": {
     "title": "聊天",
-    "newChat": "新聊天",
-    "sendMessage": "发送消息",
-    "typeMessage": "输入消息..."
+    "model_select": "选择模型",
+    "model_empty": "暂无可用模型",
+    "send": "发送",
+    "stop_generating": "停止生成",
+    "attachments_title": "附件",
+    "attachments_clear": "清空附件",
+    "new_thread": "新建聊天",
+    "threads_title": "聊天记录",
+    "threads_today": "今天",
+    "threads_yesterday": "昨天",
+    "threads_days_ago": "{days} 天前"
   },
   "workbench": {
     "title": "工作台",
-    "sources": "资源",
-    "threads": "对话"
+    "thread_new": "新建线程",
+    "thread_close": "关闭线程",
+    "thread_status_active": "活跃",
+    "thread_status_closed": "已关闭",
+    "thread_status_revoked": "已撤销",
+    "agent_current": "当前智能体",
+    "agent_change": "切换智能体",
+    "turn_status_queued": "队列中",
+    "turn_status_running": "运行中",
+    "turn_status_completed": "已完成",
+    "turn_status_cancelled": "已取消",
+    "turn_status_failed": "失败",
+    "turn_cancel": "取消任务",
+    "sse_connected": "已连接",
+    "sse_reconnecting": "重连中...",
+    "sse_disconnected": "已断开",
+    "thread_info_id": "线程 ID",
+    "thread_info_status": "状态",
+    "thread_info_user": "最终用户",
+    "recipe": {
+      "title": "Recipe",
+      "new": "新建 Recipe",
+      "create": "创建 Recipe",
+      "create_title": "Recipe 标题",
+      "select_agent": "选择 Agent",
+      "agent_fixed_notice": "创建后 Agent 不可更改",
+      "history_immutable_notice": "对话历史不可修改",
+      "leave": "离开 Recipe",
+      "leave_tooltip": "返回 Workbench 列表，Recipe 将继续在后台运行",
+      "delete": "删除 Recipe",
+      "delete_confirm_message": "确定要删除此 Recipe 吗？此操作不可撤销。所有消息和生成物将被永久删除。",
+      "delete_cancel": "取消",
+      "status": {
+        "active": "活跃",
+        "closed": "已关闭",
+        "archived": "已归档"
+      }
+    },
+    "attached_sources": {
+      "title": "已附加来源",
+      "subtitle": "附加到此 Recipe 的文件",
+      "add": "添加来源",
+      "remove": "移除",
+      "empty": "未附加任何来源",
+      "empty_description": "从您的文件库中添加 AIReady 文件，为 Agent 提供上下文",
+      "select_dialog": {
+        "title": "添加来源到 Recipe",
+        "description": "从您的文件库中选择 AIReady 文件作为上下文",
+        "search_placeholder": "搜索您的文件...",
+        "confirm": "添加选中",
+        "no_files": "您的文件库中暂无可用文件",
+        "from_library": "来自您的文件库"
+      },
+      "tooltip": {
+        "attached_file": "此文件已附加到此 Recipe 作为上下文",
+        "remove_file": "从 Recipe 中移除（文件仍保留在您的文件库中）"
+      }
+    },
+    "conversation": {
+      "title": "对话",
+      "input_placeholder": "输入消息...",
+      "send": "发送",
+      "empty": "开始对话",
+      "empty_description": "发送消息开始",
+      "agent_offline": "Agent 离线",
+      "agent_disabled": "Agent 已禁用"
+    },
+    "artifacts": {
+      "title": "生成物",
+      "empty": "暂无生成物",
+      "empty_description": "开始对话以生成内容",
+      "save_to_library": "保存到文件库",
+      "download": "下载",
+      "view_full": "查看完整",
+      "copy": "复制",
+      "filter": {
+        "all": "全部",
+        "text": "文本",
+        "image": "图片",
+        "other": "其他"
+      }
+    }
   },
   "agents": {
-    "title": "代理",
-    "createAgent": "创建代理",
-    "agentName": "代理名称",
-    "status": "状态"
+    "title": "智能体",
+    "create": "创建智能体",
+    "mode_external": "外部",
+    "mode_internal": "托管",
+    "presence_online": "在线",
+    "presence_offline": "离线",
+    "presence_managed": "托管中",
+    "status_enabled": "已启用",
+    "status_disabled": "已禁用",
+    "keys_title": "服务密钥",
+    "keys_create": "签发密钥",
+    "keys_revoke": "撤销",
+    "keys_suspend": "暂停",
+    "keys_resume": "恢复",
+    "diagnostics_backoff": "等待重试",
+    "detail_title": "智能体详情",
+    "detail_general": "基本信息",
+    "detail_keys": "密钥管理",
+    "detail_diagnostics": "诊断信息",
+    "detail_config": "配置"
   },
   "endpoints": {
     "title": "端点",
-    "createEndpoint": "创建端点",
-    "endpointName": "端点名称"
-  },
-  "userdata": {
-    "title": "用户数据",
-    "uploadFile": "上传文件"
+    "create": "创建端点",
+    "status_active": "活跃",
+    "status_disabled": "已禁用",
+    "action_disable": "禁用",
+    "action_enable": "启用",
+    "action_rotate_credential": "轮换凭据",
+    "action_delete": "删除",
+    "acl_title": "访问控制",
+    "acl_deny_list": "拒绝列表",
+    "acl_add_deny": "添加拒绝",
+    "acl_remove_deny": "移除",
+    "detail_limits": "限制",
+    "detail_credential": "凭据"
   },
   "members": {
     "title": "成员",
-    "addMember": "添加成员",
-    "role": "角色"
+    "join_requests_title": "加入申请",
+    "action_block": "冻结",
+    "action_unblock": "解冻",
+    "action_remove": "移除",
+    "action_update_permissions": "更新权限",
+    "role_owner": "所有者",
+    "role_admin": "管理员",
+    "role_developer": "开发者",
+    "role_user": "用户",
+    "role_custom": "自定义 ({count} 项权限)",
+    "status_active": "活跃",
+    "status_blocked": "已冻结",
+    "status_removed": "已移除",
+    "join_requests_approve": "批准",
+    "join_requests_reject": "拒绝",
+    "join_requests_approve_all": "批准全部 ({count})"
   },
   "audit": {
     "title": "审计",
-    "logs": "审计日志"
+    "subtitle": "审计事件与合规日志",
+    "filters": {
+      "time_range": "时间范围",
+      "action": "操作",
+      "actor_type": "操作者类型",
+      "actor_id": "操作者 ID",
+      "end_user_id": "最终用户 ID",
+      "resource_type": "资源类型",
+      "resource_id": "资源 ID",
+      "result": "结果"
+    },
+    "table": {
+      "timestamp": "时间戳",
+      "action": "操作",
+      "actor": "操作者",
+      "end_user": "最终用户",
+      "resource": "资源",
+      "result": "结果",
+      "request_id": "请求 ID",
+      "error_code": "错误码"
+    },
+    "detail": {
+      "title": "审计事件详情",
+      "metadata": "元数据",
+      "copy_json": "复制 JSON"
+    },
+    "empty": {
+      "title": "未找到审计事件",
+      "description": "尝试调整筛选条件或选择不同的时间范围"
+    }
   },
   "usage": {
-    "title": "使用情况",
-    "statistics": "统计"
+    "title": "用量",
+    "subtitle": "用量统计与资源消耗",
+    "kpi": {
+      "requests_today": "今日请求数",
+      "errors_today": "今日错误数",
+      "tokens_today": "今日 Token 数",
+      "userdata_bytes": "UserData 存储"
+    },
+    "filters": {
+      "time_range": "时间范围",
+      "resource_type": "资源类型",
+      "agent_id": "智能体 ID",
+      "end_user_id": "最终用户 ID"
+    },
+    "table": {
+      "time_bucket": "时间桶",
+      "resource_type": "资源类型",
+      "resource_id": "资源 ID",
+      "requests": "请求数",
+      "duration_p95": "P95 延迟",
+      "bytes_in": "接收字节",
+      "bytes_out": "发送字节",
+      "tokens": "Token 数"
+    },
+    "empty": {
+      "title": "未找到用量数据",
+      "description": "尝试调整筛选条件或选择不同的时间范围"
+    }
   },
   "settings": {
-    "title": "设置",
-    "general": "通用"
+    "title": "项目设置",
+    "config_title": "项目配置",
+    "policy_title": "项目策略",
+    "confirm_warning": "策略更改将立即影响所有项目成员。",
+    "confirm_save": "保存策略",
+    "confirm_message": "此策略更改将立即生效并影响所有项目成员。正在进行的请求可能会受到影响 (403/429/队列)。",
+    "project_name": "项目名称",
+    "description": "描述",
+    "visibility": "可见性",
+    "join_policy": "加入策略",
+    "tags": "标签",
+    "policy_capabilities": "功能开关",
+    "policy_turns": "任务设置",
+    "policy_guardrails": "智能体调用护栏",
+    "policy_internal": "托管智能体",
+    "policy_endpoints": "端点限制",
+    "policy_advanced": "高级 (JSON)"
+  },
+  "user_keys": {
+    "title": "用户 API 密钥",
+    "create": "创建 API 密钥",
+    "create_success_title": "API 密钥已创建",
+    "create_success_hint": "请立即保存此密钥！关闭后将无法再次查看。",
+    "revoke": "撤销",
+    "revoke_confirm_title": "撤销 API 密钥",
+    "revoke_confirm_hint": "撤销此密钥将立即使其失效。使用此密钥的所有应用程序将停止工作。",
+    "key_id": "密钥 ID",
+    "prefix": "密钥前缀",
+    "created": "创建时间",
+    "last_used": "最后使用",
+    "expires": "过期时间",
+    "expiration_never": "永不过期",
+    "expiration_days": "{days} 天",
+    "note": "备注（可选）"
+  },
+  "errors": {
+    "unknown_error": "发生未知错误",
+    "network_error": "网络连接失败",
+    "timeout": "请求超时",
+    "unauthorized": "未授权",
+    "forbidden": "权限被拒绝",
+    "not_found": "资源未找到",
+    "validation_error": "输入无效",
+    "rate_limit": "请求过于频繁",
+    "permission_denied_title": "权限不足",
+    "permission_denied_hint": "您没有权限访问此资源。",
+    "rate_limited_title": "请求过于频繁",
+    "rate_limited_hint": "请求过于频繁，请稍后再试。",
+    "quota_exceeded_title": "配额已用尽",
+    "quota_exceeded_hint": "您已超出配额限制。",
+    "model_not_found_title": "模型不存在",
+    "model_not_found_hint": "请求的模型不可用。",
+    "endpoint_disabled_title": "端点已禁用",
+    "endpoint_disabled_hint": "此端点已被禁用。",
+    "request_id": "请求 ID",
+    "error_code": "错误码"
+  },
+  "members": {
+    "title": "成员",
+    "invite_member": "邀请成员",
+    "description": "管理项目成员、权限和配额",
+    "no_permission_to_view": "您没有权限查看成员",
+    "table": {
+      "user": "用户",
+      "role": "角色",
+      "status": "状态",
+      "joined": "加入时间",
+      "actions": "操作",
+      "no_members": "暂无成员",
+      "no_members_description": "邀请成员加入您的项目"
+    },
+    "tabs": {
+      "members": "成员",
+      "requests": "加入申请",
+      "templates": "权限模板"
+    },
+    "permissions": {
+      "title": "权限配置",
+      "template_mode": "模板模式",
+      "advanced_mode": "高级模式",
+      "template": {
+        "owner": "所有者",
+        "admin": "管理员",
+        "developer": "开发者",
+        "user": "用户",
+        "custom": "自定义"
+      },
+      "changes_preview": "变更预览",
+      "added": "已添加",
+      "removed": "已移除",
+      "high_risk_warning": "高风险权限变更",
+      "update_success": "权限更新成功",
+      "select_template": "选择模板",
+      "customized": "已自定义",
+      "search_permissions": "搜索权限...",
+      "selected_count": "已选择: {count} 个权限",
+      "copy_json": "复制 JSON",
+      "reset_to_template": "重置为模板",
+      "save_changes": "保存更改",
+      "cancel": "取消",
+      "template_description": {
+        "owner": "所有者拥有所有项目资源和设置的完全访问权限。",
+        "admin": "管理员拥有除项目删除外的完全访问权限。可以管理成员和策略。",
+        "developer": "开发者可以创建配方、管理源文件和签发代理密钥。无法管理成员或策略。",
+        "user": "用户具有只读访问权限，可以创建配方。仅限于基本操作。"
+      },
+      "custom_mode": "自定义权限模式。切换到高级模式以编辑单个权限。",
+      "no_permissions_found": "未找到匹配 \"{query}\" 的权限",
+      "high_risk_description": "您即将授予以下高风险权限：",
+      "high_risk_confirm": "这些权限具有重大影响。您确定要继续吗？",
+      "confirm_save": "确认并保存"
+    },
+    "quota": {
+      "title": "配额覆盖",
+      "description": "默认配额继承自项目策略。在下方为此用户覆盖特定配额。",
+      "use_default": "使用默认值",
+      "override": "覆盖",
+      "reset_all": "重置全部",
+      "update_success": "配额覆盖更新成功",
+      "coming_soon": "配额编辑器即将推出...",
+      "cancel": "取消",
+      "save_changes": "保存更改"
+    },
+    "acl": {
+      "title": "资源 ACL",
+      "description": "为知识库和端点配置资源级权限。",
+      "endpoint": {
+        "deny": "拒绝访问",
+        "remove_deny": "移除拒绝",
+        "reason_required": "必须填写原因"
+      },
+      "kb": {
+        "edit_permissions": "编辑权限"
+      },
+      "update_success": "资源 ACL 更新成功",
+      "coming_soon": "资源 ACL 编辑器即将推出...",
+      "cancel": "取消"
+    },
+    "history": {
+      "title": "变更历史",
+      "view_history": "查看变更历史",
+      "permissions_updated": "权限已更新",
+      "quota_updated": "配额覆盖",
+      "acl_updated": "资源 ACL 已更新"
+    },
+    "actions": {
+      "edit_permissions_quota": "编辑权限和配额",
+      "view_history": "查看变更历史",
+      "remove_member": "移除成员"
+    },
+    "requests": {
+      "coming_soon": "加入申请即将推出..."
+    },
+    "templates": {
+      "coming_soon": "权限模板即将推出...",
+      "title": "权限模板",
+      "description": "管理角色的默认权限模板。",
+      "create_template": "创建模板",
+      "view_details": "查看详情",
+      "edit": "编辑",
+      "default": "默认",
+      "readonly": "只读",
+      "permissions_count": "{count} 个权限",
+      "permissions_list": "权限列表",
+      "default_templates": {
+        "owner": "所有者",
+        "owner_description": "所有权限（包括 project:delete）",
+        "admin": "管理员",
+        "admin_description": "除 project:delete 外的所有权限",
+        "developer": "开发者",
+        "developer_description": "代理密钥、UserData、AgentThread",
+        "user": "用户",
+        "user_description": "只读 + AgentThread + UserData（受限）"
+      }
+    },
+    "join_requests": {
+      "title": "加入申请",
+      "pending_requests": "待处理申请",
+      "reviewed_requests": "已处理申请",
+      "approve": "批准",
+      "reject": "拒绝",
+      "reason": "申请原因",
+      "requested_at": "申请时间",
+      "reviewed_at": "处理时间",
+      "status": {
+        "pending": "待处理",
+        "approved": "已批准",
+        "rejected": "已拒绝"
+      },
+      "empty": {
+        "title": "暂无加入申请",
+        "description": "没有待处理或已处理的加入申请"
+      },
+      "approve_success": "加入申请已批准",
+      "reject_success": "加入申请已拒绝"
+    }
   }
 }

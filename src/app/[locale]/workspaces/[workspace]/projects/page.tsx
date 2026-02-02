@@ -10,6 +10,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import {
   FolderOpen,
   Plus,
@@ -26,7 +27,6 @@ import {
   createColumnHelper,
   getCoreRowModel,
   useReactTable,
-  type ColumnDef,
 } from '@tanstack/react-table';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { useAuthStore, useAuthStoreHydration, type Project as AuthProject } from '@/lib/stores/authStore';
@@ -45,13 +45,12 @@ const columnHelper = createColumnHelper<Project>();
 
 export default function ProjectsPage({ params }: ProjectsPageProps) {
   const router = useRouter();
+  const t = useTranslations('projects');
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; locale: string } | null>(null);
   const { 
     projects: allProjects, 
     setProject, 
     currentWorkspace,
-    workspaces,
-    setWorkspace,
     isAuthenticated,
   } = useAuthStore();
   const hydrated = useAuthStoreHydration();
@@ -115,7 +114,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   if (!resolvedParams || !hydrated) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-tertiary">Loading...</div>
+        <div className="text-tertiary">{t('loading')}</div>
       </div>
     );
   }
@@ -127,20 +126,20 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
       <main className="flex-1 max-w-7xl mx-auto w-full p-6">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-foreground mb-2">Projects</h1>
+          <h1 className="text-2xl font-semibold text-foreground mb-2">{t('title')}</h1>
           <p className="text-tertiary">
-            Workspace: {currentWorkspace?.name || resolvedParams.workspace}
+            {t('workspace_label')} {currentWorkspace?.name || resolvedParams.workspace}
           </p>
         </div>
 
         {!isAuthenticated || projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
-            <h2 className="text-xl font-semibold text-foreground mb-2">No projects yet</h2>
-            <p className="text-tertiary mb-6">Create your first project to get started</p>
+            <h2 className="text-xl font-semibold text-foreground mb-2">{t('empty.title')}</h2>
+            <p className="text-tertiary mb-6">{t('empty.description')}</p>
             <Button variant="action">
               <Plus className="w-4 h-4" />
-              New Project
+              {t('empty.create_first')}
             </Button>
           </div>
         ) : (
@@ -150,7 +149,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
               <section>
                 <h2 className="text-lg font-medium text-foreground mb-4 flex items-center gap-2">
                   <Pin className="w-4 h-4" />
-                  Pinned Projects
+                  {t('pinned.title')}
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {pinnedProjects.map((project) => (
@@ -159,6 +158,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                       project={project}
                       onClick={() => handleProjectClick(project)}
                       onTogglePin={(e) => togglePin(project.id, e)}
+                      t={t}
                     />
                   ))}
                 </div>
@@ -169,7 +169,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
             <section>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-medium text-foreground">
-                  All Projects ({unpinnedProjects.length})
+                  {t('all.count', { count: unpinnedProjects.length })}
                 </h2>
                 <div className="flex items-center gap-3">
                   {/* Search */}
@@ -177,7 +177,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-icon-default" />
                     <input
                       type="text"
-                      placeholder="Search projects..."
+                      placeholder={t('search_placeholder')}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9 pr-4 py-2 w-64 bg-surface-high border border-subtle rounded-sm text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
@@ -187,7 +187,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                   {/* New Project Button */}
                   <Button variant="action">
                     <Plus className="w-4 h-4" />
-                    New Project
+                    {t('new_project')}
                   </Button>
                 </div>
               </div>
@@ -196,6 +196,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                 projects={unpinnedProjects}
                 onProjectClick={handleProjectClick}
                 onTogglePin={togglePin}
+                t={t}
               />
             </section>
           </div>
@@ -210,10 +211,12 @@ function ProjectCard({
   project,
   onClick,
   onTogglePin,
+  t,
 }: {
   project: Project;
   onClick: () => void;
   onTogglePin: (e: React.MouseEvent) => void;
+  t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
   return (
     <div
@@ -223,7 +226,7 @@ function ProjectCard({
       <button
         onClick={onTogglePin}
         className="absolute top-4 right-4 p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
-        aria-label="Unpin project"
+        aria-label={t('actions.unpin')}
       >
         <Pin className="w-4 h-4 text-icon-default" />
       </button>
@@ -242,8 +245,8 @@ function ProjectCard({
             ) : (
               <Lock className="w-3.5 h-3.5 text-icon-default" />
             )}
-            <span className="capitalize text-tertiary">
-              {project.visibility}
+            <span className="text-tertiary">
+              {t(`visibility.${project.visibility}`)}
             </span>
           </div>
         </div>
@@ -266,12 +269,14 @@ function ProjectsTable({
   projects,
   onProjectClick,
   onTogglePin,
+  t,
 }: {
   projects: Project[];
   onProjectClick: (project: Project) => void;
   onTogglePin: (projectId: string, e: React.MouseEvent) => void;
+  t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
-  const columns = useMemo<ColumnDef<Project>[]>(
+  const columns = useMemo(
     () => [
       columnHelper.display({
         id: 'pin',
@@ -280,14 +285,14 @@ function ProjectsTable({
           <button
             onClick={(e) => onTogglePin(row.original.id, e)}
             className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
-            aria-label="Pin project"
+            aria-label={t('actions.pin')}
           >
             <PinOff className="w-4 h-4 text-icon-default" />
           </button>
         ),
       }),
       columnHelper.accessor('name', {
-        header: 'Name',
+        header: t('table.name'),
         cell: (info) => (
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
@@ -298,31 +303,31 @@ function ProjectsTable({
         ),
       }),
       columnHelper.accessor('visibility', {
-        header: 'Visibility',
+        header: t('table.visibility'),
         cell: (info) => (
           <div className="flex items-center gap-2">
             {info.getValue() === 'public' ? (
               <>
                 <Globe className="w-4 h-4 text-icon-default" />
-                <span className="capitalize text-primary">Public</span>
+                <span className="text-primary">{t('visibility.public')}</span>
               </>
             ) : (
               <>
                 <Lock className="w-4 h-4 text-icon-default" />
-                <span className="capitalize text-primary">Private</span>
+                <span className="text-primary">{t('visibility.private')}</span>
               </>
             )}
           </div>
         ),
       }),
       columnHelper.accessor('role', {
-        header: 'Your Role',
+        header: t('table.role'),
         cell: (info) => (
           <span className="capitalize text-primary">{info.getValue()}</span>
         ),
       }),
       columnHelper.accessor('status', {
-        header: 'Status',
+        header: t('table.status'),
         cell: (info) => (
           <StatusBadge status={info.getValue() === 'active' ? 'active' : 'paused'}>
             {info.getValue()}
@@ -337,13 +342,13 @@ function ProjectsTable({
             <button
               onClick={() => onProjectClick(row.original)}
               className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
-              aria-label="Open project"
+              aria-label={t('actions.open')}
             >
               <Eye className="w-4 h-4 text-icon-default" />
             </button>
             <button
               className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
-              aria-label="Project settings"
+              aria-label={t('actions.settings')}
             >
               <Settings className="w-4 h-4 text-icon-default" />
             </button>
@@ -354,7 +359,7 @@ function ProjectsTable({
         ),
       }),
     ],
-    [onProjectClick, onTogglePin]
+    [onProjectClick, onTogglePin, t]
   );
 
   const table = useReactTable({
@@ -366,7 +371,7 @@ function ProjectsTable({
   if (projects.length === 0) {
     return (
       <div className="text-center py-12 bg-surface border border-border rounded-md">
-        <p className="text-tertiary">No projects found</p>
+        <p className="text-tertiary">{t('no_results')}</p>
       </div>
     );
   }

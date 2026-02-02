@@ -575,5 +575,42 @@
       "approve_success": "Join request approved successfully",
       "reject_success": "Join request rejected successfully"
     }
+  },
+  "projects": {
+    "title": "Projects",
+    "workspace_label": "Workspace:",
+    "loading": "Loading...",
+    "empty": {
+      "title": "No projects yet",
+      "description": "Create your first project to get started",
+      "create_first": "New Project"
+    },
+    "pinned": {
+      "title": "Pinned Projects"
+    },
+    "all": {
+      "title": "All Projects",
+      "count": "All Projects ({count})"
+    },
+    "search_placeholder": "Search projects...",
+    "no_results": "No projects found",
+    "new_project": "New Project",
+    "current": "Current",
+    "table": {
+      "name": "Name",
+      "visibility": "Visibility",
+      "role": "Your Role",
+      "status": "Status"
+    },
+    "visibility": {
+      "public": "Public",
+      "private": "Private"
+    },
+    "actions": {
+      "pin": "Pin project",
+      "unpin": "Unpin project",
+      "open": "Open project",
+      "settings": "Project settings"
+    }
   }
 }

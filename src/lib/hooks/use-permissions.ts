@@ -10,17 +10,13 @@ import { useMemo } from 'react';
 import { useProject } from './use-projects-queries';
 import { useParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
-import type { Project } from '@/lib/api/types';
+import { validateProjectWithMembership, type ProjectWithMembership as ValidationProjectWithMembership } from '@/lib/utils/validation';
 
-// Stable empty array reference
-const EMPTY_PERMISSIONS: readonly string[] = Object.freeze([]) as unknown as string[];
+// Re-export type for backward compatibility
+export type ProjectWithMembership = ValidationProjectWithMembership;
 
-// Project extended with role/permissions from membership
-// TODO: This should come from a membership API endpoint
-export interface ProjectWithMembership extends Project {
-  role?: 'owner' | 'admin' | 'developer' | 'user';
-  permissions?: string[];
-}
+// Stable empty array reference - now properly typed
+const EMPTY_PERMISSIONS: readonly string[] = Object.freeze([]);
 
 /**
  * Check if user is authenticated
@@ -40,9 +36,9 @@ export function useCurrentPermissions() {
   const { data: currentProject } = useProject(workspaceId, projectId);
 
   return useMemo(() => {
-    // Cast to extended type - will be resolved when membership API is integrated
-    const projectWithMembership = currentProject as unknown as ProjectWithMembership | undefined;
-    return projectWithMembership?.permissions ?? EMPTY_PERMISSIONS;
+    // Runtime validation: ensure project data matches expected schema
+    const validated = currentProject ? validateProjectWithMembership(currentProject) : null;
+    return validated?.permissions ?? EMPTY_PERMISSIONS;
   }, [currentProject]);
 }
 
@@ -110,9 +106,9 @@ export function useIsOwnerOrAdmin(): boolean {
       return false;
     }
 
-    // Cast to extended type - will be resolved when membership API is integrated
-    const projectWithMembership = currentProject as unknown as ProjectWithMembership | undefined;
-    const role = projectWithMembership?.role || 'user';
+    // Runtime validation: ensure project data matches expected schema
+    const validated = validateProjectWithMembership(currentProject);
+    const role = validated?.role || 'user';
     return role === 'owner' || role === 'admin';
   }, [currentProject]);
 }
@@ -131,9 +127,9 @@ export function useIsOwner(): boolean {
       return false;
     }
 
-    // Cast to extended type - will be resolved when membership API is integrated
-    const projectWithMembership = currentProject as unknown as ProjectWithMembership | undefined;
-    const role = projectWithMembership?.role || 'user';
+    // Runtime validation: ensure project data matches expected schema
+    const validated = validateProjectWithMembership(currentProject);
+    const role = validated?.role || 'user';
     return role === 'owner';
   }, [currentProject]);
 }

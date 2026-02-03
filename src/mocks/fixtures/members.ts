@@ -175,3 +175,6 @@ export const joinRequestFixtures: JoinRequest[] = [
     reviewed_by: 'user_001',
   },
 ];
+
+// Re-export ProjectMembership as Membership for API use
+export type { ProjectMembership as Membership } from '@/lib/api/types';

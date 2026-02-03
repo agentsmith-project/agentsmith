@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import React from 'react';
-import { useHasPermission, useHasAllPermissions, useCurrentPermissions, useIsOwnerOrAdmin, useIsOwner } from '../use-permissions';
+import { useHasPermission, useCurrentPermissions, useIsOwnerOrAdmin, useIsOwner } from '../use-permissions';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Mock dependencies

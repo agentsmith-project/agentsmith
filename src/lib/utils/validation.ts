@@ -5,7 +5,6 @@
  */
 
 import { z } from 'zod';
-import type { Project } from '@/lib/api/types';
 
 /**
  * UUIDv7 validation pattern

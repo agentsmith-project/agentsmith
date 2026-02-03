@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateProjectWithMembership, type ProjectWithMembership } from '../validation';
+import { validateProjectWithMembership } from '../validation';
 
 describe('validateProjectWithMembership', () => {
   it('should validate a valid project with membership', () => {

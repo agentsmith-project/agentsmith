@@ -9,7 +9,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Settings as SettingsIcon, Save } from 'lucide-react';
-import { useAuthStore } from '@/lib/stores/authStore';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import { handleErrorForToast } from '@/lib/api';
@@ -36,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useProject } from '@/lib/hooks/use-projects-queries';
 
 interface SettingsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -58,13 +59,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [governanceConfirmOpen, setGovernanceConfirmOpen] = useState(false);
   const router = useRouter();
-  const currentProject = useAuthStore((state) => state.currentProject);
-  const setProject = useAuthStore((state) => state.setProject);
-  const clearProject = useAuthStore((state) => state.clearProject);
-  const projects = useAuthStore((state) => state.projects);
-  const setProjects = useAuthStore((state) => state.setProjects);
   const commonT = useTranslations('common');
   const settingsT = useTranslations('settings');
+  const queryClient = useQueryClient();
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);
 
@@ -72,53 +69,41 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project, locale: p.locale }));
   }, [params]);
 
+  // Fetch project data
+  const { data: currentProject } = useProject(
+    resolvedParams?.workspace ?? '',
+    resolvedParams?.project ?? ''
+  );
+
   useEffect(() => {
     if (currentProject) {
       setName(currentProject.name);
+      setDescription(currentProject.description ?? '');
       setVisibility(currentProject.visibility || 'private');
-      setJoinPolicy('approval_required');
+      setJoinPolicy(currentProject.join_policy || 'approval_required');
+      setRuntimePreferences((currentProject.runtime_preferences_json as RuntimePreferences) ?? {});
+      setGovernance((currentProject.governance_json as GovernanceJson) ?? {});
+      setLimits((currentProject.limits_json as LimitsJson) ?? {});
     }
   }, [currentProject]);
 
-  useEffect(() => {
-    if (!resolvedParams) return;
-    const load = async () => {
-      try {
-        const p = await projectAPI.get(resolvedParams.workspace, resolvedParams.project);
-        setName(p.name ?? '');
-        setDescription(p.description ?? '');
-        setVisibility((p.visibility as 'public' | 'private') ?? 'private');
-        setJoinPolicy((p.join_policy as 'approval_required' | 'open') ?? 'approval_required');
-        setRuntimePreferences((p.runtime_preferences_json as RuntimePreferences) ?? {});
-        setGovernance((p.governance_json as GovernanceJson) ?? {});
-        setLimits((p.limits_json as LimitsJson) ?? {});
-      } catch {
-        // Use auth store defaults
-      }
-    };
-    load();
-  }, [resolvedParams, projectAPI]);
-
   const handleSaveGeneral = async () => {
-    if (!resolvedParams || !currentProject) return;
+    if (!resolvedParams) return;
     setSaving(true);
     try {
-      const updated = await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
+      await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
         name: name.trim(),
         description: description.trim() || undefined,
         visibility,
         join_policy: joinPolicy,
       });
-      setProject({
-        ...currentProject,
-        name: updated.name,
-        visibility: updated.visibility,
+      // Invalidate and refetch project data
+      queryClient.invalidateQueries({
+        queryKey: ['workspaces', resolvedParams.workspace, 'projects', resolvedParams.project],
       });
-      setProjects(
-        projects.map((p) =>
-          p.id === currentProject.id ? { ...p, name: updated.name, visibility: updated.visibility } : p
-        )
-      );
+      queryClient.invalidateQueries({
+        queryKey: ['workspaces', resolvedParams.workspace, 'projects'],
+      });
       toast.success(commonT('refreshed_data'));
     } catch (error) {
       handleErrorForToast(error);
@@ -352,23 +337,29 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       <DeleteProjectDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        project={currentProject}
+        project={currentProject ? {
+          id: currentProject.id,
+          workspace_id: currentProject.workspace_id,
+          name: currentProject.name,
+          visibility: currentProject.visibility,
+          role: 'owner',
+          permissions: ['project:*'],
+          status: currentProject.status,
+          created_at: currentProject.created_at,
+          updated_at: currentProject.updated_at,
+        } : null}
         workspaceId={resolvedParams?.workspace || ''}
         onConfirm={() => {
-          if (currentProject) {
-            const remaining = projects.filter((p) => p.id !== currentProject.id);
-            setProjects(remaining);
-            clearProject();
-            router.push(`/${resolvedParams?.locale || 'en-US'}/workspaces/${resolvedParams?.workspace}/projects`);
-          }
+          queryClient.invalidateQueries({
+            queryKey: ['workspaces', resolvedParams?.workspace, 'projects'],
+          });
+          router.push(`/${resolvedParams?.locale || 'en-US'}/workspaces/${resolvedParams?.workspace}/projects`);
         }}
         onDeleted={() => {
-          if (currentProject) {
-            const remaining = projects.filter((p) => p.id !== currentProject.id);
-            setProjects(remaining);
-            clearProject();
-            router.push(`/${resolvedParams?.locale || 'en-US'}/workspaces/${resolvedParams?.workspace}/projects`);
-          }
+          queryClient.invalidateQueries({
+            queryKey: ['workspaces', resolvedParams?.workspace, 'projects'],
+          });
+          router.push(`/${resolvedParams?.locale || 'en-US'}/workspaces/${resolvedParams?.workspace}/projects`);
         }}
         deleteProject={(wsId, projectId) => projectAPI.delete(wsId, projectId)}
       />

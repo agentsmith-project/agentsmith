@@ -13,12 +13,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { handleErrorForToast } from '@/lib/api';
-import type { Project as AuthProject } from '@/lib/stores/authStore';
+import type { ProjectWithMembership } from '@/lib/hooks/use-permissions';
 
 export interface DeleteProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  project: AuthProject | null;
+  project: ProjectWithMembership | null;
   workspaceId: string;
   onConfirm: () => void;
   onDeleted?: () => void;

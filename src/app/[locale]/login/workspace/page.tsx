@@ -1,35 +1,18 @@
 'use client';
 
-import { useAuthStore } from '@/lib/stores/authStore';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Building2, FolderKanban } from 'lucide-react';
-import { useEffect } from 'react';
+import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 
 export default function WorkspaceSelectPage() {
   const router = useRouter();
   const params = useParams();
   const t = useTranslations('auth');
   const locale = (params?.locale as string) || 'en-US';
-  const { workspaces, projects, setWorkspace, setProject, currentWorkspace } = useAuthStore();
-
-  // If already has a workspace, redirect to projects
-  useEffect(() => {
-    if (currentWorkspace) {
-      router.push(`/${locale}/workspaces/${currentWorkspace.id}/projects`);
-    }
-  }, [currentWorkspace, router, locale]);
+  const { data: workspaces } = useWorkspaces();
 
   const handleWorkspaceSelect = (workspaceId: string) => {
-    const workspace = workspaces?.find(ws => ws.id === workspaceId);
-    if (workspace) {
-      setWorkspace(workspace);
-      // Set first project as current project
-      const firstProject = projects.find(p => p.workspace_id === workspaceId);
-      if (firstProject) {
-        setProject(firstProject);
-      }
-    }
     router.push(`/${locale}/workspaces/${workspaceId}/projects`);
   };
 
@@ -71,14 +54,14 @@ function WorkspaceCard({ workspace, onSelect }: { workspace: any; onSelect: () =
         </div>
         <div>
           <h3 className="text-lg font-semibold text-foreground">{workspace.name}</h3>
-          <p className="text-sm text-tertiary">{workspace.role}</p>
+          <p className="text-sm text-tertiary">{workspace.id}</p>
         </div>
       </div>
 
       <div className="flex items-center gap-4 text-sm text-tertiary">
         <span className="flex items-center gap-1">
           <FolderKanban className="w-4 h-4" />
-          {t('projects_count', { count: workspace.projects?.length || 0 })}
+          {t('projects_count', { count: 0 })}
         </span>
       </div>
     </div>

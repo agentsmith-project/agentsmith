@@ -12,7 +12,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { Key, Plus, RotateCcw, Trash2 } from 'lucide-react';
-import { useAuthStore } from '@/lib/stores/authStore';
 import { CredentialsAPI, getApiClient, handleErrorForToast } from '@/lib/api';
 import type { Credential } from '@/lib/api/types';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
@@ -115,7 +114,6 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCredential, setSelectedCredential] = useState<Credential | null>(null);
 
-  const currentProject = useAuthStore((state) => state.currentProject);
 
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
@@ -175,7 +173,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  if (!resolvedParams || !currentProject) {
+  if (!resolvedParams) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-tertiary">Loading...</div>

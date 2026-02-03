@@ -39,7 +39,6 @@ interface ChatPageProps {
 export default function ChatPage({ params }: ChatPageProps) {
   const queryClient = useQueryClient();
 
-  const currentProject = useAuthStore((s) => s.currentProject);
   const token = useAuthStore((s) => s.token);
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
 
@@ -407,7 +406,7 @@ export default function ChatPage({ params }: ChatPageProps) {
     }
   };
 
-  if (!resolvedParams || !currentProject) {
+  if (!resolvedParams) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-tertiary">Loading...</div>

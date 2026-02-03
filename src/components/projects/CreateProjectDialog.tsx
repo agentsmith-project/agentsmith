@@ -23,10 +23,9 @@ import { useMutation } from '@tanstack/react-query';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import type { CreateProjectRequest } from '@/lib/api/endpoints/projects';
 import type { Project as ApiProject } from '@/lib/api/types';
-import type { Project as AuthProject } from '@/lib/stores/authStore';
+import type { ProjectWithMembership } from '@/lib/hooks/use-permissions';
 import { handleErrorForToast } from '@/lib/api';
-function mapApiProjectToAuthProject(apiProject: ApiProject): AuthProject {
-  const status = apiProject.status === 'active' ? 'active' : 'disabled';
+function mapApiProjectToAuthProject(apiProject: ApiProject): ProjectWithMembership {
   return {
     id: apiProject.id,
     workspace_id: apiProject.workspace_id,
@@ -34,7 +33,9 @@ function mapApiProjectToAuthProject(apiProject: ApiProject): AuthProject {
     visibility: apiProject.visibility,
     role: 'owner',
     permissions: ['project:*'],
-    status,
+    status: apiProject.status,
+    created_at: apiProject.created_at,
+    updated_at: apiProject.updated_at,
   };
 }
 
@@ -42,7 +43,7 @@ export interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
-  onSuccess?: (project: AuthProject) => void;
+  onSuccess?: (project: ProjectWithMembership) => void;
   onCancel?: () => void;
 }
 

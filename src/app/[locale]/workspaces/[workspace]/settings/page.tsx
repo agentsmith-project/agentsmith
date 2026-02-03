@@ -4,18 +4,18 @@ import * as React from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Settings as SettingsIcon } from 'lucide-react';
-import { useAuthStore } from '@/lib/stores/authStore';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
+import { useWorkspace } from '@/lib/hooks/use-workspaces';
 
 export default function WorkspaceSettingsPage() {
   const params = useParams();
   const t = useTranslations('settings');
   const workspaceId = params?.workspace as string;
-  const currentWorkspace = useAuthStore((state) => state.currentWorkspace);
+  const { data: currentWorkspace } = useWorkspace(workspaceId);
   useSyncAuthFromUrl();
 
-  const workspace = currentWorkspace || { id: workspaceId, name: workspaceId, role: 'owner' as const };
+  const workspace = currentWorkspace || { id: workspaceId, name: workspaceId };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

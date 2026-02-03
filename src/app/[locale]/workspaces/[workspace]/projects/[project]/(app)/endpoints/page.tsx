@@ -11,7 +11,6 @@ import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { Server, Plus, Trash2, Globe } from 'lucide-react';
-import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, EndpointAPI } from '@/lib/api';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -123,7 +122,6 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
-  const currentProject = useAuthStore((state) => state.currentProject);
 
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
@@ -161,7 +159,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  if (!resolvedParams || !currentProject) {
+  if (!resolvedParams) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-tertiary">Loading...</div>

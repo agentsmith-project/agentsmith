@@ -13,9 +13,9 @@ import { useMemo } from 'react';
 // Stable empty array reference
 const EMPTY_PERMISSIONS: string[] = Object.freeze([]) as unknown as string[];
 
-// Local interface extending Project with role/permissions
+// Project extended with role/permissions from membership
 // TODO: This should come from a membership API endpoint
-interface ProjectWithMembership {
+export interface ProjectWithMembership {
   id: string;
   workspace_id: string;
   name: string;

@@ -11,7 +11,6 @@ import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { Bot, Plus, Key, Pencil, Power, PowerOff } from 'lucide-react';
-import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, AgentAPI } from '@/lib/api';
 import type { Agent } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
@@ -197,8 +196,6 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const [editDialogAgent, setEditDialogAgent] = useState<Agent | null>(null);
   const [keysDialogAgent, setKeysDialogAgent] = useState<Agent | null>(null);
 
-  const currentProject = useAuthStore((state) => state.currentProject);
-
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
   }, [params]);
@@ -245,7 +242,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  if (!resolvedParams || !currentProject) {
+  if (!resolvedParams) {
     return <PageLoading />;
   }
 

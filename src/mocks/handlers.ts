@@ -809,6 +809,24 @@ export const handlers = [
     return HttpResponse.json({ success: true });
   }),
 
+  http.get('/api/workspaces/:ws/projects/:prj/memberships/:userId', ({ params }) => {
+    const userId = getId(params, 'userId');
+    const projectId = getId(params, 'prj');
+
+    const membership = projectMembershipFixtures.find(
+      (m) => m.project_id === projectId && m.user_id === userId
+    );
+
+    if (!membership) {
+      return HttpResponse.json(
+        { error_code: 'NOT_FOUND', message: 'Membership not found' },
+        { status: 404 }
+      );
+    }
+
+    return HttpResponse.json(membership);
+  }),
+
   // ============================================================
   // Audit & Usage
   // ============================================================

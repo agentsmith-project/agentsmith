@@ -57,6 +57,15 @@ export interface InviteResponse {
   expires_at: string;
 }
 
+export interface Membership {
+  project_id: string;
+  user_id: string;
+  role: 'owner' | 'admin' | 'developer' | 'user';
+  permissions: string[];
+  status: 'active' | 'blocked' | 'removed';
+  joined_at: string;
+}
+
 export class MemberAPI {
   constructor(private client: ApiClient) {}
 
@@ -408,5 +417,21 @@ export class MemberAPI {
       `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/change-history`
     );
     return response.items;
+  }
+
+  /**
+   * Get membership for a specific user in a project
+   *
+   * This endpoint returns the current user's role and permissions
+   * for the specified project. Used for permission checks.
+   */
+  async getMembership(
+    workspaceId: string,
+    projectId: string,
+    userId: string
+  ): Promise<Membership> {
+    return this.client.get<Membership>(
+      `/workspaces/${workspaceId}/projects/${projectId}/memberships/${userId}`
+    );
   }
 }

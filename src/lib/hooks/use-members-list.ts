@@ -229,6 +229,7 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     selectedMemberIds,
     allSelected,
     someSelected,
+    setSelectedMemberIds,
 
     // Dialog states
     drawerOpen,

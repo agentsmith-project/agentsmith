@@ -1,69 +1,61 @@
 /**
- * Hook to sync auth store state from URL parameters
- * 
- * This hook ensures that currentWorkspace and currentProject in the store
- * are always in sync with the URL parameters. This is important for:
- * - Direct URL navigation (deep links)
- * - Browser back/forward navigation
- * - Programmatic navigation
+ * Hook to sync auth state from URL parameters
+ *
+ * After refactoring:
+ * - Reads workspace/project from URL params
+ * - Queries React Query for data
+ * - No writing to Zustand for selection
+ * - Handles deep links and redirects
  */
 
 import { useEffect } from 'react';
-import { useParams } from 'next/navigation';
-import { useAuthStore } from '@/lib/stores/authStore';
-import { useAuthStoreHydration } from '@/lib/stores/authStore';
+import { useParams, useRouter } from 'next/navigation';
+import { useWorkspaces } from './use-workspaces';
+import { useProjects } from './use-projects-queries';
+import { useAuthStoreHydration } from '@/lib/stores/authStore.new';
 
 export function useSyncAuthFromUrl() {
   const params = useParams();
+  const router = useRouter();
   const hydrated = useAuthStoreHydration();
-  const {
-    workspaces,
-    projects: allProjects,
-    currentWorkspace,
-    currentProject,
-    setWorkspace,
-    setProject,
-    clearProject,
-  } = useAuthStore();
 
+  const { data: workspaces, isLoading: workspacesLoading } = useWorkspaces();
   const workspaceId = params?.workspace as string | undefined;
   const projectId = params?.project as string | undefined;
 
-  // Sync workspace from URL
+  // Get projects for current workspace (if workspace selected)
+  const { data: projects, isLoading: projectsLoading } = useProjects(workspaceId || '');
+
+  // Validate workspace from URL
   useEffect(() => {
-    if (!hydrated || !workspaceId || !workspaces) return;
+    if (!hydrated || workspacesLoading || !workspaceId) return;
 
-    const workspaceFromUrl = workspaces.find((ws) => ws.id === workspaceId);
-    
-    if (workspaceFromUrl && currentWorkspace?.id !== workspaceFromUrl.id) {
-      // Update workspace in store (this will clear currentProject)
-      setWorkspace(workspaceFromUrl);
-      // Note: We don't update projects here - projects should contain all projects
-      // Components will filter by currentWorkspace.id when needed
+    const workspaceExists = workspaces?.find((ws) => ws.id === workspaceId);
+
+    if (!workspaceExists) {
+      // Workspace not found for user, redirect to workspace list
+      router.replace('/workspaces');
     }
-  }, [hydrated, workspaceId, workspaces, currentWorkspace, setWorkspace]);
+  }, [hydrated, workspaceId, workspaces, workspacesLoading, router]);
 
-  // Sync project from URL (only if we have a workspace)
+  // Validate project from URL
   useEffect(() => {
-    if (!hydrated || !workspaceId || !currentWorkspace) return;
-    if (currentWorkspace.id !== workspaceId) return; // Wait for workspace to sync first
+    if (!hydrated || !workspaceId || projectsLoading) return;
 
-    if (!projectId) {
-      // URL has no project (e.g. /workspaces/ws/projects) -> clear project so topbar shows correct state
-      if (currentProject) {
-        clearProject();
-      }
-      return;
+    // If no project in URL, we're on project list page - nothing to validate
+    if (!projectId) return;
+
+    const projectExists = projects?.find((p) => p.id === projectId);
+
+    if (!projectExists) {
+      // Project not found or not in this workspace, redirect to project list
+      router.replace(`/workspaces/${workspaceId}/projects`);
     }
+  }, [hydrated, workspaceId, projectId, projects, projectsLoading, router]);
 
-    const projectFromUrl = allProjects.find(
-      (p) => p.id === projectId && p.workspace_id === workspaceId
-    );
-
-    if (projectFromUrl && currentProject?.id !== projectFromUrl.id) {
-      if (projectFromUrl.workspace_id === currentWorkspace.id) {
-        setProject(projectFromUrl);
-      }
-    }
-  }, [hydrated, projectId, workspaceId, currentWorkspace, allProjects, currentProject, setProject, clearProject]);
+  return {
+    workspaceId,
+    projectId,
+    isLoading: workspacesLoading || projectsLoading,
+  };
 }

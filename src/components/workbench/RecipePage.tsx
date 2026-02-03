@@ -157,10 +157,33 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
     }
   };
 
-  const handleSaveArtifactToLibrary = async (_filename?: string, _description?: string) => {
+  const handleSaveArtifactToLibrary = async (filename?: string, description?: string) => {
     if (!selectedArtifact) return;
-    // TODO: Implement save to library
-    setSaveDialogOpen(false);
+
+    try {
+      const recipeAPI = new RecipeAPI(getApiClient());
+      await recipeAPI.saveArtifact(
+        workspaceId,
+        projectId,
+        recipeId,
+        selectedArtifact.id,
+        {
+          artifact_id: selectedArtifact.id,
+          filename: filename || selectedArtifact.title,
+          description,
+        },
+      );
+
+      // Show success notification (you could add a toast here)
+      setSaveDialogOpen(false);
+
+      // Optionally refresh sources list
+      queryClient.invalidateQueries({
+        queryKey: ['sources', workspaceId, projectId],
+      });
+    } catch (err) {
+      handleError(err, { logContext: 'RecipePage.saveArtifactToLibrary' });
+    }
   };
 
   const handleCreateNew = () => {

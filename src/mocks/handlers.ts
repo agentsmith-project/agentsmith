@@ -138,7 +138,17 @@ export const handlers = [
     if (!project) {
       return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Project not found' }, { status: 404 });
     }
-    return HttpResponse.json(project);
+    // Include current user's membership info for permission checks
+    // Mock current user is user_001 (owner of proj_001 and proj_002)
+    const currentUserId = 'user_001';
+    const membership = projectMembershipFixtures.find(
+      (m) => m.project_id === projectId && m.user_id === currentUserId
+    );
+    return HttpResponse.json({
+      ...project,
+      role: membership?.role,
+      permissions: membership?.permissions,
+    });
   }),
 
   http.post('/api/workspaces/:ws/projects', async ({ request }) => {

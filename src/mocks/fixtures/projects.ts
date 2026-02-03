@@ -83,6 +83,7 @@ export const projectFixtures: Project[] = [
 ];
 
 export const projectMembershipFixtures: ProjectMembership[] = [
+  // proj_001 members
   {
     project_id: 'proj_001',
     user_id: 'user_001',
@@ -108,6 +109,23 @@ export const projectMembershipFixtures: ProjectMembership[] = [
     joined_at: '2026-01-17T10:00:00Z',
   },
   {
+    project_id: 'proj_001',
+    user_id: 'user_004',
+    role: 'user',
+    permissions: [...ROLE_TEMPLATES.user],
+    status: 'active',
+    joined_at: '2026-01-18T10:00:00Z',
+  },
+  {
+    project_id: 'proj_001',
+    user_id: 'user_005',
+    role: 'user',
+    permissions: [...ROLE_TEMPLATES.user],
+    status: 'blocked',
+    joined_at: '2026-01-08T10:00:00Z',
+  },
+  // proj_002 members
+  {
     project_id: 'proj_002',
     user_id: 'user_001',
     role: 'owner',
@@ -115,4 +133,15 @@ export const projectMembershipFixtures: ProjectMembership[] = [
     status: 'active',
     joined_at: '2026-01-10T09:00:00Z',
   },
+  {
+    project_id: 'proj_002',
+    user_id: 'user_003',
+    role: 'admin',
+    permissions: [...ROLE_TEMPLATES.admin],
+    status: 'active',
+    joined_at: '2026-01-12T09:00:00Z',
+  },
 ];
+
+// Mock current user ID for development
+export const CURRENT_USER_ID = 'user_001';

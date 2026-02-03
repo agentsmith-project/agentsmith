@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useIsAuthenticated, useHasPermission, useHasAllPermissions } from '@/lib/hooks/use-permissions';
+import { useHasPermission, useHasAllPermissions, useIsAuthenticated } from '@/lib/hooks/use-permissions';
 import { useAuthStoreHydration } from '@/lib/stores/authStore';
 
 interface ProtectedRouteProps {

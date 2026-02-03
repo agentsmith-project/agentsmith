@@ -28,7 +28,7 @@ export default function LoginPage() {
   const params = useParams();
   const t = useTranslations('auth');
   const hydrated = useAuthStoreHydration();
-  const { mockLogin, isAuthenticated, currentWorkspace } = useAuthStore();
+  const { setAuth, isAuthenticated } = useAuthStore();
 
   const [workspaceId, setWorkspaceId] = useState('ws_default');
   const [userEmail, setUserEmail] = useState('');
@@ -38,15 +38,11 @@ export default function LoginPage() {
   // Get locale from params
   const locale = (params?.locale as string) || 'en-US';
 
-  // Redirect authenticated users to workspace/projects (persisted login state)
+  // Redirect authenticated users to workspace selection
   useEffect(() => {
     if (!hydrated || !isAuthenticated) return;
-    if (currentWorkspace) {
-      router.replace(`/${locale}/workspaces/${currentWorkspace.id}/projects`);
-    } else {
-      router.replace(`/${locale}/login/workspace`);
-    }
-  }, [hydrated, isAuthenticated, currentWorkspace, locale, router]);
+    router.replace(`/${locale}/login/workspace`);
+  }, [hydrated, isAuthenticated, locale, router]);
 
   const handleQuickLogin = async () => {
     if (!userEmail.trim()) {
@@ -55,7 +51,16 @@ export default function LoginPage() {
 
     setIsLoggingIn(true);
     try {
-      mockLogin(workspaceId, userEmail, _userName);
+      // Mock login: set auth state directly
+      setAuth(
+        {
+          id: 'user_default',
+          email: userEmail,
+          name: _userName || userEmail.split('@')[0],
+          locale: locale as 'en-US' | 'zh-CN',
+        },
+        'mock_token_' + Date.now()
+      );
       // Redirect to workspace selection page
       const redirectPath = `/${locale}/login/workspace`;
       router.push(redirectPath);

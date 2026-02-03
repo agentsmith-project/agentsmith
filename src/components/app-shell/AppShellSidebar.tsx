@@ -1,12 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { useAuthStore } from '@/lib/stores/authStore';
-import { usePathname } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useProject } from '@/lib/hooks/use-projects-queries';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -54,12 +54,16 @@ export function AppShellSidebar({
   onChange: _onChange,
   className = '',
 }: AppShellSidebarProps) {
-  const { currentProject } = useAuthStore();
+  const params = useParams();
   const pathname = usePathname();
   const t = useTranslations('nav');
   const [collapsed, setCollapsed] = React.useState(false);
   const canReadAudit = useHasPermission('project:audit:read');
   const canReadUsage = useHasPermission('project:usage:read');
+
+  const workspaceId = params?.workspace as string | undefined;
+  const projectId = params?.project as string | undefined;
+  const { data: currentProject } = useProject(workspaceId || '', projectId || '');
 
   const projectMenuItems = currentProject
     ? PROJECT_MENU_ITEMS.filter((item) => {

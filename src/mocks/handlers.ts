@@ -113,6 +113,15 @@ export const handlers = [
     });
   }),
 
+  http.get('/api/workspaces/:id', ({ params }) => {
+    const workspaceId = getId(params, 'id');
+    const workspace = workspaceFixtures.find((w) => w.id === workspaceId);
+    if (!workspace) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Workspace not found' }, { status: 404 });
+    }
+    return HttpResponse.json(workspace);
+  }),
+
   // ============================================================
   // Projects
   // ============================================================

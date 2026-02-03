@@ -36,7 +36,8 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { Topbar } from '@/components/app-shell/Topbar';
-import { useAuthStore, useAuthStoreHydration, type Project as AuthProject } from '@/lib/stores/authStore';
+import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
+import type { ProjectWithMembership } from '@/lib/hooks/use-permissions';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
@@ -44,8 +45,11 @@ import { Button } from '@/components/ui/button';
 import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { ProjectAPI, getApiClient } from '@/lib/api';
+import { useProjects } from '@/lib/hooks/use-projects-queries';
+import { useWorkspace } from '@/lib/hooks/use-workspaces';
+import { useQueryClient } from '@tanstack/react-query';
 
-type Project = AuthProject & { pinned: boolean };
+type Project = ProjectWithMembership & { pinned: boolean };
 
 interface ProjectsPageProps {
   params: Promise<{ workspace: string; locale: string }>;
@@ -55,29 +59,16 @@ const columnHelper = createColumnHelper<Project>();
 
 export default function ProjectsPage({ params }: ProjectsPageProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const t = useTranslations('projects');
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; locale: string } | null>(null);
-  const { 
-    projects: allProjects, 
-    setProject,
-    clearProject,
-    setProjects: setAuthProjects,
-    currentWorkspace,
-    currentProject,
-    isAuthenticated,
-  } = useAuthStore();
-
-  const handleSettingsClick = (project: Project) => {
-    setProject(project);
-    router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/settings`);
-  };
+  const { isAuthenticated } = useAuthStore();
   const hydrated = useAuthStoreHydration();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogProject, setDeleteDialogProject] = useState<Project | null>(null);
-  const projectAPI = new ProjectAPI(getApiClient());
 
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, locale: p.locale }));
@@ -86,30 +77,30 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   // Sync auth store from URL parameters
   useSyncAuthFromUrl();
 
-  // Initialize projects with pinned status (filter by current workspace)
+  const workspaceId = resolvedParams?.workspace || '';
+  const locale = resolvedParams?.locale || 'en-US';
+
+  // Fetch workspace and projects
+  const { data: currentWorkspace } = useWorkspace(workspaceId);
+  const { data: allProjects = [] } = useProjects(workspaceId);
+
+  // Initialize projects with pinned status
   useEffect(() => {
-    if (hydrated && allProjects.length > 0 && currentWorkspace) {
-      // Filter projects for current workspace
-      const workspaceProjects = allProjects.filter((p) => p.workspace_id === currentWorkspace.id);
-      const projectsWithPin = workspaceProjects.map((p) => ({
+    if (hydrated && allProjects.length > 0) {
+      const projectsWithPin = allProjects.map((p) => ({
         ...p,
         pinned: p.id === 'proj_001', // Pin first project by default for demo
       })) as Project[];
       setProjects(projectsWithPin);
-    } else if (hydrated && allProjects.length > 0 && !currentWorkspace && resolvedParams) {
-      // Fallback: if workspace not set yet, filter by URL param
-      const workspaceProjects = allProjects.filter((p) => p.workspace_id === resolvedParams.workspace);
-      const projectsWithPin = workspaceProjects.map((p) => ({
-        ...p,
-        pinned: p.id === 'proj_001',
-      })) as Project[];
-      setProjects(projectsWithPin);
     }
-  }, [hydrated, allProjects, currentWorkspace, resolvedParams]);
+  }, [hydrated, allProjects]);
 
   const handleProjectClick = (project: Project) => {
-    setProject(project);
-    router.push(`/${resolvedParams?.locale || 'en-US'}/workspaces/${resolvedParams?.workspace || 'ws1'}/projects/${project.id}/overview`);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/overview`);
+  };
+
+  const handleSettingsClick = (project: Project) => {
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/settings`);
   };
 
   const togglePin = (projectId: string, e: React.MouseEvent) => {
@@ -119,30 +110,28 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
     );
   };
 
-  const workspaceId = currentWorkspace?.id || resolvedParams?.workspace || '';
-  const locale = resolvedParams?.locale || 'en-US';
-
   const handleDeleteProject = async (wsId: string, projectId: string) => {
+    const projectAPI = new ProjectAPI(getApiClient());
     await projectAPI.delete(wsId, projectId);
   };
 
   const handleDeleteProjectSuccess = () => {
     if (!deleteDialogProject) return;
-    const remaining = allProjects.filter((p) => p.id !== deleteDialogProject.id);
-    setAuthProjects(remaining);
-    setProjects((prev) => prev.filter((p) => p.id !== deleteDialogProject.id));
-    if (currentProject?.id === deleteDialogProject.id) {
-      clearProject();
-    }
+    // Invalidate and refetch projects
+    queryClient.invalidateQueries({
+      queryKey: ['workspaces', workspaceId, 'projects'],
+    });
     setDeleteDialogProject(null);
     router.push(`/${locale}/workspaces/${workspaceId}/projects`);
   };
 
-  const handleCreateProjectSuccess = (newProject: AuthProject) => {
+  const handleCreateProjectSuccess = (newProject: ProjectWithMembership) => {
     const projectWithPin: Project = { ...newProject, pinned: false };
-    setAuthProjects([...allProjects, newProject]);
     setProjects((prev) => [...prev, projectWithPin]);
-    setProject(newProject);
+    // Invalidate and refetch projects
+    queryClient.invalidateQueries({
+      queryKey: ['workspaces', workspaceId, 'projects'],
+    });
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${newProject.id}/overview`);
   };
 

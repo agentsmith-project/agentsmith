@@ -77,6 +77,43 @@ Hierarchical structure: User → Workspace → Project
 
 See `docs/workspace-project-state-management.md` for complete state logic.
 
+### Architecture (Post-Refactoring 2026-02-03)
+
+#### State Management
+- **Auth**: `lib/stores/authStore.ts` (Zustand) - user, token, currentWorkspace, currentProject
+- **Data**: React Query - workspaces, projects, members, sources, agents, endpoints, audit logs, usage stats
+- **URL**: Source of truth for workspace/project selection
+- **Sync**: `useSyncAuthFromUrl` hook keeps store in sync with URL params
+
+#### Component Patterns
+- **Compound components** with context (e.g., `MembersPage`, `SourcesPage`)
+  - Parent manages state and data fetching
+  - Child components receive data via context
+  - Co-located for better maintainability
+- **Custom hooks** for business logic
+  - `useMembersList` - member CRUD operations
+  - `useSourcesList` - source management
+  - `useWorkspaceNavigation` - navigation logic
+- **Reusable primitives**
+  - `FormDialog` - modal forms
+  - `Skeleton` - loading states
+  - `useTableSelection` - table row selection
+
+#### Routing Structure
+- **Max depth**: 2-3 levels
+- **Route groups**: `(shell)` for shared layouts
+- **Loading states**: `loading.tsx` with skeletons
+- **Error handling**: `error.tsx` boundaries
+
+Example routing structure:
+```
+[locale]/workspaces/[workspace]/projects/[project]/(app)/[page]/
+├── layout.tsx          # Shell layout (Sidebar + Topbar)
+├── loading.tsx         # Loading skeleton
+├── error.tsx           # Error boundary
+└── page.tsx            # Page content
+```
+
 ### Component Organization
 
 ```

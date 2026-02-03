@@ -581,6 +581,8 @@
     "note": "Note (optional)"
   },
   "errors": {
+    "error_title": "Something went wrong",
+    "error_message": "An unexpected error occurred. Please try again.",
     "unknown_error": "An unexpected error occurred",
     "network_error": "Network connection failed",
     "timeout": "Request timed out",

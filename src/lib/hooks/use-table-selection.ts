@@ -8,7 +8,7 @@
  * - Selection state queries
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 
 export interface UseTableSelectionOptions<T> {
   items: T[];

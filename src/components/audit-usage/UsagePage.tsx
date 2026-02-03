@@ -67,17 +67,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
     enabled: canReadUsage,
   });
 
-  if (!canReadUsage) {
-    return (
-      <div className="flex flex-col items-center justify-center flex-1 p-6">
-        <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
-          <p className="text-sm text-tertiary">{t('permission_denied')}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const handleRefresh = () => {
+  const handleRefresh = React.useCallback(() => {
     queryClient.invalidateQueries({
       queryKey: ['usage-kpi', workspaceId, projectId],
     });
@@ -85,9 +75,9 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
       queryKey: ['usage', workspaceId, projectId],
     });
     toast.success(commonT('refreshed_data') || 'Refreshed usage data');
-  };
+  }, [queryClient, workspaceId, projectId, commonT]);
 
-  const handleClearFilters = () => {
+  const handleClearFilters = React.useCallback(() => {
     setFilters({
       ...DEFAULT_TIME_RANGE,
       page: 1,
@@ -97,7 +87,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
       group_by: 'day',
       ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
     });
-  };
+  }, [effectiveEndUserId]);
 
   const handleFiltersChange = React.useCallback(
     (newFilters: UsageListParams) => {
@@ -109,6 +99,16 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
     },
     [effectiveEndUserId]
   );
+
+  if (!canReadUsage) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 p-6">
+        <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
+          <p className="text-sm text-tertiary">{t('permission_denied')}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

@@ -46,48 +46,43 @@ export class MSWApiClient implements ApiClient {
   }
 
   /**
-   * Simulate API delay for realistic development experience
-   */
-  private async delay(ms: number = 100): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /**
    * Convert response to match backend API structure
    */
   private async fetchFromMsw<T>(
     path: string,
     init: RequestInit,
   ): Promise<T> {
-    // Add small delay to simulate network
-    await this.delay();
-
     try {
       const url = `${API_BASE}${path}`;
       const response = await fetch(url, init);
 
-      let data: any;
-      try {
-        data = await response.json();
-      } catch (jsonError) {
-        // If JSON parsing fails, create error from response text
-        const text = await response.text().catch(() => 'Unable to read response');
-        throw new ApiError(
-          'INVALID_RESPONSE',
-          `Failed to parse response: ${text}`,
-          undefined,
-        );
+      // Read as text first so we have it for error messages; body can only be consumed once
+      const text = await response.text().catch(() => 'Unable to read response');
+      let data: unknown;
+      if (!text || text.trim() === '') {
+        data = null;
+      } else {
+        try {
+          data = JSON.parse(text) as unknown;
+        } catch {
+          throw new ApiError(
+            'INVALID_RESPONSE',
+            `Failed to parse response: ${text.slice(0, 200)}${text.length > 200 ? '...' : ''}`,
+            undefined,
+          );
+        }
       }
 
       if (!response.ok) {
+        const err = data as { error_code?: string; error?: string; message?: string; request_id?: string };
         throw new ApiError(
-          data.error_code || data.error || 'UNKNOWN_ERROR',
-          data.message || data.error || `HTTP ${response.status}`,
-          data.request_id,
+          err?.error_code || (err?.error as string) || 'UNKNOWN_ERROR',
+          err?.message || (err?.error as string) || `HTTP ${response.status}`,
+          err?.request_id,
         );
       }
 
-      return data;
+      return data as T;
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;

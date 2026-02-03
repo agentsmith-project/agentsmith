@@ -8,6 +8,8 @@ import type { ApiClient } from '../client';
 import type {
   MemberPermissions,
   QuotaOverride,
+  QuotaOverrideHistoryItem,
+  QuotaTemplate,
   ResourceACL,
   PermissionTemplate,
   ChangeHistoryEntry,
@@ -41,6 +43,18 @@ export interface JoinRequest {
   requested_at: string;
   reviewed_at?: string;
   reviewed_by?: string;
+}
+
+export interface CreateInviteRequest {
+  email: string;
+  role_template?: 'developer' | 'user';
+  expires_in_hours?: number;
+}
+
+export interface InviteResponse {
+  invite_id: string;
+  invite_url: string;
+  expires_at: string;
 }
 
 export class MemberAPI {
@@ -143,15 +157,34 @@ export class MemberAPI {
   }
 
   /**
-   * Get member quota overrides
+   * Get member quota overrides. Returns { overrides } from backend.
    */
   async getQuotaOverrides(
     workspaceId: string,
     projectId: string,
     memberId: string
   ): Promise<QuotaOverride> {
-    return this.client.get<QuotaOverride>(
+    const res = await this.client.get<{ overrides: QuotaOverride }>(
       `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/quota-overrides`
+    );
+    return res.overrides ?? {};
+  }
+
+  /**
+   * Get quota overrides history (paginated)
+   */
+  async getQuotaOverridesHistory(
+    workspaceId: string,
+    projectId: string,
+    memberId: string,
+    params?: { page?: number; page_size?: number }
+  ): Promise<{ items: QuotaOverrideHistoryItem[]; total: number; page: number; page_size: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
+    const query = searchParams.toString();
+    return this.client.get<{ items: QuotaOverrideHistoryItem[]; total: number; page: number; page_size: number }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/quota-overrides/history${query ? `?${query}` : ''}`
     );
   }
 
@@ -163,11 +196,12 @@ export class MemberAPI {
     projectId: string,
     memberId: string,
     data: QuotaOverride
-  ): Promise<void> {
-    return this.client.patch<void>(
+  ): Promise<QuotaOverride> {
+    const res = await this.client.patch<{ overrides: QuotaOverride }>(
       `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/quota-overrides`,
-      data
+      { overrides: data }
     );
+    return res.overrides ?? data;
   }
 
   /**
@@ -176,7 +210,7 @@ export class MemberAPI {
   async getResourceACL(
     workspaceId: string,
     projectId: string,
-    resourceType: 'kb' | 'endpoint',
+    resourceType: 'endpoint',
     resourceId: string
   ): Promise<ResourceACL> {
     return this.client.get<ResourceACL>(
@@ -190,7 +224,7 @@ export class MemberAPI {
   async updateResourceACL(
     workspaceId: string,
     projectId: string,
-    resourceType: 'kb' | 'endpoint',
+    resourceType: 'endpoint',
     resourceId: string,
     data: {
       ops: Array<{
@@ -219,6 +253,147 @@ export class MemberAPI {
       `/workspaces/${workspaceId}/projects/${projectId}/permission-templates`
     );
     return response.items;
+  }
+
+  /**
+   * Create a custom permission template
+   */
+  async createPermissionTemplate(
+    workspaceId: string,
+    projectId: string,
+    data: { name: string; description?: string; permissions: string[] }
+  ): Promise<PermissionTemplate> {
+    const response = await this.client.post<PermissionTemplate>(
+      `/workspaces/${workspaceId}/projects/${projectId}/permission-templates`,
+      data
+    );
+    return response;
+  }
+
+  /**
+   * Update a custom permission template
+   */
+  async updatePermissionTemplate(
+    workspaceId: string,
+    projectId: string,
+    templateId: string,
+    data: { name?: string; description?: string; permissions?: string[] }
+  ): Promise<PermissionTemplate> {
+    const response = await this.client.patch<PermissionTemplate>(
+      `/workspaces/${workspaceId}/projects/${projectId}/permission-templates/${templateId}`,
+      data
+    );
+    return response;
+  }
+
+  /**
+   * Delete a custom permission template
+   */
+  async deletePermissionTemplate(
+    workspaceId: string,
+    projectId: string,
+    templateId: string
+  ): Promise<void> {
+    await this.client.delete(
+      `/workspaces/${workspaceId}/projects/${projectId}/permission-templates/${templateId}`
+    );
+  }
+
+  /**
+   * Create an invite for a new member
+   */
+  async createInvite(
+    workspaceId: string,
+    projectId: string,
+    data: CreateInviteRequest
+  ): Promise<InviteResponse> {
+    return this.client.post<InviteResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/invites`,
+      data
+    );
+  }
+
+  /**
+   * List quota templates
+   */
+  async listQuotaTemplates(
+    workspaceId: string,
+    projectId: string
+  ): Promise<QuotaTemplate[]> {
+    const response = await this.client.get<QuotaTemplate[]>(
+      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates`
+    );
+    return Array.isArray(response) ? response : [];
+  }
+
+  /**
+   * Get a quota template by ID
+   */
+  async getQuotaTemplate(
+    workspaceId: string,
+    projectId: string,
+    templateId: string
+  ): Promise<QuotaTemplate> {
+    return this.client.get<QuotaTemplate>(
+      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates/${templateId}`
+    );
+  }
+
+  /**
+   * Create a quota template
+   */
+  async createQuotaTemplate(
+    workspaceId: string,
+    projectId: string,
+    data: { name: string; description?: string; overrides_json: QuotaOverride }
+  ): Promise<QuotaTemplate> {
+    return this.client.post<QuotaTemplate>(
+      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates`,
+      data
+    );
+  }
+
+  /**
+   * Update a quota template
+   */
+  async updateQuotaTemplate(
+    workspaceId: string,
+    projectId: string,
+    templateId: string,
+    data: { name?: string; description?: string; overrides_json?: QuotaOverride }
+  ): Promise<QuotaTemplate> {
+    return this.client.patch<QuotaTemplate>(
+      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates/${templateId}`,
+      data
+    );
+  }
+
+  /**
+   * Delete a quota template
+   */
+  async deleteQuotaTemplate(
+    workspaceId: string,
+    projectId: string,
+    templateId: string
+  ): Promise<void> {
+    await this.client.delete(
+      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates/${templateId}`
+    );
+  }
+
+  /**
+   * Apply a quota template to members
+   */
+  async applyQuotaTemplate(
+    workspaceId: string,
+    projectId: string,
+    templateId: string,
+    memberIds: string[]
+  ): Promise<{ applied_count: number }> {
+    return this.client.post<{ applied_count: number }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates/${templateId}/apply`,
+      { member_ids: memberIds }
+    );
   }
 
   /**

@@ -3,7 +3,6 @@ import * as React from 'react';
 import { Download, Save, Copy, Eye, FileText, Image as ImageIcon, File } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Artifact } from '@/lib/types/recipe';
-import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { formatBytes } from '@/lib/utils/formatters';
 

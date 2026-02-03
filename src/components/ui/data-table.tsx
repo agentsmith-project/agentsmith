@@ -3,21 +3,31 @@ import { cn } from '@/lib/utils';
 
 interface DataTableProps<TData> {
   table: TanStackTable<TData>;
+  /** Compact mode: smaller padding, 36px row height (Design 5.4) */
+  compact?: boolean;
 }
 
-export function DataTable<TData>({ table }: DataTableProps<TData>) {
+export function DataTable<TData>({ table, compact = false }: DataTableProps<TData>) {
+  const cellPadding = compact ? 'px-3 py-2' : 'px-4 py-3';
+  const headerPadding = compact ? 'px-3 py-2' : 'px-4 py-3';
+  const selectedRowBg = 'bg-accent/15 hover:bg-accent/20 border-l-2 border-l-accent';
+  const unselectedRowBg = 'border-l-2 border-l-transparent hover:bg-hover';
+
   return (
     <div
       className="rounded-md overflow-hidden border border-border bg-surface"
     >
       <table className="w-full border-collapse">
-        <thead className="bg-transparent border-b border-border">
+        <thead className="bg-transparent border-b border-subtle">
           {table.getHeaderGroups().map(headerGroup => (
             <tr key={headerGroup.id}>
               {headerGroup.headers.map(header => (
                 <th
                   key={header.id}
-                  className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-tertiary"
+                  className={cn(
+                    'text-left text-xs font-medium uppercase tracking-wide text-tertiary',
+                    headerPadding,
+                  )}
                 >
                   {flexRender(
                     header.column.columnDef.header,
@@ -33,16 +43,14 @@ export function DataTable<TData>({ table }: DataTableProps<TData>) {
             <tr
               key={row.id}
               className={cn(
-                "border-b border-border last:border-b-0 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
-                row.getIsSelected() 
-                  ? "bg-primary/10 hover:bg-primary/15" 
-                  : "hover:bg-hover"
+                'border-b border-border last:border-b-0 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+                row.getIsSelected() ? selectedRowBg : unselectedRowBg,
               )}
             >
               {row.getVisibleCells().map(cell => (
                 <td
                   key={cell.id}
-                  className="px-4 py-3 text-sm text-primary"
+                  className={cn('text-sm text-primary', cellPadding)}
                 >
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </td>

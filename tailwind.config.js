@@ -34,6 +34,11 @@ module.exports = {
         error: "rgb(var(--error) / <alpha-value>)", // #F44336
         warning: "rgb(var(--warning) / <alpha-value>)",
 
+        // Dialog-specific (layered hierarchy)
+        dialog: "rgb(var(--bg-dialog) / <alpha-value>)",
+        input: "rgb(var(--bg-input) / <alpha-value>)",
+        "border-input": "rgb(var(--border-input) / <alpha-value>)",
+
         // Borders
         border: "rgb(var(--border) / <alpha-value>)",
         subtle: "rgb(var(--border-subtle) / <alpha-value>)",
@@ -56,6 +61,9 @@ module.exports = {
       boxShadow: {
         // Only for floating layers (dropdown/dialog). Keep subtle per design doc.
         float: "0 8px 16px -4px rgba(0,0,0,0.10)",
+      },
+      ringOffsetColor: {
+        dialog: "rgb(var(--bg-dialog))",
       },
     },
   },

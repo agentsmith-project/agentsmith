@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useEffect, useState } from 'react';
 import type { Locale } from '@/lib/i18n/config';
+import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
 
 // ============================================================
 // Types
@@ -43,7 +44,7 @@ export interface Project {
 // ============================================================
 
 // Stable empty array reference to avoid creating new arrays on each selector call
-const EMPTY_PERMISSIONS: string[] = Object.freeze([]) as string[];
+const EMPTY_PERMISSIONS: string[] = Object.freeze([]) as unknown as string[];
 
 // ============================================================
 // Data-only state (without actions)
@@ -63,8 +64,9 @@ export interface AuthState extends AuthData {
   // Actions
   setAuth: (user: User, token: string) => void;
   setWorkspace: (workspace: Workspace) => void;
-  setProject: (project: Project) => void;
+  setProject: (project: Project | null) => void;
   setProjects: (projects: Project[]) => void; // Update projects list for current workspace
+  clearProject: () => void;
   clearAuth: () => void;
 
   // Mock actions (development only)
@@ -110,7 +112,7 @@ const mockProjects: Project[] = [
     name: 'AI Assistant Project',
     visibility: 'public',
     role: 'owner',
-    permissions: ['project:*'],
+    permissions: [...ROLE_TEMPLATES.owner],
     status: 'active',
   },
   {
@@ -119,7 +121,7 @@ const mockProjects: Project[] = [
     name: 'Research Project',
     visibility: 'private',
     role: 'admin',
-    permissions: ['project:read', 'project:agent:create'],
+    permissions: [...ROLE_TEMPLATES.admin],
     status: 'active',
   },
 ];
@@ -150,10 +152,14 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
-      setProject: (project: Project) => {
+      setProject: (project: Project | null) => {
         set({
           currentProject: project,
         });
+      },
+
+      clearProject: () => {
+        set({ currentProject: null });
       },
 
       setProjects: (projects: Project[]) => {
@@ -254,13 +260,21 @@ export const selectCurrentPermissions = (state: AuthState): readonly string[] =>
 /**
  * Check if user has a specific permission
  * This is a selector factory that returns a stable selector function.
+ * Supports: exact match, literal '*', and prefix wildcards like 'project:*'.
  */
 export const selectHasPermission = (permission: string) => {
-  // Return a stable selector function
   return (state: AuthState): boolean => {
     const permissions = selectCurrentPermissions(state);
     if (permissions.length === 0) return false;
-    return permissions.includes('*') || permissions.includes(permission);
+    if (permissions.includes('*')) return true;
+    if (permissions.includes(permission)) return true;
+    // Prefix wildcard: e.g. 'project:*' grants 'project:audit:read', 'project:usage:read', etc.
+    const prefixMatch = permissions.find((p) => p.endsWith(':*'));
+    if (prefixMatch) {
+      const prefix = prefixMatch.slice(0, -1); // 'project:' 
+      if (permission.startsWith(prefix)) return true;
+    }
+    return false;
   };
 };
 

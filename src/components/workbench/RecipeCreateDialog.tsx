@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import {
   Dialog,
   DialogContent,
@@ -21,7 +22,6 @@ import { useCreateRecipe } from '@/lib/hooks/use-recipe';
 import { useQuery } from '@tanstack/react-query';
 import { AgentAPI, getApiClient } from '@/lib/api';
 import type { CreateRecipeRequest } from '@/lib/types/recipe';
-
 export interface RecipeCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,6 +37,8 @@ export function RecipeCreateDialog({
   projectId,
   onSuccess,
 }: RecipeCreateDialogProps) {
+  const t = useTranslations('workbench.recipe');
+  const commonT = useTranslations('common');
   const [title, setTitle] = React.useState('');
   const [agentId, setAgentId] = React.useState<string>('');
   const createRecipe = useCreateRecipe();
@@ -81,7 +83,7 @@ export function RecipeCreateDialog({
       if (onSuccess) {
         onSuccess(recipe.id);
       }
-    } catch (error) {
+    } catch {
       // Error is handled by the hook
     }
   };
@@ -92,22 +94,22 @@ export function RecipeCreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Create Recipe</DialogTitle>
+          <DialogTitle>{t('create')}</DialogTitle>
           <DialogDescription>
-            Create a new Recipe to work with an agent. The agent cannot be changed after creation.
+            {t('create')} {t('new')}. {t('agent_fixed_notice')}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="recipe-title" className="text-sm font-medium text-foreground">
-              Recipe Title
+              {t('create_title')}
             </label>
             <Input
               id="recipe-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter recipe title"
+              placeholder={t('create_title')}
               disabled={createRecipe.isPending}
               required
             />
@@ -115,11 +117,11 @@ export function RecipeCreateDialog({
 
           <div className="space-y-2">
             <label htmlFor="recipe-agent" className="text-sm font-medium text-foreground">
-              Select Agent
+              {t('select_agent')}
             </label>
             <Select value={agentId} onValueChange={setAgentId} disabled={createRecipe.isPending}>
               <SelectTrigger id="recipe-agent">
-                <SelectValue placeholder="Choose an agent" />
+                <SelectValue placeholder={t('select_agent')} />
               </SelectTrigger>
               <SelectContent>
                 {agentsLoading ? (
@@ -127,7 +129,7 @@ export function RecipeCreateDialog({
                     <Loader2 className="h-4 w-4 animate-spin text-tertiary" />
                   </div>
                 ) : agents.length === 0 ? (
-                  <div className="py-4 text-center text-sm text-tertiary">No agents available</div>
+                  <div className="py-4 text-center text-sm text-tertiary">{commonT('empty')}</div>
                 ) : (
                   agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
@@ -143,23 +145,23 @@ export function RecipeCreateDialog({
             <AlertCircle className="h-4 w-4 text-warning flex-shrink-0 mt-0.5" />
             <div className="text-xs text-tertiary space-y-1">
               <p className="font-medium text-foreground">Important:</p>
-              <p>• The agent cannot be changed after creation</p>
-              <p>• Conversation history cannot be modified</p>
+              <p>• {t('agent_fixed_notice')}</p>
+              <p>• {t('history_immutable_notice')}</p>
             </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               onClick={() => onOpenChange(false)}
               disabled={createRecipe.isPending}
             >
-              Cancel
+              {commonT('cancel')}
             </Button>
             <Button type="submit" disabled={!canSubmit}>
               {createRecipe.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Recipe
+              {t('create')}
             </Button>
           </div>
         </form>

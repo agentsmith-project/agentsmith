@@ -23,6 +23,7 @@ export function useSyncAuthFromUrl() {
     currentProject,
     setWorkspace,
     setProject,
+    clearProject,
   } = useAuthStore();
 
   const workspaceId = params?.workspace as string | undefined;
@@ -44,22 +45,25 @@ export function useSyncAuthFromUrl() {
 
   // Sync project from URL (only if we have a workspace)
   useEffect(() => {
-    if (!hydrated || !projectId || !workspaceId || !currentWorkspace) return;
+    if (!hydrated || !workspaceId || !currentWorkspace) return;
     if (currentWorkspace.id !== workspaceId) return; // Wait for workspace to sync first
+
+    if (!projectId) {
+      // URL has no project (e.g. /workspaces/ws/projects) -> clear project so topbar shows correct state
+      if (currentProject) {
+        clearProject();
+      }
+      return;
+    }
 
     const projectFromUrl = allProjects.find(
       (p) => p.id === projectId && p.workspace_id === workspaceId
     );
 
     if (projectFromUrl && currentProject?.id !== projectFromUrl.id) {
-      // Verify project belongs to current workspace
       if (projectFromUrl.workspace_id === currentWorkspace.id) {
         setProject(projectFromUrl);
       }
-    } else if (!projectFromUrl && currentProject) {
-      // If URL has no project but store has one, clear it (user navigated to project list)
-      // Actually, we should only clear if we're on the projects page, not if we're on a project page
-      // So we'll leave this for now - the project list page will handle clearing
     }
-  }, [hydrated, projectId, workspaceId, currentWorkspace, allProjects, currentProject, setProject]);
+  }, [hydrated, projectId, workspaceId, currentWorkspace, allProjects, currentProject, setProject, clearProject]);
 }

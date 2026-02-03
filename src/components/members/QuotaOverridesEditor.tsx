@@ -13,6 +13,10 @@ export interface QuotaOverridesEditorProps {
   initialOverrides?: QuotaOverride;
   onSave: (overrides: QuotaOverride) => void;
   onCancel: () => void;
+  /** When true, hide footer buttons; use with onOverridesChange for embedded forms */
+  embedded?: boolean;
+  /** Called when overrides change (for embedded use in parent forms) */
+  onOverridesChange?: (overrides: QuotaOverride) => void;
 }
 
 interface QuotaField {
@@ -29,10 +33,16 @@ export function QuotaOverridesEditor({
   initialOverrides,
   onSave,
   onCancel,
+  embedded,
+  onOverridesChange,
 }: QuotaOverridesEditorProps) {
   const t = useTranslations('members.quota');
   const [overrides, setOverrides] = React.useState<QuotaOverride>(initialOverrides || {});
   const [hasChanges, setHasChanges] = React.useState(false);
+
+  React.useEffect(() => {
+    onOverridesChange?.(overrides);
+  }, [overrides, onOverridesChange]);
 
   // Calculate changes
   React.useEffect(() => {
@@ -46,13 +56,13 @@ export function QuotaOverridesEditor({
   ) => {
     setOverrides((prev) => {
       const next = { ...prev };
-      let current: any = next;
+      let current: Record<string, unknown> = next;
       
       for (let i = 0; i < path.length - 1; i++) {
         if (!current[path[i]]) {
           current[path[i]] = {};
         }
-        current = current[path[i]];
+        current = current[path[i]] as Record<string, unknown>;
       }
       
       if (value === undefined) {
@@ -97,15 +107,7 @@ export function QuotaOverridesEditor({
           defaultValue: storage.objects_per_end_user,
         });
       }
-      if (storage.max_object_bytes !== undefined) {
-        fields.push({
-          key: 'userdata.storage.max_object_bytes',
-          label: 'Max object bytes',
-          value: overrides.userdata?.storage?.max_object_bytes,
-          defaultValue: storage.max_object_bytes,
-          format: formatBytes,
-        });
-      }
+      // max_object_bytes excluded from member override whitelist
     }
 
     // UserData DocDB
@@ -177,41 +179,21 @@ export function QuotaOverridesEditor({
     }
 
     // Endpoints
-    if (defaultQuotas.endpoints) {
-      if (defaultQuotas.endpoints.requests_per_day_per_end_user !== undefined) {
+    if (defaultQuotas.endpoint) {
+      if (defaultQuotas.endpoint.requests_per_day_per_end_user !== undefined) {
         fields.push({
-          key: 'endpoints.requests_per_day_per_end_user',
+          key: 'endpoint.requests_per_day_per_end_user',
           label: 'Requests per day per end user',
-          value: overrides.endpoints?.requests_per_day_per_end_user,
-          defaultValue: defaultQuotas.endpoints.requests_per_day_per_end_user,
+          value: overrides.endpoint?.requests_per_day_per_end_user,
+          defaultValue: defaultQuotas.endpoint.requests_per_day_per_end_user,
         });
       }
-      if (defaultQuotas.endpoints.requests_per_min_per_end_user !== undefined) {
+      if (defaultQuotas.endpoint.requests_per_min_per_end_user !== undefined) {
         fields.push({
-          key: 'endpoints.requests_per_min_per_end_user',
+          key: 'endpoint.requests_per_min_per_end_user',
           label: 'Requests per min per end user',
-          value: overrides.endpoints?.requests_per_min_per_end_user,
-          defaultValue: defaultQuotas.endpoints.requests_per_min_per_end_user,
-        });
-      }
-    }
-
-    // OpenAI Chat
-    if (defaultQuotas.openai_chat) {
-      if (defaultQuotas.openai_chat.requests_per_day_per_end_user !== undefined) {
-        fields.push({
-          key: 'openai_chat.requests_per_day_per_end_user',
-          label: 'Requests per day per end user',
-          value: overrides.openai_chat?.requests_per_day_per_end_user,
-          defaultValue: defaultQuotas.openai_chat.requests_per_day_per_end_user,
-        });
-      }
-      if (defaultQuotas.openai_chat.requests_per_min_per_end_user !== undefined) {
-        fields.push({
-          key: 'openai_chat.requests_per_min_per_end_user',
-          label: 'Requests per min per end user',
-          value: overrides.openai_chat?.requests_per_min_per_end_user,
-          defaultValue: defaultQuotas.openai_chat.requests_per_min_per_end_user,
+          value: overrides.endpoint?.requests_per_min_per_end_user,
+          defaultValue: defaultQuotas.endpoint.requests_per_min_per_end_user,
         });
       }
     }
@@ -301,32 +283,12 @@ export function QuotaOverridesEditor({
         )}
 
         {/* Endpoints */}
-        {quotaFields.filter(f => f.key.startsWith('endpoints')).length > 0 && (
+        {quotaFields.filter(f => f.key.startsWith('endpoint')).length > 0 && (
           <div className="border border-border rounded-md p-4 space-y-4">
-            <h4 className="text-sm font-medium text-foreground">Endpoints</h4>
+            <h4 className="text-sm font-medium text-foreground">Endpoint</h4>
             <div className="space-y-3">
               {quotaFields
-                .filter(f => f.key.startsWith('endpoints'))
-                .map((field) => (
-                  <QuotaFieldRow
-                    key={field.key}
-                    field={field}
-                    isOverridden={isOverridden(field)}
-                    onUseDefault={() => handleOverrideChange(field.key.split('.'), undefined)}
-                    onOverride={(value) => handleOverrideChange(field.key.split('.'), value)}
-                  />
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* OpenAI Chat */}
-        {quotaFields.filter(f => f.key.startsWith('openai_chat')).length > 0 && (
-          <div className="border border-border rounded-md p-4 space-y-4">
-            <h4 className="text-sm font-medium text-foreground">OpenAI Chat</h4>
-            <div className="space-y-3">
-              {quotaFields
-                .filter(f => f.key.startsWith('openai_chat'))
+                .filter(f => f.key.startsWith('endpoint'))
                 .map((field) => (
                   <QuotaFieldRow
                     key={field.key}
@@ -341,18 +303,20 @@ export function QuotaOverridesEditor({
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-        <Button variant="outline" onClick={onCancel}>
-          {t('cancel')}
-        </Button>
-        <Button
-          variant="default"
-          onClick={handleSave}
-          disabled={!hasChanges}
-        >
-          {t('save_changes')}
-        </Button>
-      </div>
+      {!embedded && (
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
+          <Button variant="ghost" onClick={onCancel}>
+            {t('cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSave}
+            disabled={!hasChanges}
+          >
+            {t('save_changes')}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

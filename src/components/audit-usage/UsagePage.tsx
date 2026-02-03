@@ -7,6 +7,7 @@ import { UsageKPICards } from './UsageKPICards';
 import { UsageFilters } from './UsageFilters';
 import { UsageTable } from './UsageTable';
 import { useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import type { UsageListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,7 +15,8 @@ import { useQueryClient } from '@tanstack/react-query';
 export interface UsagePageProps {
   workspaceId: string;
   projectId: string;
-  defaultEndUserId?: string; // For project-user permission
+  defaultEndUserId?: string; // When set, user can only see own usage (locked)
+  currentUserId?: string; // For scope switch when user has project-wide permission
 }
 
 const DEFAULT_TIME_RANGE = {
@@ -22,10 +24,22 @@ const DEFAULT_TIME_RANGE = {
   end_time: new Date().toISOString(), // Now
 };
 
-export function UsagePage({ workspaceId, projectId, defaultEndUserId }: UsagePageProps) {
+export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUserId }: UsagePageProps) {
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
+  const canReadUsage = useHasPermission('project:usage:read');
+
+  // User role: locked to own usage. Owner/admin/developer: can switch scope
+  const isScopeLocked = !!defaultEndUserId;
+  const [scope, setScope] = React.useState<'my' | 'project'>(defaultEndUserId ? 'my' : 'project');
+
+  const effectiveEndUserId = isScopeLocked
+    ? defaultEndUserId
+    : scope === 'my' && currentUserId
+      ? currentUserId
+      : undefined;
+
   const [filters, setFilters] = React.useState<UsageListParams>({
     ...DEFAULT_TIME_RANGE,
     page: 1,
@@ -33,16 +47,35 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId }: UsagePag
     sort_by: 'time_bucket',
     sort_order: 'desc',
     group_by: 'day',
-    ...(defaultEndUserId && { end_user_id: defaultEndUserId }),
+    ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
   });
+
+  const apiFilters = React.useMemo(
+    () => ({ ...filters, end_user_id: effectiveEndUserId }),
+    [filters, effectiveEndUserId]
+  );
 
   const { data: kpiData, isLoading: kpiLoading } = useUsageKPI(
     workspaceId,
     projectId,
-    filters.start_time,
-    filters.end_time,
+    apiFilters.start_time,
+    apiFilters.end_time,
+    apiFilters.end_user_id,
+    { enabled: canReadUsage }
   );
-  const { data, isLoading, error } = useUsageRecords(workspaceId, projectId, filters);
+  const { data, isLoading, error } = useUsageRecords(workspaceId, projectId, apiFilters, {
+    enabled: canReadUsage,
+  });
+
+  if (!canReadUsage) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 p-6">
+        <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
+          <p className="text-sm text-tertiary">{t('permission_denied')}</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({
@@ -62,9 +95,20 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId }: UsagePag
       sort_by: 'time_bucket',
       sort_order: 'desc',
       group_by: 'day',
-      ...(defaultEndUserId && { end_user_id: defaultEndUserId }),
+      ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
     });
   };
+
+  const handleFiltersChange = React.useCallback(
+    (newFilters: UsageListParams) => {
+      setFilters((prev) => ({
+        ...prev,
+        ...newFilters,
+        ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
+      }));
+    },
+    [effectiveEndUserId]
+  );
 
   if (error) {
     return (
@@ -85,6 +129,32 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId }: UsagePag
         <div>
           <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
           <p className="text-sm text-tertiary mt-1">{t('subtitle')}</p>
+          {!isScopeLocked && currentUserId && (
+            <div className="flex gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => setScope('my')}
+                className={`text-sm px-3 py-1.5 rounded-md transition-colors ${
+                  scope === 'my'
+                    ? 'bg-accent/20 text-accent font-medium'
+                    : 'text-tertiary hover:text-foreground'
+                }`}
+              >
+                {t('scope_my_usage')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setScope('project')}
+                className={`text-sm px-3 py-1.5 rounded-md transition-colors ${
+                  scope === 'project'
+                    ? 'bg-accent/20 text-accent font-medium'
+                    : 'text-tertiary hover:text-foreground'
+                }`}
+              >
+                {t('scope_project_usage')}
+              </button>
+            </div>
+          )}
         </div>
         <Button variant="outline" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || kpiLoading ? 'animate-spin' : ''}`} />
@@ -100,10 +170,10 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId }: UsagePag
       {/* Filters */}
       <div className="px-6 pb-4">
         <UsageFilters
-          filters={filters}
-          onChange={setFilters}
+          filters={apiFilters}
+          onChange={handleFiltersChange}
           onClear={handleClearFilters}
-          defaultEndUserId={defaultEndUserId}
+          defaultEndUserId={effectiveEndUserId}
         />
       </div>
 

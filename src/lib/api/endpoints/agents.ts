@@ -4,13 +4,14 @@
  * Typed API functions for agent operations.
  */
 
-import type { Agent, AgentServiceKey, PaginationParams, PaginatedResponse } from '../types';
+import type { Agent, AgentInteractionMode, AgentServiceKey, CreateAgentKeyResponse, PaginationParams, PaginatedResponse } from '../types';
 import type { ApiClient } from '../client';
 
 export interface CreateAgentRequest {
   name: string;
   description?: string;
   mode: 'external' | 'internal';
+  interaction_mode?: AgentInteractionMode;
   config?: {
     image?: string;
     env?: Record<string, string>;
@@ -22,6 +23,8 @@ export interface UpdateAgentRequest {
   name?: string;
   description?: string;
   mode?: 'external' | 'internal';
+  interaction_mode?: AgentInteractionMode;
+  admin_id?: string;
   presence?: 'online' | 'offline' | 'managed';
   status?: 'enabled' | 'disabled';
   config?: {
@@ -29,6 +32,7 @@ export interface UpdateAgentRequest {
     env?: Record<string, string>;
     max_concurrent_sessions_override?: number;
   };
+  runtime_preferences?: Record<string, unknown>;
 }
 
 export class AgentAPI {
@@ -68,7 +72,22 @@ export class AgentAPI {
    * Update an agent
    */
   async update(workspaceId: string, projectId: string, agentId: string, data: UpdateAgentRequest): Promise<Agent> {
-    return this.client.put<Agent>(`/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}`, data);
+    return this.client.patch<Agent>(`/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}`, data);
+  }
+
+  /**
+   * Get merged runtime config for an agent (requires agent key auth)
+   */
+  async getRuntimeConfig(
+    workspaceId: string,
+    projectId: string,
+    agentId: string,
+    agentKey: string
+  ): Promise<{ project_id: string; agent_id: string; runtime_preferences: Record<string, unknown>; schema_version: number }> {
+    return this.client.get(
+      `/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/runtime-config`,
+      { headers: { Authorization: `Bearer ${agentKey}` } }
+    );
   }
 
   /**
@@ -89,10 +108,10 @@ export class AgentAPI {
   }
 
   /**
-   * Create a service key for an agent
+   * Create a service key for an agent. Returns full key only once - user must copy it.
    */
-  async createKey(workspaceId: string, projectId: string, agentId: string): Promise<AgentServiceKey> {
-    return this.client.post<AgentServiceKey>(
+  async createKey(workspaceId: string, projectId: string, agentId: string): Promise<CreateAgentKeyResponse> {
+    return this.client.post<CreateAgentKeyResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/keys`,
       {}
     );

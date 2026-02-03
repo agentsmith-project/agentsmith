@@ -8,12 +8,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { SourcesTable } from '@/components/sources/SourcesTable';
 import { useSources } from '@/lib/hooks/use-sources';
 import { Loader2 } from 'lucide-react';
-import type { SourceFileWithAIReady } from '@/lib/api/types';
-
 export interface SourceSelectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -81,6 +78,7 @@ export function SourceSelectDialog({
           ) : (
             <SourcesTable
               data={availableSources}
+              selectedIds={selectedIds}
               onRowSelect={setSelectedIds}
             />
           )}
@@ -91,7 +89,7 @@ export function SourceSelectDialog({
             {selectedIds.length > 0 ? `${selectedIds.length} file(s) selected` : 'No files selected'}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button onClick={handleConfirm} disabled={selectedIds.length === 0}>

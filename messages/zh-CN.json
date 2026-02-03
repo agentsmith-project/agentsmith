@@ -490,7 +490,8 @@
       "no_permissions_found": "未找到匹配 \"{query}\" 的权限",
       "high_risk_description": "您即将授予以下高风险权限：",
       "high_risk_confirm": "这些权限具有重大影响。您确定要继续吗？",
-      "confirm_save": "确认并保存"
+      "confirm_save": "确认并保存",
+      "loading": "加载权限中..."
     },
     "quota": {
       "title": "配额覆盖",
@@ -530,6 +531,10 @@
       "view_history": "查看变更历史",
       "remove_member": "移除成员"
     },
+    "remove_success": "成员已从项目中移除",
+    "remove_confirm_title": "移除成员",
+    "remove_confirm_message": "确定要将 {name} 移出此项目吗？他们将失去对所有项目资源的访问权限。",
+    "removing": "移除中...",
     "requests": {
       "coming_soon": "加入申请即将推出..."
     },
@@ -553,7 +558,23 @@
         "developer_description": "代理密钥、UserData、AgentThread",
         "user": "用户",
         "user_description": "只读 + AgentThread + UserData（受限）"
-      }
+      },
+      "create_success": "模板创建成功",
+      "update_success": "模板更新成功",
+      "delete_success": "模板已删除",
+      "apply_success": "模板已应用到成员",
+      "apply_to_member": "应用到成员",
+      "applying": "应用中...",
+      "updating": "更新中...",
+      "select_member": "选择成员",
+      "no_members_available": "没有可应用模板的成员",
+      "empty_custom_title": "暂无自定义模板",
+      "empty_custom_description": "创建自定义模板以定义默认角色之外的权限组合。",
+      "template_name": "模板名称",
+      "template_description": "描述（可选）",
+      "name_required": "名称为必填项",
+      "cancel": "取消",
+      "creating": "创建中..."
     },
     "join_requests": {
       "title": "加入申请",

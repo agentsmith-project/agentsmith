@@ -1,0 +1,225 @@
+/**
+ * MBOS Platform Screenshot Capture
+ *
+ * Run: npx playwright test e2e/capture-screenshots.spec.ts --project=chromium
+ * Requires: dev server at localhost:3000
+ *
+ * Output: test-results/screenshots/ (temporary, gitignored)
+ * For marketing use: manually copy to marketing/screenshots/
+ */
+
+import { test } from '@playwright/test';
+import * as path from 'path';
+import * as fs from 'fs';
+
+const BASE = path.join(process.cwd(), 'test-results', 'screenshots');
+const WS_ID = 'ws_default';
+const PROJECT_ID = 'proj_001';
+
+const DIRS = [
+  '01-auth',
+  '02-projects',
+  '03-overview',
+  '04-chat',
+  '05-workbench',
+  '06-agents',
+  '07-endpoints',
+  '08-members',
+  '09-audit',
+  '10-usage',
+  '11-settings',
+  '12-sources',
+  '13-credentials',
+  '14-user',
+];
+
+function ensureDirs() {
+  DIRS.forEach((d) => {
+    const p = path.join(BASE, d);
+    if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+  });
+}
+
+async function mockLogin(page: import('@playwright/test').Page) {
+  await page.evaluate(({ wsId }) => {
+    const mockAuthState = {
+      state: {
+        user: { id: 'user_demo', email: 'demo@demo.com', name: 'Demo User', locale: 'zh-CN' },
+        token: 'mock_jwt_demo_' + Date.now(),
+        isAuthenticated: true,
+        currentWorkspace: { id: wsId, name: 'Default Workspace', role: 'owner' },
+        currentProject: {
+          id: 'proj_001',
+          workspace_id: wsId,
+          name: 'AI Assistant Project',
+          visibility: 'public',
+          role: 'owner',
+          permissions: ['project:*'],
+          status: 'active',
+        },
+        workspaces: [
+          { id: 'ws_default', name: 'Default Workspace', role: 'owner' },
+          { id: 'ws_test', name: 'Test Workspace', role: 'admin' },
+        ],
+        projects: [
+          { id: 'proj_001', workspace_id: wsId, name: 'AI Assistant Project', visibility: 'public', role: 'owner', permissions: ['project:*'], status: 'active' },
+          { id: 'proj_002', workspace_id: wsId, name: 'Research Project', visibility: 'private', role: 'admin', permissions: ['project:read', 'project:agent:create'], status: 'active' },
+        ],
+      },
+      version: 0,
+    };
+    localStorage.setItem('mbos-auth', JSON.stringify(mockAuthState));
+  }, { wsId: WS_ID });
+}
+
+/** Expand SettingsTokenReference (click to show all quota/limits tokens) */
+async function expandTokenReference(page: import('@playwright/test').Page) {
+  const btn = page.getByRole('button', { name: /支持的 token|Supported tokens/i });
+  if (await btn.isVisible()) {
+    await btn.click();
+    await page.waitForTimeout(400);
+  }
+}
+
+test.describe('Screenshot Capture', () => {
+  test.beforeAll(() => ensureDirs());
+
+  test('capture all pages', async ({ page }) => {
+    test.setTimeout(180000);
+
+    // === 01-auth ===
+    await page.goto('/zh-CN/login', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(BASE, '01-auth', 'login.png'), fullPage: true });
+
+    await mockLogin(page);
+    await page.reload();
+    await page.waitForTimeout(1500);
+    await page.goto('/zh-CN/workspaces/ws_default/projects', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '01-auth', 'workspace-select.png'), fullPage: true });
+
+    // === 02-projects ===
+    await page.screenshot({ path: path.join(BASE, '02-projects', 'projects-list.png'), fullPage: true });
+
+    // === 03-overview ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/overview`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: path.join(BASE, '03-overview', 'overview.png'), fullPage: true });
+
+    // === 04-chat ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/chat`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '04-chat', 'chat.png'), fullPage: true });
+
+    // === 05-workbench ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/workbench`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '05-workbench', 'workbench.png'), fullPage: true });
+
+    // === 06-agents ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agents`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '06-agents', 'agents.png'), fullPage: true });
+
+    // === 07-endpoints ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/endpoints`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '07-endpoints', 'endpoints.png'), fullPage: true });
+
+    // === 08-members ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/members`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: path.join(BASE, '08-members', 'members-list.png'), fullPage: true });
+
+    const memberRow = page.locator('table tbody tr').first();
+    if (await memberRow.isVisible()) {
+      await memberRow.click();
+      await page.waitForTimeout(1200);
+      await page.screenshot({ path: path.join(BASE, '08-members', 'member-detail-overview.png'), fullPage: true });
+
+      const drawerTabs = page.locator('[role="tablist"]').first().getByRole('tab');
+      await drawerTabs.nth(0).click();
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: path.join(BASE, '08-members', 'member-permissions-template.png'), fullPage: true });
+      const advTab = page.getByRole('tab').filter({ hasText: /高级模式|Advanced Mode/ });
+      if (await advTab.count() > 0) {
+        await advTab.first().click();
+        await page.waitForTimeout(600);
+        await page.screenshot({ path: path.join(BASE, '08-members', 'member-permissions-advanced.png'), fullPage: true });
+      }
+      await drawerTabs.nth(1).click();
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: path.join(BASE, '08-members', 'member-quota.png'), fullPage: true });
+      await drawerTabs.nth(2).click();
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: path.join(BASE, '08-members', 'member-resource-acl.png'), fullPage: true });
+      await page.keyboard.press('Escape');
+    }
+
+    // === 09-audit ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/audit`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '09-audit', 'audit.png'), fullPage: true });
+
+    // === 10-usage ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/usage`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '10-usage', 'usage.png'), fullPage: true });
+
+    // === 11-settings ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/settings`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-general.png'), fullPage: true });
+
+    const runtimeTab = page.getByRole('tab', { name: /运行偏好|Runtime Preferences/i });
+    if (await runtimeTab.isVisible()) {
+      await runtimeTab.click();
+      await page.waitForTimeout(500);
+      await expandTokenReference(page);
+      await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-runtime-with-tokens.png'), fullPage: true });
+    }
+
+    const governanceTab = page.getByRole('tab', { name: /治理规则|Governance/i });
+    if (await governanceTab.isVisible()) {
+      await governanceTab.click();
+      await page.waitForTimeout(500);
+      await expandTokenReference(page);
+      await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-governance-with-tokens.png'), fullPage: true });
+    }
+
+    const limitsTab = page.getByRole('tab', { name: /资源限制|Limits/i });
+    if (await limitsTab.isVisible()) {
+      await limitsTab.click();
+      await page.waitForTimeout(500);
+      await expandTokenReference(page);
+      await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-limits-with-tokens.png'), fullPage: true });
+    }
+
+    // === 12-sources ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/sources`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '12-sources', 'sources.png'), fullPage: true });
+
+    // === 13-credentials ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/credentials`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '13-credentials', 'credentials-list.png'), fullPage: true });
+    const createKeyBtn = page.getByRole('button', { name: /创建|Create|新增/i });
+    if (await createKeyBtn.isVisible()) {
+      await createKeyBtn.click();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(BASE, '13-credentials', 'create-credential-dialog.png'), fullPage: true });
+      await page.keyboard.press('Escape');
+    }
+
+    // === 14-user ===
+    await page.goto('/zh-CN/user/profile', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(BASE, '14-user', 'profile.png'), fullPage: true });
+
+    await page.goto('/zh-CN/user/api-keys', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(BASE, '14-user', 'api-keys.png'), fullPage: true });
+  });
+});

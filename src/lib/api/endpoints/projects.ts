@@ -20,6 +20,9 @@ export interface UpdateProjectRequest {
   description?: string;
   visibility?: 'public' | 'private';
   join_policy?: 'approval_required' | 'open';
+  governance_json?: Record<string, unknown>;
+  runtime_preferences_json?: Record<string, unknown>;
+  limits_json?: Record<string, unknown>;
 }
 
 export class ProjectAPI {
@@ -58,7 +61,7 @@ export class ProjectAPI {
    * Update a project
    */
   async update(workspaceId: string, projectId: string, data: UpdateProjectRequest): Promise<Project> {
-    return this.client.put<Project>(`/workspaces/${workspaceId}/projects/${projectId}`, data);
+    return this.client.patch<Project>(`/workspaces/${workspaceId}/projects/${projectId}`, data);
   }
 
   /**

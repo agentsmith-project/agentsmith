@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 /**
  * E2E Tests for MBOS Frontend - Login Flow
@@ -86,13 +86,16 @@ test.describe('Homepage', () => {
 
   test('should display Chinese login page', async ({ page }) => {
     await page.goto('/zh-CN/login');
-    await expect(page.getByText('Welcome to MBOS')).toBeVisible();
+    await expect(page.getByText('欢迎使用 MBOS')).toBeVisible();
   });
 });
 
 test.describe('Login Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/en-US/login');
+    // Clear persisted auth so login form is shown (not redirect)
+    await page.evaluate(() => localStorage.removeItem('mbos-auth'));
+    await page.reload();
   });
 
   test('should display login form correctly', async ({ page }) => {
@@ -104,8 +107,8 @@ test.describe('Login Page', () => {
     // Check Keycloak button
     await expect(page.getByText('Login with Keycloak')).toBeVisible();
 
-    // Check workspace selector
-    const workspaceSelect = page.locator('select');
+    // Check workspace selector (dropdown) - scope to main to avoid Topbar's workspace switcher
+    const workspaceSelect = page.getByRole('main').getByRole('button', { name: 'Default Workspace' });
     await expect(workspaceSelect).toBeVisible();
 
     // Check email input
@@ -116,16 +119,15 @@ test.describe('Login Page', () => {
     await expect(page.getByText('Quick Login')).toBeVisible();
 
     // Check development notice
-    await expect(page.getByText('Development Mode Only')).toBeVisible();
+    await expect(page.getByText('Development Mode')).toBeVisible();
     await expect(page.getByText(/Mock authentication/)).toBeVisible();
   });
 
   test('should have workspace options', async ({ page }) => {
-    const workspaceSelect = page.locator('select');
-
-    const options = await workspaceSelect.locator('option').allTextContents();
-    expect(options).toContain('Default Workspace');
-    expect(options).toContain('Test Workspace');
+    const workspaceSelect = page.getByRole('main').getByRole('button', { name: 'Default Workspace' });
+    await workspaceSelect.click();
+    await expect(page.getByRole('menuitem', { name: 'Default Workspace' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Test Workspace' })).toBeVisible();
   });
 
   test('should enable login button when email is entered', async ({ page }) => {
@@ -140,6 +142,15 @@ test.describe('Login Page', () => {
 
     // Button should be enabled
     await expect(loginBtn).toBeEnabled();
+  });
+
+  test('should redirect to projects when already authenticated (persisted login)', async ({ page }) => {
+    await page.goto('/en-US/login');
+    // Set auth state in localStorage (simulates previous login, e.g. from closed browser session)
+    await mockLogin(page, 'ws_default', 'test@example.com', 'Test User');
+    // After reload, login page should redirect to projects
+    await page.waitForURL(/\/en-US\/workspaces\/ws_default\/projects/, { timeout: 5000 });
+    await expect(page.locator('h1').filter({ hasText: 'Projects' })).toBeVisible();
   });
 
   test('should login successfully and redirect to workspace selection', async ({ page }) => {
@@ -206,8 +217,7 @@ test.describe('Overview Page', () => {
     await expect(page.locator('h1').filter({ hasText: 'Overview' })).toBeVisible();
 
     // Check for KPI cards
-    await expect(page.locator('text=/Total Turns/i')).toBeVisible();
-    await expect(page.locator('text=/Errors/i')).toBeVisible();
+    await expect(page.getByText('Requests Today').first()).toBeVisible();
   });
 });
 

@@ -2,12 +2,14 @@
 
 import { useAuthStore } from '@/lib/stores/authStore';
 import { useParams, useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { Building2, FolderKanban } from 'lucide-react';
 import { useEffect } from 'react';
 
 export default function WorkspaceSelectPage() {
   const router = useRouter();
   const params = useParams();
+  const t = useTranslations('auth');
   const locale = (params?.locale as string) || 'en-US';
   const { workspaces, projects, setWorkspace, setProject, currentWorkspace } = useAuthStore();
 
@@ -35,10 +37,10 @@ export default function WorkspaceSelectPage() {
     <div className="min-h-screen bg-background p-8">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-2xl font-semibold text-foreground mb-2">
-          Select your workspace
+          {t('select_your_workspace')}
         </h1>
         <p className="text-tertiary mb-8">
-          Choose a workspace to continue
+          {t('choose_workspace')}
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -57,6 +59,7 @@ export default function WorkspaceSelectPage() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function WorkspaceCard({ workspace, onSelect }: { workspace: any; onSelect: () => void }) {
+  const t = useTranslations('auth');
   return (
     <div
       onClick={onSelect}
@@ -75,7 +78,7 @@ function WorkspaceCard({ workspace, onSelect }: { workspace: any; onSelect: () =
       <div className="flex items-center gap-4 text-sm text-tertiary">
         <span className="flex items-center gap-1">
           <FolderKanban className="w-4 h-4" />
-          {workspace.projects?.length || 0} projects
+          {t('projects_count', { count: workspace.projects?.length || 0 })}
         </span>
       </div>
     </div>

@@ -24,6 +24,7 @@ const eslintConfig = [
       "@typescript-eslint/no-require-imports": "off",
       "react/no-unescaped-entities": "off",
       "react-hooks/rules-of-hooks": "warn",
+      "@next/next/no-img-element": "off",
     },
   },
   {

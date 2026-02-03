@@ -46,9 +46,12 @@ export interface Project {
   name: string;
   description?: string;
   visibility: 'public' | 'private';
-  join_policy: 'approval_required' | 'open';
+  join_policy?: 'approval_required' | 'open';
   owner_id: string;
-  status: 'active' | 'disabled';
+  status: 'active' | 'archived' | 'deleted';
+  governance_json?: Record<string, unknown>;
+  runtime_preferences_json?: Record<string, unknown>;
+  limits_json?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -66,15 +69,47 @@ export interface ProjectMembership {
 // Agent
 // ============================================================
 
+/** Runtime stats for external agents (source IP, connection duration, QPM) */
+export interface AgentExternalStats {
+  source_ip?: string;
+  connection_duration_sec?: number;
+  qpm?: number; // queries per minute, turn-based
+}
+
+/** Runtime stats for internal agents (pod count, etc.) */
+export interface AgentInternalStats {
+  pod_count?: number;
+  desired_replicas?: number;
+}
+
+/** Expected interaction mode: chat, workbench, or both */
+export type AgentInteractionMode = 'chat' | 'workbench' | 'both';
+
 export interface Agent {
   id: string;
   project_id: string;
+  workspace_id?: string;
   name: string;
   description?: string;
   mode: 'external' | 'internal';
-  presence: 'online' | 'offline' | 'managed';
+  presence?: 'online' | 'offline' | 'managed';
   status: 'enabled' | 'disabled';
   config?: AgentConfig;
+  config_json?: Record<string, unknown>;
+  runtime_preferences_json?: Record<string, unknown>;
+  internal_config_json?: Record<string, unknown>;
+  /** External agents: source IP, connection duration, QPM */
+  external_stats?: AgentExternalStats;
+  /** Internal agents: pod count, etc. */
+  internal_stats?: AgentInternalStats;
+  /** Creator (owner) */
+  owner_id?: string;
+  owner_name?: string;
+  /** Maintainer (admin) */
+  admin_id?: string;
+  admin_name?: string;
+  /** Expected interaction: chat, workbench, or both */
+  interaction_mode?: AgentInteractionMode;
   created_at: string;
   updated_at: string;
 }
@@ -88,11 +123,37 @@ export interface AgentConfig {
 export interface AgentServiceKey {
   id: string;
   agent_id: string;
-  key_prefix: string; // ask-*** (never show full key)
+  key_prefix: string; // ask-***
   status: 'active' | 'suspended' | 'revoked' | 'expired';
   created_at: string;
   expires_at?: string;
   last_used_at?: string;
+}
+
+/** Create response includes full key only once - never stored or shown again */
+export interface CreateAgentKeyResponse extends AgentServiceKey {
+  key?: string; // Full key (ask_xxx...), returned only on create
+}
+
+// ============================================================
+// Credential
+// ============================================================
+
+export interface Credential {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  name: string;
+  type: 'api_key';
+  fingerprint: string;
+  created_at: string;
+  last_rotated_at?: string;
+}
+
+export interface CreateCredentialRequest {
+  name: string;
+  type: 'api_key';
+  value: string;
 }
 
 // ============================================================
@@ -108,6 +169,7 @@ export interface Endpoint {
   type: 'openai' | 'anthropic' | 'custom';
   base_url: string;
   status: 'active' | 'disabled';
+  credential_ref?: string;
   limits?: EndpointLimits;
   created_at: string;
   updated_at: string;
@@ -293,8 +355,9 @@ export interface UsageKPI {
   errors_today: number;
   tokens_today?: number;
   userdata_bytes?: number;
-  requests_yesterday?: number; // 可选，用于趋势
+  requests_yesterday?: number; // optional, for trend
   errors_yesterday?: number;
+  tokens_yesterday?: number; // optional, for trend
 }
 
 export interface AuditListParams extends PaginationParams {
@@ -335,6 +398,11 @@ export interface UserAPIKey {
   created_at: string;
   expires_at?: string;
   last_used_at?: string;
+}
+
+/** Create response includes full key only once - never stored or shown again */
+export interface CreateUserKeyResponse extends UserAPIKey {
+  key?: string; // Full key (usk_xxx...), returned only on create
 }
 
 // ============================================================
@@ -407,7 +475,7 @@ export interface SourcesListParams extends PaginationParams {
   sort_order?: 'asc' | 'desc';
 }
 
-export interface SourcesListResponse extends PaginatedResponse<SourceFileWithAIReady> {}
+export type SourcesListResponse = PaginatedResponse<SourceFileWithAIReady>;
 
 // ============================================================
 // Error Types
@@ -427,7 +495,6 @@ export interface ErrorResponse {
 export interface MemberPermissions {
   platform_permissions: string[];
   resource_permissions?: {
-    kb?: string[];
     endpoint?: string[];
   };
 }
@@ -451,18 +518,14 @@ export interface QuotaOverride {
       upsert_records_max?: number;
     };
   };
-  endpoints?: {
-    requests_per_day_per_end_user?: number;
-    requests_per_min_per_end_user?: number;
-  };
-  openai_chat?: {
+  endpoint?: {
     requests_per_day_per_end_user?: number;
     requests_per_min_per_end_user?: number;
   };
 }
 
 export interface ResourceACL {
-  resource_type: 'kb' | 'endpoint';
+  resource_type: 'endpoint';
   resource_id: string;
   allow: Array<{
     subject_type: 'user';
@@ -496,6 +559,20 @@ export interface ChangeHistoryEntry {
   changes: {
     added?: string[];
     removed?: string[];
-    updated?: Record<string, { from: any; to: any }>;
+    updated?: Record<string, { from: unknown; to: unknown }>;
   };
+}
+
+export interface QuotaOverrideHistoryItem {
+  id: string;
+  created_at: string;
+  created_by_user_id: string;
+  overrides_json: QuotaOverride;
+}
+
+export interface QuotaTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  overrides_json: QuotaOverride;
 }

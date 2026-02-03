@@ -16,7 +16,15 @@ import {
 import { TemplateMode } from './TemplateMode';
 import { AdvancedMode } from './AdvancedMode';
 import { ChangesPreview } from './ChangesPreview';
-import { ROLE_TEMPLATES, HIGH_RISK_PERMISSIONS } from '@/lib/constants/permissions';
+import { ROLE_TEMPLATES, isHighRiskPermission, ALL_PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
+
+/** Expand wildcard permissions to explicit platform permissions (v1 design: no wildcards in storage, but defensive handling) */
+function expandPermissions(perms: string[]): string[] {
+  if (perms.some((p) => p === 'project:*' || p === '*')) {
+    return [...ALL_PLATFORM_PERMISSIONS];
+  }
+  return perms;
+}
 
 export interface PermissionsEditorProps {
   initialPermissions: string[];
@@ -30,38 +38,65 @@ export function PermissionsEditor({
   onCancel,
 }: PermissionsEditorProps) {
   const t = useTranslations('members.permissions');
-  const [mode, setMode] = React.useState<'template' | 'advanced'>('template');
+  const expandedInitial = React.useMemo(() => expandPermissions(initialPermissions), [initialPermissions]);
+  // Default to advanced when member has custom permissions (no matching template)
+  const initialMode = React.useMemo(() => {
+    for (const [, perms] of Object.entries(ROLE_TEMPLATES)) {
+      const templateSet = new Set(perms);
+      const currentSet = new Set(expandedInitial);
+      if (templateSet.size === currentSet.size && Array.from(templateSet).every((p) => currentSet.has(p))) {
+        return 'template';
+      }
+    }
+    return 'advanced';
+  }, [expandedInitial]);
+  const [mode, setMode] = React.useState<'template' | 'advanced'>(initialMode);
   const [selectedTemplate, setSelectedTemplate] = React.useState<'owner' | 'admin' | 'developer' | 'user' | null>(null);
   const [selectedPermissions, setSelectedPermissions] = React.useState<Set<string>>(
-    new Set(initialPermissions)
+    () => new Set(expandedInitial)
   );
+
+  // Sync selectedPermissions when initialPermissions change (e.g. async load, member switch).
+  // Use content-based comparison to avoid resetting on parent re-renders with new array refs.
+  const initialKey = React.useMemo(
+    () => [...new Set(expandedInitial)].sort().join(','),
+    [expandedInitial]
+  );
+  const prevInitialKeyRef = React.useRef(initialKey);
+  React.useEffect(() => {
+    if (prevInitialKeyRef.current !== initialKey) {
+      prevInitialKeyRef.current = initialKey;
+      setSelectedPermissions(new Set(expandedInitial));
+    }
+  }, [initialKey, expandedInitial]);
   const [showHighRiskDialog, setShowHighRiskDialog] = React.useState(false);
   const [pendingSave, setPendingSave] = React.useState<(() => void) | null>(null);
 
-  // Detect initial template
+  // Detect initial template (use expanded initial for comparison)
   React.useEffect(() => {
     for (const [template, perms] of Object.entries(ROLE_TEMPLATES)) {
       const templateSet = new Set(perms);
-      const currentSet = new Set(initialPermissions);
-      if (templateSet.size === currentSet.size && 
-          Array.from(templateSet).every(p => currentSet.has(p))) {
+      const currentSet = new Set(expandedInitial);
+      if (templateSet.size === currentSet.size &&
+          Array.from(templateSet).every((p) => currentSet.has(p))) {
         setSelectedTemplate(template as 'owner' | 'admin' | 'developer' | 'user');
         return;
       }
     }
     setSelectedTemplate(null);
-  }, [initialPermissions]);
+  }, [expandedInitial]);
 
-  // Calculate changes
+  // Calculate changes (use expanded initial as baseline)
   const changes = React.useMemo(() => {
-    const added = Array.from(selectedPermissions).filter(p => !initialPermissions.includes(p));
-    const removed = initialPermissions.filter(p => !selectedPermissions.has(p));
+    const initialSet = new Set(expandedInitial);
+    const added = Array.from(selectedPermissions).filter((p) => !initialSet.has(p));
+    const removed = expandedInitial.filter((p) => !selectedPermissions.has(p));
     return { added, removed };
-  }, [selectedPermissions, initialPermissions]);
+  }, [selectedPermissions, expandedInitial]);
 
   // Detect high-risk permissions
   const highRiskAdded = React.useMemo(() => {
-    return changes.added.filter(p => HIGH_RISK_PERMISSIONS.includes(p as any));
+    return changes.added.filter(isHighRiskPermission);
   }, [changes.added]);
 
   const handlePermissionToggle = React.useCallback((permission: string, checked: boolean) => {
@@ -76,7 +111,7 @@ export function PermissionsEditor({
     });
     // If template mode, mark as custom
     if (selectedTemplate && checked) {
-      const templatePerms = new Set(ROLE_TEMPLATES[selectedTemplate]);
+      const templatePerms = new Set<string>(ROLE_TEMPLATES[selectedTemplate]);
       if (!templatePerms.has(permission)) {
         setSelectedTemplate(null);
       }
@@ -149,11 +184,11 @@ export function PermissionsEditor({
       />
 
       <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-        <Button variant="outline" onClick={onCancel}>
+        <Button variant="ghost" onClick={onCancel}>
           {t('cancel')}
         </Button>
         <Button
-          variant="default"
+          variant="primary"
           onClick={handleSave}
           disabled={!hasChanges}
         >

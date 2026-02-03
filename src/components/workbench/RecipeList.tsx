@@ -3,7 +3,7 @@ import * as React from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Loader2, MessageSquare } from 'lucide-react';
+import { Plus, Loader2 } from 'lucide-react';
 import { useRecipes } from '@/lib/hooks/use-recipe';
 import { RecipeCreateDialog } from './RecipeCreateDialog';
 import { EmptyState } from '@/components/ui/loading';

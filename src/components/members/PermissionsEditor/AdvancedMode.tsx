@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PermissionGroup } from './PermissionGroup';
-import { PLATFORM_PERMISSIONS_GROUPED, ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { PLATFORM_PERMISSIONS_GROUPED, PERMISSION_DESCRIPTIONS } from '@/lib/constants/permissions';
 import { Search, Copy, RotateCw } from 'lucide-react';
 import { toast } from '@/components/ui/toast';
 
@@ -107,6 +107,7 @@ export function AdvancedMode({
               permissions={group.permissions}
               selectedPermissions={selectedPermissions}
               onPermissionToggle={onPermissionToggle}
+              descriptions={PERMISSION_DESCRIPTIONS}
             />
           ))
         )}

@@ -1,9 +1,7 @@
 'use client';
 import * as React from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { PermissionItem } from './PermissionItem';
-import { cn } from '@/lib/utils';
 
 export interface PermissionGroupProps {
   id: string;
@@ -15,7 +13,7 @@ export interface PermissionGroupProps {
 }
 
 export function PermissionGroup({
-  id,
+  id: _id,
   name,
   permissions,
   selectedPermissions,

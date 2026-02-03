@@ -4,7 +4,7 @@
  * Typed API functions for user API key operations.
  */
 
-import type { UserAPIKey } from '../types';
+import type { UserAPIKey, CreateUserKeyResponse } from '../types';
 import type { ApiClient } from '../client';
 
 export interface CreateUserKeyRequest {
@@ -24,10 +24,10 @@ export class UserAPIKeyService {
   }
 
   /**
-   * Create a new API key
+   * Create a new API key. Returns full key only once - user must copy it.
    */
-  async create(data: CreateUserKeyRequest): Promise<UserAPIKey> {
-    return this.client.post<UserAPIKey>('/user/keys', data);
+  async create(data: CreateUserKeyRequest): Promise<CreateUserKeyResponse> {
+    return this.client.post<CreateUserKeyResponse>('/user/keys', data);
   }
 
   /**

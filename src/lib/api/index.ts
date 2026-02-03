@@ -27,6 +27,7 @@ export {
   formatErrorWithRequestID,
   copyRequestID,
   handleAPIError,
+  handleErrorForToast,
   getErrorSuggestions,
 } from './errors';
 
@@ -39,10 +40,12 @@ export {
   ProjectAPI,
   AgentAPI,
   EndpointAPI,
+  CredentialsAPI,
   MemberAPI,
   AuditAPI,
   UsageAPI,
   UserAPIKeyService,
+  MeAPI,
   ChatAPI,
   SourcesAPI,
   RecipeAPI,

@@ -65,5 +65,8 @@ src/
 
 ## Documentation
 
-- [Architecture Design](./docs/plans/2026-02-01-frontend-architecture-design.md)
 - [Design System](./DESIGN_SYSTEM.md)
+- [Development Guide](./DEVELOPMENT.md)
+- [Component Documentation](./docs/components.md)
+- [Workspace/Project State Management](./docs/workspace-project-state-management.md)
+- [i18n Internal Guide](./docs/I18N_INTERN_GUIDE.md)

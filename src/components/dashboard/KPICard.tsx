@@ -23,6 +23,8 @@ export interface KPICardProps {
   };
   /** Optional click handler */
   onClick?: () => void;
+  /** Label for "vs last period" text */
+  vsLastPeriodLabel?: string;
 }
 
 /**
@@ -38,7 +40,7 @@ export interface KPICardProps {
  * />
  * ```
  */
-export function KPICard({ icon: Icon, label, value, trend, onClick }: KPICardProps) {
+export function KPICard({ icon: Icon, label, value, trend, onClick, vsLastPeriodLabel }: KPICardProps) {
   return (
     <div
       className={`bg-panel border border-subtle rounded-xl p-6 ${onClick ? 'cursor-pointer hover:bg-hover transition-colors' : ''}`}
@@ -66,7 +68,7 @@ export function KPICard({ icon: Icon, label, value, trend, onClick }: KPICardPro
           <span className={trend.direction === 'up' ? 'text-success' : 'text-error'}>
             {trend.value}
           </span>
-          <span className="text-tertiary">vs last period</span>
+          <span className="text-tertiary">{vsLastPeriodLabel || 'vs last period'}</span>
         </div>
       )}
     </div>

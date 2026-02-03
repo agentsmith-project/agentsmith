@@ -16,6 +16,7 @@ export const endpointFixtures: Endpoint[] = [
     type: 'openai',
     base_url: 'https://api.openai.com/v1',
     status: 'active',
+    credential_ref: 'cred_001',
     limits: {
       max_requests_per_minute: 100,
       max_requests_per_day: 1000,
@@ -34,6 +35,7 @@ export const endpointFixtures: Endpoint[] = [
     type: 'anthropic',
     base_url: 'https://api.anthropic.com/v1',
     status: 'active',
+    credential_ref: 'cred_002',
     limits: {
       max_requests_per_minute: 50,
       max_requests_per_day: 500,

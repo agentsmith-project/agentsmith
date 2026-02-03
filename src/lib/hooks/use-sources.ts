@@ -6,11 +6,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getApiClient, SourcesAPI } from '@/lib/api';
-import type {
-  SourcesListParams,
-  SourceFileWithAIReady,
-  QuotaSummary,
-} from '@/lib/api/types';
+import type { SourcesListParams } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { handleErrorForToast } from '@/lib/api/errors';
 

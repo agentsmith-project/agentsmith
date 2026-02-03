@@ -6,26 +6,22 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { getApiClient } from '@/lib/api';
+import { getApiClient, MemberAPI } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 import { handleErrorForToast } from '@/lib/api/errors';
 import type { JoinRequest } from '@/lib/api/endpoints/members';
+
+const getMemberAPI = () => new MemberAPI(getApiClient());
 
 /**
  * Hook to query join requests list
  */
 export function useJoinRequests(workspaceId: string, projectId: string) {
-  const api = getApiClient();
-  
   return useQuery<JoinRequest[]>({
     queryKey: ['join-requests', workspaceId, projectId],
-    queryFn: () => {
-      const api = getApiClient();
-      return api.members.listJoinRequests(workspaceId, projectId);
-    },
+    queryFn: () => getMemberAPI().listJoinRequests(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 30 * 1000,
-    onError: (error) => handleErrorForToast(error, 'useJoinRequests'),
   });
 }
 
@@ -41,8 +37,7 @@ export function useApproveJoinRequest(
 
   return useMutation({
     mutationFn: async (requestId: string) => {
-      const api = getApiClient();
-      return api.members.approveJoinRequest(workspaceId, projectId, requestId);
+      return getMemberAPI().approveJoinRequest(workspaceId, projectId, requestId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['join-requests', workspaceId, projectId] });
@@ -65,8 +60,7 @@ export function useRejectJoinRequest(
 
   return useMutation({
     mutationFn: async (requestId: string) => {
-      const api = getApiClient();
-      return api.members.rejectJoinRequest(workspaceId, projectId, requestId);
+      return getMemberAPI().rejectJoinRequest(workspaceId, projectId, requestId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['join-requests', workspaceId, projectId] });

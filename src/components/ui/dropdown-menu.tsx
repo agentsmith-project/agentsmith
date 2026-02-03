@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 export function DropdownMenu({
   children,
   modal = false,
+  open,
+  onOpenChange,
 }: {
   children: React.ReactNode;
   /**
@@ -13,8 +15,16 @@ export function DropdownMenu({
    * cause subtle layout shift (e.g. topbar width changes) when menus open.
    */
   modal?: boolean;
+  /** Controlled open state. When provided, the menu is controlled. */
+  open?: boolean;
+  /** Called when open state changes (e.g. on select, escape, outside click). */
+  onOpenChange?: (open: boolean) => void;
 }) {
-  return <DropdownMenuPrimitive.Root modal={modal}>{children}</DropdownMenuPrimitive.Root>;
+  return (
+    <DropdownMenuPrimitive.Root modal={modal} open={open} onOpenChange={onOpenChange}>
+      {children}
+    </DropdownMenuPrimitive.Root>
+  );
 }
 
 export function DropdownMenuTrigger({

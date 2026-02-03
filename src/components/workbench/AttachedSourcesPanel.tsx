@@ -8,10 +8,10 @@ import { AIReadyStatusBadge } from '@/components/sources/AIReadyStatusBadge';
 import { EmptyState } from '@/components/ui/loading';
 import { formatBytes } from '@/lib/utils/formatters';
 // Simple file icon function - can be enhanced later
-function getFileIcon(fileType: string) {
+function getFileIcon(_fileType: string) {
   return FileIcon;
 }
-import type { SourceFile } from '@/lib/api/types';
+import type { SourceFileWithAIReady } from '@/lib/api/types';
 
 export interface AttachedSourcesPanelProps {
   workspaceId: string;
@@ -97,7 +97,7 @@ export function AttachedSourcesPanel({
 }
 
 interface AttachedSourceItemProps {
-  source: SourceFile;
+  source: SourceFileWithAIReady;
   onRemove: () => void;
   removing: boolean;
 }

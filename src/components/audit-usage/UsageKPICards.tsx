@@ -6,6 +6,12 @@ import { cn } from '@/lib/utils';
 import { formatNumber, formatBytes } from '@/lib/utils/formatters';
 import type { UsageKPI } from '@/lib/api/types';
 
+export interface UsageKPICardsProps {
+  kpi: UsageKPI | null | undefined;
+  loading?: boolean;
+  className?: string;
+}
+
 function calculateTrend(current: number, previous?: number): { value: number; isPositive: boolean } | null {
   if (!previous || previous === 0) return null;
   const change = ((current - previous) / previous) * 100;

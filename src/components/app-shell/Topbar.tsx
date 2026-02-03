@@ -1,13 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { Bell } from 'lucide-react';
+import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { Logo } from './Logo';
 import { UserMenu } from './UserMenu';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Globe, FolderKanban, ChevronDown } from 'lucide-react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useRouter, usePathname } from '@/lib/i18n/routing';
 import { useTranslations } from 'next-intl';
 import {
   Tooltip,
@@ -29,8 +30,10 @@ export function Topbar({ className = '' }: TopbarProps) {
     user,
     setWorkspace,
     setProject,
+    mockLogout,
   } = useAuthStore();
   const router = useRouter();
+  const pathname = usePathname();
   const params = useParams();
   const locale = (params?.locale as string) || 'en-US';
   const t = useTranslations('nav');
@@ -56,7 +59,7 @@ export function Topbar({ className = '' }: TopbarProps) {
     // Components will filter by currentWorkspace.id when needed
 
     // Navigate to the new workspace's project list
-    router.push(`/${locale}/workspaces/${workspaceId}/projects`);
+    router.push(`/workspaces/${workspaceId}/projects`);
   };
 
   const handleProjectChange = (projectId: string) => {
@@ -79,47 +82,36 @@ export function Topbar({ className = '' }: TopbarProps) {
     setProject(newProject);
 
     // Navigate to the new project's overview
-    router.push(`/${locale}/workspaces/${currentWorkspace.id}/projects/${projectId}/overview`);
+    router.push(`/workspaces/${currentWorkspace.id}/projects/${projectId}/overview`);
   };
 
   const handleGoToProjects = () => {
     if (currentWorkspace?.id) {
-      router.push(`/${locale}/workspaces/${currentWorkspace.id}/projects`);
+      router.push(`/workspaces/${currentWorkspace.id}/projects`);
     }
-  };
-
-  const handleViewAllWorkspaces = () => {
-    // Since there's no dedicated workspace list page, we can:
-    // 1. Keep the dropdown open (do nothing, let user select from list)
-    // 2. Or navigate to the first workspace's project list
-    // For now, we'll just ensure the dropdown shows all workspaces
-    // The dropdown itself already shows all workspaces, so this is more of a visual indicator
   };
 
   const handleLogoClick = () => {
     if (currentWorkspace?.id) {
-      router.push(`/${locale}/workspaces/${currentWorkspace.id}/projects`);
+      router.push(`/workspaces/${currentWorkspace.id}/projects`);
     }
   };
 
   const handleProfile = () => {
-    console.log('Navigate to profile');
-    // TODO: Navigate to profile
+    router.push(`/user/profile`);
   };
 
   const handleApiKeys = () => {
-    console.log('Navigate to API keys');
-    // TODO: Navigate to API keys
+    router.push(`/user/api-keys`);
   };
 
-  const handleLanguage = () => {
-    console.log('Open language selector');
-    // TODO: Open language selector
+  const handleLanguageSwitch = (newLocale: string) => {
+    router.replace(pathname, { locale: newLocale });
   };
 
   const handleLogout = () => {
-    console.log('Logout');
-    // TODO: Clear auth and redirect to login
+    mockLogout();
+    router.push(`/login`);
   };
 
   return (
@@ -143,7 +135,7 @@ export function Topbar({ className = '' }: TopbarProps) {
             <DropdownMenuTrigger className="max-w-[340px] flex items-center gap-2 px-3 h-10 rounded-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
               <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
               <span className="text-sm text-foreground truncate">
-                {currentWorkspace?.name || 'Select Workspace'}
+                {currentWorkspace?.name || t('select_workspace')}
               </span>
               <ChevronDown className="w-4 h-4 text-tertiary flex-shrink-0" />
             </DropdownMenuTrigger>
@@ -154,7 +146,7 @@ export function Topbar({ className = '' }: TopbarProps) {
                     <DropdownMenuItem key={ws.id} onSelect={() => handleWorkspaceChange(ws.id)}>
                       {ws.name}
                       {currentWorkspace?.id === ws.id && (
-                        <span className="ml-auto text-xs text-tertiary">(Current)</span>
+                        <span className="ml-auto text-xs text-tertiary">({t('current_workspace')})</span>
                       )}
                     </DropdownMenuItem>
                   ))}
@@ -216,18 +208,15 @@ export function Topbar({ className = '' }: TopbarProps) {
 
       {/* Right: Controls */}
       <div className="flex items-center gap-4">
-        {/* Notification Bell (optional v1.5) */}
-        <button className="relative p-2 hover:bg-hover rounded-md text-icon-default hover:text-foreground transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-error rounded-full border-2 border-panel" />
-        </button>
+        <NotificationCenter />
 
         {/* User Menu */}
         <UserMenu
           user={user}
           onProfile={handleProfile}
           onApiKeys={handleApiKeys}
-          onLanguage={handleLanguage}
+          onLanguageSwitch={handleLanguageSwitch}
+          currentLocale={locale}
           onLogout={handleLogout}
         />
       </div>

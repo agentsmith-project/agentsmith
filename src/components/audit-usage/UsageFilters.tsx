@@ -24,8 +24,6 @@ const RESOURCE_TYPES = [
   'workspace',
 ];
 
-const PRESETS = ['today', 'last_7d', 'last_30d', 'this_month', 'custom'] as const;
-
 export function UsageFilters({
   filters,
   onChange,

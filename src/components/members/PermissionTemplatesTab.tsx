@@ -9,37 +9,45 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { EmptyState } from '@/components/ui/loading';
-import { Settings, Eye, Plus, Lock, CheckCircle } from 'lucide-react';
-import { usePermissionTemplates } from '@/lib/hooks/use-members';
+import { Settings, Eye, Plus, Lock, CheckCircle, UserPlus } from 'lucide-react';
+import { usePermissionTemplates, useCreatePermissionTemplate, useUpdatePermissionTemplate, useBatchApplyPermissionTemplate, useMembers } from '@/lib/hooks/use-members';
 import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
 import { useIsOwnerOrAdmin } from '@/lib/hooks/use-permissions';
+import { CreateTemplateDrawer } from './CreateTemplateDrawer';
+import { ApplyTemplateDialog } from './ApplyTemplateDialog';
+import { EditTemplateDrawer } from './EditTemplateDrawer';
 import type { PermissionTemplate } from '@/lib/api/types';
 
 export interface PermissionTemplatesTabProps {
   workspaceId: string;
   projectId: string;
-  onApplyTemplate?: (templateId: string, memberId: string) => void;
 }
 
 export function PermissionTemplatesTab({
   workspaceId,
   projectId,
-  onApplyTemplate,
 }: PermissionTemplatesTabProps) {
   const t = useTranslations('members.templates');
   const { data: templates, isLoading } = usePermissionTemplates(workspaceId, projectId);
+  const { data: members = [] } = useMembers(workspaceId, projectId);
+  const createTemplate = useCreatePermissionTemplate(workspaceId, projectId);
+  const batchApplyTemplate = useBatchApplyPermissionTemplate(workspaceId, projectId);
   const canManage = useIsOwnerOrAdmin();
   const [selectedTemplate, setSelectedTemplate] = React.useState<PermissionTemplate | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = React.useState('');
+  const updateTemplate = useUpdatePermissionTemplate(workspaceId, projectId, editingTemplateId);
   const [viewDialogOpen, setViewDialogOpen] = React.useState(false);
+  const [createDrawerOpen, setCreateDrawerOpen] = React.useState(false);
+  const [applyDialogOpen, setApplyDialogOpen] = React.useState(false);
+  const [editDrawerOpen, setEditDrawerOpen] = React.useState(false);
 
-  const defaultTemplates = React.useMemo(() => {
+  const defaultTemplates = React.useMemo((): PermissionTemplate[] => {
     return [
       {
         id: 'owner',
         name: t('default_templates.owner'),
         description: t('default_templates.owner_description'),
-        permissions: ROLE_TEMPLATES.owner as string[],
+        permissions: [...ROLE_TEMPLATES.owner],
         is_default: true,
         is_readonly: true,
       },
@@ -47,7 +55,7 @@ export function PermissionTemplatesTab({
         id: 'admin',
         name: t('default_templates.admin'),
         description: t('default_templates.admin_description'),
-        permissions: ROLE_TEMPLATES.admin as string[],
+        permissions: [...ROLE_TEMPLATES.admin],
         is_default: true,
         is_readonly: true,
       },
@@ -55,7 +63,7 @@ export function PermissionTemplatesTab({
         id: 'developer',
         name: t('default_templates.developer'),
         description: t('default_templates.developer_description'),
-        permissions: ROLE_TEMPLATES.developer as string[],
+        permissions: [...ROLE_TEMPLATES.developer],
         is_default: true,
         is_readonly: true,
       },
@@ -63,17 +71,30 @@ export function PermissionTemplatesTab({
         id: 'user',
         name: t('default_templates.user'),
         description: t('default_templates.user_description'),
-        permissions: ROLE_TEMPLATES.user as string[],
+        permissions: [...ROLE_TEMPLATES.user],
         is_default: true,
         is_readonly: true,
       },
-    ] as PermissionTemplate[];
+    ];
   }, [t]);
 
   const allTemplates = React.useMemo(() => {
     if (!templates) return defaultTemplates;
-    return [...defaultTemplates, ...templates.filter(t => !t.is_default)];
+    return [...defaultTemplates, ...templates.filter((t) => !t.is_default)];
   }, [templates, defaultTemplates]);
+
+  const customTemplates = allTemplates.filter((t) => !t.is_default);
+
+  const handleApplyTemplate = React.useCallback(
+    async (memberIds: string[], permissions: string[], templateId?: 'admin' | 'developer' | 'user' | null) => {
+      await batchApplyTemplate.mutateAsync({
+        memberIds,
+        permissions,
+        template: templateId ?? undefined,
+      });
+    },
+    [batchApplyTemplate]
+  );
 
   if (isLoading) {
     return (
@@ -91,7 +112,12 @@ export function PermissionTemplatesTab({
           <p className="text-xs text-tertiary mt-1">{t('description')}</p>
         </div>
         {canManage && (
-          <Button variant="outline" size="sm" className="gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => setCreateDrawerOpen(true)}
+          >
             <Plus className="h-4 w-4" />
             {t('create_template')}
           </Button>
@@ -109,11 +135,24 @@ export function PermissionTemplatesTab({
               setViewDialogOpen(true);
             }}
             onEdit={() => {
-              // TODO: Implement edit template
-              console.log('Edit template:', template.id);
+              setSelectedTemplate(template);
+              setEditingTemplateId(template.id);
+              setEditDrawerOpen(true);
             }}
           />
         ))}
+        {customTemplates.length === 0 && (
+          <div className="border border-dashed border-border rounded-lg p-8 text-center">
+            <p className="text-sm font-medium text-foreground mb-1">{t('empty_custom_title')}</p>
+            <p className="text-xs text-tertiary mb-4">{t('empty_custom_description')}</p>
+            {canManage && (
+              <Button variant="outline" size="sm" onClick={() => setCreateDrawerOpen(true)} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {t('create_template')}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {selectedTemplate && (
@@ -121,6 +160,40 @@ export function PermissionTemplatesTab({
           open={viewDialogOpen}
           onOpenChange={setViewDialogOpen}
           template={selectedTemplate}
+          canManage={canManage}
+          onApplyToMember={() => setApplyDialogOpen(true)}
+        />
+      )}
+
+      {selectedTemplate && (
+        <ApplyTemplateDialog
+          open={applyDialogOpen}
+          onOpenChange={setApplyDialogOpen}
+          template={selectedTemplate}
+          members={Array.isArray(members) ? members : []}
+          onApply={handleApplyTemplate}
+        />
+      )}
+
+      <CreateTemplateDrawer
+        open={createDrawerOpen}
+        onOpenChange={setCreateDrawerOpen}
+        onSubmit={async (data) => {
+          await createTemplate.mutateAsync(data);
+        }}
+      />
+
+      {selectedTemplate && !selectedTemplate.is_readonly && (
+        <EditTemplateDrawer
+          open={editDrawerOpen}
+          onOpenChange={(open) => {
+            setEditDrawerOpen(open);
+            if (!open) setEditingTemplateId('');
+          }}
+          template={selectedTemplate}
+          onSubmit={async (data) => {
+            await updateTemplate.mutateAsync(data);
+          }}
         />
       )}
     </div>
@@ -188,12 +261,16 @@ interface TemplateViewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   template: PermissionTemplate;
+  canManage?: boolean;
+  onApplyToMember?: () => void;
 }
 
 function TemplateViewDialog({
   open,
   onOpenChange,
   template,
+  canManage,
+  onApplyToMember,
 }: TemplateViewDialogProps) {
   const t = useTranslations('members.templates');
 
@@ -229,6 +306,15 @@ function TemplateViewDialog({
               </div>
             </div>
           </div>
+
+          {canManage && onApplyToMember && (
+            <div className="pt-2 border-t border-border">
+              <Button variant="outline" size="sm" onClick={onApplyToMember} className="gap-2">
+                <UserPlus className="h-4 w-4" />
+                {t('apply_to_member')}
+              </Button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

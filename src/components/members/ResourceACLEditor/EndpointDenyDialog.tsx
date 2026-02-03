@@ -9,7 +9,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useUpdateResourceACL } from '@/lib/hooks/use-members';
@@ -131,7 +130,7 @@ export function EndpointDenyDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleCancel} disabled={isPending}>
+          <Button variant="ghost" onClick={handleCancel} disabled={isPending}>
             Cancel
           </Button>
           <Button variant="destructive" onClick={handleSubmit} disabled={isPending || !reason.trim()}>

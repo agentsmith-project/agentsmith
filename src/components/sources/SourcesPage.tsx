@@ -1,27 +1,21 @@
 'use client';
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Play, X, Loader2 } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { QuotaSummaryCard } from './QuotaSummaryCard';
 import { SourcesSearch } from './SourcesSearch';
 import { SourcesFilters } from './SourcesFilters';
 import { SourcesTable } from './SourcesTable';
+import { SourcesSelectionBar } from './SourcesSelectionBar';
 import { FileUploadDialog } from './FileUploadDialog';
 import { FileDeleteDialog } from './FileDeleteDialog';
-import { BatchActionBar } from './BatchActionBar';
 import {
   useSources,
   useQuota,
   useUploadFile,
   useDeleteFile,
-  useAIReadyActions,
   useBatchAIReadyActions,
 } from '@/lib/hooks/use-sources';
 import { useErrorHandler } from '@/lib/hooks/use-error-handler';
@@ -46,7 +40,9 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const [selectedFileIds, setSelectedFileIds] = React.useState<string[]>([]);
   const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
-  const [fileToDelete, setFileToDelete] = React.useState<{ id: string; filename: string; hasAIReady: boolean } | null>(null);
+  const [filesToDelete, setFilesToDelete] = React.useState<{ ids: string[]; hasAIReady: boolean } | null>(null);
+  const [page, setPage] = React.useState(1);
+  const pageSize = 20;
   const [uploadProgress, setUploadProgress] = React.useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = React.useState<Record<string, string>>({});
 
@@ -58,14 +54,19 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     ai_ready_only: aiReadyOnly || undefined,
     sort_by: sortBy,
     sort_order: sortOrder,
-    page_size: 50,
+    page,
+    page_size: pageSize,
   });
 
   // Mutations
   const uploadMutation = useUploadFile();
   const deleteMutation = useDeleteFile();
-  const aiReadyActions = useAIReadyActions();
   const batchActions = useBatchAIReadyActions();
+
+  // Clear selection when page changes
+  React.useEffect(() => {
+    setSelectedFileIds([]);
+  }, [page]);
 
   // Check if there are any preparing files for polling
   const hasPreparingFiles = React.useMemo(() => {
@@ -133,49 +134,36 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     }
   };
 
-  // Handle file delete
-  const handleDelete = (fileId: string) => {
-    const file = sourcesData?.items.find((f) => f.id === fileId);
-    if (file) {
-      setFileToDelete({
-        id: file.id,
-        filename: file.filename,
-        hasAIReady: !!file.ai_ready,
-      });
-      setDeleteDialogOpen(true);
-    }
+  // Handle delete (single or batch)
+  const handleDeleteClick = () => {
+    if (selectedFileIds.length === 0) return;
+    const files = sourcesData?.items.filter((f) => selectedFileIds.includes(f.id)) ?? [];
+    const hasAIReady = files.some((f) => !!f.ai_ready);
+    setFilesToDelete({ ids: selectedFileIds, hasAIReady });
+    setDeleteDialogOpen(true);
   };
 
-  const handleConfirmDelete = (deleteAIReady: boolean) => {
-    if (fileToDelete) {
-      deleteMutation.mutate(
-        {
+  const handleConfirmDelete = async (deleteAIReady: boolean) => {
+    if (!filesToDelete) return;
+    let failed = 0;
+    for (const fileId of filesToDelete.ids) {
+      try {
+        await deleteMutation.mutateAsync({
           workspaceId,
           projectId,
-          fileId: fileToDelete.id,
+          fileId,
           deleteAIReady,
-        },
-        {
-          onSuccess: () => {
-            setDeleteDialogOpen(false);
-            setFileToDelete(null);
-          },
-        },
-      );
+        });
+      } catch {
+        failed += 1;
+      }
     }
-  };
-
-  // Handle AIReady actions
-  const handleStartAIReady = (fileId: string) => {
-    aiReadyActions.start.mutate({ workspaceId, projectId, fileId });
-  };
-
-  const handleCancelAIReady = (fileId: string) => {
-    aiReadyActions.cancel.mutate({ workspaceId, projectId, fileId });
-  };
-
-  const handleRetryAIReady = (fileId: string) => {
-    aiReadyActions.retry.mutate({ workspaceId, projectId, fileId });
+    setDeleteDialogOpen(false);
+    setFilesToDelete(null);
+    setSelectedFileIds([]);
+    if (failed > 0) {
+      toast.error(`Failed to delete ${failed} file(s)`);
+    }
   };
 
   // Check quota before batch operations
@@ -199,13 +187,8 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     };
   }, [quotaData]);
 
-  // Handle batch actions
   const handleBatchStartAIReady = () => {
-    if (selectedFileIds.length > 0) {
-      if (!canStartAIReady) {
-        // Show error toast
-        return;
-      }
+    if (selectedFileIds.length > 0 && quotaStatus.canStart) {
       batchActions.batchStart.mutate({ workspaceId, projectId, fileIds: selectedFileIds });
       setSelectedFileIds([]);
     }
@@ -244,79 +227,31 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     }
   };
 
+  const items = sourcesData?.items ?? [];
+  const total = sourcesData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const hasNext = page < totalPages;
+  const hasPrev = page > 1;
+
   return (
     <div className="h-full flex flex-col p-6">
-      {/* Header with Quota and Actions */}
-      <div className="flex items-start justify-between mb-6">
+      {/* Header with Quota and Upload */}
+      <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
-          <h1 className="text-2xl font-semibold text-foreground mb-4">Sources</h1>
+          <h1 className="text-2xl font-semibold text-foreground mb-3">Sources</h1>
           {quotaData && !quotaLoading && <QuotaSummaryCard quota={quotaData} />}
         </div>
-        <TooltipProvider>
-          <div className="flex items-center gap-2">
-            {selectedFileIds.length > 0 && (
-              <>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        variant="outline"
-                        onClick={handleBatchStartAIReady}
-                        disabled={!quotaStatus.canStart || batchActions.batchStart.isPending}
-                        className="flex items-center gap-2"
-                      >
-                        {batchActions.batchStart.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Play className="h-4 w-4" />
-                        )}
-                        Start AIReady ({selectedFileIds.length})
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  {!quotaStatus.canStart && quotaStatus.exceededTypes.length > 0 && (
-                    <TooltipContent>
-                      <p>
-                        Quota exceeded: {quotaStatus.exceededTypes.join(', ')}. Cannot start AIReady.
-                      </p>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        variant="outline"
-                        onClick={handleBatchCancelAIReady}
-                        disabled={batchActions.batchCancel.isPending}
-                        className="flex items-center gap-2"
-                      >
-                        <X className="h-4 w-4" />
-                        Cancel AIReady ({selectedFileIds.length})
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  {batchActions.batchCancel.isPending && (
-                    <TooltipContent>
-                      <p>Cancelling AIReady...</p>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-              </>
-            )}
-            <Button
-              onClick={() => setUploadDialogOpen(true)}
-              className="flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Upload
-            </Button>
-          </div>
-        </TooltipProvider>
+        <Button
+          onClick={() => setUploadDialogOpen(true)}
+          className="flex items-center gap-2"
+        >
+          <Plus className="h-4 w-4" />
+          Upload
+        </Button>
       </div>
 
       {/* Search and Filters */}
-      <div className="flex items-center gap-4 mb-4">
+      <div className="flex items-center gap-4 mb-3">
         <div className="flex-1 max-w-md">
           <SourcesSearch value={search} onChange={setSearch} />
         </div>
@@ -332,20 +267,70 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
         />
       </div>
 
-      {/* Table */}
-      <div className="flex-1 overflow-auto">
-        <SourcesTable
-          data={sourcesData?.items || []}
-          loading={sourcesLoading}
-          onRowSelect={setSelectedFileIds}
-          onStartAIReady={handleStartAIReady}
-          onCancelAIReady={handleCancelAIReady}
-          onRetryAIReady={handleRetryAIReady}
-          onDelete={handleDelete}
-          onDownload={handleDownload}
-          onUploadClick={() => setUploadDialogOpen(true)}
-        />
+      {/* Table + selection bar (bar overlays bottom, no layout shift) */}
+      <div className="flex-1 min-h-0 flex flex-col relative">
+        <div
+          className={cn(
+            'flex-1 min-h-0 overflow-auto transition-[padding] duration-200',
+            selectedFileIds.length > 0 && 'pb-14',
+          )}
+        >
+          <SourcesTable
+            data={items}
+            loading={sourcesLoading}
+            compact
+            selectedIds={selectedFileIds}
+            onRowSelect={setSelectedFileIds}
+            onUploadClick={() => setUploadDialogOpen(true)}
+          />
+        </div>
+
+        {/* Selection bar: fixed at bottom of table area, overlays content (no layout shift) */}
+        {selectedFileIds.length > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-subtle bg-surface shadow-[0_-4px_12px_rgba(0,0,0,0.15)]">
+            <SourcesSelectionBar
+                overlay
+                selectedIds={selectedFileIds}
+                files={items}
+                quotaExceeded={!quotaStatus.canStart}
+                onDelete={handleDeleteClick}
+                onStartAIReady={handleBatchStartAIReady}
+                onCancelAIReady={handleBatchCancelAIReady}
+                onDownload={handleDownload}
+                onClearSelection={() => setSelectedFileIds([])}
+                batchStartPending={batchActions.batchStart.isPending}
+                batchCancelPending={batchActions.batchCancel.isPending}
+              />
+          </div>
+        )}
       </div>
+
+      {/* Pagination */}
+      {total > pageSize && (
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-subtle">
+          <span className="text-sm text-tertiary">
+            {total} file(s) · page {page} of {totalPages}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={!hasPrev}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={!hasNext}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Dialogs */}
       <FileUploadDialog
@@ -357,13 +342,14 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
         uploadErrors={uploadErrors}
       />
 
-      {fileToDelete && (
+      {filesToDelete && (
         <FileDeleteDialog
           open={deleteDialogOpen}
           onOpenChange={setDeleteDialogOpen}
           onConfirm={handleConfirmDelete}
-          filename={fileToDelete.filename}
-          hasAIReady={fileToDelete.hasAIReady}
+          filename={filesToDelete.ids.length === 1 ? sourcesData?.items.find((f) => f.id === filesToDelete!.ids[0])?.filename : undefined}
+          hasAIReady={filesToDelete.hasAIReady}
+          fileCount={filesToDelete.ids.length}
           deleting={deleteMutation.isPending}
         />
       )}

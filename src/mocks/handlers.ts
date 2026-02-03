@@ -6,6 +6,7 @@
  */
 
 import { http, HttpResponse } from 'msw';
+import type { RecipeMessage } from '@/lib/types/recipe';
 import {
   workspaceFixtures,
   projectFixtures,
@@ -14,11 +15,15 @@ import {
   agentServiceKeyFixtures,
   endpointFixtures,
   endpointACLFixtures,
+  credentialFixtures,
+  credentialSecrets,
   memberFixtures,
   joinRequestFixtures,
   auditEventFixtures,
   usageRecordFixtures,
   userAPIKeyFixtures,
+  userProfileFixture,
+  userNotificationFixtures,
   chatSessionFixtures,
   chatMessageFixtures,
   attachmentFixtures,
@@ -30,6 +35,24 @@ import {
   artifactFixtures,
   usageKPI,
 } from './fixtures';
+
+// In-memory store for custom permission templates (mock only)
+const customPermissionTemplates: Array<{
+  id: string;
+  name: string;
+  description?: string;
+  permissions: string[];
+  is_default: boolean;
+  is_readonly: boolean;
+}> = [];
+
+// In-memory store for quota templates (mock only)
+const customQuotaTemplates: Array<{
+  id: string;
+  name: string;
+  description?: string;
+  overrides_json: Record<string, unknown>;
+}> = [];
 
 // ============================================================
 // Utility Functions
@@ -131,7 +154,7 @@ export const handlers = [
     return HttpResponse.json(newProject, { status: 201 });
   }),
 
-  http.put('/api/workspaces/:ws/projects/:prj', async ({ params, request }) => {
+  http.patch('/api/workspaces/:ws/projects/:prj', async ({ params, request }) => {
     const projectId = getId(params, 'prj');
     const body: any = await request.json();
     const index = projectFixtures.findIndex((p) => p.id === projectId);
@@ -140,6 +163,16 @@ export const handlers = [
     }
     projectFixtures[index] = { ...projectFixtures[index], ...body, updated_at: new Date().toISOString() };
     return HttpResponse.json(projectFixtures[index]);
+  }),
+
+  http.delete('/api/workspaces/:ws/projects/:prj', ({ params }) => {
+    const projectId = getId(params, 'prj');
+    const index = projectFixtures.findIndex((p) => p.id === projectId);
+    if (index === -1) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Project not found' }, { status: 404 });
+    }
+    projectFixtures.splice(index, 1);
+    return HttpResponse.json({ success: true });
   }),
 
   // ============================================================
@@ -171,9 +204,12 @@ export const handlers = [
       name: body.name,
       description: body.description,
       mode: body.mode || 'external',
+      interaction_mode: body.interaction_mode || 'both',
       presence: 'offline' as const,
       status: 'enabled' as const,
       config: body.config,
+      owner_id: 'user_current',
+      owner_name: 'Current User',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -181,7 +217,7 @@ export const handlers = [
     return HttpResponse.json(newAgent, { status: 201 });
   }),
 
-  http.put('/api/workspaces/:ws/projects/:prj/agents/:agent', async ({ params, request }) => {
+  http.patch('/api/workspaces/:ws/projects/:prj/agents/:agent', async ({ params, request }) => {
     const agentId = getId(params, 'agent');
     const body: any = await request.json();
     const index = agentFixtures.findIndex((a) => a.id === agentId);
@@ -211,15 +247,26 @@ export const handlers = [
 
   http.post('/api/workspaces/:ws/projects/:prj/agents/:agent/keys', async ({ params }) => {
     const agentId = getId(params, 'agent');
-    // This endpoint doesn't use request body
+    const agent = agentFixtures.find((a) => a.id === agentId);
+    if (agent?.mode === 'internal') {
+      return HttpResponse.json(
+        { error_code: 'INTERNAL_AGENT_NO_ASK', message: 'Internal agents cannot have service keys (ASK)' },
+        { status: 400 }
+      );
+    }
+    const secret = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    const fullKey = `ask_${secret}`;
+    const keyPrefix = `ask-***${secret.slice(-9)}`;
     const newKey = {
       id: `ask_${Date.now()}`,
       agent_id: agentId,
-      key_prefix: `ask-***${Math.random().toString(36).substring(2, 9)}`,
+      key_prefix: keyPrefix,
       status: 'active' as const,
       created_at: new Date().toISOString(),
+      key: fullKey,
     };
-    agentServiceKeyFixtures.push(newKey);
+    const { key: _key, ...stored } = newKey;
+    agentServiceKeyFixtures.push(stored as any);
     return HttpResponse.json(newKey, { status: 201 });
   }),
 
@@ -255,15 +302,26 @@ export const handlers = [
 
   http.post('/api/workspaces/:ws/projects/:prj/endpoints', async ({ params, request }) => {
     const body: any = await request.json();
+    const projectId = getId(params, 'prj');
+    const existing = endpointFixtures.find(
+      (e) => e.project_id === projectId && e.openai_model === body.openai_model
+    );
+    if (existing) {
+      return HttpResponse.json(
+        { error_code: 'ENDPOINT_MODEL_CONFLICT', message: 'Model ID already exists in this project' },
+        { status: 409 }
+      );
+    }
     const newEndpoint = {
       id: `endpoint_${Date.now()}`,
-      project_id: getId(params, 'prj'),
+      project_id: projectId,
       name: body.name,
       description: body.description,
       openai_model: body.openai_model,
       type: body.type || 'openai',
       base_url: body.base_url,
       status: 'active' as const,
+      credential_ref: body.credential_ref,
       limits: body.limits,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -333,6 +391,65 @@ export const handlers = [
   }),
 
   // ============================================================
+  // Credentials
+  // ============================================================
+
+  http.get('/api/workspaces/:ws/projects/:prj/credentials', ({ params }) => {
+    const projectId = getId(params, 'prj');
+    const filtered = credentialFixtures.filter((c) => c.project_id === projectId);
+    return HttpResponse.json({ items: filtered, total: filtered.length });
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/credentials', async ({ params, request }) => {
+    const projectId = getId(params, 'prj');
+    const workspaceId = getId(params, 'ws');
+    const body: any = await request.json();
+    const value = body.value || '';
+    const fingerprint = value.length >= 4 ? `••••••••••••${value.slice(-4)}` : '••••••••••••****';
+    const newCred = {
+      id: `cred_${Date.now()}`,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: body.name || 'Unnamed',
+      type: 'api_key' as const,
+      fingerprint,
+      created_at: new Date().toISOString(),
+    };
+    credentialFixtures.push(newCred);
+    credentialSecrets[newCred.id] = value;
+    return HttpResponse.json(newCred, { status: 201 });
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/credentials/:cred/rotate', async ({ params, request }) => {
+    const credId = getId(params, 'cred');
+    const body: any = await request.json();
+    const value = body.value || '';
+    const index = credentialFixtures.findIndex((c) => c.id === credId);
+    if (index === -1) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Credential not found' }, { status: 404 });
+    }
+    const fingerprint = value.length >= 4 ? `••••••••••••${value.slice(-4)}` : '••••••••••••****';
+    credentialFixtures[index] = {
+      ...credentialFixtures[index],
+      fingerprint,
+      last_rotated_at: new Date().toISOString(),
+    };
+    credentialSecrets[credId] = value;
+    return HttpResponse.json(credentialFixtures[index]);
+  }),
+
+  http.delete('/api/workspaces/:ws/projects/:prj/credentials/:cred', ({ params }) => {
+    const credId = getId(params, 'cred');
+    const index = credentialFixtures.findIndex((c) => c.id === credId);
+    if (index === -1) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'Credential not found' }, { status: 404 });
+    }
+    credentialFixtures.splice(index, 1);
+    delete credentialSecrets[credId];
+    return HttpResponse.json({ success: true });
+  }),
+
+  // ============================================================
   // Members
   // ============================================================
 
@@ -394,6 +511,22 @@ export const handlers = [
     return HttpResponse.json({ success: true });
   }),
 
+  // Invites
+  http.post('/api/workspaces/:ws/projects/:prj/invites', async ({ request }) => {
+    const body = (await request.json()) as { email: string; role_template?: string; expires_in_hours?: number };
+    const inviteId = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const token = `itk-${inviteId}`;
+    const expiresInHours = body.expires_in_hours ?? 168; // 7 days default
+    const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000).toISOString();
+    // Relative path; client will resolve to full URL when copying
+    const inviteUrl = `/join?token=${token}`;
+    return HttpResponse.json({
+      invite_id: inviteId,
+      invite_url: inviteUrl,
+      expires_at: expiresAt,
+    });
+  }),
+
   // Member Permissions
   http.get('/api/workspaces/:ws/projects/:prj/members/:member/permissions', ({ params }) => {
     const memberId = getId(params, 'member');
@@ -432,15 +565,41 @@ export const handlers = [
   }),
 
   // Member Quota Overrides
-  http.get('/api/workspaces/:ws/projects/:prj/members/:member/quota-overrides', ({ params }) => {
-    // Return empty quota overrides for now
-    return HttpResponse.json({});
+  http.get('/api/workspaces/:ws/projects/:prj/members/:member/quota-overrides', () => {
+    return HttpResponse.json({ overrides: {} });
   }),
 
-  http.patch('/api/workspaces/:ws/projects/:prj/members/:member/quota-overrides', async ({ params, request }) => {
-    // Store quota overrides (in a real implementation, this would be persisted)
-    const body: any = await request.json();
-    return HttpResponse.json({ success: true });
+  http.get('/api/workspaces/:ws/projects/:prj/members/:member/quota-overrides/history', ({ request }) => {
+    const url = new URL(request.url);
+    const page = parseInt(url.searchParams.get('page') || '1');
+    const pageSize = parseInt(url.searchParams.get('page_size') || '20');
+    const sampleHistory = [
+      {
+        id: 'qoh_001',
+        created_at: new Date(Date.now() - 86400000).toISOString(),
+        created_by_user_id: 'user_001',
+        overrides_json: { userdata: { storage: { bytes_per_end_user: 1073741824 } } },
+      },
+      {
+        id: 'qoh_002',
+        created_at: new Date(Date.now() - 172800000).toISOString(),
+        created_by_user_id: 'user_002',
+        overrides_json: {},
+      },
+    ];
+    const start = (page - 1) * pageSize;
+    const items = sampleHistory.slice(start, start + pageSize);
+    return HttpResponse.json({
+      items,
+      total: sampleHistory.length,
+      page,
+      page_size: pageSize,
+    });
+  }),
+
+  http.patch('/api/workspaces/:ws/projects/:prj/members/:member/quota-overrides', async ({ request }) => {
+    const body = (await request.json()) as { overrides?: Record<string, unknown> };
+    return HttpResponse.json({ overrides: body.overrides ?? {} });
   }),
 
   // Resource ACL
@@ -455,16 +614,15 @@ export const handlers = [
     });
   }),
 
-  http.patch('/api/workspaces/:ws/projects/:prj/resources/:type/:id/acl', async ({ params, request }) => {
-    // Store ACL changes (in a real implementation, this would be persisted)
-    const body: any = await request.json();
+  http.patch('/api/workspaces/:ws/projects/:prj/resources/:type/:id/acl', async ({ request }) => {
+    await request.json(); // Consume body - in real impl would persist
     return HttpResponse.json({ success: true });
   }),
 
-  // Permission Templates
+  // Permission Templates (custom templates stored in-memory for mock)
   http.get('/api/workspaces/:ws/projects/:prj/permission-templates', () => {
     const { ROLE_TEMPLATES } = require('@/lib/constants/permissions');
-    const templates = [
+    const defaultTemplates = [
       {
         id: 'owner',
         name: 'Owner',
@@ -498,11 +656,125 @@ export const handlers = [
         is_readonly: true,
       },
     ];
-    return HttpResponse.json({ items: templates });
+    const items = [...defaultTemplates, ...customPermissionTemplates];
+    return HttpResponse.json({ items });
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/permission-templates', async ({ request }) => {
+    const body = (await request.json()) as { name: string; description?: string; permissions: string[] };
+    const id = `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const template = {
+      id,
+      name: body.name,
+      description: body.description,
+      permissions: body.permissions ?? [],
+      is_default: false,
+      is_readonly: false,
+    };
+    customPermissionTemplates.push(template);
+    return HttpResponse.json(template, { status: 201 });
+  }),
+
+  http.patch('/api/workspaces/:ws/projects/:prj/permission-templates/:tid', async ({ params, request }) => {
+    const templateId = getId(params, 'tid');
+    const body = (await request.json()) as { name?: string; description?: string; permissions?: string[] };
+    const index = customPermissionTemplates.findIndex((t) => t.id === templateId);
+    if (index === -1) {
+      return HttpResponse.json({ error: 'Template not found' }, { status: 404 });
+    }
+    if (customPermissionTemplates[index].is_readonly) {
+      return HttpResponse.json({ error: 'Cannot edit default template' }, { status: 403 });
+    }
+    if (body.name !== undefined) customPermissionTemplates[index].name = body.name;
+    if (body.description !== undefined) customPermissionTemplates[index].description = body.description;
+    if (body.permissions !== undefined) customPermissionTemplates[index].permissions = body.permissions;
+    return HttpResponse.json(customPermissionTemplates[index]);
+  }),
+
+  http.delete('/api/workspaces/:ws/projects/:prj/permission-templates/:tid', ({ params }) => {
+    const templateId = getId(params, 'tid');
+    const index = customPermissionTemplates.findIndex((t) => t.id === templateId);
+    if (index === -1) {
+      return HttpResponse.json({ error: 'Template not found' }, { status: 404 });
+    }
+    if (customPermissionTemplates[index].is_readonly) {
+      return HttpResponse.json({ error: 'Cannot delete default template' }, { status: 403 });
+    }
+    customPermissionTemplates.splice(index, 1);
+    return HttpResponse.json({ success: true });
+  }),
+
+  // Quota Templates
+  http.get('/api/workspaces/:ws/projects/:prj/quota-templates', () => {
+    return HttpResponse.json([...customQuotaTemplates]);
+  }),
+
+  http.get('/api/workspaces/:ws/projects/:prj/quota-templates/:tid', ({ params }) => {
+    const templateId = getId(params, 'tid');
+    const template = customQuotaTemplates.find((t) => t.id === templateId);
+    if (!template) {
+      return HttpResponse.json({ error: 'Quota template not found' }, { status: 404 });
+    }
+    return HttpResponse.json(template);
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/quota-templates', async ({ request }) => {
+    const body = (await request.json()) as {
+      name: string;
+      description?: string;
+      overrides_json?: Record<string, unknown>;
+    };
+    const id = `qot_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const template = {
+      id,
+      name: body.name,
+      description: body.description,
+      overrides_json: body.overrides_json ?? {},
+    };
+    customQuotaTemplates.push(template);
+    return HttpResponse.json(template, { status: 201 });
+  }),
+
+  http.patch('/api/workspaces/:ws/projects/:prj/quota-templates/:tid', async ({ params, request }) => {
+    const templateId = getId(params, 'tid');
+    const body = (await request.json()) as {
+      name?: string;
+      description?: string;
+      overrides_json?: Record<string, unknown>;
+    };
+    const index = customQuotaTemplates.findIndex((t) => t.id === templateId);
+    if (index === -1) {
+      return HttpResponse.json({ error: 'Quota template not found' }, { status: 404 });
+    }
+    if (body.name !== undefined) customQuotaTemplates[index].name = body.name;
+    if (body.description !== undefined) customQuotaTemplates[index].description = body.description;
+    if (body.overrides_json !== undefined) customQuotaTemplates[index].overrides_json = body.overrides_json;
+    return HttpResponse.json(customQuotaTemplates[index]);
+  }),
+
+  http.delete('/api/workspaces/:ws/projects/:prj/quota-templates/:tid', ({ params }) => {
+    const templateId = getId(params, 'tid');
+    const index = customQuotaTemplates.findIndex((t) => t.id === templateId);
+    if (index === -1) {
+      return HttpResponse.json({ error: 'Quota template not found' }, { status: 404 });
+    }
+    customQuotaTemplates.splice(index, 1);
+    return HttpResponse.json(null, { status: 204 });
+  }),
+
+  http.post('/api/workspaces/:ws/projects/:prj/quota-templates/:tid/apply', async ({ params, request }) => {
+    const templateId = getId(params, 'tid');
+    const body = (await request.json()) as { member_ids: string[] };
+    const template = customQuotaTemplates.find((t) => t.id === templateId);
+    if (!template) {
+      return HttpResponse.json({ error: 'Quota template not found' }, { status: 404 });
+    }
+    const count = body.member_ids?.length ?? 0;
+    return HttpResponse.json({ applied_count: count });
   }),
 
   // Member Change History
-  http.get('/api/workspaces/:ws/projects/:prj/members/:member/change-history', ({ params }) => {
+  http.get('/api/workspaces/:ws/projects/:prj/members/:member/change-history', () => {
     // Return empty change history for now
     return HttpResponse.json({ items: [] });
   }),
@@ -583,13 +855,17 @@ export const handlers = [
   http.get('/api/workspaces/:ws/projects/:prj/usage/kpi', ({ params, request }) => {
     const url = new URL(request.url);
     const projectId = getId(params, 'prj');
-    
+    const endUserId = url.searchParams.get('end_user_id');
+
     // Filter usage records by project and calculate KPI
-    const filtered = usageRecordFixtures.filter((r) => r.project_id === projectId);
+    let filtered = usageRecordFixtures.filter((r) => r.project_id === projectId);
+    if (endUserId) {
+      filtered = filtered.filter((r) => r.end_user_id === endUserId);
+    }
     const startTime = url.searchParams.get('start_time');
     const endTime = url.searchParams.get('end_time');
     
-    let kpiData = { ...usageKPI };
+    const kpiData = { ...usageKPI };
     
     if (startTime && endTime) {
       // Calculate from filtered records
@@ -663,16 +939,21 @@ export const handlers = [
 
   http.post('/api/user/keys', async ({ request }) => {
     const body: any = await request.json();
+    const secret = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    const fullKey = `usk_${secret}`;
+    const keyPrefix = `usk-***${secret.slice(-9)}`;
     const newKey = {
       id: `key_${Date.now()}`,
       user_id: 'user_001',
-      key_prefix: `usk-***${Math.random().toString(36).substring(2, 11)}`,
+      key_prefix: keyPrefix,
       status: 'active' as const,
       note: body.note,
       created_at: new Date().toISOString(),
       expires_at: body.expires_in ? new Date(Date.now() + body.expires_in * 24 * 60 * 60 * 1000).toISOString() : undefined,
+      key: fullKey, // Full key returned only once on create
     };
-    userAPIKeyFixtures.unshift(newKey);
+    const { key: _key, ...stored } = newKey;
+    userAPIKeyFixtures.unshift(stored as any);
     return HttpResponse.json(newKey, { status: 201 });
   }),
 
@@ -683,6 +964,61 @@ export const handlers = [
       userAPIKeyFixtures[index].status = 'revoked';
     }
     return HttpResponse.json({ success: true });
+  }),
+
+  // ============================================================
+  // Me - Profile & Notifications
+  // ============================================================
+
+  http.get('/api/me/profile', () => {
+    return HttpResponse.json({ ...userProfileFixture });
+  }),
+
+  http.patch('/api/me/profile', async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    Object.assign(userProfileFixture, body);
+    return HttpResponse.json({ ...userProfileFixture });
+  }),
+
+  http.get('/api/me/notifications', ({ request }) => {
+    const url = new URL(request.url);
+    const unreadOnly = url.searchParams.get('unread_only') === 'true';
+    const limit = parseInt(url.searchParams.get('limit') || '50');
+    const offset = parseInt(url.searchParams.get('offset') || '0');
+    let items = userNotificationFixtures;
+    if (unreadOnly) {
+      items = items.filter((n) => !n.read_at);
+    }
+    const total = items.length;
+    const paginatedItems = items.slice(offset, offset + limit);
+    const unreadCount = userNotificationFixtures.filter((n) => !n.read_at).length;
+    return HttpResponse.json({
+      items: paginatedItems,
+      total,
+      unread_count: unreadCount,
+    });
+  }),
+
+  http.get('/api/me/notifications/unread-count', () => {
+    const count = userNotificationFixtures.filter((n) => !n.read_at).length;
+    return HttpResponse.json({ unread_count: count });
+  }),
+
+  http.post('/api/me/notifications/:id/read', ({ params }) => {
+    const id = getId(params, 'id');
+    const notif = userNotificationFixtures.find((n) => n.id === id);
+    if (notif) {
+      notif.read_at = new Date().toISOString();
+    }
+    return HttpResponse.json(notif || {});
+  }),
+
+  http.post('/api/me/notifications/read-all', () => {
+    const count = userNotificationFixtures.filter((n) => !n.read_at).length;
+    userNotificationFixtures.forEach((n) => {
+      n.read_at = new Date().toISOString();
+    });
+    return HttpResponse.json({ marked_count: count });
   }),
 
   // ============================================================
@@ -984,8 +1320,28 @@ export const handlers = [
   // Workbench
   // ============================================================
 
-  http.get('/api/workspaces/:ws/projects/:prj/sources', () => {
-    return HttpResponse.json({ items: sourceFileFixtures, total: sourceFileFixtures.length });
+  http.get('/api/workspaces/:ws/projects/:prj/sources', ({ params, request }) => {
+    const url = new URL(request.url);
+    const { page, pageSize } = getPagination(url);
+    const projectId = getId(params, 'prj');
+    const workspaceId = getId(params, 'ws');
+    const filtered = sourceFileFixtures.filter((f) => f.project_id === projectId);
+    const mapped = filtered.map((f) => ({
+      id: f.id,
+      workspace_id: workspaceId,
+      project_id: f.project_id,
+      owner_user_id: 'user_001',
+      filename: f.file_name,
+      file_type: f.file_type,
+      file_size: f.file_size,
+      object_ref: { bucket: 'mock', key: f.id },
+      version: 1,
+      created_at: f.created_at,
+      updated_at: f.updated_at,
+      ai_ready: f.status === 'ready' ? { id: `ar_${f.id}`, source_file_id: f.id, status: 'ready' as const, created_at: f.created_at, updated_at: f.updated_at } : f.status === 'processing' ? { id: `ar_${f.id}`, source_file_id: f.id, status: 'preparing' as const, created_at: f.created_at, updated_at: f.updated_at } : f.status === 'failed' ? { id: `ar_${f.id}`, source_file_id: f.id, status: 'failed' as const, error_message: f.error_message, created_at: f.created_at, updated_at: f.updated_at } : undefined,
+      ai_ready_usage: f.status === 'ready' ? { docdb_bytes: 1024, vectordb_bytes: 2048, chunks_count: 5 } : undefined,
+    }));
+    return HttpResponse.json(paginated(mapped, page, pageSize));
   }),
 
   http.get('/api/workspaces/:ws/projects/:prj/threads', () => {

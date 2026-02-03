@@ -85,7 +85,7 @@ export class SourcesAPI {
             const response = JSON.parse(xhr.responseText);
             if (onProgress) onProgress(100);
             resolve(response);
-          } catch (error) {
+          } catch {
             reject(new Error('Failed to parse response'));
           }
         } else {

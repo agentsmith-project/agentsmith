@@ -11,7 +11,6 @@ import { DataTable } from '@/components/ui/data-table';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
@@ -30,13 +29,6 @@ function formatTimeBucket(timeBucket: string): string {
   return timeBucket;
 }
 
-function formatTokens(tokens?: number): string {
-  if (!tokens) return '—';
-  if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`;
-  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}K`;
-  return tokens.toString();
-}
-
 function truncateId(id: string, length: number = 8): string {
   if (id.length <= length) return id;
   return `${id.substring(0, length)}...`;
@@ -50,7 +42,6 @@ export interface UsageTableProps {
 
 export function UsageTable({ data, loading = false, onClearFilters }: UsageTableProps) {
   const t = useTranslations('usage');
-  const commonT = useTranslations('common');
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'time_bucket', desc: true },
   ]);
@@ -137,7 +128,7 @@ export function UsageTable({ data, loading = false, onClearFilters }: UsageTable
         size: 80,
       }),
     ],
-    [sorting, t, commonT],
+    [t],
   );
 
   const table = useReactTable({

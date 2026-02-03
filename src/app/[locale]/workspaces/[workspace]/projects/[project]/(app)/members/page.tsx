@@ -29,7 +29,7 @@ export default function MembersRoute({ params }: MembersPageProps) {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="h-full flex flex-col p-6 max-w-7xl mx-auto">
       <MembersPage workspaceId={resolvedParams.workspace} projectId={resolvedParams.project} />
     </div>
   );

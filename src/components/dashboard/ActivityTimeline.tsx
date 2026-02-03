@@ -30,6 +30,8 @@ export interface ActivityTimelineProps {
   maxItems?: number;
   /** Link to view all activities */
   viewAllLink?: string;
+  /** Translation function */
+  translations?: (key: string) => string;
 }
 
 /**
@@ -44,8 +46,9 @@ export interface ActivityTimelineProps {
  * />
  * ```
  */
-export function ActivityTimeline({ items, maxItems = 5, viewAllLink }: ActivityTimelineProps) {
+export function ActivityTimeline({ items, maxItems = 5, viewAllLink, translations }: ActivityTimelineProps) {
   const displayItems = items.slice(0, maxItems);
+  const t = translations || ((key: string) => key);
 
   const handleCopy = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -61,14 +64,14 @@ export function ActivityTimeline({ items, maxItems = 5, viewAllLink }: ActivityT
     <div className="bg-panel border border-subtle rounded-xl">
       {/* Header */}
       <div className="px-6 py-4 border-b border-subtle">
-        <h3 className="text-lg font-semibold text-primary">Recent Activity</h3>
+        <h3 className="text-lg font-semibold text-primary">{t('recent_activity')}</h3>
       </div>
 
       {/* Timeline Items */}
       <div className="divide-y divide-subtle">
         {displayItems.length === 0 ? (
           <div className="px-6 py-8 text-center text-tertiary">
-            No recent activity
+            {t('no_recent_activity')}
           </div>
         ) : (
           displayItems.map((item) => {
@@ -94,7 +97,7 @@ export function ActivityTimeline({ items, maxItems = 5, viewAllLink }: ActivityT
                     <button
                       onClick={(e) => handleCopy(item.copyableId!, e)}
                       className="text-xs text-accent hover:underline mt-1"
-                      title="Click to copy ID"
+                      title={t('click_to_copy_id')}
                     >
                       {item.copyableId}
                     </button>
@@ -116,7 +119,7 @@ export function ActivityTimeline({ items, maxItems = 5, viewAllLink }: ActivityT
             href={viewAllLink}
             className="text-sm text-accent hover:underline"
           >
-            View all activity →
+            {t('view_all_activity')}
           </a>
         </div>
       )}

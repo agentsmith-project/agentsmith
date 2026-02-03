@@ -15,8 +15,12 @@ export interface FileDeleteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (deleteAIReady: boolean) => void;
-  filename: string;
+  /** Single file: filename. Batch: count. */
+  filename?: string;
+  /** Single file mode: has AIReady. Batch: any has AIReady. */
   hasAIReady: boolean;
+  /** Batch mode: number of files to delete */
+  fileCount?: number;
   deleting?: boolean;
 }
 
@@ -26,9 +30,11 @@ export function FileDeleteDialog({
   onConfirm,
   filename,
   hasAIReady,
+  fileCount = 1,
   deleting = false,
 }: FileDeleteDialogProps) {
   const [deleteAIReady, setDeleteAIReady] = React.useState(true);
+  const isBatch = fileCount > 1;
 
   const handleConfirm = () => {
     onConfirm(deleteAIReady);
@@ -45,9 +51,15 @@ export function FileDeleteDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Delete File</DialogTitle>
+          <DialogTitle>
+            {isBatch ? `Delete ${fileCount} files` : 'Delete File'}
+          </DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete <strong>{filename}</strong>?
+            {isBatch ? (
+              <>Are you sure you want to delete <strong>{fileCount} files</strong>?</>
+            ) : (
+              <>Are you sure you want to delete <strong>{filename}</strong>?</>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -69,7 +81,7 @@ export function FileDeleteDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={deleting}>
+          <Button variant="ghost" onClick={handleClose} disabled={deleting}>
             Cancel
           </Button>
           <Button variant="destructive" onClick={handleConfirm} disabled={deleting}>

@@ -1,5 +1,6 @@
 {
   "common": {
+    "user": "用户",
     "create": "创建",
     "save": "保存",
     "cancel": "取消",
@@ -15,7 +16,28 @@
     "loading": "加载中...",
     "empty": "暂无数据",
     "retry": "重试",
-    "refreshed_data": "数据已刷新"
+    "refreshed_data": "数据已刷新",
+    "try_again": "重试",
+    "something_went_wrong": "出现错误",
+    "remove": "移除",
+    "edit": "编辑",
+    "rename": "重命名",
+    "attach_files": "附加文件",
+    "regenerate": "重新生成",
+    "previous": "上一个",
+    "next": "下一个",
+    "user_menu": {
+      "profile": "个人资料",
+      "api_keys": "API 密钥",
+      "language": "语言",
+      "logout": "退出登录"
+    },
+    "placeholders": {
+      "search": "搜索...",
+      "select": "选择...",
+      "enter_name": "输入名称",
+      "enter_description": "输入描述"
+    }
   },
   "nav": {
     "overview": "概览",
@@ -24,6 +46,7 @@
     "sources": "文件",
     "agents": "智能体",
     "endpoints": "端点",
+    "credentials": "凭据",
     "members": "成员",
     "audit": "审计",
     "usage": "用量",
@@ -31,7 +54,15 @@
     "go_to_projects": "前往项目列表",
     "view_all_projects": "查看所有项目",
     "view_all_workspaces": "查看所有工作空间",
-    "no_workspaces": "暂无工作空间"
+    "no_workspaces": "暂无工作空间",
+    "select_workspace": "选择工作空间",
+    "current_workspace": "当前",
+    "current_project": "当前",
+    "sidebar": {
+      "collapse": "收起侧栏",
+      "expand": "展开侧栏",
+      "projects": "项目"
+    }
   },
   "auth": {
     "login": "登录",
@@ -40,7 +71,20 @@
     "dev_mode": "开发模式",
     "select_workspace": "选择工作空间",
     "enter_user": "输入用户 ID 或邮箱",
-    "quick_login": "快速登录"
+    "quick_login": "快速登录",
+    "welcome_title": "欢迎使用 MBOS",
+    "welcome_subtitle": "智能体平台",
+    "sign_in": "登录",
+    "or": "或",
+    "workspace": "工作空间",
+    "select_workspace_placeholder": "选择工作空间",
+    "user_id_email": "用户 ID / 邮箱",
+    "user_id_placeholder": "user@example.com",
+    "signing_in": "登录中...",
+    "dev_notice": "开发环境模拟认证。生产环境将使用 Keycloak OIDC。",
+    "select_your_workspace": "选择您的工作空间",
+    "choose_workspace": "选择一个工作空间以继续",
+    "projects_count": "{count} 个项目"
   },
   "workspace": {
     "select": "选择工作空间",
@@ -50,11 +94,15 @@
     "select": "选择项目",
     "switch": "切换项目",
     "create": "创建项目",
+    "create_description": "向工作空间添加新项目。",
+    "name": "项目名称",
+    "description": "描述",
     "visibility": "可见性",
     "public": "公开",
     "private": "私有",
     "join_policy": "加入策略",
-    "approval_required": "需要审批"
+    "approval_required": "需要审批",
+    "open": "开放"
   },
   "sources": {
     "title": "文件",
@@ -153,6 +201,14 @@
     "status_failed": "失败",
     "action_attach": "附加",
     "action_detach": "移除",
+    "action_download": "下载",
+    "action_start_ai_ready": "启动 AIReady",
+    "action_cancel_ai_ready": "移除 AIReady",
+    "action_processing": "处理中...",
+    "selection_bar_label": "已选操作",
+    "selection_count": "个文件已选",
+    "selection_clear": "清除选择",
+    "quota_exceeded_hint": "配额超限，无法启动 AIReady。",
     "action_clear_attachments": "清空附件",
     "action_retry": "重试",
     "action_delete": "删除",
@@ -263,6 +319,31 @@
   "agents": {
     "title": "智能体",
     "create": "创建智能体",
+    "create_dialog": {
+      "title": "创建智能体",
+      "description": "添加新的 AI 智能体。外部智能体通过外部 API 连接；内部智能体在您的基础设施中运行。",
+      "name": "名称",
+      "name_placeholder": "例如 我的聊天智能体",
+      "description": "描述",
+      "mode": "模式",
+      "mode_external": "外部",
+      "mode_internal": "内部",
+      "interaction_mode": "交互方式",
+      "config_title": "内部智能体配置",
+      "image": "镜像",
+      "image_required": "内部智能体需要指定镜像",
+      "env": "环境变量",
+      "add_env": "添加变量",
+      "max_concurrent_sessions": "最大并发会话数",
+      "max_concurrent_sessions_placeholder": "可选覆盖",
+      "success": "智能体创建成功"
+    },
+    "edit": "编辑",
+    "edit_dialog": {
+      "title": "编辑智能体",
+      "description": "更新智能体名称、描述和运行偏好。",
+      "success": "智能体更新成功"
+    },
     "mode_external": "外部",
     "mode_internal": "托管",
     "presence_online": "在线",
@@ -271,10 +352,24 @@
     "status_enabled": "已启用",
     "status_disabled": "已禁用",
     "keys_title": "服务密钥",
+    "keys_description": "创建用于 agent 连接的密钥 (ASK)。完整密钥仅显示一次。",
+    "keys_empty": "暂无密钥。创建一个用于 agent 连接。",
     "keys_create": "签发密钥",
     "keys_revoke": "撤销",
     "keys_suspend": "暂停",
     "keys_resume": "恢复",
+    "disable": "禁用",
+    "enable": "启用",
+    "disable_hint": "禁用智能体。外部智能体将被强制离线；内部智能体将不会创建 Pod。",
+    "enable_hint": "重新启用智能体。",
+    "disabled_access_message": "该智能体已被禁用，在重新启用前无法访问。",
+    "connection_duration": "接入时长",
+    "pods_running": "运行中 Pod",
+    "desired_replicas": "期望副本",
+    "admin": "维护人",
+    "interaction_chat": "聊天",
+    "interaction_workbench": "工作台",
+    "interaction_both": "聊天 & 工作台",
     "diagnostics_backoff": "等待重试",
     "detail_title": "智能体详情",
     "detail_general": "基本信息",
@@ -282,9 +377,72 @@
     "detail_diagnostics": "诊断信息",
     "detail_config": "配置"
   },
+  "credentials": {
+    "title": "凭据",
+    "subtitle": "管理端点使用的 API 密钥和密钥",
+    "create": "创建凭据",
+    "fingerprint": "指纹",
+    "rotate": "轮换",
+    "delete": "删除",
+    "table": {
+      "name": "名称",
+      "type": "类型",
+      "last_rotated": "上次轮换"
+    },
+    "create_dialog": {
+      "title": "创建凭据",
+      "description": "添加新的 API 密钥。创建后密钥值将不再显示。",
+      "name": "名称",
+      "name_placeholder": "例如 OpenAI API Key",
+      "value": "密钥值",
+      "value_placeholder": "输入 API 密钥",
+      "show": "显示",
+      "hide": "隐藏",
+      "success": "凭据创建成功"
+    },
+    "rotate_dialog": {
+      "title": "轮换凭据",
+      "description": "为 {name} 输入新值。旧值将被替换。",
+      "new_value": "新值",
+      "value_placeholder": "输入新的 API 密钥",
+      "success": "凭据轮换成功"
+    },
+    "delete_dialog": {
+      "title": "删除凭据",
+      "description": "确定要删除「{name}」吗？使用此凭据的端点将无法工作。",
+      "deleting": "删除中..."
+    },
+    "empty": {
+      "title": "暂无凭据",
+      "description": "创建凭据以配合端点使用"
+    }
+  },
   "endpoints": {
     "title": "端点",
     "create": "创建端点",
+    "create_dialog": {
+      "title": "创建端点",
+      "description": "添加新的 LLM 端点。选择凭据以验证 API 请求。",
+      "name": "名称",
+      "name_placeholder": "例如 GPT-4o",
+      "description": "描述",
+      "model_id": "模型 ID",
+      "provider": "提供商",
+      "provider_openai": "OpenAI",
+      "provider_anthropic": "Anthropic",
+      "provider_custom": "自定义",
+      "base_url": "Base URL",
+      "credential": "凭据",
+      "no_credentials": "此项目暂无凭据。",
+      "create_credential_first": "请先创建凭据",
+      "credential_required": "请选择凭据",
+      "base_url_required": "自定义提供商需要填写 Base URL",
+      "model_conflict": "此项目中已存在该模型 ID",
+      "limits": "限制（可选）",
+      "max_rpm": "最大请求/分钟",
+      "timeout_seconds": "超时（秒）",
+      "success": "端点创建成功"
+    },
     "status_active": "活跃",
     "status_disabled": "已禁用",
     "action_disable": "禁用",
@@ -297,25 +455,6 @@
     "acl_remove_deny": "移除",
     "detail_limits": "限制",
     "detail_credential": "凭据"
-  },
-  "members": {
-    "title": "成员",
-    "join_requests_title": "加入申请",
-    "action_block": "冻结",
-    "action_unblock": "解冻",
-    "action_remove": "移除",
-    "action_update_permissions": "更新权限",
-    "role_owner": "所有者",
-    "role_admin": "管理员",
-    "role_developer": "开发者",
-    "role_user": "用户",
-    "role_custom": "自定义 ({count} 项权限)",
-    "status_active": "活跃",
-    "status_blocked": "已冻结",
-    "status_removed": "已移除",
-    "join_requests_approve": "批准",
-    "join_requests_reject": "拒绝",
-    "join_requests_approve_all": "批准全部 ({count})"
   },
   "audit": {
     "title": "审计",
@@ -348,7 +487,8 @@
     "empty": {
       "title": "未找到审计事件",
       "description": "尝试调整筛选条件或选择不同的时间范围"
-    }
+    },
+    "permission_denied": "您没有权限查看审计日志。"
   },
   "usage": {
     "title": "用量",
@@ -378,10 +518,21 @@
     "empty": {
       "title": "未找到用量数据",
       "description": "尝试调整筛选条件或选择不同的时间范围"
-    }
+    },
+    "permission_denied": "您没有权限查看用量统计。",
+    "scope_my_usage": "我的用量",
+    "scope_project_usage": "项目用量"
   },
   "settings": {
     "title": "项目设置",
+    "subtitle": "管理项目配置",
+    "tab_general": "常规",
+    "tab_runtime_preferences": "运行偏好",
+    "tab_governance": "治理规则",
+    "general_access_title": "常规与访问",
+    "runtime_preferences_title": "运行偏好",
+    "runtime_preferences_description": "智能体行为参数。智能体可在智能体级别覆盖。",
+    "governance_title": "治理规则",
     "config_title": "项目配置",
     "policy_title": "项目策略",
     "confirm_warning": "策略更改将立即影响所有项目成员。",
@@ -397,7 +548,20 @@
     "policy_guardrails": "智能体调用护栏",
     "policy_internal": "托管智能体",
     "policy_endpoints": "端点限制",
-    "policy_advanced": "高级 (JSON)"
+    "policy_advanced": "高级 (JSON)",
+    "tab_limits": "资源限制",
+    "limits_title": "资源限制",
+    "limits_hint": "这些限制作用于资源整体（不区分用户）。每个 Endpoint/KB 可在资源级别覆盖。未设置 = 无限制。",
+    "limits_userdata_total": "UserData 总量",
+    "limits_endpoint_default": "端点默认",
+    "governance_save_confirm_title": "保存治理规则更改",
+    "governance_save_confirm_body": "更改可能影响活跃会话 (403/429/队列)。确定继续？",
+    "governance_save_confirm_action": "确认并保存",
+    "token_reference_title": "支持的 token",
+    "general_help": "项目基础元数据。可见性与加入策略控制谁可查看和加入项目。",
+    "runtime_help": "智能体行为参数。智能体可在智能体级别覆盖。更改在智能体下次获取运行时配置时生效。",
+    "governance_help": "每成员配额、限流与护栏。更改影响所有成员。成员配额覆盖可为每个用户定制。",
+    "limits_help": "资源级聚合限制（不区分用户）。每个 Endpoint/KB 可在资源级别覆盖。未设置 = 无限制。"
   },
   "user_keys": {
     "title": "用户 API 密钥",
@@ -440,8 +604,44 @@
   },
   "members": {
     "title": "成员",
+    "join_requests_title": "加入申请",
     "invite_member": "邀请成员",
+    "invite": {
+      "title": "邀请成员",
+      "email_label": "邮箱",
+      "email_placeholder": "colleague@example.com",
+      "role_label": "角色",
+      "role_developer": "开发者",
+      "role_user": "用户",
+      "expires_label": "链接有效期",
+      "expires_24h": "24 小时",
+      "expires_72h": "3 天",
+      "expires_7d": "7 天",
+      "expires_14d": "14 天",
+      "create_invite": "创建邀请",
+      "creating": "创建中...",
+      "cancel": "取消",
+      "copy_link": "复制链接",
+      "copied": "已复制",
+      "done": "完成",
+      "create_another": "再邀请一位",
+      "success_description": "将此链接分享给被邀请人，他们可通过链接加入项目。",
+      "create_success": "邀请已创建"
+    },
     "description": "管理项目成员、权限和配额",
+    "action_block": "冻结",
+    "action_unblock": "解冻",
+    "action_remove": "移除",
+    "action_update_permissions": "更新权限",
+    "role_owner": "所有者",
+    "role_admin": "管理员",
+    "role_developer": "开发者",
+    "role_user": "用户",
+    "role_custom": "自定义 ({count} 项权限)",
+    "status_active": "活跃",
+    "status_blocked": "已冻结",
+    "status_removed": "已移除",
+    "join_requests_approve_all": "批准全部 ({count})",
     "table": {
       "user": "用户",
       "role": "角色",
@@ -452,7 +652,8 @@
       "no_members_description": "邀请成员加入您的项目"
     },
     "permissions": {
-      "title": "权限配置",
+      "title": "成员权限",
+      "title_description": "控制对管理接口的访问（如成员、策略、资源）。",
       "template_mode": "模板模式",
       "advanced_mode": "高级模式",
       "template": {
@@ -485,7 +686,8 @@
       "no_permissions_found": "未找到匹配 \"{query}\" 的权限",
       "high_risk_description": "您即将授予以下高风险权限：",
       "high_risk_confirm": "这些权限具有重大影响。您确定要继续吗？",
-      "confirm_save": "确认并保存"
+      "confirm_save": "确认并保存",
+      "loading": "加载权限中..."
     },
     "quota": {
       "title": "配额覆盖",
@@ -498,19 +700,27 @@
       "cancel": "取消",
       "save_changes": "保存更改"
     },
+    "quota_history": {
+      "title": "配额覆盖历史",
+      "view_history": "查看配额历史",
+      "loading": "加载中...",
+      "empty": "暂无配额覆盖历史",
+      "by": "由",
+      "page_info": "第 {page} 页，共 {totalPages} 页（共 {total} 条）",
+      "prev": "上一页",
+      "next": "下一页"
+    },
     "acl": {
-      "title": "资源 ACL",
-      "description": "为知识库和端点配置资源级权限。",
+      "title": "资源访问控制",
+      "title_short": "资源 ACL",
+      "description": "为端点配置资源级权限。",
       "endpoint": {
         "deny": "拒绝访问",
         "remove_deny": "移除拒绝",
         "reason_required": "必须填写原因"
       },
-      "kb": {
-        "edit_permissions": "编辑权限"
-      },
-      "update_success": "资源 ACL 更新成功",
-      "coming_soon": "资源 ACL 编辑器即将推出...",
+      "update_success": "资源访问控制更新成功",
+      "coming_soon": "资源访问控制编辑器即将推出...",
       "cancel": "取消"
     },
     "history": {
@@ -518,17 +728,21 @@
       "view_history": "查看变更历史",
       "permissions_updated": "权限已更新",
       "quota_updated": "配额覆盖",
-      "acl_updated": "资源 ACL 已更新"
+      "acl_updated": "资源访问控制已更新"
     },
     "actions": {
       "edit_permissions_quota": "编辑权限和配额",
       "view_history": "查看变更历史",
       "remove_member": "移除成员"
     },
+    "remove_success": "成员已从项目中移除",
+    "remove_confirm_title": "移除成员",
+    "remove_confirm_message": "确定要将 {name} 移出此项目吗？他们将失去对所有项目资源的访问权限。",
+    "removing": "移除中...",
     "tabs": {
       "members": "成员",
       "requests": "加入申请",
-      "templates": "权限模板"
+      "templates": "模板"
     },
     "no_permission_to_view": "您没有权限查看成员",
     "requests": {
@@ -554,7 +768,55 @@
         "developer_description": "代理密钥、UserData、AgentThread",
         "user": "用户",
         "user_description": "只读 + AgentThread + UserData（受限）"
-      }
+      },
+      "create_success": "模板创建成功",
+      "update_success": "模板更新成功",
+      "delete_success": "模板已删除",
+      "apply_success": "模板已应用到成员",
+      "apply_batch_success": "模板已应用到 {count} 位成员",
+      "apply_template": "应用模板",
+      "apply_to_member": "应用到成员",
+      "apply_to_members": "应用到成员",
+      "select_members": "选择成员",
+      "selected_count": "已选 {count} 人",
+      "select_all": "全选",
+      "deselect_all": "取消全选",
+      "applying": "应用中...",
+      "updating": "更新中...",
+      "select_member": "选择成员",
+      "no_members_available": "没有可应用模板的成员",
+      "empty_custom_title": "暂无自定义模板",
+      "empty_custom_description": "创建自定义模板以定义默认角色之外的权限组合。",
+      "permission_templates": "权限模板",
+      "quota_templates": "配额模板",
+      "quota_coming_soon": "配额模板即将推出。可创建并应用配额预设（如标准、高用量）到成员。",
+      "template_name": "模板名称",
+      "template_description": "描述（可选）",
+      "name_required": "名称为必填项",
+      "cancel": "取消",
+      "creating": "创建中...",
+      "quota_create_success": "配额模板创建成功",
+      "quota_update_success": "配额模板更新成功",
+      "quota_delete_success": "配额模板已删除",
+      "quota_apply_success": "配额模板已应用到成员",
+      "quota_apply_batch_success": "配额模板已应用到 {count} 位成员",
+      "quota_title": "配额模板",
+      "quota_description": "管理可复用的配额预设（如标准、高用量、受限）。",
+      "quota_empty_title": "暂无配额模板",
+      "quota_empty_description": "创建配额模板以定义存储、DocDB、VectorDB 和端点限制的预设覆盖。",
+      "save_changes": "保存更改",
+      "delete": "删除",
+      "delete_confirm_title": "删除模板",
+      "delete_confirm_message": "确定要删除配额模板「{name}」吗？已应用此模板的成员不会受影响。",
+      "select_template": "选择模板",
+      "batch_apply_permission_hint": "将权限模板应用到 {count} 位已选成员。",
+      "batch_apply_quota_hint": "将配额模板应用到 {count} 位已选成员。"
+    },
+    "batch": {
+      "selected_count": "已选择 {count} 位",
+      "clear_selection": "清除选择",
+      "apply_permission_template": "应用权限模板",
+      "apply_quota_template": "应用配额模板"
     },
     "join_requests": {
       "title": "加入申请",
@@ -576,6 +838,38 @@
       },
       "approve_success": "加入申请已批准",
       "reject_success": "加入申请已拒绝"
+    }
+  },
+  "overview": {
+    "title": "概览",
+    "subtitle": "项目仪表板与快速导航",
+    "kpi": {
+      "requests_today": "今日请求数",
+      "errors_today": "今日错误数",
+      "tokens_today": "今日 Token 数",
+      "userdata_storage": "UserData 存储",
+      "vs_last_period": "对比上期"
+    },
+    "quick_access": "快速访问",
+    "recent_activity": "最近活动",
+    "no_recent_activity": "暂无最近活动",
+    "view_all_activity": "查看全部活动 →",
+    "click_to_copy_id": "点击复制 ID",
+    "navigation": {
+      "chat": "聊天",
+      "chat_description": "AI 聊天对话",
+      "workbench": "工作台",
+      "workbench_description": "多轮智能体线程",
+      "agents": "智能体",
+      "agents_description": "管理 AI 智能体",
+      "endpoints": "端点",
+      "endpoints_description": "模型端点",
+      "members": "成员",
+      "members_description": "团队管理",
+      "usage": "用量",
+      "usage_description": "用量统计",
+      "settings": "设置",
+      "settings_description": "项目配置"
     }
   },
   "projects": {
@@ -612,7 +906,57 @@
       "pin": "置顶项目",
       "unpin": "取消置顶",
       "open": "打开项目",
-      "settings": "项目设置"
-    }
+      "settings": "项目设置",
+      "delete": "删除项目"
+    },
+    "delete_confirm_title": "删除项目",
+    "delete_confirm_message": "确定要删除此项目吗？此操作不可撤销。"
+  },
+  "join": {
+    "title": "加入项目",
+    "description": "您已被邀请加入项目。点击接受继续。",
+    "accept": "接受邀请",
+    "decline": "拒绝",
+    "invalid_title": "邀请无效",
+    "invalid_description": "此邀请链接无效或已过期。",
+    "go_home": "返回首页"
+  },
+  "profile": {
+    "title": "个人资料",
+    "description": "管理您的资料与偏好设置",
+    "agent_disclosure_title": "AI 智能体访问说明",
+    "agent_disclosure": "您在此资料中填写的信息将被 AI 智能体读取，用于个性化问候、回复与交互。这有助于智能体以恰当方式称呼您并定制建议。",
+    "basic_info": "基本信息",
+    "display_name": "显示名称",
+    "display_name_placeholder": "您希望被称呼的方式",
+    "bio": "简介",
+    "bio_placeholder": "简短自我介绍",
+    "work_info": "工作信息",
+    "job_title": "职位",
+    "job_title_placeholder": "如：软件工程师",
+    "company": "公司",
+    "company_placeholder": "您所在的组织",
+    "preferences": "偏好设置",
+    "timezone": "时区",
+    "timezone_placeholder": "如：America/New_York",
+    "locale": "首选语言",
+    "greeting_preference": "问候风格",
+    "greeting_preference_options": {
+      "formal": "正式",
+      "casual": "随意",
+      "friendly": "友好",
+      "professional": "专业"
+    },
+    "interests": "兴趣",
+    "interests_placeholder": "逗号分隔（如：AI、设计、效率）",
+    "save": "保存更改",
+    "saving": "保存中...",
+    "saved": "资料已保存"
+  },
+  "notifications": {
+    "title": "通知",
+    "empty": "暂无通知",
+    "mark_all_read": "全部标为已读",
+    "view_all": "查看全部"
   }
 }

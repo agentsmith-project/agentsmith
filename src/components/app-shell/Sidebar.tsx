@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { type LucideIcon } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
 export interface SidebarItem {
@@ -18,6 +19,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ items, value, onChange, className = '' }: SidebarProps) {
+  const t = useTranslations('nav');
+
   return (
     <aside className={cn("w-[260px] bg-panel border-r border-subtle flex flex-col", className)}>
       {/* Menu Items */}
@@ -69,7 +72,7 @@ export function Sidebar({ items, value, onChange, className = '' }: SidebarProps
       <div className="p-3 border-t border-subtle">
         {/* Collapse button could go here */}
         <button className="w-full h-10 flex items-center justify-center gap-2 px-3 text-sm text-secondary hover:bg-hover hover:text-foreground rounded-sm transition-colors duration-200">
-          <span>Collapse</span>
+          <span>{t('sidebar.collapse')}</span>
         </button>
       </div>
     </aside>

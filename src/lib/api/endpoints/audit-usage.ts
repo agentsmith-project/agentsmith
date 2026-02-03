@@ -74,10 +74,12 @@ export class UsageAPI {
     projectId: string,
     startTime?: string,
     endTime?: string,
+    endUserId?: string,
   ): Promise<UsageKPI> {
     const searchParams = new URLSearchParams();
     if (startTime) searchParams.set('start_time', startTime);
     if (endTime) searchParams.set('end_time', endTime);
+    if (endUserId) searchParams.set('end_user_id', endUserId);
 
     const query = searchParams.toString();
     return this.client.get<UsageKPI>(

@@ -1,5 +1,6 @@
 {
   "common": {
+    "user": "User",
     "create": "Create",
     "save": "Save",
     "cancel": "Cancel",
@@ -15,7 +16,28 @@
     "loading": "Loading...",
     "empty": "No data",
     "retry": "Retry",
-    "refreshed_data": "Data refreshed"
+    "refreshed_data": "Data refreshed",
+    "try_again": "Try Again",
+    "something_went_wrong": "Something went wrong",
+    "remove": "Remove",
+    "edit": "Edit",
+    "rename": "Rename",
+    "attach_files": "Attach files",
+    "regenerate": "Regenerate",
+    "previous": "Previous",
+    "next": "Next",
+    "user_menu": {
+      "profile": "Profile",
+      "api_keys": "API Keys",
+      "language": "Language",
+      "logout": "Logout"
+    },
+    "placeholders": {
+      "search": "Search...",
+      "select": "Select...",
+      "enter_name": "Enter name",
+      "enter_description": "Enter description"
+    }
   },
   "nav": {
     "overview": "Overview",
@@ -24,6 +46,7 @@
     "sources": "Sources",
     "agents": "Agents",
     "endpoints": "Endpoints",
+    "credentials": "Credentials",
     "members": "Members",
     "audit": "Audit",
     "usage": "Usage",
@@ -31,7 +54,15 @@
     "go_to_projects": "Go to Projects",
     "view_all_projects": "View All Projects",
     "view_all_workspaces": "View All Workspaces",
-    "no_workspaces": "No workspaces available"
+    "no_workspaces": "No workspaces available",
+    "select_workspace": "Select Workspace",
+    "current_workspace": "Current",
+    "current_project": "Current",
+    "sidebar": {
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar",
+      "projects": "Projects"
+    }
   },
   "auth": {
     "login": "Login",
@@ -40,7 +71,20 @@
     "dev_mode": "Development Mode",
     "select_workspace": "Select Workspace",
     "enter_user": "Enter User ID or Email",
-    "quick_login": "Quick Login"
+    "quick_login": "Quick Login",
+    "welcome_title": "Welcome to MBOS",
+    "welcome_subtitle": "Intelligent Agent Platform",
+    "sign_in": "Sign in",
+    "or": "or",
+    "workspace": "Workspace",
+    "select_workspace_placeholder": "Select workspace",
+    "user_id_email": "User ID / Email",
+    "user_id_placeholder": "user@example.com",
+    "signing_in": "Signing in...",
+    "dev_notice": "Mock authentication for development. In production, this will be replaced with Keycloak OIDC.",
+    "select_your_workspace": "Select your workspace",
+    "choose_workspace": "Choose a workspace to continue",
+    "projects_count": "{count} projects"
   },
   "workspace": {
     "select": "Select Workspace",
@@ -50,11 +94,15 @@
     "select": "Select Project",
     "switch": "Switch Project",
     "create": "Create Project",
+    "create_description": "Add a new project to your workspace.",
+    "name": "Project Name",
+    "description": "Description",
     "visibility": "Visibility",
     "public": "Public",
     "private": "Private",
     "join_policy": "Join Policy",
-    "approval_required": "Approval Required"
+    "approval_required": "Approval Required",
+    "open": "Open"
   },
   "sources": {
     "title": "Sources",
@@ -153,6 +201,14 @@
     "status_failed": "Failed",
     "action_attach": "Attach",
     "action_detach": "Detach",
+    "action_download": "Download",
+    "action_start_ai_ready": "Start AIReady",
+    "action_cancel_ai_ready": "Remove AIReady",
+    "action_processing": "Processing...",
+    "selection_bar_label": "Selection actions",
+    "selection_count": "file(s) selected",
+    "selection_clear": "Clear",
+    "quota_exceeded_hint": "Quota exceeded. Cannot start AIReady.",
     "action_clear_attachments": "Clear Attachments",
     "action_retry": "Retry",
     "action_delete": "Delete",
@@ -263,6 +319,31 @@
   "agents": {
     "title": "Agents",
     "create": "Create Agent",
+    "create_dialog": {
+      "title": "Create Agent",
+      "description": "Add a new AI agent. External agents connect via external APIs; internal agents run in your infrastructure.",
+      "name": "Name",
+      "name_placeholder": "e.g. My Chat Agent",
+      "description": "Description",
+      "mode": "Mode",
+      "mode_external": "External",
+      "mode_internal": "Internal",
+      "interaction_mode": "Interaction Mode",
+      "config_title": "Internal Agent Config",
+      "image": "Image",
+      "image_required": "Image is required for internal agents",
+      "env": "Environment Variables",
+      "add_env": "Add variable",
+      "max_concurrent_sessions": "Max Concurrent Sessions",
+      "max_concurrent_sessions_placeholder": "Optional override",
+      "success": "Agent created successfully"
+    },
+    "edit": "Edit",
+    "edit_dialog": {
+      "title": "Edit Agent",
+      "description": "Update agent name, description, and runtime preferences.",
+      "success": "Agent updated successfully"
+    },
     "mode_external": "External",
     "mode_internal": "Internal",
     "presence_online": "Online",
@@ -271,10 +352,24 @@
     "status_enabled": "Enabled",
     "status_disabled": "Disabled",
     "keys_title": "Agent Service Keys",
+    "keys_description": "Create keys for agent connections (ASK). Full key is shown only once.",
+    "keys_empty": "No keys yet. Create one for agent connection.",
     "keys_create": "Issue Key",
     "keys_revoke": "Revoke",
     "keys_suspend": "Suspend",
     "keys_resume": "Resume",
+    "disable": "Disable",
+    "enable": "Enable",
+    "disable_hint": "Disable agent. External agents will be forced offline; internal agents will not create pods.",
+    "enable_hint": "Re-enable agent.",
+    "disabled_access_message": "This agent has been disabled and cannot be accessed until re-enabled.",
+    "connection_duration": "Duration",
+    "pods_running": "Pods",
+    "desired_replicas": "Desired",
+    "admin": "Admin",
+    "interaction_chat": "Chat",
+    "interaction_workbench": "Workbench",
+    "interaction_both": "Chat & Workbench",
     "diagnostics_backoff": "Backing off",
     "detail_title": "Agent Details",
     "detail_general": "General",
@@ -282,9 +377,72 @@
     "detail_diagnostics": "Diagnostics",
     "detail_config": "Config"
   },
+  "credentials": {
+    "title": "Credentials",
+    "subtitle": "Manage API keys and secrets for endpoints",
+    "create": "Create Credential",
+    "fingerprint": "Fingerprint",
+    "rotate": "Rotate",
+    "delete": "Delete",
+    "table": {
+      "name": "Name",
+      "type": "Type",
+      "last_rotated": "Last Rotated"
+    },
+    "create_dialog": {
+      "title": "Create Credential",
+      "description": "Add a new API key. The secret value will never be shown again after creation.",
+      "name": "Name",
+      "name_placeholder": "e.g. OpenAI API Key",
+      "value": "Secret Value",
+      "value_placeholder": "Enter the API key",
+      "show": "Show",
+      "hide": "Hide",
+      "success": "Credential created successfully"
+    },
+    "rotate_dialog": {
+      "title": "Rotate Credential",
+      "description": "Enter a new value for {name}. The old value will be replaced.",
+      "new_value": "New Value",
+      "value_placeholder": "Enter new API key",
+      "success": "Credential rotated successfully"
+    },
+    "delete_dialog": {
+      "title": "Delete Credential",
+      "description": "Are you sure you want to delete \"{name}\"? Endpoints using this credential will stop working.",
+      "deleting": "Deleting..."
+    },
+    "empty": {
+      "title": "No credentials yet",
+      "description": "Create credentials to use with your endpoints"
+    }
+  },
   "endpoints": {
     "title": "Endpoints",
     "create": "Create Endpoint",
+    "create_dialog": {
+      "title": "Create Endpoint",
+      "description": "Add a new LLM endpoint. Select a credential to authenticate API requests.",
+      "name": "Name",
+      "name_placeholder": "e.g. GPT-4o",
+      "description": "Description",
+      "model_id": "Model ID",
+      "provider": "Provider",
+      "provider_openai": "OpenAI",
+      "provider_anthropic": "Anthropic",
+      "provider_custom": "Custom",
+      "base_url": "Base URL",
+      "credential": "Credential",
+      "no_credentials": "No credentials in this project.",
+      "create_credential_first": "Create credential first",
+      "credential_required": "Please select a credential",
+      "base_url_required": "Base URL is required for custom providers",
+      "model_conflict": "Model ID already exists in this project",
+      "limits": "Limits (optional)",
+      "max_rpm": "Max requests/min",
+      "timeout_seconds": "Timeout (seconds)",
+      "success": "Endpoint created successfully"
+    },
     "status_active": "Active",
     "status_disabled": "Disabled",
     "action_disable": "Disable",
@@ -297,25 +455,6 @@
     "acl_remove_deny": "Remove",
     "detail_limits": "Limits",
     "detail_credential": "Credential"
-  },
-  "members": {
-    "title": "Members",
-    "join_requests_title": "Join Requests",
-    "action_block": "Block",
-    "action_unblock": "Unblock",
-    "action_remove": "Remove",
-    "action_update_permissions": "Update Permissions",
-    "role_owner": "Owner",
-    "role_admin": "Admin",
-    "role_developer": "Developer",
-    "role_user": "User",
-    "role_custom": "Custom ({count} permissions)",
-    "status_active": "Active",
-    "status_blocked": "Blocked",
-    "status_removed": "Removed",
-    "join_requests_approve": "Approve",
-    "join_requests_reject": "Reject",
-    "join_requests_approve_all": "Approve All ({count})"
   },
   "audit": {
     "title": "Audit",
@@ -348,7 +487,8 @@
     "empty": {
       "title": "No audit events found",
       "description": "Try adjusting your filters or select a different time range"
-    }
+    },
+    "permission_denied": "You don't have permission to view audit logs."
   },
   "usage": {
     "title": "Usage",
@@ -378,10 +518,21 @@
     "empty": {
       "title": "No usage data found",
       "description": "Try adjusting your filters or select a different time range"
-    }
+    },
+    "permission_denied": "You don't have permission to view usage statistics.",
+    "scope_my_usage": "My Usage",
+    "scope_project_usage": "Project Usage"
   },
   "settings": {
     "title": "Project Settings",
+    "subtitle": "Manage project configuration",
+    "tab_general": "General",
+    "tab_runtime_preferences": "Runtime Preferences",
+    "tab_governance": "Governance",
+    "general_access_title": "General & Access",
+    "runtime_preferences_title": "Runtime Preferences",
+    "runtime_preferences_description": "Agent behavior parameters. Agents may override at agent level.",
+    "governance_title": "Governance",
     "config_title": "Project Config",
     "policy_title": "Project Policy",
     "confirm_warning": "Policy changes affect all project members immediately.",
@@ -397,7 +548,20 @@
     "policy_guardrails": "Agent Invoke Guardrails",
     "policy_internal": "Internal Agents",
     "policy_endpoints": "Endpoints Limits",
-    "policy_advanced": "Advanced (JSON)"
+    "policy_advanced": "Advanced (JSON)",
+    "tab_limits": "Limits",
+    "limits_title": "Resource Limits",
+    "limits_hint": "These limits apply to resources as a whole (not per user). Each Endpoint/KB can override at resource level. Unset = no limit.",
+    "limits_userdata_total": "UserData Totals",
+    "limits_endpoint_default": "Endpoint Defaults",
+    "governance_save_confirm_title": "Save Governance Changes",
+    "governance_save_confirm_body": "Changes may affect active sessions (403/429/queued). Are you sure?",
+    "governance_save_confirm_action": "Confirm & Save",
+    "token_reference_title": "Supported tokens",
+    "general_help": "Basic project metadata. Visibility and join policy control who can see and join the project.",
+    "runtime_help": "Agent behavior parameters. Agents may override at agent level. Changes take effect when agents next fetch runtime config.",
+    "governance_help": "Per-member quotas, rate limits, and guardrails. Changes affect all members. Member quota overrides can customize per user.",
+    "limits_help": "Resource-level aggregate limits (not per user). Each Endpoint/KB can override at resource level. Unset = no limit."
   },
   "user_keys": {
     "title": "User API Keys",
@@ -440,8 +604,44 @@
   },
   "members": {
     "title": "Members",
+    "join_requests_title": "Join Requests",
     "invite_member": "Invite Member",
+    "invite": {
+      "title": "Invite Member",
+      "email_label": "Email",
+      "email_placeholder": "colleague@example.com",
+      "role_label": "Role",
+      "role_developer": "Developer",
+      "role_user": "User",
+      "expires_label": "Link expires",
+      "expires_24h": "24 hours",
+      "expires_72h": "3 days",
+      "expires_7d": "7 days",
+      "expires_14d": "14 days",
+      "create_invite": "Create Invite",
+      "creating": "Creating...",
+      "cancel": "Cancel",
+      "copy_link": "Copy Link",
+      "copied": "Copied",
+      "done": "Done",
+      "create_another": "Create Another",
+      "success_description": "Share this link with the invitee. They can use it to join the project.",
+      "create_success": "Invite created successfully"
+    },
     "description": "Manage project members, permissions, and quotas",
+    "action_block": "Block",
+    "action_unblock": "Unblock",
+    "action_remove": "Remove",
+    "action_update_permissions": "Update Permissions",
+    "role_owner": "Owner",
+    "role_admin": "Admin",
+    "role_developer": "Developer",
+    "role_user": "User",
+    "role_custom": "Custom ({count} permissions)",
+    "status_active": "Active",
+    "status_blocked": "Blocked",
+    "status_removed": "Removed",
+    "join_requests_approve_all": "Approve All ({count})",
     "table": {
       "user": "User",
       "role": "Role",
@@ -452,7 +652,8 @@
       "no_members_description": "Invite members to join your project"
     },
     "permissions": {
-      "title": "Permissions Configuration",
+      "title": "Platform Permissions",
+      "title_description": "Control access to management APIs (e.g. members, policies, resources).",
       "template_mode": "Template Mode",
       "advanced_mode": "Advanced Mode",
       "template": {
@@ -485,7 +686,8 @@
       "no_permissions_found": "No permissions found matching \"{query}\"",
       "high_risk_description": "You are about to grant the following high-risk permissions:",
       "high_risk_confirm": "These permissions have significant impact. Are you sure you want to continue?",
-      "confirm_save": "Confirm & Save"
+      "confirm_save": "Confirm & Save",
+      "loading": "Loading permissions..."
     },
     "quota": {
       "title": "Quota Overrides",
@@ -494,21 +696,31 @@
       "override": "Override",
       "reset_all": "Reset All",
       "update_success": "Quota overrides updated successfully",
-      "coming_soon": "Quota editor coming soon..."
+      "coming_soon": "Quota editor coming soon...",
+      "cancel": "Cancel",
+      "save_changes": "Save Changes"
+    },
+    "quota_history": {
+      "title": "Quota Override History",
+      "view_history": "View Quota History",
+      "loading": "Loading...",
+      "empty": "No quota override history",
+      "by": "by",
+      "page_info": "Page {page} of {totalPages} ({total} total)",
+      "prev": "Previous",
+      "next": "Next"
     },
     "acl": {
-      "title": "Resource ACL",
-      "description": "Configure resource-level permissions for Knowledge Bases and Endpoints.",
+      "title": "Resource Access Control",
+      "title_short": "Resource ACL",
+      "description": "Configure resource-level permissions for Endpoints.",
       "endpoint": {
         "deny": "Deny Access",
         "remove_deny": "Remove Deny",
         "reason_required": "Reason is required"
       },
-      "kb": {
-        "edit_permissions": "Edit Permissions"
-      },
-      "update_success": "Resource ACL updated successfully",
-      "coming_soon": "Resource ACL editor coming soon...",
+      "update_success": "Resource access control updated successfully",
+      "coming_soon": "Resource access control editor coming soon...",
       "cancel": "Cancel"
     },
     "history": {
@@ -516,17 +728,21 @@
       "view_history": "View Change History",
       "permissions_updated": "Permissions updated",
       "quota_updated": "Quota override",
-      "acl_updated": "Resource ACL updated"
+      "acl_updated": "Resource access control updated"
     },
     "actions": {
       "edit_permissions_quota": "Edit Permissions & Quota",
       "view_history": "View Change History",
       "remove_member": "Remove Member"
     },
+    "remove_success": "Member removed from project",
+    "remove_confirm_title": "Remove Member",
+    "remove_confirm_message": "Are you sure you want to remove {name} from this project? They will lose access to all project resources.",
+    "removing": "Removing...",
     "tabs": {
       "members": "Members",
       "requests": "Join Requests",
-      "templates": "Permission Templates"
+      "templates": "Templates"
     },
     "no_permission_to_view": "You don't have permission to view members",
     "requests": {
@@ -552,7 +768,55 @@
         "developer_description": "Agent keys, UserData, AgentThread",
         "user": "User",
         "user_description": "Read-only + AgentThread + UserData (limited)"
-      }
+      },
+      "create_success": "Template created successfully",
+      "update_success": "Template updated successfully",
+      "delete_success": "Template deleted successfully",
+      "apply_success": "Template applied to member",
+      "apply_batch_success": "Template applied to {count} members",
+      "apply_template": "Apply template",
+      "apply_to_member": "Apply to Member",
+      "apply_to_members": "Apply to Members",
+      "select_members": "Select members",
+      "selected_count": "{count} selected",
+      "select_all": "Select all",
+      "deselect_all": "Deselect all",
+      "applying": "Applying...",
+      "updating": "Updating...",
+      "select_member": "Select a member",
+      "no_members_available": "No members available to apply template to",
+      "empty_custom_title": "No custom templates yet",
+      "empty_custom_description": "Create a custom template to define permission sets beyond the default roles.",
+      "permission_templates": "Permission Templates",
+      "quota_templates": "Quota Templates",
+      "quota_coming_soon": "Quota templates coming soon. Create and apply quota presets (e.g. Standard, High Usage) to members.",
+      "template_name": "Template Name",
+      "template_description": "Description (optional)",
+      "name_required": "Name is required",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "quota_create_success": "Quota template created successfully",
+      "quota_update_success": "Quota template updated successfully",
+      "quota_delete_success": "Quota template deleted successfully",
+      "quota_apply_success": "Quota template applied to member",
+      "quota_apply_batch_success": "Quota template applied to {count} members",
+      "quota_title": "Quota Templates",
+      "quota_description": "Manage reusable quota presets (e.g. Standard, High Usage, Restricted).",
+      "quota_empty_title": "No quota templates yet",
+      "quota_empty_description": "Create a quota template to define preset overrides for storage, DocDB, VectorDB, and endpoint limits.",
+      "save_changes": "Save Changes",
+      "delete": "Delete",
+      "delete_confirm_title": "Delete Template",
+      "delete_confirm_message": "Delete quota template \"{name}\"? This will not affect members who already have this template applied.",
+      "select_template": "Select template",
+      "batch_apply_permission_hint": "Apply a permission template to {count} selected member(s).",
+      "batch_apply_quota_hint": "Apply a quota template to {count} selected member(s)."
+    },
+    "batch": {
+      "selected_count": "{count} selected",
+      "clear_selection": "Clear selection",
+      "apply_permission_template": "Apply Permission Template",
+      "apply_quota_template": "Apply Quota Template"
     },
     "join_requests": {
       "title": "Join Requests",
@@ -574,6 +838,38 @@
       },
       "approve_success": "Join request approved successfully",
       "reject_success": "Join request rejected successfully"
+    }
+  },
+  "overview": {
+    "title": "Overview",
+    "subtitle": "Project dashboard and quick navigation",
+    "kpi": {
+      "requests_today": "Requests Today",
+      "errors_today": "Errors Today",
+      "tokens_today": "Tokens Today",
+      "userdata_storage": "UserData Storage",
+      "vs_last_period": "vs last period"
+    },
+    "quick_access": "Quick Access",
+    "recent_activity": "Recent Activity",
+    "no_recent_activity": "No recent activity",
+    "view_all_activity": "View all activity →",
+    "click_to_copy_id": "Click to copy ID",
+    "navigation": {
+      "chat": "Chat",
+      "chat_description": "AI chat conversations",
+      "workbench": "Workbench",
+      "workbench_description": "Multi-turn agent threads",
+      "agents": "Agents",
+      "agents_description": "Manage AI agents",
+      "endpoints": "Endpoints",
+      "endpoints_description": "Model endpoints",
+      "members": "Members",
+      "members_description": "Team management",
+      "usage": "Usage",
+      "usage_description": "Usage statistics",
+      "settings": "Settings",
+      "settings_description": "Project configuration"
     }
   },
   "projects": {
@@ -610,7 +906,57 @@
       "pin": "Pin project",
       "unpin": "Unpin project",
       "open": "Open project",
-      "settings": "Project settings"
-    }
+      "settings": "Project settings",
+      "delete": "Delete project"
+    },
+    "delete_confirm_title": "Delete Project",
+    "delete_confirm_message": "Are you sure you want to delete this project? This action cannot be undone."
+  },
+  "join": {
+    "title": "Join Project",
+    "description": "You have been invited to join a project. Accept to continue.",
+    "accept": "Accept Invitation",
+    "decline": "Decline",
+    "invalid_title": "Invalid Invitation",
+    "invalid_description": "This invitation link is invalid or has expired.",
+    "go_home": "Go to Home"
+  },
+  "profile": {
+    "title": "Profile",
+    "description": "Manage your profile and preferences",
+    "agent_disclosure_title": "AI Agent Access",
+    "agent_disclosure": "The information you provide in this profile will be read by AI agents to personalize greetings, responses, and interactions. This helps agents address you appropriately and tailor their suggestions.",
+    "basic_info": "Basic Information",
+    "display_name": "Display Name",
+    "display_name_placeholder": "How you'd like to be called",
+    "bio": "Bio",
+    "bio_placeholder": "A short introduction about yourself",
+    "work_info": "Work Information",
+    "job_title": "Job Title",
+    "job_title_placeholder": "e.g. Software Engineer",
+    "company": "Company",
+    "company_placeholder": "Your organization",
+    "preferences": "Preferences",
+    "timezone": "Timezone",
+    "timezone_placeholder": "e.g. America/New_York",
+    "locale": "Preferred Language",
+    "greeting_preference": "Greeting Style",
+    "greeting_preference_options": {
+      "formal": "Formal",
+      "casual": "Casual",
+      "friendly": "Friendly",
+      "professional": "Professional"
+    },
+    "interests": "Interests",
+    "interests_placeholder": "Comma-separated (e.g. AI, design, productivity)",
+    "save": "Save Changes",
+    "saving": "Saving...",
+    "saved": "Profile saved"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "No notifications",
+    "mark_all_read": "Mark all as read",
+    "view_all": "View all"
   }
 }

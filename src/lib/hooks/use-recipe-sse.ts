@@ -103,7 +103,7 @@ export function useRecipeSSE(
             const errorData = data.data as { message: string; code?: string };
             const error = new Error(errorData.message);
             if (errorData.code) {
-              (error as any).code = errorData.code;
+              (error as Error & { code?: string }).code = errorData.code;
             }
             if (onError) {
               onError(error);

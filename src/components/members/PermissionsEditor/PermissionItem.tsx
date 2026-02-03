@@ -10,7 +10,6 @@ import {
 } from '@/components/ui/tooltip';
 import { AlertTriangle } from 'lucide-react';
 import { isHighRiskPermission } from '@/lib/constants/permissions';
-import { cn } from '@/lib/utils';
 
 export interface PermissionItemProps {
   permission: string;

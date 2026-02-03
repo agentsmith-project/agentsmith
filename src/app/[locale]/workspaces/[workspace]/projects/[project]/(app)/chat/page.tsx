@@ -109,7 +109,7 @@ export default function ChatPage({ params }: ChatPageProps) {
     enabled: !!currentSessionId && !!workspaceId && !!projectId,
   });
 
-  const messages = messagesData?.items ?? [];
+  const messages = useMemo(() => messagesData?.items ?? [], [messagesData?.items]);
 
   const visibleLeafId = useMemo(() => {
     if (messages.length === 0) return null;
@@ -496,13 +496,15 @@ export default function ChatPage({ params }: ChatPageProps) {
                 });
                 pendingAutoGroupRef.current = edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null);
                 setEditingMessageId(null);
-                await runStream({
-                  sessionId: currentSessionId,
-                  model: activeSession?.model,
-                  endpointId: activeSession?.endpoint_id,
-                  fromMessageId: edited.id,
-                  mode: 'append',
-                });
+                if (activeSession?.model && activeSession?.endpoint_id) {
+                  await runStream({
+                    sessionId: currentSessionId,
+                    model: activeSession.model,
+                    endpointId: activeSession.endpoint_id,
+                    fromMessageId: edited.id,
+                    mode: 'append',
+                  });
+                }
               }}
               onEditCancel={() => setEditingMessageId(null)}
               onRegenerate={async (m) => {

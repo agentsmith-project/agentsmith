@@ -145,7 +145,7 @@ export function AuditFilters({
             <label className="text-xs text-tertiary mb-1 block">Actor Type</label>
             <Select
               value={filters.actor_type || 'all'}
-              onValueChange={(value) => handleFilterChange('actor_type', value === 'all' ? undefined : value as any)}
+              onValueChange={(value) => handleFilterChange('actor_type', value === 'all' ? undefined : value as 'user' | 'agent' | 'plugin')}
             >
               <SelectTrigger>
                 <SelectValue placeholder="All types" />
@@ -211,7 +211,7 @@ export function AuditFilters({
             <label className="text-xs text-tertiary mb-1 block">Result</label>
             <Select
               value={filters.result || 'all'}
-              onValueChange={(value) => handleFilterChange('result', value === 'all' ? undefined : value as any)}
+              onValueChange={(value) => handleFilterChange('result', value === 'all' ? undefined : value as 'ok' | 'error')}
             >
               <SelectTrigger>
                 <SelectValue placeholder="All results" />

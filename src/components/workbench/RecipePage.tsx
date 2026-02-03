@@ -36,9 +36,10 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
   const [streamingContent, setStreamingContent] = React.useState<string>('');
 
   const queryClient = useQueryClient();
-  const { data: recipe, isLoading: recipeLoading, error: recipeError } = useRecipe(workspaceId, projectId, recipeId);
-  const { data: messages, isLoading: messagesLoading } = useRecipeMessages(workspaceId, projectId, recipeId);
-  const { data: artifacts, isLoading: artifactsLoading } = useRecipeArtifacts(workspaceId, projectId, recipeId);
+  const { handleError } = useErrorHandler();
+  const { data: recipe, isLoading: recipeLoading } = useRecipe(workspaceId, projectId, recipeId);
+  const { data: messages } = useRecipeMessages(workspaceId, projectId, recipeId);
+  const { data: artifacts } = useRecipeArtifacts(workspaceId, projectId, recipeId);
   const sendMessage = useSendMessage();
   const addSources = useAddSources();
 
@@ -112,8 +113,8 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
         setStreamingMessageId(response.id);
         setStreamingContent('');
       }
-    } catch (error) {
-      handleError(error, { logContext: 'RecipePage.sendMessage' });
+    } catch (err) {
+      handleError(err, { logContext: 'RecipePage.sendMessage' });
     }
   };
 
@@ -151,12 +152,12 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-    } catch (error) {
-      handleError(error, { logContext: 'RecipePage.downloadArtifact' });
+    } catch (err) {
+      handleError(err, { logContext: 'RecipePage.downloadArtifact' });
     }
   };
 
-  const handleSaveArtifactToLibrary = async (filename?: string, description?: string) => {
+  const handleSaveArtifactToLibrary = async (_filename?: string, _description?: string) => {
     if (!selectedArtifact) return;
     // TODO: Implement save to library
     setSaveDialogOpen(false);

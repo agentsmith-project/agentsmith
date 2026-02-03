@@ -5,11 +5,11 @@
  */
 
 import Link from 'next/link';
-import { MessageSquare, Wrench, Bot, Server, Users, BarChart3, Settings, ChevronRight } from 'lucide-react';
+import { MessageSquare, Wrench, Bot, Server, Users, BarChart3, Settings, ChevronRight, LucideIcon } from 'lucide-react';
 
 export interface NavItem {
   /** Icon component */
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   /** Navigation label */
   label: string;
   /** Route path */
@@ -20,52 +20,6 @@ export interface NavItem {
   requiresPermission?: string;
 }
 
-const defaultNavItems: NavItem[] = [
-  {
-    icon: MessageSquare,
-    label: 'Chat',
-    href: '/chat',
-    description: 'AI chat conversations',
-  },
-  {
-    icon: Wrench,
-    label: 'Workbench',
-    href: '/workbench',
-    description: 'Multi-turn agent threads',
-  },
-  {
-    icon: Bot,
-    label: 'Agents',
-    href: '/agents',
-    description: 'Manage AI agents',
-  },
-  {
-    icon: Server,
-    label: 'Endpoints',
-    href: '/endpoints',
-    description: 'Model endpoints',
-  },
-  {
-    icon: Users,
-    label: 'Members',
-    href: '/members',
-    description: 'Team management',
-  },
-  {
-    icon: BarChart3,
-    label: 'Usage',
-    href: '/usage',
-    description: 'Usage statistics',
-  },
-  {
-    icon: Settings,
-    label: 'Settings',
-    href: '/settings',
-    description: 'Project configuration',
-    requiresPermission: 'project:settings:edit',
-  },
-];
-
 export interface ProjectNavigationProps {
   /** Base path for navigation (workspace/project context) */
   basePath: string;
@@ -73,6 +27,8 @@ export interface ProjectNavigationProps {
   items?: NavItem[];
   /** Number of columns in grid layout */
   columns?: 2 | 3 | 4;
+  /** Translation function */
+  translations?: (key: string) => string;
 }
 
 /**
@@ -86,8 +42,55 @@ export interface ProjectNavigationProps {
  * />
  * ```
  */
-export function ProjectNavigation({ basePath, items, columns = 3 }: ProjectNavigationProps) {
-  const navItems = items || defaultNavItems;
+export function ProjectNavigation({ basePath, items, columns = 3, translations }: ProjectNavigationProps) {
+  const t = translations || ((key: string) => key);
+
+  // Generate nav items with translations if not provided
+  const navItems = items || [
+    {
+      icon: MessageSquare,
+      label: t('navigation.chat'),
+      href: '/chat',
+      description: t('navigation.chat_description'),
+    },
+    {
+      icon: Wrench,
+      label: t('navigation.workbench'),
+      href: '/workbench',
+      description: t('navigation.workbench_description'),
+    },
+    {
+      icon: Bot,
+      label: t('navigation.agents'),
+      href: '/agents',
+      description: t('navigation.agents_description'),
+    },
+    {
+      icon: Server,
+      label: t('navigation.endpoints'),
+      href: '/endpoints',
+      description: t('navigation.endpoints_description'),
+    },
+    {
+      icon: Users,
+      label: t('navigation.members'),
+      href: '/members',
+      description: t('navigation.members_description'),
+    },
+    {
+      icon: BarChart3,
+      label: t('navigation.usage'),
+      href: '/usage',
+      description: t('navigation.usage_description'),
+    },
+    {
+      icon: Settings,
+      label: t('navigation.settings'),
+      href: '/settings',
+      description: t('navigation.settings_description'),
+      requiresPermission: 'project:settings:edit',
+    },
+  ];
 
   return (
     <div className={`grid grid-cols-1 ${columns === 2 ? 'md:grid-cols-2' : columns === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-4`}>

@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import {
   useReactTable,
   getCoreRowModel,
@@ -10,15 +11,7 @@ import {
 } from '@tanstack/react-table';
 import { DataTable } from '@/components/ui/data-table';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
-import { MoreHorizontal, File, Download, Trash2, Play, X, RotateCw } from 'lucide-react';
+import { File } from 'lucide-react';
 import { AIReadyStatusBadge } from './AIReadyStatusBadge';
 import { AIReadyProgress } from './AIReadyProgress';
 import { EmptyState } from '@/components/ui/loading';
@@ -35,46 +28,43 @@ import { formatBytes, formatRelativeTime } from '@/lib/utils/formatters';
 
 const columnHelper = createColumnHelper<SourceFileWithAIReady>();
 
-function getFileIcon(fileType: string) {
-  // Simple icon based on file type - can be enhanced later
+function getFileIcon(_fileType: string) {
   return File;
 }
 
 export interface SourcesTableProps {
   data: SourceFileWithAIReady[];
   loading?: boolean;
+  compact?: boolean;
+  /** Controlled selection: pass selected IDs to sync (e.g. when clearing from parent) */
+  selectedIds?: string[];
   onRowSelect?: (selectedIds: string[]) => void;
-  onStartAIReady?: (fileId: string) => void;
-  onCancelAIReady?: (fileId: string) => void;
-  onRetryAIReady?: (fileId: string) => void;
-  onDelete?: (fileId: string) => void;
-  onDownload?: (fileId: string) => void;
   onUploadClick?: () => void;
 }
 
 export function SourcesTable({
   data,
   loading = false,
+  compact = false,
+  selectedIds = [],
   onRowSelect,
-  onStartAIReady,
-  onCancelAIReady,
-  onRetryAIReady,
-  onDelete,
-  onDownload,
   onUploadClick,
 }: SourcesTableProps) {
+  const t = useTranslations('sources');
   const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
+  const rowSelection: RowSelectionState = React.useMemo(
+    () => Object.fromEntries(selectedIds.map((id) => [id, true])),
+    [selectedIds],
+  );
 
-  // Notify parent of selection changes
-  React.useEffect(() => {
-    if (onRowSelect) {
-      const selectedIds = Object.keys(rowSelection).filter(
-        (key) => rowSelection[key],
-      );
-      onRowSelect(selectedIds);
-    }
-  }, [rowSelection, onRowSelect]);
+  const setRowSelection = React.useCallback(
+    (updater: React.SetStateAction<RowSelectionState>) => {
+      const next = typeof updater === 'function' ? updater(rowSelection) : updater;
+      const ids = Object.keys(next).filter((k) => next[k]);
+      onRowSelect?.(ids);
+    },
+    [rowSelection, onRowSelect],
+  );
 
   const columns = React.useMemo(
     () => [
@@ -85,27 +75,27 @@ export function SourcesTable({
           <Checkbox
             checked={table.getIsAllPageRowsSelected()}
             onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all files"
+            aria-label={t('action_attach')}
           />
         ),
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label={`Select ${row.original.filename || 'file'}`}
+            aria-label={`${t('action_attach')} ${row.original.filename || 'file'}`}
           />
         ),
         enableSorting: false,
       }),
       // Filename column
       columnHelper.accessor('filename', {
-        header: 'Filename',
+        header: t('table.filename'),
         cell: (info) => {
           const file = info.row.original;
           const FileIcon = getFileIcon(file.file_type);
           const filename = file.filename || 'Unknown file';
-          const displayName = filename.length > 40 
-            ? `${filename.substring(0, 40)}...` 
+          const displayName = filename.length > 40
+            ? `${filename.substring(0, 40)}...`
             : filename;
           
           return (
@@ -136,7 +126,7 @@ export function SourcesTable({
       }),
       // Size column
       columnHelper.accessor('file_size', {
-        header: 'Size',
+        header: t('table.size'),
         cell: (info) => (
           <span className="text-tertiary text-sm font-mono">
             {formatBytes(info.getValue())}
@@ -145,7 +135,7 @@ export function SourcesTable({
       }),
       // Updated at column
       columnHelper.accessor('updated_at', {
-        header: 'Updated',
+        header: t('table.updated_at'),
         cell: (info) => (
           <span className="text-tertiary text-sm">
             {formatRelativeTime(info.getValue())}
@@ -155,7 +145,7 @@ export function SourcesTable({
       // AIReady status column
       columnHelper.display({
         id: 'ai_ready_status',
-        header: 'AIReady Status',
+        header: t('table.ai_ready_status'),
         cell: (info) => {
           const file = info.row.original;
           const aiReady = file.ai_ready;
@@ -177,7 +167,7 @@ export function SourcesTable({
       // Usage column
       columnHelper.display({
         id: 'usage',
-        header: 'Usage',
+        header: t('table.usage'),
         cell: (info) => {
           const file = info.row.original;
           const usage = file.ai_ready_usage;
@@ -191,113 +181,14 @@ export function SourcesTable({
           );
         },
       }),
-      // Actions column
-      columnHelper.display({
-        id: 'actions',
-        header: '',
-        cell: (info) => {
-          const file = info.row.original;
-          const aiReady = file.ai_ready;
-          const status = aiReady?.status || 'idle';
-
-          return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  aria-label={`Actions for ${file.filename}`}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {status === 'idle' && onStartAIReady && (
-                  <DropdownMenuItem
-                    onClick={() => onStartAIReady(file.id)}
-                    className="flex items-center gap-2"
-                  >
-                    <Play className="h-4 w-4" />
-                    Start AIReady
-                  </DropdownMenuItem>
-                )}
-                {(status === 'preparing' || status === 'ready') && onCancelAIReady && (
-                  <DropdownMenuItem
-                    onClick={() => onCancelAIReady(file.id)}
-                    className="flex items-center gap-2"
-                  >
-                    <X className="h-4 w-4" />
-                    Cancel AIReady
-                  </DropdownMenuItem>
-                )}
-                {status === 'failed' && (
-                  <>
-                    {onRetryAIReady && (
-                      <DropdownMenuItem
-                        onClick={() => onRetryAIReady(file.id)}
-                        className="flex items-center gap-2"
-                      >
-                        <RotateCw className="h-4 w-4" />
-                        Retry
-                      </DropdownMenuItem>
-                    )}
-                    {onCancelAIReady && (
-                      <DropdownMenuItem
-                        onClick={() => onCancelAIReady(file.id)}
-                        className="flex items-center gap-2"
-                      >
-                        <X className="h-4 w-4" />
-                        Cancel AIReady
-                      </DropdownMenuItem>
-                    )}
-                  </>
-                )}
-                {status === 'cancelled' && onStartAIReady && (
-                  <DropdownMenuItem
-                    onClick={() => onStartAIReady(file.id)}
-                    className="flex items-center gap-2"
-                  >
-                    <Play className="h-4 w-4" />
-                    Start AIReady
-                  </DropdownMenuItem>
-                )}
-                {onDownload && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => onDownload(file.id)}
-                      className="flex items-center gap-2"
-                    >
-                      <Download className="h-4 w-4" />
-                      Download
-                    </DropdownMenuItem>
-                  </>
-                )}
-                {onDelete && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => onDelete(file.id)}
-                      className="flex items-center gap-2 text-error focus:text-error"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          );
-        },
-      }),
     ],
-    [onStartAIReady, onCancelAIReady, onRetryAIReady, onDelete, onDownload],
+    [t],
   );
 
   const table = useReactTable({
     data,
     columns,
+    getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
@@ -316,12 +207,12 @@ export function SourcesTable({
   if (data.length === 0) {
     return (
       <EmptyState
-        title="No files yet"
-        description="Upload your first file to get started"
+        title={t('empty_title')}
+        description={t('empty_cta')}
         action={
           onUploadClick
             ? {
-                label: 'Upload Files',
+                label: t('upload_files'),
                 onClick: onUploadClick,
               }
             : undefined
@@ -330,5 +221,5 @@ export function SourcesTable({
     );
   }
 
-  return <DataTable table={table} />;
+  return <DataTable table={table} compact={compact} />;
 }

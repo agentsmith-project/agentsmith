@@ -15,7 +15,6 @@ export interface MessageItemProps {
 
 export function MessageItem({ message, streamingContent, disabled = false }: MessageItemProps) {
   const isUser = message.role === 'user';
-  const isAgent = message.role === 'agent';
 
   const displayContent = streamingContent ?? message.content;
 
@@ -44,20 +43,20 @@ export function MessageItem({ message, streamingContent, disabled = false }: Mes
         )}
       >
         <div className="space-y-2">
-          {streamingContent ? (
+          {streamingContent != null ? (
             <div className="min-h-[48px]">
-              {streamingContent.trim().length === 0 ? (
+              {displayContent.trim().length === 0 ? (
                 <div className="space-y-2">
                   <div className="h-3 w-2/3 rounded-sm bg-surface-high/60 animate-pulse" />
                   <div className="h-3 w-1/2 rounded-sm bg-surface-high/60 animate-pulse" />
                   <div className="h-3 w-1/3 rounded-sm bg-surface-high/60 animate-pulse" />
                 </div>
               ) : (
-                <Markdown content={streamingContent || '…'} />
+                <Markdown content={displayContent || '…'} />
               )}
             </div>
           ) : (
-            <Markdown content={message.content} />
+            <Markdown content={displayContent} />
           )}
         </div>
 

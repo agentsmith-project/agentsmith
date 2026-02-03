@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { LogOut, User, Settings, Languages, type LucideIcon } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,12 +12,16 @@ import {
 
 interface UserMenuItem {
   id: string;
-  label: string;
   icon: LucideIcon;
   onClick?: () => void;
   disabled?: boolean;
   badge?: string;
 }
+
+const LOCALES = [
+  { id: 'en-US', label: 'English', icon: Languages },
+  { id: 'zh-CN', label: '中文', icon: Languages },
+] as const;
 
 interface UserMenuProps {
   user: {
@@ -26,35 +31,36 @@ interface UserMenuProps {
   } | null;
   onProfile?: () => void;
   onApiKeys?: () => void;
-  onLanguage?: () => void;
+  onLanguageSwitch?: (locale: string) => void;
   onLogout?: () => void;
   className?: string;
+  currentLocale?: string;
 }
 
-const defaultItems: UserMenuItem[] = [
-  { id: 'profile', label: 'Profile', icon: User },
-  { id: 'api-keys', label: 'API Keys', icon: Settings },
-  { id: 'language', label: 'Language', icon: Languages },
+const defaultItems: Omit<UserMenuItem, 'label'>[] = [
+  { id: 'profile', icon: User },
+  { id: 'api_keys', icon: Settings },
 ];
 
 export function UserMenu({
   user,
   onProfile,
   onApiKeys,
-  onLanguage,
+  onLanguageSwitch,
   onLogout,
+  currentLocale = 'en-US',
   className = '',
 }: UserMenuProps) {
+  const t = useTranslations('common.user_menu');
+  const commonT = useTranslations('common');
+
   const handleClick = (itemId: string) => {
     switch (itemId) {
       case 'profile':
         onProfile?.();
         break;
-      case 'api-keys':
+      case 'api_keys':
         onApiKeys?.();
-        break;
-      case 'language':
-        onLanguage?.();
         break;
       case 'logout':
         onLogout?.();
@@ -83,23 +89,20 @@ export function UserMenu({
               {user?.avatar ? (
                 <AvatarImage src={user.avatar} alt={user.name} />
               ) : (
-                <AvatarFallback
-                  className="text-foreground text-xs"
-                  style={{ backgroundImage: 'var(--ai-gradient)' }}
-                >
-                  {user ? getInitials(user.name) : '?'}
+                <AvatarFallback className="text-foreground text-xs bg-surface-high border border-subtle">
+                  {user ? getInitials(user.name) : commonT('user')}
                 </AvatarFallback>
               )}
             </Avatar>
             <span className="hidden sm:block text-sm text-foreground max-w-[120px] truncate">
-              {user?.name || 'User'}
+              {user?.name || commonT('user')}
             </span>
           </button>
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end" className="w-64 p-2">
           <div className="px-2 py-2">
-            <p className="text-sm font-medium text-foreground truncate">{user?.name || 'User'}</p>
+            <p className="text-sm font-medium text-foreground truncate">{user?.name || commonT('user')}</p>
             <p className="text-xs text-tertiary truncate">{user?.email || ''}</p>
           </div>
 
@@ -112,9 +115,28 @@ export function UserMenu({
               className="gap-3"
             >
               <item.icon className="w-4 h-4 text-icon-default" />
-              <span>{item.label}</span>
+              <span>{t(item.id as 'profile' | 'api_keys')}</span>
             </DropdownMenuItem>
           ))}
+
+          {onLanguageSwitch && (
+            <>
+              <DropdownMenuSeparator />
+              {LOCALES.map((loc) => (
+                <DropdownMenuItem
+                  key={loc.id}
+                  onSelect={() => onLanguageSwitch(loc.id)}
+                  className="gap-3"
+                >
+                  <loc.icon className="w-4 h-4 text-icon-default" />
+                  <span>{loc.label}</span>
+                  {currentLocale === loc.id && (
+                    <span className="ml-auto text-xs text-accent">✓</span>
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
 
           <DropdownMenuSeparator />
 
@@ -123,7 +145,7 @@ export function UserMenu({
             className="gap-3 text-error hover:text-error focus:text-error"
           >
             <LogOut className="w-4 h-4" />
-            <span>Logout</span>
+            <span>{t('logout')}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

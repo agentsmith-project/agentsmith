@@ -104,7 +104,6 @@ export function Markdown({ content }: { content: string }) {
           </a>
         ),
         img: ({ alt, ...props }) => (
-          // eslint-disable-next-line @next/next/no-img-element
           <img
             {...props}
             alt={alt || ''}

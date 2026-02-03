@@ -96,7 +96,7 @@ export function TimeRangePicker({
   value,
   onChange,
   presets = ['last_24h', 'last_7d', 'last_30d', 'custom'],
-  showCustom = true,
+  showCustom: _showCustom = true,
   className,
   maxDays = 90,
 }: TimeRangePickerProps) {

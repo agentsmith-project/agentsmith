@@ -12,6 +12,7 @@ import { useParams, useRouter, usePathname } from 'next/navigation';
 import { AppShellSidebar } from '@/components/app-shell/AppShellSidebar';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 
 export default function ProjectLayout({
   children,
@@ -24,6 +25,9 @@ export default function ProjectLayout({
   const locale = (params?.locale as string) || 'en-US';
   const workspaceId = params?.workspace as string;
   const projectId = params?.project as string;
+
+  // Sync currentProject from URL so permission checks work on all project pages
+  useSyncAuthFromUrl();
 
   // Get current page from URL path using usePathname (works on both server and client)
   const currentPage = useMemo(() => {
@@ -53,7 +57,7 @@ export default function ProjectLayout({
           <AppShellSidebar currentValue={currentPage} onChange={handleSidebarChange} />
 
           {/* Page Content */}
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-y-auto [scrollbar-gutter:stable]">
             {children}
           </main>
         </div>

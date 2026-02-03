@@ -7,14 +7,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
+import { useTranslations } from 'next-intl';
 import { Server, Plus, Trash2, Globe } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, EndpointAPI } from '@/lib/api';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
+import { CreateEndpointDialog } from '@/components/endpoints/CreateEndpointDialog';
 
 interface EndpointsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -33,7 +35,13 @@ interface Endpoint {
 
 const columnHelper = createColumnHelper<Endpoint>();
 
-const endpointColumns = [
+type DeleteEndpointMutation = UseMutationResult<void, Error, string>;
+
+function createEndpointColumns(
+  t: (key: string) => string,
+  deleteEndpointMutation: DeleteEndpointMutation
+) {
+  return [
   columnHelper.accessor('name', {
     header: 'Name',
     cell: (info) => (
@@ -106,14 +114,14 @@ const endpointColumns = [
       </div>
     ),
   }),
-];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let deleteEndpointMutation: any;
+  ];
+}
 
 export default function EndpointsPage({ params }: EndpointsPageProps) {
+  const t = useTranslations('endpoints');
   const queryClient = useQueryClient();
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const currentProject = useAuthStore((state) => state.currentProject);
 
@@ -132,14 +140,20 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     enabled: !!workspaceId && !!projectId,
   });
 
-  deleteEndpointMutation = useMutation({
+  const deleteEndpointMutation = useMutation({
     mutationFn: (endpointId: string) => endpointAPI.delete(workspaceId, projectId, endpointId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['endpoints', workspaceId, projectId] });
     },
   });
 
+  const invalidateEndpoints = () => {
+    queryClient.invalidateQueries({ queryKey: ['endpoints', workspaceId, projectId] });
+  };
+
   const endpoints = endpointsData?.items || [];
+
+  const endpointColumns = createEndpointColumns(t, deleteEndpointMutation);
 
   const table = useReactTable({
     data: endpoints,
@@ -159,12 +173,15 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Endpoints</h1>
-          <p className="text-sm text-tertiary mt-1">Manage LLM endpoints within the project</p>
+          <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
+          <p className="text-sm text-tertiary mt-1">Manage LLM endpoints</p>
         </div>
-        <button className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors">
+        <button
+          onClick={() => setCreateDialogOpen(true)}
+          className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors"
+        >
           <Plus className="w-4 h-4" />
-          New Endpoint
+          {t('create')}
         </button>
       </div>
 
@@ -173,16 +190,24 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
       ) : endpoints.length === 0 ? (
         <EmptyState
           icon={Server}
-          title="No endpoints yet"
-          description="Add your first LLM endpoint to get started"
+          title={`No ${t('title').toLowerCase()} yet`}
+          description={`Add your first LLM ${t('title').toLowerCase()} to get started`}
           action={{
-            label: 'Add Endpoint',
-            onClick: () => {},
+            label: `Add ${t('title')}`,
+            onClick: () => setCreateDialogOpen(true),
           }}
         />
       ) : (
         <DataTable table={table} />
       )}
+
+      <CreateEndpointDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        workspaceId={workspaceId}
+        projectId={projectId}
+        onSuccess={invalidateEndpoints}
+      />
     </div>
   );
 }

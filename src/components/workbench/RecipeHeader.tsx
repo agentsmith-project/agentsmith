@@ -75,7 +75,7 @@ export function RecipeHeader({
       if (onDeleted) {
         onDeleted();
       }
-    } catch (error) {
+    } catch {
       // Error is handled by the hook
     }
   };

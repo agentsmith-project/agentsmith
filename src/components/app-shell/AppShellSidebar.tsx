@@ -3,8 +3,10 @@
 import * as React from 'react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -12,6 +14,7 @@ import {
   FolderOpen,
   Bot,
   Server,
+  Key,
   Users,
   Settings as SettingsIcon,
   FolderKanban,
@@ -28,21 +31,22 @@ interface AppShellSidebarProps {
 }
 
 const PROJECT_MENU_ITEMS = [
-  { icon: LayoutDashboard, label: 'Overview', href: 'overview' },
-  { icon: MessageSquare, label: 'Chat', href: 'chat' },
-  { icon: Wrench, label: 'Workbench', href: 'workbench' },
-  { icon: FolderOpen, label: 'Sources', href: 'sources' },
-  { icon: Bot, label: 'Agents', href: 'agents' },
-  { icon: Server, label: 'Endpoints', href: 'endpoints' },
-  { icon: Users, label: 'Members', href: 'members' },
-  { icon: Shield, label: 'Audit', href: 'audit' },
-  { icon: BarChart3, label: 'Usage', href: 'usage' },
-  { icon: SettingsIcon, label: 'Settings', href: 'settings' },
+  { icon: LayoutDashboard, labelKey: 'overview', href: 'overview' },
+  { icon: MessageSquare, labelKey: 'chat', href: 'chat' },
+  { icon: Wrench, labelKey: 'workbench', href: 'workbench' },
+  { icon: FolderOpen, labelKey: 'sources', href: 'sources' },
+  { icon: Bot, labelKey: 'agents', href: 'agents' },
+  { icon: Server, labelKey: 'endpoints', href: 'endpoints' },
+  { icon: Key, labelKey: 'credentials', href: 'credentials' },
+  { icon: Users, labelKey: 'members', href: 'members' },
+  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:read' as const },
+  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:read' as const },
+  { icon: SettingsIcon, labelKey: 'settings', href: 'settings' },
 ];
 
 const WORKSPACE_MENU_ITEMS = [
-  { icon: FolderKanban, label: 'Projects', href: '../projects' },
-  { icon: SettingsIcon, label: 'Settings', href: '../settings' },
+  { icon: FolderKanban, labelKey: 'sidebar.projects', href: '../projects' },
+  { icon: SettingsIcon, labelKey: 'settings', href: '../../settings' },
 ];
 
 export function AppShellSidebar({
@@ -52,9 +56,21 @@ export function AppShellSidebar({
 }: AppShellSidebarProps) {
   const { currentProject } = useAuthStore();
   const pathname = usePathname();
+  const t = useTranslations('nav');
   const [collapsed, setCollapsed] = React.useState(false);
+  const canReadAudit = useHasPermission('project:audit:read');
+  const canReadUsage = useHasPermission('project:usage:read');
 
-  const menuItems = currentProject ? PROJECT_MENU_ITEMS : WORKSPACE_MENU_ITEMS;
+  const projectMenuItems = currentProject
+    ? PROJECT_MENU_ITEMS.filter((item) => {
+        if ('permission' in item && item.permission) {
+          if (item.permission === 'project:audit:read') return canReadAudit;
+          if (item.permission === 'project:usage:read') return canReadUsage;
+        }
+        return true;
+      })
+    : [];
+  const menuItems = currentProject ? projectMenuItems : WORKSPACE_MENU_ITEMS;
 
   React.useEffect(() => {
     try {
@@ -80,35 +96,20 @@ export function AppShellSidebar({
   return (
     <aside
       className={cn(
-        collapsed ? 'w-[72px]' : 'w-[260px]',
+        collapsed ? 'w-[72px]' : 'w-[220px]',
         'border-r border-subtle bg-panel flex flex-col transition-[width] duration-200',
         className,
       )}
     >
-      <div className={cn('px-2 py-2', collapsed ? 'flex justify-center' : 'flex justify-end')}>
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          className={cn(
-            'h-10 w-10 rounded-sm flex items-center justify-center transition-colors duration-200',
-            'text-icon-default hover:bg-hover hover:text-foreground',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
-          )}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
-        </button>
-      </div>
-
       <nav className="flex-1 px-2 py-4 space-y-1">
         {menuItems.map((item) => {
           const isActive = pathname?.includes(item.href);
+          const label = t(item.labelKey);
           return (
             <Link
               key={item.href}
               href={item.href}
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? label : undefined}
               className={cn(
                 'relative flex items-center h-10 rounded-sm text-sm transition-colors duration-200',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
@@ -119,17 +120,33 @@ export function AppShellSidebar({
               )}
             >
               <item.icon className={cn('w-5 h-5', isActive ? 'text-accent' : 'text-icon-default')} />
-              <span className={cn('truncate', collapsed && 'hidden')}>{item.label}</span>
+              <span className={cn('truncate', collapsed && 'hidden')}>{label}</span>
               {isActive && (
                 <div
                   className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full"
                   style={{ backgroundColor: 'rgb(var(--accent))' }}
                 />
-              )}
-            </Link>
-          );
+          )}
+        </Link>
+      );
         })}
       </nav>
+
+      <div className={cn('p-2 border-t border-subtle', collapsed ? 'flex justify-center' : 'flex justify-end')}>
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          className={cn(
+            'h-10 w-10 rounded-sm flex items-center justify-center transition-colors duration-200',
+            'text-icon-default hover:bg-hover hover:text-foreground',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+          )}
+          aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
+          title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
+        >
+          {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+        </button>
+      </div>
     </aside>
   );
 }

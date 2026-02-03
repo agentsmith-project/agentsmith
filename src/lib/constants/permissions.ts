@@ -89,6 +89,55 @@ export const PLATFORM_PERMISSIONS = {
 // Flattened list of all platform permissions
 export const ALL_PLATFORM_PERMISSIONS = Object.values(PLATFORM_PERMISSIONS).flat() as readonly string[];
 
+// Permission descriptions for UI tooltips (from 权限点标准规范-v1)
+export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
+  'workspace:read': 'View workspace info',
+  'workspace:project:create': 'Create projects in workspace',
+  'project:read': 'View project info',
+  'project:update': 'Update project config',
+  'project:delete': 'Delete project (irreversible)',
+  'project:visibility:update': 'Update project visibility',
+  'project:join:request': 'Request to join project',
+  'project:join:approve': 'Approve join requests',
+  'project:member:read': 'View member list',
+  'project:member:manage': 'Manage members (permissions, quota, remove)',
+  'project:policy:read': 'View project policy (quota, limits, guardrails)',
+  'project:policy:update': 'Update project policy',
+  'project:audit:read': 'View audit logs',
+  'project:usage:read': 'View usage stats',
+  'project:source:read': 'View file list',
+  'project:source:upload': 'Upload files',
+  'project:source:delete': 'Delete files',
+  'project:source:download': 'Download files',
+  'project:recipe:create': 'Create recipes',
+  'project:recipe:read': 'View recipes',
+  'project:recipe:update': 'Update recipes',
+  'project:recipe:delete': 'Delete recipes',
+  'project:resource:read': 'View shared resources (KB/Endpoints)',
+  'project:resource:create': 'Create shared resources',
+  'project:resource:update': 'Update shared resources',
+  'project:resource:delete': 'Delete shared resources',
+  'agent:read': 'View agent list and details',
+  'agent:manage': 'Manage agents (create/update/enable/disable/kick)',
+  'agent:key:issue': 'Issue agent service keys',
+  'agent:key:revoke': 'Revoke agent service keys',
+  'agent_thread:create': 'Create agent threads',
+  'agent_thread:read': 'View agent threads',
+  'agent_thread:handoff': 'Handoff between agents',
+  'agent_thread:cancel': 'Cancel turn',
+  'userdata:docdb:read': 'Read DocDB data',
+  'userdata:docdb:write': 'Write DocDB data',
+  'userdata:docdb:delete': 'Delete DocDB data',
+  'userdata:docdb:clear': 'Clear DocDB collections (irreversible)',
+  'userdata:vectordb:search': 'Search VectorDB',
+  'userdata:vectordb:upsert': 'Upsert VectorDB data',
+  'userdata:vectordb:delete': 'Delete VectorDB data',
+  'userdata:storage:read': 'Read Storage files',
+  'userdata:storage:write': 'Write Storage files',
+  'userdata:storage:delete': 'Delete Storage files',
+  'userdata:storage:clear': 'Clear Storage (irreversible)',
+};
+
 // Grouped permissions for UI display
 export const PLATFORM_PERMISSIONS_GROUPED = [
   {
@@ -146,17 +195,6 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
 // ============================================================
 
 export const RESOURCE_PERMISSIONS = {
-  KB: [
-    'kb:read',
-    'kb:query',
-    'kb:entry:read',
-    'kb:entry:write',
-    'kb:entry:delete',
-    'kb:update',
-    'kb:acl:manage',
-    'kb:delete',
-  ] as const,
-
   ENDPOINT: [
     'endpoint:read',
     'endpoint:use',
@@ -328,6 +366,8 @@ export const ROLE_TEMPLATES = {
     'project:read',
     // Membership (1)
     'project:member:read',
+    // Policy & Governance (1) - user can view own usage only; backend filters by end_user_id
+    'project:usage:read',
     // Sources (2)
     'project:source:read',
     'project:source:download',
@@ -363,13 +403,12 @@ export const HIGH_RISK_PERMISSIONS = [
   'project:policy:update',
   'userdata:docdb:clear',
   'userdata:storage:clear',
-  'kb:delete',
   'endpoint:admin',
 ] as const;
 
 // Type helpers
 export type PlatformPermission = typeof ALL_PLATFORM_PERMISSIONS[number];
-export type ResourcePermission = typeof RESOURCE_PERMISSIONS.KB[number] | typeof RESOURCE_PERMISSIONS.ENDPOINT[number];
+export type ResourcePermission = typeof RESOURCE_PERMISSIONS.ENDPOINT[number];
 export type RoleTemplate = keyof typeof ROLE_TEMPLATES;
 export type HighRiskPermission = typeof HIGH_RISK_PERMISSIONS[number];
 

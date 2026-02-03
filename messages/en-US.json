@@ -490,7 +490,8 @@
       "no_permissions_found": "No permissions found matching \"{query}\"",
       "high_risk_description": "You are about to grant the following high-risk permissions:",
       "high_risk_confirm": "These permissions have significant impact. Are you sure you want to continue?",
-      "confirm_save": "Confirm & Save"
+      "confirm_save": "Confirm & Save",
+      "loading": "Loading permissions..."
     },
     "quota": {
       "title": "Quota Overrides",
@@ -528,6 +529,10 @@
       "view_history": "View Change History",
       "remove_member": "Remove Member"
     },
+    "remove_success": "Member removed from project",
+    "remove_confirm_title": "Remove Member",
+    "remove_confirm_message": "Are you sure you want to remove {name} from this project? They will lose access to all project resources.",
+    "removing": "Removing...",
     "requests": {
       "coming_soon": "Join requests coming soon..."
     },
@@ -551,7 +556,23 @@
         "developer_description": "Agent keys, UserData, AgentThread",
         "user": "User",
         "user_description": "Read-only + AgentThread + UserData (limited)"
-      }
+      },
+      "create_success": "Template created successfully",
+      "update_success": "Template updated successfully",
+      "delete_success": "Template deleted successfully",
+      "apply_success": "Template applied to member",
+      "apply_to_member": "Apply to Member",
+      "applying": "Applying...",
+      "updating": "Updating...",
+      "select_member": "Select a member",
+      "no_members_available": "No members available to apply template to",
+      "empty_custom_title": "No custom templates yet",
+      "empty_custom_description": "Create a custom template to define permission sets beyond the default roles.",
+      "template_name": "Template Name",
+      "template_description": "Description (optional)",
+      "name_required": "Name is required",
+      "cancel": "Cancel",
+      "creating": "Creating..."
     },
     "join_requests": {
       "title": "Join Requests",

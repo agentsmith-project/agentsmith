@@ -4,7 +4,6 @@ import * as React from 'react';
 import { Plus, File, Search, X } from 'lucide-react';
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { AIReadyStatusBadge } from '@/components/sources/AIReadyStatusBadge';
 import { useSources } from '@/lib/hooks/use-sources';
 import { PageLoading } from '@/components/ui/loading';

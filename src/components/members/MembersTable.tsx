@@ -18,9 +18,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { MoreHorizontal, Settings, Trash2, History } from 'lucide-react';
 import { EmptyState } from '@/components/ui/loading';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
 import type { Member } from '@/lib/api/endpoints/members';
 import { formatRelativeTime } from '@/lib/utils/formatters';
 
@@ -30,6 +30,20 @@ function formatRole(role: string): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
+function getRoleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' | 'destructive' {
+  switch (role) {
+    case 'owner':
+      return 'default';
+    case 'admin':
+      return 'secondary';
+    case 'developer':
+    case 'user':
+      return 'outline';
+    default:
+      return 'outline';
+  }
+}
+
 function formatStatus(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
@@ -37,6 +51,9 @@ function formatStatus(status: string): string {
 export interface MembersTableProps {
   data: Member[];
   loading?: boolean;
+  enableSelection?: boolean;
+  selectedMemberIds?: string[];
+  onSelectionChange?: (ids: string[]) => void;
   onEditPermissions?: (member: Member) => void;
   onRemove?: (member: Member) => void;
   onViewHistory?: (member: Member) => void;
@@ -45,16 +62,74 @@ export interface MembersTableProps {
 export function MembersTable({
   data,
   loading = false,
+  enableSelection = false,
+  selectedMemberIds = [],
+  onSelectionChange,
   onEditPermissions,
   onRemove,
   onViewHistory,
 }: MembersTableProps) {
   const t = useTranslations('members');
-  const canManage = useHasPermission('project:member:manage');
   const [sorting, setSorting] = React.useState<SortingState>([]);
+
+  const selectableIds = React.useMemo(
+    () =>
+      new Set(
+        data
+          .filter((m) => m.status === 'active' && m.role !== 'owner')
+          .map((m) => m.id),
+      ),
+    [data],
+  );
 
   const columns = React.useMemo(
     () => [
+      ...(enableSelection
+        ? [
+            columnHelper.display({
+              id: 'select',
+              header: () => {
+                const allSelectableSelected =
+                  selectableIds.size > 0 &&
+                  selectedMemberIds.length === selectableIds.size;
+                return (
+                  <Checkbox
+                    checked={allSelectableSelected}
+                    onCheckedChange={(value) => {
+                      if (value) {
+                        onSelectionChange?.(Array.from(selectableIds));
+                      } else {
+                        onSelectionChange?.([]);
+                      }
+                    }}
+                    aria-label={t('batch.clear_selection')}
+                  />
+                );
+              },
+              cell: ({ row }) => {
+                const member = row.original;
+                if (member.role === 'owner' || member.status !== 'active') {
+                  return <div className="w-4" />;
+                }
+                const isSelected = selectedMemberIds.includes(member.id);
+                return (
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={(value) => {
+                      if (value) {
+                        onSelectionChange?.([...selectedMemberIds, member.id]);
+                      } else {
+                        onSelectionChange?.(selectedMemberIds.filter((id) => id !== member.id));
+                      }
+                    }}
+                    aria-label={`Select ${member.name || member.email}`}
+                  />
+                );
+              },
+              enableSorting: false,
+            }),
+          ]
+        : []),
       columnHelper.accessor('name', {
         header: t('table.user'),
         cell: (info) => {
@@ -82,11 +157,14 @@ export function MembersTable({
       }),
       columnHelper.accessor('role', {
         header: t('table.role'),
-        cell: (info) => (
-          <Badge variant="outline" className="text-xs">
-            {formatRole(info.getValue())}
-          </Badge>
-        ),
+        cell: (info) => {
+          const role = info.getValue();
+          return (
+            <Badge variant={getRoleBadgeVariant(role)} className="text-xs font-medium">
+              {formatRole(role)}
+            </Badge>
+          );
+        },
       }),
       columnHelper.accessor('status', {
         header: t('table.status'),
@@ -159,7 +237,7 @@ export function MembersTable({
         },
       }),
     ],
-    [t, canManage, onEditPermissions, onRemove, onViewHistory]
+    [t, enableSelection, selectableIds, selectedMemberIds, onSelectionChange, onEditPermissions, onRemove, onViewHistory]
   );
 
   const table = useReactTable({

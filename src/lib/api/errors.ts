@@ -186,7 +186,7 @@ export function handleErrorForToast(error: unknown, context?: string): void {
   const { ApiError } = require('./client');
   
   if (error instanceof ApiError) {
-    const message = formatErrorForToast(error);
+    const message = formatErrorForToast(error as Error);
     toast.error(message);
     if (context) {
       console.error(`[${context}]`, error);

@@ -4,8 +4,6 @@ import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, Plus, Minus } from 'lucide-react';
 import { isHighRiskPermission } from '@/lib/constants/permissions';
-import { cn } from '@/lib/utils';
-
 export interface ChangesPreviewProps {
   added: string[];
   removed: string[];
@@ -16,8 +14,8 @@ export interface ChangesPreviewProps {
 export function ChangesPreview({
   added,
   removed,
-  onConfirm,
-  onCancel,
+  onConfirm: _onConfirm,
+  onCancel: _onCancel,
 }: ChangesPreviewProps) {
   const t = useTranslations('members.permissions');
   const highRiskAdded = added.filter((p) => isHighRiskPermission(p));

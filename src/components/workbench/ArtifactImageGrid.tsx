@@ -2,7 +2,6 @@
 import * as React from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import type { Artifact } from '@/lib/types/recipe';
-import { cn } from '@/lib/utils';
 
 export interface ArtifactImageGridProps {
   artifacts: Artifact[];

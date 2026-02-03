@@ -22,7 +22,14 @@ import {
   Lock,
   Eye,
   Settings,
+  Trash2,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   createColumnHelper,
   getCoreRowModel,
@@ -34,6 +41,9 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { Button } from '@/components/ui/button';
+import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
+import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
+import { ProjectAPI, getApiClient } from '@/lib/api';
 
 type Project = AuthProject & { pinned: boolean };
 
@@ -49,14 +59,25 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; locale: string } | null>(null);
   const { 
     projects: allProjects, 
-    setProject, 
+    setProject,
+    clearProject,
+    setProjects: setAuthProjects,
     currentWorkspace,
+    currentProject,
     isAuthenticated,
   } = useAuthStore();
+
+  const handleSettingsClick = (project: Project) => {
+    setProject(project);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/settings`);
+  };
   const hydrated = useAuthStoreHydration();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [deleteDialogProject, setDeleteDialogProject] = useState<Project | null>(null);
+  const projectAPI = new ProjectAPI(getApiClient());
 
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, locale: p.locale }));
@@ -98,6 +119,33 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
     );
   };
 
+  const workspaceId = currentWorkspace?.id || resolvedParams?.workspace || '';
+  const locale = resolvedParams?.locale || 'en-US';
+
+  const handleDeleteProject = async (wsId: string, projectId: string) => {
+    await projectAPI.delete(wsId, projectId);
+  };
+
+  const handleDeleteProjectSuccess = () => {
+    if (!deleteDialogProject) return;
+    const remaining = allProjects.filter((p) => p.id !== deleteDialogProject.id);
+    setAuthProjects(remaining);
+    setProjects((prev) => prev.filter((p) => p.id !== deleteDialogProject.id));
+    if (currentProject?.id === deleteDialogProject.id) {
+      clearProject();
+    }
+    setDeleteDialogProject(null);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects`);
+  };
+
+  const handleCreateProjectSuccess = (newProject: AuthProject) => {
+    const projectWithPin: Project = { ...newProject, pinned: false };
+    setAuthProjects([...allProjects, newProject]);
+    setProjects((prev) => [...prev, projectWithPin]);
+    setProject(newProject);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${newProject.id}/overview`);
+  };
+
   // Filter projects based on search
   const filteredProjects = useMemo(() => {
     if (!searchQuery) return projects;
@@ -137,7 +185,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
             <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
             <h2 className="text-xl font-semibold text-foreground mb-2">{t('empty.title')}</h2>
             <p className="text-tertiary mb-6">{t('empty.description')}</p>
-            <Button variant="action">
+            <Button variant="action" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="w-4 h-4" />
               {t('empty.create_first')}
             </Button>
@@ -157,6 +205,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                       key={project.id}
                       project={project}
                       onClick={() => handleProjectClick(project)}
+                      onSettingsClick={() => handleSettingsClick(project)}
                       onTogglePin={(e) => togglePin(project.id, e)}
                       t={t}
                     />
@@ -185,7 +234,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                   </div>
 
                   {/* New Project Button */}
-                  <Button variant="action">
+                  <Button variant="action" onClick={() => setCreateDialogOpen(true)}>
                     <Plus className="w-4 h-4" />
                     {t('new_project')}
                   </Button>
@@ -195,6 +244,8 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
               <ProjectsTable
                 projects={unpinnedProjects}
                 onProjectClick={handleProjectClick}
+                onSettingsClick={handleSettingsClick}
+                onDeleteClick={(project) => setDeleteDialogProject(project)}
                 onTogglePin={togglePin}
                 t={t}
               />
@@ -202,6 +253,23 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
           </div>
         )}
       </main>
+
+      <CreateProjectDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        workspaceId={workspaceId}
+        onSuccess={handleCreateProjectSuccess}
+      />
+
+      <DeleteProjectDialog
+        open={!!deleteDialogProject}
+        onOpenChange={(open) => !open && setDeleteDialogProject(null)}
+        project={deleteDialogProject}
+        workspaceId={workspaceId}
+        onConfirm={handleDeleteProjectSuccess}
+        onDeleted={handleDeleteProjectSuccess}
+        deleteProject={handleDeleteProject}
+      />
     </div>
   );
 }
@@ -210,11 +278,13 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
 function ProjectCard({
   project,
   onClick,
+  onSettingsClick,
   onTogglePin,
   t,
 }: {
   project: Project;
   onClick: () => void;
+  onSettingsClick: () => void;
   onTogglePin: (e: React.MouseEvent) => void;
   t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
@@ -223,13 +293,28 @@ function ProjectCard({
       onClick={onClick}
       className="relative group bg-surface border border-border rounded-md p-5 transition-colors duration-200 hover:bg-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
     >
-      <button
-        onClick={onTogglePin}
-        className="absolute top-4 right-4 p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
-        aria-label={t('actions.unpin')}
-      >
-        <Pin className="w-4 h-4 text-icon-default" />
-      </button>
+      <div className="absolute top-4 right-4 flex items-center gap-1">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSettingsClick();
+          }}
+          className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+          aria-label={t('actions.settings')}
+        >
+          <Settings className="w-4 h-4 text-icon-default" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePin(e);
+          }}
+          className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+          aria-label={t('actions.unpin')}
+        >
+          <Pin className="w-4 h-4 text-icon-default" />
+        </button>
+      </div>
 
       <div className="flex items-start gap-4 mb-4">
         <div className="w-10 h-10 rounded-sm bg-surface-high flex items-center justify-center">
@@ -268,11 +353,15 @@ function ProjectCard({
 function ProjectsTable({
   projects,
   onProjectClick,
+  onSettingsClick,
+  onDeleteClick,
   onTogglePin,
   t,
 }: {
   projects: Project[];
   onProjectClick: (project: Project) => void;
+  onSettingsClick: (project: Project) => void;
+  onDeleteClick: (project: Project) => void;
   onTogglePin: (projectId: string, e: React.MouseEvent) => void;
   t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
@@ -347,19 +436,43 @@ function ProjectsTable({
               <Eye className="w-4 h-4 text-icon-default" />
             </button>
             <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSettingsClick(row.original);
+              }}
               className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
               aria-label={t('actions.settings')}
             >
               <Settings className="w-4 h-4 text-icon-default" />
             </button>
-            <button className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50">
-              <MoreVertical className="w-4 h-4 text-icon-default" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  aria-label="More actions"
+                >
+                  <MoreVertical className="w-4 h-4 text-icon-default" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    onDeleteClick(row.original);
+                  }}
+                  className="text-error focus:text-error"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {t('actions.delete')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         ),
       }),
     ],
-    [onProjectClick, onTogglePin, t]
+    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, t]
   );
 
   const table = useReactTable({

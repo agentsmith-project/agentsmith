@@ -191,7 +191,7 @@ export function FileUploadDialog({
 
           {/* Actions */}
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={handleClose} disabled={uploading}>
+            <Button variant="ghost" onClick={handleClose} disabled={uploading}>
               Cancel
             </Button>
             <Button onClick={handleUpload} disabled={files.length === 0 || uploading}>

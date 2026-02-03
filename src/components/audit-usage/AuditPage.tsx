@@ -7,6 +7,7 @@ import { AuditFilters } from './AuditFilters';
 import { AuditTable } from './AuditTable';
 import { AuditDetailDrawer } from './AuditDetailDrawer';
 import { useAuditEvents } from '@/lib/hooks/use-audit-usage';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import type { AuditEvent, AuditListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -26,6 +27,8 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
+  const canReadAudit = useHasPermission('project:audit:read');
+
   const [filters, setFilters] = React.useState<AuditListParams>({
     ...DEFAULT_TIME_RANGE,
     page: 1,
@@ -37,7 +40,19 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
   const [selectedEvent, setSelectedEvent] = React.useState<AuditEvent | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
-  const { data, isLoading, error } = useAuditEvents(workspaceId, projectId, filters);
+  const { data, isLoading, error } = useAuditEvents(workspaceId, projectId, filters, {
+    enabled: canReadAudit,
+  });
+
+  if (!canReadAudit) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 p-6">
+        <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
+          <p className="text-sm text-tertiary">{t('permission_denied')}</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({

@@ -4,14 +4,17 @@
  * Custom hooks for Recipe API operations using React Query.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import { getApiClient, RecipeAPI } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
 import { handleErrorForToast } from '@/lib/api/errors';
 import type {
   Recipe,
-  RecipeMessage,
-  Artifact,
   CreateRecipeRequest,
   UpdateRecipeRequest,
   SendMessageRequest,
@@ -45,10 +48,10 @@ export function useRecipe(
   workspaceId: string,
   projectId: string,
   recipeId: string,
-) {
+): UseQueryResult<Recipe> {
   const recipeAPI = new RecipeAPI(getApiClient());
 
-  return useQuery({
+  return useQuery<Recipe>({
     queryKey: ['recipe', workspaceId, projectId, recipeId],
     queryFn: async () => {
       try {
@@ -91,14 +94,6 @@ export function useRecipe(
     },
     enabled: !!workspaceId && !!projectId && !!recipeId,
     retry: false, // Don't retry on 404
-    onError: (error: unknown) => {
-      // Don't show toast for 404 errors (recipe not found is handled in component)
-      if (error instanceof ApiError && error.errorCode === 'NOT_FOUND') {
-        console.error(`[useRecipe] Recipe not found: ${recipeId}`);
-        return;
-      }
-      handleErrorForToast(error, 'useRecipe');
-    },
   });
 }
 

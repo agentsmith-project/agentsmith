@@ -108,7 +108,7 @@ function JSONNode({
 }
 
 export function JSONViewer({ data, className }: JSONViewerProps) {
-  const [isAllExpanded, setIsAllExpanded] = React.useState(false);
+  const [_isAllExpanded, _setIsAllExpanded] = React.useState(false);
   const { handleError } = useErrorHandler();
 
   const handleCopy = () => {

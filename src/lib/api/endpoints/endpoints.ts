@@ -13,6 +13,7 @@ export interface CreateEndpointRequest {
   openai_model: string;
   type: 'openai' | 'anthropic' | 'custom';
   base_url: string;
+  credential_ref?: string;
   limits?: {
     max_requests_per_minute?: number;
     max_requests_per_day?: number;

@@ -38,15 +38,7 @@ export function useHasPermission(permission: string): boolean {
  * @returns true if user has at least one of the permissions, false otherwise
  */
 export function useHasAnyPermission(permissions: string[]): boolean {
-  // Create a stable key from permissions array to detect changes
-  const permissionsKey = useMemo(() => {
-    return permissions.join(',');
-  }, [permissions]);
-  
-  // Memoize the permissions array to ensure stable reference
-  const stablePermissions = useMemo(() => {
-    return permissions;
-  }, [permissionsKey]);
+  const stablePermissions = useMemo(() => permissions, [permissions]);
   
   // Use stable selector factory
   const selector = useMemo(
@@ -64,15 +56,7 @@ export function useHasAnyPermission(permissions: string[]): boolean {
  * @returns true if user has all of the permissions, false otherwise
  */
 export function useHasAllPermissions(permissions: string[]): boolean {
-  // Create a stable key from permissions array to detect changes
-  const permissionsKey = useMemo(() => {
-    return permissions.join(',');
-  }, [permissions]);
-  
-  // Memoize the permissions array to ensure stable reference
-  const stablePermissions = useMemo(() => {
-    return permissions;
-  }, [permissionsKey]);
+  const stablePermissions = useMemo(() => permissions, [permissions]);
   
   // Use stable selector factory
   const selector = useMemo(

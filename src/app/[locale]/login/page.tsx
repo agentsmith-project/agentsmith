@@ -4,10 +4,11 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { Topbar } from '@/components/app-shell/Topbar';
-import { useAuthStore } from '@/lib/stores/authStore';
+import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { Logo } from '@/components/app-shell/Logo';
 import {
   DropdownMenu,
@@ -25,7 +26,9 @@ const mockWorkspaces = [
 export default function LoginPage() {
   const router = useRouter();
   const params = useParams();
-  const { mockLogin } = useAuthStore();
+  const t = useTranslations('auth');
+  const hydrated = useAuthStoreHydration();
+  const { mockLogin, isAuthenticated, currentWorkspace } = useAuthStore();
 
   const [workspaceId, setWorkspaceId] = useState('ws_default');
   const [userEmail, setUserEmail] = useState('');
@@ -35,8 +38,16 @@ export default function LoginPage() {
   // Get locale from params
   const locale = (params?.locale as string) || 'en-US';
 
-  // If already authenticated and has a workspace, redirect to appropriate page
-  // Don't redirect if on login page (user might be selecting workspace)
+  // Redirect authenticated users to workspace/projects (persisted login state)
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated) return;
+    if (currentWorkspace) {
+      router.replace(`/${locale}/workspaces/${currentWorkspace.id}/projects`);
+    } else {
+      router.replace(`/${locale}/login/workspace`);
+    }
+  }, [hydrated, isAuthenticated, currentWorkspace, locale, router]);
+
   const handleQuickLogin = async () => {
     if (!userEmail.trim()) {
       return;
@@ -68,17 +79,17 @@ export default function LoginPage() {
               <Logo className="scale-150" />
             </div>
             <h1 className="text-2xl font-semibold text-foreground">
-              Welcome to MBOS
+              {t('welcome_title')}
             </h1>
             <p className="text-tertiary">
-              Intelligent Agent Platform
+              {t('welcome_subtitle')}
             </p>
           </div>
 
           {/* Login Card */}
           <div className="bg-surface border border-border rounded-md p-8">
             <h2 className="text-lg font-semibold text-foreground mb-6">
-              Sign in
+              {t('sign_in')}
             </h2>
 
             {/* Keycloak Login Button */}
@@ -86,7 +97,7 @@ export default function LoginPage() {
               className="w-full h-10 px-4 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200 mb-4"
               onClick={() => console.log('Keycloak login not configured')}
             >
-              Login with Keycloak
+              {t('login_with_keycloak')}
             </button>
 
             {/* Divider */}
@@ -95,7 +106,7 @@ export default function LoginPage() {
                 <div className="w-full border-t border-subtle"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-background text-tertiary">or</span>
+                <span className="px-2 bg-background text-tertiary">{t('or')}</span>
               </div>
             </div>
 
@@ -103,13 +114,13 @@ export default function LoginPage() {
             <div className="space-y-4">
               <div className="bg-surface-high border border-subtle rounded-md p-4">
                 <p className="text-sm text-tertiary mb-4 text-center">
-                  Development Mode Only
+                  {t('dev_mode')}
                 </p>
 
                 {/* Workspace Select */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-secondary mb-2">
-                    Workspace
+                    {t('workspace')}
                   </label>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -120,7 +131,7 @@ export default function LoginPage() {
                         <span className="flex items-center gap-2 min-w-0">
                           <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
                           <span className="truncate text-sm">
-                            {mockWorkspaces.find((ws) => ws.value === workspaceId)?.label || 'Select workspace'}
+                            {mockWorkspaces.find((ws) => ws.value === workspaceId)?.label || t('select_workspace_placeholder')}
                           </span>
                         </span>
                         <ChevronDown className="w-4 h-4 text-tertiary flex-shrink-0" />
@@ -142,13 +153,13 @@ export default function LoginPage() {
                 {/* User Email */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-secondary mb-2">
-                    User ID / Email
+                    {t('user_id_email')}
                   </label>
                   <input
                     type="text"
                     value={userEmail}
                     onChange={(e) => setUserEmail(e.target.value)}
-                    placeholder="user@example.com"
+                    placeholder={t('user_id_placeholder')}
                     className="w-full px-3 py-2 bg-surface-high border border-subtle rounded-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
                   />
                 </div>
@@ -159,14 +170,13 @@ export default function LoginPage() {
                   disabled={isLoggingIn || !userEmail.trim()}
                   className="w-full h-10 px-4 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isLoggingIn ? 'Signing in...' : 'Quick Login'}
+                  {isLoggingIn ? t('signing_in') : t('quick_login')}
                 </button>
               </div>
 
               {/* Development Notice */}
               <p className="text-xs text-tertiary text-center">
-                Mock authentication for development. In production, this will
-                be replaced with Keycloak OIDC.
+                {t('dev_notice')}
               </p>
             </div>
           </div>

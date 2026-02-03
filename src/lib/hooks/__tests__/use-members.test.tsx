@@ -2,40 +2,40 @@
  * Unit tests for use-members hooks
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { QuotaOverride } from '@/lib/api/types';
 
-// Create mock class inline in the vi.mock call
-const mockList = vi.fn().mockResolvedValue([]);
-const mockCreateInvite = vi.fn().mockResolvedValue({
-  invite_id: 'invite_123',
-  invite_url: 'https://example.com/invite',
-  expires_at: '2026-01-08T00:00:00Z',
-});
-const mockRemove = vi.fn().mockResolvedValue(undefined);
-const mockGetPermissions = vi.fn().mockResolvedValue({
-  role: 'developer',
-  permissions: ['project:read'],
-});
-const mockUpdatePermissions = vi.fn().mockResolvedValue(undefined);
-const mockGetQuotaOverrides = vi.fn().mockResolvedValue({});
-const mockUpdateQuotaOverrides = vi.fn().mockResolvedValue({});
-const mockGetResourceACL = vi.fn().mockResolvedValue({ owner_id: 'user_1', permissions: [] });
-const mockUpdateResourceACL = vi.fn().mockResolvedValue(undefined);
-const _mockListPermissionTemplates = vi.fn().mockResolvedValue([]);
-const _mockCreatePermissionTemplate = vi.fn().mockResolvedValue({});
-const _mockUpdatePermissionTemplate = vi.fn().mockResolvedValue({});
-const _mockDeletePermissionTemplate = vi.fn().mockResolvedValue(undefined);
-const _mockListQuotaTemplates = vi.fn().mockResolvedValue([]);
-const _mockCreateQuotaTemplate = vi.fn().mockResolvedValue({});
-const _mockUpdateQuotaTemplate = vi.fn().mockResolvedValue({});
-const _mockDeleteQuotaTemplate = vi.fn().mockResolvedValue(undefined);
-const _mockApplyQuotaTemplate = vi.fn().mockResolvedValue({ applied_count: 1 });
-const _mockGetChangeHistory = vi.fn().mockResolvedValue([]);
-
+// Mock the MemberAPI class and all its methods inline
 vi.mock('@/lib/api/endpoints/members', () => {
+  const mockList = vi.fn().mockResolvedValue([]);
+  const mockCreateInvite = vi.fn().mockResolvedValue({
+    invite_id: 'invite_123',
+    invite_url: 'https://example.com/invite',
+    expires_at: '2026-01-08T00:00:00Z',
+  });
+  const mockRemove = vi.fn().mockResolvedValue(undefined);
+  const mockGetPermissions = vi.fn().mockResolvedValue({
+    role: 'developer',
+    permissions: ['project:read'],
+  });
+  const mockUpdatePermissions = vi.fn().mockResolvedValue(undefined);
+  const mockGetQuotaOverrides = vi.fn().mockResolvedValue({});
+  const mockUpdateQuotaOverrides = vi.fn().mockResolvedValue({});
+  const mockGetResourceACL = vi.fn().mockResolvedValue({ owner_id: 'user_1', permissions: [] });
+  const mockUpdateResourceACL = vi.fn().mockResolvedValue(undefined);
+  const mockListPermissionTemplates = vi.fn().mockResolvedValue([]);
+  const mockCreatePermissionTemplate = vi.fn().mockResolvedValue({});
+  const mockUpdatePermissionTemplate = vi.fn().mockResolvedValue({});
+  const mockDeletePermissionTemplate = vi.fn().mockResolvedValue(undefined);
+  const mockListQuotaTemplates = vi.fn().mockResolvedValue([]);
+  const mockCreateQuotaTemplate = vi.fn().mockResolvedValue({});
+  const mockUpdateQuotaTemplate = vi.fn().mockResolvedValue({});
+  const mockDeleteQuotaTemplate = vi.fn().mockResolvedValue(undefined);
+  const mockApplyQuotaTemplate = vi.fn().mockResolvedValue({ applied_count: 1 });
+  const mockGetChangeHistory = vi.fn().mockResolvedValue([]);
+
   class MockMemberAPI {
     list = mockList;
     createInvite = mockCreateInvite;
@@ -46,21 +46,62 @@ vi.mock('@/lib/api/endpoints/members', () => {
     updateQuotaOverrides = mockUpdateQuotaOverrides;
     getResourceACL = mockGetResourceACL;
     updateResourceACL = mockUpdateResourceACL;
-    listPermissionTemplates = _mockListPermissionTemplates;
-    createPermissionTemplate = _mockCreatePermissionTemplate;
-    updatePermissionTemplate = _mockUpdatePermissionTemplate;
-    deletePermissionTemplate = _mockDeletePermissionTemplate;
-    listQuotaTemplates = _mockListQuotaTemplates;
-    createQuotaTemplate = _mockCreateQuotaTemplate;
-    updateQuotaTemplate = _mockUpdateQuotaTemplate;
-    deleteQuotaTemplate = _mockDeleteQuotaTemplate;
-    applyQuotaTemplate = _mockApplyQuotaTemplate;
-    getChangeHistory = _mockGetChangeHistory;
+    listPermissionTemplates = mockListPermissionTemplates;
+    createPermissionTemplate = mockCreatePermissionTemplate;
+    updatePermissionTemplate = mockUpdatePermissionTemplate;
+    deletePermissionTemplate = mockDeletePermissionTemplate;
+    listQuotaTemplates = mockListQuotaTemplates;
+    createQuotaTemplate = mockCreateQuotaTemplate;
+    updateQuotaTemplate = mockUpdateQuotaTemplate;
+    deleteQuotaTemplate = mockDeleteQuotaTemplate;
+    applyQuotaTemplate = mockApplyQuotaTemplate;
+    getChangeHistory = mockGetChangeHistory;
   }
+
   return {
     MemberAPI: MockMemberAPI,
   };
 });
+
+// Mock the getApiClient function
+vi.mock('@/lib/api/client', () => ({
+  getApiClient: vi.fn(() => ({})),
+}));
+
+// Mock the @/lib/api module to export MemberAPI
+vi.mock('@/lib/api', () => ({
+  getApiClient: vi.fn(() => ({})),
+  MemberAPI: vi.fn().mockImplementation(function() {
+    return {
+      list: vi.fn().mockResolvedValue([]),
+      createInvite: vi.fn().mockResolvedValue({
+        invite_id: 'invite_123',
+        invite_url: 'https://example.com/invite',
+        expires_at: '2026-01-08T00:00:00Z',
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+      getPermissions: vi.fn().mockResolvedValue({
+        role: 'developer',
+        permissions: ['project:read'],
+      }),
+      updatePermissions: vi.fn().mockResolvedValue(undefined),
+      getQuotaOverrides: vi.fn().mockResolvedValue({}),
+      updateQuotaOverrides: vi.fn().mockResolvedValue({}),
+      getResourceACL: vi.fn().mockResolvedValue({ owner_id: 'user_1', permissions: [] }),
+      updateResourceACL: vi.fn().mockResolvedValue(undefined),
+      listPermissionTemplates: vi.fn().mockResolvedValue([]),
+      createPermissionTemplate: vi.fn().mockResolvedValue({}),
+      updatePermissionTemplate: vi.fn().mockResolvedValue({}),
+      deletePermissionTemplate: vi.fn().mockResolvedValue(undefined),
+      listQuotaTemplates: vi.fn().mockResolvedValue([]),
+      createQuotaTemplate: vi.fn().mockResolvedValue({}),
+      updateQuotaTemplate: vi.fn().mockResolvedValue({}),
+      deleteQuotaTemplate: vi.fn().mockResolvedValue(undefined),
+      applyQuotaTemplate: vi.fn().mockResolvedValue({ applied_count: 1 }),
+      getChangeHistory: vi.fn().mockResolvedValue([]),
+    };
+  }),
+}));
 
 vi.mock('@/components/ui/toast', () => ({
   toast: {
@@ -148,7 +189,8 @@ describe('useCreateInvite', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
     expect(result.current.data).toEqual({
       invite_id: 'invite_123',
       invite_url: 'https://example.com/invite',
@@ -203,7 +245,7 @@ describe('useRemoveMember', () => {
       await result.current.mutateAsync(memberId);
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -249,7 +291,7 @@ describe('useUpdateMemberPermissions', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
   it('should update permissions with custom mode successfully', async () => {
@@ -270,7 +312,7 @@ describe('useUpdateMemberPermissions', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -288,7 +330,7 @@ describe('useApplyTemplateToMember', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
   it('should apply custom permissions to member successfully', async () => {
@@ -304,7 +346,7 @@ describe('useApplyTemplateToMember', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -324,7 +366,7 @@ describe('useBatchApplyPermissionTemplate', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
   it('should handle single member correctly', async () => {
@@ -339,7 +381,7 @@ describe('useBatchApplyPermissionTemplate', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -373,7 +415,7 @@ describe('useUpdateMemberQuotaOverrides', () => {
       await result.current.mutateAsync(updatedOverrides);
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -415,7 +457,7 @@ describe('useUpdateResourceACL', () => {
       await result.current.mutateAsync({ ops });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -445,7 +487,7 @@ describe('useCreatePermissionTemplate', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -464,7 +506,7 @@ describe('useUpdatePermissionTemplate', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -478,7 +520,7 @@ describe('useDeletePermissionTemplate', () => {
       await result.current.mutateAsync(templateId);
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -507,7 +549,7 @@ describe('useCreateQuotaTemplate', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -526,7 +568,7 @@ describe('useUpdateQuotaTemplate', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -540,7 +582,7 @@ describe('useDeleteQuotaTemplate', () => {
       await result.current.mutateAsync(templateId);
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
 
@@ -559,7 +601,7 @@ describe('useBatchApplyQuotaTemplate', () => {
       });
     });
 
-    expect(result.current.isSuccess).toBe(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual({ memberIds, appliedCount: 1 });
   });
 });

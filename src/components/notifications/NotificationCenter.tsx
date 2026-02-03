@@ -144,7 +144,7 @@ function NotificationItem({
             </p>
           )}
           <p className="text-xs text-tertiary mt-1">
-            {formatRelativeTime(new Date(notif.created_at))}
+            {formatRelativeTime(notif.created_at)}
           </p>
         </div>
       </div>

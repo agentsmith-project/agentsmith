@@ -71,7 +71,7 @@ export default function ProfilePage() {
       queryClient.invalidateQueries({ queryKey: ['me', 'profile'] });
       toast.success(t('saved'));
     },
-    onError: (err) => handleErrorForToast(err, { context: 'ProfilePage.save' }),
+    onError: (err) => handleErrorForToast(err, 'ProfilePage.save'),
   });
 
   const handleSave = () => saveMutation.mutate();

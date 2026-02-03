@@ -12,7 +12,7 @@ import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useWorkspaces } from './use-workspaces';
 import { useProjects } from './use-projects-queries';
-import { useAuthStoreHydration } from '@/lib/stores/authStore.new';
+import { useAuthStoreHydration } from '@/lib/stores/authStore';
 
 export function useSyncAuthFromUrl() {
   const params = useParams();

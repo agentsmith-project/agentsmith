@@ -4,12 +4,14 @@ import * as React from 'react';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { Logo } from './Logo';
 import { UserMenu } from './UserMenu';
-import { useAuthStore } from '@/lib/stores/authStore';
+import { useAuthStore, selectCurrentUser } from '@/lib/stores/authStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Globe, FolderKanban, ChevronDown } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useRouter, usePathname } from '@/lib/i18n/routing';
 import { useTranslations } from 'next-intl';
+import { useWorkspaces } from '@/lib/hooks/use-workspaces';
+import { useProjects, useProject } from '@/lib/hooks/use-projects-queries';
 import {
   Tooltip,
   TooltipContent,
@@ -22,78 +24,48 @@ interface TopbarProps {
 }
 
 export function Topbar({ className = '' }: TopbarProps) {
-  const { 
-    currentWorkspace, 
-    currentProject, 
-    workspaces, 
-    projects: allProjects, 
-    user,
-    setWorkspace,
-    setProject,
-    mockLogout,
-  } = useAuthStore();
+  const user = useAuthStore(selectCurrentUser);
+  const { clearAuth } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams();
   const locale = (params?.locale as string) || 'en-US';
   const t = useTranslations('nav');
 
-  // Filter projects for current workspace
-  const projects = React.useMemo(() => {
-    if (!currentWorkspace) return [];
-    return allProjects.filter((p) => p.workspace_id === currentWorkspace.id);
-  }, [allProjects, currentWorkspace]);
+  const workspaceId = params?.workspace as string | undefined;
+  const projectId = params?.project as string | undefined;
 
-  const handleWorkspaceChange = (workspaceId: string) => {
-    // Find the workspace object
-    const newWorkspace = workspaces?.find((ws) => ws.id === workspaceId);
-    if (!newWorkspace) {
-      console.error(`Workspace ${workspaceId} not found`);
-      return;
-    }
+  const { data: workspaces } = useWorkspaces();
+  const { data: projects } = useProjects(workspaceId || '');
+  const { data: currentProject } = useProject(workspaceId || '', projectId || '');
 
-    // Update store: set new workspace and clear current project
-    // This will automatically clear currentProject via setWorkspace
-    setWorkspace(newWorkspace);
-    // Note: We don't update projects here - projects should contain all projects
-    // Components will filter by currentWorkspace.id when needed
+  // Get current workspace from workspaces list
+  const currentWorkspace = React.useMemo(() => {
+    if (!workspaceId || !workspaces) return null;
+    return workspaces.find((ws) => ws.id === workspaceId) || null;
+  }, [workspaceId, workspaces]);
 
+  const handleWorkspaceChange = (newWorkspaceId: string) => {
     // Navigate to the new workspace's project list
-    router.push(`/workspaces/${workspaceId}/projects`);
+    router.push(`/workspaces/${newWorkspaceId}/projects`);
   };
 
-  const handleProjectChange = (projectId: string) => {
-    if (!currentWorkspace?.id) return;
-
-    // Find the project object from filtered projects (current workspace only)
-    const newProject = projects.find((p) => p.id === projectId);
-    if (!newProject) {
-      console.error(`Project ${projectId} not found in current workspace`);
-      return;
-    }
-
-    // Verify project belongs to current workspace (should always be true if filtered correctly)
-    if (newProject.workspace_id !== currentWorkspace.id) {
-      console.error(`Project ${projectId} does not belong to workspace ${currentWorkspace.id}`);
-      return;
-    }
-
-    // Update store: set new project
-    setProject(newProject);
+  const handleProjectChange = (newProjectId: string) => {
+    if (!workspaceId) return;
 
     // Navigate to the new project's overview
-    router.push(`/workspaces/${currentWorkspace.id}/projects/${projectId}/overview`);
+    router.push(`/workspaces/${workspaceId}/projects/${newProjectId}/overview`);
   };
 
   const handleGoToProjects = () => {
-    if (currentWorkspace?.id) {
-      router.push(`/workspaces/${currentWorkspace.id}/projects`);
+    if (workspaceId) {
+      router.push(`/workspaces/${workspaceId}/projects`);
     }
   };
 
   const handleLogoClick = () => {
-    if (currentWorkspace?.id) {
-      router.push(`/workspaces/${currentWorkspace.id}/projects`);
+    if (workspaceId) {
+      router.push(`/workspaces/${workspaceId}/projects`);
     }
   };
 
@@ -110,7 +82,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   };
 
   const handleLogout = () => {
-    mockLogout();
+    clearAuth();
     router.push(`/login`);
   };
 

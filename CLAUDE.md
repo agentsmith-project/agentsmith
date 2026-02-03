@@ -8,7 +8,7 @@ MBOS Frontend is the admin interface for the Microservices-Based Agent System. I
 
 **Tech Stack**: Next.js 15 (App Router), TypeScript 5.0, TailwindCSS, Radix UI, Zustand, React Query, next-intl
 
-**Workspace**: `/home/percy/works/mygithub/mbos-server/mbos_frontend`
+**Workspace**: `/home/percy/works/mygithub/mbos-server/mbos-frontend-v1`
 
 ## Common Commands
 

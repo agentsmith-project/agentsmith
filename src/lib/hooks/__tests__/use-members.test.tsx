@@ -5,48 +5,57 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { MemberPermissions, QuotaOverride, ResourceACL, PermissionTemplate, QuotaTemplate } from '@/lib/api/types';
-
-// Mock dependencies first, before importing the hooks
-vi.mock('@/lib/api/client', () => ({
-  getApiClient: vi.fn(() => ({
-    get: vi.fn(),
-    post: vi.fn(),
-    put: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
-  })),
-}));
+import type { QuotaOverride } from '@/lib/api/types';
 
 // Create mock class inline in the vi.mock call
+const mockList = vi.fn().mockResolvedValue([]);
+const mockCreateInvite = vi.fn().mockResolvedValue({
+  invite_id: 'invite_123',
+  invite_url: 'https://example.com/invite',
+  expires_at: '2026-01-08T00:00:00Z',
+});
+const mockRemove = vi.fn().mockResolvedValue(undefined);
+const mockGetPermissions = vi.fn().mockResolvedValue({
+  role: 'developer',
+  permissions: ['project:read'],
+});
+const mockUpdatePermissions = vi.fn().mockResolvedValue(undefined);
+const mockGetQuotaOverrides = vi.fn().mockResolvedValue({});
+const mockUpdateQuotaOverrides = vi.fn().mockResolvedValue({});
+const mockGetResourceACL = vi.fn().mockResolvedValue({ owner_id: 'user_1', permissions: [] });
+const mockUpdateResourceACL = vi.fn().mockResolvedValue(undefined);
+const _mockListPermissionTemplates = vi.fn().mockResolvedValue([]);
+const _mockCreatePermissionTemplate = vi.fn().mockResolvedValue({});
+const _mockUpdatePermissionTemplate = vi.fn().mockResolvedValue({});
+const _mockDeletePermissionTemplate = vi.fn().mockResolvedValue(undefined);
+const _mockListQuotaTemplates = vi.fn().mockResolvedValue([]);
+const _mockCreateQuotaTemplate = vi.fn().mockResolvedValue({});
+const _mockUpdateQuotaTemplate = vi.fn().mockResolvedValue({});
+const _mockDeleteQuotaTemplate = vi.fn().mockResolvedValue(undefined);
+const _mockApplyQuotaTemplate = vi.fn().mockResolvedValue({ applied_count: 1 });
+const _mockGetChangeHistory = vi.fn().mockResolvedValue([]);
+
 vi.mock('@/lib/api/endpoints/members', () => {
   class MockMemberAPI {
-    list = vi.fn().mockResolvedValue([]);
-    createInvite = vi.fn().mockResolvedValue({
-      invite_id: 'invite_123',
-      invite_url: 'https://example.com/invite',
-      expires_at: '2026-01-08T00:00:00Z',
-    });
-    remove = vi.fn().mockResolvedValue(undefined);
-    getPermissions = vi.fn().mockResolvedValue({
-      role: 'developer',
-      permissions: ['project:read'],
-    });
-    updatePermissions = vi.fn().mockResolvedValue(undefined);
-    getQuotaOverrides = vi.fn().mockResolvedValue({});
-    updateQuotaOverrides = vi.fn().mockResolvedValue({});
-    getResourceACL = vi.fn().mockResolvedValue({ owner_id: 'user_1', permissions: [] });
-    updateResourceACL = vi.fn().mockResolvedValue(undefined);
-    listPermissionTemplates = vi.fn().mockResolvedValue([]);
-    createPermissionTemplate = vi.fn().mockResolvedValue({});
-    updatePermissionTemplate = vi.fn().mockResolvedValue({});
-    deletePermissionTemplate = vi.fn().mockResolvedValue(undefined);
-    listQuotaTemplates = vi.fn().mockResolvedValue([]);
-    createQuotaTemplate = vi.fn().mockResolvedValue({});
-    updateQuotaTemplate = vi.fn().mockResolvedValue({});
-    deleteQuotaTemplate = vi.fn().mockResolvedValue(undefined);
-    applyQuotaTemplate = vi.fn().mockResolvedValue({ applied_count: 1 });
-    getChangeHistory = vi.fn().mockResolvedValue([]);
+    list = mockList;
+    createInvite = mockCreateInvite;
+    remove = mockRemove;
+    getPermissions = mockGetPermissions;
+    updatePermissions = mockUpdatePermissions;
+    getQuotaOverrides = mockGetQuotaOverrides;
+    updateQuotaOverrides = mockUpdateQuotaOverrides;
+    getResourceACL = mockGetResourceACL;
+    updateResourceACL = mockUpdateResourceACL;
+    listPermissionTemplates = _mockListPermissionTemplates;
+    createPermissionTemplate = _mockCreatePermissionTemplate;
+    updatePermissionTemplate = _mockUpdatePermissionTemplate;
+    deletePermissionTemplate = _mockDeletePermissionTemplate;
+    listQuotaTemplates = _mockListQuotaTemplates;
+    createQuotaTemplate = _mockCreateQuotaTemplate;
+    updateQuotaTemplate = _mockUpdateQuotaTemplate;
+    deleteQuotaTemplate = _mockDeleteQuotaTemplate;
+    applyQuotaTemplate = _mockApplyQuotaTemplate;
+    getChangeHistory = _mockGetChangeHistory;
   }
   return {
     MemberAPI: MockMemberAPI,
@@ -98,12 +107,6 @@ import {
   useMemberChangeHistory,
 } from '../use-members';
 
-// Import the mocked class for test usage
-import { MemberAPI } from '@/lib/api/endpoints/members';
-
-// Get the mock class prototype for spying
-const MockMemberAPI = MemberAPI as any;
-
 // Test constants
 const workspaceId = 'ws_test';
 const projectId = 'proj_test';
@@ -112,27 +115,6 @@ const templateId = 'template_test';
 const resourceId = 'endpoint_test';
 
 // Test data
-const mockMembers = [
-  {
-    id: 'member_1',
-    email: 'user1@example.com',
-    name: 'User One',
-    role: 'owner' as const,
-    permissions: ['project:*'],
-    status: 'active' as const,
-    joined_at: '2026-01-01T00:00:00Z',
-  },
-  {
-    id: 'member_2',
-    email: 'user2@example.com',
-    name: 'User Two',
-    role: 'developer' as const,
-    permissions: ['project:read', 'project:update'],
-    status: 'active' as const,
-    joined_at: '2026-01-02T00:00:00Z',
-  },
-];
-
 const mockQuotaOverrides: QuotaOverride = {
   max_endpoints: 10,
   max_agents: 5,

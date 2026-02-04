@@ -1,23 +1,8 @@
-/**
- * MSW Browser Setup
- *
- * Initialize MSW for browser environment
- */
-
 import { setupWorker } from 'msw/browser';
-import { handlers } from './handlers';
+import { handlers } from './index';
 
-let worker: ReturnType<typeof setupWorker> | null = null;
+export const worker = setupWorker(...handlers);
 
-export function initMSW() {
-  if (typeof window !== 'undefined' && !worker) {
-    worker = setupWorker(...handlers);
-    return worker.start({
-      // Suppress warnings for development-related unhandled requests
-      onUnhandledRequest: 'bypass',
-    });
-  }
-  return Promise.resolve();
+if (process.env.NEXT_PUBLIC_API_MOCK === 'true') {
+  worker.start({ onUnhandledRequest: 'bypass' });
 }
-
-export { worker };

@@ -1,0 +1,28 @@
+{
+  "auth": {
+    "user": { "id": "u_1", "email": "it@corp.com", "name": "IT Admin" },
+    "access_token": "atk_mock",
+    "refresh_token": "rtk_mock",
+    "expires_in": 3600
+  },
+  "workspaces": [
+    { "id": "ws_1", "name": "Corp Workspace", "role": "owner" }
+  ],
+  "workspace_members": [],
+  "projects": [],
+  "project_detail": {},
+  "join_requests": [],
+  "members": [],
+  "endpoints": [],
+  "endpoint_acl": [],
+  "agents": [],
+  "sources": [],
+  "userdata_summary": { "total_bytes": 0, "docdb_collections": 0, "vectordb_indexes": 0 },
+  "userdata_end_users": [],
+  "audit": [],
+  "usage": [],
+  "chat_sessions": [],
+  "chat_messages": [],
+  "recipes": [],
+  "artifacts": []
+}

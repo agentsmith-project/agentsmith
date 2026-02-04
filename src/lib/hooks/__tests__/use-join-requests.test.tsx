@@ -1,0 +1,59 @@
+import { describe, it, expect, vi } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const mockReject = vi.fn().mockResolvedValue(undefined);
+
+vi.mock('@/lib/api', () => ({
+  getApiClient: vi.fn(() => ({})),
+  MemberAPI: vi.fn().mockImplementation(function () {
+    return {
+      rejectJoinRequest: mockReject,
+      approveJoinRequest: vi.fn().mockResolvedValue(undefined),
+      listJoinRequests: vi.fn().mockResolvedValue([]),
+    };
+  }),
+}));
+
+vi.mock('@/components/ui/toast', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('@/lib/api/errors', () => ({
+  handleErrorForToast: vi.fn(),
+}));
+
+vi.mock('next-intl', () => ({
+  useTranslations: () => (key: string) => key,
+}));
+
+import { useRejectJoinRequest } from '../use-join-requests';
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  };
+}
+
+describe('useRejectJoinRequest', () => {
+  it('passes reject reason to API', async () => {
+    const { result } = renderHook(() => useRejectJoinRequest('ws_1', 'prj_1'), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ requestId: 'jr_1', reason: 'Not in scope' });
+    });
+
+    expect(mockReject).toHaveBeenCalledWith('ws_1', 'prj_1', 'jr_1', { reason: 'Not in scope' });
+  });
+});

@@ -4,6 +4,8 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/loading';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { CheckCircle, XCircle, Clock, UserPlus } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils/formatters';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
@@ -31,6 +33,9 @@ export function JoinRequestsTab({
   const canApprove = useHasPermission('project:join:approve');
   const approveMutation = useApproveJoinRequest(workspaceId, projectId);
   const rejectMutation = useRejectJoinRequest(workspaceId, projectId);
+  const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false);
+  const [rejectReason, setRejectReason] = React.useState('');
+  const [rejectTarget, setRejectTarget] = React.useState<JoinRequest | null>(null);
 
   const handleApprove = React.useCallback((requestId: string) => {
     if (onApprove) {
@@ -44,9 +49,19 @@ export function JoinRequestsTab({
     if (onReject) {
       onReject(requestId);
     } else {
-      rejectMutation.mutate(requestId);
+      const target = requests.find((r) => r.id === requestId) || null;
+      setRejectTarget(target);
+      setRejectReason('');
+      setRejectDialogOpen(true);
     }
-  }, [onReject, rejectMutation]);
+  }, [onReject, requests]);
+
+  const handleRejectConfirm = () => {
+    if (!rejectTarget) return;
+    if (!rejectReason.trim()) return;
+    rejectMutation.mutate({ requestId: rejectTarget.id, reason: rejectReason.trim() });
+    setRejectDialogOpen(false);
+  };
 
   if (loading) {
     return (
@@ -111,6 +126,37 @@ export function JoinRequestsTab({
           </div>
         </div>
       )}
+
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>{t('reject_title')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-tertiary">
+              {t('reject_description')}
+            </p>
+            <Input
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder={t('reject_placeholder')}
+              disabled={rejectMutation.isPending}
+            />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setRejectDialogOpen(false)}>
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleRejectConfirm}
+                disabled={!rejectReason.trim() || rejectMutation.isPending}
+              >
+                {t('confirm_reject')}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -183,6 +229,13 @@ function JoinRequestCard({
         <div className="bg-surface-high rounded-md p-3">
           <p className="text-xs text-tertiary mb-1">{t('reason')}</p>
           <p className="text-sm text-foreground">{request.reason}</p>
+        </div>
+      )}
+
+      {request.status === 'rejected' && request.reject_reason && (
+        <div className="bg-surface-high rounded-md p-3">
+          <p className="text-xs text-tertiary mb-1">{t('reject_reason')}</p>
+          <p className="text-sm text-foreground">{request.reject_reason}</p>
         </div>
       )}
 

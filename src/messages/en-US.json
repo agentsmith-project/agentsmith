@@ -826,7 +826,13 @@
       "reviewed_requests": "Reviewed Requests",
       "approve": "Approve",
       "reject": "Reject",
+      "reject_title": "Reject Join Request",
+      "reject_description": "Please provide a reason so the requester understands the decision.",
+      "reject_placeholder": "e.g. Not in scope for this project",
+      "confirm_reject": "Confirm Reject",
+      "cancel": "Cancel",
       "reason": "Reason",
+      "reject_reason": "Rejection Reason",
       "requested_at": "Requested",
       "reviewed_at": "Reviewed",
       "status": {

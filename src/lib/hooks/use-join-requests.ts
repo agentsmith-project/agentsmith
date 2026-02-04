@@ -59,8 +59,10 @@ export function useRejectJoinRequest(
   const t = useTranslations('members.join_requests');
 
   return useMutation({
-    mutationFn: async (requestId: string) => {
-      return getMemberAPI().rejectJoinRequest(workspaceId, projectId, requestId);
+    mutationFn: async (payload: { requestId: string; reason?: string }) => {
+      return getMemberAPI().rejectJoinRequest(workspaceId, projectId, payload.requestId, {
+        reason: payload.reason,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['join-requests', workspaceId, projectId] });

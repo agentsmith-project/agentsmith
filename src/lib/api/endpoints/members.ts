@@ -43,6 +43,7 @@ export interface JoinRequest {
   requested_at: string;
   reviewed_at?: string;
   reviewed_by?: string;
+  reject_reason?: string;
 }
 
 export interface CreateInviteRequest {
@@ -126,10 +127,15 @@ export class MemberAPI {
   /**
    * Reject a join request
    */
-  async rejectJoinRequest(workspaceId: string, projectId: string, joinId: string): Promise<void> {
+  async rejectJoinRequest(
+    workspaceId: string,
+    projectId: string,
+    joinId: string,
+    data?: { reason?: string }
+  ): Promise<void> {
     return this.client.post<void>(
       `/workspaces/${workspaceId}/projects/${projectId}/join-requests/${joinId}/reject`,
-      {}
+      data ?? {}
     );
   }
 

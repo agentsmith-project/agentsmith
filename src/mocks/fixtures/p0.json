@@ -11,7 +11,31 @@
   "workspace_members": [],
   "projects": [],
   "project_detail": {},
-  "join_requests": [],
+  "join_requests": [
+    {
+      "id": "jr_1",
+      "project_id": "proj_001",
+      "user_id": "u_2",
+      "user_email": "dev2@corp.com",
+      "user_name": "Dev Two",
+      "reason": "Need access to debug agent responses",
+      "status": "pending",
+      "requested_at": "2026-02-01T08:00:00Z"
+    },
+    {
+      "id": "jr_2",
+      "project_id": "proj_001",
+      "user_id": "u_3",
+      "user_email": "dev3@corp.com",
+      "user_name": "Dev Three",
+      "reason": "Want to view usage logs",
+      "status": "rejected",
+      "requested_at": "2026-01-28T08:00:00Z",
+      "reviewed_at": "2026-01-29T08:00:00Z",
+      "reviewed_by": "u_1",
+      "reject_reason": "Not assigned to this project"
+    }
+  ],
   "members": [],
   "endpoints": [],
   "endpoint_acl": [],

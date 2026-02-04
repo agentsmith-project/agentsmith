@@ -826,7 +826,13 @@
       "reviewed_requests": "已处理申请",
       "approve": "批准",
       "reject": "拒绝",
+      "reject_title": "拒绝加入申请",
+      "reject_description": "请填写拒绝原因，便于对方理解。",
+      "reject_placeholder": "例如：当前项目不在申请范围",
+      "confirm_reject": "确认拒绝",
+      "cancel": "取消",
       "reason": "申请原因",
+      "reject_reason": "拒绝原因",
       "requested_at": "申请时间",
       "reviewed_at": "处理时间",
       "status": {

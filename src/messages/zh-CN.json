@@ -44,6 +44,7 @@
     "chat": "聊天",
     "workbench": "工作台",
     "sources": "文件",
+    "userdata": "UserData",
     "agents": "智能体",
     "endpoints": "端点",
     "credentials": "凭据",
@@ -465,6 +466,16 @@
     "acl_remove_deny": "移除",
     "detail_limits": "限制",
     "detail_credential": "凭据"
+  },
+  "userdata": {
+    "title": "UserData",
+    "subtitle": "管理终端用户存储与索引",
+    "summary_title": "项目汇总",
+    "summary_storage": "总存储（字节）",
+    "summary_docdb": "DocDB 集合数",
+    "summary_vectordb": "VectorDB 索引数",
+    "end_users_title": "终端用户",
+    "end_users_empty": "暂无终端用户"
   },
   "audit": {
     "title": "审计",

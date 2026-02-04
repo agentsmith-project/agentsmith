@@ -380,6 +380,19 @@ export interface UsageKPI {
   tokens_yesterday?: number; // optional, for trend
 }
 
+export interface UserdataSummary {
+  total_bytes: number;
+  docdb_collections: number;
+  vectordb_indexes: number;
+}
+
+export interface UserdataEndUser {
+  id: string;
+  storage_bytes: number;
+  docdb_collections: number;
+  vectordb_indexes: number;
+}
+
 export interface AuditListParams extends PaginationParams {
   start_time: string; // ISO 8601, 必选
   end_time: string; // ISO 8601, 必选

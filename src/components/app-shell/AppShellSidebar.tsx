@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Bot,
   Server,
+  Database,
   Key,
   Users,
   Settings as SettingsIcon,
@@ -35,6 +36,7 @@ const PROJECT_MENU_ITEMS = [
   { icon: MessageSquare, labelKey: 'chat', href: 'chat' },
   { icon: Wrench, labelKey: 'workbench', href: 'workbench' },
   { icon: FolderOpen, labelKey: 'sources', href: 'sources' },
+  { icon: Database, labelKey: 'userdata', href: 'userdata', permission: 'userdata:storage:read' as const },
   { icon: Bot, labelKey: 'agents', href: 'agents' },
   { icon: Server, labelKey: 'endpoints', href: 'endpoints' },
   { icon: Key, labelKey: 'credentials', href: 'credentials' },
@@ -60,6 +62,7 @@ export function AppShellSidebar({
   const [collapsed, setCollapsed] = React.useState(false);
   const canReadAudit = useHasPermission('project:audit:read');
   const canReadUsage = useHasPermission('project:usage:read');
+  const canReadUserdata = useHasPermission('userdata:storage:read');
 
   const workspaceId = params?.workspace as string | undefined;
   const projectId = params?.project as string | undefined;
@@ -70,6 +73,7 @@ export function AppShellSidebar({
         if ('permission' in item && item.permission) {
           if (item.permission === 'project:audit:read') return canReadAudit;
           if (item.permission === 'project:usage:read') return canReadUsage;
+          if (item.permission === 'userdata:storage:read') return canReadUserdata;
         }
         return true;
       })

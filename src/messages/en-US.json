@@ -44,6 +44,7 @@
     "chat": "Chat",
     "workbench": "Workbench",
     "sources": "Sources",
+    "userdata": "UserData",
     "agents": "Agents",
     "endpoints": "Endpoints",
     "credentials": "Credentials",
@@ -465,6 +466,16 @@
     "acl_remove_deny": "Remove",
     "detail_limits": "Limits",
     "detail_credential": "Credential"
+  },
+  "userdata": {
+    "title": "UserData",
+    "subtitle": "Manage end-user storage and indexes",
+    "summary_title": "Project Summary",
+    "summary_storage": "Total Storage (bytes)",
+    "summary_docdb": "DocDB Collections",
+    "summary_vectordb": "VectorDB Indexes",
+    "end_users_title": "End Users",
+    "end_users_empty": "No end users found"
   },
   "audit": {
     "title": "Audit",

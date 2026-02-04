@@ -37,7 +37,20 @@
     }
   ],
   "members": [],
-  "endpoints": [],
+  "endpoints": [
+    {
+      "id": "ep_1",
+      "project_id": "proj_001",
+      "name": "OpenAI Main",
+      "description": "Primary endpoint",
+      "openai_model": "gpt-4o",
+      "type": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "status": "active",
+      "created_at": "2026-02-01T00:00:00Z",
+      "updated_at": "2026-02-01T00:00:00Z"
+    }
+  ],
   "endpoint_acl": [],
   "agents": [],
   "sources": [],

@@ -10,12 +10,13 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
-import { Server, Plus, Trash2, Globe } from 'lucide-react';
+import { Server, Plus, Trash2, Globe, Pencil, Power, PowerOff } from 'lucide-react';
 import { getApiClient, EndpointAPI } from '@/lib/api';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
 import { CreateEndpointDialog } from '@/components/endpoints/CreateEndpointDialog';
+import { EditEndpointDialog } from '@/components/endpoints/EditEndpointDialog';
 
 interface EndpointsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -35,10 +36,13 @@ interface Endpoint {
 const columnHelper = createColumnHelper<Endpoint>();
 
 type DeleteEndpointMutation = UseMutationResult<void, Error, string>;
+type UpdateEndpointMutation = UseMutationResult<Endpoint, Error, { endpointId: string; data: { status?: 'active' | 'disabled' } }>;
 
 function createEndpointColumns(
   t: (key: string) => string,
-  deleteEndpointMutation: DeleteEndpointMutation
+  deleteEndpointMutation: DeleteEndpointMutation,
+  updateEndpointMutation: UpdateEndpointMutation,
+  onEdit: (endpoint: Endpoint) => void
 ) {
   return [
   columnHelper.accessor('name', {
@@ -104,6 +108,36 @@ function createEndpointColumns(
     cell: (info) => (
       <div className="flex items-center gap-2">
         <button
+          onClick={() => onEdit(info.row.original)}
+          className="p-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors"
+          aria-label={t('action_edit')}
+          title={t('action_edit')}
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() =>
+            updateEndpointMutation.mutate({
+              endpointId: info.row.original.id,
+              data: { status: info.row.original.status === 'active' ? 'disabled' : 'active' },
+            })
+          }
+          disabled={updateEndpointMutation.isPending}
+          className="p-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
+          aria-label={
+            info.row.original.status === 'active' ? t('action_disable') : t('action_enable')
+          }
+          title={
+            info.row.original.status === 'active' ? t('action_disable') : t('action_enable')
+          }
+        >
+          {info.row.original.status === 'active' ? (
+            <PowerOff className="w-4 h-4 text-warning" />
+          ) : (
+            <Power className="w-4 h-4 text-success" />
+          )}
+        </button>
+        <button
           onClick={() => deleteEndpointMutation.mutate(info.row.original.id)}
           disabled={deleteEndpointMutation.isPending}
           className="p-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
@@ -121,6 +155,8 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   const queryClient = useQueryClient();
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
 
 
   useEffect(() => {
@@ -145,13 +181,29 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     },
   });
 
+  const updateEndpointMutation = useMutation({
+    mutationFn: (args: { endpointId: string; data: { status?: 'active' | 'disabled' } }) =>
+      endpointAPI.update(workspaceId, projectId, args.endpointId, args.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['endpoints', workspaceId, projectId] });
+    },
+  });
+
   const invalidateEndpoints = () => {
     queryClient.invalidateQueries({ queryKey: ['endpoints', workspaceId, projectId] });
   };
 
   const endpoints = endpointsData?.items || [];
 
-  const endpointColumns = createEndpointColumns(t, deleteEndpointMutation);
+  const endpointColumns = createEndpointColumns(
+    t,
+    deleteEndpointMutation,
+    updateEndpointMutation,
+    (endpoint) => {
+      setSelectedEndpoint(endpoint);
+      setEditDialogOpen(true);
+    }
+  );
 
   const table = useReactTable({
     data: endpoints,
@@ -206,6 +258,20 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
         projectId={projectId}
         onSuccess={invalidateEndpoints}
       />
+
+      {selectedEndpoint && (
+        <EditEndpointDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          endpoint={selectedEndpoint}
+          onSuccess={() => {
+            invalidateEndpoints();
+            setEditDialogOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

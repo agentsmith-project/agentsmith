@@ -10,7 +10,7 @@ import { useMemo } from 'react';
 import { useProject } from './use-projects-queries';
 import { useParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
-import { validateProjectWithMembership, type ProjectWithMembership as ValidationProjectWithMembership } from '@/lib/utils/validation';
+import { validateProjectWithMembership, type ProjectWithMembership as ValidationProjectWithMembership } from '@/lib/utils/validation-zod';
 
 // Re-export type for backward compatibility
 export type ProjectWithMembership = ValidationProjectWithMembership;

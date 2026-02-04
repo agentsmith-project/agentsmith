@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateProjectWithMembership } from '../validation';
+import { validateProjectWithMembership } from '../validation-zod';
 
 describe('validateProjectWithMembership', () => {
   it('should validate a valid project with membership', () => {

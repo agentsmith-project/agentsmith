@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { UsagePage as UsagePageComponent } from '@/components/audit-usage/UsagePage';
 import { useAuthStore } from '@/lib/stores/authStore';
+import { useProject } from '@/lib/hooks/use-projects-queries';
+import { validateProjectWithMembership } from '@/lib/utils/validation-zod';
 
 interface UsagePageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -14,6 +16,9 @@ export default function UsagePage({ params }: UsagePageProps) {
     project: string;
   } | null>(null);
   const currentUser = useAuthStore((s) => s.user);
+  const workspaceId = resolvedParams?.workspace ?? '';
+  const projectId = resolvedParams?.project ?? '';
+  const { data: currentProject } = useProject(workspaceId, projectId);
 
   useEffect(() => {
     params.then((p) =>
@@ -25,13 +30,16 @@ export default function UsagePage({ params }: UsagePageProps) {
     return <div className="p-6">Loading...</div>;
   }
 
-  // TODO: Lock end_user_id filter for user role when membership API is integrated
-  const defaultEndUserId = undefined;
+  const validatedProject = currentProject
+    ? validateProjectWithMembership(currentProject)
+    : null;
+  const defaultEndUserId =
+    validatedProject?.role === 'user' ? currentUser?.id : undefined;
 
   return (
     <UsagePageComponent
-      workspaceId={resolvedParams.workspace}
-      projectId={resolvedParams.project}
+      workspaceId={workspaceId}
+      projectId={projectId}
       defaultEndUserId={defaultEndUserId}
       currentUserId={currentUser?.id}
     />

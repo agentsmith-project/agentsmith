@@ -24,6 +24,16 @@ export interface UseRecipeSSEOptions {
   maxReconnectAttempts?: number;
 }
 
+/**
+ * Stable refs to prevent callback dependencies from causing reconnections
+ */
+interface CallbackRefs {
+  onMessage?: UseRecipeSSEOptions['onMessage'];
+  onArtifact?: UseRecipeSSEOptions['onArtifact'];
+  onRecipeUpdate?: UseRecipeSSEOptions['onRecipeUpdate'];
+  onError?: UseRecipeSSEOptions['onError'];
+}
+
 export function useRecipeSSE(
   workspaceId: string,
   projectId: string,
@@ -47,6 +57,24 @@ export function useRecipeSSE(
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
+
+  // Store callbacks in refs to prevent them from causing reconnection cycles
+  const callbacksRef = useRef<CallbackRefs>({
+    onMessage,
+    onArtifact,
+    onRecipeUpdate,
+    onError,
+  });
+
+  // Update refs when callbacks change
+  useEffect(() => {
+    callbacksRef.current = {
+      onMessage,
+      onArtifact,
+      onRecipeUpdate,
+      onError,
+    };
+  }, [onMessage, onArtifact, onRecipeUpdate, onError]);
 
   const connect = useCallback(() => {
     if (!enabled || !workspaceId || !projectId || !recipeId) {
@@ -85,19 +113,13 @@ export function useRecipeSSE(
 
         switch (data.type) {
           case 'message':
-            if (onMessage) {
-              onMessage(data.data as RecipeMessage);
-            }
+            callbacksRef.current.onMessage?.(data.data as RecipeMessage);
             break;
           case 'artifact':
-            if (onArtifact) {
-              onArtifact(data.data as Artifact);
-            }
+            callbacksRef.current.onArtifact?.(data.data as Artifact);
             break;
           case 'recipe_update':
-            if (onRecipeUpdate) {
-              onRecipeUpdate(data.data as Recipe);
-            }
+            callbacksRef.current.onRecipeUpdate?.(data.data as Recipe);
             break;
           case 'error':
             const errorData = data.data as { message: string; code?: string };
@@ -105,43 +127,48 @@ export function useRecipeSSE(
             if (errorData.code) {
               (error as Error & { code?: string }).code = errorData.code;
             }
-            if (onError) {
-              onError(error);
-            }
+            callbacksRef.current.onError?.(error);
             break;
         }
-      } catch (error) {
-        console.error('Failed to parse SSE event:', error);
-        if (onError) {
-          onError(error instanceof Error ? error : new Error('Failed to parse SSE event'));
-        }
+      } catch (err) {
+        console.error('Failed to parse SSE event:', err);
+        callbacksRef.current.onError?.(
+          err instanceof Error ? err : new Error('Failed to parse SSE event')
+        );
       }
     };
 
     eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error);
-      setConnectionStatus('reconnecting');
+      // Check the EventSource readyState to determine the nature of the error
+      // readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSED
+      const readyState = eventSource.readyState;
 
-      // Close the connection
+      // Only log if there's a real error, not just a normal reconnection
+      if (readyState === EventSource.CLOSED) {
+        console.warn('SSE connection closed, will attempt reconnect');
+      }
+
+      // Close the connection to clean up
       eventSource.close();
       eventSourceRef.current = null;
 
-      // Attempt to reconnect
+      // Attempt to reconnect if we haven't exceeded max attempts
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+        setConnectionStatus('reconnecting');
         reconnectAttemptsRef.current += 1;
         reconnectTimeoutRef.current = setTimeout(() => {
           connect();
         }, reconnectInterval);
       } else {
         setConnectionStatus('error');
-        if (onError) {
-          onError(new Error('Max reconnection attempts reached'));
-        }
+        callbacksRef.current.onError?.(
+          new Error(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`)
+        );
       }
     };
 
     eventSourceRef.current = eventSource;
-  }, [enabled, workspaceId, projectId, recipeId, onMessage, onArtifact, onRecipeUpdate, onError, reconnectInterval, maxReconnectAttempts]);
+  }, [enabled, workspaceId, projectId, recipeId, reconnectInterval, maxReconnectAttempts]);
 
   useEffect(() => {
     if (enabled) {
@@ -157,6 +184,7 @@ export function useRecipeSSE(
         eventSourceRef.current = null;
       }
       setConnectionStatus('disconnected');
+      reconnectAttemptsRef.current = 0;
     };
   }, [enabled, connect]);
 

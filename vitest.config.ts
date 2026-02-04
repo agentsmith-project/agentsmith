@@ -11,6 +11,8 @@ export default defineConfig({
     include: ['**/__tests__/**/*.{test,spec}.{js,ts,tsx}', '**/*.{test,spec}.{js,ts,tsx}'],
     exclude: [
       'node_modules/',
+      '.worktrees/',
+      '**/.worktrees/**',
       'dist/',
       '.next/',
       'e2e/',

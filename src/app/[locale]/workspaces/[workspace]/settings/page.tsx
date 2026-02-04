@@ -6,13 +6,14 @@ import { useTranslations } from 'next-intl';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
-import { useWorkspace } from '@/lib/hooks/use-workspaces';
+import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 
 export default function WorkspaceSettingsPage() {
   const params = useParams();
   const t = useTranslations('settings');
   const workspaceId = params?.workspace as string;
   const { data: currentWorkspace } = useWorkspace(workspaceId);
+  const { data: members = [] } = useWorkspaceMembers(workspaceId);
   useSyncAuthFromUrl();
 
   const workspace = currentWorkspace || { id: workspaceId, name: workspaceId };
@@ -40,8 +41,23 @@ export default function WorkspaceSettingsPage() {
           </div>
         </div>
 
-        <div className="mt-6 p-6 rounded-md border border-subtle bg-surface-high">
-          <p className="text-tertiary text-sm">Workspace members and advanced settings coming soon.</p>
+        <div className="mt-6 p-6 rounded-md border border-border bg-surface">
+          <h2 className="font-semibold text-foreground mb-4">Workspace Members</h2>
+          {members.length === 0 ? (
+            <p className="text-tertiary text-sm">No members yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {members.map((member) => (
+                <div key={member.id} className="flex items-center justify-between rounded-md border border-subtle bg-surface-high px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-primary truncate">{member.name}</p>
+                    <p className="text-xs text-tertiary truncate">{member.email}</p>
+                  </div>
+                  <span className="text-xs text-tertiary capitalize">{member.role}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>

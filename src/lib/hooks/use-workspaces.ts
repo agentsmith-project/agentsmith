@@ -12,6 +12,7 @@ import { WorkspaceAPI } from '@/lib/api/endpoints/workspaces';
 export const workspaceKeys = {
   all: ['workspaces'] as const,
   detail: (id: string) => ['workspaces', id] as const,
+  members: (id: string) => ['workspaces', id, 'members'] as const,
 };
 
 /**
@@ -39,6 +40,22 @@ export function useWorkspace(id: string) {
       const client = getApiClient();
       const api = new WorkspaceAPI(client);
       return api.get(id);
+    },
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Get workspace members by workspace ID
+ */
+export function useWorkspaceMembers(id: string) {
+  return useQuery({
+    queryKey: workspaceKeys.members(id),
+    queryFn: async () => {
+      const client = getApiClient();
+      const api = new WorkspaceAPI(client);
+      return api.listMembers(id);
     },
     enabled: !!id,
     staleTime: 60_000,

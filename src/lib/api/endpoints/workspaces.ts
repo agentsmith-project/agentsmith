@@ -4,7 +4,7 @@
  * Typed API functions for workspace operations.
  */
 
-import type { Workspace } from '../types';
+import type { Workspace, WorkspaceMember } from '../types';
 import type { ApiClient } from '../client';
 
 export class WorkspaceAPI {
@@ -23,5 +23,15 @@ export class WorkspaceAPI {
    */
   async get(id: string): Promise<Workspace> {
     return this.client.get<Workspace>(`/workspaces/${id}`);
+  }
+
+  /**
+   * List members in a workspace
+   */
+  async listMembers(id: string): Promise<WorkspaceMember[]> {
+    const response = await this.client.get<{ items: WorkspaceMember[]; total: number }>(
+      `/workspaces/${id}/members`
+    );
+    return response.items;
   }
 }

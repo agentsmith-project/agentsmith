@@ -40,6 +40,16 @@ export interface Workspace {
   updated_at: string;
 }
 
+export interface WorkspaceMember {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  role: 'owner' | 'admin' | 'developer' | 'user';
+  status: 'active' | 'blocked' | 'removed';
+  joined_at: string;
+}
+
 export interface Project {
   id: string;
   workspace_id: string;

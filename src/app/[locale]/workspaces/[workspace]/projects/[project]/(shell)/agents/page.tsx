@@ -12,7 +12,7 @@ import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/re
 import { useTranslations } from 'next-intl';
 import { Bot, Plus, Key, Pencil, Power, PowerOff } from 'lucide-react';
 import { getApiClient, AgentAPI } from '@/lib/api';
-import type { Agent } from '@/lib/api/types';
+import type { Agent, AgentDiagnostics } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -20,6 +20,7 @@ import { DataTable } from '@/components/ui/data-table';
 import { AgentKeysDialog } from '@/components/api-keys/AgentKeysDialog';
 import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { EditAgentDialog } from '@/components/agents/EditAgentDialog';
+import { AgentDiagnosticsPanel } from '@/components/agents/AgentDiagnosticsPanel';
 
 interface AgentsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -195,6 +196,8 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogAgent, setEditDialogAgent] = useState<Agent | null>(null);
   const [keysDialogAgent, setKeysDialogAgent] = useState<Agent | null>(null);
+  const [detailsAgent, setDetailsAgent] = useState<Agent | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
@@ -209,6 +212,13 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     queryKey: ['agents', workspaceId, projectId],
     queryFn: () => agentAPI.list(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId,
+  });
+
+  const { data: diagnosticsData, isLoading: diagnosticsLoading } = useQuery({
+    queryKey: ['agents', workspaceId, projectId, detailsAgent?.id, 'diagnostics'],
+    queryFn: () =>
+      detailsAgent ? agentAPI.getDiagnostics(workspaceId, projectId, detailsAgent.id) : Promise.resolve(null),
+    enabled: !!detailsAgent && !!workspaceId && !!projectId,
   });
 
   const invalidateAgents = () => {
@@ -233,7 +243,11 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     t,
     updateAgentMutation,
     (agent) => setKeysDialogAgent(agent),
-    (agent) => setEditDialogAgent(agent)
+    (agent) => {
+      setEditDialogAgent(agent);
+      setDetailsAgent(agent);
+      setDetailsOpen(true);
+    }
   );
 
   const table = useReactTable({
@@ -276,6 +290,39 @@ export default function AgentsPage({ params }: AgentsPageProps) {
         />
       ) : (
         <DataTable table={table} />
+      )}
+
+      {detailsAgent && detailsOpen && (
+        <div className="mt-6 rounded-md border border-border bg-surface p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">{t('detail_title')}</h2>
+              <p className="text-sm text-tertiary">{detailsAgent.name}</p>
+            </div>
+            <button
+              className="text-sm text-tertiary hover:text-primary"
+              onClick={() => setDetailsOpen(false)}
+            >
+              {t('cancel')}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-tertiary">{t('mode_external')}</p>
+              <p className="text-foreground capitalize">{detailsAgent.mode}</p>
+            </div>
+            <div>
+              <p className="text-xs text-tertiary">{t('interaction_mode')}</p>
+              <p className="text-foreground capitalize">{detailsAgent.interaction_mode ?? '—'}</p>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium text-foreground mb-2">{t('detail_diagnostics')}</h3>
+            <AgentDiagnosticsPanel diagnostics={diagnosticsData as AgentDiagnostics | null} loading={diagnosticsLoading} />
+          </div>
+        </div>
       )}
 
       <CreateAgentDialog

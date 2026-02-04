@@ -92,6 +92,16 @@ export interface AgentInternalStats {
   desired_replicas?: number;
 }
 
+export interface AgentDiagnostics {
+  last_error?: string;
+  last_error_at?: string;
+  retry_backoff_sec?: number;
+  restarts?: number;
+  queue_depth?: number;
+  cpu_percent?: number;
+  memory_mb?: number;
+}
+
 /** Expected interaction mode: chat, workbench, or both */
 export type AgentInteractionMode = 'chat' | 'workbench' | 'both';
 

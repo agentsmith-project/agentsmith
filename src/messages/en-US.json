@@ -375,6 +375,7 @@
     "detail_general": "General",
     "detail_keys": "Keys",
     "detail_diagnostics": "Diagnostics",
+    "detail_diagnostics_empty": "No diagnostics available.",
     "detail_config": "Config"
   },
   "credentials": {

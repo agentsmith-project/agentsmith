@@ -375,6 +375,7 @@
     "detail_general": "基本信息",
     "detail_keys": "密钥管理",
     "detail_diagnostics": "诊断信息",
+    "detail_diagnostics_empty": "暂无诊断信息。",
     "detail_config": "配置"
   },
   "credentials": {

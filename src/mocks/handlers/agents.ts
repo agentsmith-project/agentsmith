@@ -3,4 +3,5 @@ import p0 from '../fixtures/p0.json';
 
 export const agentHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/agents', () => HttpResponse.json({ items: p0.agents })),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/agents/:id/diagnostics', () => HttpResponse.json(p0.agent_diagnostics)),
 ];

@@ -4,7 +4,7 @@
  * Typed API functions for agent operations.
  */
 
-import type { Agent, AgentInteractionMode, AgentServiceKey, CreateAgentKeyResponse, PaginationParams, PaginatedResponse } from '../types';
+import type { Agent, AgentDiagnostics, AgentInteractionMode, AgentServiceKey, CreateAgentKeyResponse, PaginationParams, PaginatedResponse } from '../types';
 import type { ApiClient } from '../client';
 
 export interface CreateAgentRequest {
@@ -95,6 +95,15 @@ export class AgentAPI {
    */
   async delete(workspaceId: string, projectId: string, agentId: string): Promise<void> {
     return this.client.delete<void>(`/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}`);
+  }
+
+  /**
+   * Get diagnostics for an agent
+   */
+  async getDiagnostics(workspaceId: string, projectId: string, agentId: string): Promise<AgentDiagnostics> {
+    return this.client.get<AgentDiagnostics>(
+      `/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/diagnostics`
+    );
   }
 
   /**

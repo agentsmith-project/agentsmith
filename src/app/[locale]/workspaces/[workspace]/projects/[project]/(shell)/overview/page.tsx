@@ -15,7 +15,7 @@ import { useTranslations } from 'next-intl';
 import { UsageAPI, AuditAPI } from '@/lib/api';
 import { getApiClient } from '@/lib/api';
 import { validateUsageKPI } from '@/lib/api/validators';
-import { formatNumber } from '@/lib/utils/formatters';
+import { formatBytes, formatNumber } from '@/lib/utils/formatters';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import {
   Select,
@@ -39,6 +39,15 @@ function getTimeRange(preset: TimeRangePreset): { start_time: string; end_time: 
     start_time: start.toISOString(),
     end_time: end.toISOString(),
   };
+}
+
+function calculateTrend(current: number, previous?: number) {
+  if (!previous || previous === 0) return undefined;
+  const delta = ((current - previous) / previous) * 100;
+  return {
+    value: `${Math.abs(delta).toFixed(1)}%`,
+    direction: delta >= 0 ? 'up' : 'down',
+  } as const;
 }
 
 export default function OverviewPage() {
@@ -90,6 +99,9 @@ export default function OverviewPage() {
     requests_today: 0,
     errors_today: 0,
   };
+  const requestsTrend = calculateTrend(kpi.requests_today, kpi.requests_yesterday);
+  const errorsTrend = calculateTrend(kpi.errors_today, kpi.errors_yesterday);
+  const tokensTrend = calculateTrend(kpi.tokens_today ?? 0, kpi.tokens_yesterday);
 
   // Activity timeline items (will be replaced with real audit data)
   const activityItems = auditEvents?.items.map((event) => ({
@@ -126,36 +138,28 @@ export default function OverviewPage() {
           icon={Activity}
           label={t('kpi.requests_today')}
           value={formatNumber(kpi.requests_today)}
-          trend={kpi.requests_yesterday !== undefined ? {
-            value: `${((kpi.requests_today - kpi.requests_yesterday) / kpi.requests_yesterday * 100).toFixed(1)}%`,
-            direction: kpi.requests_today >= kpi.requests_yesterday ? 'up' : 'down',
-          } : undefined}
+          trend={requestsTrend}
           vsLastPeriodLabel={t('kpi.vs_last_period')}
         />
         <KPICard
           icon={AlertCircle}
           label={t('kpi.errors_today')}
           value={formatNumber(kpi.errors_today)}
-          trend={kpi.errors_yesterday !== undefined ? {
-            value: `${((kpi.errors_today - kpi.errors_yesterday) / kpi.errors_yesterday * 100).toFixed(1)}%`,
-            direction: kpi.errors_today >= kpi.errors_yesterday ? 'up' : 'down',
-          } : undefined}
+          trend={errorsTrend}
           vsLastPeriodLabel={t('kpi.vs_last_period')}
         />
-        {kpi.tokens_today !== undefined && (
-          <KPICard
-            icon={Clock}
-            label={t('kpi.tokens_today')}
-            value={formatNumber(kpi.tokens_today)}
-          />
-        )}
-        {kpi.userdata_bytes !== undefined && (
-          <KPICard
-            icon={Wifi}
-            label={t('kpi.userdata_storage')}
-            value={formatNumber(kpi.userdata_bytes)}
-          />
-        )}
+        <KPICard
+          icon={Clock}
+          label={t('kpi.tokens_today')}
+          value={formatNumber(kpi.tokens_today, { defaultValue: '--' })}
+          trend={tokensTrend}
+          vsLastPeriodLabel={t('kpi.vs_last_period')}
+        />
+        <KPICard
+          icon={Wifi}
+          label={t('kpi.userdata_storage')}
+          value={formatBytes(kpi.userdata_bytes, { defaultValue: '--' })}
+        />
       </div>
 
       {/* Project Navigation */}

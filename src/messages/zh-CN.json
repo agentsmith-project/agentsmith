@@ -582,6 +582,14 @@
     "general_help": "项目基础元数据。可见性与加入策略控制谁可查看和加入项目。",
     "runtime_help": "智能体行为参数。智能体可在智能体级别覆盖。更改在智能体下次获取运行时配置时生效。",
     "governance_help": "每成员配额、限流与护栏。更改影响所有成员。成员配额覆盖可为每个用户定制。",
+    "governance_form": {
+      "guardrails": "防护规则",
+      "content_filter": "启用内容过滤",
+      "pii_detection": "启用 PII 检测",
+      "rate_limit": "限流",
+      "max_rpm": "每分钟最大请求数",
+      "max_tokens_per_request": "单次请求最大 Token"
+    },
     "limits_help": "资源级聚合限制（不区分用户）。每个 Endpoint/KB 可在资源级别覆盖。未设置 = 无限制。"
   },
   "user_keys": {

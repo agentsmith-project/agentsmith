@@ -582,6 +582,14 @@
     "general_help": "Basic project metadata. Visibility and join policy control who can see and join the project.",
     "runtime_help": "Agent behavior parameters. Agents may override at agent level. Changes take effect when agents next fetch runtime config.",
     "governance_help": "Per-member quotas, rate limits, and guardrails. Changes affect all members. Member quota overrides can customize per user.",
+    "governance_form": {
+      "guardrails": "Guardrails",
+      "content_filter": "Enable content filtering",
+      "pii_detection": "Enable PII detection",
+      "rate_limit": "Rate Limits",
+      "max_rpm": "Max requests per minute",
+      "max_tokens_per_request": "Max tokens per request"
+    },
     "limits_help": "Resource-level aggregate limits (not per user). Each Endpoint/KB can override at resource level. Unset = no limit."
   },
   "user_keys": {

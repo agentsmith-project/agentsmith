@@ -138,7 +138,7 @@ export function useRecipeSSE(
       }
     };
 
-    eventSource.onerror = (error) => {
+    eventSource.onerror = (_error) => {
       // Check the EventSource readyState to determine the nature of the error
       // readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSED
       const readyState = eventSource.readyState;

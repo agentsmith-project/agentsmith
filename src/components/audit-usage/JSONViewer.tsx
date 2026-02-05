@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Copy, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -108,6 +109,7 @@ function JSONNode({
 }
 
 export function JSONViewer({ data, className }: JSONViewerProps) {
+  const t = useTranslations('common');
   const [_isAllExpanded, _setIsAllExpanded] = React.useState(false);
   const { handleError } = useErrorHandler();
 
@@ -115,7 +117,7 @@ export function JSONViewer({ data, className }: JSONViewerProps) {
     try {
       const jsonString = JSON.stringify(data, null, 2);
       navigator.clipboard.writeText(jsonString);
-      toast.success('Copied JSON to clipboard');
+      toast.success(t('copied'));
     } catch (error) {
       handleError(error, { logContext: 'JSONViewer.copy', fallbackMessage: 'Failed to copy JSON' });
     }

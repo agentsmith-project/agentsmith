@@ -18,6 +18,8 @@ import {
 } from './use-sources';
 import { useErrorHandler } from './use-error-handler';
 import { toast } from '@/components/ui/toast';
+import { SourcesAPI, getApiClient } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 import type { AIReadyStatus } from '@/lib/api/types';
 
 export interface UseSourcesListOptions {
@@ -88,7 +90,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
 
     const interval = setInterval(() => {
       queryClient.invalidateQueries({
-        queryKey: ['sources', workspaceId, projectId],
+        queryKey: queryKeys.sources.list(workspaceId, projectId),
       });
     }, 3000); // Poll every 3 seconds
 
@@ -169,7 +171,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
     setFilesToDelete(null);
     setSelectedFileIds([]);
     if (failed > 0) {
-      toast.error(`Failed to delete ${failed} file(s)`);
+      toast.error(t('batch_delete_failed', { count: failed }));
     }
   }, [filesToDelete, deleteMutation, workspaceId, projectId]);
 
@@ -211,9 +213,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
   // Handle download
   const handleDownload = useCallback(async (fileId: string) => {
     try {
-      const sourcesAPI = new (require('@/lib/api')).SourcesAPI(
-        (require('@/lib/api')).getApiClient(),
-      );
+      const sourcesAPI = new SourcesAPI(getApiClient());
       const blob = await sourcesAPI.download(workspaceId, projectId, fileId);
 
       // Create download link
@@ -228,7 +228,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast.success('File downloaded successfully');
+      toast.success(t('file_download_success'));
     } catch (error) {
       handleError(error, { logContext: 'SourcesPage.download' });
     }

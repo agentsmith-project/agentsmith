@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MBOS Frontend is the admin interface for the Microservices-Based Agent System. It provides workspace/project isolation, intelligent agent management, and multilingual support (English/Chinese).
 
-**Tech Stack**: Next.js 15 (App Router), TypeScript 5.0, TailwindCSS, Radix UI, Zustand, React Query, next-intl
+**Tech Stack**: Next.js 15 (App Router), TypeScript 5.9, TailwindCSS, Radix UI, Zustand, React Query, next-intl
 
-**Workspace**: `/home/percy/works/mygithub/mbos-server/mbos-frontend-v1`
+**Workspace**: `/home/percy/works/mbos-server-v1/mbos-frontend-v1`
 
 ## Common Commands
 
@@ -19,15 +19,26 @@ npm run build            # Production build
 npm run start            # Production server
 npm run lint             # ESLint
 
-# Testing
+# Unit Tests (Vitest)
+npm run test             # Run unit tests
+npm run test:ui          # Vitest with UI
+npm run test:run         # Run tests without UI
+npm run test:coverage    # Test coverage report
+
+# E2E Tests (Playwright)
 npm run test:e2e         # Playwright end-to-end tests
 npm run test:e2e:ui      # Playwright with UI
 npm run test:e2e:debug   # Playwright debug mode
-npm run test:integration # Integration tests
+
+# Integration Tests
+npm run test:integration # Integration tests (bash script)
 
 # Component Documentation
 npm run storybook        # Start Storybook (port 6006)
 npm run build-storybook  # Build Storybook static
+
+# OpenAPI Types
+npm run openapi:generate # Generate TypeScript types from OpenAPI spec
 ```
 
 ## Architecture
@@ -74,8 +85,6 @@ Hierarchical structure: User → Workspace → Project
 1. **Workspace change** → Automatically clears `currentProject`, filters projects by `workspace_id`, navigates to project list
 2. **Project change** → Updates `currentProject`, navigates to `/overview`
 3. **URL navigation** → `useSyncAuthFromUrl` syncs store from URL params (handles deep links, browser history)
-
-See `docs/workspace-project-state-management.md` for complete state logic.
 
 ### Architecture (Post-Refactoring 2026-02-03)
 
@@ -155,8 +164,7 @@ Key tokens (use these, not arbitrary colors):
 
 Tailwind classes map to tokens via `tailwind.config.js`.
 
-See `DESIGN_SYSTEM.md` for reference. The authoritative design doc is at:
-`/home/percy/works/mygithub/mbos-server/文档/UXUI/2026-01-31-视觉设计系统-v1.md`
+See `DESIGN_SYSTEM.md` and `docs/UXUI/00-设计系统/视觉设计系统-v1.md` for reference.
 
 ## Internationalization (i18n)
 
@@ -165,7 +173,7 @@ See `DESIGN_SYSTEM.md` for reference. The authoritative design doc is at:
 - **Message files**: `src/messages/en-US.json`, `src/messages/zh-CN.json`
 - **Usage**: `const t = useTranslations('namespace');` then `{t('key')}`
 
-**Rules** (from `docs/I18N_INTERN_GUIDE.md`):
+**Rules** (from `docs/UXUI/01-通用规范/2026-02-03-i18n-内部指南-v1.md`):
 - Keys use `snake_case`
 - One key per meaning (reuse across project)
 - Common strings in `common` namespace
@@ -191,9 +199,43 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
 
 - `DEVELOPMENT.md` - Development setup and troubleshooting
 - `DESIGN_SYSTEM.md` - Design tokens and style guardrails
-- `docs/workspace-project-state-management.md` - Workspace/project state logic
-- `docs/I18N_INTERN_GUIDE.md` - i18n implementation guide
-- `docs/components.md` - Component documentation
+- `docs/UXUI/2026-02-05-前端-testid-规范.md` - Test ID conventions
+- `docs/UXUI/01-通用规范/2026-02-03-i18n-内部指南-v1.md` - i18n implementation guide
+- `docs/UXUI/00-设计系统/视觉设计系统-v1.md` - Authoritative design system reference
+- `scripts/openapi/` - OpenAPI type generation utilities
+- `scripts/capture-screenshots.ts` - Screenshot capture script for documentation
+
+## Testing
+
+### Unit Tests (Vitest)
+- **Framework**: Vitest with jsdom environment
+- **Location**: `**/__tests__/**/*.{test,spec}.{js,ts,tsx}` and `**/*.{test,spec}.{js,ts,tsx}`
+- **Coverage thresholds**: 40% statements, 35% branches, 40% functions, 45% lines
+- **Globals**: Enabled (describe, it, expect available globally)
+- **Path alias**: `@/*` maps to `./src/*`
+
+### E2E Tests (Playwright)
+- **Location**: `e2e/` directory
+- **Projects**:
+  - `smoke` - Smoke tests (smoke.spec.ts)
+  - `chromium` - Full E2E tests (excludes smoke)
+- **Timeouts**: 15s test timeout, 10s action/navigation timeouts
+- **Test selector convention**: Use `data-testid` attributes (see below)
+
+### Test ID Convention
+
+Use `data-testid` attributes for stable test selectors. Format: `scope__element__state`
+
+Examples:
+- `login__submit`, `projects__create-button`, `agents__row`
+- `page-state__error`, `workbench__recipe-header`
+
+Rules:
+- Must be stable (not depend on text/styles)
+- Must be unique per page
+- Apply to: key buttons, table rows, panels, dialogs, page states
+
+See: `docs/UXUI/2026-02-05-前端-testid-规范.md`
 
 ## Development Notes
 
@@ -201,4 +243,6 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
 - MSW for API mocking in development (quick login for testing)
 - Permission system: String-based (e.g., `'project:*'`, `'project:read'`)
 - Storybook for component development and documentation
+- Path aliases: `@/*`, `@/components/*`, `@/lib/*`, `@/app/*`, `@/types/*`
+- TypeScript strict mode enabled
 - Always prefer editing existing files over creating new ones

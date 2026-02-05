@@ -5,7 +5,9 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
 import { getApiClient, SourcesAPI } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 import type { SourcesListParams } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { handleErrorForToast } from '@/lib/api/errors';
@@ -21,7 +23,7 @@ export function useSources(
   const sourcesAPI = new SourcesAPI(getApiClient());
 
   return useQuery({
-    queryKey: ['sources', workspaceId, projectId, params],
+    queryKey: queryKeys.sources.list(workspaceId, projectId, params),
     queryFn: () => sourcesAPI.list(workspaceId, projectId, params),
     enabled: !!workspaceId && !!projectId,
     staleTime: 10000, // 10 seconds
@@ -39,7 +41,7 @@ export function useSourceFile(
   const sourcesAPI = new SourcesAPI(getApiClient());
 
   return useQuery({
-    queryKey: ['source', workspaceId, projectId, fileId],
+    queryKey: queryKeys.sources.detail(workspaceId, projectId, fileId),
     queryFn: () => sourcesAPI.get(workspaceId, projectId, fileId),
     enabled: !!workspaceId && !!projectId && !!fileId,
   });
@@ -52,7 +54,7 @@ export function useQuota(workspaceId: string, projectId: string) {
   const sourcesAPI = new SourcesAPI(getApiClient());
 
   return useQuery({
-    queryKey: ['quota', workspaceId, projectId],
+    queryKey: queryKeys.quota.detail(workspaceId, projectId),
     queryFn: () => sourcesAPI.getQuota(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 30000, // 30 seconds
@@ -65,6 +67,7 @@ export function useQuota(workspaceId: string, projectId: string) {
 export function useUploadFile() {
   const queryClient = useQueryClient();
   const sourcesAPI = new SourcesAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   return useMutation({
     mutationFn: ({
@@ -80,12 +83,12 @@ export function useUploadFile() {
     }) => sourcesAPI.upload(workspaceId, projectId, file, onProgress),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['sources', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
         queryKey: ['quota', variables.workspaceId, variables.projectId],
       });
-      toast.success('File uploaded successfully');
+      toast.success(t('upload_success'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useUploadFile');
@@ -99,6 +102,7 @@ export function useUploadFile() {
 export function useDeleteFile() {
   const queryClient = useQueryClient();
   const sourcesAPI = new SourcesAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   return useMutation({
     mutationFn: ({
@@ -114,12 +118,12 @@ export function useDeleteFile() {
     }) => sourcesAPI.delete(workspaceId, projectId, fileId, deleteAIReady),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['sources', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
         queryKey: ['quota', variables.workspaceId, variables.projectId],
       });
-      toast.success('File deleted successfully');
+      toast.success(t('delete_success'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useDeleteFile');
@@ -133,6 +137,7 @@ export function useDeleteFile() {
 export function useAIReadyActions() {
   const queryClient = useQueryClient();
   const sourcesAPI = new SourcesAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   const start = useMutation({
     mutationFn: ({
@@ -146,12 +151,12 @@ export function useAIReadyActions() {
     }) => sourcesAPI.startAIReady(workspaceId, projectId, fileId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['sources', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['source', variables.workspaceId, variables.projectId, variables.fileId],
+        queryKey: queryKeys.sources.detail(variables.workspaceId, variables.projectId, variables.fileId),
       });
-      toast.success('AIReady started');
+      toast.success(t('ai_ready_started'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useAIReadyActions.start');
@@ -170,12 +175,12 @@ export function useAIReadyActions() {
     }) => sourcesAPI.cancelAIReady(workspaceId, projectId, fileId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['sources', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['quota', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
       });
-      toast.success('AIReady cancelled');
+      toast.success(t('ai_ready_cancelled'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useAIReadyActions.cancel');
@@ -194,9 +199,9 @@ export function useAIReadyActions() {
     }) => sourcesAPI.retryAIReady(workspaceId, projectId, fileId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['sources', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
-      toast.success('AIReady retry started');
+      toast.success(t('ai_ready_retry_started'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useAIReadyActions.retry');
@@ -212,6 +217,7 @@ export function useAIReadyActions() {
 export function useBatchAIReadyActions() {
   const queryClient = useQueryClient();
   const sourcesAPI = new SourcesAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   const batchStart = useMutation({
     mutationFn: ({
@@ -225,26 +231,26 @@ export function useBatchAIReadyActions() {
     }) => sourcesAPI.batchStartAIReady(workspaceId, projectId, fileIds),
     onSuccess: (response, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['sources', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['quota', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
       });
-      
+
       // Show detailed results if available
       const successCount = response.jobs?.filter((j) => j.status !== 'failed').length || variables.fileIds.length;
       const failedCount = response.jobs?.filter((j) => j.status === 'failed').length || 0;
-      
+
       if (failedCount > 0) {
         toast.warning(
-          `Started AIReady for ${successCount} file(s), ${failedCount} failed`,
+          t('ai_ready_batch_failed', { error: `${failedCount} failed` }),
         );
       } else {
-        toast.success(`Started AIReady for ${successCount} file(s)`);
+        toast.success(t('ai_ready_batch_started', { count: successCount.toString() }));
       }
     },
     onError: (error: Error) => {
-      toast.error(`Failed to start batch AIReady: ${error.message}`);
+      toast.error(t('ai_ready_batch_failed', { error: error.message }));
     },
   });
 
@@ -260,22 +266,22 @@ export function useBatchAIReadyActions() {
     }) => sourcesAPI.batchCancelAIReady(workspaceId, projectId, fileIds),
     onSuccess: (response, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['sources', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['quota', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
       });
-      
+
       // Show detailed results if available
       const successCount = response.jobs?.filter((j) => j.status === 'cancelled').length || variables.fileIds.length;
       const failedCount = response.jobs?.filter((j) => j.status === 'failed').length || 0;
-      
+
       if (failedCount > 0) {
         toast.warning(
-          `Cancelled AIReady for ${successCount} file(s), ${failedCount} failed`,
+          t('ai_ready_batch_cancelled', { successCount: successCount.toString(), failedCount: failedCount.toString() }),
         );
       } else {
-        toast.success(`Cancelled AIReady for ${successCount} file(s)`);
+        toast.success(t('ai_ready_batch_cancelled_success', { count: successCount.toString() }));
       }
     },
     onError: (error: unknown) => {

@@ -15,6 +15,17 @@ vi.mock('@/lib/api', () => ({
   }),
 }));
 
+vi.mock('@/lib/query-keys', () => ({
+  queryKeys: {
+    joinRequests: {
+      list: vi.fn((ws: string, prj: string) => ['join-requests', ws, prj]),
+    },
+    members: {
+      list: vi.fn((ws: string, prj: string) => ['members', ws, prj]),
+    },
+  },
+}));
+
 vi.mock('@/components/ui/toast', () => ({
   toast: {
     success: vi.fn(),

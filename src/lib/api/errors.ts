@@ -5,6 +5,7 @@
  */
 
 import type { ErrorResponse } from './types';
+import { toast } from '@/components/ui/toast';
 
 // ============================================================
 // Error Types
@@ -13,8 +14,8 @@ import type { ErrorResponse } from './types';
 export class APIError extends Error {
   constructor(
     public errorCode: string,
-    public message: string,
-    public requestId: string,
+    message: string,
+    public requestId?: string,
     public statusCode?: number,
     public details?: Record<string, unknown>
   ) {
@@ -180,13 +181,8 @@ export function formatErrorForToast(error: APIError | Error, t?: (key: string) =
  * This can be used in React Query onError callbacks where hooks can't be used
  */
 export function handleErrorForToast(error: unknown, context?: string): void {
-  // Use synchronous imports - toast and ApiError are already available
-  // This avoids async issues in callbacks
-  const { toast } = require('@/components/ui/toast');
-  const { ApiError } = require('./client');
-  
-  if (error instanceof ApiError) {
-    const message = formatErrorForToast(error as Error);
+  if (error instanceof APIError) {
+    const message = formatErrorForToast(error);
     toast.error(message);
     if (context) {
       console.error(`[${context}]`, error);
@@ -294,3 +290,4 @@ export function getErrorSuggestions(error: APIError): string[] {
 
   return suggestions;
 }
+

@@ -12,6 +12,7 @@ import {
 } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { getApiClient, MemberAPI } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 import { toast } from '@/components/ui/toast';
 import { handleErrorForToast } from '@/lib/api/errors';
 import type {
@@ -39,8 +40,8 @@ export function useCreateInvite(workspaceId: string, projectId: string) {
       return getMemberAPI().createInvite(workspaceId, projectId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['members', workspaceId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ['join-requests', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.joinRequests.list(workspaceId, projectId) });
       toast.success(t('create_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useCreateInvite'),
@@ -52,7 +53,7 @@ export function useCreateInvite(workspaceId: string, projectId: string) {
  */
 export function useMembers(workspaceId: string, projectId: string) {
   return useQuery({
-    queryKey: ['members', workspaceId, projectId],
+    queryKey: queryKeys.members.list(workspaceId, projectId),
     queryFn: () => getMemberAPI().list(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 30 * 1000,
@@ -71,7 +72,7 @@ export function useRemoveMember(workspaceId: string, projectId: string) {
       return getMemberAPI().remove(workspaceId, projectId, memberId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['members', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
       toast.success(t('remove_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useRemoveMember'),
@@ -87,7 +88,7 @@ export function useMemberPermissions(
   memberId: string
 ): UseQueryResult<MemberPermissions> {
   return useQuery<MemberPermissions>({
-    queryKey: ['member-permissions', workspaceId, projectId, memberId],
+    queryKey: queryKeys.members.permissions(workspaceId, projectId, memberId),
     queryFn: () => getMemberAPI().getPermissions(workspaceId, projectId, memberId),
     enabled: !!workspaceId && !!projectId && !!memberId,
     staleTime: 30 * 1000,
@@ -114,8 +115,8 @@ export function useUpdateMemberPermissions(
       return getMemberAPI().updatePermissions(workspaceId, projectId, memberId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['members', workspaceId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ['member-permissions', workspaceId, projectId, memberId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.permissions(workspaceId, projectId, memberId) });
       toast.success(t('update_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useUpdateMemberPermissions'),
@@ -147,9 +148,9 @@ export function useApplyTemplateToMember(workspaceId: string, projectId: string)
       });
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['members', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
       queryClient.invalidateQueries({
-        queryKey: ['member-permissions', workspaceId, projectId, variables.memberId],
+        queryKey: queryKeys.members.permissions(workspaceId, projectId, variables.memberId),
       });
       toast.success(t('apply_success'));
     },
@@ -185,10 +186,10 @@ export function useBatchApplyPermissionTemplate(workspaceId: string, projectId: 
       return { memberIds };
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['members', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
       for (const memberId of data.memberIds) {
         queryClient.invalidateQueries({
-          queryKey: ['member-permissions', workspaceId, projectId, memberId],
+          queryKey: queryKeys.members.permissions(workspaceId, projectId, memberId),
         });
       }
       const count = data.memberIds.length;
@@ -209,7 +210,7 @@ export function useMemberQuotaOverrides(
   memberId: string
 ): UseQueryResult<QuotaOverride> {
   return useQuery<QuotaOverride>({
-    queryKey: ['member-quota-overrides', workspaceId, projectId, memberId],
+    queryKey: queryKeys.members.quotaOverrides(workspaceId, projectId, memberId),
     queryFn: () => getMemberAPI().getQuotaOverrides(workspaceId, projectId, memberId),
     enabled: !!workspaceId && !!projectId && !!memberId,
     staleTime: 30 * 1000,
@@ -228,7 +229,7 @@ export function useMemberQuotaOverridesHistory(
 ): UseQueryResult<{ items: QuotaOverrideHistoryItem[]; total: number; page: number; page_size: number }> {
   const enabled = options?.enabled !== false && !!workspaceId && !!projectId && !!memberId;
   return useQuery({
-    queryKey: ['member-quota-overrides-history', workspaceId, projectId, memberId, params?.page, params?.page_size],
+    queryKey: queryKeys.members.quotaOverridesHistory(workspaceId, projectId, memberId, params?.page ?? 1, params?.page_size ?? 20),
     queryFn: () => getMemberAPI().getQuotaOverridesHistory(workspaceId, projectId, memberId, params),
     enabled,
     staleTime: 30 * 1000,
@@ -251,8 +252,8 @@ export function useUpdateMemberQuotaOverrides(
       return getMemberAPI().updateQuotaOverrides(workspaceId, projectId, memberId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['member-quota-overrides', workspaceId, projectId, memberId] });
-      queryClient.invalidateQueries({ queryKey: ['member-quota-overrides-history', workspaceId, projectId, memberId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.quotaOverrides(workspaceId, projectId, memberId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.quotaOverridesHistory(workspaceId, projectId, memberId, 1, 20) });
       toast.success(t('update_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useUpdateMemberQuotaOverrides'),
@@ -269,7 +270,7 @@ export function useResourceACL(
   resourceId: string
 ): UseQueryResult<ResourceACL> {
   return useQuery<ResourceACL>({
-    queryKey: ['resource-acl', workspaceId, projectId, resourceType, resourceId],
+    queryKey: queryKeys.resourceAcl.detail(workspaceId, projectId, resourceType, resourceId),
     queryFn: () =>
       getMemberAPI().getResourceACL(workspaceId, projectId, resourceType, resourceId),
     enabled: !!workspaceId && !!projectId && !!resourceId,
@@ -302,7 +303,7 @@ export function useUpdateResourceACL(
       return getMemberAPI().updateResourceACL(workspaceId, projectId, resourceType, resourceId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['resource-acl', workspaceId, projectId, resourceType, resourceId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.resourceAcl.detail(workspaceId, projectId, resourceType, resourceId) });
       toast.success(t('update_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useUpdateResourceACL'),
@@ -317,7 +318,7 @@ export function usePermissionTemplates(
   projectId: string
 ): UseQueryResult<PermissionTemplate[]> {
   return useQuery<PermissionTemplate[]>({
-    queryKey: ['permission-templates', workspaceId, projectId],
+    queryKey: queryKeys.permissionTemplates.list(workspaceId, projectId),
     queryFn: () => getMemberAPI().listPermissionTemplates(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -336,7 +337,7 @@ export function useCreatePermissionTemplate(workspaceId: string, projectId: stri
       return getMemberAPI().createPermissionTemplate(workspaceId, projectId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['permission-templates', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.permissionTemplates.list(workspaceId, projectId) });
       toast.success(t('create_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useCreatePermissionTemplate'),
@@ -359,7 +360,7 @@ export function useUpdatePermissionTemplate(
       return getMemberAPI().updatePermissionTemplate(workspaceId, projectId, templateId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['permission-templates', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.permissionTemplates.list(workspaceId, projectId) });
       toast.success(t('update_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useUpdatePermissionTemplate'),
@@ -378,7 +379,7 @@ export function useDeletePermissionTemplate(workspaceId: string, projectId: stri
       return getMemberAPI().deletePermissionTemplate(workspaceId, projectId, templateId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['permission-templates', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.permissionTemplates.list(workspaceId, projectId) });
       toast.success(t('delete_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useDeletePermissionTemplate'),
@@ -393,7 +394,7 @@ export function useQuotaTemplates(
   projectId: string
 ): UseQueryResult<QuotaTemplate[]> {
   return useQuery<QuotaTemplate[]>({
-    queryKey: ['quota-templates', workspaceId, projectId],
+    queryKey: queryKeys.quotaTemplates.list(workspaceId, projectId),
     queryFn: () => getMemberAPI().listQuotaTemplates(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 5 * 60 * 1000,
@@ -416,7 +417,7 @@ export function useCreateQuotaTemplate(workspaceId: string, projectId: string) {
       return getMemberAPI().createQuotaTemplate(workspaceId, projectId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['quota-templates', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.quotaTemplates.list(workspaceId, projectId) });
       toast.success(t('quota_create_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useCreateQuotaTemplate'),
@@ -447,8 +448,9 @@ export function useUpdateQuotaTemplate(
         data
       );
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['quota-templates', workspaceId, projectId] });
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.quotaTemplates.list(workspaceId, projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.quotaTemplates.detail(workspaceId, projectId, variables.templateId) });
       toast.success(t('quota_update_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useUpdateQuotaTemplate'),
@@ -467,7 +469,7 @@ export function useDeleteQuotaTemplate(workspaceId: string, projectId: string) {
       return getMemberAPI().deleteQuotaTemplate(workspaceId, projectId, templateId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['quota-templates', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.quotaTemplates.list(workspaceId, projectId) });
       toast.success(t('quota_delete_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useDeleteQuotaTemplate'),
@@ -498,10 +500,10 @@ export function useBatchApplyQuotaTemplate(workspaceId: string, projectId: strin
       return { memberIds, appliedCount: res.applied_count };
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['members', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
       for (const memberId of data.memberIds) {
         queryClient.invalidateQueries({
-          queryKey: ['member-quota-overrides', workspaceId, projectId, memberId],
+          queryKey: queryKeys.members.quotaOverrides(workspaceId, projectId, memberId),
         });
       }
       const count = data.appliedCount;
@@ -524,7 +526,7 @@ export function useMemberChangeHistory(
   memberId: string
 ): UseQueryResult<ChangeHistoryEntry[]> {
   return useQuery<ChangeHistoryEntry[]>({
-    queryKey: ['member-change-history', workspaceId, projectId, memberId],
+    queryKey: queryKeys.members.changeHistory(workspaceId, projectId, memberId),
     queryFn: () => getMemberAPI().getChangeHistory(workspaceId, projectId, memberId),
     enabled: !!workspaceId && !!projectId && !!memberId,
     staleTime: 30 * 1000,

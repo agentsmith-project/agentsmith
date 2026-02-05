@@ -9,6 +9,10 @@
  * Switch via NEXT_PUBLIC_USE_MSW environment variable.
  */
 
+// Static imports - Next.js will tree-shake unused adapter in production build
+import { MSWApiClient } from './adapters/msw-adapter';
+import { FetchApiClient } from './adapters/fetch-adapter';
+
 export interface ApiRequestOptions {
   headers?: Record<string, string>;
   params?: Record<string, string | number>;
@@ -22,16 +26,9 @@ export interface ApiResponse<T> {
   request_id?: string;
 }
 
-export class ApiError extends Error {
-  constructor(
-    public errorCode: string,
-    message: string,
-    public requestId?: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+// Re-export unified error class from errors.ts
+// ApiError is an alias for APIError for backward compatibility
+export { APIError, APIError as ApiError } from './errors';
 
 /**
  * Core API Client Interface
@@ -97,16 +94,13 @@ export const API_BASE = process.env.NEXT_PUBLIC_USE_MSW === 'true'
 /**
  * Create API client instance
  * Automatically chooses between MSW and Fetch based on environment
+ *
+ * Note: Both adapters are statically imported. Next.js will tree-shake
+ * the unused adapter in production builds based on NEXT_PUBLIC_USE_MSW.
  */
 export function createApiClient(): ApiClient {
   const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
-
-  if (useMsw) {
-    // Dynamic import to avoid bundling MSW in production
-    return new (require('./adapters/msw-adapter').MSWApiClient)();
-  }
-
-  return new (require('./adapters/fetch-adapter').FetchApiClient)();
+  return useMsw ? new MSWApiClient() : new FetchApiClient();
 }
 
 // Singleton instance

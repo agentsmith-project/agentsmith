@@ -2,24 +2,14 @@
 
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import type { Credential } from '@/lib/api/types';
 
 export interface DeleteCredentialDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   credential: Credential | null;
-  onConfirm: () => void;
-  deleting?: boolean;
+  onConfirm: () => Promise<void>;
 }
 
 export function DeleteCredentialDialog({
@@ -27,38 +17,21 @@ export function DeleteCredentialDialog({
   onOpenChange,
   credential,
   onConfirm,
-  deleting = false,
 }: DeleteCredentialDialogProps) {
   const t = useTranslations('credentials');
   const commonT = useTranslations('common');
 
-  const handleConfirm = () => {
-    onConfirm();
-  };
-
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('delete_dialog.title')}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {t('delete_dialog.description', { name: credential?.name ?? '' })}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleting}>{commonT('cancel')}</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              handleConfirm();
-            }}
-            disabled={deleting}
-            className="bg-error hover:bg-error/90"
-          >
-            {deleting ? t('delete_dialog.deleting') : commonT('delete')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmationDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('delete_dialog.title')}
+      description={t('delete_dialog.description', { name: credential?.name ?? '' })}
+      confirmText={commonT('delete')}
+      cancelText={commonT('cancel')}
+      variant="destructive"
+      onConfirm={onConfirm}
+      errorContext="credentials.delete"
+    />
   );
 }

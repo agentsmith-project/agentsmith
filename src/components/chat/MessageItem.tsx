@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Copy, Pencil, RotateCcw, ChevronLeft, ChevronRight, Check, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import type { ChatMessage } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,7 @@ export const MessageItem = React.memo(function MessageItem({
   branchBadge?: { groupId: string; index: number; total: number } | null;
   disabled: boolean;
 }) {
+  const t = useTranslations('common.toast');
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
 
@@ -65,9 +67,9 @@ export const MessageItem = React.memo(function MessageItem({
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(message.content);
-      toast.info('Copied');
+      toast.info(t('copied'));
     } catch {
-      toast.error('Copy failed');
+      toast.error(t('copy_failed'));
     }
   };
 

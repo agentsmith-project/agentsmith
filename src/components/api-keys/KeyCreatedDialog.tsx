@@ -43,7 +43,7 @@ export function KeyCreatedDialog({
       toast.success(commonT('copied'));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error('Copy failed');
+      toast.error(commonT('copy_failed'));
     }
   };
 

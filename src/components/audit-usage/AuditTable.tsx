@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import {
   useReactTable,
   getCoreRowModel,
@@ -61,6 +62,7 @@ export function AuditTable({
   onViewDetails,
   onClearFilters,
 }: AuditTableProps) {
+  const t = useTranslations('common.toast');
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'timestamp', desc: true },
   ]);
@@ -207,7 +209,7 @@ export function AuditTable({
                 className="h-6 w-6"
                 onClick={() => {
                   navigator.clipboard.writeText(requestId);
-                  toast.success('Copied request ID');
+                  toast.success(t('copied'));
                 }}
               >
                 <Copy className="h-3 w-3" />

@@ -5,7 +5,8 @@
  * Server data (workspaces, projects) handled by React Query.
  */
 
-import { create } from 'zustand';
+import { useState, useEffect } from 'react';
+import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Locale } from '@/lib/i18n/config';
 
@@ -32,6 +33,27 @@ export interface AuthState extends AuthData {
   clearAuth: () => void;
 }
 
+/**
+ * Type for Zustand persist API (from zustand/middleware/persist.d.ts)
+ * Used for type-safe hydration handling
+ */
+interface PersistApi<T> {
+  setOptions: (options: Partial<unknown>) => void;
+  clearStorage: () => void;
+  rehydrate: () => Promise<void> | void;
+  hasHydrated: () => boolean;
+  onHydrate: (fn: (state: T) => void) => () => void;
+  onFinishHydration: (fn: (state: T) => void) => () => void;
+  getOptions: () => Partial<unknown>;
+}
+
+/**
+ * Type for store with optional persist middleware
+ */
+type AuthStoreWithPersist = UseBoundStore<StoreApi<AuthState>> & {
+  persist?: PersistApi<AuthState>;
+};
+
 // ============================================================
 // Initial State
 // ============================================================
@@ -48,30 +70,11 @@ const initialData: AuthData = {
 
 const isDev = process.env.NEXT_PUBLIC_USE_MSW === 'true';
 
-const createAuthStore = () =>
-  create<AuthState>()(
-    isDev
-      ? persist(
-          (set) => ({
-            ...initialData,
-            setAuth: (user: User, token: string) => {
-              set({ user, token, isAuthenticated: true });
-            },
-            clearAuth: () => {
-              set(initialData);
-            },
-          }),
-          {
-            name: 'mbos-auth',
-            storage: createJSONStorage(() => localStorage),
-            partialize: (state) => ({
-              user: state.user,
-              token: state.token,
-              isAuthenticated: state.isAuthenticated,
-            }),
-          }
-        )
-      : (set) => ({
+const createAuthStore = (): AuthStoreWithPersist => {
+  if (isDev) {
+    return create<AuthState>()(
+      persist(
+        (set) => ({
           ...initialData,
           setAuth: (user: User, token: string) => {
             set({ user, token, isAuthenticated: true });
@@ -79,8 +82,30 @@ const createAuthStore = () =>
           clearAuth: () => {
             set(initialData);
           },
-        })
-  );
+        }),
+        {
+          name: 'mbos-auth',
+          storage: createJSONStorage(() => localStorage),
+          partialize: (state) => ({
+            user: state.user,
+            token: state.token,
+            isAuthenticated: state.isAuthenticated,
+          }),
+        }
+      )
+    ) as AuthStoreWithPersist;
+  }
+
+  return create<AuthState>()((set) => ({
+    ...initialData,
+    setAuth: (user: User, token: string) => {
+      set({ user, token, isAuthenticated: true });
+    },
+    clearAuth: () => {
+      set(initialData);
+    },
+  })) as AuthStoreWithPersist;
+};
 
 export const useAuthStore = createAuthStore();
 
@@ -88,28 +113,43 @@ export const useAuthStore = createAuthStore();
 // Hydration Hook
 // ============================================================
 
-import { useState, useEffect } from 'react';
-
-export const useAuthStoreHydration = () => {
+/**
+ * Hook to check if the auth store has been hydrated from storage.
+ *
+ * In development mode (with persist middleware), this waits for
+ * localStorage data to be loaded. In production (without persist),
+ * hydration is immediate.
+ *
+ * @returns boolean - true when store is ready to use
+ */
+export const useAuthStoreHydration = (): boolean => {
   const [hydrated, setHydrated] = useState(() => {
-    const persistApi = (useAuthStore as unknown as {
-      persist?: { hasHydrated?: () => boolean };
-    }).persist;
-    return persistApi?.hasHydrated
-      ? persistApi.hasHydrated()
-      : typeof window !== 'undefined';
+    // If persist middleware is not enabled, hydration is immediate
+    if (!useAuthStore.persist) {
+      return true;
+    }
+    // Check if already hydrated (for fast refresh scenarios)
+    return useAuthStore.persist.hasHydrated();
   });
 
   useEffect(() => {
-    const persistApi = (useAuthStore as unknown as {
-      persist?: { onFinishHydration?: (fn: () => void) => () => void };
-    }).persist;
-    if (persistApi?.onFinishHydration) {
-      const unsub = persistApi.onFinishHydration(() => setHydrated(true));
-      return () => unsub?.();
+    // If no persist middleware, nothing to wait for
+    if (!useAuthStore.persist) {
+      setHydrated(true);
+      return;
     }
-    setHydrated(true);
-    return;
+
+    // Subscribe to hydration completion
+    const unsubscribe = useAuthStore.persist.onFinishHydration(() => {
+      setHydrated(true);
+    });
+
+    // Check again in case hydration completed between render and effect
+    if (useAuthStore.persist.hasHydrated()) {
+      setHydrated(true);
+    }
+
+    return unsubscribe;
   }, []);
 
   return hydrated;

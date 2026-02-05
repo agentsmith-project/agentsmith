@@ -38,14 +38,14 @@ export function AdvancedMode({
     const permissionsArray = Array.from(selectedPermissions);
     const json = JSON.stringify(permissionsArray, null, 2);
     navigator.clipboard.writeText(json);
-    toast.success('Permissions copied to clipboard');
+    toast.success(t('copied_to_clipboard'));
   };
 
   const handleReset = () => {
     if (initialTemplate && onReset) {
       onReset();
     } else {
-      toast.error('No template to reset to');
+      toast.error(t('no_template_to_reset'));
     }
   };
 

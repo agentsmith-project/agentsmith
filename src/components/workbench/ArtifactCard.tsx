@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import { Download, Save, Copy, Eye, FileText, Image as ImageIcon, File } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Artifact } from '@/lib/types/recipe';
@@ -21,13 +22,17 @@ export function ArtifactCard({
   onDownload,
   disabled = false,
 }: ArtifactCardProps) {
+  const t = useTranslations('common.toast');
+  const tWorkbench = useTranslations('workbench');
+  const tCommon = useTranslations('common');
+
   const handleCopy = async () => {
     if (artifact.type === 'text' && artifact.content) {
       try {
         await navigator.clipboard.writeText(artifact.content);
-        toast.info('Copied to clipboard');
+        toast.info(t('copied'));
       } catch {
-        toast.error('Copy failed');
+        toast.error(t('copy_failed'));
       }
     }
   };
@@ -40,7 +45,7 @@ export function ArtifactCard({
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-icon-default" />
               <span className="text-sm font-medium text-foreground">
-                {artifact.title || 'Text Artifact'}
+                {artifact.title || tWorkbench('artifact.text_default')}
               </span>
             </div>
             {artifact.content && (
@@ -55,13 +60,13 @@ export function ArtifactCard({
               {artifact.thumbnail_url ? (
                 <img
                   src={artifact.thumbnail_url}
-                  alt={artifact.title || 'Image artifact'}
+                  alt={artifact.title || tWorkbench('artifact.image_default')}
                   className="w-full h-full object-cover"
                 />
               ) : artifact.content ? (
                 <img
                   src={artifact.content}
-                  alt={artifact.title || 'Image artifact'}
+                  alt={artifact.title || tWorkbench('artifact.image_default')}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -81,7 +86,7 @@ export function ArtifactCard({
             <div className="flex items-center gap-2">
               <File className="h-4 w-4 text-icon-default" />
               <span className="text-sm font-medium text-foreground">
-                {artifact.title || 'File Artifact'}
+                {artifact.title || tWorkbench('artifact.file_default')}
               </span>
             </div>
             {artifact.file_size && (
@@ -107,7 +112,7 @@ export function ArtifactCard({
             className="h-7 text-xs"
           >
             <Copy className="h-3 w-3 mr-1" />
-            Copy
+            {tCommon('copy')}
           </Button>
         )}
         {onView && (
@@ -119,7 +124,7 @@ export function ArtifactCard({
             className="h-7 text-xs"
           >
             <Eye className="h-3 w-3 mr-1" />
-            View
+            {tCommon('view')}
           </Button>
         )}
         {onSave && (
@@ -131,7 +136,7 @@ export function ArtifactCard({
             className="h-7 text-xs"
           >
             <Save className="h-3 w-3 mr-1" />
-            Save
+            {tCommon('save')}
           </Button>
         )}
         {onDownload && (
@@ -143,7 +148,7 @@ export function ArtifactCard({
             className="h-7 text-xs"
           >
             <Download className="h-3 w-3 mr-1" />
-            Download
+            {tCommon('download')}
           </Button>
         )}
       </div>

@@ -1,6 +1,7 @@
 'use client';
 import * as React from 'react';
 import { Copy } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import type { RecipeMessage } from '@/lib/types/recipe';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
@@ -14,6 +15,7 @@ export interface MessageItemProps {
 }
 
 export function MessageItem({ message, streamingContent, disabled = false }: MessageItemProps) {
+  const t = useTranslations('common.toast');
   const isUser = message.role === 'user';
 
   const displayContent = streamingContent ?? message.content;
@@ -21,9 +23,9 @@ export function MessageItem({ message, streamingContent, disabled = false }: Mes
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(message.content);
-      toast.info('Copied');
+      toast.info(t('copied'));
     } catch {
-      toast.error('Copy failed');
+      toast.error(t('copy_failed'));
     }
   };
 

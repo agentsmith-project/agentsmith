@@ -12,7 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { Key, Plus, RotateCcw, Trash2 } from 'lucide-react';
-import { CredentialsAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { CredentialsAPI, getApiClient } from '@/lib/api';
 import type { Credential } from '@/lib/api/types';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -139,12 +139,6 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
 
   const deleteMutation = useMutation({
     mutationFn: (credId: string) => credentialsAPI.delete(workspaceId, projectId, credId),
-    onSuccess: () => {
-      setDeleteDialogOpen(false);
-      setSelectedCredential(null);
-      invalidate();
-    },
-    onError: handleErrorForToast,
   });
 
   const handleRotateClick = (cred: Credential) => {
@@ -157,9 +151,12 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
     setDeleteDialogOpen(true);
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!selectedCredential) return;
-    deleteMutation.mutate(selectedCredential.id);
+    await deleteMutation.mutateAsync(selectedCredential.id);
+    setDeleteDialogOpen(false);
+    setSelectedCredential(null);
+    invalidate();
   };
 
   const credentialColumns = createCredentialColumns(
@@ -239,7 +236,6 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
             onOpenChange={setDeleteDialogOpen}
             credential={selectedCredential}
             onConfirm={handleDeleteConfirm}
-            deleting={deleteMutation.isPending}
           />
         </div>
       </PageLayout>

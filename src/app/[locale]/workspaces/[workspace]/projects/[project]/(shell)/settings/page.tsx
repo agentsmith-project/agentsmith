@@ -356,12 +356,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
           updated_at: currentProject.updated_at,
         } : null}
         workspaceId={resolvedParams?.workspace || ''}
-        onConfirm={() => {
-          queryClient.invalidateQueries({
-            queryKey: ['workspaces', resolvedParams?.workspace, 'projects'],
-          });
-          router.push(`/${resolvedParams?.locale || 'en-US'}/workspaces/${resolvedParams?.workspace}/projects`);
-        }}
         onDeleted={() => {
           queryClient.invalidateQueries({
             queryKey: ['workspaces', resolvedParams?.workspace, 'projects'],

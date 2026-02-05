@@ -18,6 +18,7 @@
     "retry": "重试",
     "refreshed_data": "数据已刷新",
     "try_again": "重试",
+    "go_home": "返回首页",
     "something_went_wrong": "出现错误",
     "remove": "移除",
     "edit": "编辑",
@@ -26,6 +27,8 @@
     "regenerate": "重新生成",
     "previous": "上一个",
     "next": "下一个",
+    "view": "查看",
+    "download": "下载",
     "user_menu": {
       "profile": "个人资料",
       "api_keys": "API 密钥",
@@ -37,6 +40,38 @@
       "select": "选择...",
       "enter_name": "输入名称",
       "enter_description": "输入描述"
+    },
+    "toast": {
+      "copied": "已复制！",
+      "copy_failed": "复制失败",
+      "delete_success": "删除成功",
+      "delete_failed": "删除失败",
+      "update_success": "更新成功",
+      "update_failed": "更新失败",
+      "create_success": "创建成功",
+      "create_failed": "创建失败",
+      "upload_success": "上传成功",
+      "upload_failed": "上传失败",
+      "download_success": "下载成功",
+      "download_failed": "下载失败",
+      "save_success": "保存成功",
+      "save_failed": "保存失败",
+      "unexpected_error": "发生意外错误",
+      "ai_ready_started": "AIReady 已启动",
+      "ai_ready_cancelled": "AIReady 已取消",
+      "ai_ready_retry_started": "AIReady 重试已启动",
+      "ai_ready_batch_started": "已为 {{count}} 个文件启动 AIReady",
+      "ai_ready_batch_failed": "批量启动 AIReady 失败: {{error}}",
+      "ai_ready_batch_cancelled": "已为 {{successCount}} 个文件取消 AIReady，{{failedCount}} 个失败",
+      "ai_ready_batch_cancelled_success": "已为 {{count}} 个文件取消 AIReady",
+      "sources_added_to_recipe": "已添加 {{count}} 个源到配方",
+      "source_removed_from_recipe": "已从配方中移除源",
+      "artifact_saved_to_library": "已保存制品到库",
+      "batch_delete_failed": "删除 {{count}} 个文件失败",
+      "file_download_success": "文件下载成功",
+      "update_agent_failed": "更新智能体失败",
+      "view": "查看",
+      "download": "下载"
     }
   },
   "nav": {
@@ -230,7 +265,10 @@
     "threads_title": "聊天记录",
     "threads_today": "今天",
     "threads_yesterday": "昨天",
-    "threads_days_ago": "{days} 天前"
+    "threads_days_ago": "{days} 天前",
+    "attachments": {
+      "disabled_while_editing": "编辑时禁用附件。"
+    }
   },
   "workbench": {
     "title": "工作台",
@@ -315,6 +353,11 @@
         "image": "图片",
         "other": "其他"
       }
+    },
+    "artifact": {
+      "text_default": "文本生成物",
+      "image_default": "图片生成物",
+      "file_default": "文件生成物"
     }
   },
   "agents": {
@@ -498,7 +541,10 @@
       "resource": "资源",
       "result": "结果",
       "request_id": "请求 ID",
-      "error_code": "错误码"
+      "error_code": "错误码",
+      "header": {
+        "error_code": "错误码"
+      }
     },
     "detail": {
       "title": "审计事件详情",
@@ -724,7 +770,9 @@
       "high_risk_description": "您即将授予以下高风险权限：",
       "high_risk_confirm": "这些权限具有重大影响。您确定要继续吗？",
       "confirm_save": "确认并保存",
-      "loading": "加载权限中..."
+      "loading": "加载权限中...",
+      "copied_to_clipboard": "已将权限复制到剪贴板",
+      "no_template_to_reset": "没有模板可重置"
     },
     "quota": {
       "title": "配额覆盖",

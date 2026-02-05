@@ -18,6 +18,7 @@
     "retry": "Retry",
     "refreshed_data": "Data refreshed",
     "try_again": "Try Again",
+    "go_home": "Go Home",
     "something_went_wrong": "Something went wrong",
     "remove": "Remove",
     "edit": "Edit",
@@ -26,6 +27,8 @@
     "regenerate": "Regenerate",
     "previous": "Previous",
     "next": "Next",
+    "view": "View",
+    "download": "Download",
     "user_menu": {
       "profile": "Profile",
       "api_keys": "API Keys",
@@ -37,6 +40,36 @@
       "select": "Select...",
       "enter_name": "Enter name",
       "enter_description": "Enter description"
+    },
+    "toast": {
+      "copied": "Copied!",
+      "copy_failed": "Copy failed",
+      "delete_success": "Deleted successfully",
+      "delete_failed": "Failed to delete",
+      "update_success": "Updated successfully",
+      "update_failed": "Failed to update",
+      "create_success": "Created successfully",
+      "create_failed": "Failed to create",
+      "upload_success": "Uploaded successfully",
+      "upload_failed": "Upload failed",
+      "download_success": "Downloaded successfully",
+      "download_failed": "Download failed",
+      "save_success": "Saved successfully",
+      "save_failed": "Failed to save",
+      "unexpected_error": "An unexpected error occurred",
+      "ai_ready_started": "AIReady started",
+      "ai_ready_cancelled": "AIReady cancelled",
+      "ai_ready_retry_started": "AIReady retry started",
+      "ai_ready_batch_started": "Started AIReady for {{count}} file(s)",
+      "ai_ready_batch_failed": "Failed to start batch AIReady: {{error}}",
+      "ai_ready_batch_cancelled": "Cancelled AIReady for {{successCount}} file(s), {{failedCount}} failed",
+      "ai_ready_batch_cancelled_success": "Cancelled AIReady for {{count}} file(s)",
+      "sources_added_to_recipe": "Added {{count}} source(s) to recipe",
+      "source_removed_from_recipe": "Source removed from recipe",
+      "artifact_saved_to_library": "Artifact saved to library",
+      "batch_delete_failed": "Failed to delete {{count}} file(s)",
+      "file_download_success": "File downloaded successfully",
+      "update_agent_failed": "Failed to update agent"
     }
   },
   "nav": {
@@ -230,7 +263,10 @@
     "threads_title": "Chats",
     "threads_today": "Today",
     "threads_yesterday": "Yesterday",
-    "threads_days_ago": "{days} days ago"
+    "threads_days_ago": "{days} days ago",
+    "attachments": {
+      "disabled_while_editing": "Attachments are disabled while editing."
+    }
   },
   "workbench": {
     "title": "Workbench",
@@ -315,6 +351,11 @@
         "image": "Image",
         "other": "Other"
       }
+    },
+    "artifact": {
+      "text_default": "Text Artifact",
+      "image_default": "Image artifact",
+      "file_default": "File Artifact"
     }
   },
   "agents": {
@@ -498,7 +539,10 @@
       "resource": "Resource",
       "result": "Result",
       "request_id": "Request ID",
-      "error_code": "Error Code"
+      "error_code": "Error Code",
+      "header": {
+        "error_code": "Error Code"
+      }
     },
     "detail": {
       "title": "Audit Event Details",
@@ -724,7 +768,9 @@
       "high_risk_description": "You are about to grant the following high-risk permissions:",
       "high_risk_confirm": "These permissions have significant impact. Are you sure you want to continue?",
       "confirm_save": "Confirm & Save",
-      "loading": "Loading permissions..."
+      "loading": "Loading permissions...",
+      "copied_to_clipboard": "Permissions copied to clipboard",
+      "no_template_to_reset": "No template to reset to"
     },
     "quota": {
       "title": "Quota Overrides",

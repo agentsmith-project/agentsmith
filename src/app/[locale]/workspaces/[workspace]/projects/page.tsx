@@ -260,7 +260,6 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
         onOpenChange={(open) => !open && setDeleteDialogProject(null)}
         project={deleteDialogProject}
         workspaceId={workspaceId}
-        onConfirm={handleDeleteProjectSuccess}
         onDeleted={handleDeleteProjectSuccess}
         deleteProject={handleDeleteProject}
       />

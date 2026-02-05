@@ -10,9 +10,11 @@ import {
   useQueryClient,
   type UseQueryResult,
 } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
 import { getApiClient, RecipeAPI } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
 import { handleErrorForToast } from '@/lib/api/errors';
+import { queryKeys } from '@/lib/query-keys';
 import type {
   Recipe,
   CreateRecipeRequest,
@@ -34,7 +36,7 @@ export function useRecipes(
   const recipeAPI = new RecipeAPI(getApiClient());
 
   return useQuery({
-    queryKey: ['recipes', workspaceId, projectId, params],
+    queryKey: queryKeys.recipes.list(workspaceId, projectId, params),
     queryFn: () => recipeAPI.list(workspaceId, projectId, params),
     enabled: !!workspaceId && !!projectId,
     staleTime: 10000, // 10 seconds
@@ -52,7 +54,7 @@ export function useRecipe(
   const recipeAPI = new RecipeAPI(getApiClient());
 
   return useQuery<Recipe>({
-    queryKey: ['recipe', workspaceId, projectId, recipeId],
+    queryKey: queryKeys.recipes.detail(workspaceId, projectId, recipeId),
     queryFn: async () => {
       try {
         return await recipeAPI.get(workspaceId, projectId, recipeId);
@@ -103,6 +105,7 @@ export function useRecipe(
 export function useCreateRecipe() {
   const queryClient = useQueryClient();
   const recipeAPI = new RecipeAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   return useMutation({
     mutationFn: ({
@@ -116,9 +119,9 @@ export function useCreateRecipe() {
     }) => recipeAPI.create(workspaceId, projectId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['recipes', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.recipes.list(variables.workspaceId, variables.projectId),
       });
-      toast.success('Recipe created successfully');
+      toast.success(t('create_success'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useCreateRecipe');
@@ -132,6 +135,7 @@ export function useCreateRecipe() {
 export function useUpdateRecipe() {
   const queryClient = useQueryClient();
   const recipeAPI = new RecipeAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   return useMutation({
     mutationFn: ({
@@ -147,12 +151,12 @@ export function useUpdateRecipe() {
     }) => recipeAPI.update(workspaceId, projectId, recipeId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['recipe', variables.workspaceId, variables.projectId, variables.recipeId],
+        queryKey: queryKeys.recipes.detail(variables.workspaceId, variables.projectId, variables.recipeId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['recipes', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.recipes.list(variables.workspaceId, variables.projectId),
       });
-      toast.success('Recipe updated successfully');
+      toast.success(t('update_success'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useUpdateRecipe');
@@ -166,6 +170,7 @@ export function useUpdateRecipe() {
 export function useDeleteRecipe() {
   const queryClient = useQueryClient();
   const recipeAPI = new RecipeAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   return useMutation({
     mutationFn: ({
@@ -179,9 +184,9 @@ export function useDeleteRecipe() {
     }) => recipeAPI.delete(workspaceId, projectId, recipeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['recipes', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.recipes.list(variables.workspaceId, variables.projectId),
       });
-      toast.success('Recipe deleted successfully');
+      toast.success(t('delete_success'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useDeleteRecipe');
@@ -200,7 +205,7 @@ export function useRecipeMessages(
   const recipeAPI = new RecipeAPI(getApiClient());
 
   return useQuery({
-    queryKey: ['recipe-messages', workspaceId, projectId, recipeId],
+    queryKey: queryKeys.recipes.messages(workspaceId, projectId, recipeId),
     queryFn: () => recipeAPI.listMessages(workspaceId, projectId, recipeId),
     enabled: !!workspaceId && !!projectId && !!recipeId,
     staleTime: 5000, // 5 seconds
@@ -228,10 +233,10 @@ export function useSendMessage() {
     }) => recipeAPI.sendMessage(workspaceId, projectId, recipeId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['recipe-messages', variables.workspaceId, variables.projectId, variables.recipeId],
+        queryKey: queryKeys.recipes.messages(variables.workspaceId, variables.projectId, variables.recipeId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['recipe', variables.workspaceId, variables.projectId, variables.recipeId],
+        queryKey: queryKeys.recipes.detail(variables.workspaceId, variables.projectId, variables.recipeId),
       });
     },
     onError: (error: unknown) => {
@@ -251,7 +256,7 @@ export function useRecipeArtifacts(
   const recipeAPI = new RecipeAPI(getApiClient());
 
   return useQuery({
-    queryKey: ['recipe-artifacts', workspaceId, projectId, recipeId],
+    queryKey: queryKeys.recipes.artifacts(workspaceId, projectId, recipeId),
     queryFn: () => recipeAPI.listArtifacts(workspaceId, projectId, recipeId),
     enabled: !!workspaceId && !!projectId && !!recipeId,
     staleTime: 5000, // 5 seconds
@@ -264,6 +269,7 @@ export function useRecipeArtifacts(
 export function useAddSources() {
   const queryClient = useQueryClient();
   const recipeAPI = new RecipeAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   return useMutation({
     mutationFn: ({
@@ -279,9 +285,9 @@ export function useAddSources() {
     }) => recipeAPI.addSources(workspaceId, projectId, recipeId, sourceIds),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['recipe', variables.workspaceId, variables.projectId, variables.recipeId],
+        queryKey: queryKeys.recipes.detail(variables.workspaceId, variables.projectId, variables.recipeId),
       });
-      toast.success(`Added ${variables.sourceIds.length} source(s) to recipe`);
+      toast.success(t('sources_added_to_recipe', { count: variables.sourceIds.length }));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useAddSources');
@@ -295,6 +301,7 @@ export function useAddSources() {
 export function useRemoveSource() {
   const queryClient = useQueryClient();
   const recipeAPI = new RecipeAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   return useMutation({
     mutationFn: ({
@@ -310,9 +317,9 @@ export function useRemoveSource() {
     }) => recipeAPI.removeSource(workspaceId, projectId, recipeId, sourceId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['recipe', variables.workspaceId, variables.projectId, variables.recipeId],
+        queryKey: queryKeys.recipes.detail(variables.workspaceId, variables.projectId, variables.recipeId),
       });
-      toast.success('Source removed from recipe');
+      toast.success(t('source_removed_from_recipe'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useRemoveSource');
@@ -326,6 +333,7 @@ export function useRemoveSource() {
 export function useSaveArtifact() {
   const queryClient = useQueryClient();
   const recipeAPI = new RecipeAPI(getApiClient());
+  const t = useTranslations('common.toast');
 
   return useMutation({
     mutationFn: ({
@@ -343,9 +351,9 @@ export function useSaveArtifact() {
     }) => recipeAPI.saveArtifact(workspaceId, projectId, recipeId, artifactId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['sources', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
-      toast.success('Artifact saved to library');
+      toast.success(t('artifact_saved_to_library'));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useSaveArtifact');

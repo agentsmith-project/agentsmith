@@ -120,6 +120,32 @@ vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+// Mock query-keys to provide the expected structure
+vi.mock('@/lib/query-keys', () => ({
+  queryKeys: {
+    members: {
+      list: vi.fn((ws: string, proj: string) => ['members', ws, proj]),
+      permissions: vi.fn((ws: string, proj: string, member: string) => ['member-permissions', ws, proj, member]),
+      quotaOverrides: vi.fn((ws: string, proj: string, member: string) => ['member-quota-overrides', ws, proj, member]),
+      quotaOverridesHistory: vi.fn((ws: string, proj: string, member: string, page: number, pageSize: number) => ['member-quota-overrides-history', ws, proj, member, page, pageSize]),
+      changeHistory: vi.fn((ws: string, proj: string, member: string) => ['member-change-history', ws, proj, member]),
+    },
+    joinRequests: {
+      list: vi.fn((ws: string, proj: string) => ['join-requests', ws, proj]),
+    },
+    permissionTemplates: {
+      list: vi.fn((ws: string, proj: string) => ['permission-templates', ws, proj]),
+    },
+    quotaTemplates: {
+      list: vi.fn((ws: string, proj: string) => ['quota-templates', ws, proj]),
+      detail: vi.fn((ws: string, proj: string, id: string) => ['quota-templates', ws, proj, id]),
+    },
+    resourceAcl: {
+      detail: vi.fn((ws: string, proj: string, type: string, id: string) => ['resource-acl', ws, proj, type, id]),
+    },
+  },
+}));
+
 // Mock console.error to avoid cluttering test output
 global.console.error = vi.fn();
 

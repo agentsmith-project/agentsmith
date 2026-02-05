@@ -193,6 +193,7 @@ function createAgentColumns(
 
 export default function AgentsPage({ params }: AgentsPageProps) {
   const t = useTranslations('agents');
+  const tToast = useTranslations('common.toast');
   const queryClient = useQueryClient();
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -232,10 +233,10 @@ export default function AgentsPage({ params }: AgentsPageProps) {
       agentAPI.update(workspaceId, projectId, agentId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents', workspaceId, projectId] });
-      toast.success('Agent updated successfully');
+      toast.success(t('edit_dialog.success'));
     },
     onError: () => {
-      toast.error('Failed to update agent');
+      toast.error(tToast('update_agent_failed'));
     },
   });
 

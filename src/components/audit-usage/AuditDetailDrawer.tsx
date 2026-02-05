@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import {
   Dialog,
   DialogContent,
@@ -28,11 +29,12 @@ export function AuditDetailDrawer({
   onOpenChange,
   event,
 }: AuditDetailDrawerProps) {
+  const t = useTranslations('common.toast');
   if (!event) return null;
 
   const handleCopyRequestId = () => {
     navigator.clipboard.writeText(event.request_id);
-    toast.success('Copied request ID');
+    toast.success(t('copied'));
   };
 
   return (

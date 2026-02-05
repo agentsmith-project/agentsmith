@@ -31,6 +31,9 @@ export {
   getErrorSuggestions,
 } from './errors';
 
+// Re-export ApiError alias from client (same as APIError, for backward compatibility)
+export { ApiError } from './client';
+
 // Types
 export * from './types';
 

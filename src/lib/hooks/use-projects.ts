@@ -6,6 +6,7 @@
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { getApiClient, ProjectAPI } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 import type { Project } from '@/lib/api/types';
 
 const getProjectAPI = () => new ProjectAPI(getApiClient());
@@ -18,7 +19,7 @@ export function useProject(
   projectId: string
 ): UseQueryResult<Project> {
   return useQuery<Project>({
-    queryKey: ['project', workspaceId, projectId],
+    queryKey: queryKeys.projects.detail(workspaceId, projectId),
     queryFn: () => getProjectAPI().get(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 60 * 1000,

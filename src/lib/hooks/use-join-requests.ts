@@ -9,6 +9,7 @@ import { useTranslations } from 'next-intl';
 import { getApiClient, MemberAPI } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 import { handleErrorForToast } from '@/lib/api/errors';
+import { queryKeys } from '@/lib/query-keys';
 import type { JoinRequest } from '@/lib/api/endpoints/members';
 
 const getMemberAPI = () => new MemberAPI(getApiClient());
@@ -18,7 +19,7 @@ const getMemberAPI = () => new MemberAPI(getApiClient());
  */
 export function useJoinRequests(workspaceId: string, projectId: string) {
   return useQuery<JoinRequest[]>({
-    queryKey: ['join-requests', workspaceId, projectId],
+    queryKey: queryKeys.joinRequests.list(workspaceId, projectId),
     queryFn: () => getMemberAPI().listJoinRequests(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 30 * 1000,
@@ -40,8 +41,8 @@ export function useApproveJoinRequest(
       return getMemberAPI().approveJoinRequest(workspaceId, projectId, requestId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['join-requests', workspaceId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ['members', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.joinRequests.list(workspaceId, projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
       toast.success(t('approve_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useApproveJoinRequest'),
@@ -65,7 +66,7 @@ export function useRejectJoinRequest(
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['join-requests', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.joinRequests.list(workspaceId, projectId) });
       toast.success(t('reject_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useRejectJoinRequest'),

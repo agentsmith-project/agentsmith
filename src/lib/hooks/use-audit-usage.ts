@@ -6,6 +6,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getApiClient, AuditAPI, UsageAPI } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 import type { AuditListParams, UsageListParams } from '@/lib/api/types';
 
 /**
@@ -26,7 +27,7 @@ export function useAuditEvents(
     !!params.end_time;
 
   return useQuery({
-    queryKey: ['audit', workspaceId, projectId, params],
+    queryKey: queryKeys.audit.list(workspaceId, projectId, params),
     queryFn: () => auditAPI.list(workspaceId, projectId, params),
     enabled,
     staleTime: 10000, // 10 seconds
@@ -49,7 +50,7 @@ export function useUsageKPI(
     (options?.enabled ?? true) && !!workspaceId && !!projectId;
 
   return useQuery({
-    queryKey: ['usage-kpi', workspaceId, projectId, startTime, endTime, endUserId],
+    queryKey: queryKeys.usage.kpi(workspaceId, projectId, startTime || '', endTime || '', endUserId),
     queryFn: () =>
       usageAPI.getKPI(workspaceId, projectId, startTime, endTime, endUserId),
     enabled,
@@ -75,7 +76,7 @@ export function useUsageRecords(
     !!params.end_time;
 
   return useQuery({
-    queryKey: ['usage', workspaceId, projectId, params],
+    queryKey: queryKeys.usage.list(workspaceId, projectId, params),
     queryFn: () => usageAPI.list(workspaceId, projectId, params),
     enabled,
     staleTime: 10000, // 10 seconds

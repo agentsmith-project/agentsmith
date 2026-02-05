@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 
@@ -19,47 +21,51 @@ export default function WorkspaceSettingsPage() {
   const workspace = currentWorkspace || { id: workspaceId, name: workspaceId };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <Topbar />
+    <PageState state="success">
+      <PageLayout>
+        <div className="min-h-screen bg-background flex flex-col">
+          <Topbar />
 
-      <main className="flex-1 max-w-4xl mx-auto w-full p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-            <SettingsIcon className="w-6 h-6 text-icon-default" />
-            {t('title')}
-          </h1>
-          <p className="text-tertiary">Workspace configuration</p>
-        </div>
-
-        <div className="p-6 rounded-md border border-border bg-surface">
-          <h2 className="font-semibold text-foreground mb-4">General</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-primary mb-2">Workspace Name</label>
-              <p className="text-primary">{workspace.name}</p>
+          <main className="flex-1 max-w-4xl mx-auto w-full p-6">
+            <div className="mb-6">
+              <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+                <SettingsIcon className="w-6 h-6 text-icon-default" />
+                {t('title')}
+              </h1>
+              <p className="text-tertiary">Workspace configuration</p>
             </div>
-          </div>
-        </div>
 
-        <div className="mt-6 p-6 rounded-md border border-border bg-surface">
-          <h2 className="font-semibold text-foreground mb-4">Workspace Members</h2>
-          {members.length === 0 ? (
-            <p className="text-tertiary text-sm">No members yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {members.map((member) => (
-                <div key={member.id} className="flex items-center justify-between rounded-md border border-subtle bg-surface-high px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="text-sm text-primary truncate">{member.name}</p>
-                    <p className="text-xs text-tertiary truncate">{member.email}</p>
-                  </div>
-                  <span className="text-xs text-tertiary capitalize">{member.role}</span>
+            <div className="p-6 rounded-md border border-border bg-surface">
+              <h2 className="font-semibold text-foreground mb-4">General</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-2">Workspace Name</label>
+                  <p className="text-primary">{workspace.name}</p>
                 </div>
-              ))}
+              </div>
             </div>
-          )}
+
+            <div className="mt-6 p-6 rounded-md border border-border bg-surface">
+              <h2 className="font-semibold text-foreground mb-4">Workspace Members</h2>
+              {members.length === 0 ? (
+                <p className="text-tertiary text-sm">No members yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {members.map((member) => (
+                    <div key={member.id} className="flex items-center justify-between rounded-md border border-subtle bg-surface-high px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm text-primary truncate">{member.name}</p>
+                        <p className="text-xs text-tertiary truncate">{member.email}</p>
+                      </div>
+                      <span className="text-xs text-tertiary capitalize">{member.role}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </main>
         </div>
-      </main>
-    </div>
+      </PageLayout>
+    </PageState>
   );
 }

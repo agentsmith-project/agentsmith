@@ -37,4 +37,11 @@ test.describe('Settings Page', () => {
     await expect(authenticatedPage.getByRole('tab', { name: 'Governance' })).toBeVisible();
     await expect(authenticatedPage.getByRole('tab', { name: 'Limits' })).toBeVisible();
   });
+
+  test('should display workspace settings', async ({ authenticatedPage }) => {
+    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/settings`);
+
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
+    await expect(authenticatedPage.getByText('Workspace configuration')).toBeVisible();
+  });
 });

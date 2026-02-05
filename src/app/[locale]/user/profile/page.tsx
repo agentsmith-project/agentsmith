@@ -8,6 +8,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
+import { PageLoading } from '@/components/ui/loading';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MeAPI, getApiClient } from '@/lib/api';
 import { handleErrorForToast } from '@/lib/api';
@@ -78,9 +81,9 @@ export default function ProfilePage() {
 
   if (!user) {
     return (
-      <div className="max-w-2xl mx-auto p-6">
-        <p className="text-tertiary">Loading...</p>
-      </div>
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
     );
   }
 
@@ -93,7 +96,9 @@ export default function ProfilePage() {
       .slice(0, 2);
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
+    <PageState state="success">
+      <PageLayout>
+        <div className="max-w-2xl mx-auto p-6 space-y-6">
       <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
       <p className="text-sm text-tertiary">{t('description')}</p>
 
@@ -262,6 +267,8 @@ export default function ProfilePage() {
           {saveMutation.isPending ? t('saving') : t('save')}
         </Button>
       </div>
-    </div>
+        </div>
+      </PageLayout>
+    </PageState>
   );
 }

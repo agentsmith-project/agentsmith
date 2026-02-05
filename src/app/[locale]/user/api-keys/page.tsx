@@ -6,6 +6,8 @@ import { Plus, Key, Trash2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserAPIKeyService, getApiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 import {
   createColumnHelper,
   getCoreRowModel,
@@ -192,7 +194,9 @@ export default function UserAPIKeysPage() {
   });
 
   return (
-    <div className="max-w-5xl mx-auto w-full p-6">
+    <PageState state="success">
+      <PageLayout>
+        <div className="max-w-5xl mx-auto w-full p-6">
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
@@ -299,6 +303,8 @@ export default function UserAPIKeysPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+        </div>
+      </PageLayout>
+    </PageState>
   );
 }

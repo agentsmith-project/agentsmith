@@ -44,6 +44,9 @@ import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { Button } from '@/components/ui/button';
 import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
+import { PageLoading } from '@/components/ui/loading';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
@@ -150,17 +153,19 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   // Wait for params to resolve and auth to hydrate
   if (!resolvedParams || !hydrated) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-tertiary">{t('loading')}</div>
-      </div>
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <Topbar />
+    <PageState state="success">
+      <PageLayout>
+        <div className="min-h-screen bg-background flex flex-col">
+          <Topbar />
 
-      <main className="flex-1 max-w-7xl mx-auto w-full p-6">
+          <main className="flex-1 max-w-7xl mx-auto w-full p-6">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-semibold text-foreground mb-2">{t('title')}</h1>
@@ -259,7 +264,9 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
         onDeleted={handleDeleteProjectSuccess}
         deleteProject={handleDeleteProject}
       />
-    </div>
+        </div>
+      </PageLayout>
+    </PageState>
   );
 }
 

@@ -22,12 +22,14 @@ export const test = base.extend<{
 test.describe('Projects Page', () => {
   test('should display projects list', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects`);
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.locator('h1').filter({ hasText: 'Projects' })).toBeVisible();
     await expect(authenticatedPage.locator('h3').filter({ hasText: /AI Assistant Project/ })).toBeVisible();
   });
 
   test('should display project cards with correct info', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects`);
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.locator('h3').filter({ hasText: /AI Assistant Project/ })).toBeVisible();
 
     const projectCard = authenticatedPage.locator('h3').filter({ hasText: /AI Assistant Project/ }).locator('..').locator('..');

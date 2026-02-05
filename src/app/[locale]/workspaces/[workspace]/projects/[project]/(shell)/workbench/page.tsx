@@ -8,6 +8,8 @@
 
 import { useEffect, useState } from 'react';
 import { RecipeList } from '@/components/workbench/RecipeList';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 
 interface WorkbenchPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -30,16 +32,22 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
 
   if (!resolvedParams) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-tertiary">Loading...</div>
-      </div>
+      <PageState state="loading">
+        <div className="h-full flex items-center justify-center">
+          <div className="text-tertiary">Loading...</div>
+        </div>
+      </PageState>
     );
   }
 
   return (
-    <RecipeList
-      workspaceId={resolvedParams.workspace}
-      projectId={resolvedParams.project}
-    />
+    <PageState state="success">
+      <PageLayout>
+        <RecipeList
+          workspaceId={resolvedParams.workspace}
+          projectId={resolvedParams.project}
+        />
+      </PageLayout>
+    </PageState>
   );
 }

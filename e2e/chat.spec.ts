@@ -24,12 +24,14 @@ test.describe('Chat Page', () => {
   test('should display chat workspace', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByText('New Chat').first()).toBeVisible();
   });
 
   test('should create new chat session', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByText('New Chat').first()).toBeVisible();
     await expect(authenticatedPage.getByTestId('chat-main-pane')).toBeVisible();
   });
@@ -37,6 +39,7 @@ test.describe('Chat Page', () => {
   test('should display three-column layout', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByTestId('chat-threads-pane')).toBeVisible();
     await expect(authenticatedPage.getByTestId('chat-main-pane')).toBeVisible();
     await expect(authenticatedPage.getByTestId('chat-composer')).toBeVisible();

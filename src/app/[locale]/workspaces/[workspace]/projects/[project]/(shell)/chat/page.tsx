@@ -31,6 +31,8 @@ import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageList } from '@/components/chat/MessageList';
 import { Composer } from '@/components/chat/Composer';
 import { Markdown } from '@/components/chat/Markdown';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -408,9 +410,11 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   if (!resolvedParams) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-tertiary">Loading...</div>
-      </div>
+      <PageState state="loading">
+        <div className="flex items-center justify-center h-full">
+          <div className="text-tertiary">Loading...</div>
+        </div>
+      </PageState>
     );
   }
 
@@ -418,170 +422,174 @@ export default function ChatPage({ params }: ChatPageProps) {
   const disabled = streamStatus === 'connecting' || streamStatus === 'streaming';
 
   return (
-    <div className="h-full flex overflow-hidden">
-      <ThreadsPane
-        sessions={sessions}
-        activeSessionId={currentSessionId}
-        searchQuery={searchQuery}
-        onSearchQueryChange={setSearchQuery}
-        onCreate={() => createSessionMutation.mutate()}
-        onSelect={(id) => {
-          setCurrentSessionId(id);
-          setEditingMessageId(null);
-        }}
-        onRename={(id, title) => updateSessionMutation.mutate({ sessionId: id, data: { title } })}
-        onToggleStar={(id, next) => updateSessionMutation.mutate({ sessionId: id, data: { starred: next } })}
-        onTogglePin={(id, next) => updateSessionMutation.mutate({ sessionId: id, data: { pinned: next } })}
-        onDelete={(id) => {
-          if (!window.confirm('Delete this thread?')) return;
-          deleteSessionMutation.mutate(id);
-        }}
-        isCreating={createSessionMutation.isPending}
-        isLoading={sessionsLoading}
-      />
+    <PageState state="success">
+      <PageLayout>
+        <div className="h-full flex overflow-hidden">
+          <ThreadsPane
+            sessions={sessions}
+            activeSessionId={currentSessionId}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            onCreate={() => createSessionMutation.mutate()}
+            onSelect={(id) => {
+              setCurrentSessionId(id);
+              setEditingMessageId(null);
+            }}
+            onRename={(id, title) => updateSessionMutation.mutate({ sessionId: id, data: { title } })}
+            onToggleStar={(id, next) => updateSessionMutation.mutate({ sessionId: id, data: { starred: next } })}
+            onTogglePin={(id, next) => updateSessionMutation.mutate({ sessionId: id, data: { pinned: next } })}
+            onDelete={(id) => {
+              if (!window.confirm('Delete this thread?')) return;
+              deleteSessionMutation.mutate(id);
+            }}
+            isCreating={createSessionMutation.isPending}
+            isLoading={sessionsLoading}
+          />
 
-      <section className="flex-1 flex flex-col bg-background overflow-hidden" data-testid="chat-main-pane">
-        <ChatHeader
-          session={activeSession}
-          endpoints={endpoints}
-          streamStatus={streamStatus}
-          onRename={(title) => {
-            if (!activeSession) return;
-            updateSessionMutation.mutate({ sessionId: activeSession.id, data: { title } });
-          }}
-          onSelectEndpoint={(e: Endpoint) => {
-            if (!activeSession) return;
-            updateSessionMutation.mutate({ sessionId: activeSession.id, data: { endpoint_id: e.id, model: e.openai_model } });
-          }}
-        />
+          <section className="flex-1 flex flex-col bg-background overflow-hidden" data-testid="chat-main-pane">
+            <ChatHeader
+              session={activeSession}
+              endpoints={endpoints}
+              streamStatus={streamStatus}
+              onRename={(title) => {
+                if (!activeSession) return;
+                updateSessionMutation.mutate({ sessionId: activeSession.id, data: { title } });
+              }}
+              onSelectEndpoint={(e: Endpoint) => {
+                if (!activeSession) return;
+                updateSessionMutation.mutate({ sessionId: activeSession.id, data: { endpoint_id: e.id, model: e.openai_model } });
+              }}
+            />
 
-        <div className="flex-1 min-h-0">
-          {!currentSessionId ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center px-6">
-                <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
-                <div className="text-foreground font-medium mb-1">No active thread</div>
-                <div className="text-tertiary text-sm">Create a new chat to start.</div>
-              </div>
-            </div>
-          ) : messagesLoading ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-tertiary">Loading...</div>
-            </div>
-          ) : (
-            <MessageList
-              messages={messages}
-              activeVariantIndexByGroup={activeVariantIndexByGroup}
-              editingMessageId={editingMessageId}
-              onSelectVariant={(groupId, nextIndex) => {
-                manualVariantGroupsRef.current.add(groupId);
-                setSuppressAutoScroll(true);
-                if (suppressTimerRef.current) window.clearTimeout(suppressTimerRef.current);
-                suppressTimerRef.current = window.setTimeout(() => setSuppressAutoScroll(false), 1500);
-                setActiveVariantIndexByGroup((prev) => ({ ...prev, [groupId]: nextIndex }));
-              }}
-              onEdit={(m) => {
-                if (disabled) return;
-                if (m.role !== 'user') return;
-                setEditingMessageId(m.id);
-              }}
-              onEditCommit={async (m, nextContent) => {
-                if (disabled) return;
-                if (!currentSessionId) return;
-                const edited = await editMessageMutation.mutateAsync({
-                  sessionId: currentSessionId,
-                  messageId: m.id,
-                  content: nextContent,
-                });
-                pendingAutoGroupRef.current = edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null);
-                setEditingMessageId(null);
-                if (activeSession?.model && activeSession?.endpoint_id) {
-                  await runStream({
-                    sessionId: currentSessionId,
-                    model: activeSession.model,
-                    endpointId: activeSession.endpoint_id,
-                    fromMessageId: edited.id,
-                    mode: 'append',
-                  });
-                }
-              }}
-              onEditCancel={() => setEditingMessageId(null)}
-              onRegenerate={async (m) => {
-                if (disabled) return;
-                if (!activeSession || !currentSessionId) return;
-                if (messages.length) {
-                  const groups = buildVariantGroups(messages);
-                  pendingAutoGroupRef.current = getGroupIdForMessageId(groups, m.id);
-                }
-                await runStream({
-                  sessionId: currentSessionId,
-                  model: activeSession.model,
-                  endpointId: activeSession.endpoint_id,
-                  fromMessageId: m.id,
-                  mode: 'replace',
-                });
-              }}
-              disabled={disabled}
-              footer={
-                streamingAssistant && streamingAssistant.mode === 'append' ? (
-                  <div className="px-4 py-2">
-                    <div className="flex justify-start">
-                      <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
-                        <div className="text-xs text-tertiary mb-1">Assistant</div>
-                        <div className="space-y-2">
-                          <Markdown content={streamingAssistant.content || '…'} />
+            <div className="flex-1 min-h-0">
+              {!currentSessionId ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-center px-6">
+                    <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
+                    <div className="text-foreground font-medium mb-1">No active thread</div>
+                    <div className="text-tertiary text-sm">Create a new chat to start.</div>
+                  </div>
+                </div>
+              ) : messagesLoading ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-tertiary">Loading...</div>
+                </div>
+              ) : (
+                <MessageList
+                  messages={messages}
+                  activeVariantIndexByGroup={activeVariantIndexByGroup}
+                  editingMessageId={editingMessageId}
+                  onSelectVariant={(groupId, nextIndex) => {
+                    manualVariantGroupsRef.current.add(groupId);
+                    setSuppressAutoScroll(true);
+                    if (suppressTimerRef.current) window.clearTimeout(suppressTimerRef.current);
+                    suppressTimerRef.current = window.setTimeout(() => setSuppressAutoScroll(false), 1500);
+                    setActiveVariantIndexByGroup((prev) => ({ ...prev, [groupId]: nextIndex }));
+                  }}
+                  onEdit={(m) => {
+                    if (disabled) return;
+                    if (m.role !== 'user') return;
+                    setEditingMessageId(m.id);
+                  }}
+                  onEditCommit={async (m, nextContent) => {
+                    if (disabled) return;
+                    if (!currentSessionId) return;
+                    const edited = await editMessageMutation.mutateAsync({
+                      sessionId: currentSessionId,
+                      messageId: m.id,
+                      content: nextContent,
+                    });
+                    pendingAutoGroupRef.current = edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null);
+                    setEditingMessageId(null);
+                    if (activeSession?.model && activeSession?.endpoint_id) {
+                      await runStream({
+                        sessionId: currentSessionId,
+                        model: activeSession.model,
+                        endpointId: activeSession.endpoint_id,
+                        fromMessageId: edited.id,
+                        mode: 'append',
+                      });
+                    }
+                  }}
+                  onEditCancel={() => setEditingMessageId(null)}
+                  onRegenerate={async (m) => {
+                    if (disabled) return;
+                    if (!activeSession || !currentSessionId) return;
+                    if (messages.length) {
+                      const groups = buildVariantGroups(messages);
+                      pendingAutoGroupRef.current = getGroupIdForMessageId(groups, m.id);
+                    }
+                    await runStream({
+                      sessionId: currentSessionId,
+                      model: activeSession.model,
+                      endpointId: activeSession.endpoint_id,
+                      fromMessageId: m.id,
+                      mode: 'replace',
+                    });
+                  }}
+                  disabled={disabled}
+                  footer={
+                    streamingAssistant && streamingAssistant.mode === 'append' ? (
+                      <div className="px-4 py-2">
+                        <div className="flex justify-start">
+                          <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
+                            <div className="text-xs text-tertiary mb-1">Assistant</div>
+                            <div className="space-y-2">
+                              <Markdown content={streamingAssistant.content || '…'} />
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ) : null
+                    ) : null
+                  }
+                  streamingAssistant={streamingAssistant}
+                  followOutput={streamingAssistant?.mode !== 'replace'}
+                  suppressAutoScroll={suppressAutoScroll}
+                />
+              )}
+            </div>
+
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePicked} />
+
+            <Composer
+              value={composerValue}
+              onChange={(v) => {
+                if (!currentSessionId) return;
+                setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
+              }}
+              onSend={handleSend}
+              onStop={stopStreaming}
+              mode="compose"
+              autoFocus={!editingMessageId && streamStatus === 'idle'}
+              onPickFiles={() => {
+                if (editingMessageId) {
+                  toast.info('Attachments are disabled while editing.');
+                  return;
+                }
+                onPickFiles();
+              }}
+              attachments={attachments}
+              onRemoveAttachment={(id) => {
+                if (!currentSessionId) return;
+                deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
+              }}
+              onRetryAttachment={(id) => {
+                if (!currentSessionId) return;
+                retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
+              }}
+              disabled={
+                !currentSessionId ||
+                createMessageMutation.isPending ||
+                editMessageMutation.isPending ||
+                initAttachmentMutation.isPending ||
+                disabled ||
+                !!editingMessageId
               }
-              streamingAssistant={streamingAssistant}
-              followOutput={streamingAssistant?.mode !== 'replace'}
-              suppressAutoScroll={suppressAutoScroll}
+              streaming={disabled}
             />
-          )}
+          </section>
         </div>
-
-        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePicked} />
-
-        <Composer
-          value={composerValue}
-          onChange={(v) => {
-            if (!currentSessionId) return;
-            setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
-          }}
-          onSend={handleSend}
-          onStop={stopStreaming}
-          mode="compose"
-          autoFocus={!editingMessageId && streamStatus === 'idle'}
-          onPickFiles={() => {
-            if (editingMessageId) {
-              toast.info('Attachments are disabled while editing.');
-              return;
-            }
-            onPickFiles();
-          }}
-          attachments={attachments}
-          onRemoveAttachment={(id) => {
-            if (!currentSessionId) return;
-            deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
-          }}
-          onRetryAttachment={(id) => {
-            if (!currentSessionId) return;
-            retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
-          }}
-          disabled={
-            !currentSessionId ||
-            createMessageMutation.isPending ||
-            editMessageMutation.isPending ||
-            initAttachmentMutation.isPending ||
-            disabled ||
-            !!editingMessageId
-          }
-          streaming={disabled}
-        />
-      </section>
-    </div>
+      </PageLayout>
+    </PageState>
   );
 }

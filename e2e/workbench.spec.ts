@@ -24,12 +24,14 @@ test.describe('Workbench Page', () => {
   test('should display workbench workspace', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/workbench`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByRole('heading', { name: 'Workbench' })).toBeVisible();
   });
 
   test('should display thread controls', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/workbench`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByText(/New Recipe/i)).toBeVisible();
   });
 });

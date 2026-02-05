@@ -1,3 +1,5 @@
+'use client';
+
 import { useTranslations } from 'next-intl';
 import { useUserdataSummary, useUserdataEndUsers } from '@/lib/hooks/use-userdata';
 

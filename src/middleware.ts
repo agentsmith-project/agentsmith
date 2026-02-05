@@ -52,6 +52,6 @@ export const config = {
      * - mockServiceWorker.js (MSW must be served without redirect)
      * - public files (public folder)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|mockServiceWorker\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|mockServiceWorker\\.js|app-shell|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

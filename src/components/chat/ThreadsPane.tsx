@@ -50,7 +50,10 @@ export function ThreadsPane({
   }, [sessions, searchQuery]);
 
   return (
-    <aside className="w-[320px] border-r border-subtle bg-panel flex flex-col overflow-hidden">
+    <aside
+      className="w-[320px] border-r border-subtle bg-panel flex flex-col overflow-hidden"
+      data-testid="chat-threads-pane"
+    >
       <div className="p-3 border-b border-subtle">
         <Button
           variant="action"

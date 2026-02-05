@@ -70,7 +70,7 @@ export function Composer({
   };
 
   return (
-    <div className="border-t border-subtle bg-background">
+    <div className="border-t border-subtle bg-background" data-testid="chat-composer">
       {mode === 'edit' && (
         <div className="px-4 pt-3 flex items-center justify-between">
           <div className="text-xs text-tertiary">Editing message</div>

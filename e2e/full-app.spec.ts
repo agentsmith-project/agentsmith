@@ -15,6 +15,25 @@ const baseUrl = 'http://localhost:3000';
 const workspaceId = 'ws_default';
 const projectId = 'proj_001';
 const testEmail = 'test@example.com';
+const zhPublicRoutes = ['/zh-CN/login', '/zh-CN/login/workspace', '/zh-CN/join'];
+const zhAuthedRoutes = [
+  `/zh-CN/workspaces/${workspaceId}/projects`,
+  `/zh-CN/workspaces/${workspaceId}/settings`,
+  `/zh-CN/user/profile`,
+  `/zh-CN/user/api-keys`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/overview`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/chat`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/workbench`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/agents`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/endpoints`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/members`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/audit`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/usage`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/userdata`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/sources`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/credentials`,
+  `/zh-CN/workspaces/${workspaceId}/projects/${projectId}/settings`,
+];
 
 /**
  * Extended test fixture with authenticated context
@@ -37,6 +56,26 @@ async function navigateWithAuth(page: Page, url: string) {
 }
 
 test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
+  test.describe('Smoke route coverage (zh-CN)', () => {
+    test('public routes should render', async ({ page }) => {
+      for (const route of zhPublicRoutes) {
+        await gotoAndWait(page, route);
+        await expect(page.getByTestId('page-state__success')).toBeVisible();
+      }
+    });
+
+    test('authenticated routes should render shell', async ({ authenticatedPage }) => {
+      test.setTimeout(120000);
+      for (const route of zhAuthedRoutes) {
+        await navigateWithAuth(authenticatedPage, `${baseUrl}${route}`);
+        await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
+        if (route.includes('/projects/')) {
+          await expect(authenticatedPage.locator('header').first()).toBeVisible();
+          await expect(authenticatedPage.locator('aside').first()).toBeVisible();
+        }
+      }
+    });
+  });
   // =========================================================================
   // 1. Homepage & Login
   // =========================================================================

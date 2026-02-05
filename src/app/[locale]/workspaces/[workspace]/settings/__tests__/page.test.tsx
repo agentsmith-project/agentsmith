@@ -33,7 +33,7 @@ import WorkspaceSettingsPage from '../page';
 describe('WorkspaceSettingsPage', () => {
   it('renders members section', () => {
     render(<WorkspaceSettingsPage />);
-    expect(screen.getByText('Workspace Members')).toBeInTheDocument();
+    expect(screen.getByText('workspace_members')).toBeInTheDocument();
     expect(screen.getByText('dev1@example.com')).toBeInTheDocument();
   });
 });

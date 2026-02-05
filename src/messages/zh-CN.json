@@ -547,6 +547,12 @@
   "settings": {
     "title": "项目设置",
     "subtitle": "管理项目配置",
+    "workspace_title": "工作区设置",
+    "workspace_subtitle": "管理工作区配置",
+    "workspace_general": "常规",
+    "workspace_name": "工作区名称",
+    "workspace_members": "工作区成员",
+    "workspace_members_empty": "暂无成员。",
     "tab_general": "常规",
     "tab_runtime_preferences": "运行偏好",
     "tab_governance": "治理规则",

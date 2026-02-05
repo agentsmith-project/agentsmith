@@ -547,6 +547,12 @@
   "settings": {
     "title": "Project Settings",
     "subtitle": "Manage project configuration",
+    "workspace_title": "Workspace Settings",
+    "workspace_subtitle": "Manage workspace configuration",
+    "workspace_general": "General",
+    "workspace_name": "Workspace Name",
+    "workspace_members": "Workspace Members",
+    "workspace_members_empty": "No members yet.",
     "tab_general": "General",
     "tab_runtime_preferences": "Runtime Preferences",
     "tab_governance": "Governance",

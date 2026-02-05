@@ -30,25 +30,25 @@ export default function WorkspaceSettingsPage() {
             <div className="mb-6">
               <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
                 <SettingsIcon className="w-6 h-6 text-icon-default" />
-                {t('title')}
+                {t('workspace_title')}
               </h1>
-              <p className="text-tertiary">Workspace configuration</p>
+              <p className="text-tertiary">{t('workspace_subtitle')}</p>
             </div>
 
-            <div className="p-6 rounded-md border border-border bg-surface">
-              <h2 className="font-semibold text-foreground mb-4">General</h2>
+            <div className="p-6 rounded-xl border border-border bg-surface">
+              <h2 className="font-semibold text-foreground mb-4">{t('workspace_general')}</h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-primary mb-2">Workspace Name</label>
+                  <label className="block text-sm font-medium text-secondary mb-2">{t('workspace_name')}</label>
                   <p className="text-primary">{workspace.name}</p>
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 p-6 rounded-md border border-border bg-surface">
-              <h2 className="font-semibold text-foreground mb-4">Workspace Members</h2>
+            <div className="mt-6 p-6 rounded-xl border border-border bg-surface">
+              <h2 className="font-semibold text-foreground mb-4">{t('workspace_members')}</h2>
               {members.length === 0 ? (
-                <p className="text-tertiary text-sm">No members yet.</p>
+                <p className="text-tertiary text-sm">{t('workspace_members_empty')}</p>
               ) : (
                 <div className="space-y-3">
                   {members.map((member) => (

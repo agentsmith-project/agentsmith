@@ -25,6 +25,9 @@ test.describe('UX guardrails', () => {
 
   test('project pages render shell and avoid horizontal overflow', async ({ page }) => {
     test.setTimeout(90000);
+    await page.addInitScript(() => {
+      localStorage.setItem('mbos.sidebar.collapsed', '0');
+    });
     await withAuth(page);
 
     for (const path of PROJECT_ROUTES) {
@@ -32,7 +35,10 @@ test.describe('UX guardrails', () => {
       await expect(page.getByTestId('page-state__success')).toBeVisible();
 
       await expect(page.locator('header').first()).toBeVisible();
-      await expect(page.locator('aside').first()).toBeVisible();
+      const sidebar = page.locator('aside').first();
+      await expect(sidebar).toBeVisible();
+      const sidebarWidth = await sidebar.evaluate((el) => Math.round(el.getBoundingClientRect().width));
+      expect(sidebarWidth, `Unexpected sidebar width at ${path}`).toBe(260);
 
       const hasOverflow = await page.evaluate(() => {
         const doc = document.documentElement;

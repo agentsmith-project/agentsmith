@@ -104,7 +104,7 @@ export function AppShellSidebar({
   return (
     <aside
       className={cn(
-        collapsed ? 'w-[72px]' : 'w-[220px]',
+        collapsed ? 'w-[72px]' : 'w-[260px]',
         'border-r border-subtle bg-panel flex flex-col transition-[width] duration-200',
         className,
       )}

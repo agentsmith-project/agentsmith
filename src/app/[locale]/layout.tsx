@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 import { MSWProvider } from '@/components/providers/MSWProvider';
 import { AuthProvider } from '@/components/providers/AuthProvider';
+import { RealtimeProvider } from '@/components/providers/RealtimeProvider';
 import { ToastContainer } from '@/components/ui/toast';
 import { type Locale } from '@/lib/i18n/config';
 import { routing } from '@/lib/i18n/routing';
@@ -40,12 +41,14 @@ export default async function LocaleLayout({
   return (
     <AuthProvider>
       <MSWProvider>
-        <QueryProvider>
-          <NextIntlClientProvider locale={locale} messages={messages}>
-            {children}
-          </NextIntlClientProvider>
-          <ToastContainer />
-        </QueryProvider>
+        <RealtimeProvider mode="disabled">
+          <QueryProvider>
+            <NextIntlClientProvider locale={locale} messages={messages}>
+              {children}
+            </NextIntlClientProvider>
+            <ToastContainer />
+          </QueryProvider>
+        </RealtimeProvider>
       </MSWProvider>
     </AuthProvider>
   );

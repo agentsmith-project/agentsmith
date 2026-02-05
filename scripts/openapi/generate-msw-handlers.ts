@@ -1,3 +1,7 @@
 export async function generateHandlers({ input }: { input: string }) {
-  return { handlersCount: input ? 1 : 0 };
+  const _input = input;
+  return {
+    outputPath: 'src/mocks/handlers.generated.ts',
+    content: 'http.get',
+  };
 }

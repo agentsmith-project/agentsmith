@@ -18,6 +18,7 @@ test.describe('Route coverage', () => {
     test.setTimeout(60000);
     for (const route of ROUTES.public) {
       await gotoAndWait(page, route.path);
+      await expect(page.getByTestId('page-state__success')).toBeVisible();
       await expect(getRouteExpectation(page, route).first()).toBeVisible();
     }
   });
@@ -28,6 +29,7 @@ test.describe('Route coverage', () => {
     const allAuthed = [...ROUTES.user, ...ROUTES.workspace, ...ROUTES.project];
     for (const route of allAuthed) {
       await gotoAndWait(page, route.path);
+      await expect(page.getByTestId('page-state__success')).toBeVisible();
       await expect(getRouteExpectation(page, route).first()).toBeVisible();
     }
   });

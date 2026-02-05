@@ -46,12 +46,14 @@ async function mockLogin(page: Page, workspaceId: string, email: string, name?: 
 test.describe('Homepage', () => {
   test('should display English login page', async ({ page }) => {
     await page.goto('/en-US/login');
+    await expect(page.getByTestId('page-state__success')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Welcome to MBOS' })).toBeVisible();
     await expect(page.getByText('Intelligent Agent Platform', { exact: true })).toBeVisible();
   });
 
   test('should display Chinese login page', async ({ page }) => {
     await page.goto('/zh-CN/login');
+    await expect(page.getByTestId('page-state__success')).toBeVisible();
     await expect(page.getByText('欢迎使用 MBOS')).toBeVisible();
   });
 });
@@ -62,6 +64,7 @@ test.describe('Login Page', () => {
     // Clear persisted auth so login form is shown (not redirect)
     await page.evaluate(() => localStorage.removeItem('mbos-auth'));
     await page.reload();
+    await expect(page.getByTestId('page-state__success')).toBeVisible();
   });
 
   test('should display login form correctly', async ({ page }) => {

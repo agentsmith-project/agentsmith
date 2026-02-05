@@ -3,6 +3,8 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Building2, FolderKanban } from 'lucide-react';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 
 export default function WorkspaceSelectPage() {
@@ -17,26 +19,30 @@ export default function WorkspaceSelectPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-semibold text-foreground mb-2">
-          {t('select_your_workspace')}
-        </h1>
-        <p className="text-tertiary mb-8">
-          {t('choose_workspace')}
-        </p>
+    <PageState state="success">
+      <PageLayout>
+        <div className="min-h-screen bg-background p-8">
+          <div className="max-w-4xl mx-auto">
+            <h1 className="text-2xl font-semibold text-foreground mb-2">
+              {t('select_your_workspace')}
+            </h1>
+            <p className="text-tertiary mb-8">
+              {t('choose_workspace')}
+            </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {workspaces?.map(workspace => (
-            <WorkspaceCard
-              key={workspace.id}
-              workspace={workspace}
-              onSelect={() => handleWorkspaceSelect(workspace.id)}
-            />
-          ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {workspaces?.map(workspace => (
+                <WorkspaceCard
+                  key={workspace.id}
+                  workspace={workspace}
+                  onSelect={() => handleWorkspaceSelect(workspace.id)}
+                />
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </PageLayout>
+    </PageState>
   );
 }
 

@@ -8,6 +8,8 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Topbar } from '@/components/app-shell/Topbar';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { Logo } from '@/components/app-shell/Logo';
 import {
@@ -71,13 +73,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Topbar */}
-      <Topbar />
+    <PageState state="success">
+      <PageLayout>
+        <div className="min-h-screen bg-background flex flex-col">
+          {/* Topbar */}
+          <Topbar />
 
-      {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-8">
+          {/* Main Content */}
+          <main className="flex-1 flex items-center justify-center p-4">
+            <div className="w-full max-w-md space-y-8">
           {/* Logo & Title */}
           <div className="text-center space-y-4">
             <div className="flex justify-center">
@@ -186,8 +190,10 @@ export default function LoginPage() {
               </p>
             </div>
           </div>
+            </div>
+          </main>
         </div>
-      </main>
-    </div>
+      </PageLayout>
+    </PageState>
   );
 }

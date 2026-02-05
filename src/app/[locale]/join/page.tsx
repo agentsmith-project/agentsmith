@@ -4,6 +4,9 @@ import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
+import { PageLoading } from '@/components/ui/loading';
 import { useRouter } from '@/lib/i18n/routing';
 
 function JoinPageContent() {
@@ -51,8 +54,18 @@ function JoinPageContent() {
 
 export default function JoinPage() {
   return (
-    <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background">Loading...</div>}>
-      <JoinPageContent />
+    <React.Suspense
+      fallback={
+        <PageState state="loading">
+          <PageLoading />
+        </PageState>
+      }
+    >
+      <PageState state="success">
+        <PageLayout>
+          <JoinPageContent />
+        </PageLayout>
+      </PageState>
     </React.Suspense>
   );
 }

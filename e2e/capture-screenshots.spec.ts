@@ -31,6 +31,8 @@ const DIRS = [
   '12-sources',
   '13-credentials',
   '14-user',
+  '15-userdata',
+  '16-workspace',
 ];
 
 function ensureDirs() {
@@ -87,15 +89,28 @@ test.describe('Screenshot Capture', () => {
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(BASE, '01-auth', 'login.png'), fullPage: true });
 
+    await page.goto('/zh-CN/join', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(BASE, '01-auth', 'join-invalid.png'), fullPage: true });
+
     await mockLogin(page);
     await page.reload();
     await page.waitForTimeout(1500);
+    await page.goto('/zh-CN/login/workspace', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '01-auth', 'login-workspace.png'), fullPage: true });
+
     await page.goto('/zh-CN/workspaces/ws_default/projects', { waitUntil: 'networkidle' });
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(BASE, '01-auth', 'workspace-select.png'), fullPage: true });
 
     // === 02-projects ===
     await page.screenshot({ path: path.join(BASE, '02-projects', 'projects-list.png'), fullPage: true });
+
+    // === 16-workspace ===
+    await page.goto('/zh-CN/workspaces/ws_default/settings', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '16-workspace', 'workspace-settings.png'), fullPage: true });
 
     // === 03-overview ===
     await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/overview`, { waitUntil: 'networkidle' });
@@ -196,6 +211,11 @@ test.describe('Screenshot Capture', () => {
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(BASE, '12-sources', 'sources.png'), fullPage: true });
 
+    // === 15-userdata ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/userdata`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(BASE, '15-userdata', 'userdata.png'), fullPage: true });
+
     // === 13-credentials ===
     await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/credentials`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(800);
@@ -216,5 +236,33 @@ test.describe('Screenshot Capture', () => {
     await page.goto('/zh-CN/user/api-keys', { waitUntil: 'networkidle' });
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(BASE, '14-user', 'api-keys.png'), fullPage: true });
+
+    const expectedScreenshots = [
+      path.join(BASE, '01-auth', 'login.png'),
+      path.join(BASE, '01-auth', 'workspace-select.png'),
+      path.join(BASE, '01-auth', 'login-workspace.png'),
+      path.join(BASE, '01-auth', 'join-invalid.png'),
+      path.join(BASE, '02-projects', 'projects-list.png'),
+      path.join(BASE, '03-overview', 'overview.png'),
+      path.join(BASE, '04-chat', 'chat.png'),
+      path.join(BASE, '05-workbench', 'workbench.png'),
+      path.join(BASE, '06-agents', 'agents.png'),
+      path.join(BASE, '07-endpoints', 'endpoints.png'),
+      path.join(BASE, '08-members', 'members-list.png'),
+      path.join(BASE, '09-audit', 'audit.png'),
+      path.join(BASE, '10-usage', 'usage.png'),
+      path.join(BASE, '11-settings', 'settings-general.png'),
+      path.join(BASE, '12-sources', 'sources.png'),
+      path.join(BASE, '13-credentials', 'credentials-list.png'),
+      path.join(BASE, '14-user', 'profile.png'),
+      path.join(BASE, '14-user', 'api-keys.png'),
+      path.join(BASE, '15-userdata', 'userdata.png'),
+      path.join(BASE, '16-workspace', 'workspace-settings.png'),
+    ];
+
+    const missing = expectedScreenshots.filter((shot) => !fs.existsSync(shot));
+    if (missing.length > 0) {
+      throw new Error(`Missing screenshots: ${missing.join(', ')}`);
+    }
   });
 });

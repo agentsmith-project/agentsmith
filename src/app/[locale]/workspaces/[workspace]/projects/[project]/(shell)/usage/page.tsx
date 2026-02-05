@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { UsagePage as UsagePageComponent } from '@/components/audit-usage/UsagePage';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
+import { PageLoading } from '@/components/ui/loading';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { validateProjectWithMembership } from '@/lib/utils/validation-zod';
@@ -27,7 +30,11 @@ export default function UsagePage({ params }: UsagePageProps) {
   }, [params]);
 
   if (!resolvedParams) {
-    return <div className="p-6">Loading...</div>;
+    return (
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
+    );
   }
 
   const validatedProject = currentProject
@@ -37,11 +44,15 @@ export default function UsagePage({ params }: UsagePageProps) {
     validatedProject?.role === 'user' ? currentUser?.id : undefined;
 
   return (
-    <UsagePageComponent
-      workspaceId={workspaceId}
-      projectId={projectId}
-      defaultEndUserId={defaultEndUserId}
-      currentUserId={currentUser?.id}
-    />
+    <PageState state="success">
+      <PageLayout>
+        <UsagePageComponent
+          workspaceId={workspaceId}
+          projectId={projectId}
+          defaultEndUserId={defaultEndUserId}
+          currentUserId={currentUser?.id}
+        />
+      </PageLayout>
+    </PageState>
   );
 }

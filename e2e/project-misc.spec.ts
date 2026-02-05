@@ -8,12 +8,14 @@ test.describe('Project misc pages', () => {
   test('credentials page loads', async ({ page }) => {
     await withAuth(page);
     await gotoAndWait(page, `${base}/credentials`);
+    await expect(page.getByTestId('page-state__success')).toBeVisible();
     await expect(page.getByRole('heading', { name: /Credentials|Keys/i })).toBeVisible();
   });
 
   test('userdata page loads', async ({ page }) => {
     await withAuth(page);
     await gotoAndWait(page, `${base}/userdata`);
+    await expect(page.getByTestId('page-state__success')).toBeVisible();
     await expect(page.getByRole('heading', { name: /UserData|User Data/i })).toBeVisible();
   });
 

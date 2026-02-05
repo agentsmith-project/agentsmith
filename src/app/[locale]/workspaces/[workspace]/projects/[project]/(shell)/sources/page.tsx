@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { SourcesPage as SourcesPageComponent } from '@/components/sources/SourcesPage';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
+import { PageLoading } from '@/components/ui/loading';
 
 interface SourcesPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -20,13 +23,21 @@ export default function SourcesPage({ params }: SourcesPageProps) {
   }, [params]);
 
   if (!resolvedParams) {
-    return <div className="p-6">Loading...</div>;
+    return (
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
+    );
   }
 
   return (
-    <SourcesPageComponent
-      workspaceId={resolvedParams.workspace}
-      projectId={resolvedParams.project}
-    />
+    <PageState state="success">
+      <PageLayout>
+        <SourcesPageComponent
+          workspaceId={resolvedParams.workspace}
+          projectId={resolvedParams.project}
+        />
+      </PageLayout>
+    </PageState>
   );
 }

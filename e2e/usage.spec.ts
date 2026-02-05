@@ -24,6 +24,7 @@ test.describe('Usage Page', () => {
   test('should display usage statistics', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/usage`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByText('Usage').first()).toBeVisible();
   });
 });

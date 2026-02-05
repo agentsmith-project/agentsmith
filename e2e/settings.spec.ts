@@ -24,12 +24,14 @@ test.describe('Settings Page', () => {
   test('should display settings options', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/settings`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByText('Settings').first()).toBeVisible();
   });
 
   test('should show project configuration options', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/settings`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByRole('tab', { name: 'General' })).toBeVisible();
     await expect(authenticatedPage.getByRole('tab', { name: 'Runtime Preferences' })).toBeVisible();
     await expect(authenticatedPage.getByRole('tab', { name: 'Governance' })).toBeVisible();

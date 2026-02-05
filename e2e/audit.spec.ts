@@ -24,12 +24,14 @@ test.describe('Audit Page', () => {
   test('should display audit log', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByText('Audit').first()).toBeVisible();
   });
 
   test('should show audit log title and description', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByText('Audit').first()).toBeVisible();
     await expect(authenticatedPage.getByText('Audit events and compliance logs')).toBeVisible();
   });

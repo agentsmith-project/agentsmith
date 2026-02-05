@@ -14,6 +14,8 @@ import { useTranslations } from 'next-intl';
 import { Key, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { CredentialsAPI, getApiClient, handleErrorForToast } from '@/lib/api';
 import type { Credential } from '@/lib/api/types';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { DataTable } from '@/components/ui/data-table';
 import { CreateCredentialDialog } from '@/components/credentials/CreateCredentialDialog';
@@ -175,68 +177,72 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
 
   if (!resolvedParams) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-tertiary">Loading...</div>
-      </div>
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
     );
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-          <p className="text-sm text-tertiary mt-1">{t('subtitle')}</p>
+    <PageState state="success">
+      <PageLayout>
+        <div className="p-6 max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
+              <p className="text-sm text-tertiary mt-1">{t('subtitle')}</p>
+            </div>
+            <button
+              onClick={() => setCreateDialogOpen(true)}
+              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              {t('create')}
+            </button>
+          </div>
+
+          {isLoading ? (
+            <PageLoading />
+          ) : !credentials || credentials.length === 0 ? (
+            <EmptyState
+              icon={Key}
+              title={t('empty.title')}
+              description={t('empty.description')}
+              action={{
+                label: t('create'),
+                onClick: () => setCreateDialogOpen(true),
+              }}
+            />
+          ) : (
+            <DataTable table={table} />
+          )}
+
+          <CreateCredentialDialog
+            open={createDialogOpen}
+            onOpenChange={setCreateDialogOpen}
+            workspaceId={workspaceId}
+            projectId={projectId}
+            onSuccess={invalidate}
+          />
+
+          <RotateCredentialDialog
+            open={rotateDialogOpen}
+            onOpenChange={setRotateDialogOpen}
+            credential={selectedCredential}
+            workspaceId={workspaceId}
+            projectId={projectId}
+            onSuccess={invalidate}
+          />
+
+          <DeleteCredentialDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            credential={selectedCredential}
+            onConfirm={handleDeleteConfirm}
+            deleting={deleteMutation.isPending}
+          />
         </div>
-        <button
-          onClick={() => setCreateDialogOpen(true)}
-          className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          {t('create')}
-        </button>
-      </div>
-
-      {isLoading ? (
-        <PageLoading />
-      ) : !credentials || credentials.length === 0 ? (
-        <EmptyState
-          icon={Key}
-          title={t('empty.title')}
-          description={t('empty.description')}
-          action={{
-            label: t('create'),
-            onClick: () => setCreateDialogOpen(true),
-          }}
-        />
-      ) : (
-        <DataTable table={table} />
-      )}
-
-      <CreateCredentialDialog
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        workspaceId={workspaceId}
-        projectId={projectId}
-        onSuccess={invalidate}
-      />
-
-      <RotateCredentialDialog
-        open={rotateDialogOpen}
-        onOpenChange={setRotateDialogOpen}
-        credential={selectedCredential}
-        workspaceId={workspaceId}
-        projectId={projectId}
-        onSuccess={invalidate}
-      />
-
-      <DeleteCredentialDialog
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        credential={selectedCredential}
-        onConfirm={handleDeleteConfirm}
-        deleting={deleteMutation.isPending}
-      />
-    </div>
+      </PageLayout>
+    </PageState>
   );
 }

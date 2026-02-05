@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { AuditPage as AuditPageComponent } from '@/components/audit-usage/AuditPage';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
+import { PageLoading } from '@/components/ui/loading';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { validateProjectWithMembership } from '@/lib/utils/validation-zod';
@@ -27,7 +30,11 @@ export default function AuditPage({ params }: AuditPageProps) {
   }, [params]);
 
   if (!resolvedParams) {
-    return <div className="p-6">Loading...</div>;
+    return (
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
+    );
   }
 
   const validatedProject = currentProject
@@ -37,10 +44,14 @@ export default function AuditPage({ params }: AuditPageProps) {
     validatedProject?.role === 'user' ? currentUser?.id : undefined;
 
   return (
-    <AuditPageComponent
-      workspaceId={workspaceId}
-      projectId={projectId}
-      defaultEndUserId={defaultEndUserId}
-    />
+    <PageState state="success">
+      <PageLayout>
+        <AuditPageComponent
+          workspaceId={workspaceId}
+          projectId={projectId}
+          defaultEndUserId={defaultEndUserId}
+        />
+      </PageLayout>
+    </PageState>
   );
 }

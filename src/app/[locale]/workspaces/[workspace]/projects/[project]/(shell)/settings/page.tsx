@@ -14,6 +14,9 @@ import { Button } from '@/components/ui/button';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import { handleErrorForToast } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
+import { PageLoading } from '@/components/ui/loading';
 import { useTranslations } from 'next-intl';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -164,14 +167,16 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   if (!resolvedParams || !currentProject) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-tertiary">Loading...</div>
-      </div>
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
     );
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <PageState state="success">
+      <PageLayout>
+        <div className="p-6 max-w-4xl mx-auto space-y-6">
       <header>
         <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
           <SettingsIcon className="w-6 h-6 text-icon-default" />
@@ -365,6 +370,8 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         }}
         deleteProject={(wsId, projectId) => projectAPI.delete(wsId, projectId)}
       />
-    </div>
+        </div>
+      </PageLayout>
+    </PageState>
   );
 }

@@ -24,12 +24,14 @@ test.describe('Agents Page', () => {
   test('should display agents list', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/agents`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByText('Agents').first()).toBeVisible();
   });
 
   test('should show agent management options', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/agents`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     // Look for "New Agent" button or "Create Agent" in empty state
     await expect(authenticatedPage.getByText(/New Agent|Create Agent/i)).toBeVisible();
   });

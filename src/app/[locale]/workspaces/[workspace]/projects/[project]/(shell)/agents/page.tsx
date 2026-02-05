@@ -21,6 +21,8 @@ import { AgentKeysDialog } from '@/components/api-keys/AgentKeysDialog';
 import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { EditAgentDialog } from '@/components/agents/EditAgentDialog';
 import { AgentDiagnosticsPanel } from '@/components/agents/AgentDiagnosticsPanel';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 
 interface AgentsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -257,11 +259,17 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   });
 
   if (!resolvedParams) {
-    return <PageLoading />;
+    return (
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
+    );
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <PageState state="success">
+      <PageLayout>
+        <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
@@ -342,16 +350,18 @@ export default function AgentsPage({ params }: AgentsPageProps) {
         onSuccess={invalidateAgents}
       />
 
-      {keysDialogAgent && resolvedParams && (
-        <AgentKeysDialog
-          open={!!keysDialogAgent}
-          onOpenChange={(open) => !open && setKeysDialogAgent(null)}
-          workspaceId={resolvedParams.workspace}
-          projectId={resolvedParams.project}
-          agentId={keysDialogAgent.id}
-          agentName={keysDialogAgent.name}
-        />
-      )}
-    </div>
+          {keysDialogAgent && resolvedParams && (
+            <AgentKeysDialog
+              open={!!keysDialogAgent}
+              onOpenChange={(open) => !open && setKeysDialogAgent(null)}
+              workspaceId={resolvedParams.workspace}
+              projectId={resolvedParams.project}
+              agentId={keysDialogAgent.id}
+              agentName={keysDialogAgent.name}
+            />
+          )}
+        </div>
+      </PageLayout>
+    </PageState>
   );
 }

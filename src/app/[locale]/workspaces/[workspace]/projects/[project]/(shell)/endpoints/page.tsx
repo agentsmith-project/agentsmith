@@ -17,6 +17,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
 import { CreateEndpointDialog } from '@/components/endpoints/CreateEndpointDialog';
 import { EditEndpointDialog } from '@/components/endpoints/EditEndpointDialog';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 
 interface EndpointsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -213,65 +215,71 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
 
   if (!resolvedParams) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-tertiary">Loading...</div>
-      </div>
+      <PageState state="loading">
+        <div className="flex items-center justify-center h-full">
+          <div className="text-tertiary">Loading...</div>
+        </div>
+      </PageState>
     );
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-          <p className="text-sm text-tertiary mt-1">Manage LLM endpoints</p>
+    <PageState state="success">
+      <PageLayout>
+        <div className="p-6 max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
+              <p className="text-sm text-tertiary mt-1">Manage LLM endpoints</p>
+            </div>
+            <button
+              onClick={() => setCreateDialogOpen(true)}
+              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              {t('create')}
+            </button>
+          </div>
+
+          {endpointsLoading ? (
+            <PageLoading />
+          ) : endpoints.length === 0 ? (
+            <EmptyState
+              icon={Server}
+              title={`No ${t('title').toLowerCase()} yet`}
+              description={`Add your first LLM ${t('title').toLowerCase()} to get started`}
+              action={{
+                label: `Add ${t('title')}`,
+                onClick: () => setCreateDialogOpen(true),
+              }}
+            />
+          ) : (
+            <DataTable table={table} />
+          )}
+
+          <CreateEndpointDialog
+            open={createDialogOpen}
+            onOpenChange={setCreateDialogOpen}
+            workspaceId={workspaceId}
+            projectId={projectId}
+            onSuccess={invalidateEndpoints}
+          />
+
+          {selectedEndpoint && (
+            <EditEndpointDialog
+              open={editDialogOpen}
+              onOpenChange={setEditDialogOpen}
+              workspaceId={workspaceId}
+              projectId={projectId}
+              endpoint={selectedEndpoint}
+              onSuccess={() => {
+                invalidateEndpoints();
+                setEditDialogOpen(false);
+              }}
+            />
+          )}
         </div>
-        <button
-          onClick={() => setCreateDialogOpen(true)}
-          className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          {t('create')}
-        </button>
-      </div>
-
-      {endpointsLoading ? (
-        <PageLoading />
-      ) : endpoints.length === 0 ? (
-        <EmptyState
-          icon={Server}
-          title={`No ${t('title').toLowerCase()} yet`}
-          description={`Add your first LLM ${t('title').toLowerCase()} to get started`}
-          action={{
-            label: `Add ${t('title')}`,
-            onClick: () => setCreateDialogOpen(true),
-          }}
-        />
-      ) : (
-        <DataTable table={table} />
-      )}
-
-      <CreateEndpointDialog
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        workspaceId={workspaceId}
-        projectId={projectId}
-        onSuccess={invalidateEndpoints}
-      />
-
-      {selectedEndpoint && (
-        <EditEndpointDialog
-          open={editDialogOpen}
-          onOpenChange={setEditDialogOpen}
-          workspaceId={workspaceId}
-          projectId={projectId}
-          endpoint={selectedEndpoint}
-          onSuccess={() => {
-            invalidateEndpoints();
-            setEditDialogOpen(false);
-          }}
-        />
-      )}
-    </div>
+      </PageLayout>
+    </PageState>
   );
 }

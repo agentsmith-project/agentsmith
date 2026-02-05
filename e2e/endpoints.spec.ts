@@ -24,6 +24,7 @@ test.describe('Endpoints Page', () => {
   test('should display endpoints list', async ({ authenticatedPage }) => {
     await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/endpoints`);
 
+    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
     await expect(authenticatedPage.getByText('Endpoints').first()).toBeVisible();
   });
 });

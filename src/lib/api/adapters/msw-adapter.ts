@@ -10,6 +10,7 @@
 
 import type { ApiClient, ApiRequestOptions } from '../client';
 import { API_BASE, ApiError } from '../client';
+import { createAuthenticatedSSE } from '../sse-client';
 
 export class MSWApiClient implements ApiClient {
   private token: string | null = null;
@@ -138,22 +139,21 @@ export class MSWApiClient implements ApiClient {
   connectSSE(path: string, options?: ApiRequestOptions): EventSource {
     let url = `${API_BASE}${path}`;
 
-    // Add token to URL query params for SSE
-    if (this.token) {
-      const separator = url.includes('?') ? '&' : '?';
-      url += `${separator}token=${encodeURIComponent(this.token)}`;
-    }
-
     if (options?.params) {
-      const separator = url.includes('?') ? '&' : '?';
       const searchParams = new URLSearchParams();
       Object.entries(options.params).forEach(([key, value]) => {
         searchParams.append(key, String(value));
       });
-      url += `${separator}${searchParams.toString()}`;
+      const queryString = searchParams.toString();
+      if (queryString) {
+        url += `?${queryString}`;
+      }
     }
 
-    // In development, MSW will intercept EventSource
-    return new EventSource(url);
+    return createAuthenticatedSSE(url, this.token, {
+      onError: (error) => {
+        console.error('[SSE MSW] Connection error:', error);
+      },
+    });
   }
 }

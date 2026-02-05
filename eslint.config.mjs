@@ -20,11 +20,18 @@ const eslintConfig = [
           varsIgnorePattern: "^_",
         },
       ],
-      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-require-imports": "off",
       "react/no-unescaped-entities": "off",
       "react-hooks/rules-of-hooks": "warn",
       "@next/next/no-img-element": "off",
+    },
+  },
+  {
+    // Allow 'warn' level for 'any' in test files
+    files: ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
   {

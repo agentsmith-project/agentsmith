@@ -13,6 +13,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useWorkspaces } from './use-workspaces';
 import { useProjects } from './use-projects-queries';
 import { useAuthStoreHydration } from '@/lib/stores/authStore';
+import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 export function useSyncAuthFromUrl() {
   const params = useParams();
@@ -20,8 +21,10 @@ export function useSyncAuthFromUrl() {
   const hydrated = useAuthStoreHydration();
 
   const { data: workspaces, isLoading: workspacesLoading } = useWorkspaces();
-  const workspaceId = params?.workspace as string | undefined;
-  const projectId = params?.project as string | undefined;
+  const rawWorkspaceId = params?.workspace;
+  const rawProjectId = params?.project;
+  const workspaceId = validateWorkspaceParam(rawWorkspaceId);
+  const projectId = validateProjectParam(rawProjectId);
 
   // Get projects for current workspace (if workspace selected)
   const { data: projects, isLoading: projectsLoading } = useProjects(workspaceId || '');

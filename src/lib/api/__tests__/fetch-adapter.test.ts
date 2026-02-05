@@ -380,11 +380,11 @@ describe('FetchApiClient', () => {
       expect(eventSource).toBeInstanceOf(EventSource);
     });
 
-    it('should append token as query parameter for SSE', () => {
+    it('should append ticket as query parameter for SSE', () => {
       client.setToken(testToken);
       const eventSource = client.connectSSE('/events');
 
-      expect(capturedUrl).toBe(`${API_BASE}/events?token=${encodeURIComponent(testToken)}`);
+      expect(capturedUrl).toBe(`${API_BASE}/events?ticket=${encodeURIComponent(testToken)}`);
       expect(eventSource).toBeInstanceOf(EventSource);
     });
 
@@ -397,13 +397,13 @@ describe('FetchApiClient', () => {
       expect(eventSource).toBeInstanceOf(EventSource);
     });
 
-    it('should combine token and query parameters for SSE', () => {
+    it('should combine ticket and query parameters for SSE', () => {
       client.setToken(testToken);
       const eventSource = client.connectSSE('/events', {
         params: { channel: 'updates' },
       });
 
-      expect(capturedUrl).toContain(`token=${encodeURIComponent(testToken)}`);
+      expect(capturedUrl).toContain(`ticket=${encodeURIComponent(testToken)}`);
       expect(capturedUrl).toContain('channel=updates');
       expect(eventSource).toBeInstanceOf(EventSource);
     });
@@ -413,7 +413,7 @@ describe('FetchApiClient', () => {
       client.setToken(testToken);
       const eventSource = client.connectSSE('/events?initial=true');
 
-      expect(capturedUrl).toMatch(/events\?initial=true&token=/);
+      expect(capturedUrl).toMatch(/events\?initial=true&ticket=/);
       expect(eventSource).toBeInstanceOf(EventSource);
     });
   });

@@ -70,16 +70,15 @@ export function ProtectedRoute({
   useEffect(() => {
     if (!hydrated) return;
     // In development with E2E tests, check if mock auth is being set up
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const hasMockAuthSetup = typeof window !== 'undefined' && !!(window as any).__MBOS_AUTH_SETUP__;
+    const hasMockAuthSetup = typeof window !== 'undefined' && !!window.__MBOS_AUTH_SETUP__;
 
     if (hasMockAuthSetup && !bypassAuth && !isAuthenticated) {
       // Poll for mock auth to be set up (E2E testing scenario)
       const checkMockAuth = () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const store = (window as any).__MBOS_AUTH_STORE__;
-        if (store && store.getState) {
-          const state = store.getState();
+        const storeHook = window.__MBOS_AUTH_STORE__;
+        if (storeHook) {
+          // Call the hook to get current state (works because we're checking at a point in time)
+          const state = storeHook();
           if (state.isAuthenticated) {
             console.log('[ProtectedRoute] Mock auth detected, isAuthenticated:', state.isAuthenticated);
             return true;

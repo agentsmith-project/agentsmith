@@ -3,6 +3,111 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 
+/**
+ * Trusted domains for images (expand as needed)
+ * For production, configure via environment variable
+ */
+const TRUSTED_IMAGE_DOMAINS = [
+  'example.com',
+  'cdn.example.com',
+  // Add your trusted CDN domains here
+  // For MVP, we're conservative - can be expanded via env var later
+];
+
+/**
+ * Build a strict sanitization schema that prevents XSS attacks
+ */
+const buildStrictSchema = () => {
+  const schema = {
+    ...defaultSchema,
+    tagNames: [
+      ...(defaultSchema.tagNames || []),
+      // GFM tables
+      'table',
+      'thead',
+      'tbody',
+      'tr',
+      'th',
+      'td',
+      // GFM task list (checkboxes)
+      'input',
+      // Images (restricted - validated separately in component)
+      'img',
+    ],
+    attributes: {
+      ...defaultSchema.attributes,
+      // Links: allow target and rel for security
+      a: [...(defaultSchema.attributes?.a || []), ['target'], ['rel']],
+      // Images: ONLY allow safe attributes (actual src validation happens in component)
+      img: [
+        ['src'],      // Source URL (validated separately)
+        ['alt'],      // Alt text
+        ['title'],    // Title text
+        ['width'],    // Dimensions (safe)
+        ['height'],   // Dimensions (safe)
+        ['loading'],  // Loading="lazy" (safe)
+      ],
+      // Input: only for GFM task lists (checkboxes)
+      input: [
+        ['type'],     // Only "checkbox" allowed
+        ['checked'],  // Boolean for checked state
+        ['disabled'], // Boolean for disabled state
+      ],
+      // Code blocks: className for syntax highlighting
+      code: [...(defaultSchema.attributes?.code || []), ['className']],
+      span: [...(defaultSchema.attributes?.span || []), ['className']],
+      // Table alignment
+      th: [...(defaultSchema.attributes?.th || []), ['align']],
+      td: [...(defaultSchema.attributes?.td || []), ['align']],
+    },
+    // PROTOCOLS: Only allow safe protocols
+    protocols: {
+      ...defaultSchema.protocols,
+      href: [
+        'http',
+        'https',
+        'mailto',
+      ],
+      // NO 'data', NO 'javascript', NO 'vbscript' for src
+      // We override src to ONLY allow http/https
+      src: [
+        'http',
+        'https',
+      ],
+    },
+  };
+
+  return schema;
+};
+
+const sanitizeSchema = buildStrictSchema();
+
+/**
+ * Validate image URL against trusted domains and safe protocols
+ * Returns true if URL is safe, false otherwise
+ */
+function isValidImageUrl(url: string): boolean {
+  if (!url) return false;
+
+  try {
+    const parsed = new URL(url);
+
+    // Only allow https: or http: (no data:, javascript:, etc.)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return false;
+    }
+
+    // Check if domain is trusted
+    const domain = parsed.hostname.toLowerCase();
+    return TRUSTED_IMAGE_DOMAINS.some(trusted =>
+      domain === trusted || domain.endsWith(`.${trusted}`),
+    );
+  } catch {
+    // Invalid URL
+    return false;
+  }
+}
+
 function CodeBlock({
   inline,
   className,
@@ -54,39 +159,6 @@ function CodeBlock({
   );
 }
 
-const sanitizeSchema = {
-  ...defaultSchema,
-  tagNames: [
-    ...(defaultSchema.tagNames || []),
-    // GFM tables
-    'table',
-    'thead',
-    'tbody',
-    'tr',
-    'th',
-    'td',
-    // GFM task list
-    'input',
-    // Images (keep safe via sanitize)
-    'img',
-  ],
-  attributes: {
-    ...defaultSchema.attributes,
-    a: [...(defaultSchema.attributes?.a || []), ['target'], ['rel']],
-    img: [...(defaultSchema.attributes?.img || []), ['src'], ['alt'], ['title'], ['width'], ['height'], ['loading']],
-    input: [
-      ...(defaultSchema.attributes?.input || []),
-      ['type'],
-      ['checked'],
-      ['disabled'],
-    ],
-    code: [...(defaultSchema.attributes?.code || []), ['className']],
-    span: [...(defaultSchema.attributes?.span || []), ['className']],
-    th: [...(defaultSchema.attributes?.th || []), ['align']],
-    td: [...(defaultSchema.attributes?.td || []), ['align']],
-  },
-};
-
 export function Markdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
@@ -98,19 +170,32 @@ export function Markdown({ content }: { content: string }) {
             {...props}
             className="text-accent hover:underline underline-offset-4"
             target="_blank"
-            rel="noreferrer"
+            rel="noreferrer noopener"  // Added noopener for security
           >
             {children}
           </a>
         ),
-        img: ({ alt, ...props }) => (
-          <img
-            {...props}
-            alt={alt || ''}
-            className="max-w-full h-auto rounded-md border border-subtle"
-            loading="lazy"
-          />
-        ),
+        img: ({ alt, src, ...props }) => {
+          // Validate image URL before rendering
+          if (!src || !isValidImageUrl(src)) {
+            // Return null or placeholder for unsafe images
+            return (
+              <span className="text-tertiary text-xs">
+                [Image blocked: unsafe source]
+              </span>
+            );
+          }
+
+          return (
+            <img
+              src={src}
+              alt={alt || ''}
+              className="max-w-full h-auto rounded-md border border-subtle"
+              loading="lazy"
+              {...props}
+            />
+          );
+        },
         p: ({ children }) => <p className="text-sm leading-6 text-primary">{children}</p>,
         strong: ({ children }) => <strong className="text-foreground font-semibold">{children}</strong>,
         em: ({ children }) => <em className="text-primary italic">{children}</em>,

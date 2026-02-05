@@ -22,13 +22,24 @@ test('debug store exposure', async ({ page }) => {
 
   console.log('Store info:', JSON.stringify(storeInfo, null, 2));
 
-  // Try calling mockLogin
+  // Try calling setAuth
   await page.evaluate(() => {
     const store = (window as any).__MBOS_AUTH_STORE__;
     if (store && store.getState) {
-      console.log('Before mockLogin, projects:', store.getState().projects);
-      store.getState().mockLogin('ws_default', 'test@example.com');
-      console.log('After mockLogin, projects:', store.getState().projects);
+      const state = store.getState();
+      console.log('Before setAuth, isAuthenticated:', state.isAuthenticated);
+      if (typeof state.setAuth === 'function') {
+        state.setAuth(
+          {
+            id: 'user_default',
+            email: 'test@example.com',
+            name: 'test',
+            locale: 'en-US',
+          },
+          `mock_token_${Date.now()}`
+        );
+      }
+      console.log('After setAuth, isAuthenticated:', store.getState().isAuthenticated);
     }
   });
 
@@ -40,7 +51,7 @@ test('debug store exposure', async ({ page }) => {
     return store ? store.getState() : null;
   });
 
-  console.log('State after mockLogin:', JSON.stringify(stateAfter, null, 2));
+  console.log('State after setAuth:', JSON.stringify(stateAfter, null, 2));
 
   // Take a screenshot
   await page.screenshot({ path: 'test-results/debug-store-screenshot.png' });

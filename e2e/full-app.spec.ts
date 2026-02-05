@@ -1,4 +1,6 @@
 import { test as base, expect, type Page } from '@playwright/test';
+import { withAuth } from './fixtures/authenticated';
+import { gotoAndWait } from './utils/navigation';
 
 /**
  * Comprehensive E2E Tests for MBOS Frontend v1
@@ -15,124 +17,13 @@ const projectId = 'proj_001';
 const testEmail = 'test@example.com';
 
 /**
- * Create mock auth state that matches zustand persist format
- */
-function createMockAuthState(wsId: string, userEmail: string, userName?: string) {
-  return {
-    state: {
-      user: {
-        id: `user_${Math.random().toString(36).substring(2, 10)}`,
-        email: userEmail,
-        name: userName || userEmail.split('@')[0],
-        locale: 'en-US',
-      },
-      token: `mock_jwt_token_${Date.now()}`,
-      isAuthenticated: true,
-      currentWorkspace: {
-        id: wsId,
-        name: wsId === 'ws_default' ? 'Default Workspace' : 'Test Workspace',
-        role: 'owner',
-      },
-      currentProject: {
-        id: 'proj_001',
-        workspace_id: wsId,
-        name: 'AI Assistant Project',
-        visibility: 'public',
-        role: 'owner',
-        permissions: ['project:*'],
-        status: 'active',
-      },
-      workspaces: [
-        {
-          id: 'ws_default',
-          name: 'Default Workspace',
-          role: 'owner',
-        },
-        {
-          id: 'ws_test',
-          name: 'Test Workspace',
-          role: 'admin',
-        },
-      ],
-      projects: [
-        {
-          id: 'proj_001',
-          workspace_id: wsId,
-          name: 'AI Assistant Project',
-          visibility: 'public',
-          role: 'owner',
-          permissions: ['project:*'],
-          status: 'active',
-        },
-        {
-          id: 'proj_002',
-          workspace_id: wsId,
-          name: 'Research Project',
-          visibility: 'private',
-          role: 'admin',
-          permissions: ['project:read', 'project:agent:create'],
-          status: 'active',
-        },
-      ],
-    },
-    version: 0,
-  };
-}
-
-/**
  * Extended test fixture with authenticated context
  */
 export const test = base.extend<{
   authenticatedPage: Page;
 }>({
   authenticatedPage: async ({ page }, use) => {
-    // Set up authentication once when the page is created
-    page.on('console', msg => {
-      if (msg.type() === 'log') {
-        console.log('[PAGE LOG]', msg.text());
-      }
-    });
-
-    // Set up mock authentication before React initializes
-    await page.addInitScript(({ wsId, userEmail }) => {
-      // Set flag to indicate mock auth setup is in progress
-      (window as any).__MBOS_AUTH_SETUP__ = true;
-      console.log('[INIT SCRIPT] Setting up auth for', wsId, userEmail);
-
-      // Poll for the store and call mockLogin
-      const checkAuth = () => {
-        const store = (window as any).__MBOS_AUTH_STORE__;
-        console.log('[INIT SCRIPT] Store check:', !!store);
-
-        if (store && store.getState) {
-          const state = store.getState();
-          console.log('[INIT SCRIPT] Current auth state:', state.isAuthenticated, 'projects:', state.projects.length);
-
-          if (!state.isAuthenticated || state.projects.length === 0) {
-            store.getState().mockLogin(wsId, userEmail);
-            const newState = store.getState();
-            console.log('[INIT SCRIPT] After mockLogin:', newState.isAuthenticated, 'projects:', newState.projects.length);
-            return true;
-          }
-          return true;
-        }
-        return false;
-      };
-
-      // Try immediately, then poll if needed
-      if (!checkAuth()) {
-        console.log('[INIT SCRIPT] First check failed, polling...');
-        let attempts = 0;
-        const interval = setInterval(() => {
-          attempts++;
-          if (checkAuth() || attempts > 100) {
-            clearInterval(interval);
-            console.log('[INIT SCRIPT] Polling complete, attempts:', attempts);
-          }
-        }, 50);
-      }
-    }, { wsId: workspaceId, userEmail: testEmail });
-
+    await withAuth(page, workspaceId, testEmail);
     await use(page);
   },
 });
@@ -142,9 +33,7 @@ export const test = base.extend<{
  * Note: Auth is now set up in the authenticatedPage fixture via initScript
  */
 async function navigateWithAuth(page: Page, url: string) {
-  // Just navigate - auth is handled by the fixture
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle');
+  await gotoAndWait(page, url);
 }
 
 test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
@@ -156,18 +45,14 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
     test('should display homepage with login buttons', async ({ page }) => {
       await page.goto(baseUrl);
 
-      await expect(page.getByText('MBOS Frontend')).toBeVisible();
-      await expect(page.getByText('Intelligent Agent Platform')).toBeVisible();
-      await expect(page.getByText('English Login')).toBeVisible();
-      await expect(page.getByText('中文登录')).toBeVisible();
+      await expect(page).toHaveURL(/\/en-US\/login/);
+      await expect(page.getByRole('heading', { name: 'Welcome to MBOS' })).toBeVisible();
     });
 
     test('should navigate to login page', async ({ page }) => {
-      await page.goto(baseUrl);
-      await page.getByText('English Login').click();
-
-      await expect(page).toHaveURL(/\/en-US\/login/);
-      await expect(page.getByText('Welcome to MBOS')).toBeVisible();
+      await page.goto(`${baseUrl}/en-US/login`);
+      await expect(page.getByText('Login with Keycloak')).toBeVisible();
+      await expect(page.getByText('Quick Login')).toBeVisible();
     });
 
     test('should login via Quick Login button', async ({ page }) => {
@@ -176,7 +61,8 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
       await page.locator('input[placeholder*="user@example.com"]').fill(testEmail);
       await page.getByText('Quick Login').click();
 
-      await page.waitForURL(/\/en-US\/workspaces\/ws_default\/projects/, { timeout: 10000 });
+      await page.waitForURL(/\/en-US\/login\/workspace/, { timeout: 10000 });
+      await expect(page.getByRole('heading', { name: 'Select your workspace' })).toBeVisible();
     });
   });
 
@@ -210,10 +96,10 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
       await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/overview`);
 
       await expect(authenticatedPage.locator('h1').filter({ hasText: 'Overview' })).toBeVisible();
-      await expect(authenticatedPage.locator('text=/Total Turns/i')).toBeVisible();
-      await expect(authenticatedPage.locator('text=/Errors/i')).toBeVisible();
-      await expect(authenticatedPage.locator('text=/Queued Turns/i')).toBeVisible();
-      await expect(authenticatedPage.locator('text=/Online Agents/i')).toBeVisible();
+      await expect(authenticatedPage.locator('text=/Requests Today/i')).toBeVisible();
+      await expect(authenticatedPage.locator('text=/Errors Today/i')).toBeVisible();
+      await expect(authenticatedPage.locator('text=/Tokens Today/i')).toBeVisible();
+      await expect(authenticatedPage.locator('text=/UserData Storage/i')).toBeVisible();
     });
 
     test('should display quick access navigation', async ({ authenticatedPage }) => {
@@ -234,32 +120,27 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
     test('should display chat workspace', async ({ authenticatedPage }) => {
       await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
 
-      await expect(authenticatedPage.getByText('New Chat').first()).toBeVisible();
+      await expect(authenticatedPage.getByTestId('chat-main-pane')).toBeVisible();
     });
 
     test('should create new chat session', async ({ authenticatedPage }) => {
       await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
 
-      // Should show new chat button
-      await expect(authenticatedPage.getByText('New Chat').first()).toBeVisible();
-
-      // Should show "No sessions yet" or similar empty state message
-      await expect(authenticatedPage.getByText(/No sessions|No active session/i)).toBeVisible();
+      await expect(authenticatedPage.getByTestId('chat-threads-pane')).toBeVisible();
+      await expect(authenticatedPage.getByTestId('chat-composer')).toBeVisible();
     });
 
     test('should display three-column layout', async ({ authenticatedPage }) => {
       await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
-      await authenticatedPage.getByText('New Chat').first().click();
-      await authenticatedPage.waitForTimeout(1000);
 
       // Left panel - sessions
-      await expect(authenticatedPage.locator('.w-80').first()).toBeVisible();
+      await expect(authenticatedPage.getByTestId('chat-threads-pane')).toBeVisible();
 
       // Center panel - messages
-      await expect(authenticatedPage.locator('.flex-1').first()).toBeVisible();
+      await expect(authenticatedPage.getByTestId('chat-main-pane')).toBeVisible();
 
-      // Right panel - session info
-      await expect(authenticatedPage.locator('.w-72')).toBeVisible();
+      // Composer
+      await expect(authenticatedPage.getByTestId('chat-composer')).toBeVisible();
     });
   });
 
@@ -271,14 +152,14 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
     test('should display workbench workspace', async ({ authenticatedPage }) => {
       await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/workbench`);
 
-      await expect(authenticatedPage.getByText('Workbench')).toBeVisible();
+      await expect(authenticatedPage.getByRole('heading', { name: 'Workbench' })).toBeVisible();
     });
 
     test('should display thread controls', async ({ authenticatedPage }) => {
       await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/workbench`);
 
       // Check for thread controls
-      await expect(authenticatedPage.getByText(/New Thread/i)).toBeVisible();
+      await expect(authenticatedPage.getByRole('button', { name: /New Recipe/i })).toBeVisible();
     });
   });
 
@@ -347,8 +228,8 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
       await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`);
 
       // Should have audit log title and description
-      await expect(authenticatedPage.getByText('Audit Logs').first()).toBeVisible();
-      await expect(authenticatedPage.getByText('Track all activity within the project')).toBeVisible();
+      await expect(authenticatedPage.getByText('Audit').first()).toBeVisible();
+      await expect(authenticatedPage.getByText('Audit events and compliance logs')).toBeVisible();
     });
   });
 
@@ -398,40 +279,12 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
       await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/sources`);
 
       // Should have add source button
-      await expect(authenticatedPage.getByText(/Add Source/i)).toBeVisible();
+      await expect(authenticatedPage.getByRole('button', { name: 'Upload', exact: true })).toBeVisible();
     });
   });
 
   // =========================================================================
-  // 13. Navigation Tests
-  // =========================================================================
-
-  test.describe('Navigation Between Pages', () => {
-    test('should navigate through all main pages', async ({ authenticatedPage }) => {
-      const pages = [
-        { path: 'overview', title: 'Overview' },
-        { path: 'chat', title: 'New Chat', useButton: true },
-        { path: 'workbench', title: 'Workbench', useButton: true },
-        { path: 'agents', title: 'Agents', useButton: true },
-        { path: 'endpoints', title: 'Endpoints', useButton: true },
-        { path: 'members', title: 'Members', useButton: true },
-        { path: 'audit', title: 'Audit', useButton: true },
-        { path: 'usage', title: 'Usage', useButton: true },
-        { path: 'settings', title: 'Settings', useButton: true },
-        { path: 'sources', title: 'Sources', useButton: true },
-      ];
-
-      for (const pageDef of pages) {
-        await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/${pageDef.path}`);
-
-        // Use first() to handle cases where title appears in both sidebar and page content
-        await expect(authenticatedPage.getByText(pageDef.title).first()).toBeVisible({ timeout: 5000 });
-      }
-    });
-  });
-
-  // =========================================================================
-  // 14. Full User Journey Test
+  // 13. Full User Journey Test
   // =========================================================================
 
   test.describe('Complete User Journey', () => {
@@ -446,13 +299,11 @@ test.describe('MBOS Frontend v1 - Complete E2E Tests', () => {
 
       // 3. Navigate to chat
       await authenticatedPage.goto(`${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
-      await expect(authenticatedPage.getByText('New Chat').first()).toBeVisible();
-      await authenticatedPage.getByText('New Chat').first().click();
-      await authenticatedPage.waitForTimeout(1000);
+      await expect(authenticatedPage.getByTestId('chat-main-pane')).toBeVisible();
 
       // 4. Navigate to workbench
       await authenticatedPage.goto(`${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/workbench`);
-      await expect(authenticatedPage.getByText('Workbench').first()).toBeVisible();
+      await expect(authenticatedPage.getByRole('heading', { name: 'Workbench' })).toBeVisible();
 
       // 5. Navigate to agents
       await authenticatedPage.goto(`${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/agents`);

@@ -3,6 +3,8 @@
  */
 
 import { test as base, expect } from '@playwright/test';
+import { withAuth } from './fixtures/authenticated';
+import { gotoAndWait } from './utils/navigation';
 
 const baseUrl = 'http://localhost:3000';
 const workspaceId = 'ws_default';
@@ -13,57 +15,22 @@ export const test = base.extend<{
   authenticatedPage: typeof base['page']['object'];
 }>({
   authenticatedPage: async ({ page }, use) => {
-    page.on('console', msg => {
-      if (msg.type() === 'error' || msg.type() === 'warning') {
-        console.log(`[CONSOLE ${msg.type().toUpperCase()}]`, msg.text());
-      }
-    });
-
-    await page.addInitScript(({ wsId, userEmail }) => {
-      (window as any).__MBOS_AUTH_SETUP__ = true;
-      const checkAuth = () => {
-        const store = (window as any).__MBOS_AUTH_STORE__;
-        if (store && store.getState) {
-          const state = store.getState();
-          if (!state.isAuthenticated || state.projects.length === 0) {
-            store.getState().mockLogin(wsId, userEmail);
-            return true;
-          }
-          return true;
-        }
-        return false;
-      };
-      if (!checkAuth()) {
-        let attempts = 0;
-        const interval = setInterval(() => {
-          attempts++;
-          if (checkAuth() || attempts > 100) {
-            clearInterval(interval);
-          }
-        }, 50);
-      }
-    }, { wsId: workspaceId, userEmail: testEmail });
-
+    await withAuth(page, workspaceId, testEmail);
     await use(page);
   },
 });
 
-async function navigateWithAuth(page: typeof base['page']['object'], url: string) {
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle');
-}
-
 test.describe('Audit Page', () => {
   test('should display audit log', async ({ authenticatedPage }) => {
-    await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`);
+    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`);
 
     await expect(authenticatedPage.getByText('Audit').first()).toBeVisible();
   });
 
   test('should show audit log title and description', async ({ authenticatedPage }) => {
-    await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`);
+    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`);
 
-    await expect(authenticatedPage.getByText('Audit Logs').first()).toBeVisible();
-    await expect(authenticatedPage.getByText('Track all activity within the project')).toBeVisible();
+    await expect(authenticatedPage.getByText('Audit').first()).toBeVisible();
+    await expect(authenticatedPage.getByText('Audit events and compliance logs')).toBeVisible();
   });
 });

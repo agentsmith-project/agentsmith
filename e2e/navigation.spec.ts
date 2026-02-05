@@ -3,6 +3,9 @@
  */
 
 import { test as base, expect } from '@playwright/test';
+import { withAuth } from './fixtures/authenticated';
+import { gotoAndWait } from './utils/navigation';
+import { ROUTES } from './fixtures/routes';
 
 const baseUrl = 'http://localhost:3000';
 const workspaceId = 'ws_default';
@@ -13,64 +16,27 @@ export const test = base.extend<{
   authenticatedPage: typeof base['page']['object'];
 }>({
   authenticatedPage: async ({ page }, use) => {
-    page.on('console', msg => {
-      if (msg.type() === 'error' || msg.type() === 'warning') {
-        console.log(`[CONSOLE ${msg.type().toUpperCase()}]`, msg.text());
-      }
-    });
-
-    await page.addInitScript(({ wsId, userEmail }) => {
-      (window as any).__MBOS_AUTH_SETUP__ = true;
-      const checkAuth = () => {
-        const store = (window as any).__MBOS_AUTH_STORE__;
-        if (store && store.getState) {
-          const state = store.getState();
-          if (!state.isAuthenticated || state.projects.length === 0) {
-            store.getState().mockLogin(wsId, userEmail);
-            return true;
-          }
-          return true;
-        }
-        return false;
-      };
-      if (!checkAuth()) {
-        let attempts = 0;
-        const interval = setInterval(() => {
-          attempts++;
-          if (checkAuth() || attempts > 100) {
-            clearInterval(interval);
-          }
-        }, 50);
-      }
-    }, { wsId: workspaceId, userEmail: testEmail });
-
+    await withAuth(page, workspaceId, testEmail);
     await use(page);
   },
 });
 
-async function navigateWithAuth(page: typeof base['page']['object'], url: string) {
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle');
-}
-
 test.describe('Navigation Between Pages', () => {
-  test('should navigate through all main pages', async ({ authenticatedPage }) => {
-    const pages = [
-      { path: 'overview', title: 'Overview' },
-      { path: 'chat', title: 'New Chat' },
-      { path: 'workbench', title: 'Workbench' },
-      { path: 'agents', title: 'Agents' },
-      { path: 'endpoints', title: 'Endpoints' },
-      { path: 'members', title: 'Members' },
-      { path: 'audit', title: 'Audit' },
-      { path: 'usage', title: 'Usage' },
-      { path: 'settings', title: 'Settings' },
-      { path: 'sources', title: 'Sources' },
-    ];
+  const getRouteExpectation = (page: typeof base['page']['object'], route: { title?: RegExp; testId?: string }) => {
+    if (route.testId) {
+      return page.getByTestId(route.testId);
+    }
+    if (route.title) {
+      return page.getByRole('heading', { name: route.title });
+    }
+    throw new Error('Route requires either title or testId');
+  };
 
-    for (const pageDef of pages) {
-      await navigateWithAuth(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/${pageDef.path}`);
-      await expect(authenticatedPage.getByText(pageDef.title).first()).toBeVisible({ timeout: 5000 });
+  test('should navigate through all main pages', async ({ authenticatedPage }) => {
+    test.setTimeout(60000);
+    for (const route of ROUTES.project) {
+      await gotoAndWait(authenticatedPage, `${baseUrl}${route.path}`);
+      await expect(getRouteExpectation(authenticatedPage, route).first()).toBeVisible({ timeout: 5000 });
     }
   });
 });

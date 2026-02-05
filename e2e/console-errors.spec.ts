@@ -7,6 +7,9 @@
  */
 
 import { test as base, expect } from '@playwright/test';
+import { withAuth } from './fixtures/authenticated';
+import { gotoAndWait } from './utils/navigation';
+import { ROUTES } from './fixtures/routes';
 
 type ConsoleLogs = {
   errors: string[];
@@ -79,85 +82,8 @@ const workspaceId = 'ws_default';
 const projectId = 'proj_001';
 const testEmail = 'test@example.com';
 
-/**
- * Create mock auth state that matches zustand persist format
- */
-function createMockAuthState(wsId: string, userEmail: string) {
-  return {
-    state: {
-      user: {
-        id: `user_${Math.random().toString(36).substring(2, 10)}`,
-        email: userEmail,
-        name: userEmail.split('@')[0],
-        locale: 'en-US',
-      },
-      token: `mock_jwt_token_${Date.now()}`,
-      isAuthenticated: true,
-      currentWorkspace: {
-        id: wsId,
-        name: wsId === 'ws_default' ? 'Default Workspace' : 'Test Workspace',
-        role: 'owner',
-      },
-      currentProject: {
-        id: 'proj_001',
-        workspace_id: wsId,
-        name: 'AI Assistant Project',
-        visibility: 'public',
-        role: 'owner',
-        permissions: ['project:*'],
-        status: 'active',
-      },
-      workspaces: [
-        { id: 'ws_default', name: 'Default Workspace', role: 'owner' },
-        { id: 'ws_test', name: 'Test Workspace', role: 'admin' },
-      ],
-      projects: [
-        {
-          id: 'proj_001',
-          workspace_id: wsId,
-          name: 'AI Assistant Project',
-          visibility: 'public',
-          role: 'owner',
-          permissions: ['project:*'],
-          status: 'active',
-        },
-      ],
-    },
-    version: 0,
-  };
-}
-
 test.describe('Console Errors & Warnings Detection', () => {
   test.beforeEach(async ({ page }) => {
-    // Set up mock authentication before React initializes
-    await page.addInitScript(({ wsId, userEmail }) => {
-      (window as any).__MBOS_AUTH_SETUP__ = true;
-
-      const checkAuth = () => {
-        const store = (window as any).__MBOS_AUTH_STORE__;
-
-        if (store && store.getState) {
-          const state = store.getState();
-          if (!state.isAuthenticated || state.projects.length === 0) {
-            store.getState().mockLogin(wsId, userEmail);
-            return true;
-          }
-          return true;
-        }
-        return false;
-      };
-
-      if (!checkAuth()) {
-        let attempts = 0;
-        const interval = setInterval(() => {
-          attempts++;
-          if (checkAuth() || attempts > 100) {
-            clearInterval(interval);
-          }
-        }, 50);
-      }
-    }, { wsId: workspaceId, userEmail: testEmail });
-
     // Listen to console for debugging
     page.on('console', msg => {
       if (msg.type() === 'error' || msg.type() === 'warning') {
@@ -168,20 +94,13 @@ test.describe('Console Errors & Warnings Detection', () => {
 
   test('should check all pages for console errors and warnings', async ({ page, consoleLogs }) => {
     // Increase timeout for this comprehensive test (11 pages * ~5 seconds each)
-    test.setTimeout(60000);
+    test.setTimeout(120000);
 
     const pages = [
-      { path: `/en-US/workspaces/${workspaceId}/projects`, name: 'Projects List' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/overview`, name: 'Overview' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`, name: 'Chat' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/workbench`, name: 'Workbench' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/agents`, name: 'Agents' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/endpoints`, name: 'Endpoints' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/members`, name: 'Members' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`, name: 'Audit' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/usage`, name: 'Usage' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/settings`, name: 'Settings' },
-      { path: `/en-US/workspaces/${workspaceId}/projects/${projectId}/sources`, name: 'Sources' },
+      ...ROUTES.public.map((route) => ({ path: route.path, name: `Public ${route.path}` })),
+      ...ROUTES.user.map((route) => ({ path: route.path, name: `User ${route.path}` })),
+      ...ROUTES.workspace.map((route) => ({ path: route.path, name: `Workspace ${route.path}` })),
+      ...ROUTES.project.map((route) => ({ path: route.path, name: `Project ${route.path}` })),
     ];
 
     const allErrors: Record<string, string[]> = {};
@@ -197,6 +116,10 @@ test.describe('Console Errors & Warnings Detection', () => {
 
     for (const pageInfo of pages) {
       console.log(`\n===== Testing: ${pageInfo.name} =====`);
+
+      if (pageInfo.path.startsWith('/en-US/workspaces') || pageInfo.path.startsWith('/en-US/user')) {
+        await withAuth(page, workspaceId, testEmail);
+      }
 
       // Clear previous logs by creating a new context
       const pageErrors: string[] = [];
@@ -216,7 +139,7 @@ test.describe('Console Errors & Warnings Detection', () => {
       });
 
       // Navigate to the page
-      await page.goto(`${baseUrl}${pageInfo.path}`, { waitUntil: 'domcontentloaded' });
+      await gotoAndWait(page, `${baseUrl}${pageInfo.path}`);
 
       // Wait briefly for any delayed console errors
       await page.waitForTimeout(1000);
@@ -289,8 +212,7 @@ test.describe('Console Errors & Warnings Detection', () => {
     });
 
     // Visit the overview page as it's most likely to have hydration issues
-    await page.goto(`${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/overview`, { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle');
+    await gotoAndWait(page, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/overview`);
     await page.waitForTimeout(3000);
 
     if (hydrationErrors.length > 0) {
@@ -304,6 +226,7 @@ test.describe('Console Errors & Warnings Detection', () => {
   });
 
   test('should check for 404 and 500 errors', async ({ page }) => {
+    test.setTimeout(60000);
     const failedRequests: Array<{ url: string; status: number; error: string }> = [];
 
     // Acceptable 404 patterns in mock environment
@@ -328,24 +251,16 @@ test.describe('Console Errors & Warnings Detection', () => {
       }
     });
 
-    // Visit all pages
+    // Visit all authenticated pages
     const pages = [
-      `/en-US/workspaces/${workspaceId}/projects`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/overview`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/workbench`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/agents`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/endpoints`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/members`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/audit`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/usage`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/settings`,
-      `/en-US/workspaces/${workspaceId}/projects/${projectId}/sources`,
+      ...ROUTES.user.map((route) => route.path),
+      ...ROUTES.workspace.map((route) => route.path),
+      ...ROUTES.project.map((route) => route.path),
     ];
 
+    await withAuth(page, workspaceId, testEmail);
     for (const pagePath of pages) {
-      await page.goto(`${baseUrl}${pagePath}`, { waitUntil: 'domcontentloaded' });
-      await page.waitForLoadState('networkidle');
+      await gotoAndWait(page, `${baseUrl}${pagePath}`);
     }
 
     if (failedRequests.length > 0) {

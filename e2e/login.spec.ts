@@ -9,79 +9,45 @@ import { test, expect, type Page } from '@playwright/test';
  * This simulates the zustand persist storage format
  */
 async function mockLogin(page: Page, workspaceId: string, email: string, name?: string) {
-  await page.evaluate(({ wsId, userEmail, userName }) => {
-    const mockAuthState = {
-      state: {
-        user: {
-          id: `user_${Math.random().toString(36).substring(2, 10)}`,
-          email: userEmail,
-          name: userName || userEmail.split('@')[0],
-          locale: 'en-US',
-        },
-        token: `mock_jwt_token_${Date.now()}`,
-        isAuthenticated: true,
-        currentWorkspace: {
-          id: wsId,
-          name: wsId === 'ws_default' ? 'Default Workspace' : 'Test Workspace',
-          role: 'owner',
-        },
-        currentProject: {
-          id: 'proj_001',
-          workspace_id: wsId,
-          name: 'AI Assistant Project',
-          visibility: 'public',
-          role: 'owner',
-          permissions: ['project:*'],
-          status: 'active',
-        },
-        workspaces: [
-          {
-            id: 'ws_default',
-            name: 'Default Workspace',
-            role: 'owner',
-          },
-          {
-            id: 'ws_test',
-            name: 'Test Workspace',
-            role: 'admin',
-          },
-        ],
-        projects: [
-          {
-            id: 'proj_001',
-            workspace_id: wsId,
-            name: 'AI Assistant Project',
-            visibility: 'public',
-            role: 'owner',
-            permissions: ['project:*'],
-            status: 'active',
-          },
-          {
-            id: 'proj_002',
-            workspace_id: wsId,
-            name: 'Research Project',
-            visibility: 'private',
-            role: 'admin',
-            permissions: ['project:read', 'project:agent:create'],
-            status: 'active',
-          },
-        ],
-      },
-      version: 0,
+  await page.addInitScript(({ wsId, userEmail, userName }) => {
+    (window as any).__MBOS_AUTH_SETUP__ = true;
+    const user = {
+      id: `user_${Math.random().toString(36).substring(2, 10)}`,
+      email: userEmail,
+      name: userName || userEmail.split('@')[0],
+      locale: 'en-US',
     };
-    localStorage.setItem('mbos-auth', JSON.stringify(mockAuthState));
+    const checkAuth = () => {
+      const store = (window as any).__MBOS_AUTH_STORE__;
+      if (store && store.getState) {
+        const state = store.getState();
+        if (!state.isAuthenticated && typeof state.setAuth === 'function') {
+          state.setAuth(user, `mock_jwt_token_${Date.now()}`);
+        }
+        return true;
+      }
+      return false;
+    };
+    if (!checkAuth()) {
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        if (checkAuth() || attempts > 100) {
+          clearInterval(interval);
+        }
+      }, 50);
+    }
   }, { wsId: workspaceId, userEmail: email, userName: name });
 
-  // Reload the page to pick up the localStorage changes
   await page.reload();
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(500);
 }
 
 test.describe('Homepage', () => {
   test('should display English login page', async ({ page }) => {
     await page.goto('/en-US/login');
-    await expect(page.getByText('Welcome to MBOS')).toBeVisible();
-    await expect(page.getByText('Intelligent Agent Platform')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Welcome to MBOS' })).toBeVisible();
+    await expect(page.getByText('Intelligent Agent Platform', { exact: true })).toBeVisible();
   });
 
   test('should display Chinese login page', async ({ page }) => {
@@ -100,9 +66,9 @@ test.describe('Login Page', () => {
 
   test('should display login form correctly', async ({ page }) => {
     // Check heading
-    await expect(page.getByText('Welcome to MBOS')).toBeVisible();
-    await expect(page.getByText('Intelligent Agent Platform')).toBeVisible();
-    await expect(page.getByText('Sign in')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Welcome to MBOS' })).toBeVisible();
+    await expect(page.getByText('Intelligent Agent Platform', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
 
     // Check Keycloak button
     await expect(page.getByText('Login with Keycloak')).toBeVisible();
@@ -148,9 +114,9 @@ test.describe('Login Page', () => {
     await page.goto('/en-US/login');
     // Set auth state in localStorage (simulates previous login, e.g. from closed browser session)
     await mockLogin(page, 'ws_default', 'test@example.com', 'Test User');
-    // After reload, login page should redirect to projects
-    await page.waitForURL(/\/en-US\/workspaces\/ws_default\/projects/, { timeout: 5000 });
-    await expect(page.locator('h1').filter({ hasText: 'Projects' })).toBeVisible();
+    // After reload, login page should redirect to workspace selection
+    await page.waitForURL(/\/en-US\/login\/workspace/, { timeout: 5000 });
+    await expect(page.getByRole('heading', { name: 'Select your workspace' })).toBeVisible();
   });
 
   test('should login successfully and redirect to workspace selection', async ({ page }) => {
@@ -166,7 +132,7 @@ test.describe('Login Page', () => {
     // Should redirect to workspace selection page
     await page.waitForURL(/\/en-US\/login\/workspace/, { timeout: 5000 });
     await expect(page).toHaveURL(/\/en-US\/login\/workspace/);
-    await expect(page.getByText('Select your workspace')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Select your workspace' })).toBeVisible();
   });
 });
 
@@ -233,7 +199,7 @@ test.describe('Full User Journey', () => {
 
     // 3. Should navigate to workspace selection
     await page.waitForURL(/\/login\/workspace/, { timeout: 5000 });
-    await expect(page.getByText('Select your workspace')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Select your workspace' })).toBeVisible();
 
     // 4. Select workspace
     await page.getByText('Default Workspace').click();
@@ -262,7 +228,7 @@ test.describe('Full User Journey', () => {
     await expect(page).toHaveURL(/\/en-US\/login\/workspace/);
 
     // 5. Check workspace selection page is displayed
-    await expect(page.getByText('Select your workspace')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Select your workspace' })).toBeVisible();
     await expect(page.getByText('Choose a workspace to continue')).toBeVisible();
 
     // 6. Select workspace

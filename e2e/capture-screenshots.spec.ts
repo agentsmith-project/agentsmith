@@ -41,34 +41,29 @@ function ensureDirs() {
 }
 
 async function mockLogin(page: import('@playwright/test').Page) {
-  await page.evaluate(({ wsId }) => {
-    const mockAuthState = {
-      state: {
-        user: { id: 'user_demo', email: 'demo@demo.com', name: 'Demo User', locale: 'zh-CN' },
-        token: 'mock_jwt_demo_' + Date.now(),
-        isAuthenticated: true,
-        currentWorkspace: { id: wsId, name: 'Default Workspace', role: 'owner' },
-        currentProject: {
-          id: 'proj_001',
-          workspace_id: wsId,
-          name: 'AI Assistant Project',
-          visibility: 'public',
-          role: 'owner',
-          permissions: ['project:*'],
-          status: 'active',
-        },
-        workspaces: [
-          { id: 'ws_default', name: 'Default Workspace', role: 'owner' },
-          { id: 'ws_test', name: 'Test Workspace', role: 'admin' },
-        ],
-        projects: [
-          { id: 'proj_001', workspace_id: wsId, name: 'AI Assistant Project', visibility: 'public', role: 'owner', permissions: ['project:*'], status: 'active' },
-          { id: 'proj_002', workspace_id: wsId, name: 'Research Project', visibility: 'private', role: 'admin', permissions: ['project:read', 'project:agent:create'], status: 'active' },
-        ],
-      },
-      version: 0,
+  await page.addInitScript(({ wsId }) => {
+    (window as any).__MBOS_AUTH_SETUP__ = true;
+    const user = { id: 'user_demo', email: 'demo@demo.com', name: 'Demo User', locale: 'zh-CN' };
+    const checkAuth = () => {
+      const store = (window as any).__MBOS_AUTH_STORE__;
+      if (store && store.getState) {
+        const state = store.getState();
+        if (!state.isAuthenticated && typeof state.setAuth === 'function') {
+          state.setAuth(user, `mock_jwt_demo_${Date.now()}`);
+        }
+        return true;
+      }
+      return false;
     };
-    localStorage.setItem('mbos-auth', JSON.stringify(mockAuthState));
+    if (!checkAuth()) {
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        if (checkAuth() || attempts > 100) {
+          clearInterval(interval);
+        }
+      }, 50);
+    }
   }, { wsId: WS_ID });
 }
 
@@ -205,7 +200,7 @@ test.describe('Screenshot Capture', () => {
     await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/credentials`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(BASE, '13-credentials', 'credentials-list.png'), fullPage: true });
-    const createKeyBtn = page.getByRole('button', { name: /创建|Create|新增/i });
+    const createKeyBtn = page.getByRole('button', { name: /创建凭据|Create Key|Create Credential/i }).first();
     if (await createKeyBtn.isVisible()) {
       await createKeyBtn.click();
       await page.waitForTimeout(500);

@@ -1,5 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
+import { PageLoading } from '@/components/ui/loading';
 import { RecipePage } from '@/components/workbench/RecipePage';
 
 interface RecipePageParams {
@@ -25,17 +28,21 @@ export default function RecipeDetailPage({ params }: RecipePageParams) {
 
   if (!resolvedParams) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-tertiary">Loading...</div>
-      </div>
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
     );
   }
 
   return (
-    <RecipePage
-      workspaceId={resolvedParams.workspace}
-      projectId={resolvedParams.project}
-      recipeId={resolvedParams.recipeId}
-    />
+    <PageState state="success">
+      <PageLayout>
+        <RecipePage
+          workspaceId={resolvedParams.workspace}
+          projectId={resolvedParams.project}
+          recipeId={resolvedParams.recipeId}
+        />
+      </PageLayout>
+    </PageState>
   );
 }

@@ -22,6 +22,7 @@ test.describe('Project misc pages', () => {
   test('workbench recipe page loads', async ({ page }) => {
     await withAuth(page);
     await gotoAndWait(page, `${base}/workbench/recipes/recipe_001`);
+    await expect(page.getByTestId('page-state__success')).toBeVisible();
     await expect(page.getByTestId('workbench-recipe-header')).toBeVisible();
   });
 });

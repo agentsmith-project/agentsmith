@@ -91,7 +91,7 @@ export interface ApiClient {
  * Otherwise, use the configured backend URL.
  */
 export const API_BASE = process.env.NEXT_PUBLIC_USE_MSW === 'true'
-  ? '/api'  // Use relative path for MSW interception
+  ? '/api/v1'  // Use relative path for MSW interception
   : (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000');
 
 /**

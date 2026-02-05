@@ -360,8 +360,8 @@ export const artifactFixtures: Artifact[] = [
     turn_id: 'turn_001',
     type: 'image',
     title: 'Architecture Diagram',
-    content: 'https://example.com/images/architecture-diagram.png',
-    thumbnail_url: 'https://example.com/images/architecture-diagram-thumb.png',
+    content: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100"><rect width="100%25" height="100%25" fill="%23e5e7eb"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%236b7280" font-size="12">Diagram</text></svg>',
+    thumbnail_url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="50"><rect width="100%25" height="100%25" fill="%23e5e7eb"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%236b7280" font-size="10">Diagram</text></svg>',
     created_at: '2026-01-28T10:20:00Z',
   },
 ];

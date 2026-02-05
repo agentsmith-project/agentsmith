@@ -1,15 +1,22 @@
-import { setupWorker } from 'msw/browser';
-import { handlers } from './index';
+import type { SetupWorker } from 'msw/browser';
 
-export const worker = setupWorker(...handlers);
-
+let worker: SetupWorker | null = null;
 let started = false;
 
-export function initMSW() {
+export async function initMSW() {
   const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
   if (!useMsw || typeof window === 'undefined' || started) {
-    return Promise.resolve();
+    return;
   }
+
+  if (!worker) {
+    const [{ setupWorker }, { handlers }] = await Promise.all([
+      import('msw/browser'),
+      import('./index'),
+    ]);
+    worker = setupWorker(...handlers);
+  }
+
   started = true;
-  return worker.start({ onUnhandledRequest: 'bypass' });
+  await worker.start({ onUnhandledRequest: 'bypass' });
 }

@@ -1,6 +1,8 @@
 import { type Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
+export const dynamic = 'force-dynamic';
+
 type Props = {
   params: Promise<{ locale: string }>;
 };

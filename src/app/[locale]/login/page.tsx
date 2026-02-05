@@ -171,6 +171,7 @@ export default function LoginPage() {
 
                 {/* Quick Login Button */}
                 <button
+                  data-testid="login__submit"
                   onClick={handleQuickLogin}
                   disabled={isLoggingIn || !userEmail.trim()}
                   className="w-full h-10 px-4 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"

@@ -17,6 +17,8 @@ import { getApiClient } from '@/lib/api';
 import { validateUsageKPI } from '@/lib/api/validators';
 import { formatBytes, formatNumber } from '@/lib/utils/formatters';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageState } from '@/components/layout/PageState';
 import {
   Select,
   SelectContent,
@@ -114,69 +116,74 @@ export default function OverviewPage() {
   })) || [];
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Page Title */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-primary">{t('title')}</h1>
-          <p className="text-secondary mt-1">{t('subtitle')}</p>
+    <PageState state="success">
+      <PageLayout
+        header={(
+          <div>
+            <h1 className="text-2xl font-semibold text-primary">{t('title')}</h1>
+            <p className="text-secondary mt-1">{t('subtitle')}</p>
+          </div>
+        )}
+        toolbar={(
+          <Select value={timeRangePreset} onValueChange={(v) => setTimeRangePreset(v as TimeRangePreset)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7d">Last 7 days</SelectItem>
+              <SelectItem value="30d">Last 30 days</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+      >
+        <div className="p-6 space-y-6">
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <KPICard
+              icon={Activity}
+              label={t('kpi.requests_today')}
+              value={formatNumber(kpi.requests_today)}
+              trend={requestsTrend}
+              vsLastPeriodLabel={t('kpi.vs_last_period')}
+            />
+            <KPICard
+              icon={AlertCircle}
+              label={t('kpi.errors_today')}
+              value={formatNumber(kpi.errors_today)}
+              trend={errorsTrend}
+              vsLastPeriodLabel={t('kpi.vs_last_period')}
+            />
+            <KPICard
+              icon={Clock}
+              label={t('kpi.tokens_today')}
+              value={formatNumber(kpi.tokens_today, { defaultValue: '--' })}
+              trend={tokensTrend}
+              vsLastPeriodLabel={t('kpi.vs_last_period')}
+            />
+            <KPICard
+              icon={Wifi}
+              label={t('kpi.userdata_storage')}
+              value={formatBytes(kpi.userdata_bytes, { defaultValue: '--' })}
+            />
+          </div>
+
+          {/* Project Navigation */}
+          <div>
+            <h2 className="text-lg font-semibold text-primary mb-4">{t('quick_access')}</h2>
+            <ProjectNavigation basePath={basePath} columns={3} translations={t} />
+          </div>
+
+          {/* Recent Activity */}
+          <div>
+            <ActivityTimeline
+              items={activityItems}
+              maxItems={5}
+              viewAllLink={`${basePath}/audit`}
+              translations={t}
+            />
+          </div>
         </div>
-        <Select value={timeRangePreset} onValueChange={(v) => setTimeRangePreset(v as TimeRangePreset)}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="7d">Last 7 days</SelectItem>
-            <SelectItem value="30d">Last 30 days</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard
-          icon={Activity}
-          label={t('kpi.requests_today')}
-          value={formatNumber(kpi.requests_today)}
-          trend={requestsTrend}
-          vsLastPeriodLabel={t('kpi.vs_last_period')}
-        />
-        <KPICard
-          icon={AlertCircle}
-          label={t('kpi.errors_today')}
-          value={formatNumber(kpi.errors_today)}
-          trend={errorsTrend}
-          vsLastPeriodLabel={t('kpi.vs_last_period')}
-        />
-        <KPICard
-          icon={Clock}
-          label={t('kpi.tokens_today')}
-          value={formatNumber(kpi.tokens_today, { defaultValue: '--' })}
-          trend={tokensTrend}
-          vsLastPeriodLabel={t('kpi.vs_last_period')}
-        />
-        <KPICard
-          icon={Wifi}
-          label={t('kpi.userdata_storage')}
-          value={formatBytes(kpi.userdata_bytes, { defaultValue: '--' })}
-        />
-      </div>
-
-      {/* Project Navigation */}
-      <div>
-        <h2 className="text-lg font-semibold text-primary mb-4">{t('quick_access')}</h2>
-        <ProjectNavigation basePath={basePath} columns={3} translations={t} />
-      </div>
-
-      {/* Recent Activity */}
-      <div>
-        <ActivityTimeline
-          items={activityItems}
-          maxItems={5}
-          viewAllLink={`${basePath}/audit`}
-          translations={t}
-        />
-      </div>
-    </div>
+      </PageLayout>
+    </PageState>
   );
 }

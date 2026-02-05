@@ -68,4 +68,20 @@ describe('OverviewPage', () => {
 
     expect(screen.getByText('1.0 KB')).toBeInTheDocument();
   });
+
+  it('renders page state container', () => {
+    mockUseQuery.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === 'usage') {
+        return { data: { requests_today: 12, errors_today: 1 } };
+      }
+      if (queryKey[0] === 'audit') {
+        return { data: { items: [] } };
+      }
+      return { data: undefined };
+    });
+
+    render(<OverviewPage />);
+
+    expect(screen.getByTestId('page-state__success')).toBeInTheDocument();
+  });
 });

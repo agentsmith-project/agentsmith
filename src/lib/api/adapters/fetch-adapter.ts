@@ -43,9 +43,9 @@ export class FetchApiClient implements ApiClient {
       }
     }
 
-    // Build headers
+    // Build headers - only set Content-Type when a body is present
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}),
       ...(fetchOptions.headers as Record<string, string> || {}),
     };
 
@@ -59,6 +59,14 @@ export class FetchApiClient implements ApiClient {
         headers,
       });
 
+      // Handle empty responses (e.g. 204 No Content)
+      if (response.status === 204 || response.headers.get('content-length') === '0') {
+        if (!response.ok) {
+          throw new ApiError('UNKNOWN_ERROR', `HTTP ${response.status}`, '', response.status);
+        }
+        return undefined as T;
+      }
+
       const data = await response.json();
 
       if (!response.ok) {
@@ -66,6 +74,7 @@ export class FetchApiClient implements ApiClient {
           data.error_code || 'UNKNOWN_ERROR',
           data.message || `HTTP ${response.status}`,
           data.request_id,
+          response.status,
         );
       }
 

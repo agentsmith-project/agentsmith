@@ -3,7 +3,7 @@ export function createThrottle<T>(
   fn: (value: T) => void,
 ) {
   let pending: T | null = null;
-  let timer: number | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
   const flush = () => {
     if (pending !== null) fn(pending);
@@ -15,11 +15,11 @@ export function createThrottle<T>(
     push(value: T) {
       pending = value;
       if (timer !== null) return;
-      timer = window.setTimeout(flush, intervalMs);
+      timer = setTimeout(flush, intervalMs);
     },
     flush() {
       if (timer !== null) {
-        window.clearTimeout(timer);
+        clearTimeout(timer);
         timer = null;
       }
       flush();

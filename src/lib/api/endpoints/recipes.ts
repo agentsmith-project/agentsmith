@@ -17,6 +17,7 @@ import type {
 } from '../../types/recipe';
 import type { SourceFile } from '../types';
 import type { ApiClient } from '../client';
+import { API_BASE } from '../client';
 
 export class RecipeAPI {
   constructor(private client: ApiClient) {}
@@ -207,7 +208,6 @@ export class RecipeAPI {
    * Get SSE URL for real-time updates
    */
   getSSEUrl(workspaceId: string, projectId: string, recipeId: string): string {
-    const { API_BASE } = require('../client');
     const token = this.client.getToken();
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
     return `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/recipes/${recipeId}/events${tokenParam}`;

@@ -159,10 +159,10 @@ export default function UserAPIKeysPage() {
             status === 'active'
               ? 'active'
               : status === 'suspended'
-                ? 'warning'
+                ? 'paused'
                 : 'error';
           return (
-            <StatusBadge status={badgeStatus as 'active' | 'paused' | 'error'}>
+            <StatusBadge status={badgeStatus}>
               {status}
             </StatusBadge>
           );

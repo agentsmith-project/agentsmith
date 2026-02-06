@@ -48,10 +48,12 @@ export function EditQuotaTemplateDrawer({
   const [nameError, setNameError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    setName(template.name);
-    setDescription(template.description ?? '');
-    setOverrides(template.overrides_json ?? {});
-  }, [template]);
+    if (open) {
+      setName(template.name);
+      setDescription(template.description ?? '');
+      setOverrides(template.overrides_json ?? {});
+    }
+  }, [open, template]);
 
   const defaultQuotas = React.useMemo(
     () => extractQuotasFromGovernance(projectGovernance),

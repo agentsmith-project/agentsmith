@@ -54,10 +54,12 @@ export function formatBytes(
   if (bytes === undefined || bytes === null || isNaN(bytes) || bytes === 0) {
     return defaultValue;
   }
+  if (bytes < 0) return defaultValue;
   
   const k = binary ? 1024 : 1000;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  if (i < 0) return `${bytes} B`;
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
@@ -78,6 +80,7 @@ export function formatRelativeTime(
   locale?: string
 ): string {
   const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '-';
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);

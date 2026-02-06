@@ -563,7 +563,7 @@ export default function ChatPage({ params }: ChatPageProps) {
               autoFocus={!editingMessageId && streamStatus === 'idle'}
               onPickFiles={() => {
                 if (editingMessageId) {
-                  toast.info(t('attachments.disabled_while_editing'));
+                  toast.info('Attachments are disabled while editing a message');
                   return;
                 }
                 onPickFiles();

@@ -89,13 +89,12 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
 
   // Initialize projects with pinned status
   useEffect(() => {
-    if (hydrated && allProjects.length > 0) {
-      const projectsWithPin = allProjects.map((p) => ({
-        ...p,
-        pinned: p.id === 'proj_001', // Pin first project by default for demo
-      })) as Project[];
-      setProjects(projectsWithPin);
-    }
+    if (!hydrated) return;
+    const projectsWithPin = allProjects.map((p) => ({
+      ...p,
+      pinned: false,
+    })) as Project[];
+    setProjects(projectsWithPin);
   }, [hydrated, allProjects]);
 
   const handleProjectClick = (project: Project) => {

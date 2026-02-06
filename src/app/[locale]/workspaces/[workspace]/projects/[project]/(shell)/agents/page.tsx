@@ -291,7 +291,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
         <EmptyState
           icon={Bot}
           title={`No ${t('title').toLowerCase()} yet`}
-          description={`Create your first ${t('title').toLowerCase().toLowerCase()} to get started`}
+          description={`Create your first ${t('title').toLowerCase()} to get started`}
           action={{
             label: t('create'),
             onClick: () => setCreateDialogOpen(true),

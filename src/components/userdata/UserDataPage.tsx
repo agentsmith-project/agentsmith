@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { useUserdataSummary, useUserdataEndUsers } from '@/lib/hooks/use-userdata';
+import { formatBytes } from '@/lib/utils/formatters';
 
 export interface UserDataPageProps {
   workspaceId: string;
@@ -25,7 +26,7 @@ export function UserDataPage({ workspaceId, projectId }: UserDataPageProps) {
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
             <p className="text-xs text-tertiary">{t('summary_storage')}</p>
-            <p className="text-foreground">{summary?.total_bytes ?? 0}</p>
+            <p className="text-foreground">{formatBytes(summary?.total_bytes ?? 0)}</p>
           </div>
           <div>
             <p className="text-xs text-tertiary">{t('summary_docdb')}</p>

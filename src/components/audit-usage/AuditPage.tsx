@@ -18,10 +18,12 @@ export interface AuditPageProps {
   defaultEndUserId?: string; // For project-user permission
 }
 
-const DEFAULT_TIME_RANGE = {
-  start_time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-  end_time: new Date().toISOString(),
-};
+function getDefaultTimeRange() {
+  return {
+    start_time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    end_time: new Date().toISOString(),
+  };
+}
 
 export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPageProps) {
   const t = useTranslations('audit');
@@ -29,14 +31,14 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
   const queryClient = useQueryClient();
   const canReadAudit = useHasPermission('project:audit:read');
 
-  const [filters, setFilters] = React.useState<AuditListParams>({
-    ...DEFAULT_TIME_RANGE,
+  const [filters, setFilters] = React.useState<AuditListParams>(() => ({
+    ...getDefaultTimeRange(),
     page: 1,
     page_size: 25,
     sort_by: 'timestamp',
     sort_order: 'desc',
     ...(defaultEndUserId && { end_user_id: defaultEndUserId }),
-  });
+  }));
   const [selectedEvent, setSelectedEvent] = React.useState<AuditEvent | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
@@ -68,7 +70,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
 
   const handleClearFilters = () => {
     setFilters({
-      ...DEFAULT_TIME_RANGE,
+      ...getDefaultTimeRange(),
       page: 1,
       page_size: 25,
       sort_by: 'timestamp',

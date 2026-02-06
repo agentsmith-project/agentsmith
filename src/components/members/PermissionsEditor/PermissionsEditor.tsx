@@ -109,10 +109,10 @@ export function PermissionsEditor({
       }
       return next;
     });
-    // If template mode, mark as custom
-    if (selectedTemplate && checked) {
+    // If template mode, mark as custom when permission diverges from template
+    if (selectedTemplate) {
       const templatePerms = new Set<string>(ROLE_TEMPLATES[selectedTemplate]);
-      if (!templatePerms.has(permission)) {
+      if (checked ? !templatePerms.has(permission) : templatePerms.has(permission)) {
         setSelectedTemplate(null);
       }
     }

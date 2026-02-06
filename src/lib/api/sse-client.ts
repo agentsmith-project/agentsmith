@@ -96,7 +96,7 @@ export function createAuthenticatedSSE(
 
   const eventSource = new EventSource(url);
 
-  if (options?.onTokenExpired) {
+  if (options?.onTokenExpired || options?.onError) {
     eventSource.addEventListener('error', (event) => {
       const target = event.target as EventSource;
       // EventSource.CLOSED (2) indicates the connection closed
@@ -104,7 +104,7 @@ export function createAuthenticatedSSE(
       if (target.readyState === EventSource.CLOSED) {
         options.onTokenExpired?.();
       }
-      options?.onError?.(event);
+      options.onError?.(event);
     });
   }
 

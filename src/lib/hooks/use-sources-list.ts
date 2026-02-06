@@ -7,7 +7,7 @@
  * - Handle file actions (upload, delete, download, AI ready batch operations)
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useSources,
@@ -53,6 +53,14 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
   // Upload state
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  const uploadCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (uploadCloseTimerRef.current) clearTimeout(uploadCloseTimerRef.current);
+    };
+  }, []);
 
   // Data fetching
   const { data: quotaData, isLoading: quotaLoading } = useQuota(workspaceId, projectId);
@@ -135,10 +143,11 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
 
     // Close dialog only if all succeeded, or after showing errors for a bit
     if (allSucceeded) {
-      setTimeout(() => {
+      uploadCloseTimerRef.current = setTimeout(() => {
         setUploadDialogOpen(false);
         setUploadProgress({});
         setUploadErrors({});
+        uploadCloseTimerRef.current = null;
       }, 1500);
     }
   }, [uploadMutation, workspaceId, projectId, handleError]);
@@ -171,7 +180,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
     setFilesToDelete(null);
     setSelectedFileIds([]);
     if (failed > 0) {
-      toast.error(t('batch_delete_failed', { count: failed }));
+      toast.error(`Failed to delete ${failed} file(s)`);
     }
   }, [filesToDelete, deleteMutation, workspaceId, projectId]);
 
@@ -228,7 +237,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast.success(t('file_download_success'));
+      toast.success('File downloaded successfully');
     } catch (error) {
       handleError(error, { logContext: 'SourcesPage.download' });
     }

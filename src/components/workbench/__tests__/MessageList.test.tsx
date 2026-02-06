@@ -91,21 +91,21 @@ describe('MessageList', () => {
     it('passes message role to MessageItem', () => {
       renderComponent();
 
-      expect(screen.getByTestId('message-item-msg-1')).querySelector('[data-message-role]')?.textContent).toBe('user');
-      expect(screen.getByTestId('message-item-msg-2')).querySelector('[data-message-role]')?.textContent).toBe('agent');
+      expect(screen.getByTestId('message-item-msg-1').querySelector('[data-message-role]')?.textContent).toBe('user');
+      expect(screen.getByTestId('message-item-msg-2').querySelector('[data-message-role]')?.textContent).toBe('agent');
     });
 
     it('passes message content to MessageItem', () => {
       renderComponent();
 
-      expect(screen.getByTestId('message-item-msg-1')).querySelector('[data-message-content]')?.textContent).toBe('Hello, how are you?');
-      expect(screen.getByTestId('message-item-msg-2')).querySelector('[data-message-content]')?.textContent).toBe('I am doing well, thank you!');
+      expect(screen.getByTestId('message-item-msg-1').querySelector('[data-message-content]')?.textContent).toBe('Hello, how are you?');
+      expect(screen.getByTestId('message-item-msg-2').querySelector('[data-message-content]')?.textContent).toBe('I am doing well, thank you!');
     });
 
     it('passes disabled state to MessageItem', () => {
       render(<MessageList messages={mockMessages} disabled={true} />);
 
-      expect(screen.getByTestId('message-item-msg-1')).querySelector('[data-disabled]')).toBeInTheDocument();
+      expect(screen.getByTestId('message-item-msg-1').querySelector('[data-disabled]')).toBeInTheDocument();
     });
   });
 
@@ -148,7 +148,7 @@ describe('MessageList', () => {
         />
       );
 
-      expect(screen.getByTestId('message-item-msg-1')).querySelector('[data-streaming]')?.textContent).toBe('Streaming update...');
+      expect(screen.getByTestId('message-item-msg-1').querySelector('[data-streaming]')?.textContent).toBe('Streaming update...');
     });
 
     it('shows streaming indicator for agent messages', () => {

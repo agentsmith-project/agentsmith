@@ -58,10 +58,11 @@ export function QuotaOverridesEditor({
       const next = { ...prev };
       let current: Record<string, unknown> = next;
       
+      // Deep-clone each intermediate path segment to avoid mutating prev
       for (let i = 0; i < path.length - 1; i++) {
-        if (!current[path[i]]) {
-          current[path[i]] = {};
-        }
+        current[path[i]] = current[path[i]]
+          ? { ...(current[path[i]] as Record<string, unknown>) }
+          : {};
         current = current[path[i]] as Record<string, unknown>;
       }
       
@@ -354,9 +355,10 @@ function QuotaFieldRow({
 
   const handleOverrideChange = (value: string) => {
     setOverrideValue(value);
-    const numValue = parseFloat(value);
-    if (!isNaN(numValue) && numValue > 0) {
-      onOverride(numValue);
+    const numValue = Number(value);
+    if (!isNaN(numValue) && numValue > 0 && Number.isFinite(numValue)) {
+      // Use integer if value has no decimal part
+      onOverride(Number.isInteger(numValue) ? numValue : numValue);
     }
   };
 

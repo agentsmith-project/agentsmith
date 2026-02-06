@@ -83,8 +83,7 @@ export function SourcesPanel({
         <button
           className="w-full flex items-center gap-2 px-3 h-10 rounded-sm text-sm text-primary hover:bg-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
           onClick={() => {
-            // Open upload dialog - this would need to be handled by parent
-            console.log('Upload clicked');
+            // TODO: Wire up to parent's upload dialog handler via onUpload prop
           }}
         >
           <Plus className="w-4 h-4" />

@@ -29,6 +29,8 @@ export interface ProjectNavigationProps {
   columns?: 2 | 3 | 4;
   /** Translation function */
   translations?: (key: string) => string;
+  /** User's current permissions - items with requiresPermission not in this list are hidden */
+  userPermissions?: string[];
 }
 
 /**
@@ -42,7 +44,7 @@ export interface ProjectNavigationProps {
  * />
  * ```
  */
-export function ProjectNavigation({ basePath, items, columns = 3, translations }: ProjectNavigationProps) {
+export function ProjectNavigation({ basePath, items, columns = 3, translations, userPermissions }: ProjectNavigationProps) {
   const t = translations || ((key: string) => key);
 
   // Generate nav items with translations if not provided
@@ -92,9 +94,18 @@ export function ProjectNavigation({ basePath, items, columns = 3, translations }
     },
   ];
 
+  // Filter items by permission if userPermissions is provided
+  const visibleItems = userPermissions
+    ? navItems.filter((item) => {
+        if (!item.requiresPermission) return true;
+        return userPermissions.includes('*') || userPermissions.includes(item.requiresPermission)
+          || userPermissions.some((p) => p.endsWith(':*') && item.requiresPermission!.startsWith(p.slice(0, -1)));
+      })
+    : navItems;
+
   return (
     <div className={`grid grid-cols-1 ${columns === 2 ? 'md:grid-cols-2' : columns === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-4`}>
-      {navItems.map((item) => {
+      {visibleItems.map((item) => {
         const Icon = item.icon;
         return (
           <Link

@@ -8,25 +8,25 @@
 import { useCallback } from 'react';
 import type { QuotaOverride } from '@/lib/api/types';
 import type {
-  UseUpdateMemberPermissionsReturn,
-  UseUpdateMemberQuotaOverridesReturn,
-  UseRemoveMemberReturn,
-  UseBatchApplyPermissionTemplateReturn,
-  UseBatchApplyQuotaTemplateReturn,
+  useUpdateMemberPermissions,
+  useUpdateMemberQuotaOverrides,
+  useRemoveMember,
+  useBatchApplyPermissionTemplate,
+  useBatchApplyQuotaTemplate,
 } from './use-members';
 import type { Member } from '@/lib/api/endpoints/members';
 
 export interface UseMemberActionsOptions {
   /** Update permissions mutation */
-  updatePermissions: UseUpdateMemberPermissionsReturn;
+  updatePermissions: ReturnType<typeof useUpdateMemberPermissions>;
   /** Update quota overrides mutation */
-  updateQuotaOverrides: UseUpdateMemberQuotaOverridesReturn;
+  updateQuotaOverrides: ReturnType<typeof useUpdateMemberQuotaOverrides>;
   /** Remove member mutation */
-  removeMember: UseRemoveMemberReturn;
+  removeMember: ReturnType<typeof useRemoveMember>;
   /** Batch apply permission template mutation */
-  batchApplyPermission: UseBatchApplyPermissionTemplateReturn;
+  batchApplyPermission: ReturnType<typeof useBatchApplyPermissionTemplate>;
   /** Batch apply quota template mutation */
-  batchApplyQuota: UseBatchApplyQuotaTemplateReturn;
+  batchApplyQuota: ReturnType<typeof useBatchApplyQuotaTemplate>;
   /** Currently selected member */
   selectedMember: Member | null;
   /** Close drawer callback */
@@ -48,10 +48,8 @@ export interface UseMemberActionsReturn {
   ) => Promise<void>;
   /** Save member quota overrides */
   handleSaveQuota: (quota: QuotaOverride) => Promise<void>;
-  /** Set member to remove */
-  handleRemove: (member: Member) => void;
   /** Confirm and remove member */
-  handleConfirmRemove: () => Promise<void>;
+  handleConfirmRemove: (member: Member | null) => Promise<void>;
   /** Batch apply permission template */
   handleBatchApplyPermission: (
     templateId: string,
@@ -78,7 +76,7 @@ export interface UseMemberActionsReturn {
  *   closeDrawer: () => setDrawerOpen(false),
  * });
  *
- * <button onClick={() => actions.handleRemove(member)}>Remove</button>
+ * <button onClick={() => actions.handleConfirmRemove(member)}>Remove</button>
  * ```
  */
 export function useMemberActions({
@@ -117,11 +115,6 @@ export function useMemberActions({
     [selectedMember, updateQuotaOverrides, closeDrawer]
   );
 
-  const handleRemove = useCallback((_member: Member) => {
-    // This just sets the member to remove - the actual removal is in handleConfirmRemove
-    // The calling component manages the memberToRemove state
-  }, []);
-
   const handleConfirmRemove = useCallback(
     async (memberToRemove: Member | null) => {
       if (!memberToRemove) return;
@@ -158,7 +151,6 @@ export function useMemberActions({
   return {
     handleSavePermissions,
     handleSaveQuota,
-    handleRemove,
     handleConfirmRemove,
     handleBatchApplyPermission,
     handleBatchApplyQuota,

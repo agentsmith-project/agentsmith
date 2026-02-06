@@ -45,9 +45,8 @@ export function ProtectedRoute({
 
   // Determine hasPermission based on requirePermission type
   const hasPermission = useMemo(() => {
-    if (!requirePermission || !isAuthenticated) {
-      return true;
-    }
+    if (!requirePermission) return true;
+    if (!isAuthenticated) return false;
     
     if (Array.isArray(requirePermission)) {
       return hasAllPermissionsResult;
@@ -77,8 +76,10 @@ export function ProtectedRoute({
       const checkMockAuth = () => {
         const storeHook = window.__MBOS_AUTH_STORE__;
         if (storeHook) {
-          // Call the hook to get current state (works because we're checking at a point in time)
-          const state = storeHook();
+          // Use getState() to read current state outside React render context
+          const state = typeof storeHook.getState === 'function'
+            ? storeHook.getState()
+            : storeHook();
           if (state.isAuthenticated) {
             console.log('[ProtectedRoute] Mock auth detected, isAuthenticated:', state.isAuthenticated);
             return true;

@@ -19,6 +19,21 @@ export type ProjectWithMembership = ValidationProjectWithMembership;
 const EMPTY_PERMISSIONS: readonly string[] = Object.freeze([]);
 
 /**
+ * Check if a set of granted permissions includes a required permission,
+ * supporting wildcard matching (e.g. 'project:*' grants 'project:audit:read').
+ */
+function permissionMatches(granted: readonly string[], required: string): boolean {
+  if (granted.includes('*')) return true;
+  if (granted.includes(required)) return true;
+  // Prefix wildcard: e.g. 'project:*' grants 'project:audit:read'
+  return granted.some((p) => {
+    if (!p.endsWith(':*')) return false;
+    const prefix = p.slice(0, -1); // e.g. 'project:'
+    return required.startsWith(prefix);
+  });
+}
+
+/**
  * Check if user is authenticated
  */
 export function useIsAuthenticated(): boolean {
@@ -50,17 +65,7 @@ export function useHasPermission(permission: string): boolean {
 
   return useMemo(() => {
     if (permissions.length === 0) return false;
-    if (permissions.includes('*')) return true;
-    if (permissions.includes(permission)) return true;
-
-    // Prefix wildcard: e.g. 'project:*' grants 'project:audit:read'
-    const prefixMatch = permissions.find((p) => p.endsWith(':*'));
-    if (prefixMatch) {
-      const prefix = prefixMatch.slice(0, -1);
-      if (permission.startsWith(prefix)) return true;
-    }
-
-    return false;
+    return permissionMatches(permissions, permission);
   }, [permissions, permission]);
 }
 
@@ -73,8 +78,7 @@ export function useHasAnyPermission(permissions: string[]): boolean {
   return useMemo(() => {
     if (permissions.length === 0) return false;
     if (currentPermissions.length === 0) return false;
-    if (currentPermissions.includes('*')) return true;
-    return permissions.some((p) => currentPermissions.includes(p));
+    return permissions.some((p) => permissionMatches(currentPermissions, p));
   }, [currentPermissions, permissions]);
 }
 
@@ -85,10 +89,9 @@ export function useHasAllPermissions(permissions: string[]): boolean {
   const currentPermissions = useCurrentPermissions();
 
   return useMemo(() => {
-    if (permissions.length === 0) return false;
+    if (permissions.length === 0) return true; // vacuous truth
     if (currentPermissions.length === 0) return false;
-    if (currentPermissions.includes('*')) return true;
-    return permissions.every((p) => currentPermissions.includes(p));
+    return permissions.every((p) => permissionMatches(currentPermissions, p));
   }, [currentPermissions, permissions]);
 }
 

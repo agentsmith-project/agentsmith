@@ -19,10 +19,12 @@ export interface UsagePageProps {
   currentUserId?: string; // For scope switch when user has project-wide permission
 }
 
-const DEFAULT_TIME_RANGE = {
-  start_time: new Date().toISOString().split('T')[0] + 'T00:00:00.000Z', // Today start
-  end_time: new Date().toISOString(), // Now
-};
+function getDefaultTimeRange() {
+  return {
+    start_time: new Date().toISOString().split('T')[0] + 'T00:00:00.000Z', // Today start
+    end_time: new Date().toISOString(), // Now
+  };
+}
 
 export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUserId }: UsagePageProps) {
   const t = useTranslations('usage');
@@ -40,15 +42,15 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
       ? currentUserId
       : undefined;
 
-  const [filters, setFilters] = React.useState<UsageListParams>({
-    ...DEFAULT_TIME_RANGE,
+  const [filters, setFilters] = React.useState<UsageListParams>(() => ({
+    ...getDefaultTimeRange(),
     page: 1,
     page_size: 25,
     sort_by: 'time_bucket',
     sort_order: 'desc',
     group_by: 'day',
     ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
-  });
+  }));
 
   const apiFilters = React.useMemo(
     () => ({ ...filters, end_user_id: effectiveEndUserId }),
@@ -79,7 +81,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
 
   const handleClearFilters = React.useCallback(() => {
     setFilters({
-      ...DEFAULT_TIME_RANGE,
+      ...getDefaultTimeRange(),
       page: 1,
       page_size: 25,
       sort_by: 'time_bucket',

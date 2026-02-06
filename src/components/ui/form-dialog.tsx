@@ -113,7 +113,7 @@ export function FormDialog({
 
   // Prevent closing if currently submitting
   const handleOpenChange = (newOpen: boolean) => {
-    if (!newOpen || !isSubmitting) {
+    if (newOpen || !isSubmitting) {
       setOpen(newOpen);
       setError(null);
     }

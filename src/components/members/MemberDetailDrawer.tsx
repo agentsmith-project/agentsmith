@@ -84,7 +84,7 @@ export function MemberDetailDrawer({
 
   const permInitialPermissions = React.useMemo(() => {
     if (appliedPermTemplateId) {
-      const tpl = permTemplatesForDropdown.find((t) => t.id === appliedPermTemplateId);
+      const tpl = permTemplatesForDropdown.find((tmpl) => tmpl.id === appliedPermTemplateId);
       return tpl?.permissions ?? permissions?.platform_permissions ?? [];
     }
     return permissions?.platform_permissions ?? [];
@@ -92,7 +92,7 @@ export function MemberDetailDrawer({
 
   const quotaInitialOverrides = React.useMemo(() => {
     if (appliedQuotaTemplateId) {
-      const tpl = quotaTemplates.find((t) => t.id === appliedQuotaTemplateId);
+      const tpl = quotaTemplates.find((tmpl) => tmpl.id === appliedQuotaTemplateId);
       return tpl?.overrides_json ?? quotaOverrides ?? {};
     }
     return quotaOverrides ?? {};

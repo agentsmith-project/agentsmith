@@ -194,7 +194,7 @@ export function Markdown({ content }: { content: string }) {
         ),
         img: ({ alt, src, ...props }) => {
           // Validate image URL before rendering
-          if (!src || !isValidImageUrl(src)) {
+          if (!src || typeof src !== 'string' || !isValidImageUrl(src)) {
             // Return null or placeholder for unsafe images
             return (
               <span className="text-tertiary text-xs">

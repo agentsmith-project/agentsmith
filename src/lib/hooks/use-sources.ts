@@ -86,7 +86,7 @@ export function useUploadFile() {
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['quota', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
       });
       toast.success(t('upload_success'));
     },
@@ -121,7 +121,7 @@ export function useDeleteFile() {
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['quota', variables.workspaceId, variables.projectId],
+        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
       });
       toast.success(t('delete_success'));
     },

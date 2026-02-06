@@ -52,7 +52,7 @@ export function AuditFilters({
   className,
   defaultEndUserId,
 }: AuditFiltersProps) {
-  const [debounceTimer, setDebounceTimer] = React.useState<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleTimeRangeChange = (range: TimeRange) => {
     onChange({
@@ -64,28 +64,27 @@ export function AuditFilters({
 
   const handleFilterChange = (key: keyof AuditListParams, value: string | undefined) => {
     // Clear existing debounce timer
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
     }
 
     // Set new debounce timer
-    const timer = setTimeout(() => {
+    debounceTimerRef.current = setTimeout(() => {
       onChange({
         ...filters,
         [key]: value || undefined,
       });
+      debounceTimerRef.current = null;
     }, 500);
-
-    setDebounceTimer(timer);
   };
 
   React.useEffect(() => {
     return () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [debounceTimer]);
+  }, []);
 
   const hasActiveFilters = React.useMemo(() => {
     return !!(

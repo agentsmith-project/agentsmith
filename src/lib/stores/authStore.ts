@@ -68,10 +68,10 @@ const initialData: AuthData = {
 // Store Factory (environment-aware)
 // ============================================================
 
-const isDev = process.env.NEXT_PUBLIC_USE_MSW === 'true';
+const usePersist = process.env.NEXT_PUBLIC_USE_MSW === 'true';
 
 const createAuthStore = (): AuthStoreWithPersist => {
-  if (isDev) {
+  if (usePersist) {
     return create<AuthState>()(
       persist(
         (set) => ({

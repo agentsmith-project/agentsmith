@@ -140,7 +140,10 @@ export function RecipeHeader({
             <AlertDialogFooter>
               <AlertDialogCancel>{t('delete_cancel')}</AlertDialogCancel>
               <AlertDialogAction
-                onClick={handleDelete}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleDelete();
+                }}
                 disabled={deleteRecipe.isPending}
                 variant="destructive"
               >

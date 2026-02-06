@@ -144,7 +144,7 @@ export function MembersTable({
                 />
               ) : (
                 <div className="h-8 w-8 rounded-full bg-surface-high flex items-center justify-center text-xs font-medium text-foreground">
-                  {member.name.charAt(0).toUpperCase()}
+                  {(member.name || member.email || '?').charAt(0).toUpperCase()}
                 </div>
               )}
               <div className="flex flex-col">

@@ -34,7 +34,6 @@ export default function LoginPage() {
 
   const [workspaceId, setWorkspaceId] = useState('ws_default');
   const [userEmail, setUserEmail] = useState('');
-  const [_userName, _setUserName] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Get locale from params
@@ -58,7 +57,7 @@ export default function LoginPage() {
         {
           id: 'user_default',
           email: userEmail,
-          name: _userName || userEmail.split('@')[0],
+          name: userEmail.split('@')[0],
           locale: locale as 'en-US' | 'zh-CN',
         },
         'mock_token_' + Date.now()

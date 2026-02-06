@@ -111,7 +111,7 @@ export function AppShellSidebar({
     >
       <nav className="flex-1 px-2 py-4 space-y-1">
         {menuItems.map((item) => {
-          const isActive = pathname?.includes(item.href);
+          const isActive = pathname?.split('/').includes(item.href);
           const label = t(item.labelKey);
           return (
             <Link

@@ -56,14 +56,20 @@ export function useMemberSelection({ members }: UseMemberSelectionOptions): UseM
 
   const membersList = useMemo(() => (Array.isArray(members) ? members : []), [members]);
 
+  // Filter selectedIds to only include IDs that exist in current members
+  const validSelectedIds = useMemo(() => {
+    const memberIdSet = new Set(membersList.map((m) => m.id));
+    return selectedIds.filter((id) => memberIdSet.has(id));
+  }, [selectedIds, membersList]);
+
   const allSelected = useMemo(
-    () => membersList.length > 0 && selectedIds.length === membersList.length,
-    [membersList.length, selectedIds.length]
+    () => membersList.length > 0 && validSelectedIds.length === membersList.length,
+    [membersList.length, validSelectedIds.length]
   );
 
   const someSelected = useMemo(
-    () => selectedIds.length > 0 && selectedIds.length < membersList.length,
-    [selectedIds.length, membersList.length]
+    () => validSelectedIds.length > 0 && validSelectedIds.length < membersList.length,
+    [validSelectedIds.length, membersList.length]
   );
 
   const toggleSelection = useCallback((memberId: string) => {
@@ -81,7 +87,7 @@ export function useMemberSelection({ members }: UseMemberSelectionOptions): UseM
   }, []);
 
   return {
-    selectedIds,
+    selectedIds: validSelectedIds,
     allSelected,
     someSelected,
     setSelectedIds,

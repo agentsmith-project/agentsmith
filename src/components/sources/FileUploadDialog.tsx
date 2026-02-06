@@ -94,8 +94,12 @@ export function FileUploadDialog({
   };
 
   const handleUpload = () => {
-    const filesToUpload = files.map((item) => item.file);
-    onUpload(filesToUpload);
+    const filesToUpload = files
+      .filter((item) => item.status === 'pending')
+      .map((item) => item.file);
+    if (filesToUpload.length > 0) {
+      onUpload(filesToUpload);
+    }
   };
 
   const handleClose = () => {

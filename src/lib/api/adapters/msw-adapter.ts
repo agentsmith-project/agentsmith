@@ -47,6 +47,24 @@ export class MSWApiClient implements ApiClient {
   }
 
   /**
+   * Build URL with query parameters
+   */
+  private buildUrl(path: string, params?: Record<string, string | number>): string {
+    let url = path;
+    if (params) {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        searchParams.append(key, String(value));
+      });
+      const queryString = searchParams.toString();
+      if (queryString) {
+        url += `?${queryString}`;
+      }
+    }
+    return url;
+  }
+
+  /**
    * Convert response to match backend API structure
    */
   private async fetchFromMsw<T>(
@@ -80,6 +98,7 @@ export class MSWApiClient implements ApiClient {
           err?.error_code || (err?.error as string) || 'UNKNOWN_ERROR',
           err?.message || (err?.error as string) || `HTTP ${response.status}`,
           err?.request_id,
+          response.status,
         );
       }
 
@@ -95,40 +114,45 @@ export class MSWApiClient implements ApiClient {
   }
 
   async get<T>(path: string, options?: ApiRequestOptions): Promise<T> {
-    return this.fetchFromMsw<T>(path, {
+    return this.fetchFromMsw<T>(this.buildUrl(path, options?.params), {
       method: 'GET',
       headers: this.getHeaders(options),
+      signal: options?.signal,
     });
   }
 
   async post<T>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
-    return this.fetchFromMsw<T>(path, {
+    return this.fetchFromMsw<T>(this.buildUrl(path, options?.params), {
       method: 'POST',
       headers: this.getHeaders(options),
       body: JSON.stringify(body),
+      signal: options?.signal,
     });
   }
 
   async put<T>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
-    return this.fetchFromMsw<T>(path, {
+    return this.fetchFromMsw<T>(this.buildUrl(path, options?.params), {
       method: 'PUT',
       headers: this.getHeaders(options),
       body: JSON.stringify(body),
+      signal: options?.signal,
     });
   }
 
   async patch<T>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
-    return this.fetchFromMsw<T>(path, {
+    return this.fetchFromMsw<T>(this.buildUrl(path, options?.params), {
       method: 'PATCH',
       headers: this.getHeaders(options),
       body: JSON.stringify(body),
+      signal: options?.signal,
     });
   }
 
   async delete<T>(path: string, options?: ApiRequestOptions): Promise<T> {
-    return this.fetchFromMsw<T>(path, {
+    return this.fetchFromMsw<T>(this.buildUrl(path, options?.params), {
       method: 'DELETE',
       headers: this.getHeaders(options),
+      signal: options?.signal,
     });
   }
 

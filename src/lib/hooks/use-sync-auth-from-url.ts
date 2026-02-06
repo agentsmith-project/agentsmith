@@ -9,7 +9,8 @@
  */
 
 import { useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useRouter } from '@/lib/i18n/routing';
 import { useWorkspaces } from './use-workspaces';
 import { useProjects } from './use-projects-queries';
 import { useAuthStoreHydration } from '@/lib/stores/authStore';

@@ -23,11 +23,9 @@ export async function middleware(request: NextRequest) {
   );
 
   if (recipeMatch) {
-    const [, _locale, workspace, project, recipeId] = recipeMatch;
+    const [, locale, workspace, project, recipeId] = recipeMatch;
     const validation = validateRecipeId(recipeId);
     if (!validation.valid) {
-      const localeMatch = pathname.match(/^\/([^/]+)/);
-      const locale = localeMatch ? localeMatch[1] : routing.defaultLocale;
       const redirectUrl = new URL(
         `/${locale}/workspaces/${workspace}/projects/${project}/workbench`,
         request.url,

@@ -263,7 +263,7 @@ export function AuditTable({
         size: 80,
       }),
     ],
-    [onViewDetails],
+    [onViewDetails, t],
   );
 
   const table = useReactTable({

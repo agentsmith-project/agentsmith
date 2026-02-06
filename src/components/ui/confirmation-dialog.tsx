@@ -110,7 +110,7 @@ export function ConfirmationDialog({
 
   // Prevent closing if currently confirming
   const handleOpenChange = (newOpen: boolean) => {
-    if (!newOpen || !isConfirming) {
+    if (newOpen || !isConfirming) {
       setOpen(newOpen);
     }
   };

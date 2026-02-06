@@ -11,7 +11,7 @@ export async function refreshAuth(
   refreshToken: string,
   client: ApiClient = getApiClient(),
 ): Promise<RefreshAuthResponse> {
-  return client.post<RefreshAuthResponse>('/v1/auth/refresh', {
+  return client.post<RefreshAuthResponse>('/auth/refresh', {
     refresh_token: refreshToken,
   });
 }

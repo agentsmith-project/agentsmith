@@ -26,7 +26,7 @@ export function ArtifactImageViewer({
 }: ArtifactImageViewerProps) {
   if (!artifact) return null;
 
-  const imageUrl = artifact.thumbnail_url || artifact.content;
+  const imageUrl = artifact.content || artifact.thumbnail_url;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

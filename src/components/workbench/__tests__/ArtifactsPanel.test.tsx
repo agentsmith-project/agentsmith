@@ -155,8 +155,8 @@ describe('ArtifactsPanel', () => {
     it('displays artifact types', () => {
       renderComponent();
 
-      expect(screen.getByTestId('artifact-card-artifact-1')).querySelector('[data-artifact-type]')?.textContent).toBe('text');
-      expect(screen.getByTestId('artifact-card-artifact-3')).querySelector('[data-artifact-type]')?.textContent).toBe('file');
+      expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-artifact-type]')?.textContent).toBe('text');
+      expect(screen.getByTestId('artifact-card-artifact-3').querySelector('[data-artifact-type]')?.textContent).toBe('file');
     });
   });
 
@@ -196,19 +196,19 @@ describe('ArtifactsPanel', () => {
     it('passes view callback to non-image artifacts', () => {
       renderComponent();
 
-      expect(screen.getByTestId('artifact-card-artifact-1')).querySelector('[data-action="view"]')).toBeInTheDocument();
+      expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="view"]')).toBeInTheDocument();
     });
 
     it('passes save callback to artifacts', () => {
       renderComponent();
 
-      expect(screen.getByTestId('artifact-card-artifact-1')).querySelector('[data-action="save"]')).toBeInTheDocument();
+      expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="save"]')).toBeInTheDocument();
     });
 
     it('passes download callback to artifacts', () => {
       renderComponent();
 
-      expect(screen.getByTestId('artifact-card-artifact-1')).querySelector('[data-action="download"]')).toBeInTheDocument();
+      expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="download"]')).toBeInTheDocument();
     });
   });
 
@@ -224,7 +224,7 @@ describe('ArtifactsPanel', () => {
         />
       );
 
-      expect(screen.getByTestId('artifact-card-artifact-1')).querySelector('[data-disabled]')).toBeInTheDocument();
+      expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-disabled]')).toBeInTheDocument();
     });
   });
 

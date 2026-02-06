@@ -1,4 +1,5 @@
 import * as React from 'react';
+import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,14 +27,26 @@ export function Breadcrumb({ items, className = '' }: BreadcrumbProps) {
               {item.icon && (
                 <item.icon className="w-4 h-4 text-tertiary" />
               )}
-              <span
-                className={cn(
-                  'truncate max-w-[150px]',
-                  isLast ? 'text-primary' : 'text-secondary hover:text-primary cursor-pointer transition-colors',
-                )}
-              >
-                {item.label}
-              </span>
+              {!isLast && item.href ? (
+                <Link
+                  href={item.href}
+                  className={cn(
+                    'truncate max-w-[150px]',
+                    'text-secondary hover:text-primary cursor-pointer transition-colors',
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ) : (
+                <span
+                  className={cn(
+                    'truncate max-w-[150px]',
+                    isLast ? 'text-primary' : 'text-secondary',
+                  )}
+                >
+                  {item.label}
+                </span>
+              )}
             </div>
             {!isLast && (
               <ChevronRight className="w-4 h-4 text-tertiary flex-shrink-0" />

@@ -167,7 +167,7 @@ export function EditEndpointDialog({
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" type="button" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" type="button" onClick={() => handleOpenChange(false)}>
               {t('edit_dialog.cancel')}
             </Button>
             <Button variant="default" type="submit" disabled={!canSubmit}>

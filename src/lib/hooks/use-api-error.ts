@@ -44,7 +44,7 @@ export interface ApiErrorOptions {
 export interface UseApiErrorReturn {
   error: Error | null;
   isVisible: boolean;
-  handleError: (error: unknown, options?: ApiErrorOptions) => Promise<void>;
+  handleError: (error: unknown, options?: ApiErrorOptions) => void;
   clearError: () => void;
   retry: () => void;
   setError: (error: Error | null) => void;
@@ -57,7 +57,7 @@ export function useApiError(): UseApiErrorReturn {
   const t = useTranslations('errors');
 
   const handleError = useCallback(
-    async (err: unknown, options: ApiErrorOptions = {}) => {
+    (err: unknown, options: ApiErrorOptions = {}) => {
       const { context, onRetry, fallbackMessage } = options;
 
       let errorObj: Error;

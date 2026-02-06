@@ -45,8 +45,8 @@ export default async function LocaleLayout({
           <QueryProvider>
             <NextIntlClientProvider locale={locale} messages={messages}>
               {children}
+              <ToastContainer />
             </NextIntlClientProvider>
-            <ToastContainer />
           </QueryProvider>
         </RealtimeProvider>
       </MSWProvider>

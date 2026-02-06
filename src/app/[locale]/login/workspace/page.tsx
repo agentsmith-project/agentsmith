@@ -46,8 +46,12 @@ export default function WorkspaceSelectPage() {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function WorkspaceCard({ workspace, onSelect }: { workspace: any; onSelect: () => void }) {
+interface WorkspaceCardProps {
+  workspace: { id: string; name: string };
+  onSelect: () => void;
+}
+
+function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
   const t = useTranslations('auth');
   return (
     <div

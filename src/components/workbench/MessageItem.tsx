@@ -22,7 +22,7 @@ export function MessageItem({ message, streamingContent, disabled = false }: Mes
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(displayContent);
       toast.info(t('copied'));
     } catch {
       toast.error(t('copy_failed'));

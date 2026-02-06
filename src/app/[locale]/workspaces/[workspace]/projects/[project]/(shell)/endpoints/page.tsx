@@ -12,6 +12,7 @@ import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/re
 import { useTranslations } from 'next-intl';
 import { Server, Plus, Trash2, Globe, Pencil, Power, PowerOff } from 'lucide-react';
 import { getApiClient, EndpointAPI } from '@/lib/api';
+import type { Endpoint } from '@/lib/api/types';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
@@ -22,17 +23,6 @@ import { PageState } from '@/components/layout/PageState';
 
 interface EndpointsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
-}
-
-interface Endpoint {
-  id: string;
-  name: string;
-  description?: string;
-  base_url: string;
-  openai_model: string;
-  type: string;
-  status: 'active' | 'disabled';
-  rate_limit?: number;
 }
 
 const columnHelper = createColumnHelper<Endpoint>();
@@ -92,7 +82,7 @@ function createEndpointColumns(
       </span>
     ),
   }),
-  columnHelper.accessor('rate_limit', {
+  columnHelper.accessor('limits.max_requests_per_minute', {
     header: 'Rate Limit',
     cell: (info) => (
       <span className="text-tertiary text-sm">

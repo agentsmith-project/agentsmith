@@ -15,15 +15,12 @@ interface AuthProviderProps {
  */
 export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
-    // Only run on client side
-    if (typeof window !== 'undefined') {
-      // The zustand persist middleware with custom storage will handle hydration automatically
-      // No manual rehydration needed
+    // useEffect only runs on the client, no typeof window check needed
+    // The zustand persist middleware with custom storage will handle hydration automatically
 
-      // Expose store globally for testing (development only)
-      if (process.env.NODE_ENV === 'development') {
-        window.__MBOS_AUTH_STORE__ = useAuthStore;
-      }
+    // Expose store globally for testing (development only)
+    if (process.env.NODE_ENV === 'development') {
+      window.__MBOS_AUTH_STORE__ = useAuthStore;
     }
   }, []);
 

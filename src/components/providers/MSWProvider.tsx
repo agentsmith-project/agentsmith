@@ -18,16 +18,17 @@ export function MSWProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(!useMsw);
 
   useEffect(() => {
-    if (useMsw && typeof window !== 'undefined') {
-      initMSW().then(() => {
-        console.log('[MSW] Service Worker initialized successfully');
-        setReady(true);
-      }).catch((err) => {
-        console.error('[MSW] Failed to initialize:', err);
-        console.info('[MSW] Make sure you ran: npx msw init ./public');
-        setReady(true);
-      });
-    }
+    if (!useMsw || typeof window === 'undefined') return;
+    let cancelled = false;
+    initMSW().then(() => {
+      console.log('[MSW] Service Worker initialized successfully');
+      if (!cancelled) setReady(true);
+    }).catch((err) => {
+      console.error('[MSW] Failed to initialize:', err);
+      console.info('[MSW] Make sure you ran: npx msw init ./public');
+      if (!cancelled) setReady(true);
+    });
+    return () => { cancelled = true; };
   }, [useMsw]);
 
   if (!ready) {

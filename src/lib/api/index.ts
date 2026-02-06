@@ -81,5 +81,6 @@ export type {
 } from './endpoints';
 
 // Adapters (for advanced usage)
-export { MSWApiClient } from './adapters/msw-adapter';
+// Note: MSWApiClient is NOT exported here to avoid bundling in production.
+// It is dynamically imported in client.ts when NEXT_PUBLIC_USE_MSW=true.
 export { FetchApiClient } from './adapters/fetch-adapter';

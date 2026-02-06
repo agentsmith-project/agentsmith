@@ -448,9 +448,9 @@ export function useUpdateQuotaTemplate(
         data
       );
     },
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.quotaTemplates.list(workspaceId, projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.quotaTemplates.detail(workspaceId, projectId, variables.templateId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.quotaTemplates.detail(workspaceId, projectId, templateId) });
       toast.success(t('quota_update_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useUpdateQuotaTemplate'),

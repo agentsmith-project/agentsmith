@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -6,13 +7,17 @@ export const metadata: Metadata = {
   description: "Microservices-based platform for intelligent agent management and deployment",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Derive locale from the Accept-Language header or URL path set by middleware
+  const headersList = await headers();
+  const locale = headersList.get('x-next-intl-locale') || 'en-US';
+
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang={locale} className="dark" suppressHydrationWarning>
       <body
         className="font-sans antialiased"
         suppressHydrationWarning

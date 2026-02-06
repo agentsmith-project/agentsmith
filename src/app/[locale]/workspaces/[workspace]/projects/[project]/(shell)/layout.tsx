@@ -29,16 +29,18 @@ export default function AppShellLayout({
   // Sync currentProject from URL so permission checks work on all project pages
   useSyncAuthFromUrl();
 
-  // Get current page from URL path using usePathname (works on both server and client)
+  // Get current page from URL path using usePathname
+  // Path format: /locale/workspaces/{workspaceId}/projects/{projectId}/{page}
   const currentPage = useMemo(() => {
     const pathSegments = pathname.split('/');
-    // Path format: /locale/workspaces/workspaceId/projects/projectId/page
-    const pageIndex = pathSegments.findIndex(s => s === projectId);
-    if (pageIndex >= 0 && pageIndex + 1 < pathSegments.length) {
-      return pathSegments[pageIndex + 1];
+    // Find 'projects' segment and skip workspace+project IDs to get the page segment
+    const projectsIdx = pathSegments.indexOf('projects');
+    // page is 2 segments after 'projects': projects / {projectId} / {page}
+    if (projectsIdx >= 0 && projectsIdx + 2 < pathSegments.length) {
+      return pathSegments[projectsIdx + 2];
     }
     return 'overview';
-  }, [pathname, projectId]);
+  }, [pathname]);
 
   const handleSidebarChange = (pageId: string) => {
     const newPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/${pageId}`;

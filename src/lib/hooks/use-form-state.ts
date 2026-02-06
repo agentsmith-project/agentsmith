@@ -84,25 +84,15 @@ export interface FormStateReturn<TValues extends Record<string, unknown>> {
 /**
  * Hook for managing form state in dialogs
  *
+ * Supports two modes:
+ * - **Controlled**: Pass `open` and `onOpenChange` to integrate with parent dialog state.
+ *   Returns `dialogProps` and `handleOpenChange`.
+ * - **Uncontrolled**: Omit `open`/`onOpenChange` to let the hook manage its own open state.
+ *   Returns `open`, `setOpen`, and `handleOpenChange`.
+ *
  * @param options - Form state options
  * @returns Form state object with methods and computed values
  */
-export function useFormState<TValues extends Record<string, unknown>>(
-  options: FormStateOptions<TValues> & { open: boolean; onOpenChange: (open: boolean) => void }
-): FormStateReturn<TValues>;
-
-/**
- * Hook for managing form state (uncontrolled - use with custom open handling)
- */
-export function useFormState<TValues extends Record<string, unknown>>(
-  options: Omit<FormStateOptions<TValues>, 'open' | 'onOpenChange'>
-): Omit<FormStateReturn<TValues>, 'dialogProps' | 'handleOpenChange'> & {
-  /** Set the open state (for controlled mode) */
-  setOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  /** Current open state */
-  open: boolean;
-};
-
 export function useFormState<TValues extends Record<string, unknown>>(
   options: FormStateOptions<TValues> & { open?: boolean; onOpenChange?: (open: boolean) => void }
 ) {
@@ -127,12 +117,19 @@ export function useFormState<TValues extends Record<string, unknown>>(
 
   const [values, setValues] = React.useState<TValues>(initialValues);
 
+  // Stable key for deep comparison of initialValues
+  const initialValuesKey = React.useMemo(
+    () => JSON.stringify(initialValues),
+    [initialValues] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   // Reset form when dialog opens
   React.useEffect(() => {
     if (open && resetOnOpen) {
       setValues(initialValues);
     }
-  }, [open, resetOnOpen, JSON.stringify(initialValues)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, resetOnOpen, initialValuesKey]);
 
   // Handle auto-focus
   const autoFocusRef = React.useRef<HTMLInputElement>(null);
@@ -177,7 +174,7 @@ export function useFormState<TValues extends Record<string, unknown>>(
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen || !isPending) {
+    if (nextOpen || !isPending) {
       onOpenChange(nextOpen);
     }
   };

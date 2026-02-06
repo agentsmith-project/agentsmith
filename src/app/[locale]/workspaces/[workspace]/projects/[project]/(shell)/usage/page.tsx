@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { UsagePage as UsagePageComponent } from '@/components/audit-usage/UsagePage';
-import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useAuthStore } from '@/lib/stores/authStore';
@@ -45,14 +44,12 @@ export default function UsagePage({ params }: UsagePageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <UsagePageComponent
-          workspaceId={workspaceId}
-          projectId={projectId}
-          defaultEndUserId={defaultEndUserId}
-          currentUserId={currentUser?.id}
-        />
-      </PageLayout>
+      <UsagePageComponent
+        workspaceId={workspaceId}
+        projectId={projectId}
+        defaultEndUserId={defaultEndUserId}
+        currentUserId={currentUser?.id}
+      />
     </PageState>
   );
 }

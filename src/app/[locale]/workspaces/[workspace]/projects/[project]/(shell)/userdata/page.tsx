@@ -1,4 +1,3 @@
-import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { UserDataPage } from '@/components/userdata/UserDataPage';
 
@@ -10,9 +9,7 @@ export default async function UserdataPage({ params }: UserdataPageProps) {
   const { workspace, project } = await params;
   return (
     <PageState state="success">
-      <PageLayout>
-        <UserDataPage workspaceId={workspace} projectId={project} />
-      </PageLayout>
+      <UserDataPage workspaceId={workspace} projectId={project} />
     </PageState>
   );
 }

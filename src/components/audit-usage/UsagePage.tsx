@@ -9,6 +9,9 @@ import { UsageTable } from './UsageTable';
 import { useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import type { UsageListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -104,35 +107,35 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
 
   if (!canReadUsage) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 p-6">
-        <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
-          <p className="text-sm text-tertiary">{t('permission_denied')}</p>
+      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
+        <div className="flex flex-col items-center justify-center flex-1">
+          <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
+            <p className="text-sm text-tertiary">{t('permission_denied')}</p>
+          </div>
         </div>
-      </div>
+      </PageLayout>
     );
   }
 
   if (error) {
     return (
-      <div className="p-6">
+      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
         <div className="bg-error/10 border border-error/30 rounded-md p-4">
           <p className="text-error">
             Failed to load usage data: {error instanceof Error ? error.message : 'Unknown error'}
           </p>
         </div>
-      </div>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-background">
-      {/* Header */}
-      <div className="p-6 border-b border-border flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-          <p className="text-sm text-tertiary mt-1">{t('subtitle')}</p>
+    <PageLayout
+      header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
+      toolbar={(
+        <PageToolbar>
           {!isScopeLocked && currentUserId && (
-            <div className="flex gap-2 mt-3">
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setScope('my')}
@@ -157,20 +160,18 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
               </button>
             </div>
           )}
-        </div>
-        <Button variant="outline" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || kpiLoading ? 'animate-spin' : ''}`} />
-          {commonT('refresh')}
-        </Button>
-      </div>
-
+          <Button variant="outline" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || kpiLoading ? 'animate-spin' : ''}`} />
+            {commonT('refresh')}
+          </Button>
+        </PageToolbar>
+      )}
+    >
       {/* KPI Cards */}
-      <div className="p-6">
-        <UsageKPICards kpi={kpiData} loading={kpiLoading} />
-      </div>
+      <UsageKPICards kpi={kpiData} loading={kpiLoading} />
 
       {/* Filters */}
-      <div className="px-6 pb-4" data-testid="usage__filters">
+      <div data-testid="usage__filters">
         <UsageFilters
           filters={apiFilters}
           onChange={handleFiltersChange}
@@ -180,13 +181,13 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <UsageTable
           data={data?.items || []}
           loading={isLoading}
           onClearFilters={handleClearFilters}
         />
       </div>
-    </div>
+    </PageLayout>
   );
 }

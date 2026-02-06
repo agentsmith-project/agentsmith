@@ -52,6 +52,16 @@
     --spacing-sm: 12px;
     --spacing-md: 16px;
     --spacing-lg: 24px;
+
+    /* Layout density */
+    --layout-padding: 16px;
+    --layout-gap: 16px;
+    --layout-padding-immersive: 8px;
+    --layout-gap-immersive: 8px;
+
+    /* App shell widths */
+    --sidebar-width: 216px;
+    --sidebar-width-collapsed: 72px;
   }
 
   * {

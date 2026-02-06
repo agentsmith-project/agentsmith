@@ -36,7 +36,7 @@ export default function RecipeDetailPage({ params }: RecipePageParams) {
 
   return (
     <PageState state="success">
-      <PageLayout>
+      <PageLayout density="immersive">
         <RecipePage
           workspaceId={resolvedParams.workspace}
           projectId={resolvedParams.project}

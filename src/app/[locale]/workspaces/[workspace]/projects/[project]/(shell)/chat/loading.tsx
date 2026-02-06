@@ -9,9 +9,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ChatLoading() {
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40">
       {/* Threads Pane */}
-      <div className="w-72 border-r border-border flex flex-col">
+      <div className="w-[280px] xl:w-[304px] 2xl:w-[320px] border-r border-border flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-border">
           <Skeleton className="h-10 w-full mb-3" />
@@ -28,23 +28,29 @@ export default function ChatLoading() {
       </div>
 
       {/* Chat Window */}
-      <section className="flex-1 flex flex-col bg-background overflow-hidden">
+      <section className="flex-1 flex min-w-0 flex-col bg-background overflow-hidden">
         {/* Chat Header */}
-        <div className="h-14 border-b border-border flex items-center px-4">
-          <Skeleton className="h-6 w-48" />
+        <div className="h-14 border-b border-border">
+          <div className="mx-auto flex h-full w-full max-w-[980px] items-center px-4">
+            <Skeleton className="h-6 w-48" />
+          </div>
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <Skeleton className="h-24 w-3/4 ml-auto" />
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-20 w-2/3 ml-auto" />
-          <Skeleton className="h-28 w-full" />
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="mx-auto w-full max-w-[980px] space-y-4">
+            <Skeleton className="h-24 w-3/4 ml-auto" />
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-20 w-2/3 ml-auto" />
+            <Skeleton className="h-28 w-full" />
+          </div>
         </div>
 
         {/* Composer */}
-        <div className="p-4 border-t border-border">
-          <Skeleton className="h-24 w-full" />
+        <div className="px-4 py-4 border-t border-border">
+          <div className="mx-auto w-full max-w-[980px]">
+            <Skeleton className="h-24 w-full" />
+          </div>
         </div>
       </section>
     </div>

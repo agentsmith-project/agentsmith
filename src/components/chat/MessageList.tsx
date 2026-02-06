@@ -77,34 +77,40 @@ export function MessageList({
         computeItemKey={(_index, item) => item.id}
         atBottomStateChange={setIsAtBottom}
         itemContent={(_idx, m) => (
-          <div className="px-4 py-2">
-            <MessageItem
-              message={m}
-              variantGroups={groups}
-              activeVariantIndexByGroup={activeVariantIndexByGroup}
-              onSelectVariant={onSelectVariant}
-              onEdit={onEdit}
-              onEditCommit={onEditCommit}
-              onEditCancel={onEditCancel}
-              isEditing={editingMessageId === m.id}
-            onRegenerate={onRegenerate}
-            streamingOverride={
-              streamingAssistant && streamingAssistant.mode === 'replace' && streamingAssistant.messageId === m.id
-                ? streamingAssistant.content
-                : null
-            }
-            streamingMeta={
-              streamingAssistant && streamingAssistant.mode === 'replace' && streamingAssistant.messageId === m.id
-                ? { startedAt: streamingAssistant.startedAt, lastTokenAt: streamingAssistant.lastTokenAt }
-                : null
-            }
-            branchBadge={branchBadges.get(m.id) || null}
-            disabled={disabled}
-          />
+          <div className="px-3 py-2 sm:px-4">
+            <div className="mx-auto w-full max-w-[980px]">
+              <MessageItem
+                message={m}
+                variantGroups={groups}
+                activeVariantIndexByGroup={activeVariantIndexByGroup}
+                onSelectVariant={onSelectVariant}
+                onEdit={onEdit}
+                onEditCommit={onEditCommit}
+                onEditCancel={onEditCancel}
+                isEditing={editingMessageId === m.id}
+                onRegenerate={onRegenerate}
+                streamingOverride={
+                  streamingAssistant && streamingAssistant.mode === 'replace' && streamingAssistant.messageId === m.id
+                    ? streamingAssistant.content
+                    : null
+                }
+                streamingMeta={
+                  streamingAssistant && streamingAssistant.mode === 'replace' && streamingAssistant.messageId === m.id
+                    ? { startedAt: streamingAssistant.startedAt, lastTokenAt: streamingAssistant.lastTokenAt }
+                    : null
+                }
+                branchBadge={branchBadges.get(m.id) || null}
+                disabled={disabled}
+              />
+            </div>
           </div>
         )}
         components={{
-          Footer: () => <div className="pb-4">{footer}</div>,
+          Footer: () => (
+            <div className="px-3 pb-4 sm:px-4">
+              <div className="mx-auto w-full max-w-[980px]">{footer}</div>
+            </div>
+          ),
         }}
       />
 

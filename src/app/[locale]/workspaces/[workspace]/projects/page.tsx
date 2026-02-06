@@ -164,9 +164,9 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
         <div className="min-h-screen bg-background flex flex-col">
           <Topbar />
 
-          <main className="flex-1 max-w-7xl mx-auto w-full p-6">
+          <main className="flex-1 w-full max-w-none px-4 py-4 md:px-5 md:py-5">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-2xl font-semibold text-foreground mb-2">{t('title')}</h1>
           <p className="text-tertiary">
             {t('workspace_label')} {currentWorkspace?.name || resolvedParams.workspace}
@@ -184,7 +184,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
             </Button>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-6">
             {/* Pinned Projects Section */}
             {pinnedProjects.length > 0 && (
               <section>

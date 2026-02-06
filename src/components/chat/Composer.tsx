@@ -70,9 +70,12 @@ export function Composer({
   };
 
   return (
-    <div className="border-t border-subtle bg-background" data-testid="chat__composer">
+    <div
+      className="border-t border-subtle bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85"
+      data-testid="chat__composer"
+    >
       {mode === 'edit' && (
-        <div className="px-4 pt-3 flex items-center justify-between">
+        <div className="mx-auto w-full max-w-[980px] px-4 pt-3 flex items-center justify-between">
           <div className="text-xs text-tertiary">Editing message</div>
           <Button type="button" variant="ghost" size="sm" onClick={onCancelEdit} disabled={disabled || streaming}>
             Cancel
@@ -80,7 +83,7 @@ export function Composer({
         </div>
       )}
       {attachments.length > 0 && (
-        <div className="px-4 pt-3 flex flex-wrap gap-2">
+        <div className="mx-auto w-full max-w-[980px] px-4 pt-3 flex flex-wrap gap-2">
           {attachments.map((a) => {
             const status = a.upload_status;
             return (
@@ -112,7 +115,7 @@ export function Composer({
         </div>
       )}
 
-      <div className="px-4 py-4">
+      <div className="mx-auto w-full max-w-[980px] px-4 py-4">
         <div className="flex items-end gap-2">
           <Button
             type="button"

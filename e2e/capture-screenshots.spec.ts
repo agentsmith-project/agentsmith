@@ -127,6 +127,18 @@ test.describe('Screenshot Capture', () => {
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(BASE, '05-workbench', 'workbench.png'), fullPage: true });
 
+    const createRecipeBtn = page.getByTestId('workbench__create-recipe-btn');
+    if (await createRecipeBtn.isVisible()) {
+      await createRecipeBtn.click();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(BASE, '05-workbench', 'create-recipe-dialog.png'), fullPage: true });
+      await page.keyboard.press('Escape');
+    }
+
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/workbench/recipes/recipe_001`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: path.join(BASE, '05-workbench', 'recipe-detail.png'), fullPage: true });
+
     // === 06-agents ===
     await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agents`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(800);
@@ -246,6 +258,7 @@ test.describe('Screenshot Capture', () => {
       path.join(BASE, '03-overview', 'overview.png'),
       path.join(BASE, '04-chat', 'chat.png'),
       path.join(BASE, '05-workbench', 'workbench.png'),
+      path.join(BASE, '05-workbench', 'recipe-detail.png'),
       path.join(BASE, '06-agents', 'agents.png'),
       path.join(BASE, '07-endpoints', 'endpoints.png'),
       path.join(BASE, '08-members', 'members-list.png'),

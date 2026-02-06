@@ -82,3 +82,10 @@ test('renders children when success', () => {
   expect(screen.getByTestId('page-state__success')).toBeInTheDocument();
   expect(screen.getByText('Success content')).toBeInTheDocument();
 });
+
+test('uses compact centered spacing for non-success states', () => {
+  render(<PageState state="loading" loading={<div>Loading content</div>} />);
+  const root = screen.getByTestId('page-state__loading');
+  expect(root).toHaveClass('px-4');
+  expect(root).toHaveClass('py-6');
+});

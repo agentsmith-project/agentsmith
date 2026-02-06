@@ -26,8 +26,8 @@ export default function WorkspaceSettingsPage() {
         <div className="min-h-screen bg-background flex flex-col">
           <Topbar />
 
-          <main className="flex-1 max-w-4xl mx-auto w-full p-6">
-            <div className="mb-6">
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-4 md:px-5 md:py-5">
+            <div className="mb-5">
               <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
                 <SettingsIcon className="w-6 h-6 text-icon-default" />
                 {t('workspace_title')}
@@ -35,7 +35,7 @@ export default function WorkspaceSettingsPage() {
               <p className="text-tertiary">{t('workspace_subtitle')}</p>
             </div>
 
-            <div className="p-6 rounded-xl border border-border bg-surface">
+            <div className="p-5 rounded-xl border border-border bg-surface">
               <h2 className="font-semibold text-foreground mb-4">{t('workspace_general')}</h2>
               <div className="space-y-4">
                 <div>
@@ -45,7 +45,7 @@ export default function WorkspaceSettingsPage() {
               </div>
             </div>
 
-            <div className="mt-6 p-6 rounded-xl border border-border bg-surface" data-testid="ws-settings__members">
+            <div className="mt-5 p-5 rounded-xl border border-border bg-surface" data-testid="ws-settings__members">
               <h2 className="font-semibold text-foreground mb-4">{t('workspace_members')}</h2>
               {members.length === 0 ? (
                 <p className="text-tertiary text-sm">{t('workspace_members_empty')}</p>

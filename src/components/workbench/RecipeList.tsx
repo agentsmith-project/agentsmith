@@ -57,7 +57,7 @@ export function RecipeList({ workspaceId, projectId }: RecipeListProps) {
 
   return (
     <div className="h-full flex flex-col bg-background" data-testid="workbench__recipe-list">
-      <div className="p-6 border-b border-subtle flex items-center justify-between">
+      <div className="px-4 py-4 md:px-5 border-b border-subtle flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Workbench</h1>
           <p className="text-sm text-tertiary mt-1">Manage your Recipes and collaborate with agents</p>
@@ -68,7 +68,7 @@ export function RecipeList({ workspaceId, projectId }: RecipeListProps) {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto px-4 py-4 md:px-5 md:py-5">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-6 w-6 animate-spin text-tertiary" />

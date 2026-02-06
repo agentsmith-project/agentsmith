@@ -108,6 +108,29 @@ Hierarchical structure: User → Workspace → Project
   - `Skeleton` - loading states
   - `useTableSelection` - table row selection
 
+**Example compound component pattern:**
+```tsx
+// Parent Page component manages state/context
+export function MembersPage() {
+  const [members, setMembers] = useState([]);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  return (
+    <MembersContext value={{ members, selectedIds, setSelectedIds }}>
+      <MembersHeader />
+      <MembersTable />
+      <MembersBatchActions />
+    </MembersContext>
+  );
+}
+
+// Children consume context via custom hook
+function MembersHeader() {
+  const { members } = useMembersContext();
+  // ...
+}
+```
+
 #### Routing Structure
 - **Max depth**: 2-3 levels
 - **Route groups**: `(shell)` for shared layouts
@@ -239,8 +262,17 @@ Rules:
 - Must be stable (not depend on text/styles)
 - Must be unique per page
 - Apply to: key buttons, table rows, panels, dialogs, page states
+- Use double underscores (`__`) as separators (single underscores for multi-word element names)
 
 See: `docs/UXUI/2026-02-05-前端-testid-规范.md`
+
+### ESLint Configuration
+
+Important rules enforced:
+- `@typescript-eslint/no-explicit-any: error` - No `any` types in production code
+- `@typescript-eslint/no-unused-vars: error` - Prefix unused with underscore (`_`)
+- Exception: Test files allow `any` at `warn` level for flexibility
+- Test files: `**/*.test.ts`, `**/*.test.tsx`, `**/__tests__/**`, `**/mocks/**`
 
 ## Security Guidelines
 
@@ -342,3 +374,33 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 - Path aliases: `@/*`, `@/components/*`, `@/lib/*`, `@/app/*`, `@/types/*`
 - TypeScript strict mode enabled
 - Always prefer editing existing files over creating new ones
+
+## Running Single Tests
+
+```bash
+# Unit tests - run specific test file
+npm test -- src/components/chat/__tests__/MessageItem.test.tsx
+
+# Unit tests - run by pattern
+npm test -- chat
+
+# E2E tests - run specific test file
+npm run test:e2e -- e2e/smoke.spec.ts
+
+# E2E tests - run specific project
+npm run test:e2e -- --project=smoke
+
+# E2E tests - run specific test by line number
+npm run test:e2e -- e2e/smoke.spec.ts:15
+```
+
+## Important Architecture Patterns
+
+### Auth Store Token Synchronization
+The Zustand auth store automatically syncs its token to the API client singleton via a subscription (see `src/lib/stores/authStore.ts:128-155`). This guarantees the API client always has the latest auth state without manual syncing. When calling `setAuth()` or `clearAuth()`, or when persist rehydrates, the token is automatically synced.
+
+### URL Parameter Validation
+All workspace and project URL parameters MUST be validated using `validateWorkspaceParam()` and `validateProjectParam()` from `src/lib/utils/validate-url-params.ts`. Never use `as string` type assertions on URL params - this is a security risk (XSS/injection).
+
+### Development vs Production Persistence
+The auth store only persists to localStorage when `NEXT_PUBLIC_USE_MSW=true` (development). In production, auth state is NOT persisted and must be re-established on each session via proper authentication flow.

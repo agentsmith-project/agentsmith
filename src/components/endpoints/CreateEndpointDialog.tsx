@@ -5,12 +5,12 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useLocale } from 'next-intl';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -156,14 +156,19 @@ export function CreateEndpointDialog({
     !createMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto" data-testid="endpoints__create-dialog">
-        <DialogHeader>
-          <DialogTitle>{t('create_dialog.title')}</DialogTitle>
-          <DialogDescription>{t('create_dialog.description')}</DialogDescription>
-        </DialogHeader>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetContent
+        side="right-wide"
+        className="flex h-full flex-col gap-0 overflow-hidden p-0"
+        data-testid="endpoints__create-dialog"
+      >
+        <SheetHeader className="border-b border-subtle px-6 py-4">
+          <SheetTitle>{t('create_dialog.title')}</SheetTitle>
+          <SheetDescription>{t('create_dialog.description')}</SheetDescription>
+        </SheetHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
           <div className="space-y-2">
             <label htmlFor="endpoint-name" className="text-sm font-medium text-foreground">
               {t('create_dialog.name')} <span className="text-error">*</span>
@@ -330,7 +335,9 @@ export function CreateEndpointDialog({
             )}
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          </div>
+
+          <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">
             <Button
               type="button"
               variant="ghost"
@@ -352,7 +359,7 @@ export function CreateEndpointDialog({
             </Button>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

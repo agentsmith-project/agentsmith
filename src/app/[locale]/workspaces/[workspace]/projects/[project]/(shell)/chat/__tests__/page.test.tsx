@@ -109,7 +109,7 @@ function createWrapper() {
 }
 
 describe('ChatPage', () => {
-  it('renders header and toolbar layout', async () => {
+  it('renders compact header layout with new-thread action', async () => {
     render(
       <ChatPage
         params={Promise.resolve({
@@ -127,8 +127,8 @@ describe('ChatPage', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
-    const toolbar = screen.getByTestId('page-layout__toolbar');
-    expect(within(toolbar).getByTestId('chat__new-thread-btn')).toBeInTheDocument();
+    expect(within(header).getByTestId('chat__new-thread-btn')).toBeInTheDocument();
+    expect(screen.queryByTestId('page-layout__toolbar')).not.toBeInTheDocument();
   });
 
   it('triggers new thread creation from toolbar', async () => {

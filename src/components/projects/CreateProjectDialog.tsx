@@ -3,12 +3,12 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -118,16 +118,17 @@ export function CreateProjectDialog({
   const canSubmit = name.trim().length > 0 && !createMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>{t('create')}</DialogTitle>
-          <DialogDescription>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetContent side="right-wide" className="flex h-full flex-col gap-0 overflow-hidden p-0">
+        <SheetHeader className="border-b border-subtle px-6 py-4">
+          <SheetTitle>{t('create')}</SheetTitle>
+          <SheetDescription>
             {t('create_description')}
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
           <div className="space-y-2">
             <label htmlFor="project-name" className="text-sm font-medium text-foreground">
               {t('name')}
@@ -191,7 +192,9 @@ export function CreateProjectDialog({
             </Select>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          </div>
+
+          <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">
             <Button
               type="button"
               variant="ghost"
@@ -209,7 +212,7 @@ export function CreateProjectDialog({
             </Button>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -14,7 +14,7 @@ test.describe('UserData Page', () => {
 
   test('should display page heading and subtitle', async ({ authedPage }) => {
     await expect(
-      authedPage.getByRole('heading', { name: /UserData/i }),
+      authedPage.getByRole('heading', { name: /User\s*Data|UserData/i }),
     ).toBeVisible({ timeout: 10000 });
   });
 

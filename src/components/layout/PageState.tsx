@@ -8,7 +8,7 @@ type PageStateProps = {
   error?: React.ReactNode;
 };
 
-const centered = 'h-full flex items-center justify-center px-6 py-10';
+const centered = 'h-full flex items-center justify-center px-4 py-6';
 
 export function PageState({ state, children, loading, empty, error }: PageStateProps) {
   if (state === 'success') {

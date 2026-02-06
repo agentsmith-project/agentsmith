@@ -35,7 +35,6 @@ import { Markdown } from '@/components/chat/Markdown';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
-import { PageToolbar } from '@/components/layout/PageToolbar';
 import { Button } from '@/components/ui/button';
  
 
@@ -430,22 +429,25 @@ export default function ChatPage({ params }: ChatPageProps) {
   return (
     <PageState state="success">
       <PageLayout
-        header={<PageHeader title={t('title')} />}
-        toolbar={(
-          <PageToolbar>
-            <Button
-              variant="outline"
-              onClick={() => createSessionMutation.mutate()}
-              disabled={createSessionMutation.isPending}
-              data-testid="chat__new-thread-btn"
-            >
-              <Plus className="w-4 h-4" />
-              {t('new_thread')}
-            </Button>
-          </PageToolbar>
+        density="immersive"
+        header={(
+          <PageHeader
+            title={t('title')}
+            actions={(
+              <Button
+                variant="outline"
+                onClick={() => createSessionMutation.mutate()}
+                disabled={createSessionMutation.isPending}
+                data-testid="chat__new-thread-btn"
+              >
+                <Plus className="w-4 h-4" />
+                {t('new_thread')}
+              </Button>
+            )}
+          />
         )}
       >
-        <div className="h-full flex overflow-hidden">
+        <div className="h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40">
           <ThreadsPane
             sessions={sessions}
             activeSessionId={currentSessionId}
@@ -465,7 +467,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             isLoading={sessionsLoading}
           />
 
-          <section className="flex-1 flex flex-col bg-background overflow-hidden" data-testid="chat__main-pane">
+          <section className="flex-1 flex min-w-0 flex-col bg-background overflow-hidden" data-testid="chat__main-pane">
             <ChatHeader
               session={activeSession}
               endpoints={endpoints}
@@ -482,15 +484,15 @@ export default function ChatPage({ params }: ChatPageProps) {
 
             <div className="flex-1 min-h-0">
               {!currentSessionId ? (
-                <div className="h-full flex items-center justify-center">
-                  <div className="text-center px-6">
+                <div className="h-full flex items-center justify-center px-4">
+                  <div className="mx-auto w-full max-w-[560px] text-center px-6">
                     <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
                     <div className="text-foreground font-medium mb-1">No active thread</div>
                     <div className="text-tertiary text-sm">Create a new chat to start.</div>
                   </div>
                 </div>
               ) : messagesLoading ? (
-                <div className="h-full flex items-center justify-center">
+                <div className="h-full flex items-center justify-center px-4">
                   <div className="text-tertiary">Loading...</div>
                 </div>
               ) : (

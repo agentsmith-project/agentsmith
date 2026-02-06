@@ -37,6 +37,8 @@ const buildStrictSchema = () => {
       'td',
       // GFM task list (checkboxes)
       'input',
+      // Code blocks
+      'pre',
       // Images (restricted - validated separately in component)
       'img',
     ],
@@ -126,26 +128,13 @@ function isValidImageUrl(url: string): boolean {
 }
 
 function CodeBlock({
-  inline,
-  className,
-  children,
+  language,
+  raw,
 }: {
-  inline?: boolean;
-  className?: string;
-  children: React.ReactNode;
+  language?: string;
+  raw: string;
 }) {
   const [copied, setCopied] = React.useState(false);
-  const raw = String(children ?? '');
-
-  if (inline) {
-    return (
-      <code className="font-mono text-[13px] text-primary bg-hover px-1 py-0.5 rounded-sm border border-subtle">
-        {children}
-      </code>
-    );
-  }
-
-  const language = (className || '').replace('language-', '').trim();
 
   const handleCopy = async () => {
     try {
@@ -177,6 +166,24 @@ function CodeBlock({
 }
 
 export function Markdown({ content }: { content: string }) {
+  const renderParagraph = (children: React.ReactNode) => {
+    const hasBlockChild = React.Children.toArray(children).some((child) => {
+      if (!React.isValidElement(child)) {
+        return false;
+      }
+      if (typeof child.type !== 'string') {
+        return true;
+      }
+      return child.type === 'div' || child.type === 'pre' || child.type === 'table';
+    });
+
+    if (hasBlockChild) {
+      return <div className="text-sm leading-6 text-primary">{children}</div>;
+    }
+
+    return <p className="text-sm leading-6 text-primary">{children}</p>;
+  };
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -213,7 +220,7 @@ export function Markdown({ content }: { content: string }) {
             />
           );
         },
-        p: ({ children }) => <p className="text-sm leading-6 text-primary">{children}</p>,
+        p: ({ children }) => renderParagraph(children),
         strong: ({ children }) => <strong className="text-foreground font-semibold">{children}</strong>,
         em: ({ children }) => <em className="text-primary italic">{children}</em>,
         ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 text-sm text-primary">{children}</ul>,
@@ -241,14 +248,41 @@ export function Markdown({ content }: { content: string }) {
           </th>
         ),
         td: ({ children }) => <td className="px-3 py-2 text-sm text-primary">{children}</td>,
-        code: ({ children, className, ...props }) => (
-          <CodeBlock
-            inline={Boolean((props as unknown as { inline?: boolean }).inline)}
-            className={className}
-          >
-            {children}
-          </CodeBlock>
-        ),
+        pre: ({ children }) => {
+          const child = React.Children.toArray(children)[0];
+          if (!React.isValidElement(child)) {
+            return <pre className="p-3 overflow-x-auto text-[13px] leading-5">{children}</pre>;
+          }
+
+          const childProps = child.props as { className?: string; children?: React.ReactNode };
+          const language = (childProps.className || '').replace('language-', '').trim();
+          const raw = String(childProps.children ?? '');
+          return <CodeBlock language={language} raw={raw} />;
+        },
+        code: ({ children, className, ...props }) => {
+          const raw = String(children ?? '');
+          const inline = (props as unknown as { inline?: boolean }).inline;
+          const languageFromClass = (className || '').replace('language-', '').trim();
+          const withRealNewline = raw.includes('\n');
+          const withEscapedNewline = raw.includes('\\n');
+          const languagePrefixed = raw.match(/^([a-z0-9#+.-]+)(?:\\n|\n)([\s\S]*)$/i);
+          const shouldRenderBlock =
+            inline === false || !!languageFromClass || withRealNewline || withEscapedNewline;
+
+          if (shouldRenderBlock) {
+            const normalizedRaw = languagePrefixed
+              ? languagePrefixed[2].replace(/\\n/g, '\n')
+              : raw.replace(/\\n/g, '\n');
+            const language = languageFromClass || languagePrefixed?.[1] || '';
+            return <CodeBlock language={language} raw={normalizedRaw} />;
+          }
+
+          return (
+            <code className="font-mono text-[13px] text-primary bg-hover px-1 py-0.5 rounded-sm border border-subtle">
+              {children}
+            </code>
+          );
+        },
       }}
     >
       {content}

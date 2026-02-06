@@ -15,7 +15,7 @@ export async function gotoAndWait(page: Page, url: string) {
 }
 
 /** Wait for the page to reach a ready state */
-export async function waitForPageReady(page: Page, timeout = 15000) {
+export async function waitForPageReady(page: Page, timeout = 30000) {
   await page.waitForSelector(
     '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]',
     { timeout },

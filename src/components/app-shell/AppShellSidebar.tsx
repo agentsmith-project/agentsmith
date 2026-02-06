@@ -105,7 +105,7 @@ export function AppShellSidebar({
     <aside
       data-testid="sidebar"
       className={cn(
-        collapsed ? 'w-[72px]' : 'w-[260px]',
+        collapsed ? 'w-[var(--sidebar-width-collapsed)]' : 'w-[var(--sidebar-width)]',
         'border-r border-subtle bg-panel flex flex-col transition-[width] duration-200',
         className,
       )}

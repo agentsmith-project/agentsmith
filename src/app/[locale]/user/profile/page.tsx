@@ -98,7 +98,7 @@ export default function ProfilePage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="max-w-2xl mx-auto p-6 space-y-6">
+        <div className="max-w-3xl mx-auto px-4 py-4 md:px-5 md:py-5 space-y-5">
       <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
       <p className="text-sm text-tertiary">{t('description')}</p>
 
@@ -114,7 +114,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Basic Info from Auth */}
-      <div className="p-6 rounded-md border border-border bg-surface" data-testid="profile__form">
+      <div className="p-5 rounded-md border border-border bg-surface" data-testid="profile__form">
         <h2 className="text-base font-medium text-foreground mb-4 flex items-center gap-2">
           <User className="w-4 h-4 text-icon-default" />
           {t('basic_info')}
@@ -169,7 +169,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Work Info */}
-      <div className="p-6 rounded-md border border-border bg-surface">
+      <div className="p-5 rounded-md border border-border bg-surface">
         <h2 className="text-base font-medium text-foreground mb-4">
           {t('work_info')}
         </h2>
@@ -200,7 +200,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Preferences */}
-      <div className="p-6 rounded-md border border-border bg-surface">
+      <div className="p-5 rounded-md border border-border bg-surface">
         <h2 className="text-base font-medium text-foreground mb-4">
           {t('preferences')}
         </h2>

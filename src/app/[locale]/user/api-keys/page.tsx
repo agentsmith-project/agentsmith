@@ -211,8 +211,8 @@ export default function UserAPIKeysPage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="max-w-5xl mx-auto w-full p-6">
-        <div className="mb-8 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto w-full px-4 py-4 md:px-5 md:py-5">
+        <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
             <p className="text-tertiary mt-1">

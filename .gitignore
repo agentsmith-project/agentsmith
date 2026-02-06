@@ -45,3 +45,4 @@ storybook-static
 /playwright-report/
 .worktrees/
 e2e/__screenshots__/
+test-results

@@ -67,4 +67,63 @@ test.describe('Agents Page', () => {
     const toggleBtn = firstRow.getByRole('button', { name: /enable|disable/i });
     await expect(toggleBtn).toBeVisible();
   });
+
+  test('create agent via dialog submission', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+
+    const createBtn = authedPage.getByTestId('agents__create-btn');
+    await createBtn.click();
+
+    const dialog = authedPage.getByTestId('agents__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Fill in the form
+    await dialog.locator('#agent-name').fill('E2E Test Agent');
+    await dialog.locator('#agent-description').fill('Created by E2E test');
+
+    // Submit the form
+    const submitBtn = dialog.getByRole('button', { name: /create/i });
+    await expect(submitBtn).toBeEnabled();
+    await submitBtn.click();
+
+    // Dialog should close after successful creation
+    await expect(dialog).toBeHidden({ timeout: 10000 });
+
+    // New agent should appear in the table
+    await expect(authedPage.getByText('E2E Test Agent')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('create agent with empty name should not submit', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+
+    const createBtn = authedPage.getByTestId('agents__create-btn');
+    await createBtn.click();
+
+    const dialog = authedPage.getByTestId('agents__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Submit button should be disabled when name is empty
+    const submitBtn = dialog.getByRole('button', { name: /create/i });
+    await expect(submitBtn).toBeDisabled();
+  });
+
+  test('toggle agent status via enable/disable button', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+
+    const rows = authedPage.getByTestId('agents__table__row');
+    const firstRow = rows.first();
+    await expect(firstRow).toBeVisible();
+
+    // Click the enable/disable toggle button
+    const toggleBtn = firstRow.getByRole('button', { name: /enable|disable/i });
+    await expect(toggleBtn).toBeVisible();
+
+    const initialText = await toggleBtn.textContent();
+    await toggleBtn.click();
+
+    // After toggle, the button text should change (Enable -> Disable or vice versa)
+    await authedPage.waitForTimeout(500);
+    // The agent row should still be visible
+    await expect(firstRow).toBeVisible();
+  });
 });

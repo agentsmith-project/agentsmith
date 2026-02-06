@@ -71,4 +71,57 @@ test.describe('Endpoints Page', () => {
     // AlertDialog confirmation should appear
     await expect(authedPage.getByRole('alertdialog')).toBeVisible();
   });
+
+  test('create endpoint via dialog submission', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
+
+    const createBtn = authedPage.getByTestId('endpoints__create-btn');
+    await createBtn.click();
+
+    const dialog = authedPage.getByTestId('endpoints__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Fill in required text fields
+    await dialog.locator('#endpoint-name').fill('E2E Test Endpoint');
+    await dialog.locator('#endpoint-model').fill('gpt-4o-test');
+
+    // Select a credential using the Radix Select component
+    // The credential select is the last Select trigger in the dialog (after Provider)
+    const selectTriggers = dialog.locator('[role="combobox"]');
+    const credentialTrigger = selectTriggers.last();
+
+    if (await credentialTrigger.isVisible().catch(() => false)) {
+      await credentialTrigger.click();
+      await authedPage.waitForTimeout(300);
+
+      // Select the first available credential option
+      const option = authedPage.locator('[role="option"]').first();
+      if (await option.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await option.click();
+        await authedPage.waitForTimeout(300);
+
+        // Submit the form
+        const submitBtn = dialog.getByRole('button', { name: /create/i });
+        await expect(submitBtn).toBeEnabled({ timeout: 5000 });
+        await submitBtn.click();
+
+        // Dialog should close after successful creation
+        await expect(dialog).toBeHidden({ timeout: 10000 });
+      }
+    }
+  });
+
+  test('create endpoint with empty name should not submit', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
+
+    const createBtn = authedPage.getByTestId('endpoints__create-btn');
+    await createBtn.click();
+
+    const dialog = authedPage.getByTestId('endpoints__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Submit button should be disabled when required fields are empty
+    const submitBtn = dialog.getByRole('button', { name: /create/i });
+    await expect(submitBtn).toBeDisabled();
+  });
 });

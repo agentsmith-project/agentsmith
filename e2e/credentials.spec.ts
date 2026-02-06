@@ -72,4 +72,89 @@ test.describe('Credentials Page', () => {
     const deleteDialog = authedPage.getByTestId('credentials__delete-dialog');
     await expect(deleteDialog).toBeVisible();
   });
+
+  test('create credential via dialog submission', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('credentials__table')).toBeVisible({ timeout: 10000 });
+
+    const createBtn = authedPage.getByTestId('credentials__create-btn');
+    await createBtn.click();
+
+    const dialog = authedPage.getByTestId('credentials__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Fill in the form
+    await dialog.locator('#cred-name').fill('E2E Test Credential');
+    await dialog.locator('#cred-value').fill('sk-test-e2e-credential-value-12345');
+
+    // Submit the form
+    const submitBtn = dialog.getByRole('button', { name: /create/i });
+    await expect(submitBtn).toBeEnabled();
+    await submitBtn.click();
+
+    // Dialog should close after successful creation
+    await expect(dialog).toBeHidden({ timeout: 10000 });
+
+    // New credential should appear in the table
+    await expect(authedPage.getByText('E2E Test Credential')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('create credential with empty fields should not submit', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('credentials__table')).toBeVisible({ timeout: 10000 });
+
+    const createBtn = authedPage.getByTestId('credentials__create-btn');
+    await createBtn.click();
+
+    const dialog = authedPage.getByTestId('credentials__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Submit button should be disabled when both fields are empty
+    const submitBtn = dialog.getByRole('button', { name: /create/i });
+    await expect(submitBtn).toBeDisabled();
+
+    // Fill only name - should still be disabled
+    await dialog.locator('#cred-name').fill('Test');
+    await expect(submitBtn).toBeDisabled();
+  });
+
+  test('rotate credential via dialog', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('credentials__table')).toBeVisible({ timeout: 10000 });
+
+    const firstRow = authedPage.getByTestId('credentials__table__row').first();
+    await expect(firstRow).toBeVisible();
+    const rotateBtn = firstRow.getByRole('button', { name: /rotate/i });
+    await rotateBtn.click();
+
+    const rotateDialog = authedPage.getByTestId('credentials__rotate-dialog');
+    await expect(rotateDialog).toBeVisible();
+
+    // Fill in the new value
+    await rotateDialog.locator('#rotate-value').fill('sk-new-rotated-value-12345');
+
+    // Submit the rotation
+    const confirmBtn = rotateDialog.getByRole('button', { name: /rotate|confirm|save/i });
+    await expect(confirmBtn).toBeEnabled();
+    await confirmBtn.click();
+
+    // Dialog should close
+    await expect(rotateDialog).toBeHidden({ timeout: 10000 });
+  });
+
+  test('delete credential via dialog', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('credentials__table')).toBeVisible({ timeout: 10000 });
+
+    const firstRow = authedPage.getByTestId('credentials__table__row').first();
+    await expect(firstRow).toBeVisible();
+    const deleteBtn = firstRow.getByRole('button', { name: /delete/i });
+    await deleteBtn.click();
+
+    const deleteDialog = authedPage.getByTestId('credentials__delete-dialog');
+    await expect(deleteDialog).toBeVisible();
+
+    // Confirm deletion
+    const confirmBtn = deleteDialog.getByRole('button', { name: /delete|confirm/i });
+    await confirmBtn.click();
+
+    // Dialog should close
+    await expect(deleteDialog).toBeHidden({ timeout: 10000 });
+  });
 });

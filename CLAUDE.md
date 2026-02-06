@@ -218,7 +218,7 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
 - **Location**: `e2e/` directory
 - **Projects**:
   - `smoke` - Smoke tests for all routes in both locales (26 tests)
-  - `chromium` - Full E2E tests for all pages and features (103 tests)
+  - `chromium` - Full E2E tests for all pages and features (146 tests)
   - `visual` - Visual regression tests with `toHaveScreenshot()` (29 tests)
 - **Timeouts**: 15s test timeout, 10s action/navigation timeouts
 - **Shared fixtures**: `e2e/fixtures/test-base.ts` provides `authedPage` fixture and `goToProject()` helper

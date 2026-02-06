@@ -8,17 +8,17 @@ export const userKeyHandlers = [
     HttpResponse.json({ items: userKeys, total: userKeys.length }),
   ),
   http.post('/api/v1/user/keys', async ({ request }) => {
-    const body: any = await request.json().catch(() => ({}));
+    const body: Record<string, unknown> = await request.json().catch(() => ({}));
     const fullKey = `mbos_${Math.random().toString(36).slice(2, 34)}`;
     const created = {
       id: `ukey_${Date.now()}`,
       user_id: 'u_1',
-      prefix: fullKey.slice(0, 10),
-      note: body.note ?? 'New API Key',
+      key_prefix: fullKey.slice(0, 10),
+      note: (body.note as string) ?? 'New API Key',
       status: 'active',
       created_at: new Date().toISOString(),
-      expires_at: body.expires_at,
-      full_key: fullKey,
+      expires_at: body.expires_at ?? null,
+      key: fullKey,
     };
     userKeys.push(created);
     return HttpResponse.json(created, { status: 201 });

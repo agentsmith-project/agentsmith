@@ -77,4 +77,39 @@ test.describe('Members Page', () => {
     await expect(authedPage.getByText(/owner/i).first()).toBeVisible();
     await expect(authedPage.getByText(/admin/i).first()).toBeVisible();
   });
+
+  test('invite member via dialog submission', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
+
+    const inviteBtn = authedPage.getByTestId('members__invite-btn');
+    await inviteBtn.click();
+
+    const dialog = authedPage.getByTestId('members__invite-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Fill in the email
+    await dialog.locator('#invite-email').fill('newmember@example.com');
+
+    // Submit the invite
+    const submitBtn = dialog.getByRole('button', { name: /create invite|invite/i });
+    await expect(submitBtn).toBeEnabled();
+    await submitBtn.click();
+
+    // After successful creation, the dialog should show the invite link with a Copy button
+    await expect(dialog.getByRole('button', { name: /copy link|done/i }).first()).toBeVisible({ timeout: 10000 });
+  });
+
+  test('invite dialog requires email before submit', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
+
+    const inviteBtn = authedPage.getByTestId('members__invite-btn');
+    await inviteBtn.click();
+
+    const dialog = authedPage.getByTestId('members__invite-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Submit button should be disabled when email is empty
+    const submitBtn = dialog.getByRole('button', { name: /create invite|invite/i });
+    await expect(submitBtn).toBeDisabled();
+  });
 });

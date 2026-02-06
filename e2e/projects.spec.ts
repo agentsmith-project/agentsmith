@@ -97,4 +97,45 @@ test.describe('Projects Page', () => {
     await authedPage.waitForURL(/\/projects\/.*\/overview/, { timeout: 15000 });
     await expect(authedPage.getByRole('heading', { name: /Overview/i })).toBeVisible({ timeout: 10000 });
   });
+
+  test('should create a project via dialog submission', async ({ authedPage }) => {
+    const createBtn = authedPage.getByTestId('projects__create-btn');
+    await expect(createBtn).toBeVisible({ timeout: 10000 });
+    await createBtn.click();
+
+    const dialog = authedPage.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    // Fill in the project name (uses #project-name input)
+    const nameInput = dialog.locator('#project-name');
+    await expect(nameInput).toBeVisible();
+    await nameInput.fill('E2E Test Project');
+
+    // Fill description
+    const descInput = dialog.locator('#project-description');
+    if (await descInput.isVisible()) {
+      await descInput.fill('Created by E2E test');
+    }
+
+    // Submit the form
+    const submitBtn = dialog.getByRole('button', { name: /create/i });
+    await expect(submitBtn).toBeEnabled();
+    await submitBtn.click();
+
+    // Dialog should close after successful creation
+    await expect(dialog).toBeHidden({ timeout: 10000 });
+  });
+
+  test('should not submit create project with empty name', async ({ authedPage }) => {
+    const createBtn = authedPage.getByTestId('projects__create-btn');
+    await expect(createBtn).toBeVisible({ timeout: 10000 });
+    await createBtn.click();
+
+    const dialog = authedPage.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    // Submit button should be disabled when name is empty
+    const submitBtn = dialog.getByRole('button', { name: /create/i });
+    await expect(submitBtn).toBeDisabled();
+  });
 });

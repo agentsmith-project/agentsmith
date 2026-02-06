@@ -16,9 +16,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { EndpointAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { EndpointAPI, getApiClient } from '@/lib/api';
 import type { Endpoint } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
+import { useApiError } from '@/lib/hooks/use-api-error';
 
 export interface EditEndpointDialogProps {
   open: boolean;
@@ -38,6 +39,7 @@ export function EditEndpointDialog({
   onSuccess,
 }: EditEndpointDialogProps) {
   const t = useTranslations('endpoints');
+  const { handleError } = useApiError();
   const [name, setName] = React.useState(endpoint.name);
   const [description, setDescription] = React.useState(endpoint.description ?? '');
   const [openaiModel, setOpenaiModel] = React.useState(endpoint.openai_model);
@@ -71,7 +73,7 @@ export function EditEndpointDialog({
       toast.success(t('edit_dialog.success'));
       onSuccess?.();
     } catch (error) {
-      handleErrorForToast(error);
+      handleError(error, { context: t('edit_dialog.title') });
     } finally {
       setIsSaving(false);
     }

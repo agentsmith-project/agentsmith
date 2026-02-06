@@ -101,6 +101,62 @@ Switch via `NEXT_PUBLIC_USE_MSW` environment variable.
 
 ## Troubleshooting
 
+### Test Failures
+
+#### "QueryClientProvider not found"
+**Problem**: Tests fail with "QueryClientProvider not found"
+**Solution**: Wrap test render with QueryClientProvider:
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient();
+render(
+  <QueryClientProvider client={queryClient}>
+    <YourComponent />
+  </QueryClientProvider>
+);
+```
+
+#### "next/navigation mock not found"
+**Problem**: Tests fail with navigation errors
+**Solution**: Mock next/navigation in test setup:
+```tsx
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/',
+}));
+```
+
+### SSE Connection Issues
+
+#### EventSource fails to connect
+**Problem**: SSE connection fails immediately
+**Solution**:
+1. Check `NEXT_PUBLIC_API_BASE` environment variable
+2. Verify backend is running and accessible
+3. Check browser network tab for CORS errors
+4. See `src/lib/api/sse-client.ts` for documented security limitations
+
+#### Token expires during SSE stream
+**Problem**: SSE connection drops after some time
+**Solution**: Token refresh is not automatic. Currently requires page refresh.
+TODO: Implement auto-reconnection with token refresh (see Phase 2, Task 2.1)
+
+### Build Issues
+
+#### MSW appearing in production bundle
+**Problem**: `grep -r "msw" .next/` finds MSW references
+**Solution**: This is a known issue if MSW is statically imported.
+The fix (Phase 2, Task 2.3) uses dynamic imports to exclude MSW from production.
+
+#### Type errors after refactoring
+**Problem**: TypeScript errors after changes
+**Solution**:
+1. Run `npx tsc --noEmit` to see all errors
+2. Check for missing type imports
+3. Ensure `any` types are avoided - use proper type guards
+
 ### Next.js Build Errors
 
 ```bash

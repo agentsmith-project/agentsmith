@@ -13,9 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { CredentialsAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { CredentialsAPI, getApiClient } from '@/lib/api';
 import type { Credential } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
+import { useApiError } from '@/lib/hooks/use-api-error';
 
 export interface RotateCredentialDialogProps {
   open: boolean;
@@ -36,6 +37,7 @@ export function RotateCredentialDialog({
 }: RotateCredentialDialogProps) {
   const t = useTranslations('credentials');
   const commonT = useTranslations('common');
+  const { handleError } = useApiError();
   const [value, setValue] = React.useState('');
   const [showValue, setShowValue] = React.useState(false);
 
@@ -53,7 +55,7 @@ export function RotateCredentialDialog({
       onSuccess?.();
     },
     onError: (error) => {
-      handleErrorForToast(error);
+      handleError(error, { context: t('rotate_dialog.title') });
     },
   });
 

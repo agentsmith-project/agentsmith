@@ -13,9 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { AgentAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { AgentAPI, getApiClient } from '@/lib/api';
 import type { CreateAgentRequest } from '@/lib/api/endpoints/agents';
 import { toast } from '@/components/ui/toast';
+import { useApiError } from '@/lib/hooks/use-api-error';
 
 export interface CreateAgentDialogProps {
   open: boolean;
@@ -39,6 +40,7 @@ export function CreateAgentDialog({
 }: CreateAgentDialogProps) {
   const t = useTranslations('agents');
   const commonT = useTranslations('common');
+  const { handleError } = useApiError();
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [mode, setMode] = React.useState<'external' | 'internal'>('external');
@@ -60,7 +62,7 @@ export function CreateAgentDialog({
       onSuccess?.();
     },
     onError: (error) => {
-      handleErrorForToast(error);
+      handleError(error, { context: t('create_dialog.title') });
     },
   });
 

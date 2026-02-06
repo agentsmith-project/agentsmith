@@ -12,7 +12,6 @@ import { Settings as SettingsIcon, Save } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { ProjectAPI, getApiClient } from '@/lib/api';
-import { handleErrorForToast } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -24,6 +23,7 @@ import { RuntimePreferencesEditor, type RuntimePreferences } from '@/components/
 import { GovernanceEditor, type GovernanceJson } from '@/components/settings/GovernanceEditor';
 import { LimitsEditor, type LimitsJson } from '@/components/settings/LimitsEditor';
 import { SettingsTokenReference } from '@/components/settings/SettingsTokenReference';
+import { useApiError } from '@/lib/hooks/use-api-error';
 import {
   RUNTIME_PREFERENCES_TOKENS,
   GOVERNANCE_TOKENS,
@@ -64,6 +64,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const router = useRouter();
   const commonT = useTranslations('common');
   const settingsT = useTranslations('settings');
+  const { handleError } = useApiError();
   const queryClient = useQueryClient();
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);
@@ -109,7 +110,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       });
       toast.success(commonT('refreshed_data'));
     } catch (error) {
-      handleErrorForToast(error);
+      handleError(error, { context: settingsT('tab_general') });
     } finally {
       setSaving(false);
     }
@@ -124,7 +125,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       });
       toast.success(commonT('refreshed_data'));
     } catch (error) {
-      handleErrorForToast(error);
+      handleError(error, { context: settingsT('tab_runtime_preferences') });
     } finally {
       setSaving(false);
     }
@@ -144,7 +145,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       });
       toast.success(commonT('refreshed_data'));
     } catch (error) {
-      handleErrorForToast(error);
+      handleError(error, { context: settingsT('tab_governance') });
     } finally {
       setSaving(false);
     }
@@ -159,7 +160,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       });
       toast.success(commonT('refreshed_data'));
     } catch (error) {
-      handleErrorForToast(error);
+      handleError(error, { context: settingsT('tab_limits') });
     } finally {
       setSaving(false);
     }

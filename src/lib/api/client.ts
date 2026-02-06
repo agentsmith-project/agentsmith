@@ -9,9 +9,11 @@
  * Switch via NEXT_PUBLIC_USE_MSW environment variable.
  */
 
-// Static imports - Next.js will tree-shake unused adapter in production build
-import { MSWApiClient } from './adapters/msw-adapter';
 import { FetchApiClient } from './adapters/fetch-adapter';
+
+// MSWApiClient is dynamically imported to exclude it from production bundle.
+// It will only be loaded when NEXT_PUBLIC_USE_MSW=true at build time.
+// Dynamic import ensures MSW dependencies are not bundled in production.
 
 export interface ApiRequestOptions {
   headers?: Record<string, string>;
@@ -92,15 +94,26 @@ export const API_BASE = process.env.NEXT_PUBLIC_USE_MSW === 'true'
   : (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000');
 
 /**
- * Create API client instance
- * Automatically chooses between MSW and Fetch based on environment
+ * Create API client instance.
+ * Automatically chooses between MSW and Fetch based on environment.
  *
- * Note: Both adapters are statically imported. Next.js will tree-shake
- * the unused adapter in production builds based on NEXT_PUBLIC_USE_MSW.
+ * The MSW adapter is dynamically imported to exclude it from production bundle.
+ * When NEXT_PUBLIC_USE_MSW is false (production), the MSW import is eliminated
+ * by webpack/Next.js dead code elimination since the condition is evaluated at
+ * build time.
  */
 export function createApiClient(): ApiClient {
-  const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
-  return useMsw ? new MSWApiClient() : new FetchApiClient();
+  // This condition is evaluated at build time by Next.js
+  // When false, the entire if block is tree-shaken from the bundle
+  if (process.env.NEXT_PUBLIC_USE_MSW === 'true') {
+    // Dynamic require - only executed when MSW is enabled
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { MSWApiClient } = require('./adapters/msw-adapter');
+    return new MSWApiClient();
+  }
+
+  // Default: fetch adapter for production
+  return new FetchApiClient();
 }
 
 // Singleton instance
@@ -111,4 +124,12 @@ export function getApiClient(): ApiClient {
     apiClientInstance = createApiClient();
   }
   return apiClientInstance;
+}
+
+/**
+ * Reset the singleton client instance.
+ * Useful for testing or when switching between workspaces/projects.
+ */
+export function resetApiClient(): void {
+  apiClientInstance = null;
 }

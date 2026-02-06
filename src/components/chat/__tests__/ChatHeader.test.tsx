@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChatHeader } from '../ChatHeader';
 import type { ChatSession, Endpoint } from '@/lib/api/types';
@@ -307,7 +307,7 @@ describe('ChatHeader', () => {
 
     it('should highlight active endpoint in dropdown', async () => {
       const user = userEvent.setup();
-      const { container } = render(<ChatHeader {...defaultProps} />);
+      render(<ChatHeader {...defaultProps} />);
 
       const trigger = screen.getByText('gpt-4');
       await user.click(trigger);
@@ -352,7 +352,7 @@ describe('ChatHeader', () => {
     });
 
     it('should show "No endpoints" when endpoints array is empty', async () => {
-      const { container } = render(<ChatHeader {...defaultProps} endpoints={[]} />);
+      render(<ChatHeader {...defaultProps} endpoints={[]} />);
 
       // When endpoints are empty but session exists, it shows session.model
       expect(screen.getByText('gpt-4')).toBeInTheDocument();

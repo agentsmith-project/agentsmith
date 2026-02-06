@@ -9,6 +9,7 @@ export * from './data-table';
 export * from './dialog';
 export * from './dropdown-menu';
 export * from './error-state';
+export * from './ErrorBoundary';
 export * from './form-dialog';
 export * from './input';
 export * from './loading';

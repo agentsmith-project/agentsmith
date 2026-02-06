@@ -13,11 +13,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { AgentAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { AgentAPI, getApiClient } from '@/lib/api';
 import type { UpdateAgentRequest } from '@/lib/api/endpoints/agents';
 import type { Agent } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { RuntimePreferencesEditor, type RuntimePreferences } from '@/components/settings/RuntimePreferencesEditor';
+import { useApiError } from '@/lib/hooks/use-api-error';
 
 export interface EditAgentDialogProps {
   open: boolean;
@@ -38,6 +39,7 @@ export function EditAgentDialog({
 }: EditAgentDialogProps) {
   const t = useTranslations('agents');
   const commonT = useTranslations('common');
+  const { handleError } = useApiError();
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [interactionMode, setInteractionMode] = React.useState<'chat' | 'workbench' | 'both'>('both');
@@ -57,7 +59,7 @@ export function EditAgentDialog({
       onSuccess?.();
     },
     onError: (error) => {
-      handleErrorForToast(error);
+      handleError(error, { context: t('edit_dialog.title') });
     },
   });
 

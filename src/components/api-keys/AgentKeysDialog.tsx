@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { KeyCreatedDialog } from './KeyCreatedDialog';
-import { handleErrorForToast } from '@/lib/api';
+import { useApiError } from '@/lib/hooks/use-api-error';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,6 +60,7 @@ export function AgentKeysDialog({
   const t = useTranslations('agents');
   const keysT = useTranslations('user_keys');
   const commonT = useTranslations('common');
+  const { handleError } = useApiError();
   const queryClient = useQueryClient();
   const api = React.useMemo(() => new AgentAPI(getApiClient()), []);
 
@@ -80,7 +81,7 @@ export function AgentKeysDialog({
         setKeyCreated({ key: data.key ?? '', keyPrefix: data.key_prefix });
       }
     },
-    onError: (error) => handleErrorForToast(error),
+    onError: (error) => handleError(error, { context: t('keys_title') }),
   });
 
   const revokeMutation = useMutation({
@@ -89,7 +90,7 @@ export function AgentKeysDialog({
       queryClient.invalidateQueries({ queryKey: ['agents', workspaceId, projectId, agentId, 'keys'] });
       setRevokeKeyId(null);
     },
-    onError: (error) => handleErrorForToast(error),
+    onError: (error) => handleError(error, { context: keysT('revoke') }),
   });
 
   const activeKeys = keys.filter((k) => k.status === 'active');

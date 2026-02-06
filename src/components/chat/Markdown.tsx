@@ -4,15 +4,21 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 
 /**
- * Trusted domains for images (expand as needed)
- * For production, configure via environment variable
+ * SECURITY: Image Domain Whitelist
+ *
+ * Only allow images from trusted domains to prevent XSS attacks.
+ * Malicious users could embed tracking pixels or exploit CORS issues.
+ *
+ * Configuration via environment variable:
+ * NEXT_PUBLIC_TRUSTED_IMAGE_DOMAINS=cdn.example.com,images.trusted.com
+ *
+ * IMPORTANT: Safe default - NO images are allowed unless explicitly configured.
+ * This prevents the placeholder domain vulnerability where example.com or similar
+ * placeholder domains could inadvertently allow arbitrary images.
  */
-const TRUSTED_IMAGE_DOMAINS = [
-  'example.com',
-  'cdn.example.com',
-  // Add your trusted CDN domains here
-  // For MVP, we're conservative - can be expanded via env var later
-];
+const TRUSTED_IMAGE_DOMAINS = process.env.NEXT_PUBLIC_TRUSTED_IMAGE_DOMAINS
+  ? process.env.NEXT_PUBLIC_TRUSTED_IMAGE_DOMAINS.split(',').map(d => d.trim().toLowerCase()).filter(Boolean)
+  : [];
 
 /**
  * Build a strict sanitization schema that prevents XSS attacks
@@ -85,15 +91,26 @@ const sanitizeSchema = buildStrictSchema();
 /**
  * Validate image URL against trusted domains and safe protocols
  * Returns true if URL is safe, false otherwise
+ *
+ * SECURITY NOTES:
+ * - Only HTTPS protocol is allowed (no http:, data:, javascript:, etc.)
+ * - Domain must be in TRUSTED_IMAGE_DOMAINS whitelist
+ * - Supports both exact match and subdomain match (e.g., 'example.com' matches 'cdn.example.com')
+ * - Safe default: NO domains trusted unless explicitly configured via env var
  */
 function isValidImageUrl(url: string): boolean {
+  // Safe default: no images allowed if no trusted domains configured
+  if (TRUSTED_IMAGE_DOMAINS.length === 0) {
+    return false;
+  }
+
   if (!url) return false;
 
   try {
     const parsed = new URL(url);
 
-    // Only allow https: or http: (no data:, javascript:, etc.)
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    // Only allow https: protocol (http: is deprecated for security)
+    if (parsed.protocol !== 'https:') {
       return false;
     }
 

@@ -13,9 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { CredentialsAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { CredentialsAPI, getApiClient } from '@/lib/api';
 import type { CreateCredentialRequest } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
+import { useApiError } from '@/lib/hooks/use-api-error';
 
 export interface CreateCredentialDialogProps {
   open: boolean;
@@ -34,6 +35,7 @@ export function CreateCredentialDialog({
 }: CreateCredentialDialogProps) {
   const t = useTranslations('credentials');
   const commonT = useTranslations('common');
+  const { handleError } = useApiError();
   const [name, setName] = React.useState('');
   const [value, setValue] = React.useState('');
   const [showValue, setShowValue] = React.useState(false);
@@ -51,7 +53,7 @@ export function CreateCredentialDialog({
       onSuccess?.();
     },
     onError: (error) => {
-      handleErrorForToast(error);
+      handleError(error, { context: t('create_dialog.title') });
     },
   });
 

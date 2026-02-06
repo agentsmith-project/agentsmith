@@ -11,7 +11,17 @@ vi.mock('@/lib/api', () => ({
       update: mockUpdate,
     };
   }),
-  handleErrorForToast: vi.fn(),
+}));
+
+vi.mock('@/lib/hooks/use-api-error', () => ({
+  useApiError: vi.fn(() => ({
+    handleError: vi.fn(),
+    error: null,
+    clearError: vi.fn(),
+    retry: vi.fn(),
+    setError: vi.fn(),
+    isVisible: false,
+  })),
 }));
 
 vi.mock('@/components/ui/toast', () => ({

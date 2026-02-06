@@ -60,7 +60,6 @@ describe('Composer', () => {
     });
 
     it('should send message on Enter key press', async () => {
-      const user = userEvent.setup();
       render(<Composer {...defaultProps} value="Hello" />);
 
       const textarea = screen.getByPlaceholderText('Message…');
@@ -70,7 +69,6 @@ describe('Composer', () => {
     });
 
     it('should not send on Shift+Enter', async () => {
-      const user = userEvent.setup();
       render(<Composer {...defaultProps} value="Hello" />);
 
       const textarea = screen.getByPlaceholderText('Message…');
@@ -80,7 +78,6 @@ describe('Composer', () => {
     });
 
     it('should not send when message is empty', async () => {
-      const user = userEvent.setup();
       render(<Composer {...defaultProps} value="" />);
 
       const textarea = screen.getByPlaceholderText('Message…');
@@ -90,7 +87,6 @@ describe('Composer', () => {
     });
 
     it('should not send when message is only whitespace', async () => {
-      const user = userEvent.setup();
       render(<Composer {...defaultProps} value="   " />);
 
       const textarea = screen.getByPlaceholderText('Message…');

@@ -61,4 +61,24 @@ describe('createAuthenticatedSSE', () => {
 
     expect(sseConnection.onmessage).toBeInstanceOf(Function);
   });
+
+  it('should URL-encode the token for basic obfuscation', () => {
+    // Token with special characters that need encoding
+    const tokenWithSpecialChars = 'abc123+=/xyz';
+    const sseConnection = createAuthenticatedSSE('/test-path', tokenWithSpecialChars);
+
+    // Verify the token is URL-encoded (special chars are encoded)
+    expect(sseConnection.url).toContain('ticket=');
+    // '+' should be encoded as %2B, '/' as %2F, '=' as %3D
+    expect(sseConnection.url).toContain('%2B');
+    expect(sseConnection.url).toContain('%2F');
+    expect(sseConnection.url).toContain('%3D');
+  });
+
+  it('should use & separator when URL already has query params', () => {
+    const sseConnection = createAuthenticatedSSE('/test-path?existing=param', 'my-token');
+
+    expect(sseConnection.url).toContain('&ticket=');
+    expect(sseConnection.url).not.toContain('??ticket=');
+  });
 });

@@ -681,7 +681,44 @@
     "endpoint_disabled_title": "Endpoint Disabled",
     "endpoint_disabled_hint": "This endpoint has been disabled.",
     "request_id": "Request ID",
-    "error_code": "Error Code"
+    "error_code": "Error Code",
+    "badRequest": {
+      "title": "Invalid Request",
+      "description": "Please check your input and try again."
+    },
+    "unauthorizedError": {
+      "title": "Authentication Required",
+      "description": "Please log in to continue."
+    },
+    "forbiddenError": {
+      "title": "Access Denied",
+      "description": "You don't have permission to perform this action."
+    },
+    "notFoundError": {
+      "title": "Not Found",
+      "description": "The requested resource was not found.",
+      "withContext": "%context% not found"
+    },
+    "conflict": {
+      "title": "Conflict",
+      "description": "This action conflicts with existing data."
+    },
+    "rateLimitError": {
+      "title": "Too Many Requests",
+      "description": "Please wait a moment before trying again."
+    },
+    "serverError": {
+      "title": "Server Error",
+      "description": "Something went wrong. Please try again later."
+    },
+    "networkError": {
+      "title": "Network Error",
+      "description": "Please check your connection and try again."
+    },
+    "unknown": {
+      "title": "Error",
+      "description": "An unexpected error occurred."
+    }
   },
   "members": {
     "title": "Members",

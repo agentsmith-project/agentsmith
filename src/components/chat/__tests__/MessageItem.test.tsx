@@ -180,7 +180,6 @@ describe('MessageItem', () => {
       );
 
       // Check for skeleton elements (divs with rounded-sm and bg-surface-high/60)
-      const skeletonElements = container.querySelectorAll('.rounded-sm.bg-\\[var\\(\\-\-bg-surface-high\\)\\]');
       // There should be skeleton divs for streaming state
       // If not found, check for alternative class patterns
       const allDivs = container.querySelectorAll('div[class*="bg-surface"]');
@@ -399,6 +398,267 @@ describe('MessageItem', () => {
       expect(container.textContent).toContain('and');
       expect(container.textContent).toContain('italic');
       expect(container.textContent).toContain('text');
+    });
+  });
+
+  describe('Variant Navigation Edge Cases', () => {
+    it('should handle variant at first index', () => {
+      const user = userEvent.setup();
+
+      const parentMessage: ChatMessage = {
+        ...mockAssistantMessage,
+        id: 'msg-parent',
+      };
+
+      const firstVariant: ChatMessage = {
+        ...mockAssistantMessage,
+        id: 'msg-variant-1',
+        variant_group_id: 'group-1',
+        variant_index: 0,
+        parent_id: 'msg-parent',
+      };
+
+      const secondVariant: ChatMessage = {
+        ...mockAssistantMessage,
+        id: 'msg-variant-2',
+        variant_group_id: 'group-1',
+        variant_index: 1,
+        parent_id: 'msg-parent',
+      };
+
+      const groups = buildVariantGroups([parentMessage, firstVariant, secondVariant]);
+
+      const { container } = render(
+        <MessageItem
+          {...defaultProps}
+          message={firstVariant}
+          variantGroups={groups}
+          activeVariantIndexByGroup={{ 'group-1': 0 }}
+        />,
+      );
+
+      // Verify navigation buttons exist for multi-variant groups
+      const nextButton = container.querySelector('[aria-label="Next variant"]');
+      expect(nextButton).toBeInTheDocument();
+    });
+
+    it('should handle variant at last index', () => {
+      const parentMessage: ChatMessage = {
+        ...mockAssistantMessage,
+        id: 'msg-parent',
+      };
+
+      const firstVariant: ChatMessage = {
+        ...mockAssistantMessage,
+        id: 'msg-variant-1',
+        variant_group_id: 'group-1',
+        variant_index: 0,
+        parent_id: 'msg-parent',
+      };
+
+      const lastVariant: ChatMessage = {
+        ...mockAssistantMessage,
+        id: 'msg-variant-2',
+        variant_group_id: 'group-1',
+        variant_index: 1,
+        parent_id: 'msg-parent',
+      };
+
+      const groups = buildVariantGroups([parentMessage, firstVariant, lastVariant]);
+
+      render(
+        <MessageItem
+          {...defaultProps}
+          message={lastVariant}
+          variantGroups={groups}
+          activeVariantIndexByGroup={{ 'group-1': 1 }}
+        />,
+      );
+
+      // Message should render without errors
+      expect(screen.getByText('Hi there! How can I help you?')).toBeInTheDocument();
+    });
+
+    it('should handle messages with no variants', () => {
+      const groups = buildVariantGroups([mockAssistantMessage]);
+
+      render(<MessageItem {...defaultProps} message={mockAssistantMessage} variantGroups={groups} />);
+
+      // Should render message without variant navigation
+      expect(screen.getByText('Hi there! How can I help you?')).toBeInTheDocument();
+    });
+
+    it('should handle empty variantGroups', () => {
+      render(<MessageItem {...defaultProps} variantGroups={mockVariantGroups} />);
+
+      expect(screen.getByText('Hello, world!')).toBeInTheDocument();
+    });
+  });
+
+  describe('Draft State Management', () => {
+    it('should reset draft when isEditing changes to true', () => {
+      const messageWithContent: ChatMessage = {
+        ...mockMessage,
+        content: 'Original content',
+      };
+
+      const { rerender } = render(<MessageItem {...defaultProps} message={messageWithContent} isEditing={false} />);
+
+      // Now switch to editing mode
+      rerender(<MessageItem {...defaultProps} message={messageWithContent} isEditing={true} />);
+
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('Original content');
+    });
+
+    it('should reset draft when message content changes', () => {
+      const { rerender } = render(<MessageItem {...defaultProps} isEditing={true} />);
+
+      // Change message content
+      const updatedMessage: ChatMessage = {
+        ...mockMessage,
+        content: 'Updated content',
+      };
+
+      rerender(<MessageItem {...defaultProps} message={updatedMessage} isEditing={true} />);
+
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('Updated content');
+    });
+
+    it('should reset showDiff when not editing', () => {
+      const { rerender } = render(<MessageItem {...defaultProps} isEditing={true} />);
+
+      // Trigger show diff (by finding and clicking the button)
+      const showDiffButton = screen.getByText('Show diff');
+      fireEvent.click(showDiffButton);
+
+      expect(screen.getByText('Original')).toBeInTheDocument();
+
+      // Exit edit mode
+      rerender(<MessageItem {...defaultProps} isEditing={false} />);
+
+      // Diff view should be gone
+      expect(screen.queryByText('Original')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Streaming Timer', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should start timer when streamingMeta is provided', () => {
+      render(
+        <MessageItem
+          {...defaultProps}
+          message={mockAssistantMessage}
+          streamingOverride='Streaming...'
+          streamingMeta={{ startedAt: Date.now(), lastTokenAt: Date.now() }}
+        />,
+      );
+
+      expect(screen.getByText('Regenerating…')).toBeInTheDocument();
+
+      // Advance timers
+      vi.advanceTimersByTime(2000);
+
+      // Should still be showing streaming indicator
+      expect(screen.getByText('Regenerating…')).toBeInTheDocument();
+    });
+
+    it('should not start timer without streamingMeta', () => {
+      render(
+        <MessageItem
+          {...defaultProps}
+          message={mockAssistantMessage}
+          streamingOverride='Streaming...'
+        />,
+      );
+
+      // Should render without error even without streamingMeta
+      expect(screen.getByText('Streaming...')).toBeInTheDocument();
+    });
+  });
+
+  describe('Copy Error Handling', () => {
+    it('should show error toast when clipboard write fails', async () => {
+      const user = userEvent.setup();
+      const toast = await import('@/components/ui/toast');
+
+      const mockClipboard = {
+        writeText: vi.fn().mockRejectedValue(new Error('Clipboard error')),
+      };
+      vi.stubGlobal('navigator', {
+        clipboard: mockClipboard,
+      });
+
+      render(<MessageItem {...defaultProps} />);
+
+      const copyButton = screen.getByTitle('Copy');
+      await user.click(copyButton);
+
+      // Should call error toast
+      expect(toast.toast.error).toHaveBeenCalled();
+
+      vi.unstubAllGlobals();
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle empty message content', () => {
+      const emptyMessage: ChatMessage = {
+        ...mockMessage,
+        content: '',
+      };
+
+      const { container } = render(<MessageItem {...defaultProps} message={emptyMessage} />);
+
+      // Should render without crashing - check that the message container exists
+      const messageContainer = container.querySelector('.max-w-\\[80\\%\\]');
+      expect(messageContainer).toBeInTheDocument();
+    });
+
+    it('should handle very long content', () => {
+      const longContent = 'A'.repeat(10000);
+      const longMessage: ChatMessage = {
+        ...mockMessage,
+        content: longContent,
+      };
+
+      render(<MessageItem {...defaultProps} message={longMessage} />);
+
+      expect(screen.getByText(longContent)).toBeInTheDocument();
+    });
+
+    it('should handle special characters in content', () => {
+      const specialMessage: ChatMessage = {
+        ...mockMessage,
+        content: '<>&"\'`',
+      };
+
+      render(<MessageItem {...defaultProps} message={specialMessage} />);
+
+      // Content should be rendered (sanitized by Markdown component)
+      expect(screen.getByText('<>&"\'`')).toBeInTheDocument();
+    });
+
+    it('should handle multiline content', () => {
+      const multilineMessage: ChatMessage = {
+        ...mockMessage,
+        content: 'Line 1\n\nLine 2\n\nLine 3',
+      };
+
+      const { container } = render(<MessageItem {...defaultProps} message={multilineMessage} />);
+
+      // Markdown renders paragraphs, so check for the text content
+      expect(container.textContent).toContain('Line 1');
+      expect(container.textContent).toContain('Line 2');
+      expect(container.textContent).toContain('Line 3');
     });
   });
 });

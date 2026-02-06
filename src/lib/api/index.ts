@@ -14,7 +14,7 @@
  */
 
 // Core client
-export { createApiClient, getApiClient, API_BASE } from './client';
+export { createApiClient, getApiClient, resetApiClient, API_BASE } from './client';
 export type { ApiClient, ApiRequestOptions, ApiResponse } from './client';
 
 // Error handling

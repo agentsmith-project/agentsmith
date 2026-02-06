@@ -237,6 +237,97 @@ Rules:
 
 See: `docs/UXUI/2026-02-05-前端-testid-规范.md`
 
+## Security Guidelines
+
+### Type Safety
+- **Zero `any` types**: Production code must not use `any` types
+- Use proper type guards for validation: `validateWorkspaceParam()`, `validateProjectParam()`
+- ESLint rule `@typescript-eslint/no-explicit-any` is enforced
+
+### Secure Authentication
+- **SSE Token Exposure**: JWT tokens in SSE URLs are a known security risk
+  - Current implementation uses URL params (documented in `lib/api/sse-client.ts`)
+  - TODO: Implement ticket-based auth system (`POST /api/v1/sse-ticket`)
+  - See: Phase 2, Task 2.1
+
+### Content Security
+- **Markdown Images**: Only images from trusted domains are rendered
+  - Configure via `NEXT_PUBLIC_TRUSTED_IMAGE_DOMAINS` env var
+  - Default: NO images (safe default)
+  - See: Phase 2, Task 2.2
+
+### Bundle Security
+- **MSW Excluded**: MSW adapter is excluded from production bundle via dynamic imports
+  - Never use `NEXT_PUBLIC_USE_MSW=true` in production
+  - See: Phase 2, Task 2.3
+
+## Testing Requirements
+
+### Coverage Targets
+- Chat components: 80%+
+- Workbench components: 75%+
+- Security components: 90%+
+
+### Test ID Conventions
+- Use `data-testid` attributes for stable test selectors
+- Format: `scope__element__state`
+- See: `docs/UXUI/2026-02-05-前端-testid-规范.md`
+
+### Critical Features Tested
+- Chat system: Message rendering, threading, markdown with security tests
+- Workbench: Recipe execution, SSE handling, progress updates
+- Security: API keys, credentials, permission checks
+- Sources: File upload, quota management, AI Ready operations
+
+## Error Handling Patterns
+
+### useApiError Hook
+Use the standardized `useApiError` hook for consistent error handling:
+
+```tsx
+import { useApiError } from '@/lib/hooks/use-api-error';
+
+function MyComponent() {
+  const { handleError, error, clearError } = useApiError();
+
+  const mutation = useMutation({
+    onError: (err) => handleError(err, { context: 'Creating user' })
+  });
+}
+```
+
+### Error Boundaries
+Wrap route layouts with `ErrorBoundary` for graceful error handling:
+
+```tsx
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+
+<ErrorBoundary onError={(error) => console.error(error)}>
+  <YourPageContent />
+</ErrorBoundary>
+```
+
+## Development Workflow
+
+### Before Submitting Code
+1. Run tests: `npm test`
+2. Run linter: `npm run lint`
+3. Type check: `npx tsc --noEmit`
+4. Check for `any` types: `grep -r ": any" src/ --exclude-dir=__tests__`
+
+### Troubleshooting
+
+#### SSE Connection Issues
+- Check browser console for EventSource errors
+- Verify token is valid (not expired)
+- Check `NEXT_PUBLIC_API_BASE` is correct
+- See: `src/lib/api/sse-client.ts` for documented limitations
+
+#### Test Failures
+- Check mock setup for React Query, next/navigation, next-intl
+- Verify test IDs (`data-testid`) are present on elements
+- Check for timing issues - use `waitFor` for async operations
+
 ## Development Notes
 
 - Turbopack for fast dev server startup

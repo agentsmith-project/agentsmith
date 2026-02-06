@@ -23,6 +23,36 @@ test('renders empty slot when empty', () => {
   expect(screen.getByText('Empty content')).toBeInTheDocument();
 });
 
+test('falls back to children when empty slot missing', () => {
+  render(
+    <PageState state="empty">
+      <div>Empty fallback</div>
+    </PageState>
+  );
+  expect(screen.getByTestId('page-state__empty')).toBeInTheDocument();
+  expect(screen.getByText('Empty fallback')).toBeInTheDocument();
+});
+
+test('does not fall back to children when empty slot is null', () => {
+  render(
+    <PageState state="empty" empty={null}>
+      <div>Empty null fallback</div>
+    </PageState>
+  );
+  expect(screen.getByTestId('page-state__empty')).toBeInTheDocument();
+  expect(screen.queryByText('Empty null fallback')).not.toBeInTheDocument();
+});
+
+test('falls back to children when error slot missing', () => {
+  render(
+    <PageState state="error">
+      <div>Error fallback</div>
+    </PageState>
+  );
+  expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+  expect(screen.getByText('Error fallback')).toBeInTheDocument();
+});
+
 test('renders children when success', () => {
   render(
     <PageState state="success">

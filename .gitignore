@@ -44,3 +44,4 @@ storybook-static
 # Playwright
 /playwright-report/
 .worktrees/
+e2e/__screenshots__/

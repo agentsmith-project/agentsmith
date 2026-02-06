@@ -8,12 +8,14 @@ export const credentialHandlers = [
     HttpResponse.json({ items: credentials }),
   ),
   http.post('/api/v1/workspaces/:ws/projects/:prj/credentials', async ({ request }) => {
-    const body: any = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const name = typeof body.name === 'string' ? body.name : 'New Credential';
+    const type = typeof body.type === 'string' ? body.type : 'api_key';
     const created = {
       id: `cred_${Date.now()}`,
       project_id: 'proj_001',
-      name: body.name ?? 'New Credential',
-      type: body.type ?? 'api_key',
+      name,
+      type,
       fingerprint: `sk-...${Math.random().toString(36).slice(2, 6)}`,
       created_at: new Date().toISOString(),
     };

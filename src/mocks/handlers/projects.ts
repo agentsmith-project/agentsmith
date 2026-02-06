@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { projectFixtures, projectMembershipFixtures, CURRENT_USER_ID } from '../fixtures/projects';
+import type { Project } from '@/lib/api/types';
 
 const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
 
@@ -24,14 +25,18 @@ export const projectHandlers = [
     });
   }),
   http.post('/api/v1/workspaces/:ws/projects', async ({ params, request }) => {
-    const body: Record<string, unknown> = await request.json().catch(() => ({}));
-    const created = {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const visibility: 'public' | 'private' =
+      body.visibility === 'public' ? 'public' : 'private';
+    const joinPolicy: 'open' | 'approval_required' =
+      body.join_policy === 'open' ? 'open' : 'approval_required';
+    const created: Project = {
       id: `proj_${Date.now()}`,
       workspace_id: params.ws as string,
       name: (body.name as string) ?? 'New Project',
       description: (body.description as string) ?? '',
-      visibility: (body.visibility as string) ?? 'private',
-      join_policy: (body.join_policy as string) ?? 'approval_required',
+      visibility,
+      join_policy: joinPolicy,
       owner_id: 'user_001',
       status: 'active',
       created_at: new Date().toISOString(),
@@ -41,7 +46,7 @@ export const projectHandlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj', async ({ params, request }) => {
-    const body: Record<string, unknown> = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const idx = projects.findIndex((p) => p.id === params.prj);
     if (idx < 0) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     projects[idx] = { ...projects[idx], ...body, updated_at: new Date().toISOString() };
@@ -59,11 +64,11 @@ export const projectHandlers = [
     HttpResponse.json({ status: 'approved' }),
   ),
   http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/reject', async ({ request }) => {
-    const body: Record<string, unknown> = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     return HttpResponse.json({ status: 'rejected', reject_reason: (body?.reason as string) ?? '' });
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/invites', async ({ request }) => {
-    const body: Record<string, unknown> = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const invite = {
       id: `inv_${Date.now()}`,
       email: (body.email as string) ?? '',

@@ -12,12 +12,14 @@ export const memberHandlers = [
     HttpResponse.json({ items: members }),
   ),
   http.post('/api/v1/workspaces/:ws/projects/:prj/members', async ({ request }) => {
-    const body: any = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const email = typeof body.email === 'string' ? body.email : 'new@example.com';
+    const role = typeof body.role === 'string' ? body.role : 'member';
     const invited = {
       id: `u_${Date.now()}`,
-      email: body.email ?? 'new@example.com',
-      name: body.email?.split('@')[0] ?? 'New User',
-      role: body.role ?? 'member',
+      email,
+      name: email.split('@')[0] ?? 'New User',
+      role,
       status: 'active',
       created_at: new Date().toISOString(),
     };
@@ -25,7 +27,7 @@ export const memberHandlers = [
     return HttpResponse.json(invited, { status: 201 });
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj/members/:id', async ({ params, request }) => {
-    const body: any = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const member = members.find((m) => m.id === params.id);
     if (!member) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     return HttpResponse.json({ ...member, ...body });

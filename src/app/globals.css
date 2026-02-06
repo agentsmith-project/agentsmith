@@ -113,3 +113,8 @@ body {
     text-wrap: balance;
   }
 }
+
+/* Hide Next.js dev overlay for clean visual baselines */
+nextjs-portal {
+  display: none !important;
+}

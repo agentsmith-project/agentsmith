@@ -26,6 +26,17 @@ const test = base.extend<{ authedPage: Page }>({
 async function stableNavigate(page: Page, path: string) {
   await page.goto(path, { waitUntil: 'networkidle' });
   await waitForPageReady(page);
+  // Ensure dev overlays are removed before capturing screenshots.
+  await page.evaluate(() => {
+    const hideOverlays = () => {
+      document.querySelectorAll('nextjs-portal').forEach((portal) => {
+        portal.remove();
+      });
+    };
+    hideOverlays();
+    // Guard against re-insertion in dev mode.
+    window.setTimeout(hideOverlays, 100);
+  });
   await page.waitForTimeout(500); // Let animations finish
 }
 

@@ -8,7 +8,7 @@ export const userKeyHandlers = [
     HttpResponse.json({ items: userKeys, total: userKeys.length }),
   ),
   http.post('/api/v1/user/keys', async ({ request }) => {
-    const body: Record<string, unknown> = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const fullKey = `mbos_${Math.random().toString(36).slice(2, 34)}`;
     const created = {
       id: `ukey_${Date.now()}`,

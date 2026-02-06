@@ -13,16 +13,17 @@ export const agentHandlers = [
     return HttpResponse.json(agent);
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/agents', async ({ request }) => {
-    const body: Record<string, unknown> = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const created = {
       id: `agent_${Date.now()}`,
       project_id: 'proj_001',
+      workspace_id: 'ws_default',
       name: (body.name as string) ?? 'New Agent',
       description: (body.description as string) ?? '',
       mode: (body.mode as string) ?? 'external',
       interaction_mode: (body.interaction_mode as string) ?? 'both',
-      status: 'active',
-      enabled: true,
+      presence: 'offline',
+      status: 'enabled',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -30,7 +31,7 @@ export const agentHandlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj/agents/:id', async ({ params, request }) => {
-    const body: Record<string, unknown> = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const idx = agents.findIndex((a) => a.id === params.id);
     if (idx < 0) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     agents[idx] = { ...agents[idx], ...body, updated_at: new Date().toISOString() };

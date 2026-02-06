@@ -77,7 +77,7 @@
     "chat": "Chat",
     "workbench": "Workbench",
     "sources": "Sources",
-    "userdata": "UserData",
+    "userdata": "User Data",
     "agents": "Agents",
     "endpoints": "Endpoints",
     "credentials": "Credentials",
@@ -511,7 +511,7 @@
     "delete_confirm_description": "Are you sure you want to delete endpoint \"{name}\"? This action cannot be undone."
   },
   "userdata": {
-    "title": "UserData",
+    "title": "User Data",
     "subtitle": "Manage end-user storage and indexes",
     "summary_title": "Project Summary",
     "summary_storage": "Total Storage (bytes)",
@@ -564,7 +564,7 @@
       "requests_today": "Requests Today",
       "errors_today": "Errors Today",
       "tokens_today": "Tokens Today",
-      "userdata_bytes": "UserData Storage"
+      "userdata_bytes": "User Data Storage"
     },
     "filters": {
       "time_range": "Time Range",
@@ -625,7 +625,7 @@
     "tab_limits": "Limits",
     "limits_title": "Resource Limits",
     "limits_hint": "These limits apply to resources as a whole (not per user). Each Endpoint/KB can override at resource level. Unset = no limit.",
-    "limits_userdata_total": "UserData Totals",
+    "limits_userdata_total": "User Data Totals",
     "limits_endpoint_default": "Endpoint Defaults",
     "governance_save_confirm_title": "Save Governance Changes",
     "governance_save_confirm_body": "Changes may affect active sessions (403/429/queued). Are you sure?",
@@ -887,9 +887,9 @@
         "admin": "Admin",
         "admin_description": "All permissions except project:delete",
         "developer": "Developer",
-        "developer_description": "Agent keys, UserData, AgentThread",
+        "developer_description": "Agent keys, User Data, AgentThread",
         "user": "User",
-        "user_description": "Read-only + AgentThread + UserData (limited)"
+        "user_description": "Read-only + AgentThread + User Data (limited)"
       },
       "create_success": "Template created successfully",
       "update_success": "Template updated successfully",
@@ -975,7 +975,7 @@
       "requests_today": "Requests Today",
       "errors_today": "Errors Today",
       "tokens_today": "Tokens Today",
-      "userdata_storage": "UserData Storage",
+      "userdata_storage": "User Data Storage",
       "vs_last_period": "vs last period"
     },
     "quick_access": "Quick Access",

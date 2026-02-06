@@ -10,9 +10,9 @@ All E2E tests pass across three Playwright projects (smoke, chromium, visual).
 ### Overall Status: PASS
 
 - **Smoke Tests:** 26/26 passing
-- **Chromium E2E Tests:** 103/103 passing
+- **Chromium E2E Tests:** 146/146 passing
 - **Visual Regression Tests:** 29/29 passing
-- **Total:** 158 tests passing
+- **Total:** 201 tests passing
 
 ---
 
@@ -22,7 +22,7 @@ All E2E tests pass across three Playwright projects (smoke, chromium, visual).
 Covers all routes (public, workspace, project pages) in both `en-US` and `zh-CN` locales.
 Validates page load, app shell rendering, and absence of critical console errors.
 
-### Chromium E2E Tests (103 tests)
+### Chromium E2E Tests (146 tests)
 Full functional testing across all pages and features:
 
 | Test File | Tests | Description |
@@ -32,18 +32,22 @@ Full functional testing across all pages and features:
 | `overview.spec.ts` | 4 | KPI cards, time range selector, quick access, activity timeline |
 | `chat.spec.ts` | 4 | Three-pane layout, thread selection, composer, send message |
 | `workbench.spec.ts` | 8 | Recipe list, create recipe, recipe detail, conversation input, artifacts |
-| `agents.spec.ts` | 5 | Table rendering, create dialog, agent data display |
-| `endpoints.spec.ts` | 5 | Table rendering, create dialog, endpoint data display |
-| `credentials.spec.ts` | 5 | Table rendering, create dialog, credential data display |
-| `members.spec.ts` | 5 | Table rendering, invite dialog, member drawer, role badges |
+| `agents.spec.ts` | 8 | Table rendering, create dialog, toggle, validation |
+| `endpoints.spec.ts` | 7 | Table rendering, create dialog, validation |
+| `credentials.spec.ts` | 9 | Table rendering, create/rotate/delete dialogs |
+| `members.spec.ts` | 7 | Table rendering, invite dialog, member drawer, validation |
 | `sources.spec.ts` | 5 | Table rendering, upload dialog, file selection |
 | `audit.spec.ts` | 4 | Table rendering, audit events, filter controls, page header |
 | `usage.spec.ts` | 4 | Table rendering, KPI cards, filter controls, page header |
 | `settings.spec.ts` | 7 | Tab navigation, form fields, save buttons, danger zone |
-| `account.spec.ts` | 5 | Profile page, API key management |
+| `account.spec.ts` | 8 | Profile page, API key management, create/revoke |
 | `navigation.spec.ts` | 10 | Sidebar navigation, collapse, topbar, workspace/project switchers, user menu |
 | `ux-guardrails.spec.ts` | 5 | Login CTA, app shell structure, overflow, loading states, page indicators |
 | `console-errors.spec.ts` | 3 | General console errors, hydration errors, network failures |
+| `join.spec.ts` | 5 | Invitation flow (valid/invalid), locale coverage |
+| `userdata.spec.ts` | 4 | Summary, end users table |
+| `workspace-settings.spec.ts` | 5 | Workspace info and members |
+| `interactions.spec.ts` | 12 | Notifications, language switch, dialogs, selection |
 
 ### Visual Regression Tests (29 tests)
 Full-page screenshots for all pages and 7 dialog states:

@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
   // Prevent Next.js from inferring an incorrect workspace root when multiple
   // lockfiles exist on the machine, which can break output tracing/build workers.
   outputFileTracingRoot: __dirname,
+  // Disable dev indicators for clean visual baselines.
+  devIndicators: false,
+  eslint: {
+    // Keep default behavior unless explicitly disabled for visual builds.
+    ignoreDuringBuilds: process.env.NEXT_DISABLE_ESLINT === '1',
+  },
 };
 
 export default withNextIntl(nextConfig);

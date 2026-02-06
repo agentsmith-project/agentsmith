@@ -58,7 +58,11 @@ export function MessageList({
   const showJump = !isAtBottom;
 
   if (chain.length === 0) {
-    return <div className="text-tertiary text-sm px-4 py-6">Start a conversation…</div>;
+    return (
+      <div className="h-full flex items-center justify-center px-6">
+        <div className="text-tertiary text-sm">Start a conversation…</div>
+      </div>
+    );
   }
 
   const shouldFollow = followOutput && isAtBottom && !suppressAutoScroll;

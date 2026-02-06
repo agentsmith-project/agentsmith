@@ -13,7 +13,7 @@ export const endpointHandlers = [
     return HttpResponse.json(ep);
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/endpoints', async ({ request }) => {
-    const body: Record<string, unknown> = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const created = {
       id: `ep_${Date.now()}`,
       project_id: 'proj_001',
@@ -31,7 +31,7 @@ export const endpointHandlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
   http.put('/api/v1/workspaces/:ws/projects/:prj/endpoints/:id', async ({ params, request }) => {
-    const body: Record<string, unknown> = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const idx = endpoints.findIndex((e) => e.id === params.id);
     if (idx < 0) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     endpoints[idx] = { ...endpoints[idx], ...body, updated_at: new Date().toISOString() };

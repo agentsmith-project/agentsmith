@@ -6,5 +6,9 @@ type PageStateProps = {
 };
 
 export function PageState({ state, children }: PageStateProps) {
-  return <div data-testid={`page-state__${state}`}>{children}</div>;
+  return (
+    <div data-testid={`page-state__${state}`} className="h-full">
+      {children}
+    </div>
+  );
 }

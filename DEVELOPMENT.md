@@ -101,6 +101,41 @@ Switch via `NEXT_PUBLIC_USE_MSW` environment variable.
 
 ## Troubleshooting
 
+## Visual Baselines (Best Practice)
+
+For reliable full-page screenshots, run visual tests against a production build
+and keep dev indicators disabled in local dev. This avoids dev overlays and the
+Next.js dev tools badge appearing in screenshots.
+
+**Recommended (production visuals):**
+```bash
+npm run build
+npm run start
+BASE_URL=http://localhost:3000 npx playwright test --project=visual --update-snapshots
+```
+
+**Dev visuals (when you must run `next dev`):**
+```bash
+npm run dev
+BASE_URL=http://localhost:3001 npx playwright test --project=visual --update-snapshots
+```
+
+If `next build` is blocked by existing lint warnings in test files, you can
+temporarily disable lint during the visual build only:
+```bash
+NEXT_DISABLE_ESLINT=1 npm run build
+npm run start
+BASE_URL=http://localhost:3000 npx playwright test --project=visual --update-snapshots
+```
+
+**Restore default dev indicators:**
+- In `next.config.ts`, remove `devIndicators: false` or set it to `true`.
+- In `src/app/globals.css`, remove the `nextjs-portal { display: none; }` rule.
+- Ensure `NEXT_DISABLE_ESLINT` is unset for normal production builds.
+
+Visual tests will still work in `next dev`, but overlays may appear unless
+dev indicators are disabled.
+
 ### Test Failures
 
 #### "QueryClientProvider not found"

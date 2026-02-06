@@ -19,7 +19,12 @@ export function PageState({ state, children, loading, empty, error }: PageStateP
     );
   }
 
-  const content = state === 'loading' ? loading : state === 'empty' ? empty : error;
+  const content =
+    state === 'loading'
+      ? loading ?? children
+      : state === 'empty'
+        ? empty ?? children
+        : error ?? children;
   return (
     <div data-testid={`page-state__${state}`} className={centered}>
       {content}

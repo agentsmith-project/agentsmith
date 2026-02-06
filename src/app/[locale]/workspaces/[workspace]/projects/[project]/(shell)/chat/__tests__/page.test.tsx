@@ -145,10 +145,12 @@ describe('ChatPage', () => {
     );
 
     const button = await screen.findByTestId('chat__new-thread-btn');
+    expect(mockCreateSession).not.toHaveBeenCalled();
+
     await user.click(button);
 
     await waitFor(() => {
-      expect(mockCreateSession).toHaveBeenCalled();
+      expect(mockCreateSession).toHaveBeenCalledTimes(1);
     });
   });
 });

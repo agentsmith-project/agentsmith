@@ -162,11 +162,12 @@ describe('SourcesPage', () => {
   });
 
   it('uses shared layout header without local padding', () => {
-    const { container } = render(<SourcesPage {...defaultProps} />);
+    render(<SourcesPage {...defaultProps} />);
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { name: 'Sources' })).toBeInTheDocument();
-    expect(container.querySelector('.p-6')).not.toBeInTheDocument();
+    const body = screen.getByTestId('page-layout__body');
+    expect(body.classList.contains('p-6')).toBe(false);
   });
 
   it('should render quota summary card', () => {

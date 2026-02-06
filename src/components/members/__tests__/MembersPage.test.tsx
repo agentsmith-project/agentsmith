@@ -123,10 +123,11 @@ describe('MembersPage', () => {
   });
 
   it('uses shared layout header without local padding', () => {
-    const { container } = render(<MembersPage workspaceId="ws_1" projectId="proj_1" />);
+    render(<MembersPage workspaceId="ws_1" projectId="proj_1" />);
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { name: 'title' })).toBeInTheDocument();
-    expect(container.querySelector('.p-6')).not.toBeInTheDocument();
+    const body = screen.getByTestId('page-layout__body');
+    expect(body.classList.contains('p-6')).toBe(false);
   });
 });

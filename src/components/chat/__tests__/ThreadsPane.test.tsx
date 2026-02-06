@@ -62,13 +62,11 @@ const defaultProps = {
   activeSessionId: null,
   searchQuery: '',
   onSearchQueryChange: vi.fn(),
-  onCreate: vi.fn(),
   onSelect: vi.fn(),
   onRename: vi.fn(),
   onToggleStar: vi.fn(),
   onTogglePin: vi.fn(),
   onDelete: vi.fn(),
-  isCreating: false,
   isLoading: false,
 };
 
@@ -84,12 +82,6 @@ describe('ThreadsPane', () => {
       expect(screen.getByText('Thread 1')).toBeInTheDocument();
       expect(screen.getByText('Thread 2')).toBeInTheDocument();
       expect(screen.getByText('Another Thread')).toBeInTheDocument();
-    });
-
-    it('should render New Chat button', () => {
-      render(<ThreadsPane {...defaultProps} />);
-
-      expect(screen.getByText('New Chat')).toBeInTheDocument();
     });
 
     it('should render search input', () => {
@@ -211,32 +203,6 @@ describe('ThreadsPane', () => {
 
       // Last item should be Thread 1 (neither starred nor pinned, oldest update)
       expect(items[2]?.textContent).toContain('Thread 1');
-    });
-  });
-
-  describe('New Chat Button', () => {
-    it('should call onCreate when clicked', async () => {
-      const user = userEvent.setup();
-      render(<ThreadsPane {...defaultProps} />);
-
-      const newChatButton = screen.getByText('New Chat');
-      await user.click(newChatButton);
-
-      expect(defaultProps.onCreate).toHaveBeenCalled();
-    });
-
-    it('should be disabled when isCreating is true', () => {
-      render(<ThreadsPane {...defaultProps} isCreating={true} />);
-
-      const newChatButton = screen.getByText('New Chat');
-      expect(newChatButton).toBeDisabled();
-    });
-
-    it('should be enabled when isCreating is false', () => {
-      render(<ThreadsPane {...defaultProps} isCreating={false} />);
-
-      const newChatButton = screen.getByText('New Chat');
-      expect(newChatButton).toBeEnabled();
     });
   });
 
@@ -397,11 +363,5 @@ describe('ThreadsPane', () => {
       expect(searchInput).toBeInTheDocument();
     });
 
-    it('should provide accessible buttons', () => {
-      render(<ThreadsPane {...defaultProps} />);
-
-      const newChatButton = screen.getByText('New Chat');
-      expect(newChatButton).toBeEnabled();
-    });
   });
 });

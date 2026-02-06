@@ -2,11 +2,10 @@
 
 import * as React from 'react';
 import { Virtuoso } from 'react-virtuoso';
-import { Plus, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 import type { ChatSession } from '@/lib/api/types';
 
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ThreadItem } from './ThreadItem';
 
@@ -15,26 +14,22 @@ export function ThreadsPane({
   activeSessionId,
   searchQuery,
   onSearchQueryChange,
-  onCreate,
   onSelect,
   onRename,
   onToggleStar,
   onTogglePin,
   onDelete,
-  isCreating,
   isLoading,
 }: {
   sessions: ChatSession[];
   activeSessionId: string | null;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
-  onCreate: () => void;
   onSelect: (sessionId: string) => void;
   onRename: (sessionId: string, title: string) => void;
   onToggleStar: (sessionId: string, next: boolean) => void;
   onTogglePin: (sessionId: string, next: boolean) => void;
   onDelete: (sessionId: string) => void;
-  isCreating: boolean;
   isLoading: boolean;
 }) {
   const filtered = React.useMemo(() => {
@@ -54,19 +49,6 @@ export function ThreadsPane({
       className="w-[320px] border-r border-subtle bg-panel flex flex-col overflow-hidden"
       data-testid="chat__threads-pane"
     >
-      <div className="p-3 border-b border-subtle">
-        <Button
-          variant="action"
-          className="w-full justify-center"
-          onClick={onCreate}
-          disabled={isCreating}
-          data-testid="chat__new-thread-btn"
-        >
-          <Plus className="w-4 h-4" />
-          New Chat
-        </Button>
-      </div>
-
       <div className="p-3 border-b border-subtle">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-icon-default" />

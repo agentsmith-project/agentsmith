@@ -13,7 +13,7 @@
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { useAuthStore } from '@/lib/stores/authStore';
@@ -35,6 +35,8 @@ import { Markdown } from '@/components/chat/Markdown';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
+import { PageToolbar } from '@/components/layout/PageToolbar';
+import { Button } from '@/components/ui/button';
  
 
 interface ChatPageProps {
@@ -427,14 +429,28 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout header={<PageHeader title={t('title')} />}>
+      <PageLayout
+        header={<PageHeader title={t('title')} />}
+        toolbar={(
+          <PageToolbar>
+            <Button
+              variant="outline"
+              onClick={() => createSessionMutation.mutate()}
+              disabled={createSessionMutation.isPending}
+              data-testid="chat__new-thread-btn"
+            >
+              <Plus className="w-4 h-4" />
+              {t('new_thread')}
+            </Button>
+          </PageToolbar>
+        )}
+      >
         <div className="h-full flex overflow-hidden">
           <ThreadsPane
             sessions={sessions}
             activeSessionId={currentSessionId}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
-            onCreate={() => createSessionMutation.mutate()}
             onSelect={(id) => {
               setCurrentSessionId(id);
               setEditingMessageId(null);
@@ -446,7 +462,6 @@ export default function ChatPage({ params }: ChatPageProps) {
               if (!window.confirm('Delete this thread?')) return;
               deleteSessionMutation.mutate(id);
             }}
-            isCreating={createSessionMutation.isPending}
             isLoading={sessionsLoading}
           />
 

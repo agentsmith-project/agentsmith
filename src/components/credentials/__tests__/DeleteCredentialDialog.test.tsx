@@ -58,10 +58,8 @@ vi.mock('next-intl', () => ({
   useTranslations: vi.fn((namespace) => (key: string, params?: Record<string, unknown>) => {
     const translations: Record<string, Record<string, string>> = {
       credentials: {
-        delete_dialog: {
-          title: 'Delete Credential',
-          description: 'Are you sure you want to delete {name}? This action cannot be undone.',
-        },
+        'delete_dialog.title': 'Delete Credential',
+        'delete_dialog.description': 'Are you sure you want to delete {name}? This action cannot be undone.',
       },
       common: {
         delete: 'Delete',
@@ -69,9 +67,10 @@ vi.mock('next-intl', () => ({
       },
     };
 
-    // Handle template interpolation
-    if (key === 'description' && params?.name) {
-      return `Are you sure you want to delete ${params.name}? This action cannot be undone.`;
+    // Handle template interpolation for description
+    if (key === 'delete_dialog.description') {
+      const name = params?.name ?? '';
+      return `Are you sure you want to delete ${name}? This action cannot be undone.`;
     }
 
     return translations[namespace]?.[key] || key;

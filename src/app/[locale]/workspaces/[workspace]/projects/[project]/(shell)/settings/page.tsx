@@ -51,7 +51,10 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     project: string;
     locale: string;
   } | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [savingGeneral, setSavingGeneral] = useState(false);
+  const [savingRuntime, setSavingRuntime] = useState(false);
+  const [savingGovernance, setSavingGovernance] = useState(false);
+  const [savingLimits, setSavingLimits] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private'>('private');
@@ -93,7 +96,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   const handleSaveGeneral = async () => {
     if (!resolvedParams) return;
-    setSaving(true);
+    setSavingGeneral(true);
     try {
       await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
         name: name.trim(),
@@ -112,13 +115,13 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     } catch (error) {
       handleError(error, { context: settingsT('tab_general') });
     } finally {
-      setSaving(false);
+      setSavingGeneral(false);
     }
   };
 
   const handleSaveRuntimePrefs = async () => {
     if (!resolvedParams) return;
-    setSaving(true);
+    setSavingRuntime(true);
     try {
       await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
         runtime_preferences_json: runtimePreferences as Record<string, unknown>,
@@ -127,7 +130,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     } catch (error) {
       handleError(error, { context: settingsT('tab_runtime_preferences') });
     } finally {
-      setSaving(false);
+      setSavingRuntime(false);
     }
   };
 
@@ -138,7 +141,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const handleSaveGovernanceConfirm = async () => {
     if (!resolvedParams) return;
     setGovernanceConfirmOpen(false);
-    setSaving(true);
+    setSavingGovernance(true);
     try {
       await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
         governance_json: governance as Record<string, unknown>,
@@ -147,13 +150,13 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     } catch (error) {
       handleError(error, { context: settingsT('tab_governance') });
     } finally {
-      setSaving(false);
+      setSavingGovernance(false);
     }
   };
 
   const handleSaveLimits = async () => {
     if (!resolvedParams) return;
-    setSaving(true);
+    setSavingLimits(true);
     try {
       await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
         limits_json: limits as Record<string, unknown>,
@@ -162,7 +165,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     } catch (error) {
       handleError(error, { context: settingsT('tab_limits') });
     } finally {
-      setSaving(false);
+      setSavingLimits(false);
     }
   };
 
@@ -242,9 +245,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               </div>
             </div>
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveGeneral} disabled={saving} variant="action" size="lg">
+              <Button onClick={handleSaveGeneral} disabled={savingGeneral} variant="action" size="lg">
                 <Save className="w-4 h-4" />
-                {saving ? 'Saving...' : 'Save'}
+                {savingGeneral ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>
@@ -262,9 +265,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               onChange={setRuntimePreferences}
             />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveRuntimePrefs} disabled={saving} variant="action" size="lg">
+              <Button onClick={handleSaveRuntimePrefs} disabled={savingRuntime} variant="action" size="lg">
                 <Save className="w-4 h-4" />
-                {saving ? 'Saving...' : 'Save'}
+                {savingRuntime ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>
@@ -279,9 +282,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <SettingsTokenReference tokens={GOVERNANCE_TOKENS} />
             <GovernanceEditor value={governance} onChange={setGovernance} />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveGovernanceClick} disabled={saving} variant="action" size="lg">
+              <Button onClick={handleSaveGovernanceClick} disabled={savingGovernance} variant="action" size="lg">
                 <Save className="w-4 h-4" />
-                {saving ? 'Saving...' : 'Save'}
+                {savingGovernance ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>
@@ -296,9 +299,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <SettingsTokenReference tokens={LIMITS_TOKENS} />
             <LimitsEditor value={limits} onChange={setLimits} />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveLimits} disabled={saving} variant="action" size="lg">
+              <Button onClick={handleSaveLimits} disabled={savingLimits} variant="action" size="lg">
                 <Save className="w-4 h-4" />
-                {saving ? 'Saving...' : 'Save'}
+                {savingLimits ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>
@@ -312,15 +315,15 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <AlertDialogDescription>{settingsT('governance_save_confirm_body')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={saving}>{commonT('cancel')}</AlertDialogCancel>
+            <AlertDialogCancel disabled={savingGovernance}>{commonT('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
                 handleSaveGovernanceConfirm();
               }}
-              disabled={saving}
+              disabled={savingGovernance}
             >
-              {saving ? 'Saving...' : settingsT('governance_save_confirm_action')}
+              {savingGovernance ? 'Saving...' : settingsT('governance_save_confirm_action')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

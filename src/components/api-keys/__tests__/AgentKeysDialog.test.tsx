@@ -9,7 +9,7 @@
  * - Empty states
  */
 
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -171,7 +171,7 @@ describe('AgentKeysDialog', () => {
     it('shows loading state initially', () => {
       mockListKeys.mockReturnValue(new Promise(() => {})); // Never resolves
 
-      render(<AgentKeysDialog {...defaultProps} />, { wrapper });
+      render(<AgentKeysDialog {...defaultProps} />, { wrapper: createWrapper() });
 
       expect(screen.getByText(/loading/i)).toBeInTheDocument();
     });
@@ -179,7 +179,7 @@ describe('AgentKeysDialog', () => {
     it('shows empty state when no keys', async () => {
       mockListKeys.mockResolvedValue([]);
 
-      render(<AgentKeysDialog {...defaultProps} />, { wrapper });
+      render(<AgentKeysDialog {...defaultProps} />, { wrapper: createWrapper() });
 
       await waitFor(() => {
         expect(screen.getByText(/no keys yet/i)).toBeInTheDocument();
@@ -231,7 +231,7 @@ describe('AgentKeysDialog', () => {
 
       await waitFor(() => {
         const revokeButtons = screen.getAllByRole('button').filter(btn =>
-          btn.querySelector('svg[data-lucide="trash-2"]')
+          btn.querySelector('.lucide-trash-2')
         );
         expect(revokeButtons.length).toBe(2);
       });
@@ -330,7 +330,7 @@ describe('AgentKeysDialog', () => {
       });
 
       const revokeButtons = screen.getAllByRole('button').filter(btn =>
-        btn.querySelector('svg[data-lucide="trash-2"]')
+        btn.querySelector('.lucide-trash-2')
       );
 
       await user.click(revokeButtons[0]);
@@ -347,7 +347,7 @@ describe('AgentKeysDialog', () => {
       });
 
       const revokeButtons = screen.getAllByRole('button').filter(btn =>
-        btn.querySelector('svg[data-lucide="trash-2"]')
+        btn.querySelector('.lucide-trash-2')
       );
 
       await user.click(revokeButtons[0]);
@@ -366,7 +366,7 @@ describe('AgentKeysDialog', () => {
       });
 
       const revokeButtons = screen.getAllByRole('button').filter(btn =>
-        btn.querySelector('svg[data-lucide="trash-2"]')
+        btn.querySelector('.lucide-trash-2')
       );
 
       await user.click(revokeButtons[0]);
@@ -385,7 +385,7 @@ describe('AgentKeysDialog', () => {
       });
 
       const revokeButtons = screen.getAllByRole('button').filter(btn =>
-        btn.querySelector('svg[data-lucide="trash-2"]')
+        btn.querySelector('.lucide-trash-2')
       );
 
       await user.click(revokeButtons[0]);
@@ -491,7 +491,7 @@ describe('AgentKeysDialog', () => {
       });
 
       const revokeButtons = screen.getAllByRole('button').filter(btn =>
-        btn.querySelector('svg[data-lucide="trash-2"]')
+        btn.querySelector('.lucide-trash-2')
       );
 
       await user.click(revokeButtons[0]);
@@ -555,7 +555,7 @@ describe('AgentKeysDialog', () => {
       const longName = 'Agent '.repeat(50);
       render(<AgentKeysDialog {...defaultProps} agentName={longName} />, { wrapper });
 
-      expect(screen.getByText(/agent/i)).toBeInTheDocument();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
   });
 
@@ -573,9 +573,8 @@ describe('AgentKeysDialog', () => {
       render(<AgentKeysDialog {...defaultProps} />, { wrapper });
 
       await waitFor(() => {
-        const keyIcons = screen.getAllByRole('button').filter(btn =>
-          btn.querySelector('svg[data-lucide="key"]')
-        );
+        const dialog = screen.getByRole('dialog');
+        const keyIcons = dialog.querySelectorAll('.lucide-key');
         expect(keyIcons.length).toBeGreaterThan(0);
       });
     });

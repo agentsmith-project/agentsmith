@@ -16,6 +16,7 @@ import { getApiClient } from '@/lib/api';
 import type { Artifact, RecipeMessage } from '@/lib/types/recipe';
 import { useRouter, useParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/query-keys';
 
 export interface RecipePageProps {
   workspaceId: string;
@@ -43,24 +44,23 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
   const sendMessage = useSendMessage();
   const addSources = useAddSources();
 
+  // Query keys for this recipe — used by both useQuery hooks and SSE cache writes
+  const messagesKey = queryKeys.recipes.messages(workspaceId, projectId, recipeId);
+  const artifactsKey = queryKeys.recipes.artifacts(workspaceId, projectId, recipeId);
+  const recipeDetailKey = queryKeys.recipes.detail(workspaceId, projectId, recipeId);
+
   // SSE connection for real-time updates
   useRecipeSSE(workspaceId, projectId, recipeId, {
     onMessage: (message: RecipeMessage) => {
-      // Check if this is a streaming update (message with partial content)
+      // Update streaming content for the active streaming message
       if (streamingMessageId === message.id) {
         setStreamingContent(message.content);
-        // If message is complete, clear streaming state
-        if (message.content && !message.content.endsWith('…')) {
-          setStreamingMessageId(null);
-          setStreamingContent('');
-        }
       }
 
       queryClient.setQueryData(
-        ['recipe-messages', workspaceId, projectId, recipeId],
+        messagesKey,
         (old: RecipeMessage[] | undefined) => {
           if (!old) return [message];
-          // Check if message already exists
           if (old.some((m) => m.id === message.id)) {
             return old.map((m) => (m.id === message.id ? message : m));
           }
@@ -70,10 +70,9 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
     },
     onArtifact: (artifact: Artifact) => {
       queryClient.setQueryData(
-        ['recipe-artifacts', workspaceId, projectId, recipeId],
+        artifactsKey,
         (old: Artifact[] | undefined) => {
           if (!old) return [artifact];
-          // Check if artifact already exists
           if (old.some((a) => a.id === artifact.id)) {
             return old.map((a) => (a.id === artifact.id ? artifact : a));
           }
@@ -82,10 +81,11 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
       );
     },
     onRecipeUpdate: (updatedRecipe) => {
-      queryClient.setQueryData(
-        ['recipe', workspaceId, projectId, recipeId],
-        updatedRecipe,
-      );
+      // Recipe update signals agent completion — clear streaming state
+      setStreamingMessageId(null);
+      setStreamingContent('');
+
+      queryClient.setQueryData(recipeDetailKey, updatedRecipe);
     },
     enabled: !!recipeId && !recipeLoading,
   });
@@ -177,9 +177,9 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
       // Show success notification (you could add a toast here)
       setSaveDialogOpen(false);
 
-      // Optionally refresh sources list
+      // Refresh sources list
       queryClient.invalidateQueries({
-        queryKey: ['sources', workspaceId, projectId],
+        queryKey: queryKeys.sources.list(workspaceId, projectId),
       });
     } catch (err) {
       handleError(err, { logContext: 'RecipePage.saveArtifactToLibrary' });

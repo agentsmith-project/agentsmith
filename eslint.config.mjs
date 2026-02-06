@@ -28,8 +28,8 @@ const eslintConfig = [
     },
   },
   {
-    // Allow 'warn' level for 'any' in test files
-    files: ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**"],
+    // Allow 'warn' level for 'any' in test files and mock handlers
+    files: ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**", "**/mocks/**"],
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
     },

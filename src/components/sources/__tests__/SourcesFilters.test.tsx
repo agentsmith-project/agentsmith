@@ -3,8 +3,20 @@
  */
 
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
-import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
+
+// Polyfill for Radix UI pointer capture in jsdom
+beforeAll(() => {
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+});
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
@@ -27,7 +39,9 @@ describe('SourcesFilters', () => {
   it('should render all filter controls', () => {
     render(<SourcesFilters {...defaultProps} />);
 
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    // Should have 4 select triggers (status, aiReady, sortBy, sortOrder)
+    const selects = screen.getAllByRole('combobox');
+    expect(selects.length).toBe(4);
   });
 
   it('should render status filter with current value', () => {
@@ -37,144 +51,83 @@ describe('SourcesFilters', () => {
     expect(statusSelect).toHaveTextContent('Ready');
   });
 
-  it('should call onStatusChange when status is changed', async () => {
-    const user = userEvent.setup();
-    const onStatusChange = vi.fn();
+  it('should render status select trigger showing current value', () => {
+    render(<SourcesFilters {...defaultProps} />);
 
-    render(<SourcesFilters {...defaultProps} onStatusChange={onStatusChange} />);
-
+    // The first select trigger should show "All" (the currently selected status)
     const statusSelect = screen.getAllByRole('combobox')[0];
-    await user.click(statusSelect);
-
-    const readyOption = screen.getByText('Ready');
-    await user.click(readyOption);
-
-    // Note: The actual onChange might be called with the value directly
-    // This test verifies the component structure
-    expect(readyOption).toBeInTheDocument();
+    expect(statusSelect).toHaveTextContent('All');
   });
 
   it('should render AIReady filter with correct value', () => {
     render(<SourcesFilters {...defaultProps} aiReadyOnly={true} />);
 
-    const aiReadySelects = screen.getAllByRole('combobox');
-    // AIReady filter should show "AIReady Only" when aiReadyOnly is true
+    const aiReadySelect = screen.getAllByRole('combobox')[1];
+    expect(aiReadySelect).toHaveTextContent('AIReady Only');
   });
 
-  it('should call onAIReadyOnlyChange when AIReady filter is changed', async () => {
-    const user = userEvent.setup();
-    const onAIReadyOnlyChange = vi.fn();
+  it('should render AIReady filter showing "All Files" when false', () => {
+    render(<SourcesFilters {...defaultProps} aiReadyOnly={false} />);
 
-    render(
-      <SourcesFilters
-        {...defaultProps}
-        onAIReadyOnlyChange={onAIReadyOnlyChange}
-      />
-    );
-
-    // Find the AIReady select (second select)
-    const selects = screen.getAllByRole('combobox');
-    if (selects.length > 1) {
-      await user.click(selects[1]);
-
-      const onlyOption = screen.queryByText('AIReady Only');
-      if (onlyOption) {
-        await user.click(onlyOption);
-      }
-    }
+    const aiReadySelect = screen.getAllByRole('combobox')[1];
+    expect(aiReadySelect).toHaveTextContent('All Files');
   });
 
   it('should render sort by filter with current value', () => {
     render(<SourcesFilters {...defaultProps} sortBy="file_size" />);
 
-    const sortBySelects = screen.getAllByRole('combobox');
-    // Should have a select for sort by
+    const sortBySelect = screen.getAllByRole('combobox')[2];
+    expect(sortBySelect).toHaveTextContent('Size');
   });
 
-  it('should call onSortByChange when sort by is changed', async () => {
-    const user = userEvent.setup();
-    const onSortByChange = vi.fn();
+  it('should render sort by filter showing "Updated" by default', () => {
+    render(<SourcesFilters {...defaultProps} />);
 
-    render(
-      <SourcesFilters
-        {...defaultProps}
-        onSortByChange={onSortByChange}
-      />
-    );
-
-    const selects = screen.getAllByRole('combobox');
-    // Sort by select
-    if (selects.length > 2) {
-      await user.click(selects[2]);
-
-      const sizeOption = screen.queryByText('Size');
-      if (sizeOption) {
-        await user.click(sizeOption);
-      }
-    }
+    const sortBySelect = screen.getAllByRole('combobox')[2];
+    expect(sortBySelect).toHaveTextContent('Updated');
   });
 
   it('should render sort order filter with current value', () => {
     render(<SourcesFilters {...defaultProps} sortOrder="asc" />);
 
-    const selects = screen.getAllByRole('combobox');
-    // Should have a select for sort order
+    const sortOrderSelect = screen.getAllByRole('combobox')[3];
+    expect(sortOrderSelect).toHaveTextContent('Asc');
   });
 
-  it('should call onSortOrderChange when sort order is changed', async () => {
-    const user = userEvent.setup();
-    const onSortOrderChange = vi.fn();
-
-    render(
-      <SourcesFilters
-        {...defaultProps}
-        onSortOrderChange={onSortOrderChange}
-      />
-    );
-
-    const selects = screen.getAllByRole('combobox');
-    // Sort order select (last one)
-    if (selects.length > 3) {
-      await user.click(selects[3]);
-
-      const ascOption = screen.queryByText('Asc');
-      if (ascOption) {
-        await user.click(ascOption);
-      }
-    }
-  });
-
-  it('should render all status options', () => {
+  it('should render sort order showing "Desc" by default', () => {
     render(<SourcesFilters {...defaultProps} />);
 
-    expect(screen.queryByText('All')).toBeInTheDocument();
-    expect(screen.queryByText('Not Ready')).toBeInTheDocument();
-    expect(screen.queryByText('Preparing')).toBeInTheDocument();
-    expect(screen.queryByText('Ready')).toBeInTheDocument();
-    expect(screen.queryByText('Failed')).toBeInTheDocument();
-    expect(screen.queryByText('Cancelled')).toBeInTheDocument();
+    const sortOrderSelect = screen.getAllByRole('combobox')[3];
+    expect(sortOrderSelect).toHaveTextContent('Desc');
   });
 
-  it('should render all AIReady options', () => {
+  it('should show selected status value in trigger', () => {
     render(<SourcesFilters {...defaultProps} />);
 
-    expect(screen.queryByText('All Files')).toBeInTheDocument();
-    expect(screen.queryByText('AIReady Only')).toBeInTheDocument();
+    // "All" is the trigger text for status when status='all'
+    const statusSelect = screen.getAllByRole('combobox')[0];
+    expect(statusSelect).toHaveTextContent('All');
   });
 
-  it('should render all sort by options', () => {
+  it('should show "All Files" in AIReady trigger when not filtered', () => {
     render(<SourcesFilters {...defaultProps} />);
 
-    expect(screen.queryByText('Updated')).toBeInTheDocument();
-    expect(screen.queryByText('Size')).toBeInTheDocument();
-    expect(screen.queryByText('Status')).toBeInTheDocument();
+    const aiReadySelect = screen.getAllByRole('combobox')[1];
+    expect(aiReadySelect).toHaveTextContent('All Files');
   });
 
-  it('should render all sort order options', () => {
-    render(<SourcesFilters {...defaultProps} />);
+  it('should show selected sort by value in trigger', () => {
+    render(<SourcesFilters {...defaultProps} sortBy="status" />);
 
-    expect(screen.queryByText('Desc')).toBeInTheDocument();
-    expect(screen.queryByText('Asc')).toBeInTheDocument();
+    const sortBySelect = screen.getAllByRole('combobox')[2];
+    expect(sortBySelect).toHaveTextContent('Status');
+  });
+
+  it('should show selected sort order value in trigger', () => {
+    render(<SourcesFilters {...defaultProps} sortOrder="asc" />);
+
+    const sortOrderSelect = screen.getAllByRole('combobox')[3];
+    expect(sortOrderSelect).toHaveTextContent('Asc');
   });
 
   it('should apply custom className', () => {

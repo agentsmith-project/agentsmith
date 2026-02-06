@@ -103,7 +103,7 @@ describe('ConversationInput', () => {
       );
 
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
-      const initialHeight = textarea.style.height;
+      const _initialHeight = textarea.style.height;
 
       rerender(
         <ConversationInput

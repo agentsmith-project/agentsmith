@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecipeList } from '../RecipeList';
 import type { Recipe } from '@/lib/types/recipe';
@@ -11,6 +11,12 @@ import type { Recipe } from '@/lib/types/recipe';
 // Mock the hooks
 vi.mock('@/lib/hooks/use-recipe', () => ({
   useRecipes: vi.fn(),
+}));
+
+// Mock RecipeCreateDialog to avoid transitive dependency issues
+// (it requires useCreateRecipe, AgentAPI, etc.)
+vi.mock('../RecipeCreateDialog', () => ({
+  RecipeCreateDialog: () => null,
 }));
 
 const mockPush = vi.fn();
@@ -21,10 +27,6 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({
     locale: 'en-US',
   }),
-}));
-
-vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string) => key,
 }));
 
 import { useRecipes } from '@/lib/hooks/use-recipe';
@@ -167,8 +169,9 @@ describe('RecipeList', () => {
         wrapper,
       });
 
-      expect(screen.getByText('Agent: Test Agent 1')).toBeInTheDocument();
-      expect(screen.getByText('Agent: Test Agent 2')).toBeInTheDocument();
+      // Agent names are rendered as direct text nodes (the "Agent:" label is in a child span)
+      expect(screen.getByText('Test Agent 1')).toBeInTheDocument();
+      expect(screen.getByText('Test Agent 2')).toBeInTheDocument();
     });
 
     it('displays recipe status badges', () => {
@@ -209,8 +212,9 @@ describe('RecipeList', () => {
         wrapper,
       });
 
-      // Should show time ago format
-      expect(screen.getByText(/Last activity:/)).toBeInTheDocument();
+      // Should show time ago format (multiple recipes have "Last activity:")
+      const lastActivityElements = screen.getAllByText(/Last activity:/);
+      expect(lastActivityElements.length).toBeGreaterThan(0);
     });
   });
 
@@ -282,7 +286,7 @@ describe('RecipeList', () => {
         wrapper,
       });
 
-      expect(screen.getByText('Just now')).toBeInTheDocument();
+      expect(screen.getByText(/Just now/)).toBeInTheDocument();
     });
 
     it('formats time as "Xm ago" for minutes', () => {
@@ -300,7 +304,7 @@ describe('RecipeList', () => {
         wrapper,
       });
 
-      expect(screen.getByText('15m ago')).toBeInTheDocument();
+      expect(screen.getByText(/15m ago/)).toBeInTheDocument();
     });
 
     it('formats time as "Xh ago" for hours', () => {
@@ -318,7 +322,7 @@ describe('RecipeList', () => {
         wrapper,
       });
 
-      expect(screen.getByText('3h ago')).toBeInTheDocument();
+      expect(screen.getByText(/3h ago/)).toBeInTheDocument();
     });
 
     it('formats time as "Xd ago" for days', () => {
@@ -336,7 +340,7 @@ describe('RecipeList', () => {
         wrapper,
       });
 
-      expect(screen.getByText('2d ago')).toBeInTheDocument();
+      expect(screen.getByText(/2d ago/)).toBeInTheDocument();
     });
   });
 

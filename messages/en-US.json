@@ -295,7 +295,12 @@
     "acl_add_deny": "Add Deny",
     "acl_remove_deny": "Remove",
     "detail_limits": "Limits",
-    "detail_credential": "Credential"
+    "detail_credential": "Credential",
+    "action_edit": "Edit",
+    "delete_confirm_title": "Delete Endpoint",
+    "delete_confirm_description": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
+    "delete_confirm_cancel": "Cancel",
+    "delete_confirm_action": "Delete"
   },
   "members": {
     "title": "Members",

@@ -10,7 +10,7 @@ import { SourcesSearch } from '../SourcesSearch';
 
 describe('SourcesSearch', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
   afterEach(() => {
@@ -44,7 +44,7 @@ describe('SourcesSearch', () => {
   });
 
   it('should update input value on user input', async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
     const onChange = vi.fn();
 
     render(<SourcesSearch {...defaultProps} onChange={onChange} />);
@@ -57,7 +57,7 @@ describe('SourcesSearch', () => {
   });
 
   it('should debounce onChange callback', async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
     const onChange = vi.fn();
 
     render(<SourcesSearch {...defaultProps} onChange={onChange} />);
@@ -78,7 +78,7 @@ describe('SourcesSearch', () => {
   });
 
   it('should not call onChange if value changes within debounce period', async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
     const onChange = vi.fn();
 
     render(<SourcesSearch {...defaultProps} onChange={onChange} />);
@@ -100,7 +100,7 @@ describe('SourcesSearch', () => {
   });
 
   it('should sync external value changes', async () => {
-    const user = userEvent.setup({ delay: null });
+    const _user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
     const onChange = vi.fn();
 
     const { rerender } = render(
@@ -133,7 +133,7 @@ describe('SourcesSearch', () => {
   });
 
   it('should clear value and call onChange when clear button is clicked', async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
     const onChange = vi.fn();
 
     render(<SourcesSearch {...defaultProps} value="test" onChange={onChange} />);
@@ -152,7 +152,7 @@ describe('SourcesSearch', () => {
 
     const searchIcon = container.querySelector('svg');
     expect(searchIcon).toBeInTheDocument();
-    expect(searchIcon?.parentElement).toHaveClass('absolute', 'left-3');
+    expect(searchIcon).toHaveClass('absolute', 'left-3');
   });
 
   it('should have proper positioning for clear button', () => {
@@ -179,7 +179,7 @@ describe('SourcesSearch', () => {
   });
 
   it('should handle rapid input changes correctly', async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
     const onChange = vi.fn();
 
     render(<SourcesSearch {...defaultProps} onChange={onChange} />);
@@ -199,7 +199,7 @@ describe('SourcesSearch', () => {
   });
 
   it('should reset debounce timer on new input', async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
     const onChange = vi.fn();
 
     render(<SourcesSearch {...defaultProps} onChange={onChange} />);

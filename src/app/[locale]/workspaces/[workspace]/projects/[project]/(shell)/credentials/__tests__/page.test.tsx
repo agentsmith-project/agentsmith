@@ -9,7 +9,7 @@
  * - Time formatting
  */
 
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -85,7 +85,7 @@ vi.mock('@/components/credentials/DeleteCredentialDialog', () => ({
       <div data-testid="delete-credential-dialog">
         <button
           data-testid="delete-confirm"
-          onClick={onConfirm}
+          onClick={() => onConfirm().catch(() => {})}
         >
           Confirm
         </button>
@@ -103,16 +103,12 @@ vi.mock('next-intl', () => ({
         create: 'Create Credential',
         rotate: 'Rotate',
         delete: 'Delete',
-        table: {
-          name: 'Name',
-          type: 'Type',
-          last_rotated: 'Last Rotated',
-        },
+        'table.name': 'Name',
+        'table.type': 'Type',
+        'table.last_rotated': 'Last Rotated',
         fingerprint: 'Fingerprint',
-        empty: {
-          title: 'No credentials yet',
-          description: 'Create a credential to get started',
-        },
+        'empty.title': 'No credentials yet',
+        'empty.description': 'Create a credential to get started',
       },
     };
     return translations[namespace]?.[key] || key;
@@ -206,7 +202,7 @@ describe('CredentialsPage', () => {
       });
     });
 
-    it('shows loading state initially', () => {
+    it('shows loading state initially', async () => {
       mockList.mockReturnValue(new Promise(() => {})); // Never resolves
       render(
         <CredentialsPage
@@ -216,11 +212,13 @@ describe('CredentialsPage', () => {
             locale: 'en',
           })}
         />,
-        { wrapper }
+        { wrapper: createWrapper() }
       );
 
-      // Should show loading indicator
-      expect(screen.queryByText('Credentials')).toBeInTheDocument();
+      // After params resolve, title shows but data is still loading
+      await waitFor(() => {
+        expect(screen.getByText('Credentials')).toBeInTheDocument();
+      });
     });
 
     it('shows empty state when no credentials exist', async () => {
@@ -234,7 +232,7 @@ describe('CredentialsPage', () => {
             locale: 'en',
           })}
         />,
-        { wrapper }
+        { wrapper: createWrapper() }
       );
 
       await waitFor(() => {
@@ -274,7 +272,7 @@ describe('CredentialsPage', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('api_key')).toBeInTheDocument();
+        expect(screen.getAllByText('api_key').length).toBeGreaterThanOrEqual(1);
       });
     });
 
@@ -309,11 +307,12 @@ describe('CredentialsPage', () => {
       );
 
       await waitFor(() => {
-        const allText = screen.getByRole('main').textContent;
-        // Should not contain common secret patterns
-        expect(allText).not.toMatch(/sk-[a-zA-Z0-9]{32,}/);
-        expect(allText).not.toMatch(/Bearer\s+[a-zA-Z0-9]/);
+        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
       });
+      const allText = document.body.textContent || '';
+      // Should not contain common secret patterns
+      expect(allText).not.toMatch(/sk-[a-zA-Z0-9]{32,}/);
+      expect(allText).not.toMatch(/Bearer\s+[a-zA-Z0-9]/);
     });
 
     it('displays last rotated date', async () => {
@@ -329,8 +328,8 @@ describe('CredentialsPage', () => {
       );
 
       await waitFor(() => {
-        // Should show formatted dates
-        expect(screen.getByText(/jan/i)).toBeInTheDocument();
+        // Should show formatted dates (multiple credentials have Jan dates)
+        expect(screen.getAllByText(/jan/i).length).toBeGreaterThan(0);
       });
     });
 
@@ -692,11 +691,12 @@ describe('CredentialsPage', () => {
       );
 
       await waitFor(() => {
-        const allText = screen.getByRole('main').textContent || '';
-        // Check for common API key patterns - should NOT be present
-        expect(allText).not.toMatch(/sk-[a-zA-Z0-9]{20,}/);
-        expect(allText).not.toMatch(/AKIA[0-9A-Z]{16}/);
+        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
       });
+      const allText = document.body.textContent || '';
+      // Check for common API key patterns - should NOT be present
+      expect(allText).not.toMatch(/sk-[a-zA-Z0-9]{20,}/);
+      expect(allText).not.toMatch(/AKIA[0-9A-Z]{16}/);
     });
 
     it('only shows fingerprint with masking', async () => {
@@ -810,8 +810,8 @@ describe('CredentialsPage', () => {
       );
 
       await waitFor(() => {
-        // Should show formatted date with month abbreviation
-        expect(screen.getByText(/jan/i)).toBeInTheDocument();
+        // Should show formatted dates with month abbreviation
+        expect(screen.getAllByText(/jan/i).length).toBeGreaterThan(0);
       });
     });
 
@@ -832,7 +832,7 @@ describe('CredentialsPage', () => {
             locale: 'en',
           })}
         />,
-        { wrapper }
+        { wrapper: createWrapper() }
       );
 
       await waitFor(() => {
@@ -875,8 +875,8 @@ describe('CredentialsPage', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByTitle(/rotate/i)).toBeInTheDocument();
-        expect(screen.getByTitle(/delete/i)).toBeInTheDocument();
+        expect(screen.getAllByTitle(/rotate/i).length).toBeGreaterThan(0);
+        expect(screen.getAllByTitle(/delete/i).length).toBeGreaterThan(0);
       });
     });
   });

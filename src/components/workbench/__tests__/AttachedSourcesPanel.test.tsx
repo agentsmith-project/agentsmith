@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AttachedSourcesPanel } from '../AttachedSourcesPanel';
@@ -33,8 +33,8 @@ vi.mock('@/lib/hooks/use-sources', () => ({
 vi.mock('@/components/ui/loading', () => ({
   EmptyState: ({ title, description }: any) => (
     <div data-testid="empty-state">
-      <div data-empty-title>{title}</div>
-      <div data-empty-description>{description}</div>
+      <div data-testid="empty-title">{title}</div>
+      <div data-testid="empty-description">{description}</div>
     </div>
   ),
 }));
@@ -175,7 +175,7 @@ describe('AttachedSourcesPanel', () => {
     it('displays file sizes in human readable format', () => {
       renderComponent(['source-1']);
 
-      expect(screen.getByText('1 KB')).toBeInTheDocument();
+      expect(screen.getByText('1.0 KB')).toBeInTheDocument();
     });
 
     it('displays AI ready status badge', () => {
@@ -308,26 +308,10 @@ describe('AttachedSourcesPanel', () => {
     });
 
     it('handles large file sizes', () => {
-      const largeSource: SourceFileWithAIReady = {
-        ...mockSources[0],
-        file_size: 1024 * 1024 * 100, // 100 MB
-      };
+      // The original mock has source-2 with file_size: 2048000 (~2.0 MB)
+      renderComponent(['source-2']);
 
-      vi.doMock('@/lib/hooks/use-sources', () => ({
-        useSources: () => ({
-          data: {
-            items: [largeSource],
-            total: 1,
-            page: 1,
-            page_size: 1000,
-          },
-          isLoading: false,
-        }),
-      }));
-
-      renderComponent(['source-1']);
-
-      expect(screen.getByText(/100 MB/)).toBeInTheDocument();
+      expect(screen.getByText(/2\.0 MB/)).toBeInTheDocument();
     });
   });
 

@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Mock use-sources hooks
@@ -307,7 +307,7 @@ describe('useSourcesList', () => {
       expect(result.current.page).toBe(2);
     });
 
-    it('should clear selection when page changes', () => {
+    it('should clear selection when page changes via handlePageChange', () => {
       const { result } = renderHook(
         () => useSourcesList({ workspaceId, projectId }),
         {
@@ -317,7 +317,10 @@ describe('useSourcesList', () => {
 
       act(() => {
         result.current.setSelectedFileIds(['file1', 'file2']);
-        result.current.setPage(2);
+      });
+
+      act(() => {
+        result.current.handlePageChange(2);
       });
 
       expect(result.current.selectedFileIds).toEqual([]);

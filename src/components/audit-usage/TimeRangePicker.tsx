@@ -132,39 +132,45 @@ export function TimeRangePicker({
     setError(null);
   };
 
-  const handleCustomTimeChange = () => {
-    if (!startTime || !endTime) {
-      setError('Both start and end times are required');
-      return;
-    }
+  /**
+   * Validate and submit a custom time range.
+   * Accepts explicit values to avoid stale-closure issues with React state.
+   */
+  const handleCustomTimeChange = React.useCallback(
+    (currentStart: string, currentEnd: string) => {
+      if (!currentStart || !currentEnd) {
+        setError('Both start and end times are required');
+        return;
+      }
 
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    const now = new Date();
+      const start = new Date(currentStart);
+      const end = new Date(currentEnd);
+      const now = new Date();
 
-    // Validation
-    if (end < start) {
-      setError('End time cannot be earlier than start time');
-      return;
-    }
+      if (end < start) {
+        setError('End time cannot be earlier than start time');
+        return;
+      }
 
-    if (end > now) {
-      setError('End time cannot be later than current time');
-      return;
-    }
+      if (end > now) {
+        setError('End time cannot be later than current time');
+        return;
+      }
 
-    const daysDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysDiff > maxDays) {
-      setError(`Time range cannot exceed ${maxDays} days`);
-      return;
-    }
+      const daysDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysDiff > maxDays) {
+        setError(`Time range cannot exceed ${maxDays} days`);
+        return;
+      }
 
-    setError(null);
-    onChange({
-      start_time: start.toISOString(),
-      end_time: end.toISOString(),
-    });
-  };
+      setError(null);
+      onChange({
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+      });
+    },
+    [onChange, maxDays],
+  );
 
   const formatDateTime = (isoString: string): string => {
     const date = new Date(isoString);
@@ -199,8 +205,9 @@ export function TimeRangePicker({
                   type="datetime-local"
                   value={startTime}
                   onChange={(e) => {
-                    setStartTime(e.target.value);
-                    setTimeout(handleCustomTimeChange, 100);
+                    const newStart = e.target.value;
+                    setStartTime(newStart);
+                    handleCustomTimeChange(newStart, endTime);
                   }}
                   className="w-full"
                 />
@@ -217,8 +224,9 @@ export function TimeRangePicker({
                   type="datetime-local"
                   value={endTime}
                   onChange={(e) => {
-                    setEndTime(e.target.value);
-                    setTimeout(handleCustomTimeChange, 100);
+                    const newEnd = e.target.value;
+                    setEndTime(newEnd);
+                    handleCustomTimeChange(startTime, newEnd);
                   }}
                   className="w-full"
                 />

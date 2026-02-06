@@ -110,6 +110,51 @@ const createAuthStore = (): AuthStoreWithPersist => {
 export const useAuthStore = createAuthStore();
 
 // ============================================================
+// Token Sync — single source of truth for API client auth
+// ============================================================
+
+/**
+ * Automatically sync the Zustand auth token to the API client singleton.
+ *
+ * This subscription fires on every state change, including:
+ * - setAuth(user, token)  →  client.setToken(token)
+ * - clearAuth()           →  client.clearToken()
+ * - Persist rehydration   →  client.setToken(restoredToken)
+ *
+ * By handling it at the store level we guarantee the API client
+ * always reflects the latest auth state without callers needing
+ * to remember to sync manually.
+ */
+if (typeof window !== 'undefined') {
+  // Lazy import avoids circular dependency at module-parse time.
+  // getApiClient is cheap (returns singleton) so this is safe.
+  const syncTokenToClient = () => {
+    const { getApiClient } = require('../api/client') as typeof import('../api/client');
+    const client = getApiClient();
+    const { token } = useAuthStore.getState();
+    if (token) {
+      client.setToken(token);
+    } else {
+      client.clearToken();
+    }
+  };
+
+  // Sync on every future state change
+  useAuthStore.subscribe(syncTokenToClient);
+
+  // Sync the initial / rehydrated state once the store is ready
+  if (useAuthStore.persist) {
+    useAuthStore.persist.onFinishHydration(syncTokenToClient);
+    // If already hydrated (e.g. fast refresh), sync now
+    if (useAuthStore.persist.hasHydrated()) {
+      syncTokenToClient();
+    }
+  } else {
+    syncTokenToClient();
+  }
+}
+
+// ============================================================
 // Hydration Hook
 // ============================================================
 

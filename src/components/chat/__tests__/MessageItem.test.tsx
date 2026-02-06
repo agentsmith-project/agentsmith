@@ -403,7 +403,7 @@ describe('MessageItem', () => {
 
   describe('Variant Navigation Edge Cases', () => {
     it('should handle variant at first index', () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
 
       const parentMessage: ChatMessage = {
         ...mockAssistantMessage,

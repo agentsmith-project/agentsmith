@@ -2,7 +2,7 @@
  * Unit tests for SourcesTable component
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 
@@ -140,17 +140,19 @@ describe('SourcesTable', () => {
   it('should render file sizes in formatted bytes', () => {
     render(<SourcesTable {...defaultProps} />);
 
-    // 2MB, 500KB, 100KB
-    expect(screen.getByText(/2\.00 MB/)).toBeInTheDocument();
-    expect(screen.getByText(/500\.00 KB/)).toBeInTheDocument();
-    expect(screen.getByText(/100\.00 KB/)).toBeInTheDocument();
+    // formatBytes uses 1 decimal place: 2.0 MB, 500.0 KB, 100.0 KB
+    expect(screen.getByText(/2\.0 MB/)).toBeInTheDocument();
+    expect(screen.getByText(/500\.0 KB/)).toBeInTheDocument();
+    expect(screen.getByText(/100\.0 KB/)).toBeInTheDocument();
   });
 
-  it('should render relative time for updated_at', () => {
+  it('should render formatted dates for updated_at', () => {
     render(<SourcesTable {...defaultProps} />);
 
-    // Should show relative time like "2 days ago", "1 day ago", etc.
-    expect(screen.getByText(/ago/)).toBeInTheDocument();
+    // Dates older than 7 days fall back to toLocaleDateString()
+    // e.g. "1/2/2026", "1/3/2026", "1/4/2026"
+    const dateTexts = screen.getAllByText(/2026/);
+    expect(dateTexts.length).toBeGreaterThan(0);
   });
 
   it('should render AI Ready status badges', () => {
@@ -246,7 +248,7 @@ describe('SourcesTable', () => {
   it('should apply compact mode when compact prop is true', () => {
     const { container } = render(<SourcesTable {...defaultProps} compact={true} />);
 
-    const table = container.querySelector('[role="table"]');
+    const table = container.querySelector('table');
     expect(table).toBeInTheDocument();
   });
 
@@ -275,7 +277,7 @@ describe('SourcesTable', () => {
 
     render(<SourcesTable {...defaultProps} data={[smallFile]} />);
 
-    expect(screen.getByText(/512\.00 B/)).toBeInTheDocument();
+    expect(screen.getByText(/512\.0 B/)).toBeInTheDocument();
   });
 
   it('should render different file status badges correctly', () => {

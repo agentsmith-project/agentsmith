@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConversationPanel } from '../ConversationPanel';
 import type { RecipeMessage } from '@/lib/types/recipe';
@@ -29,7 +29,7 @@ vi.mock('../ConversationInput', () => ({
 }));
 
 vi.mock('../MessageList', () => ({
-  MessageList: ({ messages, streamingMessageId, streamingContent, disabled }: any) => (
+  MessageList: ({ messages, streamingMessageId, streamingContent, disabled: _disabled }: any) => (
     <div data-testid="message-list">
       {messages.map((msg: RecipeMessage) => (
         <div key={msg.id} data-testid={`message-${msg.id}`}>

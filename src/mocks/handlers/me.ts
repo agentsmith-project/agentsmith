@@ -10,7 +10,7 @@ function getUnreadCount() {
 export const meHandlers = [
   http.get('/api/v1/me/profile', () => HttpResponse.json(userProfileFixture)),
   http.patch('/api/v1/me/profile', async ({ request }) => {
-    const body = await request.json().catch(() => ({}));
+    const body: any = await request.json().catch(() => ({}));
     Object.assign(userProfileFixture, body);
     return HttpResponse.json(userProfileFixture);
   }),

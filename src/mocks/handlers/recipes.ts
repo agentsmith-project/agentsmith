@@ -34,7 +34,7 @@ export const recipeHandlers = [
     return HttpResponse.json(recipe);
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/recipes', async ({ request, params }) => {
-    const body = await request.json().catch(() => ({}));
+    const body: any = await request.json().catch(() => ({}));
     const now = new Date().toISOString();
     const newRecipe = {
       id: `recipe_${Math.random().toString(36).slice(2, 8)}`,
@@ -59,7 +59,7 @@ export const recipeHandlers = [
     if (!recipe) {
       return HttpResponse.json({ error: 'recipe_not_found' }, { status: 404 });
     }
-    const body = await request.json().catch(() => ({}));
+    const body: any = await request.json().catch(() => ({}));
     Object.assign(recipe, body, { updated_at: new Date().toISOString() });
     return HttpResponse.json(recipe);
   }),
@@ -77,7 +77,7 @@ export const recipeHandlers = [
     if (!recipe) {
       return HttpResponse.json({ error: 'recipe_not_found' }, { status: 404 });
     }
-    const body = await request.json().catch(() => ({}));
+    const body: any = await request.json().catch(() => ({}));
     const sourceIds = Array.isArray(body?.source_ids) ? body.source_ids : [];
     recipe.attached_source_ids = Array.from(new Set([...(recipe.attached_source_ids ?? []), ...sourceIds]));
     recipe.updated_at = new Date().toISOString();
@@ -101,7 +101,7 @@ export const recipeHandlers = [
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/recipes/:id/messages', async ({ request, params }) => {
     const recipeId = params.id as string;
-    const body = await request.json().catch(() => ({}));
+    const body: any = await request.json().catch(() => ({}));
     const now = new Date().toISOString();
     const message = {
       id: `msg_${Math.random().toString(36).slice(2, 8)}`,

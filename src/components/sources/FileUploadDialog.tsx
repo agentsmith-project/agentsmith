@@ -72,6 +72,11 @@ export function FileUploadDialog({
     }));
 
     setFiles((prev) => [...prev, ...newFiles]);
+
+    // Reset the file input so the same file can be re-selected after removal
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleRemoveFile = (index: number) => {
@@ -102,15 +107,15 @@ export function FileUploadDialog({
     }
   };
 
-  const handleClose = () => {
-    if (!uploading) {
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && !uploading) {
       setFiles([]);
       onOpenChange(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Upload Files</DialogTitle>
@@ -195,7 +200,7 @@ export function FileUploadDialog({
 
           {/* Actions */}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={handleClose} disabled={uploading}>
+            <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={uploading}>
               Cancel
             </Button>
             <Button onClick={handleUpload} disabled={files.length === 0 || uploading}>

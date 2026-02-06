@@ -295,7 +295,12 @@
     "acl_add_deny": "添加拒绝",
     "acl_remove_deny": "移除",
     "detail_limits": "限制",
-    "detail_credential": "凭据"
+    "detail_credential": "凭据",
+    "action_edit": "编辑",
+    "delete_confirm_title": "删除端点",
+    "delete_confirm_description": "确定要删除 \"{name}\" 吗？此操作不可撤销。",
+    "delete_confirm_cancel": "取消",
+    "delete_confirm_action": "删除"
   },
   "members": {
     "title": "成员",

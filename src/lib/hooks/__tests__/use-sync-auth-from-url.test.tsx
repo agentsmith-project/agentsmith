@@ -12,32 +12,39 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useSyncAuthFromUrl } from '../use-sync-auth-from-url';
-import { useWorkspaces } from '../use-workspaces';
-import { useProjects } from '../use-projects-queries';
-import { useAuthStoreHydration } from '@/lib/stores/authStore';
 import * as React from 'react';
 
-// Mock next/navigation
+// Use vi.hoisted so these are available inside hoisted vi.mock factories
+const { mockRouter, mockParams } = vi.hoisted(() => ({
+  mockRouter: {
+    replace: vi.fn(),
+    push: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    pathname: '/',
+    query: {},
+  },
+  mockParams: {
+    workspace: undefined as string | undefined,
+    project: undefined as string | undefined,
+  },
+}));
+
+// Mock next/navigation (useParams is imported directly from here)
 vi.mock('next/navigation', () => ({
   useRouter: () => mockRouter,
   useParams: () => mockParams,
   usePathname: () => '/',
 }));
 
-const mockRouter = {
-  replace: vi.fn(),
-  push: vi.fn(),
-  prefetch: vi.fn(),
-  back: vi.fn(),
-  pathname: '/',
-  query: {},
-};
-
-const mockParams = {
-  workspace: undefined as string | undefined,
-  project: undefined as string | undefined,
-};
+// Mock @/lib/i18n/routing (useRouter is imported from here, not next/navigation)
+vi.mock('@/lib/i18n/routing', () => ({
+  useRouter: () => mockRouter,
+  usePathname: () => '/',
+  Link: 'a',
+  redirect: vi.fn(),
+  routing: { locales: ['en-US', 'zh-CN'], defaultLocale: 'en-US' },
+}));
 
 // Mock hooks
 vi.mock('../use-workspaces', () => ({
@@ -51,6 +58,11 @@ vi.mock('../use-projects-queries', () => ({
 vi.mock('@/lib/stores/authStore', () => ({
   useAuthStoreHydration: vi.fn(),
 }));
+
+import { useSyncAuthFromUrl } from '../use-sync-auth-from-url';
+import { useWorkspaces } from '../use-workspaces';
+import { useProjects } from '../use-projects-queries';
+import { useAuthStoreHydration } from '@/lib/stores/authStore';
 
 // Test data
 const mockWorkspaces = [

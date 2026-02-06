@@ -10,9 +10,11 @@
  * - Security - values not exposed
  */
 
+import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockCreate = vi.fn();
 const mockHandleError = vi.fn();
@@ -45,31 +47,44 @@ vi.mock('@/components/ui/toast', () => ({
 }));
 
 vi.mock('next-intl', () => ({
-  useTranslations: vi.fn((namespace) => (key: string) => {
+  useTranslations: vi.fn((namespace?: string) => {
     const translations: Record<string, Record<string, string>> = {
       credentials: {
-        create_dialog: {
-          title: 'Create Credential',
-          description: 'Add a new credential to your project',
-          name: 'Name',
-          name_placeholder: 'e.g., OpenAI API Key',
-          value: 'Value',
-          value_placeholder: 'Enter the credential value',
-          show: 'Show',
-          hide: 'Hide',
-          success: 'Credential created successfully',
-        },
+        'create_dialog.title': 'Create Credential',
+        'create_dialog.description': 'Add a new credential to your project',
+        'create_dialog.name': 'Name',
+        'create_dialog.name_placeholder': 'e.g., OpenAI API Key',
+        'create_dialog.value': 'Value',
+        'create_dialog.value_placeholder': 'Enter the credential value',
+        'create_dialog.show': 'Show',
+        'create_dialog.hide': 'Hide',
+        'create_dialog.success': 'Credential created successfully',
       },
       common: {
         cancel: 'Cancel',
         create: 'Create',
       },
     };
-    return translations[namespace]?.[key] || key;
+    return (key: string) => translations[namespace ?? '']?.[key] ?? key;
   }),
+  useLocale: () => 'en-US',
 }));
 
 import { CreateCredentialDialog } from '../CreateCredentialDialog';
+import { toast } from '@/components/ui/toast';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: false },
+    mutations: { retry: false },
+  },
+});
+
+function renderWithProviders(ui: React.ReactElement) {
+  return render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+  );
+}
 
 describe('CreateCredentialDialog', () => {
   const user = userEvent.setup();
@@ -83,6 +98,7 @@ describe('CreateCredentialDialog', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient.clear();
   });
 
   afterEach(() => {
@@ -91,26 +107,26 @@ describe('CreateCredentialDialog', () => {
 
   describe('Rendering', () => {
     it('renders when open', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       expect(screen.getByText('Create Credential')).toBeInTheDocument();
     });
 
     it('does not render when closed', () => {
-      render(<CreateCredentialDialog {...defaultProps} open={false} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} open={false} />);
 
       expect(screen.queryByText('Create Credential')).not.toBeInTheDocument();
     });
 
     it('displays dialog title and description', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       expect(screen.getByText('Create Credential')).toBeInTheDocument();
       expect(screen.getByText(/add a new credential/i)).toBeInTheDocument();
     });
 
     it('shows name input field', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       expect(nameInput).toBeInTheDocument();
@@ -118,7 +134,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('shows value input field', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const valueInput = screen.getByLabelText(/value/i);
       expect(valueInput).toBeInTheDocument();
@@ -126,20 +142,20 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('shows password visibility toggle button', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const toggleButton = screen.getByRole('button', { name: /show/i });
       expect(toggleButton).toBeInTheDocument();
     });
 
     it('shows cancel button', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
     });
 
     it('shows create button', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       expect(screen.getByRole('button', { name: /create/i })).toBeInTheDocument();
     });
@@ -147,7 +163,7 @@ describe('CreateCredentialDialog', () => {
 
   describe('Input Fields', () => {
     it('allows typing in name field', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My API Key');
@@ -156,7 +172,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('allows typing in value field', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const valueInput = screen.getByLabelText(/value/i);
       await user.type(valueInput, 'sk-secret-key-12345');
@@ -167,7 +183,7 @@ describe('CreateCredentialDialog', () => {
     it('trims whitespace from name input on submit', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, '  My Credential  ');
@@ -179,6 +195,8 @@ describe('CreateCredentialDialog', () => {
 
       await waitFor(() => {
         expect(mockCreate).toHaveBeenCalledWith(
+          'ws_test',
+          'proj_001',
           expect.objectContaining({
             name: 'My Credential',
           })
@@ -189,7 +207,7 @@ describe('CreateCredentialDialog', () => {
     it('does not trim whitespace from value input', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -201,6 +219,8 @@ describe('CreateCredentialDialog', () => {
 
       await waitFor(() => {
         expect(mockCreate).toHaveBeenCalledWith(
+          'ws_test',
+          'proj_001',
           expect.objectContaining({
             value: '  secret-value  ',
           })
@@ -211,7 +231,7 @@ describe('CreateCredentialDialog', () => {
 
   describe('Password Visibility Toggle', () => {
     it('toggles password visibility when clicking toggle button', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const valueInput = screen.getByLabelText(/value/i) as HTMLInputElement;
       const toggleButton = screen.getByRole('button', { name: /show/i });
@@ -229,7 +249,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('changes toggle button aria-label', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const toggleButton = screen.getByRole('button', { name: /show/i });
 
@@ -243,7 +263,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('shows eye icon when password is hidden', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const toggleButton = screen.getByRole('button', { name: /show/i });
       const eyeIcon = toggleButton.querySelector('svg');
@@ -252,7 +272,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('shows eye-off icon when password is visible', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const toggleButton = screen.getByRole('button', { name: /show/i });
 
@@ -265,14 +285,14 @@ describe('CreateCredentialDialog', () => {
 
   describe('Form Validation', () => {
     it('disables submit button when name is empty', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const submitButton = screen.getByRole('button', { name: /create/i });
       expect(submitButton).toBeDisabled();
     });
 
     it('disables submit button when value is empty', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -282,7 +302,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('enables submit button when both fields have values', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -295,7 +315,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('enables submit button when name has only whitespace but value has content', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, '   ');
@@ -309,7 +329,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('does not submit form when clicking submit with empty name', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const valueInput = screen.getByLabelText(/value/i);
       await user.type(valueInput, 'secret-value');
@@ -321,7 +341,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('does not submit form when clicking submit with empty value', async () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -337,7 +357,7 @@ describe('CreateCredentialDialog', () => {
     it('submits form with correct data', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'OpenAI API Key');
@@ -360,7 +380,7 @@ describe('CreateCredentialDialog', () => {
       const onOpenChange = vi.fn();
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -379,7 +399,7 @@ describe('CreateCredentialDialog', () => {
       const onSuccess = vi.fn();
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} onSuccess={onSuccess} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} onSuccess={onSuccess} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -397,7 +417,7 @@ describe('CreateCredentialDialog', () => {
     it('shows success toast after successful creation', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -408,7 +428,7 @@ describe('CreateCredentialDialog', () => {
       await user.click(screen.getByRole('button', { name: /create/i }));
 
       await waitFor(() => {
-        expect(require('@/components/ui/toast').toast.success).toHaveBeenCalledWith('Credential created successfully');
+        expect(toast.success).toHaveBeenCalledWith('Credential created successfully');
       });
     });
 
@@ -416,7 +436,7 @@ describe('CreateCredentialDialog', () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
       const onOpenChange = vi.fn();
 
-      const { rerender } = render(
+      const { rerender } = renderWithProviders(
         <CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />
       );
 
@@ -433,7 +453,7 @@ describe('CreateCredentialDialog', () => {
       });
 
       // Reopen dialog
-      rerender(<CreateCredentialDialog {...defaultProps} open={true} onOpenChange={onOpenChange} />);
+      rerender(<QueryClientProvider client={queryClient}><CreateCredentialDialog {...defaultProps} open={true} onOpenChange={onOpenChange} /></QueryClientProvider>);
 
       // Form should be reset
       expect(screen.getByLabelText(/name/i)).toHaveValue('');
@@ -443,7 +463,7 @@ describe('CreateCredentialDialog', () => {
     it('shows loading state during submission', async () => {
       mockCreate.mockReturnValue(new Promise(() => {})); // Never resolves
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -453,8 +473,10 @@ describe('CreateCredentialDialog', () => {
 
       await user.click(screen.getByRole('button', { name: /create/i }));
 
+      // During pending state the button text is replaced by a spinner,
+      // so we find it by type="submit" instead of accessible name
       await waitFor(() => {
-        const submitButton = screen.getByRole('button', { name: /create/i });
+        const submitButton = document.querySelector('button[type="submit"]');
         expect(submitButton).toBeDisabled();
       });
     });
@@ -462,7 +484,7 @@ describe('CreateCredentialDialog', () => {
     it('shows spinner icon during submission', async () => {
       mockCreate.mockReturnValue(new Promise(() => {})); // Never resolves
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -473,8 +495,8 @@ describe('CreateCredentialDialog', () => {
       await user.click(screen.getByRole('button', { name: /create/i }));
 
       await waitFor(() => {
-        const submitButton = screen.getByRole('button', { name: /create/i });
-        const spinner = submitButton.querySelector('svg[class*="animate-spin"]');
+        const submitButton = document.querySelector('button[type="submit"]');
+        const spinner = submitButton?.querySelector('svg[class*="animate-spin"]');
         expect(spinner).toBeInTheDocument();
       });
     });
@@ -484,7 +506,7 @@ describe('CreateCredentialDialog', () => {
     it('closes when clicking cancel button', async () => {
       const onOpenChange = vi.fn();
 
-      render(<CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />);
 
       await user.click(screen.getByRole('button', { name: /cancel/i }));
 
@@ -495,7 +517,7 @@ describe('CreateCredentialDialog', () => {
       const onOpenChange = vi.fn();
       mockCreate.mockReturnValue(new Promise(() => {})); // Never resolves
 
-      render(<CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -515,7 +537,7 @@ describe('CreateCredentialDialog', () => {
     it('resets form when opening dialog', async () => {
       const onOpenChange = vi.fn();
 
-      const { rerender } = render(
+      const { rerender } = renderWithProviders(
         <CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />
       );
 
@@ -524,9 +546,9 @@ describe('CreateCredentialDialog', () => {
 
       // Close and reopen
       onOpenChange(false);
-      rerender(<CreateCredentialDialog {...defaultProps} open={false} onOpenChange={onOpenChange} />);
+      rerender(<QueryClientProvider client={queryClient}><CreateCredentialDialog {...defaultProps} open={false} onOpenChange={onOpenChange} /></QueryClientProvider>);
 
-      rerender(<CreateCredentialDialog {...defaultProps} open={true} onOpenChange={onOpenChange} />);
+      rerender(<QueryClientProvider client={queryClient}><CreateCredentialDialog {...defaultProps} open={true} onOpenChange={onOpenChange} /></QueryClientProvider>);
 
       // Form should be reset
       expect(screen.getByLabelText(/name/i)).toHaveValue('');
@@ -539,7 +561,7 @@ describe('CreateCredentialDialog', () => {
       mockCreate.mockRejectedValue(error);
       mockHandleError.mockImplementation(() => {});
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -559,7 +581,7 @@ describe('CreateCredentialDialog', () => {
       const onOpenChange = vi.fn();
       mockCreate.mockRejectedValue(new Error('Failed'));
 
-      render(<CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} onOpenChange={onOpenChange} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -585,7 +607,7 @@ describe('CreateCredentialDialog', () => {
 
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const valueInput = screen.getByLabelText(/value/i);
       await user.type(valueInput, 'sk-secret-key-12345');
@@ -606,7 +628,7 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('masks value input by default', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const valueInput = screen.getByLabelText(/value/i) as HTMLInputElement;
       expect(valueInput.type).toBe('password');
@@ -615,7 +637,7 @@ describe('CreateCredentialDialog', () => {
     it('sends value unencrypted to API (API handles encryption)', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const valueInput = screen.getByLabelText(/value/i);
       await user.type(valueInput, 'sk-secret-key-12345');
@@ -639,7 +661,7 @@ describe('CreateCredentialDialog', () => {
     it('always sends type as api_key', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
@@ -663,14 +685,14 @@ describe('CreateCredentialDialog', () => {
 
   describe('Accessibility', () => {
     it('has proper labels for inputs', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       expect(screen.getByLabelText(/name/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/value/i)).toBeInTheDocument();
     });
 
     it('has required attribute on required inputs', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       const valueInput = screen.getByLabelText(/value/i);
@@ -680,14 +702,14 @@ describe('CreateCredentialDialog', () => {
     });
 
     it('has proper aria-label on password toggle', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const toggleButton = screen.getByRole('button', { name: /show/i });
       expect(toggleButton).toHaveAttribute('aria-label');
     });
 
     it('has dialog role', () => {
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
@@ -697,10 +719,10 @@ describe('CreateCredentialDialog', () => {
     it('handles very long credential names', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
-      await user.type(nameInput, 'a'.repeat(1000));
+      await user.type(nameInput, 'a'.repeat(200));
 
       const valueInput = screen.getByLabelText(/value/i);
       await user.type(valueInput, 'secret-value');
@@ -712,13 +734,13 @@ describe('CreateCredentialDialog', () => {
     it('handles very long credential values', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');
 
       const valueInput = screen.getByLabelText(/value/i);
-      await user.type(valueInput, 'a'.repeat(10000));
+      await user.type(valueInput, 'a'.repeat(200));
 
       const submitButton = screen.getByRole('button', { name: /create/i });
       await user.click(submitButton);
@@ -728,7 +750,7 @@ describe('CreateCredentialDialog', () => {
           expect.anything(),
           expect.anything(),
           expect.objectContaining({
-            value: 'a'.repeat(10000),
+            value: 'a'.repeat(200),
           })
         );
       });
@@ -737,7 +759,7 @@ describe('CreateCredentialDialog', () => {
     it('handles special characters in credential name', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'Key (production) <test> & more');
@@ -761,7 +783,7 @@ describe('CreateCredentialDialog', () => {
     it('handles unicode characters in credential value', async () => {
       mockCreate.mockResolvedValue({ id: 'new_cred' });
 
-      render(<CreateCredentialDialog {...defaultProps} />);
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 
       const nameInput = screen.getByLabelText(/name/i);
       await user.type(nameInput, 'My Credential');

@@ -20,6 +20,16 @@ import { CreateEndpointDialog } from '@/components/endpoints/CreateEndpointDialo
 import { EditEndpointDialog } from '@/components/endpoints/EditEndpointDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface EndpointsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -34,7 +44,8 @@ function createEndpointColumns(
   t: (key: string) => string,
   deleteEndpointMutation: DeleteEndpointMutation,
   updateEndpointMutation: UpdateEndpointMutation,
-  onEdit: (endpoint: Endpoint) => void
+  onEdit: (endpoint: Endpoint) => void,
+  onDeleteRequest: (endpoint: Endpoint) => void,
 ) {
   return [
   columnHelper.accessor('name', {
@@ -130,9 +141,11 @@ function createEndpointColumns(
           )}
         </button>
         <button
-          onClick={() => deleteEndpointMutation.mutate(info.row.original.id)}
+          onClick={() => onDeleteRequest(info.row.original)}
           disabled={deleteEndpointMutation.isPending}
           className="p-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
+          aria-label={t('action_delete')}
+          title={t('action_delete')}
         >
           <Trash2 className="w-4 h-4" />
         </button>
@@ -149,6 +162,8 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [endpointToDelete, setEndpointToDelete] = useState<Endpoint | null>(null);
 
 
   useEffect(() => {
@@ -187,6 +202,19 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
 
   const endpoints = endpointsData?.items || [];
 
+  const handleDeleteRequest = (endpoint: Endpoint) => {
+    setEndpointToDelete(endpoint);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (endpointToDelete) {
+      deleteEndpointMutation.mutate(endpointToDelete.id);
+    }
+    setDeleteConfirmOpen(false);
+    setEndpointToDelete(null);
+  };
+
   const endpointColumns = createEndpointColumns(
     t,
     deleteEndpointMutation,
@@ -194,7 +222,8 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     (endpoint) => {
       setSelectedEndpoint(endpoint);
       setEditDialogOpen(true);
-    }
+    },
+    handleDeleteRequest,
   );
 
   const table = useReactTable({
@@ -268,6 +297,29 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
               }}
             />
           )}
+
+          <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('delete_confirm_title')}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t('delete_confirm_description', { name: endpointToDelete?.name || '' })}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleDeleteConfirm();
+                  }}
+                  className="bg-error text-white hover:bg-error/90"
+                >
+                  {t('delete_confirm_action')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </PageLayout>
     </PageState>

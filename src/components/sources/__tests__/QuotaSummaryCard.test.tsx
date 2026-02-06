@@ -32,8 +32,8 @@ describe('QuotaSummaryCard', () => {
   it('should display storage quota with used and limit values', () => {
     render(<QuotaSummaryCard quota={mockQuota} />);
 
-    const storageText = screen.getByText(/MB/);
-    expect(storageText).toBeInTheDocument();
+    const mbTexts = screen.getAllByText(/MB/);
+    expect(mbTexts.length).toBeGreaterThan(0);
   });
 
   it('should display docdb quota with used and limit values', () => {

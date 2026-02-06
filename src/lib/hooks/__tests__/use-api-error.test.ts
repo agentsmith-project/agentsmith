@@ -27,7 +27,7 @@ vi.mock('@/components/ui/toast', () => ({
 
 // The global setup.ts already mocks next-intl, but we override for specific translations
 vi.mock('next-intl', () => ({
-  useTranslations: (namespace: string) => (key: string) => {
+  useTranslations: (_namespace: string) => (key: string) => {
     // The hook uses useTranslations('errors'), so key will be like 'badRequest.title'
     const translations: Record<string, string> = {
       'badRequest.title': 'Invalid Request',

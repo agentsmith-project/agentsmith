@@ -1,12 +1,14 @@
 'use client';
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle } from 'lucide-react';
 import { EndpointDenyDialog } from './ResourceACLEditor/EndpointDenyDialog';
 import { useResourceACL, useUpdateResourceACL } from '@/lib/hooks/use-members';
 import { getApiClient, EndpointAPI } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 import type { Endpoint } from '@/lib/api/types';
 
 export interface ResourceACLEditorProps {
@@ -27,26 +29,22 @@ export function ResourceACLEditor({
   onCancel,
 }: ResourceACLEditorProps) {
   const t = useTranslations('members.acl');
-  const [endpoints, setEndpoints] = React.useState<Endpoint[]>([]);
-  const [loading, setLoading] = React.useState(true);
   const [selectedEndpoint, setSelectedEndpoint] = React.useState<Endpoint | null>(null);
   const [endpointDenyDialogOpen, setEndpointDenyDialogOpen] = React.useState(false);
 
-  React.useEffect(() => {
-    const fetchResources = async () => {
-      try {
-        const endpointAPI = new EndpointAPI(getApiClient());
-        const endpointsResponse = await endpointAPI.list(workspaceId, projectId);
-        setEndpoints(endpointsResponse.items || []);
-        setLoading(false);
-      } catch (error) {
-        console.error('Failed to fetch resources:', error);
-        setLoading(false);
-      }
-    };
+  // Use React Query instead of imperative useEffect fetch.
+  // Provides automatic caching, deduplication, cleanup on unmount,
+  // and correct data when workspaceId/projectId change.
+  const { data: endpointsData, isLoading: loading } = useQuery({
+    queryKey: queryKeys.endpoints.list(workspaceId, projectId),
+    queryFn: async () => {
+      const endpointAPI = new EndpointAPI(getApiClient());
+      return endpointAPI.list(workspaceId, projectId);
+    },
+    enabled: !!workspaceId && !!projectId,
+  });
 
-    fetchResources();
-  }, [workspaceId, projectId]);
+  const endpoints = endpointsData?.items || [];
 
   const handleEndpointDeny = (endpoint: Endpoint) => {
     setSelectedEndpoint(endpoint);

@@ -109,9 +109,9 @@ export function CreateProjectDialog({
   };
 
   const handleOpenChange = (next: boolean) => {
-    if (!next && !createMutation.isPending) {
-      onCancel?.();
-    }
+    // Prevent closing while mutation is in-flight
+    if (!next && createMutation.isPending) return;
+    if (!next) onCancel?.();
     onOpenChange(next);
   };
 

@@ -40,15 +40,28 @@ export function QuotaOverridesEditor({
   const [overrides, setOverrides] = React.useState<QuotaOverride>(initialOverrides || {});
   const [hasChanges, setHasChanges] = React.useState(false);
 
+  // Sync state when initialOverrides changes (e.g. switching members).
+  // Uses JSON comparison to avoid unnecessary resets from object identity changes.
+  const initialOverridesJson = JSON.stringify(initialOverrides || {});
   React.useEffect(() => {
-    onOverridesChange?.(overrides);
-  }, [overrides, onOverridesChange]);
+    setOverrides(initialOverrides || {});
+    setHasChanges(false);
+  }, [initialOverridesJson]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Notify parent of overrides changes via a stable ref to prevent
+  // re-render loops when the parent passes a non-memoized callback.
+  const onOverridesChangeRef = React.useRef(onOverridesChange);
+  onOverridesChangeRef.current = onOverridesChange;
+
+  React.useEffect(() => {
+    onOverridesChangeRef.current?.(overrides);
+  }, [overrides]);
 
   // Calculate changes
   React.useEffect(() => {
-    const hasAnyChanges = JSON.stringify(overrides) !== JSON.stringify(initialOverrides || {});
+    const hasAnyChanges = JSON.stringify(overrides) !== initialOverridesJson;
     setHasChanges(hasAnyChanges);
-  }, [overrides, initialOverrides]);
+  }, [overrides, initialOverridesJson]);
 
   const handleOverrideChange = React.useCallback((
     path: string[],

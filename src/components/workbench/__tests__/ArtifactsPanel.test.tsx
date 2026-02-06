@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ArtifactsPanel } from '../ArtifactsPanel';
 import type { Artifact } from '@/lib/types/recipe';
@@ -11,8 +11,8 @@ import type { Artifact } from '@/lib/types/recipe';
 vi.mock('@/components/ui/loading', () => ({
   EmptyState: ({ title, description }: any) => (
     <div data-testid="empty-state">
-      <div data-empty-title>{title}</div>
-      <div data-empty-description>{description}</div>
+      <div data-testid="empty-title">{title}</div>
+      <div data-testid="empty-description">{description}</div>
     </div>
   ),
 }));
@@ -169,7 +169,7 @@ describe('ArtifactsPanel', () => {
     });
 
     it('filters artifacts by type', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       renderComponent();
 
       // This test is basic - actual filter interaction would require more setup

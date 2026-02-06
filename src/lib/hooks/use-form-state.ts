@@ -120,7 +120,7 @@ export function useFormState<TValues extends Record<string, unknown>>(
   // Stable key for deep comparison of initialValues
   const initialValuesKey = React.useMemo(
     () => JSON.stringify(initialValues),
-    [initialValues] // eslint-disable-line react-hooks/exhaustive-deps
+    [initialValues]
   );
 
   // Reset form when dialog opens

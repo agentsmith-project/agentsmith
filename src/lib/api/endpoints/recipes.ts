@@ -205,12 +205,14 @@ export class RecipeAPI {
   }
 
   /**
-   * Get SSE URL for real-time updates
+   * Get SSE URL for real-time updates.
+   *
+   * Returns the bare endpoint URL without auth parameters.
+   * Authentication is handled by `createAuthenticatedSSE` from sse-client.ts
+   * which adds a unified `?ticket=` parameter.
    */
   getSSEUrl(workspaceId: string, projectId: string, recipeId: string): string {
-    const token = this.client.getToken();
-    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
-    return `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/recipes/${recipeId}/events${tokenParam}`;
+    return `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/recipes/${recipeId}/events`;
   }
 }
 

@@ -2,8 +2,8 @@
  * Tests for MessageItem component
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MessageItem } from '../MessageItem';
 import type { RecipeMessage } from '@/lib/types/recipe';
@@ -51,13 +51,20 @@ describe('MessageItem', () => {
     created_at: '2024-01-01T14:31:00Z',
   };
 
+  const writeTextMock = vi.fn().mockResolvedValue(undefined);
+
+  beforeAll(() => {
+    // Mock clipboard API once (navigator.clipboard is read-only, use defineProperty)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock, readText: vi.fn() },
+      writable: true,
+      configurable: true,
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock clipboard API
-    global.navigator.clipboard = {
-      writeText: vi.fn().mockResolvedValue(undefined),
-      readText: vi.fn(),
-    } as any;
+    writeTextMock.mockResolvedValue(undefined);
   });
 
   const renderComponent = (message: RecipeMessage, props = {}) => {
@@ -133,7 +140,7 @@ describe('MessageItem', () => {
       expect(skeletonElements.length).toBeGreaterThan(0);
     });
 
-    it('shows placeholder when streaming content is empty string', () => {
+    it('shows loading skeleton when streaming content is whitespace-only', () => {
       render(
         <MessageItem
           message={mockAgentMessage}
@@ -141,7 +148,9 @@ describe('MessageItem', () => {
         />
       );
 
-      expect(screen.getByTestId('markdown-content')).toHaveTextContent('…');
+      // Whitespace-only trims to empty, so skeleton is shown
+      const skeletonElements = document.querySelectorAll('.animate-pulse');
+      expect(skeletonElements.length).toBeGreaterThan(0);
     });
 
     it('does not show loading state when not streaming', () => {
@@ -161,13 +170,14 @@ describe('MessageItem', () => {
     });
 
     it('copies message content to clipboard', async () => {
-      const user = userEvent.setup();
       renderComponent(mockUserMessage);
 
       const copyButton = screen.getByTitle('Copy');
-      await user.click(copyButton);
+      fireEvent.click(copyButton);
 
-      expect(global.navigator.clipboard.writeText).toHaveBeenCalledWith('Hello, this is a user message');
+      await waitFor(() => {
+        expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Hello, this is a user message');
+      });
     });
 
     it('shows success toast after successful copy', async () => {
@@ -186,7 +196,9 @@ describe('MessageItem', () => {
       const user = userEvent.setup();
       const { toast } = await import('@/components/ui/toast');
 
-      global.navigator.clipboard.writeText = vi.fn().mockRejectedValue(new Error('Copy failed'));
+      // Replace writeText with a rejecting mock directly on the clipboard object
+      const failingWriteText = vi.fn().mockRejectedValue(new Error('Copy failed'));
+      (navigator.clipboard as any).writeText = failingWriteText;
 
       renderComponent(mockUserMessage);
 
@@ -194,6 +206,9 @@ describe('MessageItem', () => {
       await user.click(copyButton);
 
       expect(toast.error).toHaveBeenCalledWith('Failed to copy');
+
+      // Restore the original mock
+      (navigator.clipboard as any).writeText = writeTextMock;
     });
 
     it('disables copy button when disabled', () => {
@@ -210,10 +225,15 @@ describe('MessageItem', () => {
   });
 
   describe('Timestamp Display', () => {
+    // Helper: compute expected time using the same logic as the component
+    const expectedTime = (iso: string) =>
+      new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     it('displays formatted time for message', () => {
       renderComponent(mockUserMessage);
 
-      const timeElement = screen.getByText(/14:30/);
+      const expected = expectedTime(mockUserMessage.created_at);
+      const timeElement = screen.getByText(expected);
       expect(timeElement).toBeInTheDocument();
     });
 
@@ -225,7 +245,8 @@ describe('MessageItem', () => {
 
       renderComponent(message);
 
-      const timeElement = screen.getByText(/09:05/);
+      const expected = expectedTime(message.created_at);
+      const timeElement = screen.getByText(expected);
       expect(timeElement).toBeInTheDocument();
     });
 
@@ -237,7 +258,8 @@ describe('MessageItem', () => {
 
       renderComponent(message);
 
-      const timeElement = screen.getByText(/23:59/);
+      const expected = expectedTime(message.created_at);
+      const timeElement = screen.getByText(expected);
       expect(timeElement).toBeInTheDocument();
     });
   });
@@ -276,7 +298,7 @@ describe('MessageItem', () => {
     it('passes content to Markdown component', () => {
       renderComponent(mockAgentMessage);
 
-      expect(screen.getByTestId('markdown-content')).toHaveTextContent(/markdown support/);
+      expect(screen.getByTestId('markdown-content')).toHaveTextContent(/\*\*markdown\*\* support/);
     });
 
     it('renders markdown content correctly', () => {

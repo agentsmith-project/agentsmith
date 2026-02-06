@@ -53,25 +53,35 @@ export function AuditFilters({
   defaultEndUserId,
 }: AuditFiltersProps) {
   const debounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Use a ref to always read the latest filters in debounced callbacks
+  const filtersRef = React.useRef(filters);
+  filtersRef.current = filters;
 
   const handleTimeRangeChange = (range: TimeRange) => {
     onChange({
-      ...filters,
+      ...filtersRef.current,
       start_time: range.start_time,
       end_time: range.end_time,
     });
   };
 
-  const handleFilterChange = (key: keyof AuditListParams, value: string | undefined) => {
-    // Clear existing debounce timer
+  /** Immediate change — for Select dropdowns that should apply instantly */
+  const handleSelectFilterChange = (key: keyof AuditListParams, value: string | undefined) => {
+    onChange({
+      ...filtersRef.current,
+      [key]: value || undefined,
+    });
+  };
+
+  /** Debounced change — for text inputs that need a typing delay */
+  const handleTextFilterChange = (key: keyof AuditListParams, value: string | undefined) => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
-    // Set new debounce timer
     debounceTimerRef.current = setTimeout(() => {
       onChange({
-        ...filters,
+        ...filtersRef.current,
         [key]: value || undefined,
       });
       debounceTimerRef.current = null;
@@ -124,7 +134,7 @@ export function AuditFilters({
             <label className="text-xs text-tertiary mb-1 block">Action</label>
             <Select
               value={filters.action || 'all'}
-              onValueChange={(value) => handleFilterChange('action', value === 'all' ? undefined : value)}
+              onValueChange={(value) => handleSelectFilterChange('action', value === 'all' ? undefined : value)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="All actions" />
@@ -144,7 +154,7 @@ export function AuditFilters({
             <label className="text-xs text-tertiary mb-1 block">Actor Type</label>
             <Select
               value={filters.actor_type || 'all'}
-              onValueChange={(value) => handleFilterChange('actor_type', value === 'all' ? undefined : value as 'user' | 'agent' | 'plugin')}
+              onValueChange={(value) => handleSelectFilterChange('actor_type', value === 'all' ? undefined : value as 'user' | 'agent' | 'plugin')}
             >
               <SelectTrigger>
                 <SelectValue placeholder="All types" />
@@ -163,7 +173,7 @@ export function AuditFilters({
             <Input
               placeholder="Filter by actor ID..."
               value={filters.actor_id || ''}
-              onChange={(e) => handleFilterChange('actor_id', e.target.value || undefined)}
+              onChange={(e) => handleTextFilterChange('actor_id', e.target.value || undefined)}
             />
           </div>
 
@@ -172,7 +182,7 @@ export function AuditFilters({
             <Input
               placeholder="Filter by end user ID..."
               value={filters.end_user_id || defaultEndUserId || ''}
-              onChange={(e) => handleFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
+              onChange={(e) => handleTextFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
               disabled={!!defaultEndUserId} // Lock for project-user
             />
           </div>
@@ -181,7 +191,7 @@ export function AuditFilters({
             <label className="text-xs text-tertiary mb-1 block">Resource Type</label>
             <Select
               value={filters.resource_type || 'all'}
-              onValueChange={(value) => handleFilterChange('resource_type', value === 'all' ? undefined : value)}
+              onValueChange={(value) => handleSelectFilterChange('resource_type', value === 'all' ? undefined : value)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="All types" />
@@ -202,7 +212,7 @@ export function AuditFilters({
             <Input
               placeholder="Filter by resource ID..."
               value={filters.resource_id || ''}
-              onChange={(e) => handleFilterChange('resource_id', e.target.value || undefined)}
+              onChange={(e) => handleTextFilterChange('resource_id', e.target.value || undefined)}
             />
           </div>
 
@@ -210,7 +220,7 @@ export function AuditFilters({
             <label className="text-xs text-tertiary mb-1 block">Result</label>
             <Select
               value={filters.result || 'all'}
-              onValueChange={(value) => handleFilterChange('result', value === 'all' ? undefined : value as 'ok' | 'error')}
+              onValueChange={(value) => handleSelectFilterChange('result', value === 'all' ? undefined : value as 'ok' | 'error')}
             >
               <SelectTrigger>
                 <SelectValue placeholder="All results" />

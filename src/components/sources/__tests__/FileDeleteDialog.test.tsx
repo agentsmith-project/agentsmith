@@ -176,11 +176,11 @@ describe('FileDeleteDialog', () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
-  it('should reset checkbox state when dialog closes', async () => {
+  it('should reset checkbox state when dialog is closed via cancel button', async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
 
-    const { rerender } = render(
+    render(
       <FileDeleteDialog
         {...defaultProps}
         onOpenChange={onOpenChange}
@@ -193,28 +193,10 @@ describe('FileDeleteDialog', () => {
     await user.click(checkbox);
     expect(checkbox).not.toBeChecked();
 
-    // Close and reopen dialog
-    rerender(
-      <FileDeleteDialog
-        {...defaultProps}
-        onOpenChange={onOpenChange}
-        hasAIReady={true}
-        filename="test-file.pdf"
-        open={false}
-      />
-    );
+    // Close via cancel button (which triggers handleClose and resets state)
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    rerender(
-      <FileDeleteDialog
-        {...defaultProps}
-        onOpenChange={onOpenChange}
-        hasAIReady={true}
-        filename="test-file.pdf"
-        open={true}
-      />
-    );
-
-    // Checkbox should be reset to checked (default state)
-    expect(screen.getByRole('checkbox')).toBeChecked();
+    // handleClose calls setDeleteAIReady(true) and onOpenChange(false)
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

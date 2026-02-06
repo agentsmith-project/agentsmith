@@ -2,8 +2,8 @@
  * Unit tests for SourcesPage compound component
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 
 // Mock use-sources-list hook
@@ -86,12 +86,74 @@ vi.mock('next-intl', () => ({
 }));
 
 import { SourcesPage } from '../SourcesPage';
+import { useSourcesList } from '@/lib/hooks/use-sources-list';
+
+const mockUseSourcesList = vi.mocked(useSourcesList);
 
 describe('SourcesPage', () => {
   const defaultProps = {
     workspaceId: 'ws_test',
     projectId: 'proj_test',
   };
+
+  // Reset mock to default before each test to avoid state bleed
+  beforeEach(() => {
+    mockUseSourcesList.mockReset();
+    mockUseSourcesList.mockReturnValue({
+      quotaData: {
+        storage: { used: 1024, limit: 10240 },
+        docdb: { used: 512, limit: 5120 },
+        vectordb: { used: 256, limit: 2560 },
+      },
+      quotaLoading: false,
+      items: [],
+      total: 0,
+      sourcesLoading: false,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+      hasNext: false,
+      hasPrev: false,
+      handlePageChange: vi.fn(),
+      setPage: vi.fn(),
+      search: '',
+      status: 'all',
+      aiReadyOnly: false,
+      sortBy: 'updated_at',
+      sortOrder: 'desc',
+      setSearch: vi.fn(),
+      setStatus: vi.fn(),
+      setAIReadyOnly: vi.fn(),
+      setSortBy: vi.fn(),
+      setSortOrder: vi.fn(),
+      selectedFileIds: [],
+      allSelected: false,
+      someSelected: false,
+      setSelectedFileIds: vi.fn(),
+      handleToggleSelection: vi.fn(),
+      handleToggleAll: vi.fn(),
+      clearSelection: vi.fn(),
+      uploadDialogOpen: false,
+      deleteDialogOpen: false,
+      filesToDelete: null,
+      setUploadDialogOpen: vi.fn(),
+      setDeleteDialogOpen: vi.fn(),
+      setFilesToDelete: vi.fn(),
+      uploadProgress: {},
+      uploadErrors: {},
+      uploading: false,
+      deleting: false,
+      batchStartPending: false,
+      batchCancelPending: false,
+      quotaStatus: { canStart: true, exceededTypes: [] },
+      handleUpload: vi.fn(),
+      handleDeleteClick: vi.fn(),
+      handleConfirmDelete: vi.fn(),
+      handleBatchStartAIReady: vi.fn(),
+      handleBatchCancelAIReady: vi.fn(),
+      handleDownload: vi.fn(),
+    } as any);
+  });
 
   it('should render main structure', () => {
     render(<SourcesPage {...defaultProps} />);
@@ -111,8 +173,8 @@ describe('SourcesPage', () => {
   it('should render upload button', () => {
     render(<SourcesPage {...defaultProps} />);
 
-    const uploadButton = screen.getByRole('button', { name: /Upload/i });
-    expect(uploadButton).toBeInTheDocument();
+    const uploadButtons = screen.getAllByRole('button', { name: /Upload/i });
+    expect(uploadButtons.length).toBeGreaterThan(0);
   });
 
   it('should render search input', () => {
@@ -134,9 +196,7 @@ describe('SourcesPage', () => {
     const user = userEvent.setup();
     const setUploadDialogOpen = vi.fn();
 
-    // Re-mock with the spy
-    const { useSourcesList } = require('@/lib/hooks/use-sources-list');
-    useSourcesList.mockReturnValue({
+    mockUseSourcesList.mockReturnValue({
       quotaData: {
         storage: { used: 1024, limit: 10240 },
         docdb: { used: 512, limit: 5120 },
@@ -193,15 +253,14 @@ describe('SourcesPage', () => {
 
     render(<SourcesPage {...defaultProps} />);
 
-    const uploadButton = screen.getByRole('button', { name: /Upload/i });
-    await user.click(uploadButton);
+    const uploadButtons = screen.getAllByRole('button', { name: /Upload/i });
+    await user.click(uploadButtons[0]);
 
     expect(setUploadDialogOpen).toHaveBeenCalledWith(true);
   });
 
   it('should show loading state when sourcesLoading is true', () => {
-    const { useSourcesList } = require('@/lib/hooks/use-sources-list');
-    useSourcesList.mockReturnValue({
+    mockUseSourcesList.mockReturnValue({
       quotaData: {
         storage: { used: 1024, limit: 10240 },
         docdb: { used: 512, limit: 5120 },
@@ -264,8 +323,7 @@ describe('SourcesPage', () => {
   });
 
   it('should render pagination when total > pageSize', () => {
-    const { useSourcesList } = require('@/lib/hooks/use-sources-list');
-    useSourcesList.mockReturnValue({
+    mockUseSourcesList.mockReturnValue({
       quotaData: {
         storage: { used: 1024, limit: 10240 },
         docdb: { used: 512, limit: 5120 },

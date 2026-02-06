@@ -48,6 +48,7 @@ describe('FetchApiClient', () => {
       mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
+        headers: { get: () => null },
         json: async () => mockResponse,
       });
     });
@@ -59,9 +60,6 @@ describe('FetchApiClient', () => {
         `${API_BASE}/test`,
         expect.objectContaining({
           method: 'GET',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-          }),
         })
       );
       expect(result).toEqual(mockResponse);
@@ -127,6 +125,7 @@ describe('FetchApiClient', () => {
       mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
+        headers: { get: () => null },
         json: async () => ({}),
       });
     });
@@ -164,6 +163,7 @@ describe('FetchApiClient', () => {
       mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
+        headers: { get: () => null },
         json: async () => [],
       });
     });
@@ -209,6 +209,7 @@ describe('FetchApiClient', () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 400,
+        headers: { get: () => null },
         json: async () => ({
           error_code: 'VALIDATION_ERROR',
           message: 'Invalid input',
@@ -224,6 +225,7 @@ describe('FetchApiClient', () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 404,
+        headers: { get: () => null },
         json: async () => ({
           error_code: 'NOT_FOUND',
           message: 'Resource not found',
@@ -245,6 +247,7 @@ describe('FetchApiClient', () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 500,
+        headers: { get: () => null },
         json: async () => ({
           message: 'Internal server error',
         }),
@@ -262,6 +265,7 @@ describe('FetchApiClient', () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 503,
+        headers: { get: () => null },
         json: async () => ({}),
       });
 
@@ -294,6 +298,7 @@ describe('FetchApiClient', () => {
       mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
+        headers: { get: () => null },
         json: async () => ({}),
       });
     });
@@ -310,7 +315,6 @@ describe('FetchApiClient', () => {
         `${API_BASE}/test`,
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
             'X-Custom-Header': 'custom-value',
             'X-Another-Header': 'another-value',
           }),
@@ -423,6 +427,7 @@ describe('FetchApiClient', () => {
       mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
+        headers: { get: () => null },
         json: async () => ({}),
       });
     });

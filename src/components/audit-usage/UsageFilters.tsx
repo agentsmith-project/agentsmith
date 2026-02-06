@@ -32,23 +32,35 @@ export function UsageFilters({
   defaultEndUserId,
 }: UsageFiltersProps) {
   const debounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Use a ref to always read the latest filters in debounced callbacks
+  const filtersRef = React.useRef(filters);
+  filtersRef.current = filters;
 
   const handleTimeRangeChange = (range: TimeRange) => {
     onChange({
-      ...filters,
+      ...filtersRef.current,
       start_time: range.start_time,
       end_time: range.end_time,
     });
   };
 
-  const handleFilterChange = (key: keyof UsageListParams, value: string | undefined) => {
+  /** Immediate change — for Select dropdowns */
+  const handleSelectFilterChange = (key: keyof UsageListParams, value: string | undefined) => {
+    onChange({
+      ...filtersRef.current,
+      [key]: value || undefined,
+    });
+  };
+
+  /** Debounced change — for text inputs */
+  const handleTextFilterChange = (key: keyof UsageListParams, value: string | undefined) => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
     debounceTimerRef.current = setTimeout(() => {
       onChange({
-        ...filters,
+        ...filtersRef.current,
         [key]: value || undefined,
       });
       debounceTimerRef.current = null;
@@ -94,7 +106,7 @@ export function UsageFilters({
             <label className="text-xs text-tertiary mb-1 block">Resource Type</label>
             <Select
               value={filters.resource_type || 'all'}
-              onValueChange={(value) => handleFilterChange('resource_type', value === 'all' ? undefined : value)}
+              onValueChange={(value) => handleSelectFilterChange('resource_type', value === 'all' ? undefined : value)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="All types" />
@@ -115,7 +127,7 @@ export function UsageFilters({
             <Input
               placeholder="Filter by agent ID..."
               value={filters.agent_id || ''}
-              onChange={(e) => handleFilterChange('agent_id', e.target.value || undefined)}
+              onChange={(e) => handleTextFilterChange('agent_id', e.target.value || undefined)}
             />
           </div>
 
@@ -124,7 +136,7 @@ export function UsageFilters({
             <Input
               placeholder="Filter by end user ID..."
               value={filters.end_user_id || defaultEndUserId || ''}
-              onChange={(e) => handleFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
+              onChange={(e) => handleTextFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
               disabled={!!defaultEndUserId}
             />
           </div>

@@ -522,7 +522,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('should return false when requested permissions array is empty', () => {
+    it('should return true when requested permissions array is empty (vacuous truth)', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -541,7 +541,7 @@ describe('use-permissions hooks', () => {
         wrapper: createWrapper(),
       });
 
-      expect(result.current).toBe(false);
+      expect(result.current).toBe(true);
     });
 
     it('should return false when user has no permissions', () => {

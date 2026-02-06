@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { RecipeAPI } from '@/lib/api';
 import type { RecipeMessage, Artifact, Recipe } from '@/lib/types/recipe';
 import { getApiClient } from '@/lib/api';
+import { createAuthenticatedSSE } from '@/lib/api/sse-client';
 
 export interface RecipeSSEEvent {
   type: 'message' | 'artifact' | 'recipe_update' | 'error';
@@ -86,16 +87,20 @@ export function useRecipeSSE(
       eventSourceRef.current.close();
     }
 
-    const recipeAPI = new RecipeAPI(getApiClient());
+    const client = getApiClient();
+    const recipeAPI = new RecipeAPI(client);
     const sseUrl = recipeAPI.getSSEUrl(workspaceId, projectId, recipeId);
 
-    // Add Last-Event-ID header if available (for reconnection)
+    // Add Last-Event-ID for reconnection
     const urlWithLastEventId = lastEventIdRef.current
       ? `${sseUrl}${sseUrl.includes('?') ? '&' : '?'}last_event_id=${encodeURIComponent(lastEventIdRef.current)}`
       : sseUrl;
 
     setConnectionStatus('connecting');
-    const eventSource = new EventSource(urlWithLastEventId);
+
+    // Use createAuthenticatedSSE for unified auth (adds ?ticket= param)
+    const token = client.getToken();
+    const eventSource = createAuthenticatedSSE(urlWithLastEventId, token);
 
     eventSource.onopen = () => {
       setConnectionStatus('connected');

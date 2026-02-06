@@ -52,7 +52,11 @@ export function ChatHeader({
   const commitRename = () => {
     const title = draftTitle.trim();
     setEditing(false);
-    if (!title) return;
+    if (!title) {
+      // Restore the original title so the next edit starts correctly
+      setDraftTitle(session?.title || '');
+      return;
+    }
     if (!session) return;
     if (title === session.title) return;
     onRename(title);

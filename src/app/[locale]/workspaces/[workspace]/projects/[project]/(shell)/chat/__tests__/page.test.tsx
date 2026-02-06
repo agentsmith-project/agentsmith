@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -128,5 +129,26 @@ describe('ChatPage', () => {
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
     const toolbar = screen.getByTestId('page-layout__toolbar');
     expect(within(toolbar).getByTestId('chat__new-thread-btn')).toBeInTheDocument();
+  });
+
+  it('triggers new thread creation from toolbar', async () => {
+    const user = userEvent.setup();
+    render(
+      <ChatPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const button = await screen.findByTestId('chat__new-thread-btn');
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(mockCreateSession).toHaveBeenCalled();
+    });
   });
 });

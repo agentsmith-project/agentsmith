@@ -19,7 +19,9 @@ import { DataTable } from '@/components/ui/data-table';
 import { CreateEndpointDialog } from '@/components/endpoints/CreateEndpointDialog';
 import { EditEndpointDialog } from '@/components/endpoints/EditEndpointDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -244,13 +246,10 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="p-6 max-w-6xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-              <p className="text-sm text-tertiary mt-1">Manage LLM endpoints</p>
-            </div>
+      <PageLayout
+        header={<PageHeader title={t('title')} subtitle="Manage LLM endpoints" />}
+        toolbar={(
+          <PageToolbar>
             <button
               onClick={() => setCreateDialogOpen(true)}
               data-testid="endpoints__create-btn"
@@ -259,8 +258,10 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
               <Plus className="w-4 h-4" />
               {t('create')}
             </button>
-          </div>
-
+          </PageToolbar>
+        )}
+      >
+        <div className="max-w-6xl mx-auto w-full">
           {endpointsLoading ? (
             <PageLoading />
           ) : endpoints.length === 0 ? (
@@ -276,52 +277,52 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
           ) : (
             <DataTable table={table} testId="endpoints__table" />
           )}
+        </div>
 
-          <CreateEndpointDialog
-            open={createDialogOpen}
-            onOpenChange={setCreateDialogOpen}
+        <CreateEndpointDialog
+          open={createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          onSuccess={invalidateEndpoints}
+        />
+
+        {selectedEndpoint && (
+          <EditEndpointDialog
+            open={editDialogOpen}
+            onOpenChange={setEditDialogOpen}
             workspaceId={workspaceId}
             projectId={projectId}
-            onSuccess={invalidateEndpoints}
+            endpoint={selectedEndpoint}
+            onSuccess={() => {
+              invalidateEndpoints();
+              setEditDialogOpen(false);
+            }}
           />
+        )}
 
-          {selectedEndpoint && (
-            <EditEndpointDialog
-              open={editDialogOpen}
-              onOpenChange={setEditDialogOpen}
-              workspaceId={workspaceId}
-              projectId={projectId}
-              endpoint={selectedEndpoint}
-              onSuccess={() => {
-                invalidateEndpoints();
-                setEditDialogOpen(false);
-              }}
-            />
-          )}
-
-          <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('delete_confirm_title')}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('delete_confirm_description', { name: endpointToDelete?.name || '' })}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleDeleteConfirm();
-                  }}
-                  className="bg-error text-white hover:bg-error/90"
-                >
-                  {t('delete_confirm_action')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('delete_confirm_title')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('delete_confirm_description', { name: endpointToDelete?.name || '' })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleDeleteConfirm();
+                }}
+                className="bg-error text-white hover:bg-error/90"
+              >
+                {t('delete_confirm_action')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </PageLayout>
     </PageState>
   );

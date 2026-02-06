@@ -22,7 +22,9 @@ import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { EditAgentDialog } from '@/components/agents/EditAgentDialog';
 import { AgentDiagnosticsPanel } from '@/components/agents/AgentDiagnosticsPanel';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 
 interface AgentsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -269,100 +271,99 @@ export default function AgentsPage({ params }: AgentsPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-          <p className="text-sm text-tertiary mt-1">Manage AI agents</p>
-        </div>
-        <button
-          onClick={() => setCreateDialogOpen(true)}
-          data-testid="agents__create-btn"
-          className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/90 text-foreground rounded-md border border-subtle transition-colors duration-200"
-        >
-          <Plus className="w-4 h-4" />
-          {t('create')}
-        </button>
-      </div>
-
-      {agentsLoading ? (
-        <PageLoading />
-      ) : agents.length === 0 ? (
-        <EmptyState
-          icon={Bot}
-          title={`No ${t('title').toLowerCase()} yet`}
-          description={`Create your first ${t('title').toLowerCase()} to get started`}
-          action={{
-            label: t('create'),
-            onClick: () => setCreateDialogOpen(true),
-          }}
-        />
-      ) : (
-        <DataTable table={table} testId="agents__table" />
-      )}
-
-      {detailsAgent && detailsOpen && (
-        <div className="mt-6 rounded-md border border-border bg-surface p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">{t('detail_title')}</h2>
-              <p className="text-sm text-tertiary">{detailsAgent.name}</p>
-            </div>
+      <PageLayout
+        header={<PageHeader title={t('title')} subtitle="Manage AI agents" />}
+        toolbar={(
+          <PageToolbar>
             <button
-              className="text-sm text-tertiary hover:text-primary"
-              onClick={() => setDetailsOpen(false)}
+              onClick={() => setCreateDialogOpen(true)}
+              data-testid="agents__create-btn"
+              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/90 text-foreground rounded-md border border-subtle transition-colors duration-200"
             >
-              {t('cancel')}
+              <Plus className="w-4 h-4" />
+              {t('create')}
             </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-xs text-tertiary">{t('mode_external')}</p>
-              <p className="text-foreground capitalize">{detailsAgent.mode}</p>
-            </div>
-            <div>
-              <p className="text-xs text-tertiary">{t('interaction_mode')}</p>
-              <p className="text-foreground capitalize">{detailsAgent.interaction_mode ?? '—'}</p>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-medium text-foreground mb-2">{t('detail_diagnostics')}</h3>
-            <AgentDiagnosticsPanel diagnostics={diagnosticsData as AgentDiagnostics | null} loading={diagnosticsLoading} />
-          </div>
-        </div>
-      )}
-
-      <CreateAgentDialog
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        workspaceId={workspaceId}
-        projectId={projectId}
-        onSuccess={invalidateAgents}
-      />
-
-      <EditAgentDialog
-        open={!!editDialogAgent}
-        onOpenChange={(open) => !open && setEditDialogAgent(null)}
-        workspaceId={workspaceId}
-        projectId={projectId}
-        agent={editDialogAgent}
-        onSuccess={invalidateAgents}
-      />
-
-          {keysDialogAgent && resolvedParams && (
-            <AgentKeysDialog
-              open={!!keysDialogAgent}
-              onOpenChange={(open) => !open && setKeysDialogAgent(null)}
-              workspaceId={resolvedParams.workspace}
-              projectId={resolvedParams.project}
-              agentId={keysDialogAgent.id}
-              agentName={keysDialogAgent.name}
+          </PageToolbar>
+        )}
+      >
+        <div className="max-w-6xl mx-auto w-full flex flex-col gap-6">
+          {agentsLoading ? (
+            <PageLoading />
+          ) : agents.length === 0 ? (
+            <EmptyState
+              icon={Bot}
+              title={`No ${t('title').toLowerCase()} yet`}
+              description={`Create your first ${t('title').toLowerCase()} to get started`}
+              action={{
+                label: t('create'),
+                onClick: () => setCreateDialogOpen(true),
+              }}
             />
+          ) : (
+            <DataTable table={table} testId="agents__table" />
+          )}
+
+          {detailsAgent && detailsOpen && (
+            <div className="rounded-md border border-border bg-surface p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">{t('detail_title')}</h2>
+                  <p className="text-sm text-tertiary">{detailsAgent.name}</p>
+                </div>
+                <button
+                  className="text-sm text-tertiary hover:text-primary"
+                  onClick={() => setDetailsOpen(false)}
+                >
+                  {t('cancel')}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-xs text-tertiary">{t('mode_external')}</p>
+                  <p className="text-foreground capitalize">{detailsAgent.mode}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-tertiary">{t('interaction_mode')}</p>
+                  <p className="text-foreground capitalize">{detailsAgent.interaction_mode ?? '—'}</p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-medium text-foreground mb-2">{t('detail_diagnostics')}</h3>
+                <AgentDiagnosticsPanel diagnostics={diagnosticsData as AgentDiagnostics | null} loading={diagnosticsLoading} />
+              </div>
+            </div>
           )}
         </div>
+
+        <CreateAgentDialog
+          open={createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          onSuccess={invalidateAgents}
+        />
+
+        <EditAgentDialog
+          open={!!editDialogAgent}
+          onOpenChange={(open) => !open && setEditDialogAgent(null)}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          agent={editDialogAgent}
+          onSuccess={invalidateAgents}
+        />
+
+        {keysDialogAgent && resolvedParams && (
+          <AgentKeysDialog
+            open={!!keysDialogAgent}
+            onOpenChange={(open) => !open && setKeysDialogAgent(null)}
+            workspaceId={resolvedParams.workspace}
+            projectId={resolvedParams.project}
+            agentId={keysDialogAgent.id}
+            agentName={keysDialogAgent.name}
+          />
+        )}
       </PageLayout>
     </PageState>
   );

@@ -9,6 +9,9 @@ import { AuditDetailDrawer } from './AuditDetailDrawer';
 import { useAuditEvents } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import type { AuditEvent, AuditListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -48,11 +51,13 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
 
   if (!canReadAudit) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 p-6">
-        <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
-          <p className="text-sm text-tertiary">{t('permission_denied')}</p>
+      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
+        <div className="flex flex-col items-center justify-center flex-1">
+          <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
+            <p className="text-sm text-tertiary">{t('permission_denied')}</p>
+          </div>
         </div>
-      </div>
+      </PageLayout>
     );
   }
 
@@ -81,32 +86,29 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
 
   if (error) {
     return (
-      <div className="p-6">
+      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
         <div className="bg-error/10 border border-error/30 rounded-md p-4">
           <p className="text-error">
             Failed to load audit events: {error instanceof Error ? error.message : 'Unknown error'}
           </p>
         </div>
-      </div>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-background">
-      {/* Header */}
-      <div className="p-6 border-b border-border flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-          <p className="text-sm text-tertiary mt-1">{t('subtitle')}</p>
-        </div>
-        <Button variant="outline" onClick={handleRefresh} disabled={isLoading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-          {commonT('refresh')}
-        </Button>
-      </div>
-
-      {/* Filters */}
-      <div className="p-6" data-testid="audit__filters">
+    <PageLayout
+      header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
+      toolbar={(
+        <PageToolbar>
+          <Button variant="outline" onClick={handleRefresh} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            {commonT('refresh')}
+          </Button>
+        </PageToolbar>
+      )}
+    >
+      <div data-testid="audit__filters">
         <AuditFilters
           filters={filters}
           onChange={setFilters}
@@ -115,8 +117,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
         />
       </div>
 
-      {/* Table */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <AuditTable
           data={data?.items || []}
           loading={isLoading}
@@ -125,12 +126,11 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
         />
       </div>
 
-      {/* Detail Drawer */}
       <AuditDetailDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         event={selectedEvent}
       />
-    </div>
+    </PageLayout>
   );
 }

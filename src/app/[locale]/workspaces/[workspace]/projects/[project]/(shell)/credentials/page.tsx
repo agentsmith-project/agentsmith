@@ -15,7 +15,9 @@ import { Key, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { CredentialsAPI, getApiClient } from '@/lib/api';
 import type { Credential } from '@/lib/api/types';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { DataTable } from '@/components/ui/data-table';
 import { CreateCredentialDialog } from '@/components/credentials/CreateCredentialDialog';
@@ -182,13 +184,10 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="p-6 max-w-6xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-              <p className="text-sm text-tertiary mt-1">{t('subtitle')}</p>
-            </div>
+      <PageLayout
+        header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
+        toolbar={(
+          <PageToolbar>
             <button
               onClick={() => setCreateDialogOpen(true)}
               data-testid="credentials__create-btn"
@@ -197,8 +196,10 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
               <Plus className="w-4 h-4" />
               {t('create')}
             </button>
-          </div>
-
+          </PageToolbar>
+        )}
+      >
+        <div className="max-w-6xl mx-auto w-full">
           {isLoading ? (
             <PageLoading />
           ) : !credentials || credentials.length === 0 ? (
@@ -214,31 +215,31 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
           ) : (
             <DataTable table={table} testId="credentials__table" />
           )}
-
-          <CreateCredentialDialog
-            open={createDialogOpen}
-            onOpenChange={setCreateDialogOpen}
-            workspaceId={workspaceId}
-            projectId={projectId}
-            onSuccess={invalidate}
-          />
-
-          <RotateCredentialDialog
-            open={rotateDialogOpen}
-            onOpenChange={setRotateDialogOpen}
-            credential={selectedCredential}
-            workspaceId={workspaceId}
-            projectId={projectId}
-            onSuccess={invalidate}
-          />
-
-          <DeleteCredentialDialog
-            open={deleteDialogOpen}
-            onOpenChange={setDeleteDialogOpen}
-            credential={selectedCredential}
-            onConfirm={handleDeleteConfirm}
-          />
         </div>
+
+        <CreateCredentialDialog
+          open={createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          onSuccess={invalidate}
+        />
+
+        <RotateCredentialDialog
+          open={rotateDialogOpen}
+          onOpenChange={setRotateDialogOpen}
+          credential={selectedCredential}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          onSuccess={invalidate}
+        />
+
+        <DeleteCredentialDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          credential={selectedCredential}
+          onConfirm={handleDeleteConfirm}
+        />
       </PageLayout>
     </PageState>
   );

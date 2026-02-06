@@ -1,13 +1,41 @@
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 import AuditPage from '../page';
 
-const mockAuditPage = vi.fn(() => <div />);
+const mockAuditFilters = vi.fn(() => <div data-testid="audit-filters" />);
 
-vi.mock('@/components/audit-usage/AuditPage', () => ({
-  AuditPage: (props: any) => mockAuditPage(props),
+vi.mock('@/components/audit-usage/AuditFilters', () => ({
+  AuditFilters: (props: any) => mockAuditFilters(props),
 }));
+
+vi.mock('@/components/audit-usage/AuditTable', () => ({
+  AuditTable: () => <div data-testid="audit-table" />,
+}));
+
+vi.mock('@/components/audit-usage/AuditDetailDrawer', () => ({
+  AuditDetailDrawer: () => null,
+}));
+
+vi.mock('@/lib/hooks/use-permissions', () => ({
+  useHasPermission: () => true,
+}));
+
+vi.mock('@/lib/hooks/use-audit-usage', () => ({
+  useAuditEvents: () => ({ data: { items: [] }, isLoading: false, error: null }),
+}));
+
+vi.mock('@/components/ui/toast', () => ({
+  toast: { success: vi.fn() },
+}));
+
+vi.mock('@tanstack/react-query', async () => {
+  const actual = await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
+  return {
+    ...actual,
+    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  };
+});
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
   useProject: () => ({
@@ -44,10 +72,31 @@ describe('AuditPage route', () => {
     );
 
     await waitFor(() => {
-      expect(mockAuditPage).toHaveBeenCalled();
+      expect(mockAuditFilters).toHaveBeenCalled();
     });
 
-    const props = mockAuditPage.mock.calls[0][0];
+    const props = mockAuditFilters.mock.calls[0][0];
     expect(props.defaultEndUserId).toBe('user_001');
+  });
+
+  it('renders header and toolbar layout', async () => {
+    render(
+      <AuditPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
+    });
+
+    const header = screen.getByTestId('page-layout__header');
+    expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
+    const toolbar = screen.getByTestId('page-layout__toolbar');
+    expect(within(toolbar).getByRole('button', { name: 'refresh' })).toBeInTheDocument();
   });
 });

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { AuditPage as AuditPageComponent } from '@/components/audit-usage/AuditPage';
-import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useProject } from '@/lib/hooks/use-projects-queries';
@@ -45,13 +44,11 @@ export default function AuditPage({ params }: AuditPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <AuditPageComponent
-          workspaceId={workspaceId}
-          projectId={projectId}
-          defaultEndUserId={defaultEndUserId}
-        />
-      </PageLayout>
+      <AuditPageComponent
+        workspaceId={workspaceId}
+        projectId={projectId}
+        defaultEndUserId={defaultEndUserId}
+      />
     </PageState>
   );
 }

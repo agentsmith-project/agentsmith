@@ -13,7 +13,8 @@
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Plus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
@@ -32,7 +33,10 @@ import { MessageList } from '@/components/chat/MessageList';
 import { Composer } from '@/components/chat/Composer';
 import { Markdown } from '@/components/chat/Markdown';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
+import { PageToolbar } from '@/components/layout/PageToolbar';
+import { Button } from '@/components/ui/button';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -40,6 +44,7 @@ interface ChatPageProps {
 
 export default function ChatPage({ params }: ChatPageProps) {
   const queryClient = useQueryClient();
+  const t = useTranslations('chat');
 
   const token = useAuthStore((s) => s.token);
   const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
@@ -423,7 +428,22 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout>
+      <PageLayout
+        header={<PageHeader title={t('title')} />}
+        toolbar={(
+          <PageToolbar>
+            <Button
+              variant="outline"
+              onClick={() => createSessionMutation.mutate()}
+              disabled={createSessionMutation.isPending}
+              data-testid="chat__new-thread-toolbar"
+            >
+              <Plus className="w-4 h-4" />
+              {t('new_thread')}
+            </Button>
+          </PageToolbar>
+        )}
+      >
         <div className="h-full flex overflow-hidden">
           <ThreadsPane
             sessions={sessions}

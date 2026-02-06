@@ -126,7 +126,6 @@ describe('ChatPage', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
-    const toolbar = screen.getByTestId('page-layout__toolbar');
-    expect(within(toolbar).getByTestId('chat__new-thread-toolbar')).toBeInTheDocument();
+    expect(screen.queryByTestId('page-layout__toolbar')).not.toBeInTheDocument();
   });
 });

@@ -108,7 +108,7 @@ function createWrapper() {
 }
 
 describe('ChatPage', () => {
-  it('renders header and toolbar layout', async () => {
+  it('renders header without toolbar layout', async () => {
     render(
       <ChatPage
         params={Promise.resolve({

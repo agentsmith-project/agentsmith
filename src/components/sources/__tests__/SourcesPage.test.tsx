@@ -2,7 +2,7 @@
  * Unit tests for SourcesPage compound component
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 
@@ -159,6 +159,14 @@ describe('SourcesPage', () => {
     render(<SourcesPage {...defaultProps} />);
 
     expect(screen.getByText('Sources')).toBeInTheDocument();
+  });
+
+  it('uses shared layout header without local padding', () => {
+    const { container } = render(<SourcesPage {...defaultProps} />);
+
+    const header = screen.getByTestId('page-layout__header');
+    expect(within(header).getByRole('heading', { name: 'Sources' })).toBeInTheDocument();
+    expect(container.querySelector('.p-6')).not.toBeInTheDocument();
   });
 
   it('should render quota summary card', () => {

@@ -10,6 +10,8 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageLayout } from '@/components/layout/PageLayout';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,27 +55,26 @@ function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
 
   return (
     <MembersProvider value={contextValue}>
-      <div className="flex-1 min-h-0 flex flex-col gap-6">
-        {/* Header */}
-        <div className="flex-shrink-0 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-            <p className="text-sm text-tertiary mt-1">
-              {t('description')}
-            </p>
-          </div>
-          <Button
-            variant="action"
-            className="gap-2"
-            onClick={() => contextValue.setInviteDialogOpen(true)}
-            disabled={!canManageMembers}
-            data-testid="members__invite-btn"
-          >
-            <Plus className="h-4 w-4" />
-            {t('invite_member')}
-          </Button>
-        </div>
-
+      <PageLayout
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('description')}
+            actions={(
+              <Button
+                variant="action"
+                className="gap-2"
+                onClick={() => contextValue.setInviteDialogOpen(true)}
+                disabled={!canManageMembers}
+                data-testid="members__invite-btn"
+              >
+                <Plus className="h-4 w-4" />
+                {t('invite_member')}
+              </Button>
+            )}
+          />
+        )}
+      >
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'members' | 'requests' | 'templates')} className="flex-1 min-h-0 flex flex-col min-w-0">
           <TabsList className="flex-shrink-0">
@@ -129,7 +130,7 @@ function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
 
         {/* Detail Drawers and Dialogs with context */}
         <MemberDetailDrawersAndDialogs workspaceId={workspaceId} projectId={projectId} />
-      </div>
+      </PageLayout>
     </MembersProvider>
   );
 }

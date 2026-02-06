@@ -10,6 +10,9 @@ import * as React from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import { SourcesProvider, useSourcesContext } from './SourcesContext';
 import { useSourcesList } from '@/lib/hooks/use-sources-list';
 import { QuotaSummaryCard } from './QuotaSummaryCard';
@@ -30,13 +33,15 @@ function SourcesPageContent({ workspaceId, projectId }: SourcesPageProps) {
 
   return (
     <SourcesProvider value={contextValue}>
-      <div className="h-full flex flex-col p-6">
-        <SourcesPageHeader />
-        <SourcesPageFilters />
+      <PageLayout
+        header={<SourcesPageHeader />}
+        toolbar={<SourcesPageToolbar />}
+      >
+        <SourcesPageQuotaSummary />
         <SourcesPageTableSection />
         <SourcesPagePagination />
         <SourcesPageDialogs />
-      </div>
+      </PageLayout>
     </SourcesProvider>
   );
 }
@@ -48,31 +53,30 @@ function SourcesPageHeader() {
   const context = useSourcesContext();
 
   return (
-    <div className="flex items-start justify-between mb-4">
-      <div className="flex-1">
-        <h1 className="text-2xl font-semibold text-foreground mb-3">Sources</h1>
-        {context.quotaData && !context.quotaLoading && <QuotaSummaryCard quota={context.quotaData} />}
-      </div>
-      <Button
-        onClick={() => context.setUploadDialogOpen(true)}
-        className="flex items-center gap-2"
-        data-testid="sources__upload-btn"
-      >
-        <Plus className="h-4 w-4" />
-        Upload
-      </Button>
-    </div>
+    <PageHeader
+      title="Sources"
+      actions={(
+        <Button
+          onClick={() => context.setUploadDialogOpen(true)}
+          className="flex items-center gap-2"
+          data-testid="sources__upload-btn"
+        >
+          <Plus className="h-4 w-4" />
+          Upload
+        </Button>
+      )}
+    />
   );
 }
 
 /**
- * Search and Filters section
+ * Search and Filters toolbar
  */
-function SourcesPageFilters() {
+function SourcesPageToolbar() {
   const context = useSourcesContext();
 
   return (
-    <div className="flex items-center gap-4 mb-3">
+    <PageToolbar>
       <div className="flex-1 max-w-md">
         <SourcesSearch value={context.search} onChange={context.setSearch} />
       </div>
@@ -86,8 +90,21 @@ function SourcesPageFilters() {
         sortOrder={context.sortOrder}
         onSortOrderChange={context.setSortOrder}
       />
-    </div>
+    </PageToolbar>
   );
+}
+
+/**
+ * Quota summary section
+ */
+function SourcesPageQuotaSummary() {
+  const context = useSourcesContext();
+
+  if (!context.quotaData || context.quotaLoading) {
+    return null;
+  }
+
+  return <QuotaSummaryCard quota={context.quotaData} />;
 }
 
 /**

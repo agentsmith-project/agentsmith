@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { SourcesPage as SourcesPageComponent } from '@/components/sources/SourcesPage';
-import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 
@@ -32,12 +31,10 @@ export default function SourcesPage({ params }: SourcesPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <SourcesPageComponent
-          workspaceId={resolvedParams.workspace}
-          projectId={resolvedParams.project}
-        />
-      </PageLayout>
+      <SourcesPageComponent
+        workspaceId={resolvedParams.workspace}
+        projectId={resolvedParams.project}
+      />
     </PageState>
   );
 }

@@ -5,7 +5,6 @@ import { useUserdataSummary, useUserdataEndUsers } from '@/lib/hooks/use-userdat
 import { formatBytes } from '@/lib/utils/formatters';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { PageToolbar } from '@/components/layout/PageToolbar';
 
 export interface UserDataPageProps {
   workspaceId: string;
@@ -18,10 +17,7 @@ export function UserDataPage({ workspaceId, projectId }: UserDataPageProps) {
   const { data: endUsers } = useUserdataEndUsers(workspaceId, projectId);
 
   return (
-    <PageLayout
-      header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
-      toolbar={<PageToolbar>{null}</PageToolbar>}
-    >
+    <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
       <div className="max-w-6xl mx-auto w-full space-y-6">
         <div className="rounded-md border border-border bg-surface p-6">
           <h2 className="text-sm font-medium text-foreground mb-4">{t('summary_title')}</h2>

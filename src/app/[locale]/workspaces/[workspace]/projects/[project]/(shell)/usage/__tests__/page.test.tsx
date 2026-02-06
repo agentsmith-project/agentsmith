@@ -106,6 +106,6 @@ describe('UsagePage route', () => {
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
     const toolbar = screen.getByTestId('page-layout__toolbar');
-    expect(toolbar.querySelector('.flex.flex-wrap.items-center.gap-3')).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: /refresh/i })).toBeInTheDocument();
   });
 });

@@ -85,8 +85,7 @@ describe('OverviewPage', () => {
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
     const toolbar = screen.getByTestId('page-layout__toolbar');
-    expect(toolbar.querySelector('.flex.flex-wrap.items-center.gap-3')).toBeInTheDocument();
-    expect(screen.getByTestId('overview__time-range')).toBeInTheDocument();
+    expect(within(toolbar).getByTestId('overview__time-range')).toBeInTheDocument();
   });
 
   it('renders page state container', () => {

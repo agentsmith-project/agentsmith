@@ -33,8 +33,7 @@ describe('UserdataPage route', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
-    const toolbar = screen.getByTestId('page-layout__toolbar');
-    expect(toolbar.querySelector('.flex.flex-wrap.items-center.gap-3')).toBeInTheDocument();
+    expect(screen.queryByTestId('page-layout__toolbar')).not.toBeInTheDocument();
   });
 
   it('passes workspace and project ids to userdata page', async () => {

@@ -1,42 +1,93 @@
 /**
- * Overview Page Tests
+ * Overview Page E2E Tests
+ *
+ * Tests the project overview dashboard including KPI cards,
+ * time range selector, quick access navigation, and activity timeline.
  */
 
-import { test as base, expect } from '@playwright/test';
-import { withAuth } from './fixtures/authenticated';
-import { gotoAndWait } from './utils/navigation';
-
-const baseUrl = 'http://localhost:3000';
-const workspaceId = 'ws_default';
-const projectId = 'proj_001';
-const testEmail = 'test@example.com';
-
-export const test = base.extend<{
-  authenticatedPage: typeof base['page']['object'];
-}>({
-  authenticatedPage: async ({ page }, use) => {
-    await withAuth(page, workspaceId, testEmail);
-    await use(page);
-  },
-});
+import { test, expect, goToProject } from './fixtures/test-base';
 
 test.describe('Overview Page', () => {
-  test('should display overview with KPI cards', async ({ authenticatedPage }) => {
-    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/overview`);
-
-    await expect(authenticatedPage.locator('h1').filter({ hasText: 'Overview' })).toBeVisible();
-    await expect(authenticatedPage.getByText(/Requests Today/i)).toBeVisible();
-    await expect(authenticatedPage.getByText(/Errors Today/i)).toBeVisible();
-    await expect(authenticatedPage.getByText(/Tokens Today/i)).toBeVisible();
-    await expect(authenticatedPage.getByText(/UserData Storage/i)).toBeVisible();
+  test.beforeEach(async ({ authedPage }) => {
+    await goToProject(authedPage, 'overview');
   });
 
-  test('should display quick access navigation', async ({ authenticatedPage }) => {
-    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/overview`);
+  test('should display all four KPI cards', async ({ authedPage }) => {
+    const kpiRequests = authedPage.getByTestId('overview__kpi-card--requests');
+    const kpiErrors = authedPage.getByTestId('overview__kpi-card--errors');
+    const kpiTokens = authedPage.getByTestId('overview__kpi-card--tokens');
+    const kpiStorage = authedPage.getByTestId('overview__kpi-card--storage');
 
-    await expect(authenticatedPage.getByText('Quick Access')).toBeVisible();
-    await expect(authenticatedPage.getByText('Chat').first()).toBeVisible();
-    await expect(authenticatedPage.getByText('Workbench').first()).toBeVisible();
-    await expect(authenticatedPage.getByText('Agents').first()).toBeVisible();
+    await expect(kpiRequests).toBeVisible({ timeout: 10000 });
+    await expect(kpiErrors).toBeVisible();
+    await expect(kpiTokens).toBeVisible();
+    await expect(kpiStorage).toBeVisible();
+
+    // Each KPI card should contain a numeric value
+    await expect(kpiRequests).toContainText(/\d/);
+    await expect(kpiErrors).toContainText(/\d/);
+    await expect(kpiTokens).toContainText(/\d/);
+    await expect(kpiStorage).toContainText(/\d/);
+  });
+
+  test('should display and interact with time range selector', async ({ authedPage }) => {
+    const timeRange = authedPage.getByTestId('overview__time-range');
+    await expect(timeRange).toBeVisible({ timeout: 10000 });
+
+    // Click to open the selector
+    await timeRange.click();
+
+    // Verify dropdown or options appear (e.g., 7d, 30d, 90d)
+    const option = authedPage.getByRole('option', { name: /7|30|day|week/i }).first();
+    if (await option.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await option.click();
+    } else {
+      // Some implementations use listbox items or menu items
+      const menuItem = authedPage.getByRole('menuitem').first();
+      if (await menuItem.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await menuItem.click();
+      }
+    }
+
+    // Time range selector should still be visible after interaction
+    await expect(timeRange).toBeVisible();
+  });
+
+  test('should display quick access navigation cards', async ({ authedPage }) => {
+    const quickAccess = authedPage.getByTestId('overview__quick-access');
+    await expect(quickAccess).toBeVisible({ timeout: 10000 });
+
+    // Quick access should contain navigation links to key sections
+    await expect(quickAccess.getByText(/Chat/i).first()).toBeVisible();
+    await expect(quickAccess.getByText(/Workbench/i).first()).toBeVisible();
+    await expect(quickAccess.getByText(/Agents/i).first()).toBeVisible();
+  });
+
+  test('should display activity timeline', async ({ authedPage }) => {
+    const timeline = authedPage.getByTestId('overview__activity-timeline');
+    await expect(timeline).toBeVisible({ timeout: 10000 });
+
+    // Timeline may show activity entries or "No recent activity" depending on data
+    const entries = timeline.locator('[class*="timeline"], [class*="activity"], li, [role="listitem"]');
+    const noActivity = timeline.getByText(/no recent activity/i);
+    const hasEntries = await entries.count() > 0;
+    const hasNoActivityMsg = await noActivity.isVisible().catch(() => false);
+    expect(
+      hasEntries || hasNoActivityMsg,
+      'Timeline should show activity entries or a "No recent activity" message',
+    ).toBeTruthy();
+  });
+
+  test('should navigate to Chat via quick access', async ({ authedPage }) => {
+    const quickAccess = authedPage.getByTestId('overview__quick-access');
+    await expect(quickAccess).toBeVisible({ timeout: 10000 });
+
+    // Click the Chat quick access card
+    const chatLink = quickAccess.getByText(/Chat/i).first();
+    await chatLink.click();
+
+    // Should navigate to the chat page
+    await authedPage.waitForURL(/\/chat/, { timeout: 10000 });
+    await expect(authedPage.getByTestId('chat__main-pane')).toBeVisible();
   });
 });

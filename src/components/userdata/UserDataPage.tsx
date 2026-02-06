@@ -39,7 +39,7 @@ export function UserDataPage({ workspaceId, projectId }: UserDataPageProps) {
         </div>
       </div>
 
-      <div className="rounded-md border border-border bg-surface p-6">
+      <div className="rounded-md border border-border bg-surface p-6" data-testid="userdata__table">
         <h2 className="text-sm font-medium text-foreground mb-4">{t('end_users_title')}</h2>
         <div className="space-y-2 text-sm">
           {(endUsers ?? []).length === 0 ? (

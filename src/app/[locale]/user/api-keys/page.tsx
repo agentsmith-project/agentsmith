@@ -219,7 +219,7 @@ export default function UserAPIKeysPage() {
               Manage API keys for authenticating your applications.
             </p>
           </div>
-          <Button variant="action" onClick={() => setCreateDialogOpen(true)}>
+          <Button variant="action" onClick={() => setCreateDialogOpen(true)} data-testid="api-keys__create-btn">
             <Plus className="w-4 h-4" />
             {t('create')}
           </Button>
@@ -240,11 +240,11 @@ export default function UserAPIKeysPage() {
             </Button>
           </div>
         ) : (
-          <DataTable table={table} />
+          <DataTable table={table} testId="api-keys__table" />
         )}
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[425px]" data-testid="api-keys__create-dialog">
           <DialogHeader>
             <DialogTitle>{t('create')}</DialogTitle>
             <DialogDescription>

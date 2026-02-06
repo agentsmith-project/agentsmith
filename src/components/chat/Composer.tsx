@@ -70,7 +70,7 @@ export function Composer({
   };
 
   return (
-    <div className="border-t border-subtle bg-background" data-testid="chat-composer">
+    <div className="border-t border-subtle bg-background" data-testid="chat__composer">
       {mode === 'edit' && (
         <div className="px-4 pt-3 flex items-center justify-between">
           <div className="text-xs text-tertiary">Editing message</div>
@@ -149,7 +149,7 @@ export function Composer({
               Stop
             </Button>
           ) : (
-            <Button type="button" variant="action" onClick={onSend} disabled={!canSend} className="gap-2">
+            <Button type="button" variant="action" onClick={onSend} disabled={!canSend} className="gap-2" data-testid="chat__send-btn">
               <Send className="w-4 h-4" />
               {mode === 'edit' ? 'Save' : 'Send'}
             </Button>

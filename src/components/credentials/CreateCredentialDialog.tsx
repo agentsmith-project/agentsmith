@@ -90,7 +90,7 @@ export function CreateCredentialDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px]" data-testid="credentials__create-dialog">
         <DialogHeader>
           <DialogTitle>{t('create_dialog.title')}</DialogTitle>
           <DialogDescription>{t('create_dialog.description')}</DialogDescription>

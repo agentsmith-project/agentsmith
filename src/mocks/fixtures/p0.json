@@ -8,7 +8,10 @@
   "workspaces": [
     { "id": "ws_1", "name": "Corp Workspace", "role": "owner" }
   ],
-  "workspace_members": [],
+  "workspace_members": [
+    { "id": "u_1", "email": "it@corp.com", "name": "IT Admin", "role": "owner" },
+    { "id": "u_2", "email": "dev2@corp.com", "name": "Dev Two", "role": "member" }
+  ],
   "projects": [],
   "project_detail": {},
   "join_requests": [
@@ -36,19 +39,35 @@
       "reject_reason": "Not assigned to this project"
     }
   ],
-  "members": [],
+  "members": [
+    { "id": "u_1", "email": "alice@example.com", "name": "Alice Chen", "role": "owner", "status": "active", "created_at": "2026-01-01T00:00:00Z" },
+    { "id": "u_2", "email": "bob.smith@example.com", "name": "Bob Smith", "role": "admin", "status": "active", "created_at": "2026-01-05T00:00:00Z" },
+    { "id": "u_3", "email": "charlie@example.com", "name": "Charlie Wilson", "role": "member", "status": "active", "created_at": "2026-01-10T00:00:00Z" }
+  ],
   "endpoints": [
     {
       "id": "ep_1",
       "project_id": "proj_001",
       "name": "OpenAI Main",
-      "description": "Primary endpoint",
+      "description": "Primary endpoint for GPT-4o",
       "openai_model": "gpt-4o",
       "type": "openai",
       "base_url": "https://api.openai.com/v1",
       "status": "active",
       "created_at": "2026-02-01T00:00:00Z",
       "updated_at": "2026-02-01T00:00:00Z"
+    },
+    {
+      "id": "ep_2",
+      "project_id": "proj_001",
+      "name": "Claude Sonnet",
+      "description": "Anthropic Claude 3.5 Sonnet endpoint",
+      "openai_model": "claude-3.5-sonnet",
+      "type": "anthropic",
+      "base_url": "https://api.anthropic.com/v1",
+      "status": "active",
+      "created_at": "2026-01-20T00:00:00Z",
+      "updated_at": "2026-01-28T00:00:00Z"
     }
   ],
   "endpoint_acl": [],
@@ -64,6 +83,18 @@
       "interaction_mode": "chat",
       "created_at": "2026-02-01T00:00:00Z",
       "updated_at": "2026-02-01T00:00:00Z"
+    },
+    {
+      "id": "ag_2",
+      "project_id": "proj_001",
+      "name": "Research Agent",
+      "description": "Data analysis and research assistant",
+      "mode": "internal",
+      "presence": "offline",
+      "status": "enabled",
+      "interaction_mode": "workbench",
+      "created_at": "2026-01-20T00:00:00Z",
+      "updated_at": "2026-01-28T00:00:00Z"
     }
   ],
   "agent_diagnostics": {
@@ -75,13 +106,176 @@
     "cpu_percent": 42,
     "memory_mb": 512
   },
-  "sources": [],
-  "userdata_summary": { "total_bytes": 0, "docdb_collections": 0, "vectordb_indexes": 0 },
-  "userdata_end_users": [],
-  "audit": [],
-  "usage": [],
-  "chat_sessions": [],
-  "chat_messages": [],
+  "credentials": [
+    {
+      "id": "cred_001",
+      "project_id": "proj_001",
+      "name": "OpenAI API Key",
+      "type": "api_key",
+      "fingerprint": "sk-...xyz1",
+      "created_at": "2026-01-10T09:00:00Z",
+      "last_rotated_at": "2026-01-25T14:20:00Z"
+    },
+    {
+      "id": "cred_002",
+      "project_id": "proj_001",
+      "name": "Anthropic API Key",
+      "type": "api_key",
+      "fingerprint": "sk-...abc2",
+      "created_at": "2026-01-12T10:00:00Z"
+    }
+  ],
+  "sources": [
+    {
+      "id": "src_001",
+      "project_id": "proj_001",
+      "filename": "product-guide.pdf",
+      "size_bytes": 2048576,
+      "mime_type": "application/pdf",
+      "status": "ready",
+      "created_at": "2026-01-15T10:00:00Z",
+      "updated_at": "2026-01-20T10:00:00Z"
+    },
+    {
+      "id": "src_002",
+      "project_id": "proj_001",
+      "filename": "faq.md",
+      "size_bytes": 15360,
+      "mime_type": "text/markdown",
+      "status": "ready",
+      "created_at": "2026-01-16T10:00:00Z",
+      "updated_at": "2026-01-22T10:00:00Z"
+    },
+    {
+      "id": "src_003",
+      "project_id": "proj_001",
+      "filename": "api-docs.json",
+      "size_bytes": 45000,
+      "mime_type": "application/json",
+      "status": "processing",
+      "created_at": "2026-01-25T10:00:00Z",
+      "updated_at": "2026-01-25T10:00:00Z"
+    }
+  ],
+  "userdata_summary": { "total_bytes": 1048576, "docdb_collections": 2, "vectordb_indexes": 1 },
+  "userdata_end_users": [
+    { "id": "eu_1", "external_id": "ext_user_1", "storage_bytes": 524288, "last_active": "2026-02-01T12:00:00Z" },
+    { "id": "eu_2", "external_id": "ext_user_2", "storage_bytes": 524288, "last_active": "2026-01-30T15:00:00Z" }
+  ],
+  "audit": [
+    {
+      "id": "audit_001",
+      "timestamp": "2026-01-28T14:23:15Z",
+      "project_id": "proj_001",
+      "actor_type": "user",
+      "actor_id": "u_1",
+      "action": "project.create",
+      "resource_type": "project",
+      "resource_id": "proj_001",
+      "result": "ok",
+      "request_id": "req_abc001"
+    },
+    {
+      "id": "audit_002",
+      "timestamp": "2026-01-28T13:45:22Z",
+      "project_id": "proj_001",
+      "actor_type": "user",
+      "actor_id": "u_1",
+      "action": "agent.create",
+      "resource_type": "agent",
+      "resource_id": "ag_1",
+      "result": "ok",
+      "request_id": "req_abc002"
+    },
+    {
+      "id": "audit_003",
+      "timestamp": "2026-01-29T09:12:00Z",
+      "project_id": "proj_001",
+      "actor_type": "user",
+      "actor_id": "u_2",
+      "action": "endpoint.update",
+      "resource_type": "endpoint",
+      "resource_id": "ep_1",
+      "result": "ok",
+      "request_id": "req_abc003"
+    }
+  ],
+  "usage": [
+    {
+      "id": "usage_001",
+      "project_id": "proj_001",
+      "user_id": "u_1",
+      "endpoint_id": "ep_1",
+      "requests": 150,
+      "tokens_used": 12000,
+      "date": "2026-02-01"
+    },
+    {
+      "id": "usage_002",
+      "project_id": "proj_001",
+      "user_id": "u_2",
+      "endpoint_id": "ep_1",
+      "requests": 80,
+      "tokens_used": 6500,
+      "date": "2026-02-01"
+    }
+  ],
+  "chat_sessions": [
+    {
+      "id": "session_001",
+      "project_id": "proj_001",
+      "user_id": "u_1",
+      "title": "Product Q&A",
+      "created_at": "2026-02-01T10:00:00Z",
+      "updated_at": "2026-02-01T10:30:00Z"
+    },
+    {
+      "id": "session_002",
+      "project_id": "proj_001",
+      "user_id": "u_1",
+      "title": "Debug Session",
+      "created_at": "2026-01-30T14:00:00Z",
+      "updated_at": "2026-01-30T15:00:00Z"
+    }
+  ],
+  "chat_messages": [
+    {
+      "id": "msg_001",
+      "session_id": "session_001",
+      "role": "user",
+      "content": "How does the API authentication work?",
+      "created_at": "2026-02-01T10:00:00Z",
+      "parent_id": null
+    },
+    {
+      "id": "msg_002",
+      "session_id": "session_001",
+      "role": "assistant",
+      "content": "The API uses JWT-based authentication. You need to obtain a token by calling the `/auth/login` endpoint with your credentials.",
+      "created_at": "2026-02-01T10:00:05Z",
+      "parent_id": "msg_001"
+    }
+  ],
+  "user_keys": [
+    {
+      "id": "ukey_001",
+      "user_id": "u_1",
+      "prefix": "mbos_u1_",
+      "note": "CLI access key",
+      "status": "active",
+      "created_at": "2026-01-15T10:00:00Z",
+      "expires_at": "2026-07-15T10:00:00Z"
+    },
+    {
+      "id": "ukey_002",
+      "user_id": "u_1",
+      "prefix": "mbos_u1_",
+      "note": "CI/CD pipeline key",
+      "status": "active",
+      "created_at": "2026-01-20T10:00:00Z",
+      "expires_at": "2026-04-20T10:00:00Z"
+    }
+  ],
   "recipes": [],
   "artifacts": []
 }

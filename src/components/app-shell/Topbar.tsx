@@ -87,7 +87,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   };
 
   return (
-    <header className={`h-14 flex items-center justify-between px-4 bg-panel border-b border-subtle ${className}`}>
+    <header data-testid="topbar" className={`h-14 flex items-center justify-between px-4 bg-panel border-b border-subtle ${className}`}>
       {/* Left: Brand */}
       <div className="flex items-center gap-3">
         <button
@@ -104,7 +104,7 @@ export function Topbar({ className = '' }: TopbarProps) {
         <div className="flex items-center gap-2 min-w-0">
           {/* Workspace Switcher */}
           <DropdownMenu>
-            <DropdownMenuTrigger className="max-w-[340px] flex items-center gap-2 px-3 h-10 rounded-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
+            <DropdownMenuTrigger data-testid="topbar__workspace-switcher" className="max-w-[340px] flex items-center gap-2 px-3 h-10 rounded-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
               <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
               <span className="text-sm text-foreground truncate">
                 {currentWorkspace?.name || t('select_workspace')}
@@ -141,6 +141,7 @@ export function Topbar({ className = '' }: TopbarProps) {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
+                        data-testid="topbar__project-switcher"
                         onClick={handleGoToProjects}
                         className="flex items-center gap-2 px-3 h-10 rounded-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors group"
                         aria-label={t('go_to_projects')}

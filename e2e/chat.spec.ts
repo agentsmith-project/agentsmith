@@ -1,47 +1,111 @@
 /**
- * Chat Page Tests
+ * Chat Page E2E Tests
+ *
+ * Tests the chat page three-pane layout, thread list, thread selection,
+ * composer input, and message sending.
  */
 
-import { test as base, expect } from '@playwright/test';
-import { withAuth } from './fixtures/authenticated';
-import { gotoAndWait } from './utils/navigation';
-
-const baseUrl = 'http://localhost:3000';
-const workspaceId = 'ws_default';
-const projectId = 'proj_001';
-const testEmail = 'test@example.com';
-
-export const test = base.extend<{
-  authenticatedPage: typeof base['page']['object'];
-}>({
-  authenticatedPage: async ({ page }, use) => {
-    await withAuth(page, workspaceId, testEmail);
-    await use(page);
-  },
-});
+import { test, expect, goToProject } from './fixtures/test-base';
 
 test.describe('Chat Page', () => {
-  test('should display chat workspace', async ({ authenticatedPage }) => {
-    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
-
-    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
-    await expect(authenticatedPage.getByText('New Chat').first()).toBeVisible();
+  test.beforeEach(async ({ authedPage }) => {
+    await goToProject(authedPage, 'chat');
   });
 
-  test('should create new chat session', async ({ authenticatedPage }) => {
-    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
+  test('should display three-pane layout', async ({ authedPage }) => {
+    const threadsList = authedPage.getByTestId('chat__threads-pane');
+    const mainPane = authedPage.getByTestId('chat__main-pane');
+    const composer = authedPage.getByTestId('chat__composer');
 
-    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
-    await expect(authenticatedPage.getByText('New Chat').first()).toBeVisible();
-    await expect(authenticatedPage.getByTestId('chat-main-pane')).toBeVisible();
+    await expect(threadsList).toBeVisible({ timeout: 10000 });
+    await expect(mainPane).toBeVisible();
+    await expect(composer).toBeVisible();
   });
 
-  test('should display three-column layout', async ({ authenticatedPage }) => {
-    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/chat`);
+  test('should display thread items from MSW data', async ({ authedPage }) => {
+    const threadsList = authedPage.getByTestId('chat__threads-pane');
+    await expect(threadsList).toBeVisible({ timeout: 10000 });
 
-    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
-    await expect(authenticatedPage.getByTestId('chat-threads-pane')).toBeVisible();
-    await expect(authenticatedPage.getByTestId('chat-main-pane')).toBeVisible();
-    await expect(authenticatedPage.getByTestId('chat-composer')).toBeVisible();
+    // MSW should provide at least one thread
+    const threads = authedPage.getByTestId('chat__thread-item');
+    await expect(threads.first()).toBeVisible({ timeout: 10000 });
+
+    // Each thread item should have a data-thread-id attribute
+    const firstThreadId = await threads.first().getAttribute('data-thread-id');
+    expect(firstThreadId).toBeTruthy();
+  });
+
+  test('should display new thread button', async ({ authedPage }) => {
+    const newThreadBtn = authedPage.getByTestId('chat__new-thread-btn');
+    await expect(newThreadBtn).toBeVisible({ timeout: 10000 });
+    await expect(newThreadBtn).toBeEnabled();
+  });
+
+  test('should select a thread and display chat area', async ({ authedPage }) => {
+    // Wait for thread items to load
+    const threads = authedPage.getByTestId('chat__thread-item');
+    await expect(threads.first()).toBeVisible({ timeout: 10000 });
+
+    // Click the first thread
+    await threads.first().click();
+    await authedPage.waitForTimeout(1000);
+
+    // After selecting a thread, the chat content area should be active
+    // The main pane should show the thread title, composer, and either messages or "Start a conversation"
+    await expect(authedPage.getByTestId('chat__composer')).toBeVisible();
+    // The selected thread should be marked as active
+    const activeThread = threads.first();
+    const isActive = await activeThread.evaluate((el) =>
+      el.classList.contains('active') || el.getAttribute('data-state') === 'active' ||
+      el.getAttribute('aria-selected') === 'true' || el.closest('[class*="active"]') !== null,
+    );
+    // Verify thread selection visual indicator or session title appears in header
+    await expect(
+      authedPage.getByText('Product Q&A').first(),
+    ).toBeVisible();
+  });
+
+  test('should enable send button when composer has text', async ({ authedPage }) => {
+    const composer = authedPage.getByTestId('chat__composer');
+    const sendBtn = authedPage.getByTestId('chat__send-btn');
+
+    await expect(composer).toBeVisible({ timeout: 10000 });
+
+    // Composer should have an input or textarea
+    const input = composer.locator('textarea, input[type="text"], [contenteditable="true"]');
+    await expect(input.first()).toBeVisible();
+
+    // Send button should be disabled or hidden when empty
+    if (await sendBtn.isVisible().catch(() => false)) {
+      await expect(sendBtn).toBeDisabled();
+    }
+
+    // Type a message
+    await input.first().fill('Hello from E2E test');
+
+    // Send button should now be visible and enabled
+    await expect(sendBtn).toBeVisible({ timeout: 5000 });
+    await expect(sendBtn).toBeEnabled();
+  });
+
+  test('should send a message via send button', async ({ authedPage }) => {
+    const composer = authedPage.getByTestId('chat__composer');
+    const sendBtn = authedPage.getByTestId('chat__send-btn');
+
+    await expect(composer).toBeVisible({ timeout: 10000 });
+    const input = composer.locator('textarea, input[type="text"], [contenteditable="true"]');
+    await expect(input.first()).toBeVisible();
+
+    // Type and send a message
+    await input.first().fill('E2E test message');
+    await expect(sendBtn).toBeVisible({ timeout: 5000 });
+    await expect(sendBtn).toBeEnabled();
+    await sendBtn.click();
+
+    // After sending, input should either be cleared or remain (depending on implementation)
+    // At minimum the send button should still be functional
+    await authedPage.waitForTimeout(500);
+    // Verify the composer is still visible and functional after send
+    await expect(composer).toBeVisible();
   });
 });

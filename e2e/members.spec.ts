@@ -1,37 +1,80 @@
 /**
- * Members Page Tests
+ * Members Page – E2E Tests
+ *
+ * Covers table rendering, member data, invite dialog, member detail drawer,
+ * and role badges using MSW-provided mock data.
  */
 
-import { test as base, expect } from '@playwright/test';
-import { withAuth } from './fixtures/authenticated';
-import { gotoAndWait } from './utils/navigation';
-
-const baseUrl = 'http://localhost:3000';
-const workspaceId = 'ws_default';
-const projectId = 'proj_001';
-const testEmail = 'test@example.com';
-
-export const test = base.extend<{
-  authenticatedPage: typeof base['page']['object'];
-}>({
-  authenticatedPage: async ({ page }, use) => {
-    await withAuth(page, workspaceId, testEmail);
-    await use(page);
-  },
-});
+import { test, expect, goToProject } from './fixtures/test-base';
 
 test.describe('Members Page', () => {
-  test('should display members list', async ({ authenticatedPage }) => {
-    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/members`);
-
-    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
-    await expect(authenticatedPage.getByText('Members').first()).toBeVisible();
+  test.beforeEach(async ({ authedPage }) => {
+    await goToProject(authedPage, 'members');
   });
 
-  test('should show permission management options', async ({ authenticatedPage }) => {
-    await gotoAndWait(authenticatedPage, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/members`);
+  test('table renders with member rows', async ({ authedPage }) => {
+    const table = authedPage.getByTestId('members__table');
+    await expect(table).toBeVisible({ timeout: 10000 });
 
-    await expect(authenticatedPage.getByTestId('page-state__success')).toBeVisible();
-    await expect(authenticatedPage.getByText(/Invite|Add Member/i)).toBeVisible();
+    const rows = table.locator('[data-testid="members__table__row"]');
+    await expect(rows.first()).toBeVisible({ timeout: 10000 });
+    expect(await rows.count()).toBeGreaterThanOrEqual(3);
+  });
+
+  test('displays member names and emails from mock data', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
+
+    // Member names from memberFixtures (proj_001): Alice Chen, Bob Smith, Charlie Wilson
+    await expect(authedPage.getByText('Alice Chen')).toBeVisible();
+    await expect(authedPage.getByText('Bob Smith')).toBeVisible();
+    await expect(authedPage.getByText('alice@example.com')).toBeVisible();
+  });
+
+  test('invite dialog opens with email field', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
+
+    const inviteBtn = authedPage.getByTestId('members__invite-btn');
+    await expect(inviteBtn).toBeVisible();
+    await inviteBtn.click();
+
+    const dialog = authedPage.getByTestId('members__invite-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Verify the dialog has email input and role selector
+    await expect(dialog.locator('#invite-email')).toBeVisible();
+    await expect(dialog.locator('#invite-role')).toBeVisible();
+  });
+
+  test('member detail drawer opens with tabs', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
+
+    // Open the row action dropdown on a non-owner member and click "Edit Permissions & Quota"
+    const rows = authedPage.getByTestId('members__table__row');
+    await expect(rows.first()).toBeVisible();
+    // Click the action menu on the second row (Bob Smith – admin, not owner)
+    const actionBtn = rows.nth(1).getByRole('button', { name: /more/i }).or(
+      rows.nth(1).locator('button:has(svg)')
+    ).last();
+    await actionBtn.click();
+
+    // Click "Edit Permissions & Quota" from the dropdown
+    const editPermsItem = authedPage.getByRole('menuitem', { name: /edit permissions/i });
+    await editPermsItem.click();
+
+    // The MemberDetailDrawer (Sheet) should open with tabs: Permissions, Quota, ACL
+    // Use the drawer/sheet container to scope our search (avoids strict mode with multiple tablists)
+    const drawer = authedPage.locator('[role="dialog"], [data-state="open"]').last();
+    await expect(drawer).toBeVisible({ timeout: 5000 });
+    await expect(drawer.getByRole('tab', { name: /permissions/i })).toBeVisible();
+    await expect(drawer.getByRole('tab', { name: /quota/i })).toBeVisible();
+    await expect(drawer.getByRole('tab', { name: /resource access|acl/i })).toBeVisible();
+  });
+
+  test('role badges are displayed for each member', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
+
+    // Roles from p0.json: owner, admin, member (displayed capitalized in UI)
+    await expect(authedPage.getByText(/owner/i).first()).toBeVisible();
+    await expect(authedPage.getByText(/admin/i).first()).toBeVisible();
   });
 });

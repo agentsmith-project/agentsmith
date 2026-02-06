@@ -253,6 +253,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
             </div>
             <button
               onClick={() => setCreateDialogOpen(true)}
+              data-testid="endpoints__create-btn"
               className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -273,7 +274,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
               }}
             />
           ) : (
-            <DataTable table={table} />
+            <DataTable table={table} testId="endpoints__table" />
           )}
 
           <CreateEndpointDialog

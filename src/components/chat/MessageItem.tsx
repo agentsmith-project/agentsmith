@@ -74,7 +74,7 @@ export const MessageItem = React.memo(function MessageItem({
   };
 
   return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
+    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')} data-testid="chat__message" data-message-id={message.id}>
       <div
         className={cn(
           'max-w-[80%] rounded-md px-4 py-3 border relative',

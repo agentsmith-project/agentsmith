@@ -446,7 +446,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             isLoading={sessionsLoading}
           />
 
-          <section className="flex-1 flex flex-col bg-background overflow-hidden" data-testid="chat-main-pane">
+          <section className="flex-1 flex flex-col bg-background overflow-hidden" data-testid="chat__main-pane">
             <ChatHeader
               session={activeSession}
               endpoints={endpoints}

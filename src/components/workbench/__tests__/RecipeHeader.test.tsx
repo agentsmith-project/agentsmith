@@ -119,7 +119,7 @@ describe('RecipeHeader', () => {
     it('has data-testid for easy selection', () => {
       renderComponent();
 
-      expect(screen.getByTestId('workbench-recipe-header')).toBeInTheDocument();
+      expect(screen.getByTestId('workbench__recipe-header')).toBeInTheDocument();
     });
   });
 
@@ -275,7 +275,7 @@ describe('RecipeHeader', () => {
     it('has correct styling classes', () => {
       const { container } = renderComponent();
 
-      const header = container.querySelector('[data-testid="workbench-recipe-header"]');
+      const header = container.querySelector('[data-testid="workbench__recipe-header"]');
       expect(header).toHaveClass('border-b', 'border-border', 'bg-surface');
     });
 

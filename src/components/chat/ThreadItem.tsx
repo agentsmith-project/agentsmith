@@ -60,6 +60,8 @@ export function ThreadItem({
         'rounded-sm transition-colors duration-200 group',
         isActive ? 'bg-hover' : 'hover:bg-hover',
       )}
+      data-testid="chat__thread-item"
+      data-thread-id={session.id}
     >
       <div
         role="button"

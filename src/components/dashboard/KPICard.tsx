@@ -25,6 +25,8 @@ export interface KPICardProps {
   onClick?: () => void;
   /** Label for "vs last period" text */
   vsLastPeriodLabel?: string;
+  /** Optional test ID for e2e testing */
+  'data-testid'?: string;
 }
 
 /**
@@ -40,11 +42,12 @@ export interface KPICardProps {
  * />
  * ```
  */
-export function KPICard({ icon: Icon, label, value, trend, onClick, vsLastPeriodLabel }: KPICardProps) {
+export function KPICard({ icon: Icon, label, value, trend, onClick, vsLastPeriodLabel, 'data-testid': testId }: KPICardProps) {
   return (
     <div
       className={`bg-panel border border-subtle rounded-xl p-6 ${onClick ? 'cursor-pointer hover:bg-hover transition-colors' : ''}`}
       onClick={onClick}
+      data-testid={testId}
     >
       {/* Header: Icon + Label */}
       <div className="flex items-center gap-3 mb-4">

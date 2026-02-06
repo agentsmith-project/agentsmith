@@ -126,7 +126,7 @@ export default function OverviewPage() {
         )}
         toolbar={(
           <Select value={timeRangePreset} onValueChange={(v) => setTimeRangePreset(v as TimeRangePreset)}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-[140px]" data-testid="overview__time-range">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -145,6 +145,7 @@ export default function OverviewPage() {
               value={formatNumber(kpi.requests_today)}
               trend={requestsTrend}
               vsLastPeriodLabel={t('kpi.vs_last_period')}
+              data-testid="overview__kpi-card--requests"
             />
             <KPICard
               icon={AlertCircle}
@@ -152,6 +153,7 @@ export default function OverviewPage() {
               value={formatNumber(kpi.errors_today)}
               trend={errorsTrend}
               vsLastPeriodLabel={t('kpi.vs_last_period')}
+              data-testid="overview__kpi-card--errors"
             />
             <KPICard
               icon={Clock}
@@ -159,22 +161,24 @@ export default function OverviewPage() {
               value={formatNumber(kpi.tokens_today, { defaultValue: '--' })}
               trend={tokensTrend}
               vsLastPeriodLabel={t('kpi.vs_last_period')}
+              data-testid="overview__kpi-card--tokens"
             />
             <KPICard
               icon={Wifi}
               label={t('kpi.userdata_storage')}
               value={formatBytes(kpi.userdata_bytes, { defaultValue: '--' })}
+              data-testid="overview__kpi-card--storage"
             />
           </div>
 
           {/* Project Navigation */}
-          <div>
+          <div data-testid="overview__quick-access">
             <h2 className="text-lg font-semibold text-primary mb-4">{t('quick_access')}</h2>
             <ProjectNavigation basePath={basePath} columns={3} translations={t} />
           </div>
 
           {/* Recent Activity */}
-          <div>
+          <div data-testid="overview__activity-timeline">
             <ActivityTimeline
               items={activityItems}
               maxItems={5}

@@ -49,7 +49,7 @@ export function FileDeleteDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px]" data-testid="sources__delete-dialog">
         <DialogHeader>
           <DialogTitle>
             {isBatch ? `Delete ${fileCount} files` : 'Delete File'}

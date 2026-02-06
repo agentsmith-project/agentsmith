@@ -188,6 +188,7 @@ export function AuditTable({
         header: 'Request ID',
         cell: (info) => {
           const requestId = info.getValue();
+          if (!requestId) return <span className="text-tertiary">—</span>;
           const displayId = truncateId(requestId, 12);
           return (
             <div className="flex items-center gap-2">
@@ -291,5 +292,5 @@ export function AuditTable({
     );
   }
 
-  return <DataTable table={table} />;
+  return <DataTable table={table} testId="audit__table" />;
 }

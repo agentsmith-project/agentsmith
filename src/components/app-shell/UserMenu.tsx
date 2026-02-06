@@ -83,6 +83,7 @@ export function UserMenu({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            data-testid="topbar__user-menu"
             className="flex items-center gap-2 hover:bg-hover rounded-full p-1 pr-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
           >
             <Avatar className="w-8 h-8">
@@ -111,6 +112,7 @@ export function UserMenu({
           {defaultItems.map((item) => (
             <DropdownMenuItem
               key={item.id}
+              data-testid={`user-menu__${item.id === 'api_keys' ? 'api-keys' : item.id}`}
               onSelect={() => handleClick(item.id)}
               className="gap-3"
             >
@@ -125,6 +127,7 @@ export function UserMenu({
               {LOCALES.map((loc) => (
                 <DropdownMenuItem
                   key={loc.id}
+                  data-testid="user-menu__language"
                   onSelect={() => onLanguageSwitch(loc.id)}
                   className="gap-3"
                 >
@@ -141,6 +144,7 @@ export function UserMenu({
           <DropdownMenuSeparator />
 
           <DropdownMenuItem
+            data-testid="user-menu__logout"
             onSelect={() => handleClick('logout')}
             className="gap-3 text-error hover:text-error focus:text-error"
           >

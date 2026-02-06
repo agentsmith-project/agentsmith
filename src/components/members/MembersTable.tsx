@@ -270,5 +270,5 @@ export function MembersTable({
     );
   }
 
-  return <DataTable table={table} />;
+  return <DataTable table={table} testId="members__table" />;
 }

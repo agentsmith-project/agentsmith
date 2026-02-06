@@ -3,6 +3,8 @@ import { workspaceHandlers } from './handlers/workspace';
 import { projectHandlers } from './handlers/projects';
 import { endpointHandlers } from './handlers/endpoints';
 import { agentHandlers } from './handlers/agents';
+import { credentialHandlers } from './handlers/credentials';
+import { memberHandlers } from './handlers/members';
 import { sourceHandlers } from './handlers/sources';
 import { userdataHandlers } from './handlers/userdata';
 import { auditHandlers } from './handlers/audit';
@@ -11,6 +13,7 @@ import { chatHandlers } from './handlers/chat';
 import { workbenchHandlers } from './handlers/workbench';
 import { recipeHandlers } from './handlers/recipes';
 import { meHandlers } from './handlers/me';
+import { userKeyHandlers } from './handlers/user-keys';
 
 export const handlers = [
   ...authHandlers,
@@ -19,6 +22,8 @@ export const handlers = [
   ...projectHandlers,
   ...endpointHandlers,
   ...agentHandlers,
+  ...credentialHandlers,
+  ...memberHandlers,
   ...sourceHandlers,
   ...userdataHandlers,
   ...auditHandlers,
@@ -26,4 +31,5 @@ export const handlers = [
   ...chatHandlers,
   ...workbenchHandlers,
   ...recipeHandlers,
+  ...userKeyHandlers,
 ];

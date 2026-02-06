@@ -217,9 +217,14 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
 ### E2E Tests (Playwright)
 - **Location**: `e2e/` directory
 - **Projects**:
-  - `smoke` - Smoke tests (smoke.spec.ts)
-  - `chromium` - Full E2E tests (excludes smoke)
+  - `smoke` - Smoke tests for all routes in both locales (26 tests)
+  - `chromium` - Full E2E tests for all pages and features (103 tests)
+  - `visual` - Visual regression tests with `toHaveScreenshot()` (29 tests)
 - **Timeouts**: 15s test timeout, 10s action/navigation timeouts
+- **Shared fixtures**: `e2e/fixtures/test-base.ts` provides `authedPage` fixture and `goToProject()` helper
+- **Mock data**: All tests use MSW with `src/mocks/fixtures/p0.json` as the single source of truth
+- **Visual baselines**: `e2e/__screenshots__/visual.spec.ts/` (update with `--update-snapshots`)
+- **data-testid spec**: `docs/UXUI/2026-02-05-前端-testid-规范.md`
 - **Test selector convention**: Use `data-testid` attributes (see below)
 
 ### Test ID Convention

@@ -278,6 +278,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
         </div>
         <button
           onClick={() => setCreateDialogOpen(true)}
+          data-testid="agents__create-btn"
           className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/90 text-foreground rounded-md border border-subtle transition-colors duration-200"
         >
           <Plus className="w-4 h-4" />
@@ -298,7 +299,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           }}
         />
       ) : (
-        <DataTable table={table} />
+        <DataTable table={table} testId="agents__table" />
       )}
 
       {detailsAgent && detailsOpen && (

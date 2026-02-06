@@ -170,7 +170,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
       </div>
 
       {/* Filters */}
-      <div className="px-6 pb-4">
+      <div className="px-6 pb-4" data-testid="usage__filters">
         <UsageFilters
           filters={apiFilters}
           onChange={handleFiltersChange}

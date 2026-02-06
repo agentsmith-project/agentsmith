@@ -156,5 +156,5 @@ export function UsageTable({ data, loading = false, onClearFilters }: UsageTable
     );
   }
 
-  return <DataTable table={table} />;
+  return <DataTable table={table} testId="usage__table" />;
 }

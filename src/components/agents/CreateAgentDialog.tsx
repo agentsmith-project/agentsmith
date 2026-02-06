@@ -132,7 +132,7 @@ export function CreateAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto" data-testid="agents__create-dialog">
         <DialogHeader>
           <DialogTitle>{t('create_dialog.title')}</DialogTitle>
           <DialogDescription>{t('create_dialog.description')}</DialogDescription>

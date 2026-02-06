@@ -54,7 +54,7 @@ export function KeyCreatedDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]" onPointerDownOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-[500px]" onPointerDownOutside={(e) => e.preventDefault()} data-testid="api-keys__key-created-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Key className="w-5 h-5 text-accent" />

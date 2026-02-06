@@ -4,7 +4,7 @@ export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'tes
   await page.addInitScript(({ wsId, userEmail }) => {
     (window as any).__MBOS_AUTH_SETUP__ = true;
     const user = {
-      id: `user_${Math.random().toString(36).substring(2, 10)}`,
+      id: 'user_001',
       email: userEmail,
       name: userEmail.split('@')[0],
       locale: 'en-US',

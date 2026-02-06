@@ -103,6 +103,7 @@ export function AppShellSidebar({
 
   return (
     <aside
+      data-testid="sidebar"
       className={cn(
         collapsed ? 'w-[72px]' : 'w-[260px]',
         'border-r border-subtle bg-panel flex flex-col transition-[width] duration-200',
@@ -117,6 +118,7 @@ export function AppShellSidebar({
             <Link
               key={item.href}
               href={item.href}
+              data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
               title={collapsed ? label : undefined}
               className={cn(
                 'relative flex items-center h-10 rounded-sm text-sm transition-colors duration-200',
@@ -143,6 +145,7 @@ export function AppShellSidebar({
       <div className={cn('p-2 border-t border-subtle', collapsed ? 'flex justify-center' : 'flex justify-end')}>
         <button
           type="button"
+          data-testid="sidebar__collapse-btn"
           onClick={toggleCollapsed}
           className={cn(
             'h-10 w-10 rounded-sm flex items-center justify-center transition-colors duration-200',

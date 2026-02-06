@@ -23,7 +23,7 @@ export default function WorkspaceSelectPage() {
       <PageLayout>
         <div className="min-h-screen bg-background p-8">
           <div className="max-w-4xl mx-auto">
-            <h1 className="text-2xl font-semibold text-foreground mb-2">
+            <h1 data-testid="workspace-select__heading" className="text-2xl font-semibold text-foreground mb-2">
               {t('select_your_workspace')}
             </h1>
             <p className="text-tertiary mb-8">
@@ -55,6 +55,7 @@ function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
   const t = useTranslations('auth');
   return (
     <div
+      data-testid={`workspace-select__card--${workspace.id}`}
       onClick={onSelect}
       className="relative group bg-surface border border-border rounded-md p-6 transition-colors duration-200 hover:bg-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
     >

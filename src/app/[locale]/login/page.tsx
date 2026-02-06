@@ -98,6 +98,7 @@ export default function LoginPage() {
 
             {/* Keycloak Login Button */}
             <button
+              data-testid="login__keycloak-btn"
               className="w-full h-10 px-4 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200 mb-4"
               onClick={() => console.log('Keycloak login not configured')}
             >
@@ -130,6 +131,7 @@ export default function LoginPage() {
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
+                        data-testid="login__workspace-select"
                         className="w-full h-10 px-3 bg-surface-high border border-subtle rounded-sm text-primary flex items-center gap-2 justify-between hover:bg-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
                       >
                         <span className="flex items-center gap-2 min-w-0">
@@ -161,6 +163,7 @@ export default function LoginPage() {
                   </label>
                   <input
                     type="text"
+                    data-testid="login__email-input"
                     value={userEmail}
                     onChange={(e) => setUserEmail(e.target.value)}
                     placeholder={t('user_id_placeholder')}

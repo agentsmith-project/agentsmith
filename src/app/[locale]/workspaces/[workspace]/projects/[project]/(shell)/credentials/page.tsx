@@ -191,6 +191,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
             </div>
             <button
               onClick={() => setCreateDialogOpen(true)}
+              data-testid="credentials__create-btn"
               className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -211,7 +212,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
               }}
             />
           ) : (
-            <DataTable table={table} />
+            <DataTable table={table} testId="credentials__table" />
           )}
 
           <CreateCredentialDialog

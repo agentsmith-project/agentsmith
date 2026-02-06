@@ -86,7 +86,7 @@ export function RecipeHeader({
   return (
     <div
       className="border-b border-border bg-surface px-6 py-4 flex items-center justify-between"
-      data-testid="workbench-recipe-header"
+      data-testid="workbench__recipe-header"
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {/* Leave Recipe Button */}

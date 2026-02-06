@@ -56,13 +56,13 @@ export function RecipeList({ workspaceId, projectId }: RecipeListProps) {
   };
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background" data-testid="workbench__recipe-list">
       <div className="p-6 border-b border-subtle flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Workbench</h1>
           <p className="text-sm text-tertiary mt-1">Manage your Recipes and collaborate with agents</p>
         </div>
-        <Button onClick={() => setCreateDialogOpen(true)}>
+        <Button onClick={() => setCreateDialogOpen(true)} data-testid="workbench__create-recipe-btn">
           <Plus className="h-4 w-4 mr-2" />
           New Recipe
         </Button>
@@ -93,6 +93,8 @@ export function RecipeList({ workspaceId, projectId }: RecipeListProps) {
                   key={recipe.id}
                   onClick={() => handleRecipeClick(recipe.id)}
                   className="p-4 rounded-md border border-border bg-surface hover:bg-hover transition-colors cursor-pointer"
+                  data-testid="workbench__recipe-card"
+                  data-recipe-id={recipe.id}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="text-base font-semibold text-foreground truncate flex-1">{recipe.title}</h3>

@@ -53,6 +53,7 @@ export function NotificationCenter() {
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
+          data-testid="topbar__notifications"
           className="relative p-2 hover:bg-hover rounded-md text-icon-default hover:text-foreground transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
           aria-label={t('title')}
         >

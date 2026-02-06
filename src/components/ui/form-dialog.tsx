@@ -73,6 +73,8 @@ export interface FormDialogProps {
   onOpenChange?: (open: boolean) => void;
   /** Render prop for form content */
   children: (props: FormDialogRenderProps) => React.ReactNode;
+  /** Optional test ID for e2e testing */
+  testId?: string;
 }
 
 export function FormDialog({
@@ -86,6 +88,7 @@ export function FormDialog({
   open: controlledOpen,
   onOpenChange,
   children,
+  testId,
 }: FormDialogProps) {
   // Support both controlled and uncontrolled modes
   const [internalOpen, setInternalOpen] = React.useState(false);
@@ -122,7 +125,7 @@ export function FormDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent>
+      <DialogContent data-testid={testId}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -136,6 +139,7 @@ export function FormDialog({
             variant="ghost"
             onClick={() => setOpen(false)}
             disabled={isSubmitting}
+            data-testid={testId ? `${testId}__cancel-btn` : undefined}
           >
             {cancelLabel}
           </Button>
@@ -143,6 +147,7 @@ export function FormDialog({
             type="submit"
             form="dialog-form"
             disabled={isSubmitting}
+            data-testid={testId ? `${testId}__submit-btn` : undefined}
           >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {submitLabel}

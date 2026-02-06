@@ -191,10 +191,10 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
       <Tabs defaultValue="general" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="general">{settingsT('tab_general')}</TabsTrigger>
-          <TabsTrigger value="runtime">{settingsT('tab_runtime_preferences')}</TabsTrigger>
-          <TabsTrigger value="governance">{settingsT('tab_governance')}</TabsTrigger>
-          <TabsTrigger value="limits">{settingsT('tab_limits')}</TabsTrigger>
+          <TabsTrigger value="general" data-testid="settings__tab--general">{settingsT('tab_general')}</TabsTrigger>
+          <TabsTrigger value="runtime" data-testid="settings__tab--runtime">{settingsT('tab_runtime_preferences')}</TabsTrigger>
+          <TabsTrigger value="governance" data-testid="settings__tab--governance">{settingsT('tab_governance')}</TabsTrigger>
+          <TabsTrigger value="limits" data-testid="settings__tab--limits">{settingsT('tab_limits')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-6">
@@ -245,7 +245,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               </div>
             </div>
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveGeneral} disabled={savingGeneral} variant="action" size="lg">
+              <Button onClick={handleSaveGeneral} disabled={savingGeneral} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingGeneral ? 'Saving...' : 'Save'}
               </Button>
@@ -265,7 +265,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               onChange={setRuntimePreferences}
             />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveRuntimePrefs} disabled={savingRuntime} variant="action" size="lg">
+              <Button onClick={handleSaveRuntimePrefs} disabled={savingRuntime} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingRuntime ? 'Saving...' : 'Save'}
               </Button>
@@ -282,7 +282,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <SettingsTokenReference tokens={GOVERNANCE_TOKENS} />
             <GovernanceEditor value={governance} onChange={setGovernance} />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveGovernanceClick} disabled={savingGovernance} variant="action" size="lg">
+              <Button onClick={handleSaveGovernanceClick} disabled={savingGovernance} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingGovernance ? 'Saving...' : 'Save'}
               </Button>
@@ -299,7 +299,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <SettingsTokenReference tokens={LIMITS_TOKENS} />
             <LimitsEditor value={limits} onChange={setLimits} />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveLimits} disabled={savingLimits} variant="action" size="lg">
+              <Button onClick={handleSaveLimits} disabled={savingLimits} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingLimits ? 'Saving...' : 'Save'}
               </Button>
@@ -337,7 +337,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <div className="font-medium text-foreground">Delete Project</div>
             <div className="text-sm text-tertiary">Permanently delete this project and all data</div>
           </div>
-          <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
+          <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)} data-testid="settings__delete-project-btn">
             Delete Project
           </Button>
         </div>

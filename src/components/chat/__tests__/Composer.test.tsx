@@ -380,7 +380,7 @@ describe('Composer', () => {
     it('should have data-testid attribute', () => {
       render(<Composer {...defaultProps} />);
 
-      const composer = screen.getByTestId('chat-composer');
+      const composer = screen.getByTestId('chat__composer');
       expect(composer).toBeInTheDocument();
     });
   });

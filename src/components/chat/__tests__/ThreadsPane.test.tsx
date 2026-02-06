@@ -102,7 +102,7 @@ describe('ThreadsPane', () => {
     it('should have data-testid attribute', () => {
       render(<ThreadsPane {...defaultProps} />);
 
-      const pane = screen.getByTestId('chat-threads-pane');
+      const pane = screen.getByTestId('chat__threads-pane');
       expect(pane).toBeInTheDocument();
     });
   });

@@ -221,5 +221,5 @@ export function SourcesTable({
     );
   }
 
-  return <DataTable table={table} compact={compact} />;
+  return <DataTable table={table} compact={compact} testId="sources__table" />;
 }

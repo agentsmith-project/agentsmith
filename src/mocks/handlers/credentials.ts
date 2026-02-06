@@ -1,0 +1,34 @@
+import { http, HttpResponse } from 'msw';
+import p0 from '../fixtures/p0.json';
+
+const credentials = [...(p0.credentials ?? [])];
+
+export const credentialHandlers = [
+  http.get('/api/v1/workspaces/:ws/projects/:prj/credentials', () =>
+    HttpResponse.json({ items: credentials }),
+  ),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/credentials', async ({ request }) => {
+    const body: any = await request.json().catch(() => ({}));
+    const created = {
+      id: `cred_${Date.now()}`,
+      project_id: 'proj_001',
+      name: body.name ?? 'New Credential',
+      type: body.type ?? 'api_key',
+      fingerprint: `sk-...${Math.random().toString(36).slice(2, 6)}`,
+      created_at: new Date().toISOString(),
+    };
+    credentials.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/credentials/:id/rotate', ({ params }) => {
+    const cred = credentials.find((c) => c.id === params.id);
+    if (!cred) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
+    const rotated = { ...cred, last_rotated_at: new Date().toISOString() };
+    return HttpResponse.json(rotated);
+  }),
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/credentials/:id', ({ params }) => {
+    const idx = credentials.findIndex((c) => c.id === params.id);
+    if (idx >= 0) credentials.splice(idx, 1);
+    return HttpResponse.json({ ok: true });
+  }),
+];

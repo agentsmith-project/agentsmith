@@ -222,12 +222,13 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                       placeholder={t('search_placeholder')}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      data-testid="projects__search"
                       className="pl-9 pr-4 py-2 w-64 bg-surface-high border border-subtle rounded-sm text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
                     />
                   </div>
 
                   {/* New Project Button */}
-                  <Button variant="action" onClick={() => setCreateDialogOpen(true)}>
+                  <Button variant="action" onClick={() => setCreateDialogOpen(true)} data-testid="projects__create-btn">
                     <Plus className="w-4 h-4" />
                     {t('new_project')}
                   </Button>
@@ -305,6 +306,7 @@ function ProjectCard({
           }}
           className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
           aria-label={t('actions.unpin')}
+          data-testid="projects__pin-btn"
         >
           <Pin className="w-4 h-4 text-icon-default" />
         </button>
@@ -369,6 +371,7 @@ function ProjectsTable({
             onClick={(e) => onTogglePin(row.original.id, e)}
             className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
             aria-label={t('actions.pin')}
+            data-testid="projects__pin-btn"
           >
             <PinOff className="w-4 h-4 text-icon-default" />
           </button>
@@ -483,5 +486,5 @@ function ProjectsTable({
     );
   }
 
-  return <DataTable table={table} />;
+  return <DataTable table={table} testId="projects__table" />;
 }

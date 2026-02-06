@@ -67,6 +67,7 @@ function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
             className="gap-2"
             onClick={() => contextValue.setInviteDialogOpen(true)}
             disabled={!canManageMembers}
+            data-testid="members__invite-btn"
           >
             <Plus className="h-4 w-4" />
             {t('invite_member')}

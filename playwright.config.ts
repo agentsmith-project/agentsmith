@@ -10,14 +10,20 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 2 : 4,
   reporter: 'html',
-  timeout: 15000, // Reduce default timeout from 30s to 15s
+  timeout: 15000,
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.01,
+    },
+  },
+  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
   use: {
     baseURL: process.env.BASE_URL || 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    actionTimeout: 10000, // Reduce action timeout
-    navigationTimeout: 10000, // Reduce navigation timeout
+    actionTimeout: 10000,
+    navigationTimeout: 10000,
   },
 
   projects: [
@@ -28,16 +34,13 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      testIgnore: /smoke\.spec\.ts/,
+      testIgnore: [/smoke\.spec\.ts/, /visual\.spec\.ts/],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'visual',
+      testMatch: /visual\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-
-  // Don't start dev server - use existing one
-  // webServer: {
-  //   command: 'npm run dev',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  //   timeout: 120000,
-  // },
 });

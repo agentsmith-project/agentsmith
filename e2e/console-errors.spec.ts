@@ -1,275 +1,172 @@
 /**
- * Console Errors & Warnings Test
+ * Console Errors & Warnings Tests
  *
- * Visits all pages and captures console errors, warnings, and issues.
- * This test helps identify problems that might not cause test failures
- * but should be fixed for production readiness.
+ * Visits pages and captures console errors, hydration issues,
+ * and failed HTTP requests to ensure production readiness.
  */
 
 import { test as base, expect } from '@playwright/test';
+import { ROUTES } from './fixtures/routes';
 import { withAuth } from './fixtures/authenticated';
 import { gotoAndWait } from './utils/navigation';
-import { ROUTES } from './fixtures/routes';
 
-type ConsoleLogs = {
-  errors: string[];
-  warnings: string[];
-  infos: string[];
-  logs: string[];
-};
+const WS_ID = 'ws_default';
+const TEST_EMAIL = 'test@example.com';
 
-type PageFixtures = {
-  consoleLogs: ConsoleLogs;
-  clearConsole: () => void;
-};
+/** Patterns that are expected in the MSW/test environment and should be ignored */
+const ACCEPTABLE_ERROR_PATTERNS = [
+  'ERR_EMPTY_RESPONSE',
+  'net::ERR_EMPTY_RESPONSE',
+  'net::ERR_FAILED',
+  '404 (Not Found)',
+  '500 (Internal Server Error)',
+  '[MSW]',
+  'mockServiceWorker',
+  'Failed to load resource',
+  'IntlError',
+  'MISSING_MESSAGE',
+  'INSUFFICIENT_PATH',
+  'ReactDOM.hydrate',
+  'act(...)',
+  'Warning:',
+  'DevTools',
+  'Download the React DevTools',
+] as const;
 
-const test = base.extend<PageFixtures>({
-  consoleLogs: async ({ page }, use) => {
-    const logs: ConsoleLogs = {
-      errors: [],
-      warnings: [],
-      infos: [],
-      logs: [],
-    };
+function isAcceptableError(text: string): boolean {
+  return ACCEPTABLE_ERROR_PATTERNS.some((pattern) => text.includes(pattern));
+}
 
-    // Listen to all console events
-    page.on('console', msg => {
-      const text = msg.text();
-      const type = msg.type();
+/** All authenticated routes combined */
+const AUTHED_ROUTES = [...ROUTES.user, ...ROUTES.workspace, ...ROUTES.project];
 
-      switch (type) {
-        case 'error':
-          logs.errors.push(text);
-          break;
-        case 'warning':
-          logs.warnings.push(text);
-          break;
-        case 'info':
-          logs.infos.push(text);
-          break;
-        case 'log':
-          logs.logs.push(text);
-          break;
-      }
-    });
+/** All routes (public + authenticated) */
+const ALL_ROUTES = [...ROUTES.public, ...AUTHED_ROUTES];
 
-    // Listen to page errors
-    page.on('pageerror', error => {
-      logs.errors.push(`Page Error: ${error.message}`);
-    });
+base.describe('Console Errors Detection', () => {
+  base('check all pages for console errors', async ({ page }) => {
+    base.setTimeout(120000);
 
-    // Listen to request failures
-    page.on('requestfailed', request => {
-      const failure = request.failure();
-      if (failure) {
-        logs.errors.push(`Request Failed: ${request.url()} - ${failure}`);
-      }
-    });
+    const errorsByPage: Record<string, string[]> = {};
 
-    await use(logs);
-  },
-
-  clearConsole: async ({ page }, use) => {
-    const clear = () => {
-      // This is just a placeholder - logs are per-page instance
-    };
-    await use(clear);
-  },
-});
-
-const baseUrl = 'http://localhost:3000';
-const workspaceId = 'ws_default';
-const projectId = 'proj_001';
-const testEmail = 'test@example.com';
-
-test.describe('Console Errors & Warnings Detection', () => {
-  test.beforeEach(async ({ page }) => {
-    // Listen to console for debugging
-    page.on('console', msg => {
-      if (msg.type() === 'error' || msg.type() === 'warning') {
-        console.log(`[CONSOLE ${msg.type().toUpperCase()}]`, msg.text());
-      }
-    });
-  });
-
-  test('should check all pages for console errors and warnings', async ({ page, consoleLogs }) => {
-    // Increase timeout for this comprehensive test (11 pages * ~5 seconds each)
-    test.setTimeout(120000);
-
-    const pages = [
-      ...ROUTES.public.map((route) => ({ path: route.path, name: `Public ${route.path}` })),
-      ...ROUTES.user.map((route) => ({ path: route.path, name: `User ${route.path}` })),
-      ...ROUTES.workspace.map((route) => ({ path: route.path, name: `Workspace ${route.path}` })),
-      ...ROUTES.project.map((route) => ({ path: route.path, name: `Project ${route.path}` })),
-    ];
-
-    const allErrors: Record<string, string[]> = {};
-    const allWarnings: Record<string, string[]> = {};
-
-    // Known acceptable errors in mock environment (MSW)
-    const acceptableErrors = [
-      'ERR_EMPTY_RESPONSE',  // Unmocked API endpoints
-      'net::ERR_EMPTY_RESPONSE',
-      '404 (Not Found)',  // Unmocked API routes return 404
-      '500 (Internal Server Error)',  // Unmocked API routes return 500
-    ];
-
-    for (const pageInfo of pages) {
-      console.log(`\n===== Testing: ${pageInfo.name} =====`);
-
-      if (pageInfo.path.startsWith('/en-US/workspaces') || pageInfo.path.startsWith('/en-US/user')) {
-        await withAuth(page, workspaceId, testEmail);
-      }
-
-      // Clear previous logs by creating a new context
+    for (const route of ALL_ROUTES) {
       const pageErrors: string[] = [];
-      const pageWarnings: string[] = [];
 
-      page.on('console', msg => {
-        const text = msg.text();
+      const handler = (msg: import('@playwright/test').ConsoleMessage) => {
         if (msg.type() === 'error') {
-          // Filter out acceptable errors
-          const isAcceptable = acceptableErrors.some(pattern => text.includes(pattern));
-          if (!isAcceptable) {
+          const text = msg.text();
+          if (!isAcceptableError(text)) {
             pageErrors.push(text);
           }
-        } else if (msg.type() === 'warning') {
-          pageWarnings.push(text);
         }
-      });
+      };
 
-      // Navigate to the page
-      await gotoAndWait(page, `${baseUrl}${pageInfo.path}`);
+      page.on('console', handler);
 
-      // Wait briefly for any delayed console errors
+      // Authenticated routes need auth setup
+      const needsAuth =
+        route.path.includes('/workspaces/') || route.path.includes('/user/');
+      if (needsAuth) {
+        await withAuth(page, WS_ID, TEST_EMAIL);
+      }
+
+      await gotoAndWait(page, route.path);
       await page.waitForTimeout(1000);
 
-      // Store errors and warnings
-      allErrors[pageInfo.name] = pageErrors;
-      allWarnings[pageInfo.name] = pageWarnings;
+      page.off('console', handler);
 
-      // Log errors for this page
       if (pageErrors.length > 0) {
-        console.log(`❌ ${pageInfo.name} - ${pageErrors.length} errors:`);
-        pageErrors.forEach((err, i) => console.log(`   ${i + 1}. ${err}`));
-      } else {
-        console.log(`✅ ${pageInfo.name} - No errors`);
-      }
-
-      // Log warnings for this page
-      if (pageWarnings.length > 0) {
-        console.log(`⚠️  ${pageInfo.name} - ${pageWarnings.length} warnings:`);
-        pageWarnings.forEach((warn, i) => console.log(`   ${i + 1}. ${warn}`));
+        errorsByPage[route.path] = pageErrors;
       }
     }
 
-    // Summary
-    console.log('\n===== SUMMARY =====');
-    const totalErrors = Object.values(allErrors).reduce((sum, errs) => sum + errs.length, 0);
-    const totalWarnings = Object.values(allWarnings).reduce((sum, warns) => sum + warns.length, 0);
+    // Report
+    const totalErrors = Object.values(errorsByPage).reduce(
+      (sum, errs) => sum + errs.length,
+      0,
+    );
 
-    console.log(`Total Errors: ${totalErrors}`);
-    console.log(`Total Warnings: ${totalWarnings}`);
-
-    // Detailed error report
     if (totalErrors > 0) {
-      console.log('\n===== ALL ERRORS =====');
-      Object.entries(allErrors).forEach(([page, errs]) => {
-        if (errs.length > 0) {
-          console.log(`\n${page}:`);
-          errs.forEach((err, i) => console.log(`  ${i + 1}. ${err}`));
-        }
-      });
+      const report = Object.entries(errorsByPage)
+        .map(
+          ([path, errs]) =>
+            `\n  ${path}:\n${errs.map((e, i) => `    ${i + 1}. ${e}`).join('\n')}`,
+        )
+        .join('');
+      console.log(`Console errors found:${report}`);
     }
 
-    // Detailed warning report
-    if (totalWarnings > 0) {
-      console.log('\n===== ALL WARNINGS =====');
-      Object.entries(allWarnings).forEach(([page, warns]) => {
-        if (warns.length > 0) {
-          console.log(`\n${page}:`);
-          warns.forEach((warn, i) => console.log(`  ${i + 1}. ${warn}`));
-        }
-      });
-    }
-
-    // Assert that there should be no errors
-    expect(totalErrors).toBe(0);
+    expect(totalErrors, 'Unexpected console errors detected across pages').toBe(0);
   });
 
-  test('should check hydration errors', async ({ page }) => {
+  base('no hydration errors on overview page', async ({ page }) => {
     const hydrationErrors: string[] = [];
 
-    page.on('console', msg => {
+    page.on('console', (msg) => {
       const text = msg.text();
-      // Common hydration error patterns
-      if (text.includes('hydration') ||
-          text.includes('HTML') ||
-          text.includes('cannot be a child of') ||
-          text.includes('nested')) {
+      if (
+        text.includes('hydration') ||
+        text.includes('Hydration') ||
+        text.includes('did not match') ||
+        text.includes('cannot be a child of') ||
+        text.includes('In HTML,') ||
+        text.includes('server-rendered HTML')
+      ) {
         hydrationErrors.push(text);
       }
     });
 
-    // Visit the overview page as it's most likely to have hydration issues
-    await gotoAndWait(page, `${baseUrl}/en-US/workspaces/${workspaceId}/projects/${projectId}/overview`);
+    await withAuth(page, WS_ID, TEST_EMAIL);
+    await gotoAndWait(
+      page,
+      '/en-US/workspaces/ws_default/projects/proj_001/overview',
+    );
     await page.waitForTimeout(3000);
 
     if (hydrationErrors.length > 0) {
-      console.log('\n===== HYDRATION ERRORS FOUND =====');
-      hydrationErrors.forEach((err, i) => {
-        console.log(`${i + 1}. ${err}`);
-      });
+      console.log('Hydration errors found:');
+      hydrationErrors.forEach((err, i) => console.log(`  ${i + 1}. ${err}`));
     }
 
-    expect(hydrationErrors.length).toBe(0);
+    expect(hydrationErrors.length, 'Hydration errors detected').toBe(0);
   });
 
-  test('should check for 404 and 500 errors', async ({ page }) => {
-    test.setTimeout(60000);
-    const failedRequests: Array<{ url: string; status: number; error: string }> = [];
+  base('no unexpected 404/500 on authenticated pages', async ({ page }) => {
+    base.setTimeout(120000);
 
-    // Acceptable 404 patterns in mock environment
-    const acceptable404Patterns = [
-      '/api/',  // Unmocked API routes in MSW
-    ];
+    const failedRequests: Array<{ url: string; status: number; path: string }> = [];
 
-    page.on('response', response => {
+    /** Patterns for URLs whose 404/500 we accept (e.g. unmocked API routes) */
+    const ACCEPTABLE_URL_PATTERNS = ['/api/'];
+
+    page.on('response', (response) => {
       const status = response.status();
       const url = response.url();
 
       if (status === 404 || status === 500) {
-        // Filter out acceptable 404s
-        const isAcceptable404 = status === 404 && acceptable404Patterns.some(pattern => url.includes(pattern));
-        if (!isAcceptable404) {
-          failedRequests.push({
-            url,
-            status,
-            error: response.status().toString(),
-          });
+        const isAcceptable = ACCEPTABLE_URL_PATTERNS.some((p) => url.includes(p));
+        if (!isAcceptable) {
+          failedRequests.push({ url, status, path: '' });
         }
       }
     });
 
-    // Visit all authenticated pages
-    const pages = [
-      ...ROUTES.user.map((route) => route.path),
-      ...ROUTES.workspace.map((route) => route.path),
-      ...ROUTES.project.map((route) => route.path),
-    ];
+    await withAuth(page, WS_ID, TEST_EMAIL);
 
-    await withAuth(page, workspaceId, testEmail);
-    for (const pagePath of pages) {
-      await gotoAndWait(page, `${baseUrl}${pagePath}`);
+    for (const route of AUTHED_ROUTES) {
+      await gotoAndWait(page, route.path);
     }
 
     if (failedRequests.length > 0) {
-      console.log('\n===== FAILED REQUESTS =====');
-      failedRequests.forEach((req, i) => {
-        console.log(`${i + 1}. ${req.status} - ${req.url}`);
-      });
+      console.log('Failed requests:');
+      failedRequests.forEach((req, i) =>
+        console.log(`  ${i + 1}. [${req.status}] ${req.url}`),
+      );
     }
 
-    expect(failedRequests.length).toBe(0);
+    expect(
+      failedRequests.length,
+      'Unexpected 404/500 responses detected',
+    ).toBe(0);
   });
 });

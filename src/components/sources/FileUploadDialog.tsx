@@ -116,7 +116,7 @@ export function FileUploadDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[600px]" data-testid="sources__upload-dialog">
         <DialogHeader>
           <DialogTitle>Upload Files</DialogTitle>
           <DialogDescription>

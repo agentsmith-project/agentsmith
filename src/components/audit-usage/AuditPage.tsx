@@ -106,7 +106,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
       </div>
 
       {/* Filters */}
-      <div className="p-6">
+      <div className="p-6" data-testid="audit__filters">
         <AuditFilters
           filters={filters}
           onChange={setFilters}

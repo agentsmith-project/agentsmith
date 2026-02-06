@@ -5,9 +5,11 @@ interface DataTableProps<TData> {
   table: TanStackTable<TData>;
   /** Compact mode: smaller padding, 36px row height (Design 5.4) */
   compact?: boolean;
+  /** Optional test ID for e2e testing */
+  testId?: string;
 }
 
-export function DataTable<TData>({ table, compact = false }: DataTableProps<TData>) {
+export function DataTable<TData>({ table, compact = false, testId }: DataTableProps<TData>) {
   const cellPadding = compact ? 'px-3 py-2' : 'px-4 py-3';
   const headerPadding = compact ? 'px-3 py-2' : 'px-4 py-3';
   const selectedRowBg = 'bg-accent/15 hover:bg-accent/20 border-l-2 border-l-accent';
@@ -16,6 +18,7 @@ export function DataTable<TData>({ table, compact = false }: DataTableProps<TDat
   return (
     <div
       className="rounded-md overflow-hidden border border-border bg-surface"
+      data-testid={testId}
     >
       <table className="w-full border-collapse">
         <thead className="bg-transparent border-b border-subtle">
@@ -46,6 +49,8 @@ export function DataTable<TData>({ table, compact = false }: DataTableProps<TDat
                 'border-b border-border last:border-b-0 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
                 row.getIsSelected() ? selectedRowBg : unselectedRowBg,
               )}
+              data-testid={testId ? `${testId}__row` : undefined}
+              data-row-id={(row.original as Record<string, unknown>)?.id as string | undefined}
             >
               {row.getVisibleCells().map(cell => (
                 <td

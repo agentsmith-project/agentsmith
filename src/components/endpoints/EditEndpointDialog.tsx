@@ -91,7 +91,7 @@ export function EditEndpointDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto" data-testid="endpoints__edit-dialog">
         <DialogHeader>
           <DialogTitle>{t('edit_dialog.title')}</DialogTitle>
           <DialogDescription>{t('edit_dialog.description')}</DialogDescription>

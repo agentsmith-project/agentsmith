@@ -40,12 +40,12 @@ export default function WorkspaceSettingsPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-secondary mb-2">{t('workspace_name')}</label>
-                  <p className="text-primary">{workspace.name}</p>
+                  <p className="text-primary" data-testid="ws-settings__name">{workspace.name}</p>
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 p-6 rounded-xl border border-border bg-surface">
+            <div className="mt-6 p-6 rounded-xl border border-border bg-surface" data-testid="ws-settings__members">
               <h2 className="font-semibold text-foreground mb-4">{t('workspace_members')}</h2>
               {members.length === 0 ? (
                 <p className="text-tertiary text-sm">{t('workspace_members_empty')}</p>

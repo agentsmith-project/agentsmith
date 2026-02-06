@@ -32,6 +32,7 @@ export function DeleteCredentialDialog({
       variant="destructive"
       onConfirm={onConfirm}
       errorContext="credentials.delete"
+      testId="credentials__delete-dialog"
     />
   );
 }

@@ -72,6 +72,8 @@ export interface ConfirmationDialogProps {
   errorContext?: string;
   /** Disable confirm button */
   confirmDisabled?: boolean;
+  /** Optional test ID for e2e testing */
+  testId?: string;
 }
 
 export function ConfirmationDialog({
@@ -87,6 +89,7 @@ export function ConfirmationDialog({
   onOpenChange,
   errorContext,
   confirmDisabled = false,
+  testId,
 }: ConfirmationDialogProps) {
   // Support both controlled and uncontrolled modes
   const [internalOpen, setInternalOpen] = React.useState(false);
@@ -118,7 +121,7 @@ export function ConfirmationDialog({
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
       {trigger && <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>}
-      <AlertDialogContent>
+      <AlertDialogContent data-testid={testId}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description && <AlertDialogDescription>{description}</AlertDialogDescription>}
@@ -128,6 +131,7 @@ export function ConfirmationDialog({
             variant="ghost"
             onClick={() => setOpen(false)}
             disabled={isConfirming}
+            data-testid={testId ? `${testId}__cancel-btn` : undefined}
           >
             {cancelText}
           </Button>
@@ -135,6 +139,7 @@ export function ConfirmationDialog({
             variant={variant === 'destructive' ? 'destructive' : 'action'}
             onClick={handleConfirm}
             disabled={isConfirming || confirmDisabled}
+            data-testid={testId ? `${testId}__confirm-btn` : undefined}
           >
             {isConfirming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {confirmText}

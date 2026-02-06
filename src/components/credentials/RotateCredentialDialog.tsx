@@ -87,7 +87,7 @@ export function RotateCredentialDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px]" data-testid="credentials__rotate-dialog">
         <DialogHeader>
           <DialogTitle>{t('rotate_dialog.title')}</DialogTitle>
           <DialogDescription>

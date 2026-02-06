@@ -114,7 +114,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Basic Info from Auth */}
-      <div className="p-6 rounded-md border border-border bg-surface">
+      <div className="p-6 rounded-md border border-border bg-surface" data-testid="profile__form">
         <h2 className="text-base font-medium text-foreground mb-4 flex items-center gap-2">
           <User className="w-4 h-4 text-icon-default" />
           {t('basic_info')}
@@ -149,6 +149,7 @@ export default function ProfilePage() {
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder={t('display_name_placeholder')}
               className="bg-surface-high"
+              data-testid="profile__display-name"
             />
           </div>
           <div>
@@ -161,6 +162,7 @@ export default function ProfilePage() {
               placeholder={t('bio_placeholder')}
               rows={3}
               className="bg-surface-high resize-none"
+              data-testid="profile__bio"
             />
           </div>
         </div>
@@ -262,6 +264,7 @@ export default function ProfilePage() {
           onClick={handleSave}
           disabled={saveMutation.isPending || isLoading}
           className="gap-2"
+          data-testid="profile__save-btn"
         >
           <Save className="w-4 h-4" />
           {saveMutation.isPending ? t('saving') : t('save')}

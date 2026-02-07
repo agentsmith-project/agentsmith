@@ -5,7 +5,7 @@ import { useParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanManageResourcePolicy, useHasPermission } from '@/lib/hooks/use-permissions';
 import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import {
@@ -15,7 +15,6 @@ import {
   FolderOpen,
   Bot,
   Server,
-  Database,
   Key,
   Users,
   Settings as SettingsIcon,
@@ -38,10 +37,9 @@ const PROJECT_MENU_ITEMS = [
   { icon: MessageSquare, labelKey: 'chat', href: 'chat' },
   { icon: Wrench, labelKey: 'workbench', href: 'workbench' },
   { icon: FolderOpen, labelKey: 'sources', href: 'sources' },
-  { icon: Database, labelKey: 'userdata', href: 'userdata', permission: 'userdata:storage:read' as const },
-  { icon: Bot, labelKey: 'agents', href: 'agents' },
+  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:read' as const },
   { icon: Server, labelKey: 'endpoints', href: 'endpoints' },
-  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:resource:update' as const },
+  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:endpoint:update' as const },
   { icon: Key, labelKey: 'credentials', href: 'credentials', governance: 'wheel' as const },
   { icon: Users, labelKey: 'members', href: 'members' },
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:read' as const },
@@ -65,8 +63,12 @@ export function AppShellSidebar({
   const [collapsed, setCollapsed] = React.useState(false);
   const canReadAudit = useHasPermission('project:audit:read');
   const canReadUsage = useHasPermission('project:usage:read');
-  const canReadUserdata = useHasPermission('userdata:storage:read');
-  const canUpdateResourcePolicy = useHasPermission('project:resource:update');
+  const canUpdateEndpointPolicy = useHasPermission('project:endpoint:update');
+  const canUpdateSourceLibraryPolicy = useHasPermission('project:source:library:update');
+  const canUpdateAgentPolicy = useHasPermission('project:agent:update');
+  const canReadAgents = useHasPermission('project:agent:read');
+  const canUpdateResourcePolicy = canUpdateEndpointPolicy || canUpdateSourceLibraryPolicy || canUpdateAgentPolicy;
+  const canManageResourcePolicy = useCanManageResourcePolicy();
 
   const workspaceId = params?.workspace as string | undefined;
   const projectId = params?.project as string | undefined;
@@ -78,8 +80,8 @@ export function AppShellSidebar({
         if ('permission' in item && item.permission) {
           if (item.permission === 'project:audit:read') return canReadAudit;
           if (item.permission === 'project:usage:read') return canReadUsage;
-          if (item.permission === 'userdata:storage:read') return canReadUserdata;
-          if (item.permission === 'project:resource:update') return canUpdateResourcePolicy;
+          if (item.permission === 'project:endpoint:update') return canUpdateResourcePolicy && canManageResourcePolicy;
+          if (item.permission === 'project:agent:read') return canReadAgents;
         }
         if ('governance' in item && item.governance === 'wheel') {
           return canViewCredentials;

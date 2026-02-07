@@ -1,9 +1,9 @@
 'use client';
 import * as React from 'react';
-import { Activity, AlertCircle, Sparkles, Database, TrendingUp, TrendingDown } from 'lucide-react';
+import { Activity, AlertCircle, Sparkles, TrendingUp, TrendingDown } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { formatNumber, formatBytes } from '@/lib/utils/formatters';
+import { formatNumber } from '@/lib/utils/formatters';
 import type { UsageKPI } from '@/lib/api/types';
 
 export interface UsageKPICardsProps {
@@ -93,18 +93,6 @@ export function UsageKPICards({ kpi, loading, className }: UsageKPICardsProps) {
         </div>
       )}
 
-      {/* UserData Bytes */}
-      {kpi.userdata_bytes !== undefined && (
-        <div className="bg-surface border border-border rounded-md p-4">
-          <div className="flex items-center justify-between mb-2">
-            <Database className="h-5 w-5 text-tertiary" />
-          </div>
-          <div className="text-2xl font-semibold text-foreground mb-1">
-            {formatBytes(kpi.userdata_bytes)}
-          </div>
-          <div className="text-xs text-tertiary">{t('kpi.userdata_bytes')}</div>
-        </div>
-      )}
     </div>
   );
 }

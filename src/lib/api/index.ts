@@ -52,7 +52,6 @@ export {
   ChatAPI,
   SourcesAPI,
   RecipeAPI,
-  UserdataAPI,
 } from './endpoints';
 
 export type {

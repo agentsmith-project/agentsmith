@@ -1,26 +1,26 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanAccessStudio } from '@/lib/hooks/use-permissions';
 
 vi.mock('@/components/workbench/RecipeList', () => ({
-  RecipeList: ({ workspaceId, projectId }: { workspaceId: string; projectId: string }) => (
+  RecipeList: ({ workspaceId, projectId, canCreateRecipe }: { workspaceId: string; projectId: string; canCreateRecipe: boolean }) => (
     <div data-testid="workbench__recipe-list-route">
-      {workspaceId}:{projectId}
+      {workspaceId}:{projectId}:{String(canCreateRecipe)}
     </div>
   ),
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn(() => true),
+  useCanAccessStudio: vi.fn(() => true),
 }));
 
 import WorkbenchPage from '../page';
 
-const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseCanAccessStudio = vi.mocked(useCanAccessStudio);
 
 describe('WorkbenchPage route', () => {
   it('renders recipe list when params and permission are valid', async () => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseCanAccessStudio.mockReturnValue(true);
     render(
       <WorkbenchPage
         params={Promise.resolve({
@@ -34,11 +34,11 @@ describe('WorkbenchPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('workbench__recipe-list-route')).toBeInTheDocument();
     });
-    expect(screen.getByText('ws_1:proj_1')).toBeInTheDocument();
+    expect(screen.getByText('ws_1:proj_1:true')).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe workspace/project', async () => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseCanAccessStudio.mockReturnValue(true);
     render(
       <WorkbenchPage
         params={Promise.resolve({
@@ -55,8 +55,8 @@ describe('WorkbenchPage route', () => {
     expect(screen.getByText('validation_error')).toBeInTheDocument();
   });
 
-  it('shows permission denied when user lacks recipe permissions', async () => {
-    mockUseHasPermission.mockReturnValue(false);
+  it('shows permission denied when user lacks studio access', async () => {
+    mockUseCanAccessStudio.mockReturnValue(false);
     render(
       <WorkbenchPage
         params={Promise.resolve({

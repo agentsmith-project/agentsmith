@@ -35,6 +35,9 @@ test.describe('Audit Page', () => {
 
     const filters = authedPage.getByTestId('audit__filters');
     await expect(filters).toBeVisible();
+    await expect(filters.getByText(/Action/i)).toBeVisible();
+    await expect(filters.getByText(/Actor Type/i)).toBeVisible();
+    await expect(filters.getByText(/Result/i)).toBeVisible();
   });
 
   test('page header shows title and subtitle', async ({ authedPage }) => {
@@ -43,5 +46,24 @@ test.describe('Audit Page', () => {
     // Page should display the Audit title and a refresh button
     await expect(authedPage.getByText('Audit').first()).toBeVisible();
     await expect(authedPage.getByRole('button', { name: /refresh/i })).toBeVisible();
+  });
+
+  test('text filter and clear filters interaction works', async ({ authedPage }) => {
+    const filters = authedPage.getByTestId('audit__filters');
+    await expect(filters).toBeVisible({ timeout: 10000 });
+
+    const actorIdInput = filters.getByPlaceholder(/filter by actor id/i);
+    await actorIdInput.fill('user_001');
+    await expect(filters.getByRole('button', { name: /clear filters/i })).toBeVisible();
+  });
+
+  test('view details opens audit detail drawer', async ({ authedPage }) => {
+    const table = authedPage.getByTestId('audit__table');
+    await expect(table).toBeVisible({ timeout: 10000 });
+
+    const firstRow = table.getByTestId('audit__table__row').first();
+    await firstRow.getByRole('button').last().click();
+    await authedPage.getByRole('menuitem', { name: /view details/i }).click();
+    await expect(authedPage.getByText(/Audit Event Details/i)).toBeVisible();
   });
 });

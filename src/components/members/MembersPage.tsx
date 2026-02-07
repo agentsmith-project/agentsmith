@@ -23,19 +23,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Plus } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { MembersProvider, useMembersContext } from './MembersContext';
 import { useMembersList } from '@/lib/hooks/use-members-list';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import { useJoinRequests } from '@/lib/hooks/use-join-requests';
-import { MembersTable } from './MembersTable';
-import { MemberDetailDrawer } from './MemberDetailDrawer';
 import { ChangeHistoryDrawer } from './ChangeHistoryDrawer';
 import { InviteMemberDialog } from './InviteMemberDialog';
 import { QuotaOverrideHistoryDrawer } from './QuotaOverrideHistoryDrawer';
-import { JoinRequestsTab } from './JoinRequestsTab';
+import { PeopleTab } from './PeopleTab';
 import { TemplatesTab } from './TemplatesTab';
-import { BatchApplyBar } from './BatchApplyBar';
+import { GroupsTab } from './GroupsTab';
+import { JoinRequestsTab } from './JoinRequestsTab';
 import { BatchApplyPermissionDialog } from './BatchApplyPermissionDialog';
 import { BatchApplyQuotaDialog } from './BatchApplyQuotaDialog';
 
@@ -46,14 +44,11 @@ export interface MembersPageProps {
 
 function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
   const t = useTranslations('members');
-  const canReadMembers = useHasPermission('project:member:read');
-  const canProjectAdminGrant = useHasPermission('project:admin:grant');
-  const canProjectAdminRevoke = useHasPermission('project:admin:revoke');
-  const canManageMembers = canProjectAdminGrant || canProjectAdminRevoke;
+  const canManageMembers = useCanManageMemberGovernance();
 
-  const { data: joinRequests = [], isLoading: isLoadingRequests } = useJoinRequests(workspaceId, projectId);
   const contextValue = useMembersList({ workspaceId, projectId });
-  const [activeTab, setActiveTab] = React.useState<'members' | 'requests' | 'templates'>('members');
+  const [activeTab, setActiveTab] = React.useState<'people' | 'requests' | 'templates' | 'groups'>('people');
+  const { data: joinRequests = [], isLoading: isLoadingRequests } = useJoinRequests(workspaceId, projectId);
 
   return (
     <MembersProvider value={contextValue}>
@@ -77,39 +72,16 @@ function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
           />
         )}
       >
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'members' | 'requests' | 'templates')} className="flex-1 min-h-0 flex flex-col min-w-0">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'people' | 'requests' | 'templates' | 'groups')} className="flex-1 min-h-0 flex flex-col min-w-0">
           <TabsList className="flex-shrink-0">
-            <TabsTrigger value="members">{t('tabs.members')}</TabsTrigger>
+            <TabsTrigger value="people">{t('tabs.people')}</TabsTrigger>
             <TabsTrigger value="requests">{t('tabs.requests')}</TabsTrigger>
             <TabsTrigger value="templates">{t('tabs.templates')}</TabsTrigger>
+            <TabsTrigger value="groups">{t('tabs.groups')}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="members" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-            {/* Table + selection bar (bar overlays bottom, no layout shift) */}
-            <div className="flex-1 min-h-0 flex flex-col relative">
-              <div
-                className={cn(
-                  'flex-1 min-h-0 overflow-auto overflow-x-auto transition-[padding] duration-200',
-                  contextValue.selectedMemberIds.length > 0 && canManageMembers && 'pb-14',
-                )}
-              >
-                {canReadMembers ? (
-                  <MembersTableWithContext />
-                ) : (
-                  <div className="text-center py-8 text-tertiary">
-                    <p className="text-sm">{t('no_permission_to_view')}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Selection bar: fixed at bottom of table area, overlays content (no layout shift) */}
-              {contextValue.selectedMemberIds.length > 0 && canManageMembers && (
-                <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-subtle bg-surface shadow-[0_-4px_12px_rgba(0,0,0,0.15)]">
-                  <BatchApplyBarWithContext overlay />
-                </div>
-              )}
-            </div>
+          <TabsContent value="people" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
+            <PeopleTab workspaceId={workspaceId} projectId={projectId} />
           </TabsContent>
 
           <TabsContent value="requests" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
@@ -128,52 +100,16 @@ function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
               <TemplatesTab workspaceId={workspaceId} projectId={projectId} />
             </div>
           </TabsContent>
+
+          <TabsContent value="groups" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
+            <GroupsTab workspaceId={workspaceId} projectId={projectId} />
+          </TabsContent>
         </Tabs>
 
         {/* Detail Drawers and Dialogs with context */}
         <MemberDetailDrawersAndDialogs workspaceId={workspaceId} projectId={projectId} />
       </PageLayout>
     </MembersProvider>
-  );
-}
-
-/**
- * Internal component that uses context for MembersTable
- */
-function MembersTableWithContext() {
-  const context = useMembersContext();
-  const canProjectAdminGrant = useHasPermission('project:admin:grant');
-  const canProjectAdminRevoke = useHasPermission('project:admin:revoke');
-  const canManageMembers = canProjectAdminGrant || canProjectAdminRevoke;
-
-  return (
-    <MembersTable
-      data={context.members}
-      loading={context.isLoading}
-      enableSelection={canManageMembers}
-      selectedMemberIds={context.selectedMemberIds}
-      onSelectionChange={context.setSelectedMemberIds}
-      onEditPermissions={canManageMembers ? context.handleEditPermissions : undefined}
-      onRemove={canManageMembers ? context.handleRemove : undefined}
-      onViewHistory={context.handleViewHistory}
-    />
-  );
-}
-
-/**
- * Internal component that uses context for BatchApplyBar
- */
-function BatchApplyBarWithContext({ overlay }: { overlay?: boolean }) {
-  const context = useMembersContext();
-
-  return (
-    <BatchApplyBar
-      overlay={overlay}
-      selectedCount={context.selectedMemberIds.length}
-      onApplyPermissionTemplate={() => context.setBatchPermDialogOpen(true)}
-      onApplyQuotaTemplate={() => context.setBatchQuotaDialogOpen(true)}
-      onClearSelection={context.clearSelection}
-    />
   );
 }
 
@@ -185,28 +121,8 @@ function MemberDetailDrawersAndDialogs({ workspaceId, projectId }: { workspaceId
 
   return (
     <>
-      {/* Member Detail Drawer */}
       {context.selectedMember && (
         <>
-          <MemberDetailDrawer
-            open={context.drawerOpen}
-            onOpenChange={context.setDrawerOpen}
-            member={context.selectedMember}
-            permissions={context.permissions}
-            projectGovernance={context.project?.governance_json as Record<string, unknown> | undefined}
-            quotaOverrides={context.quotaOverrides}
-            _workspaceId={workspaceId}
-            _projectId={projectId}
-            permissionTemplates={context.permissionTemplates}
-            quotaTemplates={context.quotaTemplates}
-            onSavePermissions={context.handleSavePermissions}
-            onSaveQuota={context.handleSaveQuota}
-            onViewHistory={() => {
-              context.setDrawerOpen(false);
-              context.setHistoryDrawerOpen(true);
-            }}
-            onViewQuotaHistory={context.handleViewQuotaHistory}
-          />
           <ChangeHistoryDrawer
             open={context.historyDrawerOpen}
             onOpenChange={context.setHistoryDrawerOpen}

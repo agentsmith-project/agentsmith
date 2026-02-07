@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,7 @@ import {
   useBatchApplyQuotaTemplate,
   useMembers,
 } from '@/lib/hooks/use-members';
-import { useIsOwnerOrAdmin } from '@/lib/hooks/use-permissions';
+import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import { CreateQuotaTemplateDrawer } from './CreateQuotaTemplateDrawer';
 import { EditQuotaTemplateDrawer } from './EditQuotaTemplateDrawer';
 import { ApplyQuotaTemplateDialog } from './ApplyQuotaTemplateDialog';
@@ -33,6 +34,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import type { QuotaTemplate } from '@/lib/api/types';
+import { formatBytes } from '@/lib/utils/formatters';
 
 export interface QuotaTemplatesSectionProps {
   workspaceId: string;
@@ -50,7 +52,7 @@ export function QuotaTemplatesSection({
   const { data: members = [] } = useMembers(workspaceId, projectId);
   const createTemplate = useCreateQuotaTemplate(workspaceId, projectId);
   const batchApply = useBatchApplyQuotaTemplate(workspaceId, projectId);
-  const canManage = useIsOwnerOrAdmin();
+  const canManage = useCanManageMemberGovernance();
 
   const [selectedTemplate, setSelectedTemplate] = React.useState<QuotaTemplate | null>(null);
   const [editingTemplateId, setEditingTemplateId] = React.useState('');
@@ -240,6 +242,35 @@ export function QuotaTemplatesSection({
   );
 }
 
+function buildQuotaSummaryRows(overrides: QuotaTemplate['overrides_json']) {
+  const rows: Array<{ section: 'endpoint' | 'source_library' | 'agent'; items: string[] }> = [];
+  if (overrides.endpoint) {
+    const items: string[] = [];
+    if (overrides.endpoint.daily_token_limit !== undefined) {
+      items.push(`daily_token_limit: ${overrides.endpoint.daily_token_limit.toLocaleString()} tokens/day`);
+    }
+    if (items.length > 0) rows.push({ section: 'endpoint', items });
+  }
+  if (overrides.source_library) {
+    const items: string[] = [];
+    if (overrides.source_library.max_total_files !== undefined) {
+      items.push(`max_total_files: ${overrides.source_library.max_total_files.toLocaleString()} files`);
+    }
+    if (overrides.source_library.max_file_size_bytes !== undefined) {
+      items.push(`max_file_size_bytes: ${formatBytes(overrides.source_library.max_file_size_bytes)}`);
+    }
+    if (items.length > 0) rows.push({ section: 'source_library', items });
+  }
+  if (overrides.agent) {
+    const items: string[] = [];
+    if (overrides.agent.max_concurrency !== undefined) {
+      items.push(`max_concurrency: ${overrides.agent.max_concurrency.toLocaleString()}`);
+    }
+    if (items.length > 0) rows.push({ section: 'agent', items });
+  }
+  return rows;
+}
+
 interface QuotaTemplateCardProps {
   template: QuotaTemplate;
   canManage: boolean;
@@ -258,7 +289,8 @@ function QuotaTemplateCard({
   onDelete,
 }: QuotaTemplateCardProps) {
   const t = useTranslations('members.templates');
-  const overrideCount = Object.keys(template.overrides_json || {}).length;
+  const summaryRows = buildQuotaSummaryRows(template.overrides_json || {});
+  const overrideCount = summaryRows.reduce((count, row) => count + row.items.length, 0);
 
   return (
     <div className="border border-border rounded-md p-4 space-y-3">
@@ -269,8 +301,17 @@ function QuotaTemplateCard({
             <p className="text-xs text-tertiary mt-1">{template.description}</p>
           )}
           <p className="text-xs text-tertiary mt-1">
-            {overrideCount} override path{overrideCount !== 1 ? 's' : ''}
+            {overrideCount} override field{overrideCount !== 1 ? 's' : ''}
           </p>
+          {summaryRows.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {summaryRows.map((row) => (
+                <Badge key={row.section} variant="outline" className="text-[11px]">
+                  {row.section}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onView} className="gap-2">
@@ -320,9 +361,10 @@ function QuotaTemplateViewDialog({
   onApplyToMembers,
 }: QuotaTemplateViewDialogProps) {
   const t = useTranslations('members.templates');
+  const tQuota = useTranslations('members.quota');
 
   const overrides = template.overrides_json || {};
-  const overrideEntries = Object.entries(overrides);
+  const summaryRows = buildQuotaSummaryRows(overrides);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -343,12 +385,27 @@ function QuotaTemplateViewDialog({
               Quota Overrides
             </h4>
             <div className="border border-border rounded-md p-4 max-h-[400px] overflow-y-auto">
-              {overrideEntries.length === 0 ? (
+              {summaryRows.length === 0 ? (
                 <p className="text-sm text-tertiary">No overrides (uses project defaults)</p>
               ) : (
-                <pre className="text-xs font-mono text-foreground whitespace-pre-wrap">
-                  {JSON.stringify(overrides, null, 2)}
-                </pre>
+                <div className="space-y-4">
+                  {summaryRows.map((row) => (
+                    <div key={row.section} className="space-y-2">
+                      <h5 className="text-xs font-semibold text-primary uppercase tracking-wide">
+                        {row.section === 'endpoint' && tQuota('sections.endpoint_title')}
+                        {row.section === 'source_library' && tQuota('sections.source_library_title')}
+                        {row.section === 'agent' && tQuota('sections.agent_title')}
+                      </h5>
+                      <ul className="space-y-1">
+                        {row.items.map((item) => (
+                          <li key={item} className="text-xs text-tertiary font-mono">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>

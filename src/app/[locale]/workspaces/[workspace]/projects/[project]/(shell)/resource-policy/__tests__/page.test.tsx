@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanManageResourcePolicy, useHasPermission } from '@/lib/hooks/use-permissions';
 
 const mockListEndpoints = vi.fn().mockResolvedValue({
   items: [
@@ -72,6 +72,12 @@ const mockGetResourcePolicy = vi.fn().mockImplementation(
         allowed_subjects: [{ subject_type: 'group' as const, subject_id: 'group_001' }],
       };
     }
+    if (resourceType === 'agent') {
+      return {
+        ...defaultPolicy,
+        rate_limits: { rules: [{ key: 'agent.max_concurrency', value: 4 }] },
+      };
+    }
     return defaultPolicy;
   }
 );
@@ -94,6 +100,7 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
+  useCanManageResourcePolicy: vi.fn(() => true),
 }));
 
 const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
@@ -148,6 +155,7 @@ vi.mock('@/lib/hooks/use-members', () => ({
 import ResourcePolicyPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseCanManageResourcePolicy = vi.mocked(useCanManageResourcePolicy);
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -166,6 +174,7 @@ describe('ResourcePolicyPage', () => {
     mockPolicyData = defaultPolicyData();
     mockMutateAsync.mockClear();
     mockGetResourcePolicy.mockClear();
+    mockUseCanManageResourcePolicy.mockReturnValue(true);
   });
 
   it('saves endpoint policy changes', async () => {
@@ -260,8 +269,25 @@ describe('ResourcePolicyPage', () => {
       'resource_status.allow_list. resource_status_reason.allow_list'
     );
     expect(screen.getByTestId('resource-policy__row-status--agent--agent_1')).toHaveTextContent(
-      'resource_status.default'
+      'resource_status.overridden'
     );
+  });
+
+  it('renders resource groups by type', async () => {
+    mockUseHasPermission.mockReturnValue(true);
+    render(
+      <ResourcePolicyPage
+        params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__group--endpoint')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('resource-policy__group--agent')).toBeInTheDocument();
+    expect(screen.getByTestId('resource-policy__group--source_library')).toBeInTheDocument();
   });
 
   it('shows invalid parameter error state for unsafe route params', async () => {
@@ -280,8 +306,8 @@ describe('ResourcePolicyPage', () => {
     expect(screen.getByText('validation_error')).toBeInTheDocument();
   });
 
-  it('shows permission denied when user lacks read access', async () => {
-    mockUseHasPermission.mockReturnValue(false);
+  it('shows permission denied when user lacks governance access', async () => {
+    mockUseCanManageResourcePolicy.mockReturnValue(false);
     render(
       <ResourcePolicyPage
         params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
@@ -401,12 +427,16 @@ describe('ResourcePolicyPage', () => {
     });
 
     await user.click(screen.getByTestId('resource-policy__row--agent--agent_1'));
+    await user.clear(screen.getByTestId('resource-policy__agent-max-concurrency'));
     await user.type(screen.getByTestId('resource-policy__agent-max-concurrency'), '6');
 
     await user.click(screen.getByTestId('resource-policy__add-subject'));
     const subjectSelects = screen.getAllByTestId('resource-policy__subject-id-select');
     await user.selectOptions(subjectSelects[0], 'user_123');
-    await user.type(screen.getByPlaceholderText('subject_placeholders.agent.max_concurrency'), '2');
+    await user.type(
+      screen.getByPlaceholderText('subject_placeholders.agent.max_concurrency'),
+      '2'
+    );
 
     await user.click(screen.getByTestId('resource-policy__save'));
 
@@ -426,4 +456,5 @@ describe('ResourcePolicyPage', () => {
       })
     );
   });
+
 });

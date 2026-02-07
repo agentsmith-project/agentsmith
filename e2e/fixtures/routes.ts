@@ -25,7 +25,6 @@ export const ROUTES = {
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/members', title: /Members|成员/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/audit', title: /Audit|审计/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/usage', title: /Usage|用量/i },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/userdata', title: /UserData|User Data|用户数据/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/sources', testId: 'sources__library-select' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/credentials', title: /Credentials|Keys|凭据/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/settings', title: /Settings|Project|设置/i },

@@ -9,6 +9,11 @@ import {
   useIsAuthenticated,
   useHasAnyPermission,
   useHasAllPermissions,
+  useCanAccessChat,
+  useCanAccessStudio,
+  useCanCreateRecipe,
+  useCanUpdateRecipe,
+  useCanDeleteRecipe,
 } from '../use-permissions';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -110,6 +115,30 @@ describe('use-permissions hooks', () => {
 
       expect(result.current).toEqual([]);
     });
+
+    it('should fallback to role template when permissions are empty', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        role: 'developer' as const,
+        permissions: [],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCurrentPermissions(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toContain('project:read');
+      expect(result.current.length).toBeGreaterThan(0);
+    });
   });
 
   describe('useHasPermission', () => {
@@ -199,6 +228,82 @@ describe('use-permissions hooks', () => {
       });
 
       expect(result.current).toBe(false);
+    });
+  });
+
+  describe('chat/studio access hooks', () => {
+    it('useCanAccessChat should require project:chat:access', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:chat:access'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanAccessChat(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+
+    it('useCanAccessStudio should require project:studio:access', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:studio:access'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanAccessStudio(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+
+    it('studio recipe capability hooks should all follow studio access', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:studio:access'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result: createResult } = renderHook(() => useCanCreateRecipe(), {
+        wrapper: createWrapper(),
+      });
+      const { result: updateResult } = renderHook(() => useCanUpdateRecipe(), {
+        wrapper: createWrapper(),
+      });
+      const { result: deleteResult } = renderHook(() => useCanDeleteRecipe(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(createResult.current).toBe(true);
+      expect(updateResult.current).toBe(true);
+      expect(deleteResult.current).toBe(true);
     });
   });
 

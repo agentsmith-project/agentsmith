@@ -17,7 +17,6 @@ const PROJECT_SECTIONS = [
   'members',
   'audit',
   'usage',
-  'userdata',
   'sources',
   'settings',
 ] as const;

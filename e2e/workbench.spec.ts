@@ -114,5 +114,42 @@ test.describe('Workbench Page', () => {
       const sendBtn = authedPage.getByTestId('workbench__send-btn');
       await expect(sendBtn).toBeEnabled();
     });
+
+    test('should open edit dialog and submit update payload', async ({ authedPage }) => {
+      const patchRequestPromise = authedPage.waitForRequest((req) => {
+        return req.method() === 'PATCH'
+          && /\/api\/v1\/workspaces\/.*\/projects\/.*\/recipes\/recipe_001$/.test(req.url());
+      });
+
+      await authedPage.getByRole('button', { name: /edit/i }).click();
+      const dialog = authedPage.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+
+      const titleInput = dialog.getByTestId('workbench__edit-recipe-title');
+      await titleInput.fill('Updated Recipe From E2E');
+
+      await dialog.getByTestId('workbench__edit-recipe-status').click();
+      await authedPage.getByRole('option', { name: /closed/i }).click();
+      await dialog.getByTestId('workbench__edit-recipe-save').click();
+
+      const request = await patchRequestPromise;
+      const payload = request.postDataJSON() as { title?: string; status?: string };
+      expect(payload.title).toBe('Updated Recipe From E2E');
+      expect(payload.status).toBe('closed');
+    });
+
+    test('should navigate back to list when clicking leave button', async ({ authedPage }) => {
+      await authedPage.getByRole('button', { name: /leave/i }).click();
+      await authedPage.waitForURL(/\/workbench$/);
+      await expect(authedPage.getByTestId('workbench__recipe-list')).toBeVisible();
+    });
+
+    test('should open add sources dialog with disabled confirm before selection', async ({ authedPage }) => {
+      await authedPage.getByRole('button', { name: /add sources/i }).click();
+      const dialog = authedPage.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole('button', { name: /add selected/i })).toBeDisabled();
+      await expect(dialog.getByRole('button', { name: /cancel/i })).toBeVisible();
+    });
   });
 });

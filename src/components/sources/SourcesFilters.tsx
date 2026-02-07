@@ -34,9 +34,9 @@ export function SourcesFilters({
   className,
 }: SourcesFiltersProps) {
   return (
-    <div className={cn('flex items-center gap-4', className)}>
+    <div className={cn('flex items-center gap-2', className)}>
       <Select value={status} onValueChange={onStatusChange}>
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="w-[150px]">
           <SelectValue placeholder="Status" />
         </SelectTrigger>
         <SelectContent>
@@ -53,7 +53,7 @@ export function SourcesFilters({
         value={aiReadyOnly ? 'only' : 'all'}
         onValueChange={(value) => onAIReadyOnlyChange(value === 'only')}
       >
-        <SelectTrigger className="w-[160px]">
+        <SelectTrigger className="w-[150px]">
           <SelectValue placeholder="AIReady" />
         </SelectTrigger>
         <SelectContent>
@@ -63,7 +63,7 @@ export function SourcesFilters({
       </Select>
 
       <Select value={sortBy} onValueChange={onSortByChange}>
-        <SelectTrigger className="w-[140px]">
+        <SelectTrigger className="w-[130px]">
           <SelectValue placeholder="Sort by" />
         </SelectTrigger>
         <SelectContent>
@@ -74,7 +74,7 @@ export function SourcesFilters({
       </Select>
 
       <Select value={sortOrder} onValueChange={onSortOrderChange}>
-        <SelectTrigger className="w-[100px]">
+        <SelectTrigger className="w-[96px]">
           <SelectValue placeholder="Order" />
         </SelectTrigger>
         <SelectContent>

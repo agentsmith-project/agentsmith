@@ -25,7 +25,7 @@ vi.mock('@/lib/hooks/use-members', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useIsOwnerOrAdmin: vi.fn(),
+  useCanManageMemberGovernance: vi.fn(),
 }));
 
 vi.mock('../CreateTemplateDrawer', () => ({
@@ -69,7 +69,7 @@ import {
   useBatchApplyPermissionTemplate,
   useMembers,
 } from '@/lib/hooks/use-members';
-import { useIsOwnerOrAdmin } from '@/lib/hooks/use-permissions';
+import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 
 const mockUsePermissionTemplates = vi.mocked(usePermissionTemplates);
 const mockUseCreatePermissionTemplate = vi.mocked(useCreatePermissionTemplate);
@@ -77,7 +77,7 @@ const mockUseUpdatePermissionTemplate = vi.mocked(useUpdatePermissionTemplate);
 const mockUseDeletePermissionTemplate = vi.mocked(useDeletePermissionTemplate);
 const mockUseBatchApplyPermissionTemplate = vi.mocked(useBatchApplyPermissionTemplate);
 const mockUseMembers = vi.mocked(useMembers);
-const mockUseIsOwnerOrAdmin = vi.mocked(useIsOwnerOrAdmin);
+const mockUseCanManageMemberGovernance = vi.mocked(useCanManageMemberGovernance);
 const STABLE_PERMISSION_TEMPLATES_QUERY = {
   data: [
     {
@@ -99,7 +99,7 @@ describe('PermissionTemplatesTab', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseIsOwnerOrAdmin.mockReturnValue(true);
+    mockUseCanManageMemberGovernance.mockReturnValue(true);
     mockUsePermissionTemplates.mockReturnValue(STABLE_PERMISSION_TEMPLATES_QUERY);
     mockUseMembers.mockReturnValue(STABLE_EMPTY_MEMBERS_QUERY);
     mockUseCreatePermissionTemplate.mockReturnValue({ mutateAsync: vi.fn() } as never);

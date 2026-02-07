@@ -34,4 +34,18 @@ export class WorkspaceAPI {
     );
     return response.items;
   }
+
+  /**
+   * Update governance group for a workspace member.
+   */
+  async updateMemberGovernanceGroup(
+    workspaceId: string,
+    memberId: string,
+    governanceGroup: 'wheel' | 'user',
+  ): Promise<WorkspaceMember> {
+    return this.client.patch<WorkspaceMember>(
+      `/workspaces/${workspaceId}/members/${memberId}/governance`,
+      { governance_group: governanceGroup },
+    );
+  }
 }

@@ -13,6 +13,7 @@ Clarify the boundary between authentication data and authorization enforcement t
 2. `Permission point`
 - Canonical action identifier (for example `project:admin:grant`).
 - Source of truth: `src/lib/constants/permissions.ts`.
+- Access-only examples in MVP: `project:chat:access`, `project:studio:access`.
 
 3. `Frontend gate`
 - Uses permission points to drive UX states (show/hide/disable/error state).

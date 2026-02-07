@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
 
 const mockUpdate = vi.fn().mockResolvedValue({});
 const mockList = vi.fn().mockResolvedValue({
@@ -43,11 +43,13 @@ vi.mock('@/components/endpoints/CreateEndpointDialog', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
+  useIsProjectAdmin: vi.fn(() => true),
 }));
 
 import EndpointsPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseIsProjectAdmin = vi.mocked(useIsProjectAdmin);
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -64,6 +66,7 @@ function createWrapper() {
 describe('EndpointsPage', () => {
   it('renders header and toolbar layout', async () => {
     mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
     render(
       <EndpointsPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />,
       { wrapper: createWrapper() }
@@ -81,6 +84,7 @@ describe('EndpointsPage', () => {
 
   it('toggles endpoint status', async () => {
     mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
     const user = userEvent.setup();
     render(
       <EndpointsPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />,
@@ -97,6 +101,7 @@ describe('EndpointsPage', () => {
 
   it('shows invalid parameter error state for unsafe route params', async () => {
     mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
     render(
       <EndpointsPage params={Promise.resolve({ workspace: '<script>', project: 'prj_1', locale: 'en-US' })} />,
       { wrapper: createWrapper() }
@@ -111,6 +116,7 @@ describe('EndpointsPage', () => {
 
   it('shows permission denied when user lacks read access', async () => {
     mockUseHasPermission.mockReturnValue(false);
+    mockUseIsProjectAdmin.mockReturnValue(false);
     render(
       <EndpointsPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />,
       { wrapper: createWrapper() }

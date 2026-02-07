@@ -16,7 +16,6 @@ const STABLE_USAGE_WITH_STORAGE_DATA = {
   requests_today: 12,
   errors_today: 1,
   tokens_today: 800,
-  userdata_bytes: 1024,
 };
 
 vi.mock('next/navigation', () => ({
@@ -76,7 +75,7 @@ describe('OverviewPage', () => {
     });
   }
 
-  it('renders tokens and userdata cards even when KPI fields are missing', () => {
+  it('renders tokens card even when optional KPI fields are missing', () => {
     mockUseHasPermission.mockReturnValue(true);
     mockUseQuery.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
       if (queryKey[0] === 'usage') {
@@ -91,11 +90,10 @@ describe('OverviewPage', () => {
     render(<OverviewPage />);
 
     expect(screen.getByText('kpi.tokens_today')).toBeInTheDocument();
-    expect(screen.getByText('kpi.userdata_storage')).toBeInTheDocument();
-    expect(screen.getAllByText('--')).toHaveLength(2);
+    expect(screen.getByText('--')).toBeInTheDocument();
   });
 
-  it('formats userdata bytes when present', () => {
+  it('formats tokens when present', () => {
     mockUseHasPermission.mockReturnValue(true);
     mockUseQuery.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
       if (queryKey[0] === 'usage') {
@@ -109,7 +107,7 @@ describe('OverviewPage', () => {
 
     render(<OverviewPage />);
 
-    expect(screen.getByText('1.0 KB')).toBeInTheDocument();
+    expect(screen.getByText('800')).toBeInTheDocument();
   });
 
   it('renders header and toolbar layout', () => {

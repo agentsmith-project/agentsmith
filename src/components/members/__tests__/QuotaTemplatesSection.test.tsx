@@ -21,7 +21,7 @@ vi.mock('@/lib/hooks/use-members', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useIsOwnerOrAdmin: vi.fn(),
+  useCanManageMemberGovernance: vi.fn(),
 }));
 
 vi.mock('../CreateQuotaTemplateDrawer', () => ({
@@ -61,7 +61,7 @@ import {
   useBatchApplyQuotaTemplate,
   useMembers,
 } from '@/lib/hooks/use-members';
-import { useIsOwnerOrAdmin } from '@/lib/hooks/use-permissions';
+import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 
 const mockUseQuotaTemplates = vi.mocked(useQuotaTemplates);
 const mockUseCreateQuotaTemplate = vi.mocked(useCreateQuotaTemplate);
@@ -69,7 +69,7 @@ const mockUseUpdateQuotaTemplate = vi.mocked(useUpdateQuotaTemplate);
 const mockUseDeleteQuotaTemplate = vi.mocked(useDeleteQuotaTemplate);
 const mockUseBatchApplyQuotaTemplate = vi.mocked(useBatchApplyQuotaTemplate);
 const mockUseMembers = vi.mocked(useMembers);
-const mockUseIsOwnerOrAdmin = vi.mocked(useIsOwnerOrAdmin);
+const mockUseCanManageMemberGovernance = vi.mocked(useCanManageMemberGovernance);
 const STABLE_QUOTA_TEMPLATES_QUERY = {
   data: [
     {
@@ -89,7 +89,7 @@ describe('QuotaTemplatesSection', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseIsOwnerOrAdmin.mockReturnValue(true);
+    mockUseCanManageMemberGovernance.mockReturnValue(true);
     mockUseQuotaTemplates.mockReturnValue(STABLE_QUOTA_TEMPLATES_QUERY);
     mockUseMembers.mockReturnValue(STABLE_EMPTY_MEMBERS_QUERY);
     mockUseCreateQuotaTemplate.mockReturnValue({ mutateAsync: vi.fn() } as never);

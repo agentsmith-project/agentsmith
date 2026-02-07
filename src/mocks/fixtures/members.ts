@@ -11,7 +11,7 @@ export interface Member {
   email: string;
   name: string;
   avatar?: string;
-  status: 'active' | 'blocked' | 'removed';
+  status: 'active' | 'removed';
   created_at: string;
 }
 
@@ -65,7 +65,7 @@ export const memberFixtures: Member[] = [
     id: 'user_005',
     email: 'eve@example.com',
     name: 'Eve Johnson',
-    status: 'blocked',
+    status: 'removed',
     created_at: '2026-01-08T00:00:00Z',
   },
 ];
@@ -83,7 +83,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
     project_id: 'proj_001',
     user_id: 'user_002',
     role: 'admin',
-    permissions: ['project:read', 'project:agent:create', 'project:agent:manage', 'project:endpoint:create'],
+    permissions: ['project:read', 'project:agent:create', 'project:agent:update', 'project:endpoint:create'],
     status: 'active',
     joined_at: '2026-01-16T10:00:00Z',
   },
@@ -91,7 +91,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
     project_id: 'proj_001',
     user_id: 'user_003',
     role: 'developer',
-    permissions: ['project:read', 'project:agent:create', 'project:chat:use'],
+    permissions: ['project:read', 'project:agent:read', 'project:chat:access', 'project:studio:access'],
     status: 'active',
     joined_at: '2026-01-17T10:00:00Z',
   },
@@ -99,7 +99,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
     project_id: 'proj_001',
     user_id: 'user_004',
     role: 'user',
-    permissions: ['project:read', 'project:chat:use'],
+    permissions: ['project:read', 'project:chat:access', 'project:studio:access'],
     status: 'active',
     joined_at: '2026-01-18T10:00:00Z',
   },
@@ -107,8 +107,8 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
     project_id: 'proj_001',
     user_id: 'user_005',
     role: 'user',
-    permissions: ['project:read', 'project:chat:use'],
-    status: 'blocked',
+    permissions: ['project:read', 'project:chat:access', 'project:studio:access'],
+    status: 'removed',
     joined_at: '2026-01-10T10:00:00Z',
   },
   {
@@ -123,7 +123,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
     project_id: 'proj_002',
     user_id: 'user_003',
     role: 'admin',
-    permissions: ['project:read', 'project:agent:create', 'project:agent:manage'],
+    permissions: ['project:read', 'project:agent:create', 'project:agent:update'],
     status: 'active',
     joined_at: '2026-01-12T09:00:00Z',
   },

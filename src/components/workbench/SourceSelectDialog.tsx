@@ -60,7 +60,7 @@ export function SourceSelectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[800px] max-h-[80vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Add Sources to Recipe</DialogTitle>
+          <DialogTitle>Add Sources to Task</DialogTitle>
           <DialogDescription>
             Choose AIReady files from your library to add as context. Only ready files are shown.
           </DialogDescription>

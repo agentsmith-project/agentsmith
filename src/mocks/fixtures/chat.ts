@@ -147,7 +147,7 @@ export const chatMessageFixtures: ChatMessageWithMeta[] = [
     id: 'msg_007',
     session_id: 'chat_001',
     role: 'assistant',
-    content: 'Key features include:\n\n1. **Agent Management**: Create and manage external and internal agents\n2. **Endpoint Configuration**: Connect to various LLM providers (OpenAI, Anthropic, custom)\n3. **Workbench**: Multi-turn conversations with SSE streaming\n4. **UserData**: Source file management for agent context\n5. **Access Control**: Role-based permissions and audit logging\n6. **Usage Tracking**: Monitor API usage and set limits',
+    content: 'Key features include:\n\n1. **Agent Management**: Create and manage external and internal agents\n2. **Endpoint Configuration**: Connect to various LLM providers (OpenAI, Anthropic, custom)\n3. **Workbench**: Multi-turn conversations with SSE streaming\n4. **Source Libraries**: Manage project file libraries for agent context\n5. **Access Control**: Role-based permissions and audit logging\n6. **Usage Tracking**: Monitor API usage and set limits',
     created_at: '2026-01-28T10:03:15Z',
     tokens: 78,
     finish_reason: 'stop',

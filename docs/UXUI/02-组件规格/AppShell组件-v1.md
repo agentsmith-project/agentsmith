@@ -18,12 +18,12 @@
 ## 变更说明（2026-02-07）
 
 - Sidebar 宽度收敛（空间密度优化）：
-  - 展开宽度：`200px`（从历史的 260/210 收敛）
+  - 展开宽度：`192px`（从历史的 260/210 收敛）
   - 折叠宽度：`72px`
   - 菜单项高度保持 `40px`，图标保持 `20px`，保证可读性不下降
 - 页面空间利用策略：
   - Sidebar 继续保持“不滚动”，仅内容区滚动
-  - Chat / Workbench 页面推荐沉浸式内容布局（减少外圈留白）
+  - Chat / AI Studio 页面推荐沉浸式内容布局（减少外圈留白）
 
 ---
 
@@ -35,7 +35,7 @@
 中间：
 - Workspace Switcher（见入口规格）
 - Project Switcher（见入口规格）
-- Mode Switcher：Chat / Workbench（在 project 内显示）
+- Mode Switcher：Chat / AI Studio（在 project 内显示）
 
 右侧：
 - 全局 loading/connection 状态（可选：SSE/WS indicator）
@@ -57,7 +57,7 @@
   - 展开态显示 icon + label
   - 折叠状态建议 localStorage 持久化（按设备，不跨用户）
 - 宽度规范：
-  - 展开：`200px`
+  - 展开：`192px`
   - 折叠：`72px`
 - 滚动策略：
   - Sidebar 不滚动（内容少），只允许 main content 滚动

@@ -257,6 +257,9 @@ describe('RecipePage', () => {
         workspaceId={mockWorkspaceId}
         projectId={mockProjectId}
         recipeId={mockRecipeId}
+        canCreateRecipe={true}
+        canUpdateRecipe={true}
+        canDeleteRecipe={true}
       />,
       { wrapper }
     );
@@ -271,7 +274,7 @@ describe('RecipePage', () => {
 
       renderComponent();
 
-      expect(screen.getByText(/Loading recipe/i)).toBeInTheDocument();
+      expect(screen.getByText(/Loading task/i)).toBeInTheDocument();
     });
   });
 
@@ -282,7 +285,7 @@ describe('RecipePage', () => {
 
       renderComponent();
 
-      expect(screen.getByText(/Recipe not found/i)).toBeInTheDocument();
+      expect(screen.getByText(/Task not found/i)).toBeInTheDocument();
     });
 
     it('shows back button in not found state', () => {
@@ -291,7 +294,7 @@ describe('RecipePage', () => {
 
       renderComponent();
 
-      const backButton = screen.getByText(/Go back to Workbench/i);
+      const backButton = screen.getByText(/Go back to AI Studio/i);
       expect(backButton).toBeInTheDocument();
     });
   });

@@ -8,7 +8,6 @@ export { WorkspaceAPI } from './workspaces';
 export { ProjectAPI } from './projects';
 export { AgentAPI } from './agents';
 export { EndpointAPI } from './endpoints';
-export { UserdataAPI } from './userdata';
 export { CredentialsAPI } from './credentials';
 export { MemberAPI } from './members';
 export { AuditAPI, UsageAPI } from './audit-usage';

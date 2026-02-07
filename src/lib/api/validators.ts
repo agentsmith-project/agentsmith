@@ -38,14 +38,6 @@ export function validateUsageKPI(data: unknown): UsageKPI {
     }
   }
 
-  if (kpi.userdata_bytes !== undefined) {
-    if (typeof kpi.userdata_bytes !== 'number') {
-      console.warn('[validateUsageKPI] userdata_bytes is not a number, defaulting to undefined');
-    } else {
-      validated.userdata_bytes = kpi.userdata_bytes;
-    }
-  }
-
   if (kpi.requests_yesterday !== undefined) {
     if (typeof kpi.requests_yesterday !== 'number') {
       console.warn('[validateUsageKPI] requests_yesterday is not a number, defaulting to undefined');

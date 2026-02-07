@@ -1,34 +1,42 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import {
+  useCanAccessStudio,
+} from '@/lib/hooks/use-permissions';
 
 vi.mock('@/components/workbench/RecipePage', () => ({
   RecipePage: ({
     workspaceId,
     projectId,
     recipeId,
+    canCreateRecipe,
+    canUpdateRecipe,
+    canDeleteRecipe,
   }: {
     workspaceId: string;
     projectId: string;
     recipeId: string;
+    canCreateRecipe: boolean;
+    canUpdateRecipe: boolean;
+    canDeleteRecipe: boolean;
   }) => (
     <div data-testid="workbench__recipe-detail-route">
-      {workspaceId}:{projectId}:{recipeId}
+      {workspaceId}:{projectId}:{recipeId}:{String(canCreateRecipe)}:{String(canUpdateRecipe)}:{String(canDeleteRecipe)}
     </div>
   ),
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn(() => true),
+  useCanAccessStudio: vi.fn(() => true),
 }));
 
 import RecipeDetailPage from '../page';
 
-const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseCanAccessStudio = vi.mocked(useCanAccessStudio);
 
 describe('RecipeDetailPage route', () => {
   it('renders recipe page with validated params', async () => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseCanAccessStudio.mockReturnValue(true);
     render(
       <RecipeDetailPage
         params={Promise.resolve({
@@ -43,11 +51,11 @@ describe('RecipeDetailPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('workbench__recipe-detail-route')).toBeInTheDocument();
     });
-    expect(screen.getByText('ws_1:proj_1:recipe_1')).toBeInTheDocument();
+    expect(screen.getByText('ws_1:proj_1:recipe_1:true:true:true')).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe recipeId', async () => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseCanAccessStudio.mockReturnValue(true);
     render(
       <RecipeDetailPage
         params={Promise.resolve({
@@ -65,8 +73,8 @@ describe('RecipeDetailPage route', () => {
     expect(screen.getByText('validation_error')).toBeInTheDocument();
   });
 
-  it('shows permission denied when user lacks recipe permissions', async () => {
-    mockUseHasPermission.mockReturnValue(false);
+  it('shows permission denied when user lacks studio access', async () => {
+    mockUseCanAccessStudio.mockReturnValue(false);
     render(
       <RecipeDetailPage
         params={Promise.resolve({

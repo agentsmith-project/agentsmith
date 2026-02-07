@@ -22,7 +22,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import {
   AlertDialog,
@@ -98,12 +98,24 @@ function createEndpointColumns(
       </span>
     ),
   }),
-  columnHelper.accessor('limits.max_requests_per_minute', {
+  columnHelper.accessor((row) => row.limits, {
+    id: 'limits',
     header: 'Rate Limit',
     cell: (info) => (
-      <span className="text-tertiary text-sm">
-        {info.getValue() ? `${info.getValue()}/min` : '-'}
-      </span>
+      <div className="text-xs text-tertiary leading-5">
+        <p>
+          RPM:{' '}
+          <span className="text-primary">
+            {info.getValue()?.max_requests_per_minute ?? '-'}
+          </span>
+        </p>
+        <p>
+          Tokens/day:{' '}
+          <span className="text-primary">
+            {info.getValue()?.max_tokens_per_day ?? '-'}
+          </span>
+        </p>
+      </div>
     ),
   }),
   columnHelper.accessor('status', {
@@ -122,11 +134,13 @@ function createEndpointColumns(
         <div className="flex items-center gap-2">
           <button
             onClick={() => onEdit(info.row.original)}
-            className="p-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors"
+            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors text-xs"
             aria-label={t('action_edit')}
             title={t('action_edit')}
+            data-testid={`endpoints__action-edit--${info.row.original.id}`}
           >
             <Pencil className="w-4 h-4" />
+            <span className="hidden lg:inline">{t('action_edit')}</span>
           </button>
           <button
             onClick={() =>
@@ -136,7 +150,7 @@ function createEndpointColumns(
               })
             }
             disabled={updateEndpointMutation.isPending}
-            className="p-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors disabled:opacity-50 text-xs"
             aria-label={
               info.row.original.status === 'active' ? t('action_disable') : t('action_enable')
             }
@@ -149,15 +163,20 @@ function createEndpointColumns(
             ) : (
               <Power className="w-4 h-4 text-success" />
             )}
+            <span className="hidden lg:inline">
+              {info.row.original.status === 'active' ? t('action_disable') : t('action_enable')}
+            </span>
           </button>
           <button
             onClick={() => onDeleteRequest(info.row.original)}
             disabled={deleteEndpointMutation.isPending}
-            className="p-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50 text-xs"
             aria-label={t('action_delete')}
             title={t('action_delete')}
+            data-testid={`endpoints__action-delete--${info.row.original.id}`}
           >
             <Trash2 className="w-4 h-4" />
+            <span className="hidden lg:inline">{t('action_delete')}</span>
           </button>
         </div>
       );
@@ -176,15 +195,17 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [endpointToDelete, setEndpointToDelete] = useState<Endpoint | null>(null);
-  const canProjectResourceRead = useHasPermission('project:resource:read');
-  const canProjectResourceUpdate = useHasPermission('project:resource:update');
-  const canProjectResourceCreate = useHasPermission('project:resource:create');
-  const canProjectResourceDelete = useHasPermission('project:resource:delete');
-  const canReadEndpoints = canProjectResourceRead || canProjectResourceUpdate;
-  const canManageEndpoints =
-    canProjectResourceCreate ||
-    canProjectResourceUpdate ||
-    canProjectResourceDelete;
+  const canProjectEndpointRead = useHasPermission('project:endpoint:read');
+  const canProjectEndpointUpdate = useHasPermission('project:endpoint:update');
+  const canProjectEndpointCreate = useHasPermission('project:endpoint:create');
+  const canProjectEndpointDelete = useHasPermission('project:endpoint:delete');
+  const isProjectAdmin = useIsProjectAdmin();
+  const canReadEndpoints = canProjectEndpointRead || canProjectEndpointUpdate;
+  const canManageEndpoints = isProjectAdmin && (
+    canProjectEndpointCreate ||
+    canProjectEndpointUpdate ||
+    canProjectEndpointDelete
+  );
 
 
   useEffect(() => {
@@ -203,7 +224,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   const { data: endpointsData, isLoading: endpointsLoading } = useQuery({
     queryKey: ['endpoints', workspaceId, projectId],
     queryFn: () => endpointAPI.list(workspaceId, projectId),
-    enabled: !!workspaceId && !!projectId,
+    enabled: !!workspaceId && !!projectId && canReadEndpoints,
   });
 
   const deleteEndpointMutation = useMutation({

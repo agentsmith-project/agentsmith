@@ -6,7 +6,6 @@ import { agentHandlers } from './handlers/agents';
 import { credentialHandlers } from './handlers/credentials';
 import { memberHandlers } from './handlers/members';
 import { sourceHandlers } from './handlers/sources';
-import { userdataHandlers } from './handlers/userdata';
 import { auditHandlers } from './handlers/audit';
 import { usageHandlers } from './handlers/usage';
 import { chatHandlers } from './handlers/chat';
@@ -25,7 +24,6 @@ export const handlers = [
   ...credentialHandlers,
   ...memberHandlers,
   ...sourceHandlers,
-  ...userdataHandlers,
   ...auditHandlers,
   ...usageHandlers,
   ...chatHandlers,

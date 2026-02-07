@@ -36,7 +36,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanAccessChat, useCanManageChatSessions } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import {
   AlertDialog,
@@ -61,10 +61,9 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const token = useAuthStore((s) => s.token);
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
-  const canAgentThreadRead = useHasPermission('agent_thread:read');
-  const canAgentThreadCreate = useHasPermission('agent_thread:create');
-  const canReadThreads = canAgentThreadRead || canAgentThreadCreate;
-  const canManageThreads = canAgentThreadCreate;
+  const canReadThreads = useCanAccessChat();
+  const canUseChat = useCanAccessChat();
+  const canManageChatSessions = useCanManageChatSessions();
 
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -108,7 +107,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
     queryKey: ['chat', 'sessions', workspaceId, projectId],
     queryFn: () => chatAPI.getSessions(workspaceId, projectId, { page: 1, page_size: 1000 }),
-    enabled: !!workspaceId && !!projectId,
+    enabled: !!workspaceId && !!projectId && canReadThreads,
   });
 
   const sessions = useMemo(() => sessionsData?.items ?? [], [sessionsData]);
@@ -124,7 +123,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const { data: endpointsData } = useQuery({
     queryKey: ['endpoints', workspaceId, projectId],
     queryFn: () => endpointAPI.list(workspaceId, projectId, { page: 1, page_size: 500 }),
-    enabled: !!workspaceId && !!projectId,
+    enabled: !!workspaceId && !!projectId && canReadThreads,
   });
 
   const endpoints = endpointsData?.items ?? [];
@@ -135,7 +134,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       if (!currentSessionId) return { items: [], total: 0, page: 1, page_size: 500, has_more: false };
       return chatAPI.getMessages(workspaceId, projectId, currentSessionId, { page: 1, page_size: 500 });
     },
-    enabled: !!currentSessionId && !!workspaceId && !!projectId,
+    enabled: !!currentSessionId && !!workspaceId && !!projectId && canReadThreads,
   });
 
   const messages = useMemo(() => messagesData?.items ?? [], [messagesData?.items]);
@@ -199,7 +198,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       if (!currentSessionId) return { items: [], total: 0 };
       return chatAPI.getAttachments(workspaceId, projectId, currentSessionId);
     },
-    enabled: !!currentSessionId && !!workspaceId && !!projectId,
+    enabled: !!currentSessionId && !!workspaceId && !!projectId && canReadThreads,
     refetchInterval: (query) => {
       const data = query.state.data as { items: Attachment[]; total: number } | undefined;
       const items = data?.items ?? [];
@@ -395,7 +394,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   };
 
   const handleSend = async () => {
-    if (!canManageThreads) return;
+    if (!canUseChat) return;
     if (!currentSessionId) return;
     if (!activeSession) return;
 
@@ -427,13 +426,13 @@ export default function ChatPage({ params }: ChatPageProps) {
   };
 
   const onPickFiles = () => {
-    if (!canManageThreads) return;
+    if (!canUseChat) return;
     fileInputRef.current?.click();
   };
   const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!canManageThreads) return;
+    if (!canUseChat) return;
     if (!currentSessionId) return;
     if (files.length === 0) return;
     for (const f of files) {
@@ -487,10 +486,10 @@ export default function ChatPage({ params }: ChatPageProps) {
               <Button
                 variant="outline"
                 onClick={() => {
-                  if (!canManageThreads) return;
+                  if (!canUseChat) return;
                   createSessionMutation.mutate();
                 }}
-                disabled={!canManageThreads || createSessionMutation.isPending}
+                disabled={!canUseChat || createSessionMutation.isPending}
                 data-testid="chat__new-thread-btn"
               >
                 <Plus className="w-4 h-4" />
@@ -510,20 +509,20 @@ export default function ChatPage({ params }: ChatPageProps) {
               setCurrentSessionId(id);
               setEditingMessageId(null);
             }}
-            onRename={(id, title) => {
-              if (!canManageThreads) return;
+              onRename={(id, title) => {
+              if (!canManageChatSessions) return;
               updateSessionMutation.mutate({ sessionId: id, data: { title } });
             }}
             onToggleStar={(id, next) => {
-              if (!canManageThreads) return;
+              if (!canManageChatSessions) return;
               updateSessionMutation.mutate({ sessionId: id, data: { starred: next } });
             }}
             onTogglePin={(id, next) => {
-              if (!canManageThreads) return;
+              if (!canManageChatSessions) return;
               updateSessionMutation.mutate({ sessionId: id, data: { pinned: next } });
             }}
             onDelete={(id) => {
-              if (!canManageThreads) return;
+              if (!canManageChatSessions) return;
               const thread = sessions.find((s) => s.id === id) || null;
               setThreadToDelete({ id, title: thread?.title });
               setDeleteThreadDialogOpen(true);
@@ -537,12 +536,12 @@ export default function ChatPage({ params }: ChatPageProps) {
               endpoints={endpoints}
               streamStatus={streamStatus}
               onRename={(title) => {
-                if (!canManageThreads) return;
+                if (!canManageChatSessions) return;
                 if (!activeSession) return;
                 updateSessionMutation.mutate({ sessionId: activeSession.id, data: { title } });
               }}
               onSelectEndpoint={(e: Endpoint) => {
-                if (!canManageThreads) return;
+                if (!canManageChatSessions) return;
                 if (!activeSession) return;
                 updateSessionMutation.mutate({ sessionId: activeSession.id, data: { endpoint_id: e.id, model: e.openai_model } });
               }}
@@ -575,13 +574,13 @@ export default function ChatPage({ params }: ChatPageProps) {
                   }}
                   onEdit={(m) => {
                     if (disabled) return;
-                    if (!canManageThreads) return;
+                    if (!canUseChat) return;
                     if (m.role !== 'user') return;
                     setEditingMessageId(m.id);
                   }}
                   onEditCommit={async (m, nextContent) => {
                     if (disabled) return;
-                    if (!canManageThreads) return;
+                    if (!canUseChat) return;
                     if (!currentSessionId) return;
                     const edited = await editMessageMutation.mutateAsync({
                       sessionId: currentSessionId,
@@ -603,7 +602,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                   onEditCancel={() => setEditingMessageId(null)}
                   onRegenerate={async (m) => {
                     if (disabled) return;
-                    if (!canManageThreads) return;
+                    if (!canUseChat) return;
                     if (!activeSession || !currentSessionId) return;
                     if (messages.length) {
                       const groups = buildVariantGroups(messages);
@@ -660,18 +659,18 @@ export default function ChatPage({ params }: ChatPageProps) {
               }}
               attachments={attachments}
               onRemoveAttachment={(id) => {
-                if (!canManageThreads) return;
+                if (!canUseChat) return;
                 if (!currentSessionId) return;
                 deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
               }}
               onRetryAttachment={(id) => {
-                if (!canManageThreads) return;
+                if (!canUseChat) return;
                 if (!currentSessionId) return;
                 retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
               }}
               disabled={
                 !currentSessionId ||
-                !canManageThreads ||
+                !canUseChat ||
                 createMessageMutation.isPending ||
                 editMessageMutation.isPending ||
                 initAttachmentMutation.isPending ||

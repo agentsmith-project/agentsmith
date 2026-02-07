@@ -25,6 +25,9 @@ test.describe('Usage Page', () => {
 
     const filters = authedPage.getByTestId('usage__filters');
     await expect(filters).toBeVisible();
+    await expect(filters.getByText(/Resource Type/i)).toBeVisible();
+    await expect(filters.getByText(/Agent ID/i)).toBeVisible();
+    await expect(filters.getByText(/End User ID/i)).toBeVisible();
   });
 
   test('KPI cards display usage statistics', async ({ authedPage }) => {
@@ -45,5 +48,14 @@ test.describe('Usage Page', () => {
 
     await expect(authedPage.getByText('Usage').first()).toBeVisible();
     await expect(authedPage.getByRole('button', { name: /refresh/i })).toBeVisible();
+  });
+
+  test('text filter and clear filters interaction works', async ({ authedPage }) => {
+    const filters = authedPage.getByTestId('usage__filters');
+    await expect(filters).toBeVisible({ timeout: 10000 });
+
+    const agentIdInput = filters.getByPlaceholder(/filter by agent id/i);
+    await agentIdInput.fill('agent_1');
+    await expect(filters.getByRole('button', { name: /clear filters/i })).toBeVisible();
   });
 });

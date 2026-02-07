@@ -9,13 +9,13 @@
 import * as React from 'react';
 import { KPICard, ProjectNavigation, ActivityTimeline } from '@/components/dashboard';
 import { useParams } from 'next/navigation';
-import { Activity, AlertCircle, Clock, Wifi } from 'lucide-react';
+import { Activity, AlertCircle, Clock } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { UsageAPI, AuditAPI } from '@/lib/api';
 import { getApiClient } from '@/lib/api';
 import { validateUsageKPI } from '@/lib/api/validators';
-import { formatBytes, formatNumber } from '@/lib/utils/formatters';
+import { formatNumber } from '@/lib/utils/formatters';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
@@ -166,7 +166,7 @@ export default function OverviewPage() {
         )}
       >
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <KPICard
             icon={Activity}
             label={t('kpi.requests_today')}
@@ -190,12 +190,6 @@ export default function OverviewPage() {
             trend={tokensTrend}
             vsLastPeriodLabel={t('kpi.vs_last_period')}
             data-testid="overview__kpi-card--tokens"
-          />
-          <KPICard
-            icon={Wifi}
-            label={t('kpi.userdata_storage')}
-            value={formatBytes(kpi.userdata_bytes, { defaultValue: '--' })}
-            data-testid="overview__kpi-card--storage"
           />
         </div>
 

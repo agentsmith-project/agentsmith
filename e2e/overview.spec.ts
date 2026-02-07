@@ -12,22 +12,19 @@ test.describe('Overview Page', () => {
     await goToProject(authedPage, 'overview');
   });
 
-  test('should display all four KPI cards', async ({ authedPage }) => {
+  test('should display core KPI cards', async ({ authedPage }) => {
     const kpiRequests = authedPage.getByTestId('overview__kpi-card--requests');
     const kpiErrors = authedPage.getByTestId('overview__kpi-card--errors');
     const kpiTokens = authedPage.getByTestId('overview__kpi-card--tokens');
-    const kpiStorage = authedPage.getByTestId('overview__kpi-card--storage');
 
     await expect(kpiRequests).toBeVisible({ timeout: 10000 });
     await expect(kpiErrors).toBeVisible();
     await expect(kpiTokens).toBeVisible();
-    await expect(kpiStorage).toBeVisible();
 
     // Each KPI card should contain a numeric value
     await expect(kpiRequests).toContainText(/\d/);
     await expect(kpiErrors).toContainText(/\d/);
     await expect(kpiTokens).toContainText(/\d/);
-    await expect(kpiStorage).toContainText(/\d/);
   });
 
   test('should display and interact with time range selector', async ({ authedPage }) => {
@@ -53,14 +50,23 @@ test.describe('Overview Page', () => {
     await expect(timeRange).toBeVisible();
   });
 
+  test('should switch time range to 30 days', async ({ authedPage }) => {
+    const timeRange = authedPage.getByTestId('overview__time-range');
+    await expect(timeRange).toBeVisible({ timeout: 10000 });
+    await timeRange.click();
+    await authedPage.getByRole('option', { name: /last 30 days/i }).click();
+    await expect(timeRange).toContainText(/30/i);
+  });
+
   test('should display quick access navigation cards', async ({ authedPage }) => {
     const quickAccess = authedPage.getByTestId('overview__quick-access');
     await expect(quickAccess).toBeVisible({ timeout: 10000 });
 
     // Quick access should contain navigation links to key sections
     await expect(quickAccess.getByText(/Chat/i).first()).toBeVisible();
-    await expect(quickAccess.getByText(/Workbench/i).first()).toBeVisible();
+    await expect(quickAccess.getByText(/AI Studio|Workbench/i).first()).toBeVisible();
     await expect(quickAccess.getByText(/Agents/i).first()).toBeVisible();
+    await expect(quickAccess.getByText(/Endpoints/i).first()).toBeVisible();
   });
 
   test('should display activity timeline', async ({ authedPage }) => {

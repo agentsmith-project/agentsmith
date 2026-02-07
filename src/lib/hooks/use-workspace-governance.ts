@@ -20,7 +20,6 @@ export function useWorkspaceGovernance(workspaceId: string) {
   useEffect(() => {
     try {
       // Lazy-load auth store to avoid test-time module side effects.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { useAuthStore } = require('@/lib/stores/authStore') as typeof import('@/lib/stores/authStore');
       setUserId(useAuthStore.getState().user?.id);
       const unsubscribe = useAuthStore.subscribe((state) => setUserId(state.user?.id));

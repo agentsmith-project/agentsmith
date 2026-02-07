@@ -33,7 +33,7 @@ import {
   useResourcePolicy,
   useUpdateResourcePolicy,
 } from '@/lib/hooks/use-members';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanManageResourcePolicy } from '@/lib/hooks/use-permissions';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import {
   getResourcePolicyStatus,
@@ -71,10 +71,8 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const [accessMode, setAccessMode] = useState<'allow_all_members' | 'allow_list'>('allow_all_members');
   const [rootDraftRules, setRootDraftRules] = useState<Partial<Record<PolicyRuleKey, string>>>({});
   const [subjects, setSubjects] = useState<EditableSubject[]>([]);
-  const canReadResource = useHasPermission('project:resource:read');
-  const canUpdateResource = useHasPermission('project:resource:update');
-  const canReadPolicy = canReadResource || canUpdateResource;
-  const canUpdatePolicy = canUpdateResource;
+  const canUpdatePolicy = useCanManageResourcePolicy();
+  const canReadPolicy = canUpdatePolicy;
 
   useEffect(() => {
     params.then((p) => {
@@ -102,7 +100,6 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     queryFn: () => sourcesAPI.listLibraries(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId && canReadPolicy,
   });
-
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
     queryKey: ['resource-policy', 'agents', workspaceId, projectId],
     queryFn: () => agentAPI.list(workspaceId, projectId),
@@ -128,8 +125,16 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       name: item.name,
       subtitle: item.mode,
     }));
-    return [...endpoints, ...sourceLibraries, ...agents];
-  }, [agentsData?.items, endpointsData?.items, librariesData?.items]);
+    return [...endpoints, ...agents, ...sourceLibraries];
+  }, [endpointsData?.items, librariesData?.items, agentsData?.items]);
+
+  const groupedRows = useMemo(() => {
+    return {
+      endpoint: rows.filter((row) => row.type === 'endpoint'),
+      agent: rows.filter((row) => row.type === 'agent'),
+      source_library: rows.filter((row) => row.type === 'source_library'),
+    };
+  }, [rows]);
 
   const policyQueries = useQueries({
     queries: rows.map((row) => ({
@@ -331,48 +336,67 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
           </p>
           <div className="grid gap-4 lg:grid-cols-[minmax(280px,360px)_1fr]">
             <div className="space-y-2" data-testid="resource-policy__table">
-              {rows.map((row, index) => {
-                const isSelected = selectedResource?.id === row.id && selectedResource.type === row.type;
-                const rowKey = `${row.type}:${row.id}`;
-                const rowPolicyQuery = policyQueries[index];
-                const rowPolicy = policyByResourceKey.get(rowKey);
-                const rowStatus = getResourcePolicyStatus(rowPolicy);
+              {(['endpoint', 'agent', 'source_library'] as const).map((resourceType) => {
+                const typeRows = groupedRows[resourceType];
+                if (typeRows.length === 0) return null;
                 return (
-                  <button
-                    key={`${row.type}:${row.id}`}
-                    type="button"
-                    onClick={() => setSelectedResource(row)}
-                    className={`w-full flex items-center justify-between rounded-sm border p-3 text-left ${
-                      isSelected
-                        ? 'border-[rgb(var(--accent))] bg-surface-high'
-                        : 'border-subtle bg-surface-high hover:bg-hover'
-                    }`}
-                    data-testid={`resource-policy__row--${row.type}--${row.id}`}
+                  <section
+                    key={resourceType}
+                    className="rounded-sm border border-subtle bg-surface p-2.5 space-y-2"
+                    data-testid={`resource-policy__group--${resourceType}`}
                   >
-                    <div className="flex items-center gap-2">
-                      {row.type === 'endpoint' && <Server className="h-4 w-4 text-icon-default" />}
-                      {row.type === 'source_library' && <FolderOpen className="h-4 w-4 text-icon-default" />}
-                      {row.type === 'agent' && <Bot className="h-4 w-4 text-icon-default" />}
-                      <div>
-                        <p className="text-sm text-foreground">{row.name}</p>
-                        {row.subtitle ? <p className="text-xs text-tertiary">{row.subtitle}</p> : null}
-                      </div>
+                    <div className="flex items-center justify-between px-1.5">
+                      <p className="text-[11px] uppercase tracking-wide font-medium text-primary">
+                        {tResource(`resource_type.${resourceType}`)}
+                      </p>
+                      <span className="text-[11px] text-tertiary">{typeRows.length}</span>
                     </div>
-                    <ResourcePolicyStatusBadge
-                      data-testid={`resource-policy__row-status--${row.type}--${row.id}`}
-                      status={rowPolicyQuery?.isLoading ? 'loading' : rowStatus.status}
-                      label={
-                        rowPolicyQuery?.isLoading
-                          ? tResource('resource_status.loading')
-                          : tResource(rowStatus.labelKey)
-                      }
-                      title={
-                        rowPolicyQuery?.isLoading
-                          ? tResource('resource_status_reason.loading')
-                          : tResource(rowStatus.reasonKey)
-                      }
-                    />
-                  </button>
+                    {typeRows.map((row) => {
+                      const isSelected = selectedResource?.id === row.id && selectedResource.type === row.type;
+                      const rowIndex = rows.findIndex((item) => item.id === row.id && item.type === row.type);
+                      const rowKey = `${row.type}:${row.id}`;
+                      const rowPolicyQuery = policyQueries[rowIndex];
+                      const rowPolicy = policyByResourceKey.get(rowKey);
+                      const rowStatus = getResourcePolicyStatus(rowPolicy);
+                      return (
+                        <button
+                          key={`${row.type}:${row.id}`}
+                          type="button"
+                          onClick={() => setSelectedResource(row)}
+                          className={`w-full flex items-center justify-between rounded-sm border p-2.5 text-left ${
+                            isSelected
+                              ? 'border-[rgb(var(--accent))] bg-surface-high'
+                              : 'border-subtle bg-surface-high hover:bg-hover'
+                          }`}
+                          data-testid={`resource-policy__row--${row.type}--${row.id}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {row.type === 'endpoint' && <Server className="h-4 w-4 text-icon-default" />}
+                            {row.type === 'source_library' && <FolderOpen className="h-4 w-4 text-icon-default" />}
+                            {row.type === 'agent' && <Bot className="h-4 w-4 text-icon-default" />}
+                            <div>
+                              <p className="text-sm text-foreground">{row.name}</p>
+                              {row.subtitle ? <p className="text-xs text-tertiary">{row.subtitle}</p> : null}
+                            </div>
+                          </div>
+                          <ResourcePolicyStatusBadge
+                            data-testid={`resource-policy__row-status--${row.type}--${row.id}`}
+                            status={rowPolicyQuery?.isLoading ? 'loading' : rowStatus.status}
+                            label={
+                              rowPolicyQuery?.isLoading
+                                ? tResource('resource_status.loading')
+                                : tResource(rowStatus.labelKey)
+                            }
+                            title={
+                              rowPolicyQuery?.isLoading
+                                ? tResource('resource_status_reason.loading')
+                                : tResource(rowStatus.reasonKey)
+                            }
+                          />
+                        </button>
+                      );
+                    })}
+                  </section>
                 );
               })}
             </div>
@@ -387,12 +411,15 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                 <p className="text-sm text-tertiary">{tResource('loading_policy')}</p>
               ) : (
                 <>
-                  <div className="space-y-1">
+                  <div className="rounded-sm border border-subtle bg-surface p-3 space-y-1">
                     <h3 className="text-sm font-medium text-foreground">{selectedResource.name}</h3>
                     <p className="text-xs text-tertiary">{tResource(`resource_type.${selectedResource.type}`)}</p>
+                    <p className="text-xs text-tertiary">
+                      {tResource(`editor_hint.${selectedResource.type}`)}
+                    </p>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="rounded-sm border border-subtle bg-surface p-3 space-y-2">
                     <label htmlFor="resource-policy-access-mode" className="text-xs text-tertiary">
                       {tResource('access_mode.label')}
                     </label>
@@ -414,7 +441,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                     </p>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="rounded-sm border border-subtle bg-surface p-3 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-tertiary">{tResource('subjects.title')}</p>
                       <button
@@ -511,25 +538,27 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                     )}
                   </div>
 
-                  {getRuleDefinitionsForResource(selectedResource.type).map((rule) => (
-                    <div key={rule.key} className="space-y-2">
-                      <label htmlFor={rule.rootInputId} className="text-xs text-tertiary">
-                        {tResource(rule.labelKey)}
-                      </label>
-                      <input
-                        id={rule.rootInputId}
-                        type="number"
-                        min={1}
-                        value={rootDraftRules[rule.key] ?? ''}
-                        onChange={(event) =>
-                          setRootDraftRules((prev) => ({ ...prev, [rule.key]: event.target.value }))
-                        }
-                        disabled={!canUpdatePolicy}
-                        className="h-9 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground"
-                        data-testid={rule.rootTestId}
-                      />
-                    </div>
-                  ))}
+                  <div className="rounded-sm border border-subtle bg-surface p-3 space-y-3">
+                    {getRuleDefinitionsForResource(selectedResource.type).map((rule) => (
+                      <div key={rule.key} className="space-y-2">
+                        <label htmlFor={rule.rootInputId} className="text-xs text-tertiary">
+                          {tResource(rule.labelKey)}
+                        </label>
+                        <input
+                          id={rule.rootInputId}
+                          type="number"
+                          min={1}
+                          value={rootDraftRules[rule.key] ?? ''}
+                          onChange={(event) =>
+                            setRootDraftRules((prev) => ({ ...prev, [rule.key]: event.target.value }))
+                          }
+                          disabled={!canUpdatePolicy}
+                          className="h-9 w-full rounded-sm border border-subtle bg-surface-high px-3 text-sm text-foreground"
+                          data-testid={rule.rootTestId}
+                        />
+                      </div>
+                    ))}
+                  </div>
 
                   <div className="flex justify-end">
                     {allowListInvalid ? (
@@ -566,7 +595,8 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                         draftRootRuleSet.quotaRules,
                         (key) => tResource(getRuleLabel(key)),
                         tResource('effective_summary.no_explicit_limits'),
-                        (rule) => formatRuleValue(rule, tResource)
+                        (rule) => formatRuleValue(rule, tResource),
+                        () => tResource('effective_summary.source_resource')
                       )}
                     </div>
                     {validSubjects.length > 0 ? (
@@ -579,6 +609,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                           const effectiveQuota = mergeRuleSets(
                             draftRootRuleSet.quotaRules,
                             subject.quota_limits?.rules ?? []
+                          );
+                          const effectiveTrace = mergeRuleSources(
+                            draftRootRuleSet.rateRules,
+                            draftRootRuleSet.quotaRules,
+                            subject.rate_limits?.rules ?? [],
+                            subject.quota_limits?.rules ?? [],
                           );
                           return (
                             <div
@@ -595,7 +631,13 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                                 effectiveQuota,
                                 (key) => tResource(getRuleLabel(key)),
                                 tResource('effective_summary.no_explicit_limits'),
-                                (rule) => formatRuleValue(rule, tResource)
+                                (rule) => formatRuleValue(rule, tResource),
+                                (rule) =>
+                                  tResource(
+                                    effectiveTrace.get(rule.key) === 'subject'
+                                      ? 'effective_summary.source_subject'
+                                      : 'effective_summary.source_resource',
+                                  )
                               )}
                             </div>
                           );
@@ -679,7 +721,8 @@ function renderRuleSummary(
   quotaRules: PolicyRule[],
   labelForKey: (key: PolicyRuleKey) => string,
   noRulesText: string,
-  valueForRule: (rule: PolicyRule) => string
+  valueForRule: (rule: PolicyRule) => string,
+  sourceForRule?: (rule: PolicyRule) => string
 ) {
   const rules = [...rateRules, ...quotaRules];
   if (rules.length === 0) {
@@ -689,8 +732,27 @@ function renderRuleSummary(
     <p key={`${rule.key}-${rule.value}`} className="text-xs text-tertiary">
       {labelForKey(rule.key)}:{' '}
       <span className="text-primary">{valueForRule(rule)}</span>
+      {sourceForRule ? (
+        <span className="ml-1 text-[11px] text-tertiary">({sourceForRule(rule)})</span>
+      ) : null}
     </p>
   ));
+}
+
+function mergeRuleSources(
+  rootRateRules: PolicyRule[],
+  rootQuotaRules: PolicyRule[],
+  subjectRateRules: PolicyRule[],
+  subjectQuotaRules: PolicyRule[],
+): Map<PolicyRuleKey, 'resource' | 'subject'> {
+  const sourceMap = new Map<PolicyRuleKey, 'resource' | 'subject'>();
+  [...rootRateRules, ...rootQuotaRules].forEach((rule) => {
+    sourceMap.set(rule.key, 'resource');
+  });
+  [...subjectRateRules, ...subjectQuotaRules].forEach((rule) => {
+    sourceMap.set(rule.key, 'subject');
+  });
+  return sourceMap;
 }
 
 function formatRuleValue(rule: PolicyRule, tResource: (key: string) => string): string {

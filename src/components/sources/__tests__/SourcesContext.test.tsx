@@ -198,13 +198,13 @@ describe('useSourcesContext', () => {
     console.error = vi.fn();
 
     const TestChild = () => {
-      expect(() => useSourcesContext()).toThrow(
-        'useSourcesContext must be used within SourcesProvider'
-      );
+      useSourcesContext();
       return null;
     };
 
-    render(<TestChild />);
+    expect(() => render(<TestChild />)).toThrow(
+      'useSourcesContext must be used within SourcesProvider'
+    );
 
     console.error = consoleError;
   });

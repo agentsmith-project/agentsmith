@@ -105,7 +105,7 @@ describe('RecipeList', () => {
         isLoading: true,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
@@ -122,12 +122,12 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
       expect(screen.getByText('No recipes yet')).toBeInTheDocument();
-      expect(screen.getByText(/Create your first Recipe/)).toBeInTheDocument();
+      expect(screen.getByText(/Create your first task/)).toBeInTheDocument();
     });
 
     it('shows create recipe button in empty state', () => {
@@ -136,11 +136,11 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
-      expect(screen.getByText('Create Recipe')).toBeInTheDocument();
+      expect(screen.getByText('Create Task')).toBeInTheDocument();
     });
   });
 
@@ -151,7 +151,7 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
@@ -166,7 +166,7 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
@@ -181,7 +181,7 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
@@ -196,11 +196,11 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
-      expect(screen.getByText('2 source(s) attached')).toBeInTheDocument();
+      expect(screen.getByText('2 source(s)')).toBeInTheDocument();
     });
 
     it('displays last activity time', () => {
@@ -209,13 +209,13 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
-      // Should show time ago format (multiple recipes have "Last activity:")
-      const lastActivityElements = screen.getAllByText(/Last activity:/);
-      expect(lastActivityElements.length).toBeGreaterThan(0);
+      // Activity time is rendered in compact mode without a "Last activity:" label.
+      const activityTimestamps = screen.getAllByText(/\d{1,2}\/\d{1,2}\/\d{4}/);
+      expect(activityTimestamps.length).toBeGreaterThan(0);
     });
   });
 
@@ -226,7 +226,7 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
@@ -246,11 +246,11 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
-      expect(screen.getByText('New Recipe')).toBeInTheDocument();
+      expect(screen.getByText('New Task')).toBeInTheDocument();
     });
 
     it('opens create dialog when new recipe button is clicked', async () => {
@@ -260,11 +260,11 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
-      const newRecipeButton = screen.getByText('New Recipe');
+      const newRecipeButton = screen.getByText('New Task');
       await user.click(newRecipeButton);
 
       // Dialog should be visible (checked by its content)
@@ -284,7 +284,7 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
@@ -302,7 +302,7 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
@@ -320,7 +320,7 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
@@ -338,7 +338,7 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
@@ -353,12 +353,12 @@ describe('RecipeList', () => {
         isLoading: false,
       } as any);
 
-      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} />, {
+      render(<RecipeList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateRecipe={true} />, {
         wrapper,
       });
 
-      expect(screen.getByText('Workbench')).toBeInTheDocument();
-      expect(screen.getByText('Manage your Recipes and collaborate with agents')).toBeInTheDocument();
+      expect(screen.getByText('AI Studio')).toBeInTheDocument();
+      expect(screen.getByText('Manage your tasks and collaborate with agents')).toBeInTheDocument();
     });
   });
 });

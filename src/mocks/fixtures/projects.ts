@@ -10,26 +10,15 @@ import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
 
 const defaultGovernance = {
   quotas: {
-    userdata: {
-      storage: {
-        bytes_per_end_user: 2147483648,
-        objects_per_end_user: 20000,
-      },
-      docdb: {
-        max_collections_per_scope: 50,
-        max_document_bytes: 1048576,
-        query_timeout_ms: 2000,
-        page_size_max: 100,
-      },
-      vectordb: {
-        max_indexes_per_scope: 50,
-        top_k_max: 200,
-        upsert_records_max: 500,
-      },
-    },
     endpoint: {
-      requests_per_day_per_end_user: 10000,
-      requests_per_min_per_end_user: 120,
+      daily_token_limit: 200000,
+    },
+    source_library: {
+      max_total_files: 2000,
+      max_file_size_bytes: 104857600,
+    },
+    agent: {
+      max_concurrency: 4,
     },
   },
 };
@@ -121,7 +110,7 @@ export const projectMembershipFixtures: ProjectMembership[] = [
     user_id: 'user_005',
     role: 'user',
     permissions: [...ROLE_TEMPLATES.user],
-    status: 'blocked',
+    status: 'removed',
     joined_at: '2026-01-08T10:00:00Z',
   },
   // proj_002 members

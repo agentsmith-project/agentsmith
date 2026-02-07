@@ -12,6 +12,9 @@ and for:
 - `validateProjectParam()` for routes that include `[project]`
 
 2. Add route-level permission gate when page has access control requirements.
+   - Chat route: `project:chat:access`
+   - AI Studio route: `project:studio:access`
+   - Do not split Chat/AI Studio into action-level FE permission gates in MVP.
 
 3. Permission hook safety rule:
 - Do not short-circuit hooks (for example `useHasPermission('a') || useHasPermission('b')`).
@@ -44,5 +47,6 @@ Each route test file must include:
 3. Route test file existence.
 4. Invalid-param test coverage.
 5. Forbidden coverage for routes that use `useHasPermission(...)`.
+   - for wrapper hooks (for example `useCanAccessChat/useCanAccessStudio`), treat them as permission-gated routes and require forbidden coverage as well.
 
 If any rule is missing, CI fails.

@@ -24,7 +24,7 @@ import { SourcesSelectionBar } from './SourcesSelectionBar';
 import { FileUploadDialog } from './FileUploadDialog';
 import { FileDeleteDialog } from './FileDeleteDialog';
 import { SourceLibrariesDialog } from './SourceLibrariesDialog';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
 import {
   Select,
   SelectContent,
@@ -43,10 +43,13 @@ function SourcesPageContent({ workspaceId, projectId }: SourcesPageProps) {
   const canSourceUpload = useHasPermission('project:source:upload');
   const canSourceDelete = useHasPermission('project:source:delete');
   const canSourceDownload = useHasPermission('project:source:download');
-  const canResourceCreate = useHasPermission('project:resource:create');
-  const canResourceUpdate = useHasPermission('project:resource:update');
-  const canResourceDelete = useHasPermission('project:resource:delete');
-  const canManageLibraries = canResourceCreate || canResourceUpdate || canResourceDelete;
+  const canSourceLibraryCreate = useHasPermission('project:source:library:create');
+  const canSourceLibraryUpdate = useHasPermission('project:source:library:update');
+  const canSourceLibraryDelete = useHasPermission('project:source:library:delete');
+  const isProjectAdmin = useIsProjectAdmin();
+  const canManageLibraries = isProjectAdmin && (
+    canSourceLibraryCreate || canSourceLibraryUpdate || canSourceLibraryDelete
+  );
   const canControlAIReady = canSourceUpload || canSourceDelete;
   const [librariesDialogOpen, setLibrariesDialogOpen] = React.useState(false);
 
@@ -139,10 +142,11 @@ function SourcesPageToolbar({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex-1 max-w-md">
+      <div className="flex-1 min-w-[280px] max-w-lg">
         <SourcesSearch value={context.search} onChange={context.setSearch} />
       </div>
       <SourcesFilters
+        className="ml-auto"
         status={context.status}
         onStatusChange={context.setStatus}
         aiReadyOnly={context.aiReadyOnly}

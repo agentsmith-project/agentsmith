@@ -125,11 +125,6 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('sources.png', { fullPage: true });
   });
 
-  test('userdata', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('userdata'));
-    await expect(authedPage).toHaveScreenshot('userdata.png', { fullPage: true });
-  });
-
   test('audit', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('audit'));
     await expect(authedPage).toHaveScreenshot('audit.png', { fullPage: true });
@@ -138,6 +133,11 @@ test.describe('Visual - Project Pages', () => {
   test('usage', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('usage'));
     await expect(authedPage).toHaveScreenshot('usage.png', { fullPage: true });
+  });
+
+  test('resource policy', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('resource-policy'));
+    await expect(authedPage).toHaveScreenshot('resource-policy.png', { fullPage: true });
   });
 
   test('settings - general', async ({ authedPage }) => {
@@ -155,25 +155,6 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('settings-runtime.png', { fullPage: true });
   });
 
-  test('settings - governance', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('settings'));
-    const tab = authedPage.getByTestId('settings__tab--governance');
-    if (await tab.isVisible()) {
-      await tab.click();
-      await authedPage.waitForTimeout(400);
-    }
-    await expect(authedPage).toHaveScreenshot('settings-governance.png', { fullPage: true });
-  });
-
-  test('settings - limits', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('settings'));
-    const tab = authedPage.getByTestId('settings__tab--limits');
-    if (await tab.isVisible()) {
-      await tab.click();
-      await authedPage.waitForTimeout(400);
-    }
-    await expect(authedPage).toHaveScreenshot('settings-limits.png', { fullPage: true });
-  });
 });
 
 // ─── User Pages ─────────────────────────────────────────────────────────────
@@ -235,6 +216,13 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('dialog-upload-source.png');
   });
 
+  test('manage source libraries dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('sources'));
+    await authedPage.getByTestId('sources__manage-libraries-btn').click();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('dialog-manage-source-libraries.png');
+  });
+
   test('create API key dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, '/en-US/user/api-keys');
     await authedPage.getByTestId('api-keys__create-btn').click();
@@ -273,6 +261,13 @@ test.describe('Visual - Overlays', () => {
     await drawer.getByRole('tab', { name: /quota/i }).click();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('drawer-member-quota.png');
+  });
+
+  test('members templates - project groups tab', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('members'));
+    await authedPage.getByRole('tab', { name: /groups/i }).first().click();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('members-project-groups.png', { fullPage: true });
   });
 
 });

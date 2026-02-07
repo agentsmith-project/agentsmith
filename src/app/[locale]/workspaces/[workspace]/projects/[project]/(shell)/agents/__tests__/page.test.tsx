@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
 
 const mockList = vi.fn().mockResolvedValue({ items: [] });
 const mockUpdate = vi.fn().mockResolvedValue({});
@@ -43,11 +43,13 @@ vi.mock('@/components/agents/AgentDiagnosticsPanel', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
+  useIsProjectAdmin: vi.fn(() => true),
 }));
 
 import AgentsPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseIsProjectAdmin = vi.mocked(useIsProjectAdmin);
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -64,6 +66,7 @@ function createWrapper() {
 describe('AgentsPage', () => {
   it('renders header and toolbar layout', async () => {
     mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
     render(
       <AgentsPage
         params={Promise.resolve({
@@ -87,6 +90,7 @@ describe('AgentsPage', () => {
 
   it('opens delete confirmation and deletes an agent', async () => {
     mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
     const user = userEvent.setup();
     mockList.mockResolvedValueOnce({
       items: [
@@ -129,6 +133,7 @@ describe('AgentsPage', () => {
 
   it('shows invalid parameter error state for unsafe route params', async () => {
     mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
     render(
       <AgentsPage
         params={Promise.resolve({
@@ -149,6 +154,7 @@ describe('AgentsPage', () => {
 
   it('shows permission denied when user lacks read access', async () => {
     mockUseHasPermission.mockReturnValue(false);
+    mockUseIsProjectAdmin.mockReturnValue(false);
     render(
       <AgentsPage
         params={Promise.resolve({

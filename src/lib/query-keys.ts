@@ -197,16 +197,6 @@ export const queryKeys = {
       ['usage', workspaceId, projectId, params] as const,
   },
 
-  /** User data */
-  userdata: {
-    _def: ['userdata'] as const,
-    keys: () => ['user', 'keys'] as const,
-    summary: (workspaceId: string, projectId: string) =>
-      ['userdata', workspaceId, projectId, 'summary'] as const,
-    endUsers: (workspaceId: string, projectId: string) =>
-      ['userdata', workspaceId, projectId, 'end-users'] as const,
-  },
-
   /** Chat sessions and messages */
   chat: {
     _def: ['chat'] as const,

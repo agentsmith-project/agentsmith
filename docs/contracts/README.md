@@ -30,6 +30,7 @@ Before adding/changing route gates or permission checks, align with:
   - Includes workspace-scoped projects route fallback expectations.
 - `frontend-backend-gating-matrix.md`
   - Includes backend-authoritative note for workspace projects bootstrap fallback.
+  - Includes access-only gating for Chat/AI Studio (`project:chat:access`, `project:studio:access`).
 
 ## Cleanup Policy
 

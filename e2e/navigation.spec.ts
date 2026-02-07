@@ -11,11 +11,11 @@ const SIDEBAR_NAV_ITEMS = [
   'overview',
   'chat',
   'workbench',
+  'resource_policy',
   'agents',
   'endpoints',
   'members',
   'sources',
-  'userdata',
   'audit',
   'usage',
   'settings',
@@ -40,13 +40,14 @@ test.describe('Sidebar', () => {
     const sidebar = authedPage.getByTestId('sidebar');
     await expect(sidebar).toBeVisible({ timeout: 10000 });
 
-    const sectionsToTest = ['chat', 'agents', 'members', 'settings'] as const;
+    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'settings'] as const;
 
     for (const section of sectionsToTest) {
       const navItem = authedPage.getByTestId(`sidebar__nav-item--${section}`);
       await navItem.click();
-      await authedPage.waitForURL(`**/${section}`, { timeout: 10000 });
-      expect(authedPage.url()).toContain(`/${section}`);
+      const expectedPath = section === 'resource_policy' ? '/resource-policy' : `/${section}`;
+      await authedPage.waitForURL(`**${expectedPath}`, { timeout: 10000 });
+      expect(authedPage.url()).toContain(expectedPath);
     }
   });
 
@@ -136,6 +137,7 @@ test.describe('User Menu', () => {
 
     await expect(authedPage.getByTestId('user-menu__profile')).toBeVisible();
     await expect(authedPage.getByTestId('user-menu__api-keys')).toBeVisible();
+    await expect(authedPage.getByTestId('user-menu__language').first()).toBeVisible();
     await expect(authedPage.getByTestId('user-menu__logout')).toBeVisible();
   });
 
@@ -161,5 +163,28 @@ test.describe('User Menu', () => {
 
     await authedPage.waitForURL('**/user/api-keys', { timeout: 10000 });
     expect(authedPage.url()).toContain('/user/api-keys');
+  });
+
+  test('language menu includes English and Chinese options', async ({ authedPage }) => {
+    await goToProject(authedPage, 'overview');
+
+    const userMenu = authedPage.getByTestId('topbar__user-menu');
+    await expect(userMenu).toBeVisible({ timeout: 10000 });
+    await userMenu.click();
+
+    await expect(authedPage.getByRole('menuitem', { name: /English/i })).toBeVisible();
+    await expect(authedPage.getByRole('menuitem', { name: /中文/i })).toBeVisible();
+  });
+
+  test('logout navigates to login page', async ({ authedPage }) => {
+    await goToProject(authedPage, 'overview');
+
+    const userMenu = authedPage.getByTestId('topbar__user-menu');
+    await expect(userMenu).toBeVisible({ timeout: 10000 });
+    await userMenu.click();
+    await authedPage.getByTestId('user-menu__logout').click();
+
+    await authedPage.waitForURL('**/login', { timeout: 10000 });
+    expect(authedPage.url()).toContain('/login');
   });
 });

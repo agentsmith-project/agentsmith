@@ -24,7 +24,7 @@ import {
   useProjectGroups,
   useUpdateProjectGroup,
 } from '@/lib/hooks/use-members';
-import { useHasAnyPermission } from '@/lib/hooks/use-permissions';
+import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import type { ProjectGroup } from '@/lib/api/endpoints/members';
 import { toast } from '@/components/ui/toast';
 
@@ -42,7 +42,7 @@ export interface ProjectGroupsSectionProps {
 
 export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSectionProps) {
   const t = useTranslations('members.templates');
-  const canManage = useHasAnyPermission(['project:admin:grant', 'project:admin:revoke']);
+  const canManage = useCanManageMemberGovernance();
   const { data: groups = [] } = useProjectGroups(workspaceId, projectId);
   const { data: members = [], refetch: refetchMembers } = useMembers(workspaceId, projectId);
   const { data: templates = [] } = usePermissionTemplates(workspaceId, projectId);

@@ -48,7 +48,7 @@ export interface WorkspaceMember {
   role: 'owner' | 'admin' | 'developer' | 'user';
   governance_group?: 'wheel' | 'user';
   permissions?: string[];
-  status: 'active' | 'blocked' | 'removed';
+  status: 'active' | 'removed';
   joined_at: string;
 }
 
@@ -73,7 +73,7 @@ export interface ProjectMembership {
   user_id: string;
   role: 'owner' | 'admin' | 'developer' | 'user';
   permissions: string[];
-  status: 'active' | 'blocked' | 'removed';
+  status: 'active' | 'removed';
   joined_at: string;
 }
 
@@ -364,23 +364,9 @@ export interface UsageKPI {
   requests_today: number;
   errors_today: number;
   tokens_today?: number;
-  userdata_bytes?: number;
   requests_yesterday?: number; // optional, for trend
   errors_yesterday?: number;
   tokens_yesterday?: number; // optional, for trend
-}
-
-export interface UserdataSummary {
-  total_bytes: number;
-  docdb_collections: number;
-  vectordb_indexes: number;
-}
-
-export interface UserdataEndUser {
-  id: string;
-  storage_bytes: number;
-  docdb_collections: number;
-  vectordb_indexes: number;
 }
 
 export interface AuditListParams extends PaginationParams {
@@ -537,27 +523,15 @@ export interface MemberPermissions {
 }
 
 export interface QuotaOverride {
-  userdata?: {
-    storage?: {
-      bytes_per_end_user?: number;
-      objects_per_end_user?: number;
-      max_object_bytes?: number;
-    };
-    docdb?: {
-      max_collections_per_scope?: number;
-      max_document_bytes?: number;
-      query_timeout_ms?: number;
-      page_size_max?: number;
-    };
-    vectordb?: {
-      max_indexes_per_scope?: number;
-      top_k_max?: number;
-      upsert_records_max?: number;
-    };
-  };
   endpoint?: {
-    requests_per_day_per_end_user?: number;
-    requests_per_min_per_end_user?: number;
+    daily_token_limit?: number;
+  };
+  source_library?: {
+    max_total_files?: number;
+    max_file_size_bytes?: number;
+  };
+  agent?: {
+    max_concurrency?: number;
   };
 }
 

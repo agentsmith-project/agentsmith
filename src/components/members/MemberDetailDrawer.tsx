@@ -45,6 +45,8 @@ export interface MemberDetailDrawerProps {
   onSaveQuota?: (quota: QuotaOverride) => void;
   onViewHistory?: () => void;
   onViewQuotaHistory?: () => void;
+  embedded?: boolean;
+  className?: string;
 }
 
 const PERM_TEMPLATE_IDS = ['admin', 'developer', 'user'] as const;
@@ -64,6 +66,8 @@ export function MemberDetailDrawer({
   onSaveQuota,
   onViewHistory,
   onViewQuotaHistory,
+  embedded = false,
+  className,
 }: MemberDetailDrawerProps) {
   const t = useTranslations('members');
   const tTpl = useTranslations('members.templates');
@@ -141,127 +145,145 @@ export function MemberDetailDrawer({
 
   if (!member) return null;
 
+  const content = (
+    <>
+      {/* Header: fixed, no shrink. Design: 16-18px title, 24px padding */}
+      <SheetHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-subtle">
+        <div className="flex items-center justify-between pr-8">
+          <div>
+            {embedded ? (
+              <h2 className="text-base font-semibold text-foreground">{member.name}</h2>
+            ) : (
+              <SheetTitle className="text-base font-semibold text-foreground">
+                {member.name}
+              </SheetTitle>
+            )}
+            <p className="text-sm text-tertiary mt-1">{member.email}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">{member.role}</Badge>
+            {onViewHistory && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onViewHistory}
+                className="gap-2"
+              >
+                <History className="h-4 w-4" />
+                {t('history.view_history')}
+              </Button>
+            )}
+          </div>
+        </div>
+      </SheetHeader>
+
+      {/* Tab content: scrollable, fixed height prevents resize on tab switch */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'permissions' | 'quota')}>
+          <TabsList>
+            <TabsTrigger value="permissions">{t('permissions.title')}</TabsTrigger>
+            <TabsTrigger value="quota">{t('quota.title')}</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="permissions" className="mt-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <Label className="text-sm shrink-0">{tTpl('apply_template')}:</Label>
+              <Select
+                value={appliedPermTemplateId ?? '__none__'}
+                onValueChange={(v) => setAppliedPermTemplateId(v === '__none__' ? null : v)}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={tTpl('select_template')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{tTpl('select_template')}</SelectItem>
+                  {permTemplatesForDropdown.map((tpl) => (
+                    <SelectItem key={tpl.id} value={tpl.id}>
+                      {tpl.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-sm text-tertiary">{t('permissions.title_description')}</p>
+            {permissions ? (
+              <PermissionsEditor
+                key={`${member.id}-${appliedPermTemplateId ?? 'current'}`}
+                initialPermissions={permInitialPermissions}
+                onSave={handleSavePermissions}
+                onCancel={() => onOpenChange(false)}
+              />
+            ) : (
+              <div className="text-center py-8 text-tertiary">
+                <p className="text-sm">{t('permissions.loading')}</p>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="quota" className="mt-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Label className="text-sm shrink-0">{tTpl('apply_template')}:</Label>
+                  <Select
+                    value={appliedQuotaTemplateId ?? '__none__'}
+                    onValueChange={(v) => setAppliedQuotaTemplateId(v === '__none__' ? null : v)}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder={tTpl('select_template')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">{tTpl('select_template')}</SelectItem>
+                      {quotaTemplates.map((tpl) => (
+                        <SelectItem key={tpl.id} value={tpl.id}>
+                          {tpl.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {onViewQuotaHistory && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onViewQuotaHistory}
+                    className="gap-2"
+                  >
+                    <History className="h-4 w-4" />
+                    {t('quota_history.view_history')}
+                  </Button>
+                )}
+              </div>
+              <QuotaOverridesEditor
+                key={`${member.id}-quota-${appliedQuotaTemplateId ?? 'current'}`}
+                defaultQuotas={extractQuotasFromGovernance(projectGovernance)}
+                initialOverrides={quotaInitialOverrides}
+                onSave={handleSaveQuota}
+                onCancel={() => onOpenChange(false)}
+              />
+            </div>
+          </TabsContent>
+
+        </Tabs>
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className={`flex h-full flex-col overflow-hidden border-l border-subtle bg-surface ${className ?? ''}`}>
+        {content}
+      </div>
+    );
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right-wide"
         className="flex flex-col p-0 gap-0 h-full overflow-hidden sm:w-[640px]"
       >
-        {/* Header: fixed, no shrink. Design: 16-18px title, 24px padding */}
-        <SheetHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-subtle">
-          <div className="flex items-center justify-between pr-8">
-            <div>
-              <SheetTitle className="text-base font-semibold text-foreground">
-                {member.name}
-              </SheetTitle>
-              <p className="text-sm text-tertiary mt-1">{member.email}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">{member.role}</Badge>
-              {onViewHistory && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onViewHistory}
-                  className="gap-2"
-                >
-                  <History className="h-4 w-4" />
-                  {t('history.view_history')}
-                </Button>
-              )}
-            </div>
-          </div>
-        </SheetHeader>
-
-        {/* Tab content: scrollable, fixed height prevents resize on tab switch */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'permissions' | 'quota')}>
-            <TabsList>
-              <TabsTrigger value="permissions">{t('permissions.title')}</TabsTrigger>
-              <TabsTrigger value="quota">{t('quota.title')}</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="permissions" className="mt-4 space-y-4">
-              <div className="flex items-center gap-3">
-                <Label className="text-sm shrink-0">{tTpl('apply_template')}:</Label>
-                <Select
-                  value={appliedPermTemplateId ?? '__none__'}
-                  onValueChange={(v) => setAppliedPermTemplateId(v === '__none__' ? null : v)}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder={tTpl('select_template')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">{tTpl('select_template')}</SelectItem>
-                    {permTemplatesForDropdown.map((tpl) => (
-                      <SelectItem key={tpl.id} value={tpl.id}>
-                        {tpl.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <p className="text-sm text-tertiary">{t('permissions.title_description')}</p>
-              {permissions ? (
-                <PermissionsEditor
-                  key={`${member.id}-${appliedPermTemplateId ?? 'current'}`}
-                  initialPermissions={permInitialPermissions}
-                  onSave={handleSavePermissions}
-                  onCancel={() => onOpenChange(false)}
-                />
-              ) : (
-                <div className="text-center py-8 text-tertiary">
-                  <p className="text-sm">{t('permissions.loading')}</p>
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="quota" className="mt-4">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <Label className="text-sm shrink-0">{tTpl('apply_template')}:</Label>
-                    <Select
-                      value={appliedQuotaTemplateId ?? '__none__'}
-                      onValueChange={(v) => setAppliedQuotaTemplateId(v === '__none__' ? null : v)}
-                    >
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder={tTpl('select_template')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">{tTpl('select_template')}</SelectItem>
-                        {quotaTemplates.map((tpl) => (
-                          <SelectItem key={tpl.id} value={tpl.id}>
-                            {tpl.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {onViewQuotaHistory && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={onViewQuotaHistory}
-                      className="gap-2"
-                    >
-                      <History className="h-4 w-4" />
-                      {t('quota_history.view_history')}
-                    </Button>
-                  )}
-                </div>
-                <QuotaOverridesEditor
-                  key={`${member.id}-quota-${appliedQuotaTemplateId ?? 'current'}`}
-                  defaultQuotas={extractQuotasFromGovernance(projectGovernance)}
-                  initialOverrides={quotaInitialOverrides}
-                  onSave={handleSaveQuota}
-                  onCancel={() => onOpenChange(false)}
-                />
-              </div>
-            </TabsContent>
-
-          </Tabs>
-        </div>
+        {content}
       </SheetContent>
     </Sheet>
   );

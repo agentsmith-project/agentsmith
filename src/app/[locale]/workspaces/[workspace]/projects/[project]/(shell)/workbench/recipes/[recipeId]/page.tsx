@@ -5,7 +5,9 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { RecipePage } from '@/components/workbench/RecipePage';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import {
+  useCanAccessStudio,
+} from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface RecipePageParams {
@@ -29,15 +31,7 @@ export default function RecipeDetailPage({ params }: RecipePageParams) {
     project?: string;
     recipeId?: string;
   } | null>(null);
-  const canProjectRecipeRead = useHasPermission('project:recipe:read');
-  const canProjectRecipeCreate = useHasPermission('project:recipe:create');
-  const canProjectRecipeUpdate = useHasPermission('project:recipe:update');
-  const canProjectRecipeDelete = useHasPermission('project:recipe:delete');
-  const canReadRecipes =
-    canProjectRecipeRead ||
-    canProjectRecipeCreate ||
-    canProjectRecipeUpdate ||
-    canProjectRecipeDelete;
+  const canAccessStudio = useCanAccessStudio();
 
   useEffect(() => {
     params.then((p) =>
@@ -68,7 +62,7 @@ export default function RecipeDetailPage({ params }: RecipePageParams) {
     );
   }
 
-  if (!canReadRecipes) {
+  if (!canAccessStudio) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -86,6 +80,9 @@ export default function RecipeDetailPage({ params }: RecipePageParams) {
           workspaceId={resolvedParams.workspace}
           projectId={resolvedParams.project}
           recipeId={resolvedParams.recipeId}
+          canCreateRecipe={canAccessStudio}
+          canUpdateRecipe={canAccessStudio}
+          canDeleteRecipe={canAccessStudio}
         />
       </PageLayout>
     </PageState>

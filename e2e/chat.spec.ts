@@ -41,6 +41,16 @@ test.describe('Chat Page', () => {
     await expect(newThreadBtn).toBeEnabled();
   });
 
+  test('should render thread search and model selector controls', async ({ authedPage }) => {
+    await expect(authedPage.getByPlaceholder(/search threads/i)).toBeVisible({ timeout: 10000 });
+    await expect(
+      authedPage
+        .locator('[data-testid="chat__main-pane"] button')
+        .filter({ hasText: /select model/i })
+        .first()
+    ).toBeVisible();
+  });
+
   test('should select a thread and display chat area', async ({ authedPage }) => {
     // Wait for thread items to load
     const threads = authedPage.getByTestId('chat__thread-item');
@@ -86,6 +96,18 @@ test.describe('Chat Page', () => {
     // Send button should now be visible and enabled
     await expect(sendBtn).toBeVisible({ timeout: 5000 });
     await expect(sendBtn).toBeEnabled();
+  });
+
+  test('should support sending with Enter key', async ({ authedPage }) => {
+    const composer = authedPage.getByTestId('chat__composer');
+    await expect(composer).toBeVisible({ timeout: 10000 });
+
+    const input = composer.locator('textarea, input[type="text"], [contenteditable="true"]').first();
+    await input.fill('E2E enter send message');
+    await input.press('Enter');
+
+    // Composer remains available after send pipeline triggers.
+    await expect(composer).toBeVisible();
   });
 
   test('should send a message via send button', async ({ authedPage }) => {

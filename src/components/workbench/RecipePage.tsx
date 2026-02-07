@@ -23,9 +23,19 @@ export interface RecipePageProps {
   workspaceId: string;
   projectId: string;
   recipeId: string;
+  canCreateRecipe: boolean;
+  canUpdateRecipe: boolean;
+  canDeleteRecipe: boolean;
 }
 
-export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps) {
+export function RecipePage({
+  workspaceId,
+  projectId,
+  recipeId,
+  canCreateRecipe,
+  canUpdateRecipe,
+  canDeleteRecipe,
+}: RecipePageProps) {
   const router = useRouter();
   const params = useParams();
   const locale = (params?.locale as string) || 'en-US';
@@ -219,7 +229,7 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
   if (recipeLoading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="text-tertiary">Loading recipe...</div>
+        <div className="text-tertiary">Loading task...</div>
       </div>
     );
   }
@@ -228,13 +238,13 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-lg font-semibold text-foreground mb-2">Recipe not found</h2>
-          <p className="text-sm text-tertiary mb-4">The recipe you're looking for doesn't exist or has been deleted.</p>
+          <h2 className="text-lg font-semibold text-foreground mb-2">Task not found</h2>
+          <p className="text-sm text-tertiary mb-4">The task you're looking for doesn't exist or has been deleted.</p>
           <button
             onClick={() => router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/workbench`)}
             className="text-sm text-accent hover:underline"
           >
-            Go back to Workbench
+            Go back to AI Studio
           </button>
         </div>
       </div>
@@ -249,8 +259,9 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
         recipe={recipe}
         workspaceId={workspaceId}
         projectId={projectId}
-        onCreateNew={handleCreateNew}
-        onEdit={() => setEditDialogOpen(true)}
+        canDeleteRecipe={canDeleteRecipe}
+        onCreateNew={canCreateRecipe ? handleCreateNew : undefined}
+        onEdit={canUpdateRecipe ? () => setEditDialogOpen(true) : undefined}
         onDeleted={handleRecipeDeleted}
         onLeave={handleLeave}
       />
@@ -261,16 +272,19 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
             projectId={projectId}
             recipeId={recipeId}
             attachedSourceIds={recipe.attached_source_ids}
-            onAddClick={() => setSourceSelectOpen(true)}
+            onAddClick={() => {
+              if (!canUpdateRecipe) return;
+              setSourceSelectOpen(true);
+            }}
           />
         </div>
         <div className="flex-1 min-w-0">
-          <ConversationPanel
+      <ConversationPanel
             messages={messages || []}
             streamingMessageId={streamingMessageId}
             streamingContent={streamingContent}
             onSendMessage={handleSendMessage}
-            disabled={isDisabled}
+            disabled={isDisabled || !canUpdateRecipe}
             sending={sendMessage.isPending}
           />
         </div>
@@ -280,7 +294,7 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
             onView={handleViewArtifact}
             onSave={handleSaveArtifact}
             onDownload={handleDownloadArtifact}
-            disabled={isDisabled}
+            disabled={isDisabled || !canUpdateRecipe}
           />
         </div>
       </div>
@@ -309,7 +323,7 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
       />
 
       <RecipeCreateDialog
-        open={createDialogOpen}
+        open={canCreateRecipe && createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         workspaceId={workspaceId}
         projectId={projectId}
@@ -317,7 +331,7 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
       />
 
       <EditRecipeDialog
-        open={editDialogOpen}
+        open={canUpdateRecipe && editDialogOpen}
         onOpenChange={setEditDialogOpen}
         recipe={recipe}
         saving={updateRecipe.isPending}

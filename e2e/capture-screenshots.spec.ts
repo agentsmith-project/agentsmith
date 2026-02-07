@@ -31,7 +31,6 @@ const DIRS = [
   '12-sources',
   '13-credentials',
   '14-user',
-  '15-userdata',
   '16-workspace',
 ];
 
@@ -202,31 +201,10 @@ test.describe('Screenshot Capture', () => {
       await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-runtime-with-tokens.png'), fullPage: true });
     }
 
-    const governanceTab = page.getByRole('tab', { name: /治理规则|Governance/i });
-    if (await governanceTab.isVisible()) {
-      await governanceTab.click();
-      await page.waitForTimeout(500);
-      await expandTokenReference(page);
-      await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-governance-with-tokens.png'), fullPage: true });
-    }
-
-    const limitsTab = page.getByRole('tab', { name: /资源限制|Limits/i });
-    if (await limitsTab.isVisible()) {
-      await limitsTab.click();
-      await page.waitForTimeout(500);
-      await expandTokenReference(page);
-      await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-limits-with-tokens.png'), fullPage: true });
-    }
-
     // === 12-sources ===
     await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/sources`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(BASE, '12-sources', 'sources.png'), fullPage: true });
-
-    // === 15-userdata ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/userdata`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
-    await page.screenshot({ path: path.join(BASE, '15-userdata', 'userdata.png'), fullPage: true });
 
     // === 13-credentials ===
     await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/credentials`, { waitUntil: 'networkidle' });
@@ -269,7 +247,6 @@ test.describe('Screenshot Capture', () => {
       path.join(BASE, '13-credentials', 'credentials-list.png'),
       path.join(BASE, '14-user', 'profile.png'),
       path.join(BASE, '14-user', 'api-keys.png'),
-      path.join(BASE, '15-userdata', 'userdata.png'),
       path.join(BASE, '16-workspace', 'workspace-settings.png'),
     ];
 

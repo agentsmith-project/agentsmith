@@ -29,6 +29,7 @@ export interface RecipeHeaderProps {
   recipe: Recipe;
   workspaceId: string;
   projectId: string;
+  canDeleteRecipe?: boolean;
   onCreateNew?: () => void;
   onEdit?: () => void;
   onDeleted?: () => void;
@@ -45,6 +46,7 @@ export function RecipeHeader({
   recipe,
   workspaceId,
   projectId,
+  canDeleteRecipe = true,
   onCreateNew,
   onEdit,
   onDeleted,
@@ -67,6 +69,7 @@ export function RecipeHeader({
   };
 
   const handleDelete = async () => {
+    if (!canDeleteRecipe) return;
     try {
       await deleteRecipe.mutateAsync({
         workspaceId,
@@ -130,37 +133,38 @@ export function RecipeHeader({
             {t('edit')}
           </Button>
         )}
-        {/* Delete Recipe Button */}
-        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" size="sm" className="text-error hover:text-error">
-              <Trash2 className="h-4 w-4 mr-2" />
-              {t('delete')}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('delete')}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t('delete_confirm_message')}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('delete_cancel')}</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(e) => {
-                  e.preventDefault();
-                  void handleDelete();
-                }}
-                disabled={deleteRecipe.isPending}
-                variant="destructive"
-              >
-                {deleteRecipe.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {canDeleteRecipe && (
+          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="text-error hover:text-error">
+                <Trash2 className="h-4 w-4 mr-2" />
                 {t('delete')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('delete')}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t('delete_confirm_message')}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('delete_cancel')}</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void handleDelete();
+                  }}
+                  disabled={deleteRecipe.isPending}
+                  variant="destructive"
+                >
+                  {deleteRecipe.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('delete')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
 
         {/* New Recipe Button */}
         {onCreateNew && (

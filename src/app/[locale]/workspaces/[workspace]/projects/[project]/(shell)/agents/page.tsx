@@ -25,7 +25,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import {
   AlertDialog,
@@ -235,13 +235,16 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
-  const canAgentRead = useHasPermission('agent:read');
-  const canAgentManage = useHasPermission('agent:manage');
-  const canAgentKeyIssue = useHasPermission('agent:key:issue');
-  const canAgentKeyRevoke = useHasPermission('agent:key:revoke');
-  const canReadAgents = canAgentRead || canAgentManage;
-  const canManageAgents = canAgentManage;
-  const canIssueAgentKeys = canAgentKeyIssue || canAgentKeyRevoke;
+  const canAgentRead = useHasPermission('project:agent:read');
+  const canAgentCreate = useHasPermission('project:agent:create');
+  const canAgentUpdate = useHasPermission('project:agent:update');
+  const canAgentDelete = useHasPermission('project:agent:delete');
+  const canAgentKeyIssue = useHasPermission('project:agent:key:issue');
+  const canAgentKeyRevoke = useHasPermission('project:agent:key:revoke');
+  const isProjectAdmin = useIsProjectAdmin();
+  const canReadAgents = canAgentRead || canAgentCreate || canAgentUpdate || canAgentDelete;
+  const canManageAgents = isProjectAdmin && (canAgentCreate || canAgentUpdate || canAgentDelete);
+  const canIssueAgentKeys = isProjectAdmin && (canAgentKeyIssue || canAgentKeyRevoke);
 
   useEffect(() => {
     params.then((p) => {
@@ -259,14 +262,14 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
     queryKey: ['agents', workspaceId, projectId],
     queryFn: () => agentAPI.list(workspaceId, projectId),
-    enabled: !!workspaceId && !!projectId,
+    enabled: !!workspaceId && !!projectId && canReadAgents,
   });
 
   const { data: diagnosticsData, isLoading: diagnosticsLoading } = useQuery({
     queryKey: ['agents', workspaceId, projectId, detailsAgent?.id, 'diagnostics'],
     queryFn: () =>
       detailsAgent ? agentAPI.getDiagnostics(workspaceId, projectId, detailsAgent.id) : Promise.resolve(null),
-    enabled: !!detailsAgent && !!workspaceId && !!projectId,
+    enabled: !!detailsAgent && !!workspaceId && !!projectId && canReadAgents,
   });
 
   const invalidateAgents = () => {

@@ -172,13 +172,13 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+        <div className="p-6 max-w-6xl mx-auto w-full space-y-6">
+      <header className="space-y-1">
+        <h1 className="text-3xl font-semibold text-foreground flex items-center gap-2">
           <SettingsIcon className="w-6 h-6 text-icon-default" />
           {settingsT('title')}
         </h1>
-        <p className="mt-1 text-sm text-tertiary">{settingsT('subtitle')}</p>
+        <p className="text-sm text-tertiary">{settingsT('subtitle')}</p>
       </header>
 
       <Tabs defaultValue="general" className="space-y-6">
@@ -191,42 +191,46 @@ export default function SettingsPage({ params }: SettingsPageProps) {
           <div className="rounded-xl border border-border bg-surface p-6">
             <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('general_access_title')}</h2>
             <p className="text-sm text-tertiary mb-4">{settingsT('general_help')}</p>
-            <div className="space-y-4">
-              <div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('project_name')}</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  disabled={!canManageSettings}
                   className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-primary mb-2">{settingsT('description')}</label>
-                <textarea
-                  placeholder="Add a description..."
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
-                />
-              </div>
-              <div>
+              <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('visibility')}</label>
                 <select
                   value={visibility}
                   onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}
+                  disabled={!canManageSettings}
                   className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
                 >
                   <option value="public">Public</option>
                   <option value="private">Private</option>
                 </select>
               </div>
-              <div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-primary mb-2">{settingsT('description')}</label>
+                <textarea
+                  placeholder="Add a description..."
+                  rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  disabled={!canManageSettings}
+                  className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
+                />
+              </div>
+              <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('join_policy')}</label>
                 <select
                   value={joinPolicy}
                   onChange={(e) => setJoinPolicy(e.target.value as 'approval_required' | 'open')}
+                  disabled={!canManageSettings}
                   className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
                 >
                   <option value="approval_required">Approval Required</option>
@@ -234,7 +238,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
                 </select>
               </div>
             </div>
-            <div className="mt-4 flex justify-end">
+            <div className="mt-6 flex justify-end">
               <Button onClick={handleSaveGeneral} disabled={!canManageSettings || savingGeneral} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingGeneral ? 'Saving...' : 'Save'}
@@ -253,6 +257,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <RuntimePreferencesEditor
               value={runtimePreferences}
               onChange={setRuntimePreferences}
+              disabled={!canManageSettings}
             />
             <div className="mt-4 flex justify-end">
               <Button onClick={handleSaveRuntimePrefs} disabled={!canManageSettings || savingRuntime} variant="action" size="lg" data-testid="settings__save-btn">
@@ -264,8 +269,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         </TabsContent>
       </Tabs>
 
-      {/* Danger Zone - fixed at bottom */}
-      <div className="mt-8 rounded-xl border border-subtle bg-surface-high border-l-2 border-l-error/70 p-6">
+      <div className="mt-2 rounded-xl border border-subtle bg-surface-high border-l-2 border-l-error/70 p-6">
         <h2 className="font-semibold text-error mb-4">Danger Zone</h2>
         <div className="flex items-center justify-between">
           <div>

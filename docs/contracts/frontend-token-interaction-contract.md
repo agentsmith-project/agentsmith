@@ -40,7 +40,6 @@ Related source of truth:
 
 ### Workspace scope
 
-- `workspace:governance:read`
 - `workspace:governance:update`
 - `workspace:project:create`
 
@@ -54,12 +53,33 @@ Related source of truth:
 - `project:policy:read`
 - `project:policy:update`
 
-### Project resource scope
+### Chat/AI Studio access scope
 
-- `project:resource:read`
-- `project:resource:create`
-- `project:resource:update`
-- `project:resource:delete`
+- `project:chat:access`
+- `project:studio:access`
+
+### Project endpoint scope
+
+- `project:endpoint:read`
+- `project:endpoint:create`
+- `project:endpoint:update`
+- `project:endpoint:delete`
+
+### Project source library scope
+
+- `project:source:library:read`
+- `project:source:library:create`
+- `project:source:library:update`
+- `project:source:library:delete`
+
+### Project agent scope
+
+- `project:agent:read`
+- `project:agent:create`
+- `project:agent:update`
+- `project:agent:delete`
+- `project:agent:key:issue`
+- `project:agent:key:revoke`
 
 ### Diagnostics/Audit/Usage scope
 
@@ -80,8 +100,13 @@ This is default template behavior for UX and initial grants. It can be overridde
 
 3. Project Admin
 - grants in that project:
+  - `project:chat:access`
+  - `project:studio:access`
   - `project:policy:read/update`
-  - `project:resource:read/create/update/delete`
+  - `project:endpoint:read/create/update/delete`
+  - `project:source:library:read/create/update/delete`
+  - `project:agent:read/create/update/delete`
+  - `project:agent:key:issue/revoke`
   - `project:admin:grant/revoke`
 
 4. Normal User
@@ -95,7 +120,7 @@ This is default template behavior for UX and initial grants. It can be overridde
 Action: View governance assignments
 - Preconditions:
   - workspace member
-  - token `workspace:governance:read`
+  - token `workspace:governance:update`
 - Failure:
   - page state `permission_denied`
 
@@ -148,20 +173,37 @@ Action: View policy (runtime/general)
 
 Action: Update policy
 - Preconditions:
+  - current user is project admin of this project
   - token `project:policy:update`
 - Failure:
   - readonly mode
 
-## 5) Shared Libraries
+## 5) Chat
+
+Action: Access chat page and use all chat actions
+- Preconditions:
+  - token `project:chat:access`
+- Failure:
+  - page state `permission_denied`
+
+## 6) AI Studio (Task)
+
+Action: Access AI Studio list/detail and use all task actions
+- Preconditions:
+  - token `project:studio:access`
+- Failure:
+  - page state `permission_denied`
+
+## 7) Shared Libraries
 
 Action: View libraries
 - Preconditions:
-  - token `project:resource:read`
+  - token `project:source:library:read`
   - resource visible by policy
 
 Action: Create/edit/delete library
 - Preconditions:
-  - token `project:resource:create/update/delete`
+  - token `project:source:library:create/update/delete`
 
 Action: Upload file to visible library
 - Preconditions:
@@ -169,47 +211,48 @@ Action: Upload file to visible library
 - Notes:
   - record `uploaded_by`, `uploaded_at`
 
-## 6) Shared Endpoints
+## 8) Shared Endpoints
 
 Action: View endpoints
 - Preconditions:
-  - token `project:resource:read`
+  - token `project:endpoint:read`
   - resource visible by policy
 
 Action: Create/edit/delete endpoint
 - Preconditions:
-  - token `project:resource:create/update/delete`
+  - token `project:endpoint:create/update/delete`
 
-## 7) Credentials
+## 9) Credentials
 
 Action: View credentials module
 - Preconditions:
   - `wheel == true`
-  - token `project:resource:read` (or stronger resource token)
+  - token `project:endpoint:read` or `project:source:library:read`
 
 Action: Create/rotate/delete credential
 - Preconditions:
   - `wheel == true`
-  - token `project:resource:create/update/delete`
+  - token `project:endpoint:create/update/delete` or `project:source:library:create/update/delete`
 
 Security constraints:
 - never show secret value after creation
 - list fields: `name`, `fingerprint`, timestamps only
 
-## 8) Resource Policy (Draft Alignment)
+## 10) Resource Policy (Draft Alignment)
 
 Action: View/Update resource policy
 - Preconditions:
-  - project admin capability (`project:resource:update` or stronger)
+  - user is project admin in this project
+  - token capability (`project:endpoint:update` or `project:source:library:update` or `project:agent:update`)
 - Draft FE/BE direction:
-  - endpoint/library/agent use unified `resource policy`
+  - endpoint/agent/library use unified `resource policy`
   - policy includes access subjects + per-user/per-group rate/quota limits
-  - `agent` rate key: `agent.max_concurrency`
   - `endpoint` quota key: `endpoint.daily_token_limit`
+  - `agent` rate key: `agent.max_concurrency`
   - `source_library` quota keys: `source_library.max_total_files`, `source_library.max_file_size_bytes`
   - resolution order: subject override > resource override > project default
 
-## 9) Project Groups (Template-Oriented)
+## 11) Project Groups (Template-Oriented)
 
 Action: View group list
 - Preconditions:
@@ -217,16 +260,19 @@ Action: View group list
 
 Action: Create/edit/delete group
 - Preconditions:
+  - user is project admin in this project
   - `project:admin:grant` or `project:admin:revoke`
 
 Action: Bind permission template to group
 - Preconditions:
+  - user is project admin in this project
   - `project:admin:grant` or `project:admin:revoke`
 - Notes:
   - one active permission template per group
 
 Action: Apply group template to group members
 - Preconditions:
+  - user is project admin in this project
   - `project:admin:grant` or `project:admin:revoke`
 - Notes:
   - frontend applies the bound template to all members currently in that group
@@ -243,6 +289,9 @@ Action: Apply group template to group members
 
 3. Data-level denial (policy-hidden resource):
 - do not render resource in list
+
+4. Governance write operations (members/template/group/resource-policy):
+- frontend must enforce dual gate: `is_project_admin && has_required_mutation_token`
 - optionally show filtered count in diagnostics view only
 
 4. Validation/security errors:
@@ -264,5 +313,5 @@ Action: Apply group template to group members
 ## Open Items Before Freeze
 
 1. Confirm exact backend endpoint names for project defaults + resource policy updates.
-2. Confirm delete-project token naming if backend does not reuse `project:resource:delete`.
+2. Confirm delete-project token naming remains `project:delete`.
 3. Confirm whether workspace admin has emergency override over project policy/admin assignment.

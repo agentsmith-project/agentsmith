@@ -56,7 +56,16 @@ export function useCurrentPermissions() {
   return useMemo(() => {
     // Runtime validation: ensure project data matches expected schema
     const validated = currentProject ? validateProjectWithMembership(currentProject) : null;
-    return validated?.permissions ?? EMPTY_PERMISSIONS;
+    if (!validated) return EMPTY_PERMISSIONS;
+
+    const explicitPermissions = validated.permissions ?? [];
+    if (explicitPermissions.length > 0) {
+      return explicitPermissions;
+    }
+
+    const role = validated.role;
+    if (!role) return EMPTY_PERMISSIONS;
+    return ROLE_TEMPLATES[role] ?? EMPTY_PERMISSIONS;
   }, [currentProject]);
 }
 
@@ -211,6 +220,41 @@ export function useCanManageProject(): boolean {
 }
 
 /**
+ * Governance write operations in members module require:
+ * 1) current user is project admin in this project
+ * 2) has member governance mutation token
+ */
+export function useCanManageMemberGovernance(): boolean {
+  const isProjectAdmin = useIsProjectAdmin();
+  const canProjectAdminGrant = useHasPermission('project:admin:grant');
+  const canProjectAdminRevoke = useHasPermission('project:admin:revoke');
+  const hasManageToken = canProjectAdminGrant || canProjectAdminRevoke;
+
+  return useMemo(
+    () => isProjectAdmin && hasManageToken,
+    [isProjectAdmin, hasManageToken],
+  );
+}
+
+/**
+ * Resource policy write operations require:
+ * 1) current user is project admin in this project
+ * 2) has update token for at least one governed resource type
+ */
+export function useCanManageResourcePolicy(): boolean {
+  const isProjectAdmin = useIsProjectAdmin();
+  const canUpdateEndpoint = useHasPermission('project:endpoint:update');
+  const canUpdateSourceLibrary = useHasPermission('project:source:library:update');
+  const canUpdateAgent = useHasPermission('project:agent:update');
+  const hasResourcePolicyToken = canUpdateEndpoint || canUpdateSourceLibrary || canUpdateAgent;
+
+  return useMemo(
+    () => isProjectAdmin && hasResourcePolicyToken,
+    [isProjectAdmin, hasResourcePolicyToken],
+  );
+}
+
+/**
  * Check if current user can read project policy.
  */
 export function useCanReadProjectPolicy(): boolean {
@@ -223,36 +267,110 @@ export function useCanReadProjectPolicy(): boolean {
  * Check if current user can update project policy.
  */
 export function useCanUpdateProjectPolicy(): boolean {
-  return useHasPermission('project:policy:update');
+  const isProjectAdmin = useIsProjectAdmin();
+  const canPolicyUpdate = useHasPermission('project:policy:update');
+  return useMemo(() => isProjectAdmin && canPolicyUpdate, [isProjectAdmin, canPolicyUpdate]);
 }
 
 /**
- * Credentials access requires wheel governance + resource token gate.
+ * Credentials access requires wheel governance + endpoint/source management token gate.
  */
 export function useCanAccessCredentials(): { canRead: boolean; canManage: boolean } {
   const { workspace } = useParams();
   const workspaceId = workspace as string;
   const { canViewCredentials } = useWorkspaceGovernance(workspaceId || '');
-  const canProjectResourceRead = useHasPermission('project:resource:read');
-  const canProjectResourceCreate = useHasPermission('project:resource:create');
-  const canProjectResourceUpdate = useHasPermission('project:resource:update');
-  const canProjectResourceDelete = useHasPermission('project:resource:delete');
+  const isProjectAdmin = useIsProjectAdmin();
+  const canEndpointRead = useHasPermission('project:endpoint:read');
+  const canEndpointCreate = useHasPermission('project:endpoint:create');
+  const canEndpointUpdate = useHasPermission('project:endpoint:update');
+  const canEndpointDelete = useHasPermission('project:endpoint:delete');
+  const canSourceLibraryRead = useHasPermission('project:source:library:read');
+  const canSourceLibraryCreate = useHasPermission('project:source:library:create');
+  const canSourceLibraryUpdate = useHasPermission('project:source:library:update');
+  const canSourceLibraryDelete = useHasPermission('project:source:library:delete');
 
   return useMemo(
     () => ({
       canRead:
         canViewCredentials &&
-        (canProjectResourceRead || canProjectResourceUpdate || canProjectResourceDelete),
+        (
+          canEndpointRead ||
+          canEndpointUpdate ||
+          canEndpointDelete ||
+          canSourceLibraryRead ||
+          canSourceLibraryUpdate ||
+          canSourceLibraryDelete
+        ),
       canManage:
+        isProjectAdmin &&
         canViewCredentials &&
-        (canProjectResourceCreate || canProjectResourceUpdate || canProjectResourceDelete),
+        (
+          canEndpointCreate ||
+          canEndpointUpdate ||
+          canEndpointDelete ||
+          canSourceLibraryCreate ||
+          canSourceLibraryUpdate ||
+          canSourceLibraryDelete
+        ),
     }),
     [
       canViewCredentials,
-      canProjectResourceRead,
-      canProjectResourceCreate,
-      canProjectResourceUpdate,
-      canProjectResourceDelete,
+      isProjectAdmin,
+      canEndpointRead,
+      canEndpointCreate,
+      canEndpointUpdate,
+      canEndpointDelete,
+      canSourceLibraryRead,
+      canSourceLibraryCreate,
+      canSourceLibraryUpdate,
+      canSourceLibraryDelete,
     ],
   );
+}
+
+/**
+ * Chat page access gate.
+ */
+export function useCanAccessChat(): boolean {
+  return useHasPermission('project:chat:access');
+}
+
+/**
+ * Backward-compatible alias.
+ */
+export function useCanUseChat(): boolean {
+  return useCanAccessChat();
+}
+
+/**
+ * Chat actions follow chat access in MVP.
+ */
+export function useCanManageChatSessions(): boolean {
+  return useCanAccessChat();
+}
+
+/**
+ * Studio (workbench/task) access gate.
+ */
+export function useCanAccessStudio(): boolean {
+  return useHasPermission('project:studio:access');
+}
+
+/**
+ * Backward-compatible alias.
+ */
+export function useCanReadRecipes(): boolean {
+  return useCanAccessStudio();
+}
+
+export function useCanCreateRecipe(): boolean {
+  return useCanAccessStudio();
+}
+
+export function useCanUpdateRecipe(): boolean {
+  return useCanAccessStudio();
+}
+
+export function useCanDeleteRecipe(): boolean {
+  return useCanAccessStudio();
 }

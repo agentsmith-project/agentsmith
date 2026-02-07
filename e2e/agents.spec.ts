@@ -68,6 +68,21 @@ test.describe('Agents Page', () => {
     await expect(toggleBtn).toBeVisible();
   });
 
+  test('table shows interaction mode and status badges', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+
+    await expect(authedPage.getByText(/chat/i).first()).toBeVisible();
+    await expect(authedPage.getByText(/AI Studio|workbench/i).first()).toBeVisible();
+    await expect(authedPage.getByText(/active|paused/i).first()).toBeVisible();
+  });
+
+  test('external agent row exposes keys action', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+
+    const keyBtn = authedPage.getByRole('button', { name: /agent keys|keys/i }).first();
+    await expect(keyBtn).toBeVisible();
+  });
+
   test('create agent via dialog submission', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
 
@@ -91,6 +106,70 @@ test.describe('Agents Page', () => {
 
     // New agent should appear in the table
     await expect(authedPage.getByText('E2E Test Agent')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('create internal agent sends config payload', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+    await authedPage.getByTestId('agents__create-btn').click();
+
+    const dialog = authedPage.getByTestId('agents__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    await dialog.locator('#agent-name').fill('E2E Internal Agent');
+    await dialog.getByLabel(/internal/i).click();
+    await dialog.locator('#agent-image').fill('ghcr.io/acme/agent:1.0.0');
+    await dialog.locator('#agent-max-sessions').fill('3');
+    await dialog.getByRole('combobox').selectOption('workbench');
+
+    const createRequestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents$/.test(req.url());
+    });
+
+    await dialog.getByRole('button', { name: /create/i }).click();
+    const request = await createRequestPromise;
+    const payload = request.postDataJSON() as {
+      name?: string;
+      mode?: string;
+      interaction_mode?: string;
+      config?: { image?: string; max_concurrent_sessions_override?: number };
+    };
+
+    expect(payload.name).toBe('E2E Internal Agent');
+    expect(payload.mode).toBe('internal');
+    expect(payload.interaction_mode).toBe('workbench');
+    expect(payload.config?.image).toBe('ghcr.io/acme/agent:1.0.0');
+    expect(payload.config?.max_concurrent_sessions_override).toBe(3);
+  });
+
+  test('create internal agent includes env entries in payload', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+    await authedPage.getByTestId('agents__create-btn').click();
+
+    const dialog = authedPage.getByTestId('agents__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    await dialog.locator('#agent-name').fill('E2E Internal Agent Env');
+    await dialog.getByLabel(/internal/i).click();
+    await dialog.locator('#agent-image').fill('ghcr.io/acme/agent:2.0.0');
+
+    const envInputs = dialog.locator('input[placeholder="KEY"]');
+    const valInputs = dialog.locator('input[placeholder="value"]');
+    await envInputs.first().fill('API_BASE');
+    await valInputs.first().fill('https://api.example.com');
+
+    const createRequestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents$/.test(req.url());
+    });
+    await dialog.getByRole('button', { name: /^create$/i }).click();
+
+    const request = await createRequestPromise;
+    const payload = request.postDataJSON() as {
+      config?: { env?: Record<string, string>; image?: string };
+    };
+    expect(payload.config?.image).toBe('ghcr.io/acme/agent:2.0.0');
+    expect(payload.config?.env).toMatchObject({
+      API_BASE: 'https://api.example.com',
+    });
   });
 
   test('create agent with empty name should not submit', async ({ authedPage }) => {
@@ -118,12 +197,55 @@ test.describe('Agents Page', () => {
     const toggleBtn = firstRow.getByRole('button', { name: /enable|disable/i });
     await expect(toggleBtn).toBeVisible();
 
-    const initialText = await toggleBtn.textContent();
+    const requestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'PATCH' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents\/.+/.test(req.url());
+    });
     await toggleBtn.click();
+    await requestPromise;
 
-    // After toggle, the button text should change (Enable -> Disable or vice versa)
-    await authedPage.waitForTimeout(500);
     // The agent row should still be visible
     await expect(firstRow).toBeVisible();
+  });
+
+  test('edit agent submits updated interaction mode', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+
+    const firstRow = authedPage.getByTestId('agents__table__row').first();
+    await firstRow.getByRole('button', { name: /edit/i }).click();
+
+    const editDialog = authedPage.getByTestId('agents__edit-dialog');
+    await expect(editDialog).toBeVisible();
+    await editDialog.getByRole('combobox').selectOption('chat');
+
+    const updateRequestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'PATCH' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents\/.+/.test(req.url());
+    });
+
+    await editDialog.getByRole('button', { name: /save/i }).click();
+    const request = await updateRequestPromise;
+    const payload = request.postDataJSON() as { interaction_mode?: string };
+    expect(payload.interaction_mode).toBe('chat');
+  });
+
+  test('external agent keys flow opens create key dialog result', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
+
+    const keyBtn = authedPage.getByRole('button', { name: /agent keys|keys/i }).first();
+    await expect(keyBtn).toBeVisible();
+    await keyBtn.click();
+
+    const createKeyButton = authedPage.getByRole('dialog').getByRole('button', { name: /create/i }).first();
+    if (!(await createKeyButton.isVisible({ timeout: 3000 }).catch(() => false))) {
+      test.skip(true, 'Agent keys create action is not reachable in current fixture');
+      return;
+    }
+
+    const createKeyRequestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents\/.*\/keys$/.test(req.url());
+    });
+    await createKeyButton.click();
+    await createKeyRequestPromise;
+
+    await expect(authedPage.getByTestId('api-keys__key-created-dialog')).toBeVisible({ timeout: 10000 });
   });
 });

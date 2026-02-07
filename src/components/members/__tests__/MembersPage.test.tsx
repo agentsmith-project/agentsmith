@@ -7,6 +7,7 @@ vi.mock('next-intl', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(),
+  useCanManageMemberGovernance: vi.fn(),
 }));
 
 vi.mock('@/lib/hooks/use-join-requests', () => ({
@@ -41,8 +42,16 @@ vi.mock('../JoinRequestsTab', () => ({
   JoinRequestsTab: () => <div data-testid="join-requests-tab" />,
 }));
 
+vi.mock('../PeopleTab', () => ({
+  PeopleTab: () => <div data-testid="people-tab" />,
+}));
+
 vi.mock('../TemplatesTab', () => ({
   TemplatesTab: () => <div data-testid="templates-tab" />,
+}));
+
+vi.mock('../GroupsTab', () => ({
+  GroupsTab: () => <div data-testid="groups-tab" />,
 }));
 
 vi.mock('../BatchApplyBar', () => ({
@@ -59,17 +68,19 @@ vi.mock('../BatchApplyQuotaDialog', () => ({
 
 import { MembersPage } from '../MembersPage';
 import { useMembersList } from '@/lib/hooks/use-members-list';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanManageMemberGovernance, useHasPermission } from '@/lib/hooks/use-permissions';
 import { useJoinRequests } from '@/lib/hooks/use-join-requests';
 
 const mockUseMembersList = vi.mocked(useMembersList);
 const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseCanManageMemberGovernance = vi.mocked(useCanManageMemberGovernance);
 const mockUseJoinRequests = vi.mocked(useJoinRequests);
 const STABLE_EMPTY_JOIN_REQUESTS = { data: [], isLoading: false } as any;
 
 describe('MembersPage', () => {
   beforeEach(() => {
     mockUseHasPermission.mockReturnValue(true);
+    mockUseCanManageMemberGovernance.mockReturnValue(true);
     mockUseJoinRequests.mockReturnValue(STABLE_EMPTY_JOIN_REQUESTS);
     mockUseMembersList.mockReturnValue({
       project: null,

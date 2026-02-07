@@ -175,9 +175,7 @@ export function MembersTable({
               variant={
                 status === 'active'
                   ? 'default'
-                  : status === 'blocked'
-                    ? 'destructive'
-                    : 'secondary'
+                  : 'secondary'
               }
               className="text-xs"
             >

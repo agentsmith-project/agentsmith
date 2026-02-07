@@ -30,6 +30,10 @@ test.describe('Endpoints Page', () => {
 
     // URLs should appear in the table
     await expect(authedPage.getByText('https://api.openai.com/v1').first()).toBeVisible();
+
+    // Rate limit summary columns show RPM and tokens/day for each row.
+    await expect(authedPage.getByText('RPM:').first()).toBeVisible();
+    await expect(authedPage.getByText('Tokens/day:').first()).toBeVisible();
   });
 
   test('create dialog opens with form fields', async ({ authedPage }) => {
@@ -57,6 +61,15 @@ test.describe('Endpoints Page', () => {
 
     const editDialog = authedPage.getByTestId('endpoints__edit-dialog');
     await expect(editDialog).toBeVisible();
+  });
+
+  test('action buttons include text labels on desktop layout', async ({ authedPage }) => {
+    const firstRow = authedPage.getByTestId('endpoints__table__row').first();
+    await expect(firstRow).toBeVisible();
+
+    await expect(firstRow.getByRole('button', { name: /edit/i })).toBeVisible();
+    await expect(firstRow.getByRole('button', { name: /disable|enable/i })).toBeVisible();
+    await expect(firstRow.getByRole('button', { name: /delete/i })).toBeVisible();
   });
 
   test('delete action shows confirmation dialog', async ({ authedPage }) => {
@@ -123,5 +136,67 @@ test.describe('Endpoints Page', () => {
     // Submit button should be disabled when required fields are empty
     const submitBtn = dialog.getByRole('button', { name: /create/i });
     await expect(submitBtn).toBeDisabled();
+  });
+
+  test('toggle endpoint status sends update request', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
+
+    const firstRow = authedPage.getByTestId('endpoints__table__row').first();
+    await expect(firstRow).toBeVisible();
+    const toggleBtn = firstRow.getByRole('button', { name: /disable|enable/i });
+
+    const requestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'PUT' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/endpoints\/.+/.test(req.url());
+    });
+    await toggleBtn.click();
+    const request = await requestPromise;
+    const payload = request.postDataJSON() as { status?: string };
+    expect(payload.status === 'active' || payload.status === 'disabled').toBeTruthy();
+  });
+
+  test('create custom endpoint requires base URL and sends limits payload', async ({ authedPage }) => {
+    await authedPage.getByTestId('endpoints__create-btn').click();
+    const dialog = authedPage.getByTestId('endpoints__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    await dialog.locator('#endpoint-name').fill('E2E Custom Endpoint');
+    await dialog.locator('#endpoint-model').fill('custom-model-v1');
+
+    const selects = dialog.locator('[role="combobox"]');
+    const providerSelect = selects.first();
+    await providerSelect.click();
+    await authedPage.getByRole('option', { name: /custom/i }).click();
+
+    const submitBtn = dialog.getByRole('button', { name: /^create$/i });
+    await expect(submitBtn).toBeDisabled();
+
+    await dialog.locator('#endpoint-base-url').fill('https://custom.example.com/v1');
+
+    // Select first credential option
+    const credentialSelect = dialog.locator('[role="combobox"]').last();
+    await credentialSelect.click();
+    await authedPage.locator('[role="option"]').first().click();
+
+    // Expand limits and fill both values
+    await dialog.getByRole('button', { name: /limits/i }).click();
+    await dialog.locator('#endpoint-rpm').fill('120');
+    await dialog.locator('#endpoint-timeout').fill('45');
+
+    const createRequestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/endpoints$/.test(req.url());
+    });
+    await expect(submitBtn).toBeEnabled();
+    await submitBtn.click();
+
+    const request = await createRequestPromise;
+    const payload = request.postDataJSON() as {
+      type?: string;
+      base_url?: string;
+      limits?: { max_requests_per_minute?: number; timeout_seconds?: number };
+    };
+    expect(payload.type).toBe('custom');
+    expect(payload.base_url).toBe('https://custom.example.com/v1');
+    expect(payload.limits?.max_requests_per_minute).toBe(120);
+    expect(payload.limits?.timeout_seconds).toBe(45);
   });
 });

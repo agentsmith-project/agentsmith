@@ -1,10 +1,11 @@
 'use client';
+
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { RotateCw, Check } from 'lucide-react';
+import { Check, RotateCw } from 'lucide-react';
 import { formatBytes } from '@/lib/utils/formatters';
 import type { QuotaOverride } from '@/lib/api/types';
 
@@ -13,19 +14,160 @@ export interface QuotaOverridesEditorProps {
   initialOverrides?: QuotaOverride;
   onSave: (overrides: QuotaOverride) => void;
   onCancel: () => void;
-  /** When true, hide footer buttons; use with onOverridesChange for embedded forms */
   embedded?: boolean;
-  /** Called when overrides change (for embedded use in parent forms) */
   onOverridesChange?: (overrides: QuotaOverride) => void;
 }
 
-interface QuotaField {
-  key: string;
-  label: string;
+type QuotaPath =
+  | ['endpoint', 'daily_token_limit']
+  | ['source_library', 'max_total_files']
+  | ['source_library', 'max_file_size_bytes']
+  | ['agent', 'max_concurrency'];
+
+interface QuotaFieldDefinition {
+  id: string;
+  section: 'endpoint' | 'source_library' | 'agent';
+  path: QuotaPath;
+  labelKey: string;
+  format?: (value: number) => string;
+  unitKey?: string;
+}
+
+interface QuotaFieldViewModel extends QuotaFieldDefinition {
   value?: number;
   defaultValue?: number;
-  unit?: string;
-  format?: (value: number) => string;
+}
+
+const QUOTA_FIELD_DEFINITIONS: QuotaFieldDefinition[] = [
+  {
+    id: 'endpoint.daily_token_limit',
+    section: 'endpoint',
+    path: ['endpoint', 'daily_token_limit'],
+    labelKey: 'fields.endpoint_daily_token_limit',
+    unitKey: 'units.tokens_per_day',
+  },
+  {
+    id: 'source_library.max_total_files',
+    section: 'source_library',
+    path: ['source_library', 'max_total_files'],
+    labelKey: 'fields.source_library_max_total_files',
+    unitKey: 'units.files',
+  },
+  {
+    id: 'source_library.max_file_size_bytes',
+    section: 'source_library',
+    path: ['source_library', 'max_file_size_bytes'],
+    labelKey: 'fields.source_library_max_file_size_bytes',
+    format: formatBytes,
+  },
+  {
+    id: 'agent.max_concurrency',
+    section: 'agent',
+    path: ['agent', 'max_concurrency'],
+    labelKey: 'fields.agent_max_concurrency',
+    unitKey: 'units.concurrency',
+  },
+];
+
+const QUOTA_SECTIONS: Array<{
+  id: 'endpoint' | 'source_library' | 'agent';
+  titleKey: string;
+  descriptionKey: string;
+}> = [
+  {
+    id: 'endpoint',
+    titleKey: 'sections.endpoint_title',
+    descriptionKey: 'sections.endpoint_description',
+  },
+  {
+    id: 'source_library',
+    titleKey: 'sections.source_library_title',
+    descriptionKey: 'sections.source_library_description',
+  },
+  {
+    id: 'agent',
+    titleKey: 'sections.agent_title',
+    descriptionKey: 'sections.agent_description',
+  },
+];
+
+function getValueAtPath(data: QuotaOverride, [scope, key]: QuotaPath): number | undefined {
+  switch (scope) {
+    case 'endpoint':
+      return key === 'daily_token_limit' ? data.endpoint?.daily_token_limit : undefined;
+    case 'source_library':
+      if (key === 'max_total_files') return data.source_library?.max_total_files;
+      if (key === 'max_file_size_bytes') return data.source_library?.max_file_size_bytes;
+      return undefined;
+    case 'agent':
+      return key === 'max_concurrency' ? data.agent?.max_concurrency : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function setValueAtPath(
+  previous: QuotaOverride,
+  [scope, key]: QuotaPath,
+  value: number | undefined
+): QuotaOverride {
+  const next: QuotaOverride = { ...previous };
+  if (scope === 'endpoint') {
+    const scoped = { ...(next.endpoint ?? {}) };
+    if (key === 'daily_token_limit') {
+      if (value === undefined) {
+        delete scoped.daily_token_limit;
+      } else {
+        scoped.daily_token_limit = value;
+      }
+    }
+    if (Object.keys(scoped).length === 0) {
+      delete next.endpoint;
+    } else {
+      next.endpoint = scoped;
+    }
+    return next;
+  }
+
+  if (scope === 'source_library') {
+    const scoped = { ...(next.source_library ?? {}) };
+    if (key === 'max_total_files') {
+      if (value === undefined) {
+        delete scoped.max_total_files;
+      } else {
+        scoped.max_total_files = value;
+      }
+    }
+    if (key === 'max_file_size_bytes') {
+      if (value === undefined) {
+        delete scoped.max_file_size_bytes;
+      } else {
+        scoped.max_file_size_bytes = value;
+      }
+    }
+    if (Object.keys(scoped).length === 0) {
+      delete next.source_library;
+    } else {
+      next.source_library = scoped;
+    }
+    return next;
+  }
+
+  const scoped = { ...(next.agent ?? {}) };
+  if (key === 'max_concurrency') {
+    if (value === undefined) {
+      delete scoped.max_concurrency;
+    } else {
+      scoped.max_concurrency = value;
+    }
+  }
+  if (Object.keys(scoped).length === 0) {
+    delete next.agent;
+  } else {
+    next.agent = scoped;
+  }
+
+  return next;
 }
 
 export function QuotaOverridesEditor({
@@ -37,56 +179,27 @@ export function QuotaOverridesEditor({
   onOverridesChange,
 }: QuotaOverridesEditorProps) {
   const t = useTranslations('members.quota');
-  const [overrides, setOverrides] = React.useState<QuotaOverride>(initialOverrides || {});
+  const [overrides, setOverrides] = React.useState<QuotaOverride>(initialOverrides ?? {});
   const [hasChanges, setHasChanges] = React.useState(false);
 
-  // Sync state when initialOverrides changes (e.g. switching members).
-  // Uses JSON comparison to avoid unnecessary resets from object identity changes.
-  const initialOverridesJson = JSON.stringify(initialOverrides || {});
+  const initialOverridesJson = JSON.stringify(initialOverrides ?? {});
   React.useEffect(() => {
-    setOverrides(initialOverrides || {});
+    setOverrides(initialOverrides ?? {});
     setHasChanges(false);
   }, [initialOverridesJson]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Notify parent of overrides changes via a stable ref to prevent
-  // re-render loops when the parent passes a non-memoized callback.
   const onOverridesChangeRef = React.useRef(onOverridesChange);
   onOverridesChangeRef.current = onOverridesChange;
-
   React.useEffect(() => {
     onOverridesChangeRef.current?.(overrides);
   }, [overrides]);
 
-  // Calculate changes
   React.useEffect(() => {
-    const hasAnyChanges = JSON.stringify(overrides) !== initialOverridesJson;
-    setHasChanges(hasAnyChanges);
+    setHasChanges(JSON.stringify(overrides) !== initialOverridesJson);
   }, [overrides, initialOverridesJson]);
 
-  const handleOverrideChange = React.useCallback((
-    path: string[],
-    value: number | undefined
-  ) => {
-    setOverrides((prev) => {
-      const next = { ...prev };
-      let current: Record<string, unknown> = next;
-      
-      // Deep-clone each intermediate path segment to avoid mutating prev
-      for (let i = 0; i < path.length - 1; i++) {
-        current[path[i]] = current[path[i]]
-          ? { ...(current[path[i]] as Record<string, unknown>) }
-          : {};
-        current = current[path[i]] as Record<string, unknown>;
-      }
-      
-      if (value === undefined) {
-        delete current[path[path.length - 1]];
-      } else {
-        current[path[path.length - 1]] = value;
-      }
-      
-      return next;
-    });
+  const handleOverrideChange = React.useCallback((path: QuotaPath, value: number | undefined) => {
+    setOverrides((prev) => setValueAtPath(prev, path, value));
   }, []);
 
   const handleResetAll = React.useCallback(() => {
@@ -97,127 +210,13 @@ export function QuotaOverridesEditor({
     onSave(overrides);
   }, [overrides, onSave]);
 
-  // Build quota fields from structure
-  const quotaFields: QuotaField[] = React.useMemo(() => {
-    const fields: QuotaField[] = [];
-    
-    // UserData Storage
-    if (defaultQuotas.userdata?.storage) {
-      const storage = defaultQuotas.userdata.storage;
-      if (storage.bytes_per_end_user !== undefined) {
-        fields.push({
-          key: 'userdata.storage.bytes_per_end_user',
-          label: 'Bytes per end user',
-          value: overrides.userdata?.storage?.bytes_per_end_user,
-          defaultValue: storage.bytes_per_end_user,
-          format: formatBytes,
-        });
-      }
-      if (storage.objects_per_end_user !== undefined) {
-        fields.push({
-          key: 'userdata.storage.objects_per_end_user',
-          label: 'Objects per end user',
-          value: overrides.userdata?.storage?.objects_per_end_user,
-          defaultValue: storage.objects_per_end_user,
-        });
-      }
-      // max_object_bytes excluded from member override whitelist
-    }
-
-    // UserData DocDB
-    if (defaultQuotas.userdata?.docdb) {
-      const docdb = defaultQuotas.userdata.docdb;
-      if (docdb.max_collections_per_scope !== undefined) {
-        fields.push({
-          key: 'userdata.docdb.max_collections_per_scope',
-          label: 'Max collections per scope',
-          value: overrides.userdata?.docdb?.max_collections_per_scope,
-          defaultValue: docdb.max_collections_per_scope,
-        });
-      }
-      if (docdb.max_document_bytes !== undefined) {
-        fields.push({
-          key: 'userdata.docdb.max_document_bytes',
-          label: 'Max document bytes',
-          value: overrides.userdata?.docdb?.max_document_bytes,
-          defaultValue: docdb.max_document_bytes,
-          format: formatBytes,
-        });
-      }
-      if (docdb.query_timeout_ms !== undefined) {
-        fields.push({
-          key: 'userdata.docdb.query_timeout_ms',
-          label: 'Query timeout (ms)',
-          value: overrides.userdata?.docdb?.query_timeout_ms,
-          defaultValue: docdb.query_timeout_ms,
-          unit: 'ms',
-        });
-      }
-      if (docdb.page_size_max !== undefined) {
-        fields.push({
-          key: 'userdata.docdb.page_size_max',
-          label: 'Page size max',
-          value: overrides.userdata?.docdb?.page_size_max,
-          defaultValue: docdb.page_size_max,
-        });
-      }
-    }
-
-    // UserData VectorDB
-    if (defaultQuotas.userdata?.vectordb) {
-      const vectordb = defaultQuotas.userdata.vectordb;
-      if (vectordb.max_indexes_per_scope !== undefined) {
-        fields.push({
-          key: 'userdata.vectordb.max_indexes_per_scope',
-          label: 'Max indexes per scope',
-          value: overrides.userdata?.vectordb?.max_indexes_per_scope,
-          defaultValue: vectordb.max_indexes_per_scope,
-        });
-      }
-      if (vectordb.top_k_max !== undefined) {
-        fields.push({
-          key: 'userdata.vectordb.top_k_max',
-          label: 'Top K max',
-          value: overrides.userdata?.vectordb?.top_k_max,
-          defaultValue: vectordb.top_k_max,
-        });
-      }
-      if (vectordb.upsert_records_max !== undefined) {
-        fields.push({
-          key: 'userdata.vectordb.upsert_records_max',
-          label: 'Upsert records max',
-          value: overrides.userdata?.vectordb?.upsert_records_max,
-          defaultValue: vectordb.upsert_records_max,
-        });
-      }
-    }
-
-    // Endpoints
-    if (defaultQuotas.endpoint) {
-      if (defaultQuotas.endpoint.requests_per_day_per_end_user !== undefined) {
-        fields.push({
-          key: 'endpoint.requests_per_day_per_end_user',
-          label: 'Requests per day per end user',
-          value: overrides.endpoint?.requests_per_day_per_end_user,
-          defaultValue: defaultQuotas.endpoint.requests_per_day_per_end_user,
-        });
-      }
-      if (defaultQuotas.endpoint.requests_per_min_per_end_user !== undefined) {
-        fields.push({
-          key: 'endpoint.requests_per_min_per_end_user',
-          label: 'Requests per min per end user',
-          value: overrides.endpoint?.requests_per_min_per_end_user,
-          defaultValue: defaultQuotas.endpoint.requests_per_min_per_end_user,
-        });
-      }
-    }
-
-    return fields;
+  const quotaFields = React.useMemo<QuotaFieldViewModel[]>(() => {
+    return QUOTA_FIELD_DEFINITIONS.map((definition) => ({
+      ...definition,
+      defaultValue: getValueAtPath(defaultQuotas, definition.path),
+      value: getValueAtPath(overrides, definition.path),
+    }));
   }, [defaultQuotas, overrides]);
-
-  const isOverridden = React.useCallback((field: QuotaField) => {
-    return field.value !== undefined;
-  }, []);
 
   return (
     <div className="space-y-6">
@@ -236,143 +235,89 @@ export function QuotaOverridesEditor({
       </div>
 
       <div className="space-y-6">
-        {/* UserData Storage */}
-        {quotaFields.filter(f => f.key.startsWith('userdata.storage')).length > 0 && (
-          <div className="border border-border rounded-md p-4 space-y-4">
-            <h4 className="text-sm font-medium text-foreground">UserData Storage</h4>
-            <div className="space-y-3">
-              {quotaFields
-                .filter(f => f.key.startsWith('userdata.storage'))
-                .map((field) => (
+        {QUOTA_SECTIONS.map((section) => {
+          const sectionFields = quotaFields.filter((field) => field.section === section.id);
+          const visibleFields = sectionFields.filter(
+            (field) => field.defaultValue !== undefined || field.value !== undefined
+          );
+          if (visibleFields.length === 0) return null;
+          return (
+            <div key={section.id} className="border border-border rounded-md p-4 space-y-4">
+              <div className="space-y-1">
+                <h4 className="text-sm font-medium text-foreground">{t(section.titleKey)}</h4>
+                <p className="text-xs text-tertiary">{t(section.descriptionKey)}</p>
+              </div>
+              <div className="space-y-3">
+                {visibleFields.map((field) => (
                   <QuotaFieldRow
-                    key={field.key}
+                    key={field.id}
                     field={field}
-                    isOverridden={isOverridden(field)}
-                    onUseDefault={() => handleOverrideChange(field.key.split('.'), undefined)}
-                    onOverride={(value) => handleOverrideChange(field.key.split('.'), value)}
+                    label={t(field.labelKey)}
+                    unit={field.unitKey ? t(field.unitKey) : undefined}
+                    onUseDefault={() => handleOverrideChange(field.path, undefined)}
+                    onOverride={(value) => handleOverrideChange(field.path, value)}
+                    useDefaultLabel={t('use_default')}
+                    overrideLabel={t('override')}
                   />
                 ))}
+              </div>
             </div>
-          </div>
-        )}
-
-        {/* UserData DocDB */}
-        {quotaFields.filter(f => f.key.startsWith('userdata.docdb')).length > 0 && (
-          <div className="border border-border rounded-md p-4 space-y-4">
-            <h4 className="text-sm font-medium text-foreground">UserData DocDB</h4>
-            <div className="space-y-3">
-              {quotaFields
-                .filter(f => f.key.startsWith('userdata.docdb'))
-                .map((field) => (
-                  <QuotaFieldRow
-                    key={field.key}
-                    field={field}
-                    isOverridden={isOverridden(field)}
-                    onUseDefault={() => handleOverrideChange(field.key.split('.'), undefined)}
-                    onOverride={(value) => handleOverrideChange(field.key.split('.'), value)}
-                  />
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* UserData VectorDB */}
-        {quotaFields.filter(f => f.key.startsWith('userdata.vectordb')).length > 0 && (
-          <div className="border border-border rounded-md p-4 space-y-4">
-            <h4 className="text-sm font-medium text-foreground">UserData VectorDB</h4>
-            <div className="space-y-3">
-              {quotaFields
-                .filter(f => f.key.startsWith('userdata.vectordb'))
-                .map((field) => (
-                  <QuotaFieldRow
-                    key={field.key}
-                    field={field}
-                    isOverridden={isOverridden(field)}
-                    onUseDefault={() => handleOverrideChange(field.key.split('.'), undefined)}
-                    onOverride={(value) => handleOverrideChange(field.key.split('.'), value)}
-                  />
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* Endpoints */}
-        {quotaFields.filter(f => f.key.startsWith('endpoint')).length > 0 && (
-          <div className="border border-border rounded-md p-4 space-y-4">
-            <h4 className="text-sm font-medium text-foreground">Endpoint</h4>
-            <div className="space-y-3">
-              {quotaFields
-                .filter(f => f.key.startsWith('endpoint'))
-                .map((field) => (
-                  <QuotaFieldRow
-                    key={field.key}
-                    field={field}
-                    isOverridden={isOverridden(field)}
-                    onUseDefault={() => handleOverrideChange(field.key.split('.'), undefined)}
-                    onOverride={(value) => handleOverrideChange(field.key.split('.'), value)}
-                  />
-                ))}
-            </div>
-          </div>
-        )}
+          );
+        })}
       </div>
 
-      {!embedded && (
+      {!embedded ? (
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
           <Button variant="ghost" onClick={onCancel}>
             {t('cancel')}
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleSave}
-            disabled={!hasChanges}
-          >
+          <Button variant="primary" onClick={handleSave} disabled={!hasChanges}>
             {t('save_changes')}
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
 interface QuotaFieldRowProps {
-  field: QuotaField;
-  isOverridden: boolean;
+  field: QuotaFieldViewModel;
+  label: string;
+  unit?: string;
   onUseDefault: () => void;
   onOverride: (value: number) => void;
+  useDefaultLabel: string;
+  overrideLabel: string;
 }
 
 function QuotaFieldRow({
   field,
-  isOverridden,
+  label,
+  unit,
   onUseDefault,
   onOverride,
+  useDefaultLabel,
+  overrideLabel,
 }: QuotaFieldRowProps) {
-  const t = useTranslations('members.quota');
-  const [overrideValue, setOverrideValue] = React.useState<string>(
-    field.value?.toString() || ''
-  );
+  const [overrideValue, setOverrideValue] = React.useState<string>(field.value?.toString() ?? '');
+  const isOverridden = field.value !== undefined;
 
   React.useEffect(() => {
-    if (field.value !== undefined) {
-      setOverrideValue(field.value.toString());
-    } else {
-      setOverrideValue('');
-    }
+    setOverrideValue(field.value?.toString() ?? '');
   }, [field.value]);
 
-  const displayValue = field.value !== undefined ? field.value : field.defaultValue;
-  const displayText = field.format
-    ? field.format(displayValue || 0)
-    : `${displayValue?.toLocaleString()}${field.unit ? ` ${field.unit}` : ''}`;
+  const displayValue = field.value ?? field.defaultValue;
+  const displayText = displayValue === undefined
+    ? '--'
+    : field.format
+      ? field.format(displayValue)
+      : `${displayValue.toLocaleString()}${unit ? ` ${unit}` : ''}`;
 
-  const handleOverrideChange = (value: string) => {
-    setOverrideValue(value);
-    const numValue = Number(value);
-    if (!isNaN(numValue) && numValue > 0 && Number.isFinite(numValue)) {
-      // Use integer if value has no decimal part
-      onOverride(Number.isInteger(numValue) ? numValue : numValue);
-    }
+  const handleInputChange = (raw: string) => {
+    setOverrideValue(raw);
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    onOverride(Math.floor(parsed));
   };
 
   const handleUseDefault = () => {
@@ -383,37 +328,31 @@ function QuotaFieldRow({
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="flex-1">
-        <label className="text-sm text-foreground">{field.label}</label>
-        <div className="flex items-center gap-2 mt-1">
+        <label className="text-sm text-foreground">{label}</label>
+        <div className="mt-1">
           {isOverridden ? (
             <Badge variant="default" className="text-xs">
-              Override: {field.format ? formatBytes(field.value || 0) : `${field.value?.toLocaleString()}${field.unit ? ` ${field.unit}` : ''}`}
+              Override: {displayText}
             </Badge>
           ) : (
-            <span className="text-xs text-tertiary">
-              Default: {displayText}
-            </span>
+            <span className="text-xs text-tertiary">Default: {displayText}</span>
           )}
         </div>
       </div>
+
       <div className="flex items-center gap-2">
         {isOverridden ? (
           <>
             <Input
               type="number"
               value={overrideValue}
-              onChange={(e) => handleOverrideChange(e.target.value)}
-              className="w-32"
+              onChange={(event) => handleInputChange(event.target.value)}
+              className="w-36"
               min={1}
             />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleUseDefault}
-              className="gap-1"
-            >
+            <Button variant="outline" size="sm" onClick={handleUseDefault} className="gap-1">
               <Check className="h-3 w-3" />
-              {t('use_default')}
+              {useDefaultLabel}
             </Button>
           </>
         ) : (
@@ -421,11 +360,12 @@ function QuotaFieldRow({
             variant="outline"
             size="sm"
             onClick={() => {
-              setOverrideValue(field.defaultValue?.toString() || '');
-              onOverride(field.defaultValue || 0);
+              const fallbackValue = field.defaultValue ?? 1;
+              setOverrideValue(String(fallbackValue));
+              onOverride(fallbackValue);
             }}
           >
-            {t('override')}
+            {overrideLabel}
           </Button>
         )}
       </div>

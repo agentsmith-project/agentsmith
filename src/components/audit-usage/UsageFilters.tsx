@@ -18,9 +18,8 @@ export interface UsageFiltersProps {
 
 const RESOURCE_TYPES = [
   'endpoints',
-  'userdata-docdb',
-  'userdata-vectordb',
-  'userdata-storage',
+  'source_library',
+  'agent',
   'workspace',
 ];
 

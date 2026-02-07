@@ -96,15 +96,17 @@ vi.mock('next-intl', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
+  useIsProjectAdmin: vi.fn(() => true),
 }));
 
 import { SourcesPage } from '../SourcesPage';
 import { useSourcesList } from '@/lib/hooks/use-sources-list';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
 import type { UseSourcesListReturn } from '@/lib/hooks/use-sources-list';
 
 const mockUseSourcesList = vi.mocked(useSourcesList);
 const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseIsProjectAdmin = vi.mocked(useIsProjectAdmin);
 
 describe('SourcesPage', () => {
   const defaultProps = {
@@ -116,7 +118,9 @@ describe('SourcesPage', () => {
   beforeEach(() => {
     mockUseSourcesList.mockReset();
     mockUseHasPermission.mockReset();
+    mockUseIsProjectAdmin.mockReset();
     mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
     mockUseSourcesList.mockReturnValue({
       quotaData: {
         storage: { used: 1024, limit: 10240 },

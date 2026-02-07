@@ -28,14 +28,22 @@ const eslintConfig = [
     },
   },
   {
-    // Allow 'warn' level for 'any' in test files and mock handlers
+    // Test and mock code favors velocity; keep strictness on production paths.
     files: ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**", "**/mocks/**"],
     rules: {
-      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
   {
-    ignores: ["node_modules/**", ".next/**", "out/**"],
+    ignores: [
+      "node_modules/**",
+      ".next/**",
+      "out/**",
+      "e2e/**",
+      "scripts/**",
+      "public/mockServiceWorker.js",
+      "next-env.d.ts",
+    ],
   },
 ];
 

@@ -107,7 +107,6 @@ export function createApiClient(): ApiClient {
   // When false, the entire if block is tree-shaken from the bundle
   if (process.env.NEXT_PUBLIC_USE_MSW === 'true') {
     // Dynamic require - only executed when MSW is enabled
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { MSWApiClient } = require('./adapters/msw-adapter');
     return new MSWApiClient();
   }

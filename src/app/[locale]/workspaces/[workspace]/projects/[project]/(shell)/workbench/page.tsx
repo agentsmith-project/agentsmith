@@ -12,7 +12,9 @@ import { RecipeList } from '@/components/workbench/RecipeList';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import {
+  useCanAccessStudio,
+} from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface WorkbenchPageProps {
@@ -25,15 +27,7 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
     workspace?: string;
     project?: string;
   } | null>(null);
-  const canProjectRecipeRead = useHasPermission('project:recipe:read');
-  const canProjectRecipeCreate = useHasPermission('project:recipe:create');
-  const canProjectRecipeUpdate = useHasPermission('project:recipe:update');
-  const canProjectRecipeDelete = useHasPermission('project:recipe:delete');
-  const canReadRecipes =
-    canProjectRecipeRead ||
-    canProjectRecipeCreate ||
-    canProjectRecipeUpdate ||
-    canProjectRecipeDelete;
+  const canAccessStudio = useCanAccessStudio();
 
   useEffect(() => {
     params.then((p) =>
@@ -63,7 +57,7 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
     );
   }
 
-  if (!canReadRecipes) {
+  if (!canAccessStudio) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -80,6 +74,7 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
         <RecipeList
           workspaceId={resolvedParams.workspace}
           projectId={resolvedParams.project}
+          canCreateRecipe={canAccessStudio}
         />
       </PageLayout>
     </PageState>

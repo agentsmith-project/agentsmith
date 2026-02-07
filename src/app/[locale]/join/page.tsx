@@ -3,22 +3,41 @@
 import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useRouter } from '@/lib/i18n/routing';
+import { getApiClient, MemberAPI } from '@/lib/api';
+import { toast } from '@/components/ui/toast';
 
 function JoinPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const t = useTranslations('join');
   const token = searchParams.get('token');
+  const memberApi = React.useMemo(() => new MemberAPI(getApiClient()), []);
 
-  const handleAccept = () => {
-    // TODO: Call join API with token; for v1 mock, redirect to login/workspace
-    router.push('/login/workspace');
-  };
+  const acceptInviteMutation = useMutation({
+    mutationFn: async (inviteToken: string) => memberApi.acceptInvite(inviteToken),
+    onSuccess: () => {
+      router.push('/login/workspace');
+    },
+    onError: () => {
+      toast.error(t('action_failed'));
+    },
+  });
+
+  const declineInviteMutation = useMutation({
+    mutationFn: async (inviteToken: string) => memberApi.declineInvite(inviteToken),
+    onSuccess: () => {
+      router.push('/');
+    },
+    onError: () => {
+      toast.error(t('action_failed'));
+    },
+  });
 
   if (!token) {
     return (
@@ -40,11 +59,27 @@ function JoinPageContent() {
         <h1 className="text-xl font-semibold text-foreground">{t('title')}</h1>
         <p className="text-sm text-tertiary">{t('description')}</p>
         <div className="flex gap-3 justify-center">
-          <Button data-testid="join__decline-btn" variant="outline" onClick={() => router.push('/')}>
-            {t('decline')}
+          <Button
+            data-testid="join__decline-btn"
+            variant="outline"
+            disabled={acceptInviteMutation.isPending || declineInviteMutation.isPending}
+            onClick={() => {
+              if (!token) return;
+              declineInviteMutation.mutate(token);
+            }}
+          >
+            {declineInviteMutation.isPending ? t('declining') : t('decline')}
           </Button>
-          <Button data-testid="join__accept-btn" variant="default" onClick={handleAccept}>
-            {t('accept')}
+          <Button
+            data-testid="join__accept-btn"
+            variant="default"
+            disabled={acceptInviteMutation.isPending || declineInviteMutation.isPending}
+            onClick={() => {
+              if (!token) return;
+              acceptInviteMutation.mutate(token);
+            }}
+          >
+            {acceptInviteMutation.isPending ? t('accepting') : t('accept')}
           </Button>
         </div>
       </div>

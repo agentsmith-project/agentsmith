@@ -17,6 +17,8 @@ This contract supersedes ACL-first wording in older contracts.
 - `source_library`
 - `agent`
 3. Only `project admin` can create/update/delete resources.
+4. Chat / AI Studio do not define independent rate/quota rules in MVP.
+   - Usage feedback comes from resolved endpoint/source_library/agent policy results.
 
 ## Core Principles
 
@@ -167,6 +169,7 @@ Every policy mutation should record:
 1. File-level policy inside source library.
 2. Advanced override conflict UI explainers beyond basic preview.
 3. Cross-project governance templates.
+4. Chat/AI Studio-specific quota or rate-limit dimensions.
 
 ## Contract Notes
 

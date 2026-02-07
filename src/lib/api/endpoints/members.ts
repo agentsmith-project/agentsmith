@@ -25,7 +25,7 @@ export interface Member {
   role: 'owner' | 'admin' | 'developer' | 'user';
   permissions: string[]; // 平台层权限点
   quota_overrides?: QuotaOverride;
-  status: 'active' | 'blocked' | 'removed';
+  status: 'active' | 'removed';
   joined_at: string;
 }
 
@@ -60,12 +60,18 @@ export interface InviteResponse {
   expires_at: string;
 }
 
+export interface JoinInviteActionResponse {
+  ok: true;
+  workspace_id?: string;
+  project_id?: string;
+}
+
 export interface Membership {
   project_id: string;
   user_id: string;
   role: 'owner' | 'admin' | 'developer' | 'user';
   permissions: string[];
-  status: 'active' | 'blocked' | 'removed';
+  status: 'active' | 'removed';
   joined_at: string;
 }
 
@@ -360,6 +366,20 @@ export class MemberAPI {
       `/workspaces/${workspaceId}/projects/${projectId}/invites`,
       data
     );
+  }
+
+  /**
+   * Accept invite token from public join page.
+   */
+  async acceptInvite(token: string): Promise<JoinInviteActionResponse> {
+    return this.client.post<JoinInviteActionResponse>('/join/accept', { token });
+  }
+
+  /**
+   * Decline invite token from public join page.
+   */
+  async declineInvite(token: string): Promise<JoinInviteActionResponse> {
+    return this.client.post<JoinInviteActionResponse>('/join/decline', { token });
   }
 
   /**

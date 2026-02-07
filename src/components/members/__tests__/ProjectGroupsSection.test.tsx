@@ -74,7 +74,7 @@ vi.mock('@/lib/hooks/use-members', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasAnyPermission: vi.fn(() => true),
+  useCanManageMemberGovernance: vi.fn(() => true),
 }));
 
 vi.mock('next-intl', () => ({

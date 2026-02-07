@@ -12,6 +12,20 @@ test.describe('Members Page', () => {
     await goToProject(authedPage, 'members');
   });
 
+  test('does not render runtime error state on initial load', async ({ authedPage }) => {
+    const pageErrors: string[] = [];
+    authedPage.on('pageerror', (error) => pageErrors.push(error.message));
+    await authedPage.reload({ waitUntil: 'domcontentloaded' });
+
+    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByText(/something went wrong/i)).not.toBeVisible();
+
+    const dialogTitleContextError = pageErrors.find((message) =>
+      message.includes('`DialogTitle` must be used within `Dialog`')
+    );
+    expect(dialogTitleContextError).toBeUndefined();
+  });
+
   test('table renders with member rows', async ({ authedPage }) => {
     const table = authedPage.getByTestId('members__table');
     await expect(table).toBeVisible({ timeout: 10000 });
@@ -19,6 +33,25 @@ test.describe('Members Page', () => {
     const rows = table.locator('[data-testid="members__table__row"]');
     await expect(rows.first()).toBeVisible({ timeout: 10000 });
     expect(await rows.count()).toBeGreaterThanOrEqual(3);
+  });
+
+  test('uses single top-level tab navigation', async ({ authedPage }) => {
+    const tablists = authedPage.locator('[role="tablist"]');
+    await expect(tablists).toHaveCount(1);
+
+    await expect(authedPage.getByRole('tab', { name: 'People' })).toBeVisible();
+    await expect(authedPage.getByRole('tab', { name: 'Join Requests' })).toBeVisible();
+    await expect(authedPage.getByRole('tab', { name: 'Templates' })).toBeVisible();
+    await expect(authedPage.getByRole('tab', { name: 'Groups' })).toBeVisible();
+  });
+
+  test('switches top-level tabs without rendering nested members tab bar', async ({ authedPage }) => {
+    await authedPage.getByRole('tab', { name: 'Join Requests' }).click();
+    await expect(authedPage.getByText(/pending requests|reviewed requests/i).first()).toBeVisible();
+
+    // Ensure old nested tabs ("Members"/"Join Requests") are not rendered as a second tablist.
+    const tablists = authedPage.locator('[role="tablist"]');
+    await expect(tablists).toHaveCount(1);
   });
 
   test('displays member names and emails from mock data', async ({ authedPage }) => {
@@ -61,12 +94,9 @@ test.describe('Members Page', () => {
     const editPermsItem = authedPage.getByRole('menuitem', { name: /edit permissions/i });
     await editPermsItem.click();
 
-    // The MemberDetailDrawer (Sheet) should open with tabs: Permissions and Quota
-    // Use the drawer/sheet container to scope our search (avoids strict mode with multiple tablists)
-    const drawer = authedPage.locator('[role="dialog"], [data-state="open"]').last();
-    await expect(drawer).toBeVisible({ timeout: 5000 });
-    await expect(drawer.getByRole('tab', { name: /permissions/i })).toBeVisible();
-    await expect(drawer.getByRole('tab', { name: /quota/i })).toBeVisible();
+    // Detail editor may render as embedded side panel on wide viewport.
+    await expect(authedPage.getByRole('tab', { name: /permissions/i }).last()).toBeVisible({ timeout: 5000 });
+    await expect(authedPage.getByRole('tab', { name: /quota/i }).last()).toBeVisible();
   });
 
   test('permission template defaults to member existing permissions', async ({ authedPage }) => {
@@ -82,11 +112,11 @@ test.describe('Members Page', () => {
     await actionBtn.click();
     await authedPage.getByRole('menuitem', { name: /edit permissions/i }).click();
 
-    const drawer = authedPage.locator('[role="dialog"], [data-state="open"]').last();
-    await expect(drawer).toBeVisible({ timeout: 5000 });
-    await drawer.getByRole('tab', { name: /permissions/i }).click();
+    const permissionsTab = authedPage.getByRole('tab', { name: /permissions/i }).last();
+    await expect(permissionsTab).toBeVisible({ timeout: 5000 });
+    await permissionsTab.click();
 
-    const templateSelect = drawer.getByRole('combobox').first();
+    const templateSelect = authedPage.getByRole('combobox').last();
     await expect(templateSelect).toBeVisible();
     await expect(templateSelect).toContainText(/admin/i);
   });
@@ -94,9 +124,9 @@ test.describe('Members Page', () => {
   test('role badges are displayed for each member', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
 
-    // Roles from p0.json: owner, admin, member (displayed capitalized in UI)
-    await expect(authedPage.getByText(/owner/i).first()).toBeVisible();
-    await expect(authedPage.getByText(/admin/i).first()).toBeVisible();
+    const table = authedPage.getByTestId('members__table');
+    await expect(table.getByText(/owner/i).first()).toBeVisible();
+    await expect(table.getByText(/admin/i).first()).toBeVisible();
   });
 
   test('invite member via dialog submission', async ({ authedPage }) => {
@@ -134,11 +164,38 @@ test.describe('Members Page', () => {
     await expect(submitBtn).toBeDisabled();
   });
 
+  test('invite member failure keeps dialog in form mode', async ({ authedPage }) => {
+    await authedPage.route('**/api/v1/workspaces/*/projects/*/invites', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'invite failed (e2e)' }),
+      });
+    });
+
+    await authedPage.getByTestId('members__invite-btn').click();
+    const dialog = authedPage.getByTestId('members__invite-dialog');
+    await expect(dialog).toBeVisible();
+
+    const emailInput = dialog.locator('#invite-email');
+    const submitBtn = dialog.getByRole('button', { name: /create invite|invite/i });
+    await emailInput.fill('invite-failure@example.com');
+
+    await submitBtn.click();
+    await expect(dialog).toBeVisible();
+    await expect(emailInput).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /copy link|done/i })).not.toBeVisible();
+    await expect(submitBtn).toBeEnabled();
+  });
+
   test('project groups flow: create preview apply and delete', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
 
-    await authedPage.getByRole('tab', { name: /templates/i }).click();
-    await authedPage.getByRole('tab', { name: /project groups/i }).click();
+    await authedPage.getByRole('tab', { name: /groups/i }).first().click();
 
     const groupName = `e2e-group-${Date.now()}`;
     await authedPage.getByTestId('members__group-name-input').fill(groupName);
@@ -163,5 +220,149 @@ test.describe('Members Page', () => {
     await authedPage.locator('[data-testid^="members__group-delete-btn--"]').last().click();
     await authedPage.getByTestId('members__group-delete-confirm-btn').click();
     await expect(authedPage.getByText(groupName)).not.toBeVisible({ timeout: 10000 });
+  });
+
+  test('role/status filter options are explicit and status does not include banned', async ({ authedPage }) => {
+    const roleFilter = authedPage.getByTestId('members__role-filter');
+    const statusFilter = authedPage.getByTestId('members__status-filter');
+
+    await expect(roleFilter).toBeVisible();
+    await expect(statusFilter).toBeVisible();
+
+    await roleFilter.selectOption('owner');
+    await expect(authedPage.getByTestId('members__filtered-count')).toBeVisible();
+    await roleFilter.selectOption('admin');
+    await roleFilter.selectOption('developer');
+    await roleFilter.selectOption('user');
+    await roleFilter.selectOption('all');
+
+    await statusFilter.selectOption('active');
+    await expect(authedPage.getByTestId('members__filtered-count')).toBeVisible();
+    await statusFilter.selectOption('removed');
+    await statusFilter.selectOption('all');
+
+    const statusOptionValues = await statusFilter.locator('option').evaluateAll((options) =>
+      options.map((option) => (option as HTMLOptionElement).value)
+    );
+    expect(statusOptionValues).not.toContain('banned');
+  });
+
+  test('search and role filters refine result set', async ({ authedPage }) => {
+    const searchInput = authedPage.getByTestId('members__search-input');
+    const roleFilter = authedPage.getByTestId('members__role-filter');
+
+    await searchInput.fill('alice');
+    await expect(authedPage.getByText('Alice Chen')).toBeVisible();
+    await expect(authedPage.getByText('Bob Smith')).not.toBeVisible();
+
+    await searchInput.clear();
+    await roleFilter.selectOption('owner');
+    await expect(authedPage.getByText('Alice Chen')).toBeVisible();
+    await expect(authedPage.getByText('Bob Smith')).not.toBeVisible();
+
+    await roleFilter.selectOption('all');
+    await expect(authedPage.getByText('Bob Smith')).toBeVisible();
+  });
+
+  test('join request approve action sends approve request', async ({ authedPage }) => {
+    await authedPage.getByRole('tab', { name: /join requests/i }).click();
+
+    const approveBtn = authedPage.getByRole('button', { name: /approve/i }).first();
+    if (!(await approveBtn.isVisible().catch(() => false))) {
+      test.skip(true, 'No pending join request in current fixture');
+      return;
+    }
+
+    const approveRequestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/join-requests\/.*\/approve$/.test(req.url());
+    });
+    await approveBtn.click();
+    await approveRequestPromise;
+  });
+
+  test('join request reject requires reason and sends payload', async ({ authedPage }) => {
+    await authedPage.getByRole('tab', { name: /join requests/i }).click();
+
+    const rejectBtn = authedPage.getByRole('button', { name: /reject/i }).first();
+    if (!(await rejectBtn.isVisible().catch(() => false))) {
+      test.skip(true, 'No pending join request in current fixture');
+      return;
+    }
+    await rejectBtn.click();
+
+    const rejectDialog = authedPage.getByRole('dialog');
+    await expect(rejectDialog).toBeVisible();
+    const confirmRejectBtn = rejectDialog.getByRole('button', { name: /confirm reject/i });
+    await expect(confirmRejectBtn).toBeDisabled();
+
+    await rejectDialog.getByRole('textbox').fill('Not enough project context');
+    await expect(confirmRejectBtn).toBeEnabled();
+
+    const rejectRequestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/join-requests\/.*\/reject$/.test(req.url());
+    });
+    await confirmRejectBtn.click();
+    const request = await rejectRequestPromise;
+    const payload = request.postDataJSON() as { reason?: string };
+    expect(payload.reason).toBe('Not enough project context');
+  });
+
+  test('permission template apply dialog applies to selected members', async ({ authedPage }) => {
+    await authedPage.getByRole('tab', { name: /templates/i }).click();
+    await expect(authedPage.getByText(/permission templates/i).first()).toBeVisible();
+
+    await authedPage.getByRole('button', { name: /view details/i }).first().click();
+    const detailDialog = authedPage.getByRole('dialog');
+    await expect(detailDialog).toBeVisible();
+
+    const applyToMemberBtn = detailDialog.getByRole('button', { name: /apply to member/i });
+    await expect(applyToMemberBtn).toBeVisible();
+    await applyToMemberBtn.click();
+
+    const applyDialog = authedPage.getByRole('dialog').filter({ hasText: /select members/i }).last();
+    await expect(applyDialog).toBeVisible();
+
+    const memberCheckbox = applyDialog.getByRole('checkbox').first();
+    await memberCheckbox.click();
+
+    const applyRequestPromise = authedPage.waitForRequest((req) => {
+      return req.method() === 'PATCH' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/members\/.*\/permissions$/.test(req.url());
+    });
+
+    await applyDialog.getByRole('button', { name: /apply to members/i }).click();
+    await applyRequestPromise;
+  });
+
+  test('permission template apply keeps dialog open when all selected members fail', async ({ authedPage }) => {
+    await authedPage.route('**/api/v1/workspaces/*/projects/*/members/*/permissions', async (route) => {
+      if (route.request().method() !== 'PATCH') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'template apply failed (e2e)' }),
+      });
+    });
+
+    await authedPage.getByRole('tab', { name: /templates/i }).click();
+    await authedPage.getByRole('button', { name: /view details/i }).first().click();
+    const detailDialog = authedPage.getByRole('dialog');
+    await detailDialog.getByRole('button', { name: /apply to member/i }).click();
+
+    const applyDialog = authedPage.getByRole('dialog').filter({ hasText: /select members/i }).last();
+    await expect(applyDialog).toBeVisible();
+
+    const memberCheckboxes = applyDialog.getByRole('checkbox');
+    const checkboxCount = await memberCheckboxes.count();
+    expect(checkboxCount).toBeGreaterThanOrEqual(2);
+    await memberCheckboxes.nth(0).click();
+    await memberCheckboxes.nth(1).click();
+    const applyBtn = applyDialog.getByRole('button', { name: /apply to members/i });
+    await applyBtn.click();
+
+    await expect(applyDialog).toBeVisible();
+    await expect(applyBtn).toBeEnabled();
   });
 });

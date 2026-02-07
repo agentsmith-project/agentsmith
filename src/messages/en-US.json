@@ -1005,7 +1005,10 @@
       "status_all": "All statuses",
       "status_active": "Active",
       "status_removed": "Removed",
-      "result_count": "{count} member(s)"
+      "result_count": "{count} member(s)",
+      "prev_page": "Previous",
+      "next_page": "Next",
+      "page_info": "Page {page}/{totalPages}"
     },
     "requests": {
       "coming_soon": "Join requests are available in this tab."

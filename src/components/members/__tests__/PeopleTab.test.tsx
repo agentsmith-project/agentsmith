@@ -1,0 +1,85 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi } from 'vitest';
+
+import { PeopleTab } from '../PeopleTab';
+
+vi.mock('next-intl', () => ({
+  useTranslations: () => (key: string, values?: Record<string, number>) => {
+    if (key === 'filters.page_info') return `${values?.page}/${values?.totalPages}`;
+    return key;
+  },
+}));
+
+vi.mock('@/lib/hooks/use-permissions', () => ({
+  useHasPermission: () => true,
+  useCanManageMemberGovernance: () => false,
+}));
+
+const members = Array.from({ length: 25 }).map((_, index) => ({
+  id: `member_${index + 1}`,
+  name: `Member ${index + 1}`,
+  email: `member${index + 1}@example.com`,
+  role: 'user' as const,
+  status: 'active' as const,
+  joined_at: '2026-02-01T00:00:00Z',
+}));
+
+vi.mock('../MembersContext', () => ({
+  useMembersContext: () => ({
+    members,
+    isLoading: false,
+    selectedMemberIds: [],
+    setSelectedMemberIds: vi.fn(),
+    handleEditPermissions: vi.fn(),
+    handleRemove: vi.fn(),
+    handleViewHistory: vi.fn(),
+    setBatchPermDialogOpen: vi.fn(),
+    setBatchQuotaDialogOpen: vi.fn(),
+    clearSelection: vi.fn(),
+    selectedMember: null,
+    drawerOpen: false,
+    setDrawerOpen: vi.fn(),
+    permissions: [],
+    project: null,
+    quotaOverrides: {},
+    permissionTemplates: [],
+    quotaTemplates: [],
+    handleSavePermissions: vi.fn(),
+    handleSaveQuota: vi.fn(),
+    setHistoryDrawerOpen: vi.fn(),
+    handleViewQuotaHistory: vi.fn(),
+  }),
+}));
+
+vi.mock('../MembersTable', () => ({
+  MembersTable: ({ data }: { data: Array<{ name: string }> }) => (
+    <div data-testid="members-table-data">{data.map((member) => member.name).join(', ')}</div>
+  ),
+}));
+
+vi.mock('../BatchApplyBar', () => ({
+  BatchApplyBar: () => null,
+}));
+
+vi.mock('../MemberDetailDrawer', () => ({
+  MemberDetailDrawer: () => null,
+}));
+
+describe('PeopleTab', () => {
+  it('paginates member list and supports next page', async () => {
+    const user = userEvent.setup();
+    render(<PeopleTab workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(screen.getByTestId('members__page-info')).toHaveTextContent('1/2');
+    expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 1');
+    expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 20');
+    expect(screen.getByTestId('members-table-data')).not.toHaveTextContent('Member 21');
+
+    await user.click(screen.getByTestId('members__page-next'));
+
+    expect(screen.getByTestId('members__page-info')).toHaveTextContent('2/2');
+    expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 21');
+    expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 25');
+  });
+});

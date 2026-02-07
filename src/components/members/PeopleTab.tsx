@@ -16,6 +16,7 @@ export interface PeopleTabProps {
 }
 
 export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
+  const PAGE_SIZE = 20;
   const t = useTranslations('members');
   const context = useMembersContext();
   const canReadMembers = useHasPermission('project:member:view');
@@ -23,6 +24,7 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
   const [search, setSearch] = React.useState('');
   const [roleFilter, setRoleFilter] = React.useState<'all' | 'owner' | 'admin' | 'developer' | 'user'>('all');
   const [statusFilter, setStatusFilter] = React.useState<'all' | 'active' | 'removed'>('all');
+  const [page, setPage] = React.useState(1);
 
   const filteredMembers = React.useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -35,6 +37,21 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
       return matchesSearch && matchesRole && matchesStatus;
     });
   }, [context.members, roleFilter, search, statusFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredMembers.length / PAGE_SIZE));
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [search, roleFilter, statusFilter]);
+
+  React.useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+
+  const pagedMembers = React.useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredMembers.slice(start, start + PAGE_SIZE);
+  }, [filteredMembers, page, PAGE_SIZE]);
 
   return (
     <div className="flex-1 min-h-0 flex gap-0">
@@ -82,7 +99,7 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
         >
           {canReadMembers ? (
             <MembersTable
-              data={filteredMembers}
+              data={pagedMembers}
               loading={context.isLoading}
               enableSelection={canManageMembers}
               selectedMemberIds={context.selectedMemberIds}
@@ -97,6 +114,32 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
             </div>
           )}
         </div>
+
+        {canReadMembers && pageCount > 1 && (
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="h-8 rounded-md border border-subtle bg-surface px-2 text-xs text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page <= 1}
+              data-testid="members__page-prev"
+            >
+              {t('filters.prev_page')}
+            </button>
+            <span className="text-xs text-tertiary" data-testid="members__page-info">
+              {t('filters.page_info', { page, totalPages: pageCount })}
+            </span>
+            <button
+              type="button"
+              className="h-8 rounded-md border border-subtle bg-surface px-2 text-xs text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => setPage((prev) => Math.min(pageCount, prev + 1))}
+              disabled={page >= pageCount}
+              data-testid="members__page-next"
+            >
+              {t('filters.next_page')}
+            </button>
+          </div>
+        )}
 
         {context.selectedMemberIds.length > 0 && canManageMembers && (
           <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-subtle bg-surface shadow-[0_-4px_12px_rgba(0,0,0,0.15)]">

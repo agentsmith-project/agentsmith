@@ -38,6 +38,22 @@ vi.mock('../use-sources', () => ({
       isPending: false,
     },
   })),
+  useSourceLibraries: vi.fn(() => ({
+    data: { items: [] },
+    isLoading: false,
+  })),
+  useCreateSourceLibrary: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    isPending: false,
+  })),
+  useUpdateSourceLibrary: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    isPending: false,
+  })),
+  useDeleteSourceLibrary: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+  })),
 }));
 
 // Mock other dependencies
@@ -54,6 +70,18 @@ vi.mock('@/lib/api', () => ({
   SourcesAPI: vi.fn().mockImplementation(function() {
     return {
       download: vi.fn().mockResolvedValue(new Blob()),
+    };
+  }),
+  MemberAPI: vi.fn().mockImplementation(function() {
+    return {
+      getResourcePolicy: vi.fn().mockResolvedValue({
+        resource_type: 'source_library',
+        resource_id: 'lib_1',
+        access_mode: 'allow_all_members',
+        allowed_subjects: [],
+        rate_limits: { rules: [] },
+        quota_limits: { rules: [] },
+      }),
     };
   }),
 }));
@@ -73,6 +101,9 @@ vi.mock('@/lib/query-keys', () => ({
     },
     quota: {
       detail: vi.fn(() => ['quota']),
+    },
+    sourceLibraries: {
+      list: vi.fn(() => ['source-libraries']),
     },
   },
 }));
@@ -119,6 +150,8 @@ describe('useSourcesList', () => {
     expect(result.current.search).toBe('');
     expect(result.current.status).toBe('all');
     expect(result.current.aiReadyOnly).toBe(false);
+    expect(result.current.selectedLibraryId).toBe('all');
+    expect(result.current.libraries).toEqual([]);
     expect(result.current.selectedFileIds).toEqual([]);
     expect(result.current.uploadDialogOpen).toBe(false);
     expect(result.current.deleteDialogOpen).toBe(false);

@@ -347,9 +347,10 @@ describe('FetchApiClient', () => {
       capturedUrl = '';
 
       // Mock EventSource constructor
-      class MockEventSource implements EventSource {
+      class MockEventSource {
         url: string;
         readyState: 0 | 1 | 2;
+        withCredentials: boolean;
         onopen: ((this: EventSource, ev: Event) => unknown) | null;
         onmessage: ((this: EventSource, ev: MessageEvent) => unknown) | null;
         onerror: ((this: EventSource, ev: Event) => unknown) | null;
@@ -361,6 +362,7 @@ describe('FetchApiClient', () => {
           this.url = url;
           capturedUrl = url;
           this.readyState = 0;
+          this.withCredentials = false;
           this.onopen = null;
           this.onmessage = null;
           this.onerror = null;
@@ -371,6 +373,7 @@ describe('FetchApiClient', () => {
 
         addEventListener() { return vi.fn(); }
         removeEventListener() { return vi.fn(); }
+        dispatchEvent() { return true; }
         close() { return vi.fn(); }
       }
 

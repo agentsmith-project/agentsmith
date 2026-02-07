@@ -22,7 +22,7 @@ export function Sidebar({ items, value, onChange, className = '' }: SidebarProps
   const t = useTranslations('nav');
 
   return (
-    <aside className={cn("w-[216px] bg-panel border-r border-subtle flex flex-col", className)}>
+    <aside className={cn("w-[200px] bg-panel border-r border-subtle flex flex-col", className)}>
       {/* Menu Items */}
       <nav className="flex-1 py-3">
         <ul className="space-y-1 px-2">

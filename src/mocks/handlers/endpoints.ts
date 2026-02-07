@@ -42,7 +42,4 @@ export const endpointHandlers = [
     if (idx >= 0) endpoints.splice(idx, 1);
     return HttpResponse.json({ ok: true });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/endpoints/:id/acl', () =>
-    HttpResponse.json({ items: p0.endpoint_acl }),
-  ),
 ];

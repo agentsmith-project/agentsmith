@@ -1,19 +1,22 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
+const STABLE_SUMMARY = { total_bytes: 1024, docdb_collections: 2, vectordb_indexes: 3 };
+const STABLE_END_USERS = [
+  {
+    id: 'eu_1',
+    storage_bytes: 512,
+    docdb_collections: 1,
+    vectordb_indexes: 1,
+  },
+];
+
 vi.mock('@/lib/hooks/use-userdata', () => ({
   useUserdataSummary: () => ({
-    data: { total_bytes: 1024, docdb_collections: 2, vectordb_indexes: 3 },
+    data: STABLE_SUMMARY,
   }),
   useUserdataEndUsers: () => ({
-    data: [
-      {
-        id: 'eu_1',
-        storage_bytes: 512,
-        docdb_collections: 1,
-        vectordb_indexes: 1,
-      },
-    ],
+    data: STABLE_END_USERS,
   }),
 }));
 

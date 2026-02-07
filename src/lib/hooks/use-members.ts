@@ -20,11 +20,12 @@ import type {
   QuotaOverrideHistoryItem,
   QuotaTemplate,
   MemberPermissions,
-  ResourceACL,
+  ResourcePolicy,
+  ResourcePolicyUpdateRequest,
   PermissionTemplate,
   ChangeHistoryEntry,
 } from '@/lib/api/types';
-import type { CreateInviteRequest, InviteResponse } from '@/lib/api/endpoints/members';
+import type { CreateInviteRequest, InviteResponse, ProjectGroup } from '@/lib/api/endpoints/members';
 
 const getMemberAPI = () => new MemberAPI(getApiClient());
 
@@ -176,25 +177,44 @@ export function useBatchApplyPermissionTemplate(workspaceId: string, projectId: 
       template?: 'admin' | 'developer' | 'user' | null;
     }) => {
       const mode = template ? 'template' : 'custom';
+      const appliedMemberIds: string[] = [];
+      const failedMemberIds: string[] = [];
       for (const memberId of memberIds) {
-        await getMemberAPI().updatePermissions(workspaceId, projectId, memberId, {
-          permissions,
-          mode,
-          template: template ?? undefined,
-        });
+        try {
+          await getMemberAPI().updatePermissions(workspaceId, projectId, memberId, {
+            permissions,
+            mode,
+            template: template ?? undefined,
+          });
+          appliedMemberIds.push(memberId);
+        } catch {
+          failedMemberIds.push(memberId);
+        }
       }
-      return { memberIds };
+
+      if (appliedMemberIds.length === 0) {
+        throw new Error(t('apply_all_failed'));
+      }
+
+      return { appliedMemberIds, failedMemberIds };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
-      for (const memberId of data.memberIds) {
+      for (const memberId of data.appliedMemberIds) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.members.permissions(workspaceId, projectId, memberId),
         });
       }
-      const count = data.memberIds.length;
+      const appliedCount = data.appliedMemberIds.length;
+      const failedCount = data.failedMemberIds.length;
+      if (failedCount > 0) {
+        toast.warning(t('apply_partial_success'));
+        return;
+      }
       toast.success(
-        count === 1 ? t('apply_success') : t('apply_batch_success', { count: count.toString() })
+        appliedCount === 1
+          ? t('apply_success')
+          : t('apply_batch_success', { count: appliedCount.toString() })
       );
     },
     onError: (error) => handleErrorForToast(error, 'useBatchApplyPermissionTemplate'),
@@ -261,52 +281,44 @@ export function useUpdateMemberQuotaOverrides(
 }
 
 /**
- * Hook to query resource ACL
+ * Hook to query resource policy
  */
-export function useResourceACL(
+export function useResourcePolicy(
   workspaceId: string,
   projectId: string,
-  resourceType: 'endpoint',
+  resourceType: 'endpoint' | 'source_library' | 'agent',
   resourceId: string
-): UseQueryResult<ResourceACL> {
-  return useQuery<ResourceACL>({
-    queryKey: queryKeys.resourceAcl.detail(workspaceId, projectId, resourceType, resourceId),
+): UseQueryResult<ResourcePolicy> {
+  return useQuery<ResourcePolicy>({
+    queryKey: queryKeys.resourcePolicy.detail(workspaceId, projectId, resourceType, resourceId),
     queryFn: () =>
-      getMemberAPI().getResourceACL(workspaceId, projectId, resourceType, resourceId),
+      getMemberAPI().getResourcePolicy(workspaceId, projectId, resourceType, resourceId),
     enabled: !!workspaceId && !!projectId && !!resourceId,
     staleTime: 30 * 1000,
   });
 }
 
 /**
- * Hook to update resource ACL
+ * Hook to update resource policy
  */
-export function useUpdateResourceACL(
+export function useUpdateResourcePolicy(
   workspaceId: string,
   projectId: string,
-  resourceType: 'endpoint',
+  resourceType: 'endpoint' | 'source_library' | 'agent',
   resourceId: string
 ) {
   const queryClient = useQueryClient();
   const t = useTranslations('members.acl');
 
   return useMutation({
-    mutationFn: async (data: {
-      ops: Array<{
-        op: 'allow' | 'deny' | 'remove_deny';
-        subject_type: 'user';
-        subject_id: string;
-        permissions: string[];
-        reason?: string;
-      }>;
-    }) => {
-      return getMemberAPI().updateResourceACL(workspaceId, projectId, resourceType, resourceId, data);
+    mutationFn: async (data: ResourcePolicyUpdateRequest) => {
+      return getMemberAPI().updateResourcePolicy(workspaceId, projectId, resourceType, resourceId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.resourceAcl.detail(workspaceId, projectId, resourceType, resourceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.resourcePolicy.detail(workspaceId, projectId, resourceType, resourceId) });
       toast.success(t('update_success'));
     },
-    onError: (error) => handleErrorForToast(error, 'useUpdateResourceACL'),
+    onError: (error) => handleErrorForToast(error, 'useUpdateResourcePolicy'),
   });
 }
 
@@ -497,7 +509,8 @@ export function useBatchApplyQuotaTemplate(workspaceId: string, projectId: strin
         templateId,
         memberIds
       );
-      return { memberIds, appliedCount: res.applied_count };
+      const failedCount = Math.max(0, memberIds.length - res.applied_count);
+      return { memberIds, appliedCount: res.applied_count, failedCount };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
@@ -506,11 +519,18 @@ export function useBatchApplyQuotaTemplate(workspaceId: string, projectId: strin
           queryKey: queryKeys.members.quotaOverrides(workspaceId, projectId, memberId),
         });
       }
-      const count = data.appliedCount;
+      const appliedCount = data.appliedCount;
+      const failedCount = data.failedCount;
+
+      if (failedCount > 0) {
+        toast.warning(t('quota_apply_partial_success'));
+        return;
+      }
+
       toast.success(
-        count === 1
+        appliedCount === 1
           ? t('quota_apply_success')
-          : t('quota_apply_batch_success', { count: count.toString() })
+          : t('quota_apply_batch_success', { count: appliedCount.toString() })
       );
     },
     onError: (error) => handleErrorForToast(error, 'useBatchApplyQuotaTemplate'),
@@ -530,5 +550,100 @@ export function useMemberChangeHistory(
     queryFn: () => getMemberAPI().getChangeHistory(workspaceId, projectId, memberId),
     enabled: !!workspaceId && !!projectId && !!memberId,
     staleTime: 30 * 1000,
+  });
+}
+
+export function useProjectGroups(
+  workspaceId: string,
+  projectId: string
+): UseQueryResult<ProjectGroup[]> {
+  return useQuery<ProjectGroup[]>({
+    queryKey: queryKeys.projectGroups.list(workspaceId, projectId),
+    queryFn: () => getMemberAPI().listGroups(workspaceId, projectId),
+    enabled: !!workspaceId && !!projectId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateProjectGroup(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  const t = useTranslations('members.templates');
+
+  return useMutation({
+    mutationFn: async (data: {
+      name: string;
+      description?: string;
+      permission_template_id: string;
+      member_ids?: string[];
+    }) => getMemberAPI().createGroup(workspaceId, projectId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projectGroups.list(workspaceId, projectId) });
+      toast.success(t('group_create_success'));
+    },
+    onError: (error) => handleErrorForToast(error, 'useCreateProjectGroup'),
+  });
+}
+
+export function useUpdateProjectGroup(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  const t = useTranslations('members.templates');
+
+  return useMutation({
+    mutationFn: async ({
+      groupId,
+      data,
+    }: {
+      groupId: string;
+      data: {
+        name?: string;
+        description?: string;
+        permission_template_id?: string;
+        member_ids?: string[];
+      };
+    }) => getMemberAPI().updateGroup(workspaceId, projectId, groupId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projectGroups.list(workspaceId, projectId) });
+      toast.success(t('group_update_success'));
+    },
+    onError: (error) => handleErrorForToast(error, 'useUpdateProjectGroup'),
+  });
+}
+
+export function useDeleteProjectGroup(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  const t = useTranslations('members.templates');
+
+  return useMutation({
+    mutationFn: async (groupId: string) => getMemberAPI().deleteGroup(workspaceId, projectId, groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projectGroups.list(workspaceId, projectId) });
+      toast.success(t('group_delete_success'));
+    },
+    onError: (error) => handleErrorForToast(error, 'useDeleteProjectGroup'),
+  });
+}
+
+export function useApplyProjectGroupTemplate(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  const t = useTranslations('members.templates');
+
+  return useMutation({
+    mutationFn: async ({
+      groupId,
+      memberIds,
+    }: {
+      groupId: string;
+      memberIds?: string[];
+    }) => getMemberAPI().applyGroupTemplate(workspaceId, projectId, groupId, memberIds),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+      const failedCount = result.results?.filter((item) => item.status === 'failed').length ?? 0;
+      if (failedCount > 0) {
+        toast.warning(t('group_apply_partial_success', { count: failedCount.toString() }));
+        return;
+      }
+      toast.success(t('group_apply_success', { count: result.applied_count.toString() }));
+    },
+    onError: (error) => handleErrorForToast(error, 'useApplyProjectGroupTemplate'),
   });
 }

@@ -8,6 +8,7 @@
 
 import * as React from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -22,6 +23,15 @@ import { SourcesTable } from './SourcesTable';
 import { SourcesSelectionBar } from './SourcesSelectionBar';
 import { FileUploadDialog } from './FileUploadDialog';
 import { FileDeleteDialog } from './FileDeleteDialog';
+import { SourceLibrariesDialog } from './SourceLibrariesDialog';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 export interface SourcesPageProps {
   workspaceId: string;
@@ -30,17 +40,41 @@ export interface SourcesPageProps {
 
 function SourcesPageContent({ workspaceId, projectId }: SourcesPageProps) {
   const contextValue = useSourcesList({ workspaceId, projectId });
+  const canSourceUpload = useHasPermission('project:source:upload');
+  const canSourceDelete = useHasPermission('project:source:delete');
+  const canSourceDownload = useHasPermission('project:source:download');
+  const canResourceCreate = useHasPermission('project:resource:create');
+  const canResourceUpdate = useHasPermission('project:resource:update');
+  const canResourceDelete = useHasPermission('project:resource:delete');
+  const canManageLibraries = canResourceCreate || canResourceUpdate || canResourceDelete;
+  const canControlAIReady = canSourceUpload || canSourceDelete;
+  const [librariesDialogOpen, setLibrariesDialogOpen] = React.useState(false);
 
   return (
     <SourcesProvider value={contextValue}>
       <PageLayout
-        header={<SourcesPageHeader />}
-        toolbar={<SourcesPageToolbar />}
+        header={<SourcesPageHeader canSourceUpload={canSourceUpload} />}
+        toolbar={(
+          <SourcesPageToolbar
+            canManageLibraries={canManageLibraries}
+            onManageLibraries={() => setLibrariesDialogOpen(true)}
+          />
+        )}
       >
         <SourcesPageQuotaSummary />
-        <SourcesPageTableSection />
+        <SourcesPageTableSection
+          canSourceUpload={canSourceUpload}
+          canSourceDelete={canSourceDelete}
+          canSourceDownload={canSourceDownload}
+          canControlAIReady={canControlAIReady}
+        />
         <SourcesPagePagination />
-        <SourcesPageDialogs />
+        <SourcesPageDialogs
+          canSourceUpload={canSourceUpload}
+          canSourceDelete={canSourceDelete}
+          librariesDialogOpen={librariesDialogOpen}
+          onLibrariesDialogOpenChange={setLibrariesDialogOpen}
+        />
       </PageLayout>
     </SourcesProvider>
   );
@@ -49,21 +83,24 @@ function SourcesPageContent({ workspaceId, projectId }: SourcesPageProps) {
 /**
  * Header with Quota and Upload button
  */
-function SourcesPageHeader() {
+function SourcesPageHeader({ canSourceUpload }: { canSourceUpload: boolean }) {
+  const t = useTranslations('sources');
   const context = useSourcesContext();
 
   return (
     <PageHeader
-      title="Sources"
+      title={t('title')}
       actions={(
+        canSourceUpload ? (
         <Button
           onClick={() => context.setUploadDialogOpen(true)}
           className="flex items-center gap-2"
           data-testid="sources__upload-btn"
         >
           <Plus className="h-4 w-4" />
-          Upload
+          {t('upload')}
         </Button>
+        ) : undefined
       )}
     />
   );
@@ -72,11 +109,36 @@ function SourcesPageHeader() {
 /**
  * Search and Filters toolbar
  */
-function SourcesPageToolbar() {
+function SourcesPageToolbar({
+  canManageLibraries,
+  onManageLibraries,
+}: {
+  canManageLibraries: boolean;
+  onManageLibraries: () => void;
+}) {
+  const t = useTranslations('sources');
   const context = useSourcesContext();
 
   return (
     <PageToolbar>
+      <div className="w-56">
+        <Select
+          value={context.selectedLibraryId}
+          onValueChange={(value) => context.setSelectedLibraryId(value)}
+        >
+          <SelectTrigger data-testid="sources__library-select">
+            <SelectValue placeholder={t('libraries.all')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('libraries.all')}</SelectItem>
+            {context.libraries.map((library) => (
+              <SelectItem key={library.id} value={library.id}>
+                {library.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="flex-1 max-w-md">
         <SourcesSearch value={context.search} onChange={context.setSearch} />
       </div>
@@ -90,6 +152,16 @@ function SourcesPageToolbar() {
         sortOrder={context.sortOrder}
         onSortOrderChange={context.setSortOrder}
       />
+      {canManageLibraries && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onManageLibraries}
+          data-testid="sources__manage-libraries-btn"
+        >
+          {t('libraries.manage')}
+        </Button>
+      )}
     </PageToolbar>
   );
 }
@@ -110,7 +182,17 @@ function SourcesPageQuotaSummary() {
 /**
  * Table + selection bar section
  */
-function SourcesPageTableSection() {
+function SourcesPageTableSection({
+  canSourceUpload,
+  canSourceDelete,
+  canSourceDownload,
+  canControlAIReady,
+}: {
+  canSourceUpload: boolean;
+  canSourceDelete: boolean;
+  canSourceDownload: boolean;
+  canControlAIReady: boolean;
+}) {
   const context = useSourcesContext();
 
   return (
@@ -121,13 +203,18 @@ function SourcesPageTableSection() {
           context.selectedFileIds.length > 0 && 'pb-14',
         )}
       >
-        <SourcesTableWithContext />
+        <SourcesTableWithContext canSourceUpload={canSourceUpload} />
       </div>
 
       {/* Selection bar: fixed at bottom of table area, overlays content (no layout shift) */}
       {context.selectedFileIds.length > 0 && (
         <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-subtle bg-surface shadow-[0_-4px_12px_rgba(0,0,0,0.15)]">
-          <SourcesSelectionBarWithContext overlay />
+          <SourcesSelectionBarWithContext
+            overlay
+            canSourceDelete={canSourceDelete}
+            canSourceDownload={canSourceDownload}
+            canControlAIReady={canControlAIReady}
+          />
         </div>
       )}
     </div>
@@ -174,13 +261,38 @@ function SourcesPagePagination() {
 /**
  * All dialogs with context
  */
-function SourcesPageDialogs() {
+function SourcesPageDialogs({
+  canSourceUpload,
+  canSourceDelete,
+  librariesDialogOpen,
+  onLibrariesDialogOpenChange,
+}: {
+  canSourceUpload: boolean;
+  canSourceDelete: boolean;
+  librariesDialogOpen: boolean;
+  onLibrariesDialogOpenChange: (open: boolean) => void;
+}) {
   const context = useSourcesContext();
 
   return (
     <>
-      <FileUploadDialogWithContext />
-      {context.filesToDelete && <FileDeleteDialogWithContext />}
+      {canSourceUpload && <FileUploadDialogWithContext />}
+      {canSourceDelete && context.filesToDelete && <FileDeleteDialogWithContext />}
+      <SourceLibrariesDialog
+        open={librariesDialogOpen}
+        onOpenChange={onLibrariesDialogOpenChange}
+        libraries={context.libraries}
+        libraryPolicyStatusById={context.libraryPolicyStatusById}
+        libraryPolicyLoadingById={context.libraryPolicyLoadingById}
+        selectedLibraryId={context.selectedLibraryId}
+        onSelectLibrary={context.setSelectedLibraryId}
+        onCreateLibrary={context.handleCreateLibrary}
+        onRenameLibrary={context.handleRenameLibrary}
+        onDeleteLibrary={context.handleDeleteLibrary}
+        creating={context.creatingLibrary}
+        updating={context.updatingLibrary}
+        deleting={context.deletingLibrary}
+      />
     </>
   );
 }
@@ -188,7 +300,7 @@ function SourcesPageDialogs() {
 /**
  * Internal component that uses context for SourcesTable
  */
-function SourcesTableWithContext() {
+function SourcesTableWithContext({ canSourceUpload }: { canSourceUpload: boolean }) {
   const context = useSourcesContext();
 
   return (
@@ -198,7 +310,7 @@ function SourcesTableWithContext() {
       compact
       selectedIds={context.selectedFileIds}
       onRowSelect={context.setSelectedFileIds}
-      onUploadClick={() => context.setUploadDialogOpen(true)}
+      onUploadClick={canSourceUpload ? () => context.setUploadDialogOpen(true) : undefined}
     />
   );
 }
@@ -206,7 +318,17 @@ function SourcesTableWithContext() {
 /**
  * Internal component that uses context for SourcesSelectionBar
  */
-function SourcesSelectionBarWithContext({ overlay }: { overlay?: boolean }) {
+function SourcesSelectionBarWithContext({
+  overlay,
+  canSourceDelete,
+  canSourceDownload,
+  canControlAIReady,
+}: {
+  overlay?: boolean;
+  canSourceDelete: boolean;
+  canSourceDownload: boolean;
+  canControlAIReady: boolean;
+}) {
   const context = useSourcesContext();
 
   return (
@@ -215,6 +337,9 @@ function SourcesSelectionBarWithContext({ overlay }: { overlay?: boolean }) {
       selectedIds={context.selectedFileIds}
       files={context.items}
       quotaExceeded={!context.quotaStatus.canStart}
+      canSourceDelete={canSourceDelete}
+      canSourceDownload={canSourceDownload}
+      canControlAIReady={canControlAIReady}
       onDelete={context.handleDeleteClick}
       onStartAIReady={context.handleBatchStartAIReady}
       onCancelAIReady={context.handleBatchCancelAIReady}

@@ -9,24 +9,92 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AttachedSourcesPanel } from '../AttachedSourcesPanel';
 import type { SourceFileWithAIReady } from '@/lib/api/types';
 
+const mockSources: SourceFileWithAIReady[] = [
+  {
+    id: 'source-1',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    owner_user_id: 'user-1',
+    object_ref: { bucket: 'test', key: 'source-1.txt' },
+    version: 1,
+    filename: 'document1.txt',
+    file_type: 'text/plain',
+    file_size: 1024,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+    ai_ready: {
+      id: 'job-1',
+      source_file_id: 'source-1',
+      status: 'ready',
+      progress: 100,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    },
+  },
+  {
+    id: 'source-2',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    owner_user_id: 'user-1',
+    object_ref: { bucket: 'test', key: 'source-2.pdf' },
+    version: 1,
+    filename: 'document2.pdf',
+    file_type: 'application/pdf',
+    file_size: 2048000,
+    created_at: '2024-01-01T01:00:00Z',
+    updated_at: '2024-01-01T01:00:00Z',
+    ai_ready: {
+      id: 'job-2',
+      source_file_id: 'source-2',
+      status: 'preparing',
+      progress: 30,
+      created_at: '2024-01-01T01:00:00Z',
+      updated_at: '2024-01-01T01:00:00Z',
+    },
+  },
+  {
+    id: 'source-3',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    owner_user_id: 'user-1',
+    object_ref: { bucket: 'test', key: 'source-3.docx' },
+    version: 1,
+    filename: 'document3.docx',
+    file_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    file_size: 512000,
+    created_at: '2024-01-01T02:00:00Z',
+    updated_at: '2024-01-01T02:00:00Z',
+    ai_ready: {
+      id: 'job-3',
+      source_file_id: 'source-3',
+      status: 'failed',
+      error_message: 'Processing failed',
+      created_at: '2024-01-01T02:00:00Z',
+      updated_at: '2024-01-01T02:00:00Z',
+    },
+  },
+];
+const STABLE_REMOVE_SOURCE_RESULT = {
+  mutateAsync: vi.fn().mockResolvedValue({}),
+  isPending: false,
+};
+const STABLE_SOURCES_QUERY_RESULT = {
+  data: {
+    items: mockSources,
+    total: 3,
+    page: 1,
+    page_size: 1000,
+  },
+  isLoading: false,
+};
+
 // Mock hooks
 vi.mock('@/lib/hooks/use-recipe', () => ({
-  useRemoveSource: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({}),
-    isPending: false,
-  }),
+  useRemoveSource: () => STABLE_REMOVE_SOURCE_RESULT,
 }));
 
 vi.mock('@/lib/hooks/use-sources', () => ({
-  useSources: () => ({
-    data: {
-      items: mockSources,
-      total: 3,
-      page: 1,
-      page_size: 1000,
-    },
-    isLoading: false,
-  }),
+  useSources: () => STABLE_SOURCES_QUERY_RESULT,
 }));
 
 // Mock components
@@ -44,45 +112,6 @@ vi.mock('@/components/sources/AIReadyStatusBadge', () => ({
     <div data-testid={`ai-ready-${status}`}>AI Ready: {status}</div>
   ),
 }));
-
-const mockSources: SourceFileWithAIReady[] = [
-  {
-    id: 'source-1',
-    filename: 'document1.txt',
-    file_type: 'text/plain',
-    file_size: 1024,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
-    ai_ready: {
-      status: 'ready',
-      tokens: 100,
-      chunks: 5,
-    },
-  },
-  {
-    id: 'source-2',
-    filename: 'document2.pdf',
-    file_type: 'application/pdf',
-    file_size: 2048000,
-    created_at: '2024-01-01T01:00:00Z',
-    updated_at: '2024-01-01T01:00:00Z',
-    ai_ready: {
-      status: 'processing',
-    },
-  },
-  {
-    id: 'source-3',
-    filename: 'document3.docx',
-    file_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    file_size: 512000,
-    created_at: '2024-01-01T02:00:00Z',
-    updated_at: '2024-01-01T02:00:00Z',
-    ai_ready: {
-      status: 'failed',
-      error: 'Processing failed',
-    },
-  },
-];
 
 describe('AttachedSourcesPanel', () => {
   let queryClient: QueryClient;
@@ -184,10 +213,10 @@ describe('AttachedSourcesPanel', () => {
       expect(screen.getByTestId('ai-ready-ready')).toBeInTheDocument();
     });
 
-    it('shows processing status', () => {
+    it('shows preparing status', () => {
       renderComponent(['source-2']);
 
-      expect(screen.getByTestId('ai-ready-processing')).toBeInTheDocument();
+      expect(screen.getByTestId('ai-ready-preparing')).toBeInTheDocument();
     });
 
     it('shows failed status', () => {

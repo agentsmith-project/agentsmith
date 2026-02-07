@@ -9,6 +9,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
+import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 
 export default function WorkspaceSettingsPage() {
   const params = useParams();
@@ -16,6 +17,11 @@ export default function WorkspaceSettingsPage() {
   const workspaceId = params?.workspace as string;
   const { data: currentWorkspace } = useWorkspace(workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
+  const {
+    canManageGovernance,
+    getMemberGovernanceGroup,
+    updateMemberGovernanceGroup,
+  } = useWorkspaceGovernance(workspaceId);
   useSyncAuthFromUrl();
 
   const workspace = currentWorkspace || { id: workspaceId, name: workspaceId };
@@ -57,7 +63,19 @@ export default function WorkspaceSettingsPage() {
                         <p className="text-sm text-primary truncate">{member.name}</p>
                         <p className="text-xs text-tertiary truncate">{member.email}</p>
                       </div>
-                      <span className="text-xs text-tertiary capitalize">{member.role}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-tertiary capitalize">{member.role}</span>
+                        <select
+                          data-testid={`ws-settings__governance--${member.id}`}
+                          value={getMemberGovernanceGroup(member)}
+                          onChange={(event) => updateMemberGovernanceGroup(member.id, event.target.value as 'wheel' | 'user')}
+                          disabled={!canManageGovernance}
+                          className="h-8 min-w-24 rounded-sm border border-subtle bg-surface px-2 text-xs text-primary disabled:opacity-50"
+                        >
+                          <option value="wheel">{t('workspace_governance_wheel')}</option>
+                          <option value="user">{t('workspace_governance_user')}</option>
+                        </select>
+                      </div>
                     </div>
                   ))}
                 </div>

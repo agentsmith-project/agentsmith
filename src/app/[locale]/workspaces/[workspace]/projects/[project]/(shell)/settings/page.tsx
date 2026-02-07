@@ -20,26 +20,16 @@ import { useTranslations } from 'next-intl';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RuntimePreferencesEditor, type RuntimePreferences } from '@/components/settings/RuntimePreferencesEditor';
-import { GovernanceEditor, type GovernanceJson } from '@/components/settings/GovernanceEditor';
-import { LimitsEditor, type LimitsJson } from '@/components/settings/LimitsEditor';
 import { SettingsTokenReference } from '@/components/settings/SettingsTokenReference';
 import { useApiError } from '@/lib/hooks/use-api-error';
-import {
-  RUNTIME_PREFERENCES_TOKENS,
-  GOVERNANCE_TOKENS,
-  LIMITS_TOKENS,
-} from '@/components/settings/settingsTokenRefs';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { RUNTIME_PREFERENCES_TOKENS } from '@/components/settings/settingsTokenRefs';
 import { useProject } from '@/lib/hooks/use-projects-queries';
+import {
+  useCanReadProjectPolicy,
+  useCanUpdateProjectPolicy,
+  useHasPermission,
+} from '@/lib/hooks/use-permissions';
+import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface SettingsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -47,33 +37,38 @@ interface SettingsPageProps {
 
 export default function SettingsPage({ params }: SettingsPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{
-    workspace: string;
-    project: string;
+    workspace?: string;
+    project?: string;
     locale: string;
   } | null>(null);
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [savingRuntime, setSavingRuntime] = useState(false);
-  const [savingGovernance, setSavingGovernance] = useState(false);
-  const [savingLimits, setSavingLimits] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private'>('private');
   const [joinPolicy, setJoinPolicy] = useState<'approval_required' | 'open'>('approval_required');
   const [runtimePreferences, setRuntimePreferences] = useState<RuntimePreferences>({});
-  const [governance, setGovernance] = useState<GovernanceJson>({});
-  const [limits, setLimits] = useState<LimitsJson>({});
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [governanceConfirmOpen, setGovernanceConfirmOpen] = useState(false);
   const router = useRouter();
   const commonT = useTranslations('common');
   const settingsT = useTranslations('settings');
+  const tErrors = useTranslations('errors');
   const { handleError } = useApiError();
   const queryClient = useQueryClient();
+  const canReadSettings = useCanReadProjectPolicy();
+  const canManageSettings = useCanUpdateProjectPolicy();
+  const canDeleteProject = useHasPermission('project:delete');
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);
 
   useEffect(() => {
-    params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project, locale: p.locale }));
+    params.then((p) =>
+      setResolvedParams({
+        workspace: validateWorkspaceParam(p.workspace),
+        project: validateProjectParam(p.project),
+        locale: p.locale,
+      }),
+    );
   }, [params]);
 
   // Fetch project data
@@ -89,13 +84,13 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       setVisibility(currentProject.visibility || 'private');
       setJoinPolicy(currentProject.join_policy || 'approval_required');
       setRuntimePreferences((currentProject.runtime_preferences_json as RuntimePreferences) ?? {});
-      setGovernance((currentProject.governance_json as GovernanceJson) ?? {});
-      setLimits((currentProject.limits_json as LimitsJson) ?? {});
     }
   }, [currentProject]);
 
   const handleSaveGeneral = async () => {
     if (!resolvedParams) return;
+    if (!canManageSettings) return;
+    if (!resolvedParams.workspace || !resolvedParams.project) return;
     setSavingGeneral(true);
     try {
       await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
@@ -121,6 +116,8 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   const handleSaveRuntimePrefs = async () => {
     if (!resolvedParams) return;
+    if (!canManageSettings) return;
+    if (!resolvedParams.workspace || !resolvedParams.project) return;
     setSavingRuntime(true);
     try {
       await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
@@ -134,42 +131,37 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     }
   };
 
-  const handleSaveGovernanceClick = () => {
-    setGovernanceConfirmOpen(true);
-  };
+  if (!resolvedParams) {
+    return (
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
+    );
+  }
 
-  const handleSaveGovernanceConfirm = async () => {
-    if (!resolvedParams) return;
-    setGovernanceConfirmOpen(false);
-    setSavingGovernance(true);
-    try {
-      await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
-        governance_json: governance as Record<string, unknown>,
-      });
-      toast.success(commonT('refreshed_data'));
-    } catch (error) {
-      handleError(error, { context: settingsT('tab_governance') });
-    } finally {
-      setSavingGovernance(false);
-    }
-  };
+  if (!resolvedParams.workspace || !resolvedParams.project) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
 
-  const handleSaveLimits = async () => {
-    if (!resolvedParams) return;
-    setSavingLimits(true);
-    try {
-      await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
-        limits_json: limits as Record<string, unknown>,
-      });
-      toast.success(commonT('refreshed_data'));
-    } catch (error) {
-      handleError(error, { context: settingsT('tab_limits') });
-    } finally {
-      setSavingLimits(false);
-    }
-  };
+  if (!canReadSettings) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
+        </div>
+      </PageState>
+    );
+  }
 
-  if (!resolvedParams || !currentProject) {
+  if (!currentProject) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -193,8 +185,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         <TabsList>
           <TabsTrigger value="general" data-testid="settings__tab--general">{settingsT('tab_general')}</TabsTrigger>
           <TabsTrigger value="runtime" data-testid="settings__tab--runtime">{settingsT('tab_runtime_preferences')}</TabsTrigger>
-          <TabsTrigger value="governance" data-testid="settings__tab--governance">{settingsT('tab_governance')}</TabsTrigger>
-          <TabsTrigger value="limits" data-testid="settings__tab--limits">{settingsT('tab_limits')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-6">
@@ -245,7 +235,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               </div>
             </div>
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveGeneral} disabled={savingGeneral} variant="action" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveGeneral} disabled={!canManageSettings || savingGeneral} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingGeneral ? 'Saving...' : 'Save'}
               </Button>
@@ -265,69 +255,14 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               onChange={setRuntimePreferences}
             />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveRuntimePrefs} disabled={savingRuntime} variant="action" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveRuntimePrefs} disabled={!canManageSettings || savingRuntime} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingRuntime ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>
         </TabsContent>
-
-        <TabsContent value="governance" className="space-y-6">
-          <div className="rounded-xl border border-border bg-surface p-6 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('governance_title')}</h2>
-              <p className="text-sm text-tertiary">{settingsT('governance_help')}</p>
-            </div>
-            <SettingsTokenReference tokens={GOVERNANCE_TOKENS} />
-            <GovernanceEditor value={governance} onChange={setGovernance} />
-            <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveGovernanceClick} disabled={savingGovernance} variant="action" size="lg" data-testid="settings__save-btn">
-                <Save className="w-4 h-4" />
-                {savingGovernance ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="limits" className="space-y-6">
-          <div className="rounded-xl border border-border bg-surface p-6 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('limits_title')}</h2>
-              <p className="text-sm text-tertiary">{settingsT('limits_help')}</p>
-            </div>
-            <SettingsTokenReference tokens={LIMITS_TOKENS} />
-            <LimitsEditor value={limits} onChange={setLimits} />
-            <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveLimits} disabled={savingLimits} variant="action" size="lg" data-testid="settings__save-btn">
-                <Save className="w-4 h-4" />
-                {savingLimits ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </TabsContent>
       </Tabs>
-
-      <AlertDialog open={governanceConfirmOpen} onOpenChange={setGovernanceConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{settingsT('governance_save_confirm_title')}</AlertDialogTitle>
-            <AlertDialogDescription>{settingsT('governance_save_confirm_body')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={savingGovernance}>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                handleSaveGovernanceConfirm();
-              }}
-              disabled={savingGovernance}
-            >
-              {savingGovernance ? 'Saving...' : settingsT('governance_save_confirm_action')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Danger Zone - fixed at bottom */}
       <div className="mt-8 rounded-xl border border-subtle bg-surface-high border-l-2 border-l-error/70 p-6">
@@ -337,7 +272,12 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <div className="font-medium text-foreground">Delete Project</div>
             <div className="text-sm text-tertiary">Permanently delete this project and all data</div>
           </div>
-          <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)} data-testid="settings__delete-project-btn">
+          <Button
+            variant="destructive"
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={!canDeleteProject}
+            data-testid="settings__delete-project-btn"
+          >
             Delete Project
           </Button>
         </div>

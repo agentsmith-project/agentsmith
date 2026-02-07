@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecipeList } from '../RecipeList';
 import type { Recipe } from '@/lib/types/recipe';
@@ -252,7 +253,8 @@ describe('RecipeList', () => {
       expect(screen.getByText('New Recipe')).toBeInTheDocument();
     });
 
-    it('opens create dialog when new recipe button is clicked', () => {
+    it('opens create dialog when new recipe button is clicked', async () => {
+      const user = userEvent.setup();
       vi.mocked(useRecipes).mockReturnValue({
         data: { items: mockRecipes, total: 3, page: 1, page_size: 10 },
         isLoading: false,
@@ -263,7 +265,7 @@ describe('RecipeList', () => {
       });
 
       const newRecipeButton = screen.getByText('New Recipe');
-      newRecipeButton.click();
+      await user.click(newRecipeButton);
 
       // Dialog should be visible (checked by its content)
       // This is handled by RecipeCreateDialog component

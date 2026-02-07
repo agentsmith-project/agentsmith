@@ -275,21 +275,4 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('drawer-member-quota.png');
   });
 
-  test('member permissions drawer - resource acl tab', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('members'));
-    const rows = authedPage.getByTestId('members__table__row');
-    await expect(rows.first()).toBeVisible();
-
-    const actionBtn = rows.nth(1).getByRole('button', { name: /more/i }).or(
-      rows.nth(1).locator('button:has(svg)')
-    ).last();
-    await actionBtn.click();
-
-    await authedPage.getByRole('menuitem', { name: /edit permissions/i }).click();
-    const drawer = authedPage.locator('[role="dialog"], [data-state="open"]').last();
-    await expect(drawer).toBeVisible({ timeout: 5000 });
-    await drawer.getByRole('tab', { name: /resource access|acl/i }).click();
-    await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('drawer-member-resource-acl.png');
-  });
 });

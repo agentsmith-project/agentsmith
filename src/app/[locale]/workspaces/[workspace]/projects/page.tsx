@@ -38,6 +38,7 @@ import {
 import { Topbar } from '@/components/app-shell/Topbar';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import type { ProjectWithMembership } from '@/lib/hooks/use-permissions';
+import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
@@ -50,9 +51,15 @@ import { PageLoading } from '@/components/ui/loading';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
+import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 import { useQueryClient } from '@tanstack/react-query';
+import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 type Project = ProjectWithMembership & { pinned: boolean };
+
+function isProjectAdminRole(role: string | undefined): boolean {
+  return role === 'owner' || role === 'admin';
+}
 
 interface ProjectsPageProps {
   params: Promise<{ workspace: string; locale: string }>;
@@ -64,9 +71,15 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const t = useTranslations('projects');
-  const [resolvedParams, setResolvedParams] = useState<{ workspace: string; locale: string } | null>(null);
+  const tErrors = useTranslations('errors');
+  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; locale: string } | null>(null);
   const { isAuthenticated } = useAuthStore();
   const hydrated = useAuthStoreHydration();
+  const canWorkspaceRead = useHasWorkspacePermission('workspace:read');
+  const canProjectRead = useHasWorkspacePermission('project:read');
+  const canCreateProjectByWorkspacePermissions = useHasWorkspacePermission('workspace:project:create');
+  const canProjectPolicyUpdate = useHasWorkspacePermission('project:policy:update');
+  const canDeleteProjectByWorkspacePermission = useHasWorkspacePermission('project:delete');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
@@ -74,7 +87,12 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const [deleteDialogProject, setDeleteDialogProject] = useState<Project | null>(null);
 
   useEffect(() => {
-    params.then((p) => setResolvedParams({ workspace: p.workspace, locale: p.locale }));
+    params.then((p) => {
+      setResolvedParams({
+        workspace: validateWorkspaceParam(p.workspace),
+        locale: p.locale,
+      });
+    });
   }, [params]);
 
   // Sync auth store from URL parameters
@@ -82,6 +100,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
 
   const workspaceId = resolvedParams?.workspace || '';
   const locale = resolvedParams?.locale || 'en-US';
+  const { isWheelUser } = useWorkspaceGovernance(workspaceId);
 
   // Fetch workspace and projects
   const { data: currentWorkspace } = useWorkspace(workspaceId);
@@ -102,6 +121,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   };
 
   const handleSettingsClick = (project: Project) => {
+    if (!isProjectAdminRole(project.role) || !canProjectPolicyUpdate) return;
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/settings`);
   };
 
@@ -113,6 +133,8 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   };
 
   const handleDeleteProject = async (wsId: string, projectId: string) => {
+    const target = projects.find((project) => project.id === projectId);
+    if (!target || !isProjectAdminRole(target.role) || !canDeleteProjectByWorkspacePermission) return;
     const projectAPI = new ProjectAPI(getApiClient());
     await projectAPI.delete(wsId, projectId);
   };
@@ -158,6 +180,31 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
     );
   }
 
+  if (!workspaceId) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  const canReadProjects = canWorkspaceRead && canProjectRead;
+  const canCreateProject = canCreateProjectByWorkspacePermissions && isWheelUser;
+
+  if (!canReadProjects) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
   return (
     <PageState state="success">
       <PageLayout>
@@ -178,7 +225,11 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
             <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
             <h2 className="text-xl font-semibold text-foreground mb-2">{t('empty.title')}</h2>
             <p className="text-tertiary mb-6">{t('empty.description')}</p>
-            <Button variant="action" onClick={() => setCreateDialogOpen(true)}>
+            <Button
+              variant="action"
+              onClick={() => setCreateDialogOpen(true)}
+              disabled={!canCreateProject}
+            >
               <Plus className="w-4 h-4" />
               {t('empty.create_first')}
             </Button>
@@ -228,7 +279,12 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                   </div>
 
                   {/* New Project Button */}
-                  <Button variant="action" onClick={() => setCreateDialogOpen(true)} data-testid="projects__create-btn">
+                  <Button
+                    variant="action"
+                    onClick={() => setCreateDialogOpen(true)}
+                    disabled={!canCreateProject}
+                    data-testid="projects__create-btn"
+                  >
                     <Plus className="w-4 h-4" />
                     {t('new_project')}
                   </Button>
@@ -241,6 +297,8 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                 onSettingsClick={handleSettingsClick}
                 onDeleteClick={(project) => setDeleteDialogProject(project)}
                 onTogglePin={togglePin}
+                canProjectPolicyUpdate={canProjectPolicyUpdate}
+                canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
                 t={t}
               />
             </section>
@@ -249,7 +307,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
       </main>
 
       <CreateProjectDialog
-        open={createDialogOpen}
+        open={canCreateProject && createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         workspaceId={workspaceId}
         onSuccess={handleCreateProjectSuccess}
@@ -352,6 +410,8 @@ function ProjectsTable({
   onSettingsClick,
   onDeleteClick,
   onTogglePin,
+  canProjectPolicyUpdate,
+  canDeleteProjectByWorkspacePermission,
   t,
 }: {
   projects: Project[];
@@ -359,6 +419,8 @@ function ProjectsTable({
   onSettingsClick: (project: Project) => void;
   onDeleteClick: (project: Project) => void;
   onTogglePin: (projectId: string, e: React.MouseEvent) => void;
+  canProjectPolicyUpdate: boolean;
+  canDeleteProjectByWorkspacePermission: boolean;
   t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
   const columns = useMemo(
@@ -423,7 +485,11 @@ function ProjectsTable({
       columnHelper.display({
         id: 'actions',
         header: '',
-        cell: ({ row }) => (
+        cell: ({ row }) => {
+          const canManageProject = isProjectAdminRole(row.original.role) && canProjectPolicyUpdate;
+          const canDeleteProject =
+            isProjectAdminRole(row.original.role) && canDeleteProjectByWorkspacePermission;
+          return (
           <div className="flex items-center gap-1">
             <button
               onClick={() => onProjectClick(row.original)}
@@ -437,39 +503,43 @@ function ProjectsTable({
                 e.stopPropagation();
                 onSettingsClick(row.original);
               }}
+              disabled={!canManageProject}
               className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
               aria-label={t('actions.settings')}
             >
               <Settings className="w-4 h-4 text-icon-default" />
             </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  onClick={(e) => e.stopPropagation()}
-                  className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
-                  aria-label="More actions"
-                >
-                  <MoreVertical className="w-4 h-4 text-icon-default" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    onDeleteClick(row.original);
-                  }}
-                  className="text-error focus:text-error"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {t('actions.delete')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {canDeleteProject && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+                    aria-label="More actions"
+                  >
+                    <MoreVertical className="w-4 h-4 text-icon-default" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      onDeleteClick(row.original);
+                    }}
+                    className="text-error focus:text-error"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {t('actions.delete')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
-        ),
+          );
+        },
       }),
     ],
-    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, t]
+    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, canProjectPolicyUpdate, canDeleteProjectByWorkspacePermission, t]
   );
 
   const table = useReactTable({

@@ -1,26 +1,29 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
+const STABLE_WORKSPACE = { id: 'ws_1', name: 'Corp Workspace' };
+const STABLE_MEMBERS = [
+  {
+    id: 'wm_1',
+    user_id: 'u_1',
+    name: 'Dev One',
+    email: 'dev1@example.com',
+    role: 'developer',
+    status: 'active',
+    joined_at: '2026-02-01T00:00:00Z',
+  },
+];
+
 vi.mock('@/lib/hooks/use-sync-auth-from-url', () => ({
   useSyncAuthFromUrl: () => undefined,
 }));
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
   useWorkspace: () => ({
-    data: { id: 'ws_1', name: 'Corp Workspace' },
+    data: STABLE_WORKSPACE,
   }),
   useWorkspaceMembers: () => ({
-    data: [
-      {
-        id: 'wm_1',
-        user_id: 'u_1',
-        name: 'Dev One',
-        email: 'dev1@example.com',
-        role: 'developer',
-        status: 'active',
-        joined_at: '2026-02-01T00:00:00Z',
-      },
-    ],
+    data: STABLE_MEMBERS,
   }),
 }));
 

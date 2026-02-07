@@ -14,6 +14,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Credential } from '@/lib/api/types';
 
 const mockRotate = vi.fn();
 const mockHandleError = vi.fn();
@@ -94,7 +95,7 @@ function renderWithProviders(ui: React.ReactElement) {
 describe('RotateCredentialDialog', () => {
   const user = userEvent.setup();
 
-  const mockCredential = {
+  const mockCredential: Credential = {
     id: 'cred_001',
     workspace_id: 'ws_test',
     project_id: 'proj_001',

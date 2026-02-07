@@ -23,6 +23,8 @@ import { DataTable } from '@/components/ui/data-table';
 import { CreateCredentialDialog } from '@/components/credentials/CreateCredentialDialog';
 import { RotateCredentialDialog } from '@/components/credentials/RotateCredentialDialog';
 import { DeleteCredentialDialog } from '@/components/credentials/DeleteCredentialDialog';
+import { useCanAccessCredentials } from '@/lib/hooks/use-permissions';
+import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface CredentialsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -50,6 +52,7 @@ const createCredentialColumns = (
   t: (key: string) => string,
   onRotate: (cred: Credential) => void,
   onDelete: (cred: Credential) => void,
+  canManageCredentials: boolean,
   deleteMutation: { isPending: boolean }
 ) => [
   columnHelper.accessor('name', {
@@ -88,7 +91,7 @@ const createCredentialColumns = (
       <div className="flex items-center gap-2">
         <button
           onClick={() => onRotate(info.row.original)}
-          disabled={deleteMutation.isPending}
+          disabled={!canManageCredentials || deleteMutation.isPending}
           className="p-1.5 text-tertiary hover:text-foreground hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
           title={t('rotate')}
         >
@@ -96,7 +99,7 @@ const createCredentialColumns = (
         </button>
         <button
           onClick={() => onDelete(info.row.original)}
-          disabled={deleteMutation.isPending}
+          disabled={!canManageCredentials || deleteMutation.isPending}
           className="p-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
           title={t('delete')}
         >
@@ -109,18 +112,24 @@ const createCredentialColumns = (
 
 export default function CredentialsPage({ params }: CredentialsPageProps) {
   const t = useTranslations('credentials');
+  const tErrors = useTranslations('errors');
   const [resolvedParams, setResolvedParams] = useState<{
-    workspace: string;
-    project: string;
+    workspace?: string;
+    project?: string;
   } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [rotateDialogOpen, setRotateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCredential, setSelectedCredential] = useState<Credential | null>(null);
+  const { canRead: canReadCredentials, canManage: canManageCredentials } = useCanAccessCredentials();
 
 
   useEffect(() => {
-    params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
+    params.then((p) => {
+      const workspace = validateWorkspaceParam(p.workspace);
+      const project = validateProjectParam(p.project);
+      setResolvedParams({ workspace, project });
+    });
   }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
@@ -144,11 +153,13 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   });
 
   const handleRotateClick = (cred: Credential) => {
+    if (!canManageCredentials) return;
     setSelectedCredential(cred);
     setRotateDialogOpen(true);
   };
 
   const handleDeleteClick = (cred: Credential) => {
+    if (!canManageCredentials) return;
     setSelectedCredential(cred);
     setDeleteDialogOpen(true);
   };
@@ -165,6 +176,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
     t,
     handleRotateClick,
     handleDeleteClick,
+    canManageCredentials,
     deleteMutation
   );
 
@@ -182,6 +194,28 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
     );
   }
 
+  if (!workspaceId || !projectId) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (!canReadCredentials) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
   return (
     <PageState state="success">
       <PageLayout
@@ -190,8 +224,9 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
           <PageToolbar>
             <button
               onClick={() => setCreateDialogOpen(true)}
+              disabled={!canManageCredentials}
               data-testid="credentials__create-btn"
-              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors"
+              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="w-4 h-4" />
               {t('create')}
@@ -207,10 +242,10 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
               icon={Key}
               title={t('empty.title')}
               description={t('empty.description')}
-              action={{
+              action={canManageCredentials ? {
                 label: t('create'),
                 onClick: () => setCreateDialogOpen(true),
-              }}
+              } : undefined}
             />
           ) : (
             <DataTable table={table} testId="credentials__table" />
@@ -218,7 +253,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         </div>
 
         <CreateCredentialDialog
-          open={createDialogOpen}
+          open={canManageCredentials && createDialogOpen}
           onOpenChange={setCreateDialogOpen}
           workspaceId={workspaceId}
           projectId={projectId}
@@ -226,7 +261,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         />
 
         <RotateCredentialDialog
-          open={rotateDialogOpen}
+          open={canManageCredentials && rotateDialogOpen}
           onOpenChange={setRotateDialogOpen}
           credential={selectedCredential}
           workspaceId={workspaceId}
@@ -235,7 +270,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         />
 
         <DeleteCredentialDialog
-          open={deleteDialogOpen}
+          open={canManageCredentials && deleteDialogOpen}
           onOpenChange={setDeleteDialogOpen}
           credential={selectedCredential}
           onConfirm={handleDeleteConfirm}

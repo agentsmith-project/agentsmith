@@ -33,6 +33,8 @@ vi.mock('next-intl', () => ({
       'delete': 'Delete',
       'delete_confirm_message': 'Are you sure you want to delete this recipe?',
       'delete_cancel': 'Cancel',
+      'edit': 'Edit',
+      'edit_title': 'Edit Recipe',
       'new': 'New',
       'status.active': 'Active',
       'status.closed': 'Closed',
@@ -64,6 +66,7 @@ describe('RecipeHeader', () => {
   const mockOnCreateNew = vi.fn();
   const mockOnDeleted = vi.fn();
   const mockOnLeave = vi.fn();
+  const mockOnEdit = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,6 +81,7 @@ describe('RecipeHeader', () => {
         onCreateNew={mockOnCreateNew}
         onDeleted={mockOnDeleted}
         onLeave={mockOnLeave}
+        onEdit={mockOnEdit}
         {...props}
       />
     );
@@ -224,6 +228,23 @@ describe('RecipeHeader', () => {
 
       // Note: The actual delete call happens in the mock hook
       // In a real test, we'd need to wait for the mutation
+    });
+  });
+
+  describe('Edit Button', () => {
+    it('renders edit button', () => {
+      renderComponent();
+      expect(screen.getByText('Edit')).toBeInTheDocument();
+    });
+
+    it('calls onEdit when edit button is clicked', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      const editButton = screen.getByText('Edit');
+      await user.click(editButton);
+
+      expect(mockOnEdit).toHaveBeenCalledTimes(1);
     });
   });
 

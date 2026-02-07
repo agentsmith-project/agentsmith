@@ -32,11 +32,13 @@ const mockContextValue: UseSourcesListReturn = {
 
   // Filters
   search: '',
+  selectedLibraryId: 'all',
   status: 'all',
   aiReadyOnly: false,
   sortBy: 'updated_at',
   sortOrder: 'desc',
   setSearch: vi.fn(),
+  setSelectedLibraryId: vi.fn(),
   setStatus: vi.fn(),
   setAIReadyOnly: vi.fn(),
   setSortBy: vi.fn(),
@@ -71,6 +73,12 @@ const mockContextValue: UseSourcesListReturn = {
 
   // Quota status
   quotaStatus: { canStart: true, exceededTypes: [] },
+  libraries: [],
+  libraryPolicyStatusById: {},
+  libraryPolicyLoadingById: {},
+  creatingLibrary: false,
+  updatingLibrary: false,
+  deletingLibrary: false,
 
   // Actions
   handleUpload: vi.fn(),
@@ -79,6 +87,9 @@ const mockContextValue: UseSourcesListReturn = {
   handleBatchStartAIReady: vi.fn(),
   handleBatchCancelAIReady: vi.fn(),
   handleDownload: vi.fn(),
+  handleCreateLibrary: vi.fn(),
+  handleRenameLibrary: vi.fn(),
+  handleDeleteLibrary: vi.fn(),
 };
 
 describe('SourcesProvider', () => {

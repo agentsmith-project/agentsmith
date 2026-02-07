@@ -74,13 +74,15 @@ export function useUploadFile() {
       workspaceId,
       projectId,
       file,
+      libraryId,
       onProgress,
     }: {
       workspaceId: string;
       projectId: string;
       file: File;
+      libraryId?: string;
       onProgress?: (progress: number) => void;
-    }) => sourcesAPI.upload(workspaceId, projectId, file, onProgress),
+    }) => sourcesAPI.upload(workspaceId, projectId, file, libraryId, onProgress),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
@@ -92,6 +94,116 @@ export function useUploadFile() {
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useUploadFile');
+    },
+  });
+}
+
+export function useSourceLibraries(workspaceId: string, projectId: string) {
+  const sourcesAPI = new SourcesAPI(getApiClient());
+
+  return useQuery({
+    queryKey: queryKeys.sourceLibraries.list(workspaceId, projectId),
+    queryFn: () => sourcesAPI.listLibraries(workspaceId, projectId),
+    enabled: !!workspaceId && !!projectId,
+    staleTime: 10000,
+  });
+}
+
+export function useCreateSourceLibrary() {
+  const queryClient = useQueryClient();
+  const sourcesAPI = new SourcesAPI(getApiClient());
+  const t = useTranslations('common.toast');
+
+  return useMutation({
+    mutationFn: ({
+      workspaceId,
+      projectId,
+      name,
+      description,
+    }: {
+      workspaceId: string;
+      projectId: string;
+      name: string;
+      description?: string;
+    }) =>
+      sourcesAPI.createLibrary(workspaceId, projectId, {
+        name,
+        description,
+        visibility: 'shared',
+      }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sourceLibraries.list(variables.workspaceId, variables.projectId),
+      });
+      toast.success(t('create_success'));
+    },
+    onError: (error: unknown) => {
+      handleErrorForToast(error, 'useCreateSourceLibrary');
+    },
+  });
+}
+
+export function useUpdateSourceLibrary() {
+  const queryClient = useQueryClient();
+  const sourcesAPI = new SourcesAPI(getApiClient());
+  const t = useTranslations('common.toast');
+
+  return useMutation({
+    mutationFn: ({
+      workspaceId,
+      projectId,
+      libraryId,
+      name,
+      description,
+    }: {
+      workspaceId: string;
+      projectId: string;
+      libraryId: string;
+      name?: string;
+      description?: string;
+    }) =>
+      sourcesAPI.updateLibrary(workspaceId, projectId, libraryId, {
+        name,
+        description,
+      }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sourceLibraries.list(variables.workspaceId, variables.projectId),
+      });
+      toast.success(t('update_success'));
+    },
+    onError: (error: unknown) => {
+      handleErrorForToast(error, 'useUpdateSourceLibrary');
+    },
+  });
+}
+
+export function useDeleteSourceLibrary() {
+  const queryClient = useQueryClient();
+  const sourcesAPI = new SourcesAPI(getApiClient());
+  const t = useTranslations('common.toast');
+
+  return useMutation({
+    mutationFn: ({
+      workspaceId,
+      projectId,
+      libraryId,
+    }: {
+      workspaceId: string;
+      projectId: string;
+      libraryId: string;
+    }) => sourcesAPI.deleteLibrary(workspaceId, projectId, libraryId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sourceLibraries.list(variables.workspaceId, variables.projectId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
+      });
+      toast.success(t('delete_success'));
+    },
+    onError: (error: unknown) => {
+      handleErrorForToast(error, 'useDeleteSourceLibrary');
     },
   });
 }

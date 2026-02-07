@@ -30,7 +30,7 @@ vi.mock('@/lib/stores/authStore', () => ({
 
 import { useProject } from '../use-projects-queries';
 
-const mockUseProject = useProject as vi.MockedFunction<typeof useProject>;
+const mockUseProject = useProject as unknown as ReturnType<typeof vi.fn>;
 
 // Helper to update auth state
 const setMockAuthState = (state: { isAuthenticated: boolean }) => {

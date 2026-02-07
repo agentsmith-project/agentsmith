@@ -52,7 +52,7 @@ Full functional testing across all pages and features:
 ### Visual Regression Tests (29 tests)
 Full-page screenshots for all pages and 7 dialog states:
 
-**Pages:** login, join, workspace-select, projects-list, workspace-settings, overview, chat, workbench, agents, endpoints, credentials, members, sources, userdata, audit, usage, settings (4 tabs), profile, api-keys
+**Pages:** login, join, workspace-select, projects-list, workspace-settings, overview, chat, workbench, agents, endpoints, credentials, members, sources, userdata, audit, usage, settings (2 tabs), profile, api-keys
 
 **Dialogs:** create-project, create-agent, create-endpoint, create-credential, invite-member, upload-source, create-api-key
 

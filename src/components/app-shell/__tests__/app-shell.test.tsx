@@ -311,7 +311,7 @@ describe('Sidebar', () => {
     );
 
     const sidebar = container.querySelector('aside');
-    expect(sidebar).toHaveClass('w-[216px]');
+    expect(sidebar).toHaveClass('w-[200px]');
   });
 
   it('should apply custom className', () => {

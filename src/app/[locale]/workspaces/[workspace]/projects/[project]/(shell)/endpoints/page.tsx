@@ -22,6 +22,8 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +48,7 @@ function createEndpointColumns(
   t: (key: string) => string,
   deleteEndpointMutation: DeleteEndpointMutation,
   updateEndpointMutation: UpdateEndpointMutation,
+  canManageEndpoints: boolean,
   onEdit: (endpoint: Endpoint) => void,
   onDeleteRequest: (endpoint: Endpoint) => void,
 ) {
@@ -110,66 +113,86 @@ function createEndpointColumns(
   columnHelper.display({
     id: 'actions',
     header: '',
-    cell: (info) => (
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => onEdit(info.row.original)}
-          className="p-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors"
-          aria-label={t('action_edit')}
-          title={t('action_edit')}
-        >
-          <Pencil className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() =>
-            updateEndpointMutation.mutate({
-              endpointId: info.row.original.id,
-              data: { status: info.row.original.status === 'active' ? 'disabled' : 'active' },
-            })
-          }
-          disabled={updateEndpointMutation.isPending}
-          className="p-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
-          aria-label={
-            info.row.original.status === 'active' ? t('action_disable') : t('action_enable')
-          }
-          title={
-            info.row.original.status === 'active' ? t('action_disable') : t('action_enable')
-          }
-        >
-          {info.row.original.status === 'active' ? (
-            <PowerOff className="w-4 h-4 text-warning" />
-          ) : (
-            <Power className="w-4 h-4 text-success" />
-          )}
-        </button>
-        <button
-          onClick={() => onDeleteRequest(info.row.original)}
-          disabled={deleteEndpointMutation.isPending}
-          className="p-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
-          aria-label={t('action_delete')}
-          title={t('action_delete')}
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
-    ),
+    cell: (info) => {
+      if (!canManageEndpoints) {
+        return <span className="text-tertiary text-sm">-</span>;
+      }
+
+      return (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onEdit(info.row.original)}
+            className="p-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors"
+            aria-label={t('action_edit')}
+            title={t('action_edit')}
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() =>
+              updateEndpointMutation.mutate({
+                endpointId: info.row.original.id,
+                data: { status: info.row.original.status === 'active' ? 'disabled' : 'active' },
+              })
+            }
+            disabled={updateEndpointMutation.isPending}
+            className="p-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
+            aria-label={
+              info.row.original.status === 'active' ? t('action_disable') : t('action_enable')
+            }
+            title={
+              info.row.original.status === 'active' ? t('action_disable') : t('action_enable')
+            }
+          >
+            {info.row.original.status === 'active' ? (
+              <PowerOff className="w-4 h-4 text-warning" />
+            ) : (
+              <Power className="w-4 h-4 text-success" />
+            )}
+          </button>
+          <button
+            onClick={() => onDeleteRequest(info.row.original)}
+            disabled={deleteEndpointMutation.isPending}
+            className="p-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
+            aria-label={t('action_delete')}
+            title={t('action_delete')}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      );
+    },
   }),
   ];
 }
 
 export default function EndpointsPage({ params }: EndpointsPageProps) {
   const t = useTranslations('endpoints');
+  const tErrors = useTranslations('errors');
   const queryClient = useQueryClient();
-  const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [endpointToDelete, setEndpointToDelete] = useState<Endpoint | null>(null);
+  const canProjectResourceRead = useHasPermission('project:resource:read');
+  const canProjectResourceUpdate = useHasPermission('project:resource:update');
+  const canProjectResourceCreate = useHasPermission('project:resource:create');
+  const canProjectResourceDelete = useHasPermission('project:resource:delete');
+  const canReadEndpoints = canProjectResourceRead || canProjectResourceUpdate;
+  const canManageEndpoints =
+    canProjectResourceCreate ||
+    canProjectResourceUpdate ||
+    canProjectResourceDelete;
 
 
   useEffect(() => {
-    params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
+    params.then((p) => {
+      const workspace = validateWorkspaceParam(p.workspace);
+      const project = validateProjectParam(p.project);
+      setResolvedParams({ workspace, project });
+    });
   }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
@@ -221,6 +244,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     t,
     deleteEndpointMutation,
     updateEndpointMutation,
+    canManageEndpoints,
     (endpoint) => {
       setSelectedEndpoint(endpoint);
       setEditDialogOpen(true);
@@ -244,6 +268,28 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     );
   }
 
+  if (!workspaceId || !projectId) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (!canReadEndpoints) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
   return (
     <PageState state="success">
       <PageLayout
@@ -252,8 +298,9 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
           <PageToolbar>
             <button
               onClick={() => setCreateDialogOpen(true)}
+              disabled={!canManageEndpoints}
               data-testid="endpoints__create-btn"
-              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors"
+              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="w-4 h-4" />
               {t('create')}
@@ -269,10 +316,10 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
               icon={Server}
               title={`No ${t('title').toLowerCase()} yet`}
               description={`Add your first LLM ${t('title').toLowerCase()} to get started`}
-              action={{
+              action={canManageEndpoints ? {
                 label: `Add ${t('title')}`,
                 onClick: () => setCreateDialogOpen(true),
-              }}
+              } : undefined}
             />
           ) : (
             <DataTable table={table} testId="endpoints__table" />
@@ -280,7 +327,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
         </div>
 
         <CreateEndpointDialog
-          open={createDialogOpen}
+          open={canManageEndpoints && createDialogOpen}
           onOpenChange={setCreateDialogOpen}
           workspaceId={workspaceId}
           projectId={projectId}

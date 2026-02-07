@@ -101,11 +101,25 @@ export const queryKeys = {
       ['quota-templates', workspaceId, projectId, templateId] as const,
   },
 
-  /** Resource ACL (access control lists) */
-  resourceAcl: {
-    _def: ['resource-acl'] as const,
+  /** Project groups */
+  projectGroups: {
+    _def: ['project-groups'] as const,
+    list: (workspaceId: string, projectId: string) =>
+      ['project-groups', workspaceId, projectId] as const,
+  },
+
+  /** Resource policy (access + rate/quota) */
+  resourcePolicy: {
+    _def: ['resource-policy'] as const,
     detail: (workspaceId: string, projectId: string, resourceType: string, resourceId: string) =>
-      ['resource-acl', workspaceId, projectId, resourceType, resourceId] as const,
+      ['resource-policy', workspaceId, projectId, resourceType, resourceId] as const,
+  },
+
+  /** Project governance defaults */
+  governanceDefaults: {
+    _def: ['governance-defaults'] as const,
+    detail: (workspaceId: string, projectId: string) =>
+      ['governance-defaults', workspaceId, projectId] as const,
   },
 
   /** Sources (files) */
@@ -115,6 +129,13 @@ export const queryKeys = {
       ['sources', workspaceId, projectId, params] as const,
     detail: (workspaceId: string, projectId: string, fileId: string) =>
       ['source', workspaceId, projectId, fileId] as const,
+  },
+
+  /** Source libraries */
+  sourceLibraries: {
+    _def: ['source-libraries'] as const,
+    list: (workspaceId: string, projectId: string) =>
+      ['source-libraries', workspaceId, projectId] as const,
   },
 
   /** Recipes (workbench) */

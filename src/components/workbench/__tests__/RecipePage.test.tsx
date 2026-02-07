@@ -45,6 +45,10 @@ vi.mock('@/lib/hooks/use-recipe', () => ({
     mutateAsync: vi.fn().mockResolvedValue({}),
     isPending: false,
   }),
+  useUpdateRecipe: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    isPending: false,
+  }),
 }));
 
 vi.mock('@/lib/hooks/use-recipe-sse', () => ({
@@ -137,13 +141,23 @@ vi.mock('../RecipeCreateDialog', () => ({
   ),
 }));
 
+vi.mock('../EditRecipeDialog', () => ({
+  EditRecipeDialog: ({ open, onOpenChange }: any) => (
+    <dialog open={open}>
+      <button onClick={() => onOpenChange(false)}>Close Edit</button>
+    </dialog>
+  ),
+}));
+
 // Mock API
 vi.mock('@/lib/api', () => ({
-  RecipeAPI: vi.fn(() => ({
-    getSSEUrl: vi.fn(() => 'http://test/sse'),
-    downloadArtifact: vi.fn().mockResolvedValue(new Blob()),
-    saveArtifact: vi.fn().mockResolvedValue({}),
-  })),
+  RecipeAPI: vi.fn().mockImplementation(function RecipeAPI() {
+    return {
+      getSSEUrl: vi.fn(() => 'http://test/sse'),
+      downloadArtifact: vi.fn().mockResolvedValue(new Blob()),
+      saveArtifact: vi.fn().mockResolvedValue({}),
+    };
+  }),
   getApiClient: vi.fn(),
 }));
 
@@ -230,6 +244,7 @@ describe('RecipePage', () => {
     // Mock URL.createObjectURL and revokeObjectURL
     global.URL.createObjectURL = vi.fn(() => 'blob:test-url');
     global.URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   });
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (

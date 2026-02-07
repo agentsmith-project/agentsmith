@@ -1,55 +1,75 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
+
+vi.mock('@/components/userdata/UserDataPage', () => ({
+  UserDataPage: ({ workspaceId, projectId }: { workspaceId: string; projectId: string }) => (
+    <div data-testid="userdata__route-page">
+      {workspaceId}:{projectId}
+    </div>
+  ),
+}));
+
+vi.mock('@/lib/hooks/use-permissions', () => ({
+  useHasPermission: vi.fn(() => true),
+}));
 
 import UserdataPage from '../page';
 
-const mockUseUserdataSummary = vi.fn(() => ({
-  data: {
-    total_bytes: 0,
-    docdb_collections: 0,
-    vectordb_indexes: 0,
-  },
-}));
-const mockUseUserdataEndUsers = vi.fn(() => ({ data: [] }));
-
-vi.mock('@/lib/hooks/use-userdata', () => ({
-  useUserdataSummary: (workspaceId: string, projectId: string) =>
-    mockUseUserdataSummary(workspaceId, projectId),
-  useUserdataEndUsers: (workspaceId: string, projectId: string) =>
-    mockUseUserdataEndUsers(workspaceId, projectId),
-}));
+const mockUseHasPermission = vi.mocked(useHasPermission);
 
 describe('UserdataPage route', () => {
-  it('renders header and toolbar layout', async () => {
-    const ui = await UserdataPage({
-      params: Promise.resolve({
-        workspace: 'ws_1',
-        project: 'proj_1',
-        locale: 'en',
-      }),
+  it('renders userdata page with validated params', async () => {
+    mockUseHasPermission.mockReturnValue(true);
+    render(
+      <UserdataPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('userdata__route-page')).toBeInTheDocument();
     });
-
-    render(ui);
-
-    const header = screen.getByTestId('page-layout__header');
-    expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
-    expect(screen.queryByTestId('page-layout__toolbar')).not.toBeInTheDocument();
+    expect(screen.getByText('ws_1:proj_1')).toBeInTheDocument();
   });
 
-  it('passes workspace and project ids to userdata page', async () => {
-    mockUseUserdataSummary.mockClear();
-    mockUseUserdataEndUsers.mockClear();
-    const ui = await UserdataPage({
-      params: Promise.resolve({
-        workspace: 'ws_1',
-        project: 'proj_1',
-        locale: 'en',
-      }),
+  it('shows invalid parameter error for unsafe params', async () => {
+    mockUseHasPermission.mockReturnValue(true);
+    render(
+      <UserdataPage
+        params={Promise.resolve({
+          workspace: '<script>',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
+    expect(screen.getByText('validation_error')).toBeInTheDocument();
+  });
 
-    render(ui);
+  it('shows permission denied when user lacks userdata read permissions', async () => {
+    mockUseHasPermission.mockReturnValue(false);
+    render(
+      <UserdataPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
 
-    expect(mockUseUserdataSummary).toHaveBeenCalledWith('ws_1', 'proj_1');
-    expect(mockUseUserdataEndUsers).toHaveBeenCalledWith('ws_1', 'proj_1');
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+    });
+    expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
   });
 });

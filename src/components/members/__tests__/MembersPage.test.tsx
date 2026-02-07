@@ -65,11 +65,12 @@ import { useJoinRequests } from '@/lib/hooks/use-join-requests';
 const mockUseMembersList = vi.mocked(useMembersList);
 const mockUseHasPermission = vi.mocked(useHasPermission);
 const mockUseJoinRequests = vi.mocked(useJoinRequests);
+const STABLE_EMPTY_JOIN_REQUESTS = { data: [], isLoading: false } as any;
 
 describe('MembersPage', () => {
   beforeEach(() => {
     mockUseHasPermission.mockReturnValue(true);
-    mockUseJoinRequests.mockReturnValue({ data: [], isLoading: false } as any);
+    mockUseJoinRequests.mockReturnValue(STABLE_EMPTY_JOIN_REQUESTS);
     mockUseMembersList.mockReturnValue({
       project: null,
       members: [],

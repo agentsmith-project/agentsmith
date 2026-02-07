@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, ArrowLeft, Trash2, Loader2 } from 'lucide-react';
+import { Plus, ArrowLeft, Trash2, Loader2, Pencil } from 'lucide-react';
 import { useDeleteRecipe } from '@/lib/hooks/use-recipe';
 import type { Recipe, RecipeStatus } from '@/lib/types/recipe';
 import {
@@ -30,6 +30,7 @@ export interface RecipeHeaderProps {
   workspaceId: string;
   projectId: string;
   onCreateNew?: () => void;
+  onEdit?: () => void;
   onDeleted?: () => void;
   onLeave?: () => void;
 }
@@ -45,6 +46,7 @@ export function RecipeHeader({
   workspaceId,
   projectId,
   onCreateNew,
+  onEdit,
   onDeleted,
   onLeave,
 }: RecipeHeaderProps) {
@@ -122,6 +124,12 @@ export function RecipeHeader({
       </div>
 
       <div className="flex items-center gap-2 flex-shrink-0">
+        {onEdit && (
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            <Pencil className="h-4 w-4 mr-2" />
+            {t('edit')}
+          </Button>
+        )}
         {/* Delete Recipe Button */}
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogTrigger asChild>

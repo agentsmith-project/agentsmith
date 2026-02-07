@@ -946,7 +946,7 @@
         "concurrency": "并发"
       },
       "update_success": "配额覆盖更新成功",
-      "coming_soon": "配额编辑器即将推出...",
+      "coming_soon": "配额编辑器已在当前面板提供。",
       "cancel": "取消",
       "save_changes": "保存更改"
     },
@@ -970,7 +970,7 @@
         "reason_required": "必须填写原因"
       },
       "update_success": "资源策略更新成功",
-      "coming_soon": "资源策略编辑器即将推出...",
+      "coming_soon": "资源策略编辑器已在资源策略页面提供。",
       "cancel": "取消"
     },
     "history": {
@@ -1013,12 +1013,12 @@
       "page_info": "第 {page}/{totalPages} 页"
     },
     "requests": {
-      "coming_soon": "加入申请即将推出..."
+      "coming_soon": "加入申请已在当前标签页提供。"
     },
     "templates": {
-      "coming_soon": "权限模板即将推出...",
+      "coming_soon": "权限模板已在当前标签页提供。",
       "title": "权限模板",
-      "description": "管理角色的默认权限模板。",
+      "description": "管理默认权限模板（以 token 集合为准）。",
       "create_template": "创建模板",
       "view_details": "查看详情",
       "view_dialog_description": "查看模板 {name} 的详情与权限列表。",
@@ -1057,7 +1057,7 @@
       "select_member": "选择成员",
       "no_members_available": "没有可应用模板的成员",
       "empty_custom_title": "暂无自定义模板",
-      "empty_custom_description": "创建自定义模板以定义默认角色之外的权限组合。",
+      "empty_custom_description": "创建自定义模板以定义默认模板之外的权限组合。",
       "permission_templates": "权限模板",
       "quota_templates": "配额模板",
       "group_templates": "项目分组",
@@ -1080,7 +1080,7 @@
       "copy_failed_members_success": "失败成员列表已复制",
       "group_preview_title": "权限变更预览（按成员）",
       "group_preview_empty": "该分组暂无成员",
-      "quota_coming_soon": "配额模板即将推出。可创建并应用配额预设（如标准、高用量）到成员。",
+      "quota_coming_soon": "配额模板已可用。可创建并应用配额预设（如标准、高用量）到成员。",
       "template_name": "模板名称",
       "template_description": "描述（可选）",
       "name_required": "名称为必填项",

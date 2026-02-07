@@ -1016,7 +1016,7 @@
     "templates": {
       "coming_soon": "Permission templates are available in this tab.",
       "title": "Permission Templates",
-      "description": "Manage default permission templates for roles.",
+      "description": "Manage default permission templates (token-set based).",
       "create_template": "Create Template",
       "view_details": "View Details",
       "view_dialog_description": "View details and permissions for template {name}.",
@@ -1055,7 +1055,7 @@
       "select_member": "Select a member",
       "no_members_available": "No members available to apply template to",
       "empty_custom_title": "No custom templates yet",
-      "empty_custom_description": "Create a custom template to define permission sets beyond the default roles.",
+      "empty_custom_description": "Create a custom template to define permission sets beyond the default templates.",
       "permission_templates": "Permission Templates",
       "quota_templates": "Quota Templates",
       "group_templates": "Project Groups",

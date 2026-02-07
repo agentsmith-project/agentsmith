@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { workspaceFixtures } from '../fixtures/workspaces';
 import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { CURRENT_USER_ID } from '../fixtures/projects';
 
 const workspaceItems = (() => {
   const fromP0 = p0.workspaces ?? [];
@@ -31,12 +32,12 @@ const workspaceMembers = (() => {
     };
   });
 
-  if (!fromP0.some((member) => member.user_id === 'user_001')) {
+  if (!fromP0.some((member) => member.user_id === CURRENT_USER_ID)) {
     fromP0.push({
-      id: 'wm_user_001',
-      user_id: 'user_001',
-      name: 'Test User',
-      email: 'test@example.com',
+      id: `wm_${CURRENT_USER_ID}`,
+      user_id: CURRENT_USER_ID,
+      name: p0.auth.user.name,
+      email: p0.auth.user.email,
       role: 'owner',
       governance_group: 'wheel',
       permissions: [...ROLE_TEMPLATES.owner],
@@ -50,6 +51,14 @@ const workspaceMembers = (() => {
 
 export const workspaceHandlers = [
   http.get('/api/v1/workspaces', () => HttpResponse.json({ items: workspaceItems })),
+  http.get('/api/v1/workspaces/:ws', ({ params }) => {
+    const workspaceId = String(params.ws ?? '');
+    const workspace = workspaceItems.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      return HttpResponse.json({ error: 'workspace_not_found' }, { status: 404 });
+    }
+    return HttpResponse.json(workspace);
+  }),
   http.get('/api/v1/workspaces/:ws/members', () =>
     HttpResponse.json({ items: workspaceMembers, total: workspaceMembers.length })),
 ];

@@ -20,6 +20,13 @@ export function MSWProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!useMsw || typeof window === 'undefined') return;
     let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) {
+        console.warn('[MSW] init timeout, continuing without blocking UI');
+        setReady(true);
+      }
+    }, 5000);
+
     initMSW().then(() => {
       console.log('[MSW] Service Worker initialized successfully');
       if (!cancelled) setReady(true);
@@ -28,7 +35,10 @@ export function MSWProvider({ children }: { children: React.ReactNode }) {
       console.info('[MSW] Make sure you ran: npx msw init ./public');
       if (!cancelled) setReady(true);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
   }, [useMsw]);
 
   if (!ready) {

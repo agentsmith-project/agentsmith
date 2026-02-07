@@ -2,19 +2,24 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { projectFixtures, projectMembershipFixtures, CURRENT_USER_ID } from '../fixtures/projects';
 import type { Project } from '@/lib/api/types';
+import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
 
 const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
 
 export const projectHandlers = [
   http.get('/api/v1/workspaces/:ws/projects', () => {
     const items = projects.map((project) => {
-      const membership = projectMembershipFixtures.find(
+      const membership =
+        projectMembershipFixtures.find(
         (m) => m.project_id === project.id && m.user_id === CURRENT_USER_ID,
-      );
+        ) ??
+        projectMembershipFixtures.find(
+          (m) => m.project_id === project.id && m.role === 'owner',
+        );
       return {
         ...project,
-        role: membership?.role,
-        permissions: membership?.permissions ?? [],
+        role: membership?.role ?? 'owner',
+        permissions: membership?.permissions ?? [...ROLE_TEMPLATES.owner],
       };
     });
     return HttpResponse.json({ items });
@@ -22,16 +27,20 @@ export const projectHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj', ({ params }) => {
     const projectId = params.prj as string;
     const project = projects.find((p) => p.id === projectId) || projectFixtures.find((p) => p.id === projectId);
-    const membership = projectMembershipFixtures.find(
-      (m) => m.project_id === projectId && m.user_id === CURRENT_USER_ID,
-    );
+    const membership =
+      projectMembershipFixtures.find(
+        (m) => m.project_id === projectId && m.user_id === CURRENT_USER_ID,
+      ) ??
+      projectMembershipFixtures.find(
+        (m) => m.project_id === projectId && m.role === 'owner',
+      );
     if (!project) {
       return HttpResponse.json({ error: 'project_not_found' }, { status: 404 });
     }
     return HttpResponse.json({
       ...project,
-      role: membership?.role,
-      permissions: membership?.permissions ?? [],
+      role: membership?.role ?? 'owner',
+      permissions: membership?.permissions ?? [...ROLE_TEMPLATES.owner],
     });
   }),
   http.post('/api/v1/workspaces/:ws/projects', async ({ params, request }) => {

@@ -30,30 +30,40 @@ export function ProtectedRoute({
   const latestAuthRef = useRef(isAuthenticated);
   latestAuthRef.current = isAuthenticated;
 
-  // Memoize permission requirements to ensure stable references
-  const permissionArray = useMemo(() => {
-    return requirePermission && Array.isArray(requirePermission) ? requirePermission : [];
-  }, [requirePermission]);
-  
-  const permissionString = useMemo(() => {
-    return requirePermission && typeof requirePermission === 'string' ? requirePermission : '';
+  // Normalize permission requirements defensively.
+  // Empty strings / empty arrays must behave as "no permission required".
+  const normalized = useMemo(() => {
+    if (!requirePermission) {
+      return { mode: 'none' as const, single: '', multi: [] as string[] };
+    }
+    if (Array.isArray(requirePermission)) {
+      const cleaned = requirePermission.map((p) => p.trim()).filter((p) => p.length > 0);
+      if (cleaned.length === 0) {
+        return { mode: 'none' as const, single: '', multi: [] as string[] };
+      }
+      return { mode: 'multi' as const, single: '', multi: cleaned };
+    }
+    const single = requirePermission.trim();
+    if (!single) {
+      return { mode: 'none' as const, single: '', multi: [] as string[] };
+    }
+    return { mode: 'single' as const, single, multi: [] as string[] };
   }, [requirePermission]);
 
   // Check permissions using stable hooks
-  const hasAllPermissionsResult = useHasAllPermissions(permissionArray);
-  const hasSinglePermissionResult = useHasPermission(permissionString);
+  const hasAllPermissionsResult = useHasAllPermissions(normalized.multi);
+  const hasSinglePermissionResult = useHasPermission(normalized.single);
 
   // Determine hasPermission based on requirePermission type
   const hasPermission = useMemo(() => {
-    if (!requirePermission) return true;
+    if (normalized.mode === 'none') return true;
     if (!isAuthenticated) return false;
-    
-    if (Array.isArray(requirePermission)) {
+
+    if (normalized.mode === 'multi') {
       return hasAllPermissionsResult;
-    } else {
-      return hasSinglePermissionResult;
     }
-  }, [requirePermission, isAuthenticated, hasAllPermissionsResult, hasSinglePermissionResult]);
+    return hasSinglePermissionResult;
+  }, [normalized.mode, isAuthenticated, hasAllPermissionsResult, hasSinglePermissionResult]);
 
   // Mock development check - bypass auth in dev if needed
   const isDev = process.env.NODE_ENV === 'development';

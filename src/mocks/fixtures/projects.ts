@@ -31,7 +31,7 @@ export const projectFixtures: Project[] = [
     description: 'A project for AI-powered assistants and chatbots',
     visibility: 'public',
     join_policy: 'approval_required',
-    owner_id: 'u_1',
+    owner_id: 'user_001',
     status: 'active',
     governance_json: defaultGovernance,
     runtime_preferences_json: {},
@@ -46,7 +46,7 @@ export const projectFixtures: Project[] = [
     description: 'Private research project for LLM experiments',
     visibility: 'private',
     join_policy: 'approval_required',
-    owner_id: 'u_1',
+    owner_id: 'user_001',
     status: 'active',
     governance_json: defaultGovernance,
     runtime_preferences_json: {},
@@ -61,7 +61,7 @@ export const projectFixtures: Project[] = [
     description: 'Automated customer service agent',
     visibility: 'public',
     join_policy: 'open',
-    owner_id: 'u_2',
+    owner_id: 'user_002',
     status: 'active',
     governance_json: defaultGovernance,
     runtime_preferences_json: {},
@@ -75,7 +75,7 @@ export const projectMembershipFixtures: ProjectMembership[] = [
   // proj_001 members
   {
     project_id: 'proj_001',
-    user_id: 'u_1',
+    user_id: 'user_001',
     role: 'owner',
     permissions: [...ROLE_TEMPLATES.owner],
     status: 'active',
@@ -83,7 +83,7 @@ export const projectMembershipFixtures: ProjectMembership[] = [
   },
   {
     project_id: 'proj_001',
-    user_id: 'u_2',
+    user_id: 'user_002',
     role: 'admin',
     permissions: [...ROLE_TEMPLATES.admin],
     status: 'active',
@@ -91,7 +91,7 @@ export const projectMembershipFixtures: ProjectMembership[] = [
   },
   {
     project_id: 'proj_001',
-    user_id: 'u_3',
+    user_id: 'user_003',
     role: 'developer',
     permissions: [...ROLE_TEMPLATES.developer],
     status: 'active',
@@ -99,7 +99,7 @@ export const projectMembershipFixtures: ProjectMembership[] = [
   },
   {
     project_id: 'proj_001',
-    user_id: 'u_4',
+    user_id: 'user_004',
     role: 'user',
     permissions: [...ROLE_TEMPLATES.user],
     status: 'active',
@@ -107,7 +107,7 @@ export const projectMembershipFixtures: ProjectMembership[] = [
   },
   {
     project_id: 'proj_001',
-    user_id: 'u_5',
+    user_id: 'user_005',
     role: 'user',
     permissions: [...ROLE_TEMPLATES.user],
     status: 'removed',
@@ -116,7 +116,7 @@ export const projectMembershipFixtures: ProjectMembership[] = [
   // proj_002 members
   {
     project_id: 'proj_002',
-    user_id: 'u_1',
+    user_id: 'user_001',
     role: 'owner',
     permissions: [...ROLE_TEMPLATES.owner],
     status: 'active',
@@ -124,7 +124,7 @@ export const projectMembershipFixtures: ProjectMembership[] = [
   },
   {
     project_id: 'proj_002',
-    user_id: 'u_3',
+    user_id: 'user_003',
     role: 'admin',
     permissions: [...ROLE_TEMPLATES.admin],
     status: 'active',
@@ -133,4 +133,4 @@ export const projectMembershipFixtures: ProjectMembership[] = [
 ];
 
 // Mock current user ID for development
-export const CURRENT_USER_ID = 'u_1';
+export const CURRENT_USER_ID = 'user_001';

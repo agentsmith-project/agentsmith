@@ -9,6 +9,8 @@ export const PLATFORM_PERMISSIONS = {
     'workspace:governance:update',
   ] as const,
 
+  PROJECT_BASE: ['project:read'] as const,
+
   ACCESS: ['project:chat:access', 'project:studio:access'] as const,
 
   SOURCE: ['project:source:use', 'project:source:manage'] as const,
@@ -30,6 +32,7 @@ export const PLATFORM_PERMISSIONS = {
 
 export const ALL_PLATFORM_PERMISSIONS = [
   ...PLATFORM_PERMISSIONS.WORKSPACE,
+  ...PLATFORM_PERMISSIONS.PROJECT_BASE,
   ...PLATFORM_PERMISSIONS.ACCESS,
   ...PLATFORM_PERMISSIONS.SOURCE,
   ...PLATFORM_PERMISSIONS.ENDPOINT,
@@ -45,6 +48,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'workspace:read': 'View workspace info',
   'workspace:project:create': 'Create projects in workspace',
   'workspace:governance:update': 'Update workspace governance groups',
+  'project:read': 'View project shell and overview',
   'project:chat:access': 'Access chat page and features',
   'project:studio:access': 'Access AI Studio page and tasks',
   'project:source:use': 'Use source libraries and files',
@@ -90,6 +94,7 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
       ...PLATFORM_PERMISSIONS.CREDENTIAL,
       ...PLATFORM_PERMISSIONS.SETTINGS,
       ...PLATFORM_PERMISSIONS.MEMBER,
+      ...PLATFORM_PERMISSIONS.PROJECT_BASE,
     ],
   },
   {
@@ -102,6 +107,8 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
 // Legacy type name preserved to avoid churn in member-template UI components.
 export const ROLE_TEMPLATES = {
   owner: [
+    ...PLATFORM_PERMISSIONS.WORKSPACE,
+    ...PLATFORM_PERMISSIONS.PROJECT_BASE,
     ...PLATFORM_PERMISSIONS.ACCESS,
     ...PLATFORM_PERMISSIONS.SOURCE,
     ...PLATFORM_PERMISSIONS.ENDPOINT,
@@ -113,6 +120,8 @@ export const ROLE_TEMPLATES = {
     ...PLATFORM_PERMISSIONS.OBSERVABILITY,
   ],
   admin: [
+    ...PLATFORM_PERMISSIONS.WORKSPACE,
+    ...PLATFORM_PERMISSIONS.PROJECT_BASE,
     ...PLATFORM_PERMISSIONS.ACCESS,
     ...PLATFORM_PERMISSIONS.SOURCE,
     ...PLATFORM_PERMISSIONS.ENDPOINT,
@@ -124,6 +133,8 @@ export const ROLE_TEMPLATES = {
     ...PLATFORM_PERMISSIONS.OBSERVABILITY,
   ],
   developer: [
+    'workspace:read',
+    ...PLATFORM_PERMISSIONS.PROJECT_BASE,
     ...PLATFORM_PERMISSIONS.ACCESS,
     'project:source:use',
     'project:endpoint:use',
@@ -131,6 +142,8 @@ export const ROLE_TEMPLATES = {
     ...PLATFORM_PERMISSIONS.OBSERVABILITY,
   ],
   user: [
+    'workspace:read',
+    ...PLATFORM_PERMISSIONS.PROJECT_BASE,
     ...PLATFORM_PERMISSIONS.ACCESS,
     'project:source:use',
     'project:endpoint:use',

@@ -61,13 +61,34 @@ test.describe('Members Page', () => {
     const editPermsItem = authedPage.getByRole('menuitem', { name: /edit permissions/i });
     await editPermsItem.click();
 
-    // The MemberDetailDrawer (Sheet) should open with tabs: Permissions, Quota, ACL
+    // The MemberDetailDrawer (Sheet) should open with tabs: Permissions and Quota
     // Use the drawer/sheet container to scope our search (avoids strict mode with multiple tablists)
     const drawer = authedPage.locator('[role="dialog"], [data-state="open"]').last();
     await expect(drawer).toBeVisible({ timeout: 5000 });
     await expect(drawer.getByRole('tab', { name: /permissions/i })).toBeVisible();
     await expect(drawer.getByRole('tab', { name: /quota/i })).toBeVisible();
-    await expect(drawer.getByRole('tab', { name: /resource access|acl/i })).toBeVisible();
+  });
+
+  test('permission template defaults to member existing permissions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
+
+    const rows = authedPage.getByTestId('members__table__row');
+    await expect(rows.nth(1)).toBeVisible();
+
+    // Open "Edit Permissions & Quota" for Bob Smith (admin in mock fixture)
+    const actionBtn = rows.nth(1).getByRole('button', { name: /more/i }).or(
+      rows.nth(1).locator('button:has(svg)')
+    ).last();
+    await actionBtn.click();
+    await authedPage.getByRole('menuitem', { name: /edit permissions/i }).click();
+
+    const drawer = authedPage.locator('[role="dialog"], [data-state="open"]').last();
+    await expect(drawer).toBeVisible({ timeout: 5000 });
+    await drawer.getByRole('tab', { name: /permissions/i }).click();
+
+    const templateSelect = drawer.getByRole('combobox').first();
+    await expect(templateSelect).toBeVisible();
+    await expect(templateSelect).toContainText(/admin/i);
   });
 
   test('role badges are displayed for each member', async ({ authedPage }) => {
@@ -111,5 +132,36 @@ test.describe('Members Page', () => {
     // Submit button should be disabled when email is empty
     const submitBtn = dialog.getByRole('button', { name: /create invite|invite/i });
     await expect(submitBtn).toBeDisabled();
+  });
+
+  test('project groups flow: create preview apply and delete', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
+
+    await authedPage.getByRole('tab', { name: /templates/i }).click();
+    await authedPage.getByRole('tab', { name: /project groups/i }).click();
+
+    const groupName = `e2e-group-${Date.now()}`;
+    await authedPage.getByTestId('members__group-name-input').fill(groupName);
+    const templateSelect = authedPage.getByTestId('members__group-template-select');
+    await templateSelect.selectOption({ index: 1 });
+    await authedPage.locator('[data-testid^="members__group-member-checkbox--"]').first().click();
+    await authedPage.getByTestId('members__group-save-btn').click();
+
+    await expect(authedPage.getByText(groupName)).toBeVisible();
+
+    // Preview changes for the newest group row
+    await authedPage.locator('[data-testid^="members__group-preview-btn--"]').last().click();
+    await expect(authedPage.getByText(/permission changes preview/i)).toBeVisible();
+
+    // Apply template and wait for result summary
+    const applyBtn = authedPage.locator('[data-testid^="members__group-apply-btn--"]').last();
+    const applyResult = authedPage.locator('[data-testid^="members__group-apply-result--"]').last();
+    await applyBtn.click();
+    await expect(applyResult).toBeVisible({ timeout: 10000 });
+
+    // Delete with confirmation
+    await authedPage.locator('[data-testid^="members__group-delete-btn--"]').last().click();
+    await authedPage.getByTestId('members__group-delete-confirm-btn').click();
+    await expect(authedPage.getByText(groupName)).not.toBeVisible({ timeout: 10000 });
   });
 });

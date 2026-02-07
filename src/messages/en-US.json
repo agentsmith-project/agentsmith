@@ -80,6 +80,8 @@
     "userdata": "User Data",
     "agents": "Agents",
     "endpoints": "Endpoints",
+    "resource_policy": "Resource Policy",
+    "access_control": "Access Control",
     "credentials": "Credentials",
     "members": "Members",
     "audit": "Audit",
@@ -266,7 +268,14 @@
     "threads_days_ago": "{days} days ago",
     "attachments": {
       "disabled_while_editing": "Attachments are disabled while editing."
-    }
+    },
+    "delete_confirm_title": "Delete Chat Session",
+    "delete_confirm_message": "Delete chat session \"{name}\"? This action cannot be undone.",
+    "delete_confirm_cancel": "Cancel",
+    "delete_confirm_action": "Delete",
+    "loading": "Loading...",
+    "no_active_thread_title": "No active thread",
+    "no_active_thread_description": "Create a new chat to start."
   },
   "workbench": {
     "title": "Workbench",
@@ -306,7 +315,12 @@
         "active": "Active",
         "closed": "Closed",
         "archived": "Archived"
-      }
+      },
+      "edit": "Edit",
+      "edit_title": "Edit Recipe",
+      "edit_description": "Update recipe title and status.",
+      "status_label": "Status",
+      "save_changes": "Save Changes"
     },
     "attached_sources": {
       "title": "Attached Sources",
@@ -363,10 +377,9 @@
     "create": "Create Agent",
     "create_dialog": {
       "title": "Create Agent",
-      "description": "Add a new AI agent. External agents connect via external APIs; internal agents run in your infrastructure.",
+      "description": "Description",
       "name": "Name",
       "name_placeholder": "e.g. My Chat Agent",
-      "description": "Description",
       "mode": "Mode",
       "mode_external": "External",
       "mode_internal": "Internal",
@@ -418,7 +431,12 @@
     "detail_keys": "Keys",
     "detail_diagnostics": "Diagnostics",
     "detail_diagnostics_empty": "No diagnostics available.",
-    "detail_config": "Config"
+    "detail_config": "Config",
+    "delete": "Delete",
+    "delete_confirm_title": "Delete Agent",
+    "delete_confirm_message": "Delete agent \"{name}\"? This action cannot be undone.",
+    "delete_confirm_cancel": "Cancel",
+    "delete_confirm_action": "Delete"
   },
   "credentials": {
     "title": "Credentials",
@@ -465,10 +483,9 @@
     "create": "Create Endpoint",
     "create_dialog": {
       "title": "Create Endpoint",
-      "description": "Add a new LLM endpoint. Select a credential to authenticate API requests.",
+      "description": "Description",
       "name": "Name",
       "name_placeholder": "e.g. GPT-4o",
-      "description": "Description",
       "model_id": "Model ID",
       "provider": "Provider",
       "provider_openai": "OpenAI",
@@ -599,6 +616,8 @@
     "workspace_name": "Workspace Name",
     "workspace_members": "Workspace Members",
     "workspace_members_empty": "No members yet.",
+    "workspace_governance_wheel": "Wheel",
+    "workspace_governance_user": "User",
     "tab_general": "General",
     "tab_runtime_preferences": "Runtime Preferences",
     "tab_governance": "Governance",
@@ -722,6 +741,77 @@
       "description": "An unexpected error occurred."
     }
   },
+  "resource_policy": {
+    "subtitle": "Unified resource policy baseline and per-subject overrides.",
+    "default_model_hint": "Default model: all members can access resources. New resources inherit project defaults.",
+    "inherits_defaults": "inherits defaults",
+    "select_resource": "Select a resource to edit policy.",
+    "loading_policy": "Loading policy...",
+    "access_mode": {
+      "label": "Access mode",
+      "allow_all_members": "All members (default)",
+      "allow_list": "Allow list only"
+    },
+    "access_mode_description": {
+      "allow_all_members": "Any project member can access this resource, unless restricted by policy.",
+      "allow_list": "Only selected users/groups can access this resource."
+    },
+    "resource_type": {
+      "endpoint": "Endpoint",
+      "source_library": "Source Library",
+      "agent": "Agent"
+    },
+    "subjects": {
+      "title": "Allowed subjects and subject overrides",
+      "add": "Add subject",
+      "empty": "No subject overrides.",
+      "user": "User",
+      "group": "Group",
+      "select_subject": "Select subject",
+      "remove": "Remove"
+    },
+    "allow_list_required": "allow_list requires at least one subject.",
+    "save_policy": "Save policy",
+    "saving": "Saving...",
+    "effective_summary": {
+      "title": "Effective policy summary",
+      "access": "Access",
+      "no_explicit_limits": "No explicit limits."
+    },
+    "units": {
+      "tokens_per_day": "tokens/day",
+      "files": "files",
+      "sessions": "sessions",
+      "byte": "B",
+      "kib": "KiB",
+      "mib": "MiB",
+      "gib": "GiB"
+    },
+    "rules": {
+      "endpoint": {
+        "daily_token_limit": "Endpoint daily token limit"
+      },
+      "source_library": {
+        "max_total_files": "Source library max total files",
+        "max_file_size_bytes": "Source library max file size (bytes)"
+      },
+      "agent": {
+        "max_concurrency": "Agent max concurrency"
+      }
+    },
+    "subject_placeholders": {
+      "endpoint": {
+        "daily_token_limit": "subject daily token limit"
+      },
+      "source_library": {
+        "max_total_files": "subject max total files",
+        "max_file_size_bytes": "subject max file size bytes"
+      },
+      "agent": {
+        "max_concurrency": "subject max concurrency"
+      }
+    }
+  },
   "members": {
     "title": "Members",
     "join_requests_title": "Join Requests",
@@ -833,16 +923,16 @@
       "next": "Next"
     },
     "acl": {
-      "title": "Resource Access Control",
-      "title_short": "Resource ACL",
-      "description": "Configure resource-level permissions for Endpoints.",
+      "title": "Resource Policy",
+      "title_short": "Resource Policy",
+      "description": "Configure resource-level access and usage limits.",
       "endpoint": {
         "deny": "Deny Access",
         "remove_deny": "Remove Deny",
         "reason_required": "Reason is required"
       },
-      "update_success": "Resource access control updated successfully",
-      "coming_soon": "Resource access control editor coming soon...",
+      "update_success": "Resource policy updated successfully",
+      "coming_soon": "Resource policy editor coming soon...",
       "cancel": "Cancel"
     },
     "history": {
@@ -850,7 +940,7 @@
       "view_history": "View Change History",
       "permissions_updated": "Permissions updated",
       "quota_updated": "Quota override",
-      "acl_updated": "Resource access control updated"
+      "acl_updated": "Resource policy updated"
     },
     "actions": {
       "edit_permissions_quota": "Edit Permissions & Quota",
@@ -876,6 +966,7 @@
       "description": "Manage default permission templates for roles.",
       "create_template": "Create Template",
       "view_details": "View Details",
+      "view_dialog_description": "View details and permissions for template {name}.",
       "edit": "Edit",
       "default": "Default",
       "readonly": "Read-only",
@@ -896,9 +987,12 @@
       "delete_success": "Template deleted successfully",
       "apply_success": "Template applied to member",
       "apply_batch_success": "Template applied to {count} members",
+      "apply_partial_success": "Template applied partially. Some members could not be updated.",
+      "apply_all_failed": "Failed to apply template to selected members.",
       "apply_template": "Apply template",
       "apply_to_member": "Apply to Member",
       "apply_to_members": "Apply to Members",
+      "apply_dialog_description": "Select members and apply the chosen template.",
       "select_members": "Select members",
       "selected_count": "{count} selected",
       "select_all": "Select all",
@@ -911,6 +1005,26 @@
       "empty_custom_description": "Create a custom template to define permission sets beyond the default roles.",
       "permission_templates": "Permission Templates",
       "quota_templates": "Quota Templates",
+      "group_templates": "Project Groups",
+      "group_templates_description": "Create project groups, bind a permission template, and apply to group members.",
+      "group_name": "Group Name",
+      "group_name_placeholder": "e.g. External Collaborators",
+      "create_group": "Create Group",
+      "group_empty": "No project groups yet.",
+      "group_create_success": "Project group created successfully",
+      "group_update_success": "Project group updated successfully",
+      "group_delete_success": "Project group deleted successfully",
+      "group_delete_confirm_title": "Delete Project Group",
+      "group_delete_confirm_message": "Delete group \"{name}\"? Group membership and template binding will be removed.",
+      "group_apply_success": "Group template applied to {count} member(s)",
+      "group_apply_partial_success": "Group template applied partially. {count} member(s) failed.",
+      "group_apply_result": "Apply result: {applied} succeeded, {failed} failed",
+      "preview_changes": "Preview",
+      "copy_failed_members": "Copy Failed List",
+      "export_failed_members": "Export Failed List",
+      "copy_failed_members_success": "Failed member list copied",
+      "group_preview_title": "Permission changes preview (per member)",
+      "group_preview_empty": "No members in this group",
       "quota_coming_soon": "Quota templates coming soon. Create and apply quota presets (e.g. Standard, High Usage) to members.",
       "template_name": "Template Name",
       "template_description": "Description (optional)",
@@ -922,6 +1036,7 @@
       "quota_delete_success": "Quota template deleted successfully",
       "quota_apply_success": "Quota template applied to member",
       "quota_apply_batch_success": "Quota template applied to {count} members",
+      "quota_apply_partial_success": "Quota template applied partially. Some members could not be updated.",
       "quota_title": "Quota Templates",
       "quota_description": "Manage reusable quota presets (e.g. Standard, High Usage, Restricted).",
       "quota_empty_title": "No quota templates yet",
@@ -932,7 +1047,12 @@
       "delete_confirm_message": "Delete quota template \"{name}\"? This will not affect members who already have this template applied.",
       "select_template": "Select template",
       "batch_apply_permission_hint": "Apply a permission template to {count} selected member(s).",
-      "batch_apply_quota_hint": "Apply a quota template to {count} selected member(s)."
+      "batch_apply_quota_hint": "Apply a quota template to {count} selected member(s).",
+      "apply_failed_members_title": "Some members failed to update:",
+      "apply_failed_members_count": "{count} member(s) failed to update.",
+      "retry_failed_members": "Retry Failed",
+      "permission_delete_confirm_title": "Delete Permission Template",
+      "permission_delete_confirm_message": "Delete permission template \"{name}\"? Members already using it will not be automatically rolled back."
     },
     "batch": {
       "selected_count": "{count} selected",

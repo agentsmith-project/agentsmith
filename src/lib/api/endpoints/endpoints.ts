@@ -4,7 +4,7 @@
  * Typed API functions for endpoint operations.
  */
 
-import type { Endpoint, EndpointACL, PaginationParams, PaginatedResponse } from '../types';
+import type { Endpoint, PaginationParams, PaginatedResponse } from '../types';
 import type { ApiClient } from '../client';
 
 export interface CreateEndpointRequest {
@@ -81,39 +81,5 @@ export class EndpointAPI {
    */
   async delete(workspaceId: string, projectId: string, endpointId: string): Promise<void> {
     return this.client.delete<void>(`/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}`);
-  }
-
-  /**
-   * Get ACL for an endpoint
-   */
-  async getACL(workspaceId: string, projectId: string, endpointId: string): Promise<EndpointACL> {
-    return this.client.get<EndpointACL>(
-      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/acl`
-    );
-  }
-
-  /**
-   * Add user to deny list
-   */
-  async addDeny(
-    workspaceId: string,
-    projectId: string,
-    endpointId: string,
-    userId: string,
-    reason?: string
-  ): Promise<void> {
-    return this.client.post<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/acl/deny`,
-      { user_id: userId, reason }
-    );
-  }
-
-  /**
-   * Remove user from deny list
-   */
-  async removeDeny(workspaceId: string, projectId: string, endpointId: string, userId: string): Promise<void> {
-    return this.client.delete<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/acl/deny/${userId}`
-    );
   }
 }

@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
-import { Bot, Plus, Key, Pencil, Power, PowerOff } from 'lucide-react';
+import { Bot, Plus, Key, Pencil, Power, PowerOff, Trash2 } from 'lucide-react';
 import { getApiClient, AgentAPI } from '@/lib/api';
 import type { Agent, AgentDiagnostics } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
@@ -25,6 +25,18 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface AgentsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -45,8 +57,11 @@ function formatDuration(sec?: number): string {
 function createAgentColumns(
   t: (key: string) => string,
   updateAgentMutation: UpdateMutation,
+  canManageAgents: boolean,
+  canIssueAgentKeys: boolean,
   onKeysClick: (agent: Agent) => void,
-  onEditClick: (agent: Agent) => void
+  onEditClick: (agent: Agent) => void,
+  onDeleteRequest: (agent: Agent) => void
 ) {
   return [
   columnHelper.accessor('name', {
@@ -145,15 +160,17 @@ function createAgentColumns(
       const isExternal = agent.mode === 'external';
       return (
         <div className="flex items-center justify-end gap-1.5 min-w-[140px]">
-          <button
-            onClick={() => onEditClick(agent)}
-            className="h-8 w-8 flex items-center justify-center text-icon-default hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
-            title={t('edit')}
-            aria-label={t('edit')}
-          >
-            <Pencil className="w-4 h-4" />
-          </button>
-          {isExternal && (
+          {canManageAgents && (
+            <button
+              onClick={() => onEditClick(agent)}
+              className="h-8 w-8 flex items-center justify-center text-icon-default hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
+              title={t('edit')}
+              aria-label={t('edit')}
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
+          {isExternal && canIssueAgentKeys && (
             <button
               onClick={() => onKeysClick(agent)}
               className="h-8 w-8 flex items-center justify-center text-icon-default hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
@@ -163,29 +180,41 @@ function createAgentColumns(
               <Key className="w-4 h-4" />
             </button>
           )}
-          <button
-            onClick={() => {
-              updateAgentMutation.mutate({
-                agentId: agent.id,
-                data: { status: isEnabled ? 'disabled' : 'enabled' },
-              });
-            }}
-            disabled={updateAgentMutation.isPending}
-            className="h-8 flex items-center gap-1.5 px-3 text-xs font-medium rounded-md border border-subtle bg-surface-high hover:bg-hover text-primary transition-colors duration-200 disabled:opacity-50"
-            title={isEnabled ? t('disable_hint') : t('enable_hint')}
-          >
-            {isEnabled ? (
-              <>
-                <PowerOff className="w-3.5 h-3.5 text-warning" />
-                {t('disable')}
-              </>
-            ) : (
-              <>
-                <Power className="w-3.5 h-3.5 text-success" />
-                {t('enable')}
-              </>
-            )}
-          </button>
+          {canManageAgents && (
+            <>
+              <button
+                onClick={() => onDeleteRequest(agent)}
+                className="h-8 w-8 flex items-center justify-center text-error hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                title={t('delete')}
+                aria-label={t('delete')}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  updateAgentMutation.mutate({
+                    agentId: agent.id,
+                    data: { status: isEnabled ? 'disabled' : 'enabled' },
+                  });
+                }}
+                disabled={updateAgentMutation.isPending}
+                className="h-8 flex items-center gap-1.5 px-3 text-xs font-medium rounded-md border border-subtle bg-surface-high hover:bg-hover text-primary transition-colors duration-200 disabled:opacity-50"
+                title={isEnabled ? t('disable_hint') : t('enable_hint')}
+              >
+                {isEnabled ? (
+                  <>
+                    <PowerOff className="w-3.5 h-3.5 text-warning" />
+                    {t('disable')}
+                  </>
+                ) : (
+                  <>
+                    <Power className="w-3.5 h-3.5 text-success" />
+                    {t('enable')}
+                  </>
+                )}
+              </button>
+            </>
+          )}
         </div>
       );
     },
@@ -196,16 +225,30 @@ function createAgentColumns(
 export default function AgentsPage({ params }: AgentsPageProps) {
   const t = useTranslations('agents');
   const tToast = useTranslations('common.toast');
+  const tErrors = useTranslations('errors');
   const queryClient = useQueryClient();
-  const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogAgent, setEditDialogAgent] = useState<Agent | null>(null);
   const [keysDialogAgent, setKeysDialogAgent] = useState<Agent | null>(null);
   const [detailsAgent, setDetailsAgent] = useState<Agent | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
+  const canAgentRead = useHasPermission('agent:read');
+  const canAgentManage = useHasPermission('agent:manage');
+  const canAgentKeyIssue = useHasPermission('agent:key:issue');
+  const canAgentKeyRevoke = useHasPermission('agent:key:revoke');
+  const canReadAgents = canAgentRead || canAgentManage;
+  const canManageAgents = canAgentManage;
+  const canIssueAgentKeys = canAgentKeyIssue || canAgentKeyRevoke;
 
   useEffect(() => {
-    params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
+    params.then((p) => {
+      const workspace = validateWorkspaceParam(p.workspace);
+      const project = validateProjectParam(p.project);
+      setResolvedParams({ workspace, project });
+    });
   }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
@@ -241,18 +284,34 @@ export default function AgentsPage({ params }: AgentsPageProps) {
       toast.error(tToast('update_agent_failed'));
     },
   });
+  const deleteAgentMutation = useMutation({
+    mutationFn: (agentId: string) => agentAPI.delete(workspaceId, projectId, agentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', workspaceId, projectId] });
+      toast.success(tToast('delete_success'));
+    },
+    onError: () => {
+      toast.error(tToast('delete_failed'));
+    },
+  });
 
   const agents = agentsData?.items || [];
 
   const agentColumns = createAgentColumns(
     t,
     updateAgentMutation,
+    canManageAgents,
+    canIssueAgentKeys,
     (agent) => setKeysDialogAgent(agent),
     (agent) => {
       setEditDialogAgent(agent);
       setDetailsAgent(agent);
       setDetailsOpen(true);
-    }
+    },
+    (agent) => {
+      setAgentToDelete(agent);
+      setDeleteConfirmOpen(true);
+    },
   );
 
   const table = useReactTable({
@@ -269,6 +328,28 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     );
   }
 
+  if (!workspaceId || !projectId) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (!canReadAgents) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
   return (
     <PageState state="success">
       <PageLayout
@@ -277,8 +358,9 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           <PageToolbar>
             <button
               onClick={() => setCreateDialogOpen(true)}
+              disabled={!canManageAgents}
               data-testid="agents__create-btn"
-              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/90 text-foreground rounded-md border border-subtle transition-colors duration-200"
+              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/90 text-foreground rounded-md border border-subtle transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="w-4 h-4" />
               {t('create')}
@@ -294,10 +376,10 @@ export default function AgentsPage({ params }: AgentsPageProps) {
               icon={Bot}
               title={`No ${t('title').toLowerCase()} yet`}
               description={`Create your first ${t('title').toLowerCase()} to get started`}
-              action={{
+              action={canManageAgents ? {
                 label: t('create'),
                 onClick: () => setCreateDialogOpen(true),
-              }}
+              } : undefined}
             />
           ) : (
             <DataTable table={table} testId="agents__table" />
@@ -338,7 +420,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
         </div>
 
         <CreateAgentDialog
-          open={createDialogOpen}
+          open={canManageAgents && createDialogOpen}
           onOpenChange={setCreateDialogOpen}
           workspaceId={workspaceId}
           projectId={projectId}
@@ -364,6 +446,32 @@ export default function AgentsPage({ params }: AgentsPageProps) {
             agentName={keysDialogAgent.name}
           />
         )}
+
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('delete_confirm_title')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('delete_confirm_message', { name: agentToDelete?.name ?? '' })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (!agentToDelete) return;
+                  deleteAgentMutation.mutate(agentToDelete.id);
+                  setDeleteConfirmOpen(false);
+                  setAgentToDelete(null);
+                }}
+                className="bg-error text-white hover:bg-error/90"
+              >
+                {t('delete_confirm_action')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </PageLayout>
     </PageState>
   );

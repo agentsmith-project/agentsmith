@@ -9,42 +9,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AttachedSourcesPanel } from '../AttachedSourcesPanel';
 import type { SourceFileWithAIReady } from '@/lib/api/types';
 
-// Mock hooks
-vi.mock('@/lib/hooks/use-recipe', () => ({
-  useRemoveSource: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({}),
-    isPending: false,
-  }),
-}));
-
-vi.mock('@/lib/hooks/use-sources', () => ({
-  useSources: () => ({
-    data: {
-      items: mockSources,
-      total: 3,
-      page: 1,
-      page_size: 1000,
-    },
-    isLoading: false,
-  }),
-}));
-
-// Mock components
-vi.mock('@/components/ui/loading', () => ({
-  EmptyState: ({ title, description }: any) => (
-    <div data-testid="empty-state">
-      <div data-testid="empty-title">{title}</div>
-      <div data-testid="empty-description">{description}</div>
-    </div>
-  ),
-}));
-
-vi.mock('@/components/sources/AIReadyStatusBadge', () => ({
-  AIReadyStatusBadge: ({ status }: any) => (
-    <div data-testid={`ai-ready-${status}`}>AI Ready: {status}</div>
-  ),
-}));
-
 const mockSources: SourceFileWithAIReady[] = [
   {
     id: 'source-1',
@@ -83,6 +47,44 @@ const mockSources: SourceFileWithAIReady[] = [
     },
   },
 ];
+const STABLE_REMOVE_SOURCE_RESULT = {
+  mutateAsync: vi.fn().mockResolvedValue({}),
+  isPending: false,
+};
+const STABLE_SOURCES_QUERY_RESULT = {
+  data: {
+    items: mockSources,
+    total: 3,
+    page: 1,
+    page_size: 1000,
+  },
+  isLoading: false,
+};
+
+// Mock hooks
+vi.mock('@/lib/hooks/use-recipe', () => ({
+  useRemoveSource: () => STABLE_REMOVE_SOURCE_RESULT,
+}));
+
+vi.mock('@/lib/hooks/use-sources', () => ({
+  useSources: () => STABLE_SOURCES_QUERY_RESULT,
+}));
+
+// Mock components
+vi.mock('@/components/ui/loading', () => ({
+  EmptyState: ({ title, description }: any) => (
+    <div data-testid="empty-state">
+      <div data-testid="empty-title">{title}</div>
+      <div data-testid="empty-description">{description}</div>
+    </div>
+  ),
+}));
+
+vi.mock('@/components/sources/AIReadyStatusBadge', () => ({
+  AIReadyStatusBadge: ({ status }: any) => (
+    <div data-testid={`ai-ready-${status}`}>AI Ready: {status}</div>
+  ),
+}));
 
 describe('AttachedSourcesPanel', () => {
   let queryClient: QueryClient;

@@ -4,7 +4,7 @@
  * Mock endpoint data for development and testing.
  */
 
-import type { Endpoint, EndpointACL, DenyEntry } from '@/lib/api/types';
+import type { Endpoint } from '@/lib/api/types';
 
 export const endpointFixtures: Endpoint[] = [
   {
@@ -94,38 +94,5 @@ export const endpointFixtures: Endpoint[] = [
     },
     created_at: '2026-01-05T10:00:00Z',
     updated_at: '2026-01-20T12:00:00Z',
-  },
-];
-
-export const endpointACLFixtures: EndpointACL[] = [
-  {
-    endpoint_id: 'endpoint_001',
-    deny_list: [
-      {
-        user_id: 'usr-***blocked123',
-        reason: 'Violation of usage policy',
-        added_at: '2026-01-20T10:00:00Z',
-        added_by: 'user_001',
-      },
-    ],
-  },
-  {
-    endpoint_id: 'endpoint_002',
-    deny_list: [],
-  },
-];
-
-export const denyEntryFixtures: DenyEntry[] = [
-  {
-    user_id: 'usr-***blocked123',
-    reason: 'Violation of usage policy',
-    added_at: '2026-01-20T10:00:00Z',
-    added_by: 'user_001',
-  },
-  {
-    user_id: 'usr-***abuse456',
-    reason: 'Suspicious activity detected',
-    added_at: '2026-01-22T14:30:00Z',
-    added_by: 'user_001',
   },
 ];

@@ -250,6 +250,25 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
 - **data-testid spec**: `docs/UXUI/2026-02-05-前端-testid-规范.md`
 - **Test selector convention**: Use `data-testid` attributes (see below)
 
+### Playwright Execution Notes (2026-02)
+- Prefer explicit server reuse in unstable environments:
+  - Start dev server in a persistent terminal session: `npm run dev:test -- --port 3001`
+  - Run Playwright with `BASE_URL=http://localhost:3001` to bypass managed `webServer` startup ambiguity.
+- For fast triage, run targeted smoke first:
+  - `npx playwright test --project=smoke e2e/smoke.spec.ts --grep "<route-pattern>" --max-failures=1 --workers=1`
+- If route navigation hangs, separate infra vs app failure:
+  - Verify server responsiveness with `curl http://localhost:3001/...`
+  - If server is unresponsive/high CPU, restart dev server before debugging test assertions.
+- Keep navigation robust in shared helpers:
+  - Use `domcontentloaded` + retry-on-`ERR_ABORTED` helper (`gotoAndWait`) instead of raw `page.goto`.
+- Debug order for route failures:
+  1. Confirm `page.goto` reaches response.
+  2. Check `page-state__success|error|page-layout` readiness markers.
+  3. Inspect `test-results/**/error-context.md` before changing selectors.
+- Avoid React Hook short-circuit patterns in route guards:
+  - Do not write `useHasPermission('a') || useHasPermission('b')`.
+  - Call hooks separately, then combine booleans. This prevents hook-order crashes that appear only in E2E runtime.
+
 ### Test ID Convention
 
 Use `data-testid` attributes for stable test selectors. Format: `scope__element__state`
@@ -374,6 +393,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 - Path aliases: `@/*`, `@/components/*`, `@/lib/*`, `@/app/*`, `@/types/*`
 - TypeScript strict mode enabled
 - Always prefer editing existing files over creating new ones
+- Pre-release rule: do not add backward-compatibility shims for old payloads/contracts unless explicitly requested. Keep frontend and contract strict, then align mocks/backend to the current schema.
 
 ## Running Single Tests
 

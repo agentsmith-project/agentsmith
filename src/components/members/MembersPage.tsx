@@ -47,7 +47,9 @@ export interface MembersPageProps {
 function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
   const t = useTranslations('members');
   const canReadMembers = useHasPermission('project:member:read');
-  const canManageMembers = useHasPermission('project:member:manage');
+  const canProjectAdminGrant = useHasPermission('project:admin:grant');
+  const canProjectAdminRevoke = useHasPermission('project:admin:revoke');
+  const canManageMembers = canProjectAdminGrant || canProjectAdminRevoke;
 
   const { data: joinRequests = [], isLoading: isLoadingRequests } = useJoinRequests(workspaceId, projectId);
   const contextValue = useMembersList({ workspaceId, projectId });
@@ -140,7 +142,9 @@ function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
  */
 function MembersTableWithContext() {
   const context = useMembersContext();
-  const canManageMembers = useHasPermission('project:member:manage');
+  const canProjectAdminGrant = useHasPermission('project:admin:grant');
+  const canProjectAdminRevoke = useHasPermission('project:admin:revoke');
+  const canManageMembers = canProjectAdminGrant || canProjectAdminRevoke;
 
   return (
     <MembersTable
@@ -191,8 +195,8 @@ function MemberDetailDrawersAndDialogs({ workspaceId, projectId }: { workspaceId
             permissions={context.permissions}
             projectGovernance={context.project?.governance_json as Record<string, unknown> | undefined}
             quotaOverrides={context.quotaOverrides}
-            workspaceId={workspaceId}
-            projectId={projectId}
+            _workspaceId={workspaceId}
+            _projectId={projectId}
             permissionTemplates={context.permissionTemplates}
             quotaTemplates={context.quotaTemplates}
             onSavePermissions={context.handleSavePermissions}

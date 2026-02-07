@@ -46,6 +46,8 @@ export interface WorkspaceMember {
   name: string;
   email: string;
   role: 'owner' | 'admin' | 'developer' | 'user';
+  governance_group?: 'wheel' | 'user';
+  permissions?: string[];
   status: 'active' | 'blocked' | 'removed';
   joined_at: string;
 }
@@ -200,18 +202,6 @@ export interface EndpointLimits {
   max_requests_per_day?: number;
   max_tokens_per_day?: number;
   timeout_seconds?: number;
-}
-
-export interface EndpointACL {
-  endpoint_id: string;
-  deny_list: DenyEntry[];
-}
-
-export interface DenyEntry {
-  user_id: string;
-  reason?: string;
-  added_at: string;
-  added_by: string;
 }
 
 // ============================================================
@@ -448,6 +438,7 @@ export interface SourceFile {
   id: string;
   workspace_id: string;
   project_id: string;
+  library_id?: string;
   owner_user_id: string;
   filename: string;
   file_type: string; // MIME type
@@ -502,6 +493,7 @@ export interface QuotaSummary {
 
 export interface SourcesListParams extends PaginationParams {
   search?: string;
+  library_id?: string;
   status?: AIReadyStatus | 'all';
   ai_ready_only?: boolean;
   sort_by?: 'updated_at' | 'file_size' | 'status';
@@ -509,6 +501,18 @@ export interface SourcesListParams extends PaginationParams {
 }
 
 export type SourcesListResponse = PaginatedResponse<SourceFileWithAIReady>;
+
+export interface SourceLibrary {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  visibility: 'shared';
+  created_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
 
 // ============================================================
 // Error Types
@@ -557,21 +561,82 @@ export interface QuotaOverride {
   };
 }
 
-export interface ResourceACL {
-  resource_type: 'endpoint';
+export type PolicyResourceType = 'endpoint' | 'source_library' | 'agent';
+export type PolicySubjectType = 'group' | 'user';
+
+export type PolicyRuleKey =
+  | 'agent.max_concurrency'
+  | 'endpoint.daily_token_limit'
+  | 'source_library.max_total_files'
+  | 'source_library.max_file_size_bytes';
+
+export interface PolicyRule<K extends PolicyRuleKey = PolicyRuleKey> {
+  key: K;
+  value: number;
+  // Reserved for future rolling windows; use `day` for daily caps in MVP.
+  window?: 'day' | null;
+}
+
+export interface PolicyRateLimit {
+  rules: PolicyRule[];
+  [key: string]: unknown;
+}
+
+export interface PolicyQuotaLimit {
+  rules: PolicyRule[];
+  [key: string]: unknown;
+}
+
+export interface ResourcePolicySubject {
+  subject_type: PolicySubjectType;
+  subject_id: string;
+  rate_limits?: PolicyRateLimit;
+  quota_limits?: PolicyQuotaLimit;
+  updated_at?: string;
+}
+
+export interface ResourcePolicy {
+  resource_type: PolicyResourceType;
   resource_id: string;
-  allow: Array<{
-    subject_type: 'user';
+  access_mode: 'allow_all_members' | 'allow_list';
+  allowed_subjects: ResourcePolicySubject[];
+  rate_limits?: PolicyRateLimit;
+  quota_limits?: PolicyQuotaLimit;
+}
+
+export interface ResourcePolicyUpdateRequest {
+  access_mode: 'allow_all_members' | 'allow_list';
+  allowed_subjects: Array<{
+    subject_type: PolicySubjectType;
     subject_id: string;
-    permissions: string[];
+    rate_limits?: PolicyRateLimit;
+    quota_limits?: PolicyQuotaLimit;
   }>;
-  deny: Array<{
-    subject_type: 'user';
-    subject_id: string;
-    permissions: string[];
-    reason?: string;
-    updated_at?: string;
-  }>;
+  rate_limits?: PolicyRateLimit;
+  quota_limits?: PolicyQuotaLimit;
+}
+
+export interface ProjectGovernanceDefaults {
+  endpoint: {
+    access_mode: 'allow_all_members' | 'allow_list';
+    quota_limits?: {
+      rules: PolicyRule<'endpoint.daily_token_limit'>[];
+    };
+  };
+  source_library: {
+    access_mode: 'allow_all_members' | 'allow_list';
+    quota_limits?: {
+      rules: Array<
+        PolicyRule<'source_library.max_total_files'> | PolicyRule<'source_library.max_file_size_bytes'>
+      >;
+    };
+  };
+  agent: {
+    access_mode: 'allow_all_members' | 'allow_list';
+    rate_limits?: {
+      rules: PolicyRule<'agent.max_concurrency'>[];
+    };
+  };
 }
 
 export interface PermissionTemplate {
@@ -588,7 +653,7 @@ export interface ChangeHistoryEntry {
   timestamp: string;
   actor_id: string;
   actor_email: string;
-  change_type: 'permissions' | 'quota' | 'acl' | 'role';
+  change_type: 'permissions' | 'quota' | 'resource_policy' | 'role';
   changes: {
     added?: string[];
     removed?: string[];

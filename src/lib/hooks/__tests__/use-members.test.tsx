@@ -23,8 +23,8 @@ vi.mock('@/lib/api/endpoints/members', () => {
   const mockUpdatePermissions = vi.fn().mockResolvedValue(undefined);
   const mockGetQuotaOverrides = vi.fn().mockResolvedValue({});
   const mockUpdateQuotaOverrides = vi.fn().mockResolvedValue({});
-  const mockGetResourceACL = vi.fn().mockResolvedValue({ owner_id: 'user_1', permissions: [] });
-  const mockUpdateResourceACL = vi.fn().mockResolvedValue(undefined);
+  const mockGetResourcePolicy = vi.fn().mockResolvedValue({ owner_id: 'user_1', permissions: [] });
+  const mockUpdateResourcePolicy = vi.fn().mockResolvedValue(undefined);
   const mockListPermissionTemplates = vi.fn().mockResolvedValue([]);
   const mockCreatePermissionTemplate = vi.fn().mockResolvedValue({});
   const mockUpdatePermissionTemplate = vi.fn().mockResolvedValue({});
@@ -44,8 +44,8 @@ vi.mock('@/lib/api/endpoints/members', () => {
     updatePermissions = mockUpdatePermissions;
     getQuotaOverrides = mockGetQuotaOverrides;
     updateQuotaOverrides = mockUpdateQuotaOverrides;
-    getResourceACL = mockGetResourceACL;
-    updateResourceACL = mockUpdateResourceACL;
+    getResourcePolicy = mockGetResourcePolicy;
+    updateResourcePolicy = mockUpdateResourcePolicy;
     listPermissionTemplates = mockListPermissionTemplates;
     createPermissionTemplate = mockCreatePermissionTemplate;
     updatePermissionTemplate = mockUpdatePermissionTemplate;
@@ -87,8 +87,8 @@ vi.mock('@/lib/api', () => ({
       updatePermissions: vi.fn().mockResolvedValue(undefined),
       getQuotaOverrides: vi.fn().mockResolvedValue({}),
       updateQuotaOverrides: vi.fn().mockResolvedValue({}),
-      getResourceACL: vi.fn().mockResolvedValue({ owner_id: 'user_1', permissions: [] }),
-      updateResourceACL: vi.fn().mockResolvedValue(undefined),
+      getResourcePolicy: vi.fn().mockResolvedValue({ owner_id: 'user_1', permissions: [] }),
+      updateResourcePolicy: vi.fn().mockResolvedValue(undefined),
       listPermissionTemplates: vi.fn().mockResolvedValue([]),
       createPermissionTemplate: vi.fn().mockResolvedValue({}),
       updatePermissionTemplate: vi.fn().mockResolvedValue({}),
@@ -107,6 +107,7 @@ vi.mock('@/components/ui/toast', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    warning: vi.fn(),
   },
 }));
 
@@ -140,8 +141,8 @@ vi.mock('@/lib/query-keys', () => ({
       list: vi.fn((ws: string, proj: string) => ['quota-templates', ws, proj]),
       detail: vi.fn((ws: string, proj: string, id: string) => ['quota-templates', ws, proj, id]),
     },
-    resourceAcl: {
-      detail: vi.fn((ws: string, proj: string, type: string, id: string) => ['resource-acl', ws, proj, type, id]),
+    resourcePolicy: {
+      detail: vi.fn((ws: string, proj: string, type: string, id: string) => ['resource-policy', ws, proj, type, id]),
     },
   },
 }));
@@ -160,8 +161,8 @@ import {
   useBatchApplyPermissionTemplate,
   useMemberQuotaOverrides,
   useUpdateMemberQuotaOverrides,
-  useResourceACL,
-  useUpdateResourceACL,
+  useResourcePolicy,
+  useUpdateResourcePolicy,
   usePermissionTemplates,
   useCreatePermissionTemplate,
   useUpdatePermissionTemplate,
@@ -445,10 +446,10 @@ describe('useUpdateMemberQuotaOverrides', () => {
   });
 });
 
-describe('useResourceACL', () => {
-  it('should fetch resource ACL successfully', async () => {
+describe('useResourcePolicy', () => {
+  it('should fetch resource policy successfully', async () => {
     const { result } = renderHook(
-      () => useResourceACL(workspaceId, projectId, 'endpoint', resourceId),
+      () => useResourcePolicy(workspaceId, projectId, 'endpoint', resourceId),
       {
         wrapper: createTestWrapper(),
       }
@@ -460,27 +461,33 @@ describe('useResourceACL', () => {
   });
 });
 
-describe('useUpdateResourceACL', () => {
-  it('should update resource ACL successfully', async () => {
+describe('useUpdateResourcePolicy', () => {
+  it('should update resource policy successfully', async () => {
     const { result } = renderHook(
-      () => useUpdateResourceACL(workspaceId, projectId, 'endpoint', resourceId),
+      () => useUpdateResourcePolicy(workspaceId, projectId, 'endpoint', resourceId),
       {
         wrapper: createTestWrapper(),
       }
     );
 
-    const ops = [
-      {
-        op: 'allow' as const,
-        subject_type: 'user' as const,
-        subject_id: 'user_123',
-        permissions: ['endpoint:read', 'endpoint:invoke'],
-        reason: 'Grant access',
+    const payload = {
+      access_mode: 'allow_list' as const,
+      allowed_subjects: [
+        {
+          subject_type: 'user' as const,
+          subject_id: 'user_123',
+          quota_limits: {
+            rules: [{ key: 'endpoint.daily_token_limit' as const, value: 100000, window: 'day' as const }],
+          },
+        },
+      ],
+      quota_limits: {
+        rules: [{ key: 'endpoint.daily_token_limit' as const, value: 500000, window: 'day' as const }],
       },
-    ];
+    };
 
     await act(async () => {
-      await result.current.mutateAsync({ ops });
+      await result.current.mutateAsync(payload);
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -628,7 +635,7 @@ describe('useBatchApplyQuotaTemplate', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual({ memberIds, appliedCount: 1 });
+    expect(result.current.data).toEqual({ memberIds, appliedCount: 1, failedCount: 1 });
   });
 });
 

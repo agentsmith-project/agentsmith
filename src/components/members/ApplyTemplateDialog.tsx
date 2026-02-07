@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -19,7 +20,11 @@ export interface ApplyTemplateDialogProps {
   onOpenChange: (open: boolean) => void;
   template: PermissionTemplate;
   members: Member[];
-  onApply: (memberIds: string[], permissions: string[], template?: 'admin' | 'developer' | 'user' | null) => Promise<void>;
+  onApply: (
+    memberIds: string[],
+    permissions: string[],
+    template?: 'admin' | 'developer' | 'user' | null
+  ) => Promise<{ failedMemberIds?: string[]; failedCount?: number } | void>;
 }
 
 const DEFAULT_TEMPLATE_IDS = ['owner', 'admin', 'developer', 'user'];
@@ -34,6 +39,8 @@ export function ApplyTemplateDialog({
   const t = useTranslations('members.templates');
   const [selectedMemberIds, setSelectedMemberIds] = React.useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = React.useState(false);
+  const [failedMemberIds, setFailedMemberIds] = React.useState<string[]>([]);
+  const [failedCount, setFailedCount] = React.useState(0);
 
   const applicableMembers = React.useMemo(() => {
     return members.filter((m) => m.status === 'active' && m.role !== 'owner');
@@ -70,27 +77,77 @@ export function ApplyTemplateDialog({
       : null;
     setSubmitting(true);
     try {
-      await onApply(Array.from(selectedMemberIds), template.permissions, templateId);
+      const result = await onApply(Array.from(selectedMemberIds), template.permissions, templateId);
+      const nextFailedMemberIds = result?.failedMemberIds ?? [];
+      const nextFailedCount = result?.failedCount ?? nextFailedMemberIds.length;
+      if (nextFailedCount > 0) {
+        setFailedMemberIds(nextFailedMemberIds);
+        setFailedCount(nextFailedCount);
+        return;
+      }
       setSelectedMemberIds(new Set());
+      setFailedMemberIds([]);
+      setFailedCount(0);
       onOpenChange(false);
     } finally {
       setSubmitting(false);
     }
   }, [selectedMemberIds, template.id, template.permissions, onApply, onOpenChange]);
 
+  const handleRetryFailed = React.useCallback(async () => {
+    if (failedMemberIds.length === 0) return;
+    const templateId: 'admin' | 'developer' | 'user' | null = DEFAULT_TEMPLATE_IDS.includes(
+      template.id
+    )
+      ? (template.id as 'admin' | 'developer' | 'user')
+      : null;
+
+    setSubmitting(true);
+    try {
+      const result = await onApply(failedMemberIds, template.permissions, templateId);
+      const nextFailedMemberIds = result?.failedMemberIds ?? [];
+      const nextFailedCount = result?.failedCount ?? nextFailedMemberIds.length;
+      if (nextFailedCount > 0) {
+        setFailedMemberIds(nextFailedMemberIds);
+        setFailedCount(nextFailedCount);
+        setSelectedMemberIds(new Set(nextFailedMemberIds));
+        return;
+      }
+      setSelectedMemberIds(new Set());
+      setFailedMemberIds([]);
+      setFailedCount(0);
+      onOpenChange(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [failedMemberIds, onApply, onOpenChange, template.id, template.permissions]);
+
   const handleOpenChange = React.useCallback(
     (next: boolean) => {
-      if (!next) setSelectedMemberIds(new Set());
+      if (!next) {
+        setSelectedMemberIds(new Set());
+        setFailedMemberIds([]);
+        setFailedCount(0);
+      }
       onOpenChange(next);
     },
     [onOpenChange]
   );
+
+  const failedMemberNames = React.useMemo(() => {
+    if (failedMemberIds.length === 0) return [];
+    const memberMap = new Map(members.map((m) => [m.id, m.name || m.email]));
+    return failedMemberIds.map((memberId) => memberMap.get(memberId) ?? memberId);
+  }, [failedMemberIds, members]);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle>{t('apply_to_members')}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {t('apply_dialog_description')}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
@@ -141,6 +198,19 @@ export function ApplyTemplateDialog({
                 {t('selected_count', { count: selectedMemberIds.size })}
               </p>
             )}
+            {failedCount > 0 && (
+              <div
+                className="rounded-md border border-error/40 bg-error/10 px-3 py-2 text-xs text-error"
+                data-testid="members__apply-template-failed-summary"
+              >
+                <p className="font-medium">{t('apply_failed_members_title')}</p>
+                {failedMemberNames.length > 0 ? (
+                  <p>{failedMemberNames.join(', ')}</p>
+                ) : (
+                  <p>{t('apply_failed_members_count', { count: failedCount })}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -148,6 +218,11 @@ export function ApplyTemplateDialog({
           <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={submitting}>
             {t('cancel')}
           </Button>
+          {failedCount > 0 && failedMemberIds.length > 0 && (
+            <Button variant="outline" onClick={handleRetryFailed} disabled={submitting}>
+              {t('retry_failed_members')}
+            </Button>
+          )}
           <Button
             variant="primary"
             onClick={handleApply}

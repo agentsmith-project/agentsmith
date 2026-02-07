@@ -15,6 +15,10 @@ import {
   useUploadFile,
   useDeleteFile,
   useBatchAIReadyActions,
+  useSourceLibraries,
+  useCreateSourceLibrary,
+  useUpdateSourceLibrary,
+  useDeleteSourceLibrary,
 } from './use-sources';
 import { useErrorHandler } from './use-error-handler';
 import { toast } from '@/components/ui/toast';
@@ -37,6 +41,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
 
   // Filters
   const [search, setSearch] = useState('');
+  const [selectedLibraryId, setSelectedLibraryId] = useState('all');
   const [status, setStatus] = useState<AIReadyStatus | 'all'>('all');
   const [aiReadyOnly, setAIReadyOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'updated_at' | 'file_size' | 'status'>('updated_at');
@@ -64,8 +69,10 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
 
   // Data fetching
   const { data: quotaData, isLoading: quotaLoading } = useQuota(workspaceId, projectId);
+  const { data: librariesData } = useSourceLibraries(workspaceId, projectId);
   const { data: sourcesData, isLoading: sourcesLoading } = useSources(workspaceId, projectId, {
     search: search || undefined,
+    library_id: selectedLibraryId === 'all' ? undefined : selectedLibraryId,
     status: status !== 'all' ? status : undefined,
     ai_ready_only: aiReadyOnly || undefined,
     sort_by: sortBy,
@@ -78,6 +85,9 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
   const uploadMutation = useUploadFile();
   const deleteMutation = useDeleteFile();
   const batchActions = useBatchAIReadyActions();
+  const createLibraryMutation = useCreateSourceLibrary();
+  const updateLibraryMutation = useUpdateSourceLibrary();
+  const deleteLibraryMutation = useDeleteSourceLibrary();
 
   // Clear selection when page changes
   const handlePageChange = useCallback((newPage: number) => {
@@ -118,6 +128,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
           workspaceId,
           projectId,
           file,
+          libraryId: selectedLibraryId === 'all' ? undefined : selectedLibraryId,
           onProgress: (progress) => {
             setUploadProgress((prev) => ({ ...prev, [file.name]: progress }));
           },
@@ -150,7 +161,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
         uploadCloseTimerRef.current = null;
       }, 1500);
     }
-  }, [uploadMutation, workspaceId, projectId, handleError]);
+  }, [uploadMutation, workspaceId, projectId, selectedLibraryId, handleError]);
 
   // Handle delete (single or batch)
   const handleDeleteClick = useCallback(() => {
@@ -262,8 +273,43 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
     setSelectedFileIds([]);
   }, []);
 
+  const handleCreateLibrary = useCallback(async (name: string, description?: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    await createLibraryMutation.mutateAsync({
+      workspaceId,
+      projectId,
+      name: trimmedName,
+      description,
+    });
+  }, [createLibraryMutation, workspaceId, projectId]);
+
+  const handleRenameLibrary = useCallback(async (libraryId: string, name: string, description?: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    await updateLibraryMutation.mutateAsync({
+      workspaceId,
+      projectId,
+      libraryId,
+      name: trimmedName,
+      description,
+    });
+  }, [updateLibraryMutation, workspaceId, projectId]);
+
+  const handleDeleteLibrary = useCallback(async (libraryId: string) => {
+    await deleteLibraryMutation.mutateAsync({
+      workspaceId,
+      projectId,
+      libraryId,
+    });
+    if (selectedLibraryId === libraryId) {
+      setSelectedLibraryId('all');
+    }
+  }, [deleteLibraryMutation, workspaceId, projectId, selectedLibraryId]);
+
   // Computed values
   const items = sourcesData?.items ?? [];
+  const libraries = librariesData?.items ?? [];
   const total = sourcesData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const hasNext = page < totalPages;
@@ -291,11 +337,13 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
 
     // Filters
     search,
+    selectedLibraryId,
     status,
     aiReadyOnly,
     sortBy,
     sortOrder,
     setSearch,
+    setSelectedLibraryId,
     setStatus,
     setAIReadyOnly,
     setSortBy,
@@ -330,6 +378,10 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
 
     // Quota status
     quotaStatus,
+    libraries,
+    creatingLibrary: createLibraryMutation.isPending,
+    updatingLibrary: updateLibraryMutation.isPending,
+    deletingLibrary: deleteLibraryMutation.isPending,
 
     // Actions
     handleUpload,
@@ -338,6 +390,9 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
     handleBatchStartAIReady,
     handleBatchCancelAIReady,
     handleDownload,
+    handleCreateLibrary,
+    handleRenameLibrary,
+    handleDeleteLibrary,
   };
 }
 

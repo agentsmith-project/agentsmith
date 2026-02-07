@@ -40,6 +40,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useProject } from '@/lib/hooks/use-projects-queries';
+import {
+  useCanReadProjectPolicy,
+  useCanUpdateProjectPolicy,
+  useHasPermission,
+} from '@/lib/hooks/use-permissions';
+import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface SettingsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -47,8 +53,8 @@ interface SettingsPageProps {
 
 export default function SettingsPage({ params }: SettingsPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{
-    workspace: string;
-    project: string;
+    workspace?: string;
+    project?: string;
     locale: string;
   } | null>(null);
   const [savingGeneral, setSavingGeneral] = useState(false);
@@ -67,13 +73,23 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const router = useRouter();
   const commonT = useTranslations('common');
   const settingsT = useTranslations('settings');
+  const tErrors = useTranslations('errors');
   const { handleError } = useApiError();
   const queryClient = useQueryClient();
+  const canReadSettings = useCanReadProjectPolicy();
+  const canManageSettings = useCanUpdateProjectPolicy();
+  const canDeleteProject = useHasPermission('project:delete');
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);
 
   useEffect(() => {
-    params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project, locale: p.locale }));
+    params.then((p) =>
+      setResolvedParams({
+        workspace: validateWorkspaceParam(p.workspace),
+        project: validateProjectParam(p.project),
+        locale: p.locale,
+      }),
+    );
   }, [params]);
 
   // Fetch project data
@@ -96,6 +112,8 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   const handleSaveGeneral = async () => {
     if (!resolvedParams) return;
+    if (!canManageSettings) return;
+    if (!resolvedParams.workspace || !resolvedParams.project) return;
     setSavingGeneral(true);
     try {
       await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
@@ -121,6 +139,8 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   const handleSaveRuntimePrefs = async () => {
     if (!resolvedParams) return;
+    if (!canManageSettings) return;
+    if (!resolvedParams.workspace || !resolvedParams.project) return;
     setSavingRuntime(true);
     try {
       await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
@@ -140,6 +160,8 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   const handleSaveGovernanceConfirm = async () => {
     if (!resolvedParams) return;
+    if (!canManageSettings) return;
+    if (!resolvedParams.workspace || !resolvedParams.project) return;
     setGovernanceConfirmOpen(false);
     setSavingGovernance(true);
     try {
@@ -156,6 +178,8 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   const handleSaveLimits = async () => {
     if (!resolvedParams) return;
+    if (!canManageSettings) return;
+    if (!resolvedParams.workspace || !resolvedParams.project) return;
     setSavingLimits(true);
     try {
       await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
@@ -169,7 +193,37 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     }
   };
 
-  if (!resolvedParams || !currentProject) {
+  if (!resolvedParams) {
+    return (
+      <PageState state="loading">
+        <PageLoading />
+      </PageState>
+    );
+  }
+
+  if (!resolvedParams.workspace || !resolvedParams.project) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (!canReadSettings) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (!currentProject) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -245,7 +299,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               </div>
             </div>
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveGeneral} disabled={savingGeneral} variant="action" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveGeneral} disabled={!canManageSettings || savingGeneral} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingGeneral ? 'Saving...' : 'Save'}
               </Button>
@@ -265,7 +319,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               onChange={setRuntimePreferences}
             />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveRuntimePrefs} disabled={savingRuntime} variant="action" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveRuntimePrefs} disabled={!canManageSettings || savingRuntime} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingRuntime ? 'Saving...' : 'Save'}
               </Button>
@@ -282,7 +336,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <SettingsTokenReference tokens={GOVERNANCE_TOKENS} />
             <GovernanceEditor value={governance} onChange={setGovernance} />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveGovernanceClick} disabled={savingGovernance} variant="action" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveGovernanceClick} disabled={!canManageSettings || savingGovernance} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingGovernance ? 'Saving...' : 'Save'}
               </Button>
@@ -299,7 +353,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <SettingsTokenReference tokens={LIMITS_TOKENS} />
             <LimitsEditor value={limits} onChange={setLimits} />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveLimits} disabled={savingLimits} variant="action" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveLimits} disabled={!canManageSettings || savingLimits} variant="action" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingLimits ? 'Saving...' : 'Save'}
               </Button>
@@ -337,7 +391,12 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <div className="font-medium text-foreground">Delete Project</div>
             <div className="text-sm text-tertiary">Permanently delete this project and all data</div>
           </div>
-          <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)} data-testid="settings__delete-project-btn">
+          <Button
+            variant="destructive"
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={!canDeleteProject}
+            data-testid="settings__delete-project-btn"
+          >
             Delete Project
           </Button>
         </div>

@@ -70,7 +70,7 @@ export function QuotaTemplatesSection({
   const handleApplyTemplate = React.useCallback(
     async (memberIds: string[]) => {
       if (!selectedTemplate) return;
-      await batchApply.mutateAsync({
+      return batchApply.mutateAsync({
         templateId: selectedTemplate.id,
         memberIds,
       });
@@ -229,6 +229,7 @@ export function QuotaTemplatesSection({
               }}
               disabled={deleteTemplate.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="members__quota-template-delete-confirm"
             >
               {deleteTemplate.isPending ? t('updating') : t('delete')}
             </AlertDialogAction>
@@ -291,6 +292,7 @@ function QuotaTemplateCard({
                 size="sm"
                 onClick={onDelete}
                 className="gap-2 text-destructive hover:text-destructive"
+                data-testid={`members__quota-template-delete-btn--${template.id}`}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>

@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import {
   LayoutDashboard,
@@ -23,6 +24,7 @@ import {
   PanelLeftOpen,
   Shield,
   BarChart3,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 interface AppShellSidebarProps {
@@ -39,7 +41,8 @@ const PROJECT_MENU_ITEMS = [
   { icon: Database, labelKey: 'userdata', href: 'userdata', permission: 'userdata:storage:read' as const },
   { icon: Bot, labelKey: 'agents', href: 'agents' },
   { icon: Server, labelKey: 'endpoints', href: 'endpoints' },
-  { icon: Key, labelKey: 'credentials', href: 'credentials' },
+  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:resource:update' as const },
+  { icon: Key, labelKey: 'credentials', href: 'credentials', governance: 'wheel' as const },
   { icon: Users, labelKey: 'members', href: 'members' },
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:read' as const },
   { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:read' as const },
@@ -63,9 +66,11 @@ export function AppShellSidebar({
   const canReadAudit = useHasPermission('project:audit:read');
   const canReadUsage = useHasPermission('project:usage:read');
   const canReadUserdata = useHasPermission('userdata:storage:read');
+  const canUpdateResourcePolicy = useHasPermission('project:resource:update');
 
   const workspaceId = params?.workspace as string | undefined;
   const projectId = params?.project as string | undefined;
+  const { canViewCredentials } = useWorkspaceGovernance(workspaceId || '');
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
 
   const projectMenuItems = currentProject
@@ -74,6 +79,10 @@ export function AppShellSidebar({
           if (item.permission === 'project:audit:read') return canReadAudit;
           if (item.permission === 'project:usage:read') return canReadUsage;
           if (item.permission === 'userdata:storage:read') return canReadUserdata;
+          if (item.permission === 'project:resource:update') return canUpdateResourcePolicy;
+        }
+        if ('governance' in item && item.governance === 'wheel') {
+          return canViewCredentials;
         }
         return true;
       })

@@ -8,7 +8,8 @@ import { SourceSelectDialog } from './SourceSelectDialog';
 import { ArtifactImageViewer } from './ArtifactImageViewer';
 import { ArtifactSaveDialog } from './ArtifactSaveDialog';
 import { RecipeCreateDialog } from './RecipeCreateDialog';
-import { useRecipe, useRecipeMessages, useRecipeArtifacts, useSendMessage, useAddSources } from '@/lib/hooks/use-recipe';
+import { EditRecipeDialog } from './EditRecipeDialog';
+import { useRecipe, useRecipeMessages, useRecipeArtifacts, useSendMessage, useAddSources, useUpdateRecipe } from '@/lib/hooks/use-recipe';
 import { useRecipeSSE } from '@/lib/hooks/use-recipe-sse';
 import { useErrorHandler } from '@/lib/hooks/use-error-handler';
 import { RecipeAPI } from '@/lib/api';
@@ -32,6 +33,7 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
   const [imageViewerOpen, setImageViewerOpen] = React.useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
+  const [editDialogOpen, setEditDialogOpen] = React.useState(false);
   const [selectedArtifact, setSelectedArtifact] = React.useState<Artifact | null>(null);
   const [streamingMessageId, setStreamingMessageId] = React.useState<string | null>(null);
   const [streamingContent, setStreamingContent] = React.useState<string>('');
@@ -43,6 +45,7 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
   const { data: artifacts } = useRecipeArtifacts(workspaceId, projectId, recipeId);
   const sendMessage = useSendMessage();
   const addSources = useAddSources();
+  const updateRecipe = useUpdateRecipe();
 
   // Query keys for this recipe — used by both useQuery hooks and SSE cache writes
   const messagesKey = queryKeys.recipes.messages(workspaceId, projectId, recipeId);
@@ -198,6 +201,15 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/workbench`);
   };
 
+  const handleRecipeUpdated = async (data: { title: string; status: 'active' | 'closed' | 'archived' }) => {
+    await updateRecipe.mutateAsync({
+      workspaceId,
+      projectId,
+      recipeId,
+      data,
+    });
+  };
+
   const handleLeave = () => {
     // Navigate to workbench list
     // SSE connection will be automatically cleaned up when component unmounts
@@ -238,6 +250,7 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
         workspaceId={workspaceId}
         projectId={projectId}
         onCreateNew={handleCreateNew}
+        onEdit={() => setEditDialogOpen(true)}
         onDeleted={handleRecipeDeleted}
         onLeave={handleLeave}
       />
@@ -301,6 +314,14 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
         workspaceId={workspaceId}
         projectId={projectId}
         onSuccess={handleRecipeCreated}
+      />
+
+      <EditRecipeDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        recipe={recipe}
+        saving={updateRecipe.isPending}
+        onSubmit={handleRecipeUpdated}
       />
     </div>
   );

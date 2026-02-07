@@ -7,6 +7,7 @@
 import type {
   SourceFile,
   SourceFileWithAIReady,
+  SourceLibrary,
   AIReadyJob,
   QuotaSummary,
   SourcesListParams,
@@ -30,6 +31,9 @@ export class SourcesAPI {
     if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
     if (params?.search) searchParams.set('search', params.search);
     if (params?.status && params.status !== 'all') searchParams.set('status', params.status);
+    if ('library_id' in (params ?? {}) && params?.library_id) {
+      searchParams.set('library_id', params.library_id);
+    }
     if (params?.ai_ready_only) searchParams.set('ai_ready_only', 'true');
     if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
     if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
@@ -57,6 +61,7 @@ export class SourcesAPI {
     workspaceId: string,
     projectId: string,
     file: File,
+    libraryId?: string,
     onProgress?: (progress: number) => void,
   ): Promise<SourceFile> {
     const { API_BASE } = await import('../client');
@@ -67,6 +72,9 @@ export class SourcesAPI {
       const xhr = new XMLHttpRequest();
       const formData = new FormData();
       formData.append('file', file);
+      if (libraryId) {
+        formData.append('library_id', libraryId);
+      }
 
       // Track upload progress
       if (onProgress) {
@@ -230,6 +238,41 @@ export class SourcesAPI {
   async getQuota(workspaceId: string, projectId: string): Promise<QuotaSummary> {
     return this.client.get<QuotaSummary>(
       `/workspaces/${workspaceId}/projects/${projectId}/sources/quota`,
+    );
+  }
+
+  async listLibraries(workspaceId: string, projectId: string): Promise<{ items: SourceLibrary[] }> {
+    return this.client.get<{ items: SourceLibrary[] }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries`,
+    );
+  }
+
+  async createLibrary(
+    workspaceId: string,
+    projectId: string,
+    payload: { name: string; description?: string; visibility?: 'shared' | 'private' },
+  ): Promise<SourceLibrary> {
+    return this.client.post<SourceLibrary>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries`,
+      payload,
+    );
+  }
+
+  async updateLibrary(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    payload: { name?: string; description?: string },
+  ): Promise<SourceLibrary> {
+    return this.client.patch<SourceLibrary>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}`,
+      payload,
+    );
+  }
+
+  async deleteLibrary(workspaceId: string, projectId: string, libraryId: string): Promise<void> {
+    return this.client.delete<void>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}`,
     );
   }
 }

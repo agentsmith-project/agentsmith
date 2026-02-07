@@ -487,7 +487,7 @@ describe('ChatHeader', () => {
     it('should have proper padding', () => {
       const { container } = render(<ChatHeader {...defaultProps} />);
 
-      const header = container.querySelector('.px-4');
+      const header = container.querySelector('.px-3');
       expect(header).toBeInTheDocument();
     });
   });

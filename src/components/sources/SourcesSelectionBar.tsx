@@ -17,6 +17,9 @@ export interface SourcesSelectionBarProps {
   selectedIds: string[];
   files: SourceFileWithAIReady[];
   quotaExceeded: boolean;
+  canSourceDelete: boolean;
+  canSourceDownload: boolean;
+  canControlAIReady: boolean;
   onDelete: () => void;
   onStartAIReady: () => void;
   onCancelAIReady: () => void;
@@ -32,6 +35,9 @@ export function SourcesSelectionBar({
   selectedIds,
   files,
   quotaExceeded,
+  canSourceDelete,
+  canSourceDownload,
+  canControlAIReady,
   onDelete,
   onStartAIReady,
   onCancelAIReady,
@@ -75,7 +81,7 @@ export function SourcesSelectionBar({
         </div>
 
         <div className="flex items-center gap-2">
-          {singleFile && (
+          {singleFile && canSourceDownload && (
             <Button
               variant="outline"
               size="sm"
@@ -87,7 +93,7 @@ export function SourcesSelectionBar({
             </Button>
           )}
 
-          {canStartCount > 0 && (
+          {canControlAIReady && canStartCount > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span>
@@ -117,7 +123,7 @@ export function SourcesSelectionBar({
             </Tooltip>
           )}
 
-          {canCancelCount > 0 && (
+          {canControlAIReady && canCancelCount > 0 && (
             <Button
               variant="outline"
               size="sm"
@@ -136,15 +142,17 @@ export function SourcesSelectionBar({
             </Button>
           )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onDelete}
-            className="gap-1.5 text-error hover:text-error hover:bg-error/10"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t('action_delete')}
-          </Button>
+          {canSourceDelete && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onDelete}
+              className="gap-1.5 text-error hover:text-error hover:bg-error/10"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t('action_delete')}
+            </Button>
+          )}
         </div>
       </div>
     </TooltipProvider>

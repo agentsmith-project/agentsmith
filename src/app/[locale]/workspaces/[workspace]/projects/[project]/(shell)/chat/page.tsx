@@ -36,6 +36,18 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
  
 
 interface ChatPageProps {
@@ -45,9 +57,14 @@ interface ChatPageProps {
 export default function ChatPage({ params }: ChatPageProps) {
   const queryClient = useQueryClient();
   const t = useTranslations('chat');
+  const tErrors = useTranslations('errors');
 
   const token = useAuthStore((s) => s.token);
-  const [resolvedParams, setResolvedParams] = useState<{ workspace: string; project: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
+  const canAgentThreadRead = useHasPermission('agent_thread:read');
+  const canAgentThreadCreate = useHasPermission('agent_thread:create');
+  const canReadThreads = canAgentThreadRead || canAgentThreadCreate;
+  const canManageThreads = canAgentThreadCreate;
 
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,6 +75,8 @@ export default function ChatPage({ params }: ChatPageProps) {
   const manualVariantGroupsRef = useRef<Set<string>>(new Set());
   const pendingAutoGroupRef = useRef<string | null>(null);
   const [suppressAutoScroll, setSuppressAutoScroll] = useState(false);
+  const [deleteThreadDialogOpen, setDeleteThreadDialogOpen] = useState(false);
+  const [threadToDelete, setThreadToDelete] = useState<{ id: string; title?: string } | null>(null);
   const suppressTimerRef = useRef<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -72,7 +91,11 @@ export default function ChatPage({ params }: ChatPageProps) {
   } | null>(null);
 
   useEffect(() => {
-    params.then((p) => setResolvedParams({ workspace: p.workspace, project: p.project }));
+    params.then((p) => {
+      const workspace = validateWorkspaceParam(p.workspace);
+      const project = validateProjectParam(p.project);
+      setResolvedParams({ workspace, project });
+    });
   }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
@@ -372,6 +395,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   };
 
   const handleSend = async () => {
+    if (!canManageThreads) return;
     if (!currentSessionId) return;
     if (!activeSession) return;
 
@@ -402,10 +426,14 @@ export default function ChatPage({ params }: ChatPageProps) {
       });
   };
 
-  const onPickFiles = () => fileInputRef.current?.click();
+  const onPickFiles = () => {
+    if (!canManageThreads) return;
+    fileInputRef.current?.click();
+  };
   const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
+    if (!canManageThreads) return;
     if (!currentSessionId) return;
     if (files.length === 0) return;
     for (const f of files) {
@@ -415,9 +443,31 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   if (!resolvedParams) {
     return (
-      <PageState state="loading">
+          <PageState state="loading">
         <div className="flex items-center justify-center h-full">
-          <div className="text-tertiary">Loading...</div>
+          <div className="text-tertiary">{t('loading')}</div>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (!workspaceId || !projectId) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (!canReadThreads) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
         </div>
       </PageState>
     );
@@ -436,8 +486,11 @@ export default function ChatPage({ params }: ChatPageProps) {
             actions={(
               <Button
                 variant="outline"
-                onClick={() => createSessionMutation.mutate()}
-                disabled={createSessionMutation.isPending}
+                onClick={() => {
+                  if (!canManageThreads) return;
+                  createSessionMutation.mutate();
+                }}
+                disabled={!canManageThreads || createSessionMutation.isPending}
                 data-testid="chat__new-thread-btn"
               >
                 <Plus className="w-4 h-4" />
@@ -457,12 +510,23 @@ export default function ChatPage({ params }: ChatPageProps) {
               setCurrentSessionId(id);
               setEditingMessageId(null);
             }}
-            onRename={(id, title) => updateSessionMutation.mutate({ sessionId: id, data: { title } })}
-            onToggleStar={(id, next) => updateSessionMutation.mutate({ sessionId: id, data: { starred: next } })}
-            onTogglePin={(id, next) => updateSessionMutation.mutate({ sessionId: id, data: { pinned: next } })}
+            onRename={(id, title) => {
+              if (!canManageThreads) return;
+              updateSessionMutation.mutate({ sessionId: id, data: { title } });
+            }}
+            onToggleStar={(id, next) => {
+              if (!canManageThreads) return;
+              updateSessionMutation.mutate({ sessionId: id, data: { starred: next } });
+            }}
+            onTogglePin={(id, next) => {
+              if (!canManageThreads) return;
+              updateSessionMutation.mutate({ sessionId: id, data: { pinned: next } });
+            }}
             onDelete={(id) => {
-              if (!window.confirm('Delete this thread?')) return;
-              deleteSessionMutation.mutate(id);
+              if (!canManageThreads) return;
+              const thread = sessions.find((s) => s.id === id) || null;
+              setThreadToDelete({ id, title: thread?.title });
+              setDeleteThreadDialogOpen(true);
             }}
             isLoading={sessionsLoading}
           />
@@ -473,10 +537,12 @@ export default function ChatPage({ params }: ChatPageProps) {
               endpoints={endpoints}
               streamStatus={streamStatus}
               onRename={(title) => {
+                if (!canManageThreads) return;
                 if (!activeSession) return;
                 updateSessionMutation.mutate({ sessionId: activeSession.id, data: { title } });
               }}
               onSelectEndpoint={(e: Endpoint) => {
+                if (!canManageThreads) return;
                 if (!activeSession) return;
                 updateSessionMutation.mutate({ sessionId: activeSession.id, data: { endpoint_id: e.id, model: e.openai_model } });
               }}
@@ -487,13 +553,13 @@ export default function ChatPage({ params }: ChatPageProps) {
                 <div className="h-full flex items-center justify-center px-4">
                   <div className="mx-auto w-full max-w-[560px] text-center px-6">
                     <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
-                    <div className="text-foreground font-medium mb-1">No active thread</div>
-                    <div className="text-tertiary text-sm">Create a new chat to start.</div>
+                    <div className="text-foreground font-medium mb-1">{t('no_active_thread_title')}</div>
+                    <div className="text-tertiary text-sm">{t('no_active_thread_description')}</div>
                   </div>
                 </div>
               ) : messagesLoading ? (
                 <div className="h-full flex items-center justify-center px-4">
-                  <div className="text-tertiary">Loading...</div>
+                  <div className="text-tertiary">{t('loading')}</div>
                 </div>
               ) : (
                 <MessageList
@@ -509,11 +575,13 @@ export default function ChatPage({ params }: ChatPageProps) {
                   }}
                   onEdit={(m) => {
                     if (disabled) return;
+                    if (!canManageThreads) return;
                     if (m.role !== 'user') return;
                     setEditingMessageId(m.id);
                   }}
                   onEditCommit={async (m, nextContent) => {
                     if (disabled) return;
+                    if (!canManageThreads) return;
                     if (!currentSessionId) return;
                     const edited = await editMessageMutation.mutateAsync({
                       sessionId: currentSessionId,
@@ -535,6 +603,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                   onEditCancel={() => setEditingMessageId(null)}
                   onRegenerate={async (m) => {
                     if (disabled) return;
+                    if (!canManageThreads) return;
                     if (!activeSession || !currentSessionId) return;
                     if (messages.length) {
                       const groups = buildVariantGroups(messages);
@@ -584,22 +653,25 @@ export default function ChatPage({ params }: ChatPageProps) {
               autoFocus={!editingMessageId && streamStatus === 'idle'}
               onPickFiles={() => {
                 if (editingMessageId) {
-                  toast.info('Attachments are disabled while editing a message');
+                  toast.info(t('attachments.disabled_while_editing'));
                   return;
                 }
                 onPickFiles();
               }}
               attachments={attachments}
               onRemoveAttachment={(id) => {
+                if (!canManageThreads) return;
                 if (!currentSessionId) return;
                 deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
               }}
               onRetryAttachment={(id) => {
+                if (!canManageThreads) return;
                 if (!currentSessionId) return;
                 retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
               }}
               disabled={
                 !currentSessionId ||
+                !canManageThreads ||
                 createMessageMutation.isPending ||
                 editMessageMutation.isPending ||
                 initAttachmentMutation.isPending ||
@@ -610,6 +682,31 @@ export default function ChatPage({ params }: ChatPageProps) {
             />
           </section>
         </div>
+        <AlertDialog open={deleteThreadDialogOpen} onOpenChange={setDeleteThreadDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('delete_confirm_title')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('delete_confirm_message', { name: threadToDelete?.title ?? '' })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (!threadToDelete) return;
+                  deleteSessionMutation.mutate(threadToDelete.id);
+                  setDeleteThreadDialogOpen(false);
+                  setThreadToDelete(null);
+                }}
+                className="bg-error text-white hover:bg-error/90"
+              >
+                {t('delete_confirm_action')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </PageLayout>
     </PageState>
   );

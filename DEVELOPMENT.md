@@ -99,6 +99,95 @@ Switch via `NEXT_PUBLIC_USE_MSW` environment variable.
 3. Review in Storybook (`npm run storybook`)
 4. Update this guide with component details
 
+## Route Gate Check (Required)
+
+Before merging any new or changed route files, run:
+
+```bash
+npm run contracts:check
+```
+
+This check enforces route guard quality gates:
+
+1. valid permission names only
+2. route param validation presence
+3. `__tests__/page.test.tsx` existence
+4. invalid-param test coverage
+5. forbidden/permission-denied test coverage for permission-gated routes
+
+Current scope:
+
+1. `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/**/page.tsx`
+2. `src/app/[locale]/workspaces/[workspace]/projects/page.tsx`
+
+CI runs the same command and fails the pipeline on missing coverage.
+
+## Playwright E2E Runbook (Recommended)
+
+Use this runbook when E2E is unstable or intermittently timing out.
+
+### 1) Start dev server in a persistent terminal
+
+```bash
+npm run dev:test -- --port 3001
+```
+
+### 2) Run Playwright with explicit base URL
+
+```bash
+BASE_URL=http://localhost:3001 npm run test:e2e -- --project=smoke
+```
+
+This bypasses Playwright-managed `webServer` startup ambiguity and is more stable in long sessions.
+
+### 3) Use route-targeted smoke for fast triage
+
+```bash
+BASE_URL=http://localhost:3001 npx playwright test --project=smoke e2e/smoke.spec.ts \
+  --grep "loads /zh-CN/workspaces/ws_default/projects/proj_001/agents$" \
+  --workers=1 --max-failures=1
+```
+
+### 4) Distinguish infra failure from app failure
+
+If `page.goto` hangs, first check server health:
+
+```bash
+curl -I --max-time 15 http://localhost:3001/
+curl -I --max-time 15 http://localhost:3001/zh-CN/workspaces/ws_default/projects
+```
+
+If curl times out, restart dev server before debugging selectors/assertions.
+
+### 5) Inspect Playwright error context first
+
+When tests fail, inspect:
+
+- `test-results/**/error-context.md`
+- `test-results/**/test-failed-1.png`
+
+This is usually faster than changing selectors blindly.
+
+## Permission Gate Hook Rule (Important)
+
+Never short-circuit React hooks in permission guards.
+
+Do not write:
+
+```tsx
+const canRead = useHasPermission('x') || useHasPermission('y');
+```
+
+Write:
+
+```tsx
+const canX = useHasPermission('x');
+const canY = useHasPermission('y');
+const canRead = canX || canY;
+```
+
+Reason: short-circuiting can change hook call order across renders and cause runtime crashes (`Rendered more hooks than during the previous render` / `Cannot read properties of undefined (reading 'length')`).
+
 ## Troubleshooting
 
 ## Visual Baselines (Best Practice)

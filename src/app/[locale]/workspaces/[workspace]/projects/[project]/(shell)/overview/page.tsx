@@ -17,6 +17,8 @@ import { getApiClient } from '@/lib/api';
 import { validateUsageKPI } from '@/lib/api/validators';
 import { formatBytes, formatNumber } from '@/lib/utils/formatters';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -56,17 +58,19 @@ function calculateTrend(current: number, previous?: number) {
 
 export default function OverviewPage() {
   const t = useTranslations('overview');
+  const tErrors = useTranslations('errors');
   const params = useParams();
-  const workspaceId = params.workspace as string;
-  const projectId = params.project as string;
+  const workspaceId = validateWorkspaceParam(params.workspace);
+  const projectId = validateProjectParam(params.project);
   const locale = (params.locale as string) || 'en-US';
-  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
+  const canReadOverview = useHasPermission('project:read');
+  const isValidParams = !!workspaceId && !!projectId;
+
+  // Must run on every render to keep hooks order stable
+  useSyncAuthFromUrl();
 
   const [timeRangePreset, setTimeRangePreset] = React.useState<TimeRangePreset>('7d');
   const timeRange = React.useMemo(() => getTimeRange(timeRangePreset), [timeRangePreset]);
-
-  // Sync auth store from URL parameters
-  useSyncAuthFromUrl();
 
   const apiClient = getApiClient();
   const usageAPI = new UsageAPI(apiClient);
@@ -84,6 +88,7 @@ export default function OverviewPage() {
       );
       return validateUsageKPI(data);
     },
+    enabled: isValidParams && canReadOverview,
   });
 
   // Fetch recent activity
@@ -96,7 +101,32 @@ export default function OverviewPage() {
         start_time: timeRange.start_time,
         end_time: timeRange.end_time,
       }),
+    enabled: isValidParams && canReadOverview,
   });
+
+  if (!workspaceId || !projectId) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (!canReadOverview) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   // Use validated KPI data with safe defaults
   const kpi = kpiData || {

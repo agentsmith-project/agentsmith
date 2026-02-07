@@ -82,6 +82,8 @@
     "userdata": "UserData",
     "agents": "智能体",
     "endpoints": "端点",
+    "resource_policy": "资源策略",
+    "access_control": "访问控制",
     "credentials": "凭据",
     "members": "成员",
     "audit": "审计",
@@ -268,7 +270,14 @@
     "threads_days_ago": "{days} 天前",
     "attachments": {
       "disabled_while_editing": "编辑时禁用附件。"
-    }
+    },
+    "delete_confirm_title": "删除会话",
+    "delete_confirm_message": "确定要删除会话「{name}」吗？此操作不可撤销。",
+    "delete_confirm_cancel": "取消",
+    "delete_confirm_action": "删除",
+    "loading": "加载中...",
+    "no_active_thread_title": "暂无活跃会话",
+    "no_active_thread_description": "创建一个新会话开始对话。"
   },
   "workbench": {
     "title": "工作台",
@@ -308,7 +317,12 @@
         "active": "活跃",
         "closed": "已关闭",
         "archived": "已归档"
-      }
+      },
+      "edit": "编辑",
+      "edit_title": "编辑 Recipe",
+      "edit_description": "修改 Recipe 的标题与状态。",
+      "status_label": "状态",
+      "save_changes": "保存更改"
     },
     "attached_sources": {
       "title": "已附加来源",
@@ -365,10 +379,9 @@
     "create": "创建智能体",
     "create_dialog": {
       "title": "创建智能体",
-      "description": "添加新的 AI 智能体。外部智能体通过外部 API 连接；内部智能体在您的基础设施中运行。",
+      "description": "描述",
       "name": "名称",
       "name_placeholder": "例如 我的聊天智能体",
-      "description": "描述",
       "mode": "模式",
       "mode_external": "外部",
       "mode_internal": "内部",
@@ -420,7 +433,12 @@
     "detail_keys": "密钥管理",
     "detail_diagnostics": "诊断信息",
     "detail_diagnostics_empty": "暂无诊断信息。",
-    "detail_config": "配置"
+    "detail_config": "配置",
+    "delete": "删除",
+    "delete_confirm_title": "删除 Agent",
+    "delete_confirm_message": "确定要删除 Agent「{name}」吗？此操作不可撤销。",
+    "delete_confirm_cancel": "取消",
+    "delete_confirm_action": "删除"
   },
   "credentials": {
     "title": "凭据",
@@ -467,10 +485,9 @@
     "create": "创建端点",
     "create_dialog": {
       "title": "创建端点",
-      "description": "添加新的 LLM 端点。选择凭据以验证 API 请求。",
+      "description": "描述",
       "name": "名称",
       "name_placeholder": "例如 GPT-4o",
-      "description": "描述",
       "model_id": "模型 ID",
       "provider": "提供商",
       "provider_openai": "OpenAI",
@@ -601,6 +618,8 @@
     "workspace_name": "工作区名称",
     "workspace_members": "工作区成员",
     "workspace_members_empty": "暂无成员。",
+    "workspace_governance_wheel": "Wheel组",
+    "workspace_governance_user": "User组",
     "tab_general": "常规",
     "tab_runtime_preferences": "运行偏好",
     "tab_governance": "治理规则",
@@ -724,6 +743,77 @@
       "description": "发生了意外错误。"
     }
   },
+  "resource_policy": {
+    "subtitle": "统一配置资源策略基线与按主体覆盖规则。",
+    "default_model_hint": "默认模型：所有成员可访问资源。新资源继承项目默认策略。",
+    "inherits_defaults": "继承默认策略",
+    "select_resource": "请选择资源以编辑策略。",
+    "loading_policy": "正在加载策略...",
+    "access_mode": {
+      "label": "访问模式",
+      "allow_all_members": "全体成员可访问（默认）",
+      "allow_list": "仅允许名单访问"
+    },
+    "access_mode_description": {
+      "allow_all_members": "项目内任意成员都可访问该资源（受策略限制时除外）。",
+      "allow_list": "仅被选中的用户或分组可访问该资源。"
+    },
+    "resource_type": {
+      "endpoint": "端点",
+      "source_library": "文件库",
+      "agent": "智能体"
+    },
+    "subjects": {
+      "title": "允许访问主体与主体覆盖规则",
+      "add": "添加主体",
+      "empty": "暂无主体覆盖。",
+      "user": "用户",
+      "group": "分组",
+      "select_subject": "选择主体",
+      "remove": "移除"
+    },
+    "allow_list_required": "allow_list 至少需要一个主体。",
+    "save_policy": "保存策略",
+    "saving": "保存中...",
+    "effective_summary": {
+      "title": "生效策略摘要",
+      "access": "访问模式",
+      "no_explicit_limits": "未设置显式限制。"
+    },
+    "units": {
+      "tokens_per_day": "tokens/天",
+      "files": "个文件",
+      "sessions": "并发会话",
+      "byte": "B",
+      "kib": "KiB",
+      "mib": "MiB",
+      "gib": "GiB"
+    },
+    "rules": {
+      "endpoint": {
+        "daily_token_limit": "端点每日 Token 限额"
+      },
+      "source_library": {
+        "max_total_files": "文件库最大文件总数",
+        "max_file_size_bytes": "文件库单文件最大大小（字节）"
+      },
+      "agent": {
+        "max_concurrency": "智能体最大并发数"
+      }
+    },
+    "subject_placeholders": {
+      "endpoint": {
+        "daily_token_limit": "主体每日 token 限额"
+      },
+      "source_library": {
+        "max_total_files": "主体最大文件总数",
+        "max_file_size_bytes": "主体单文件最大大小（字节）"
+      },
+      "agent": {
+        "max_concurrency": "主体最大并发数"
+      }
+    }
+  },
   "members": {
     "title": "成员",
     "join_requests_title": "加入申请",
@@ -835,16 +925,16 @@
       "next": "下一页"
     },
     "acl": {
-      "title": "资源访问控制",
-      "title_short": "资源 ACL",
-      "description": "为端点配置资源级权限。",
+      "title": "资源策略",
+      "title_short": "资源策略",
+      "description": "配置资源级访问与用量限制。",
       "endpoint": {
         "deny": "拒绝访问",
         "remove_deny": "移除拒绝",
         "reason_required": "必须填写原因"
       },
-      "update_success": "资源访问控制更新成功",
-      "coming_soon": "资源访问控制编辑器即将推出...",
+      "update_success": "资源策略更新成功",
+      "coming_soon": "资源策略编辑器即将推出...",
       "cancel": "取消"
     },
     "history": {
@@ -852,7 +942,7 @@
       "view_history": "查看变更历史",
       "permissions_updated": "权限已更新",
       "quota_updated": "配额覆盖",
-      "acl_updated": "资源访问控制已更新"
+      "acl_updated": "资源策略已更新"
     },
     "actions": {
       "edit_permissions_quota": "编辑权限和配额",
@@ -878,6 +968,7 @@
       "description": "管理角色的默认权限模板。",
       "create_template": "创建模板",
       "view_details": "查看详情",
+      "view_dialog_description": "查看模板 {name} 的详情与权限列表。",
       "edit": "编辑",
       "default": "默认",
       "readonly": "只读",
@@ -898,9 +989,12 @@
       "delete_success": "模板已删除",
       "apply_success": "模板已应用到成员",
       "apply_batch_success": "模板已应用到 {count} 位成员",
+      "apply_partial_success": "模板已部分应用，部分成员更新失败。",
+      "apply_all_failed": "模板应用失败，所选成员均未更新。",
       "apply_template": "应用模板",
       "apply_to_member": "应用到成员",
       "apply_to_members": "应用到成员",
+      "apply_dialog_description": "选择成员并应用当前模板。",
       "select_members": "选择成员",
       "selected_count": "已选 {count} 人",
       "select_all": "全选",
@@ -913,6 +1007,26 @@
       "empty_custom_description": "创建自定义模板以定义默认角色之外的权限组合。",
       "permission_templates": "权限模板",
       "quota_templates": "配额模板",
+      "group_templates": "项目分组",
+      "group_templates_description": "创建项目分组，绑定权限模板，并批量应用到组成员。",
+      "group_name": "分组名称",
+      "group_name_placeholder": "例如：外部协作组",
+      "create_group": "创建分组",
+      "group_empty": "暂无项目分组。",
+      "group_create_success": "项目分组创建成功",
+      "group_update_success": "项目分组更新成功",
+      "group_delete_success": "项目分组已删除",
+      "group_delete_confirm_title": "删除项目分组",
+      "group_delete_confirm_message": "确认删除分组「{name}」吗？分组成员和模板绑定将被移除。",
+      "group_apply_success": "已将分组模板应用到 {count} 位成员",
+      "group_apply_partial_success": "分组模板已部分应用，{count} 位成员失败。",
+      "group_apply_result": "应用结果：成功 {applied}，失败 {failed}",
+      "preview_changes": "预览变更",
+      "copy_failed_members": "复制失败列表",
+      "export_failed_members": "导出失败列表",
+      "copy_failed_members_success": "失败成员列表已复制",
+      "group_preview_title": "权限变更预览（按成员）",
+      "group_preview_empty": "该分组暂无成员",
       "quota_coming_soon": "配额模板即将推出。可创建并应用配额预设（如标准、高用量）到成员。",
       "template_name": "模板名称",
       "template_description": "描述（可选）",
@@ -924,6 +1038,7 @@
       "quota_delete_success": "配额模板已删除",
       "quota_apply_success": "配额模板已应用到成员",
       "quota_apply_batch_success": "配额模板已应用到 {count} 位成员",
+      "quota_apply_partial_success": "配额模板已部分应用，部分成员更新失败。",
       "quota_title": "配额模板",
       "quota_description": "管理可复用的配额预设（如标准、高用量、受限）。",
       "quota_empty_title": "暂无配额模板",
@@ -934,7 +1049,12 @@
       "delete_confirm_message": "确定要删除配额模板「{name}」吗？已应用此模板的成员不会受影响。",
       "select_template": "选择模板",
       "batch_apply_permission_hint": "将权限模板应用到 {count} 位已选成员。",
-      "batch_apply_quota_hint": "将配额模板应用到 {count} 位已选成员。"
+      "batch_apply_quota_hint": "将配额模板应用到 {count} 位已选成员。",
+      "apply_failed_members_title": "以下成员更新失败：",
+      "apply_failed_members_count": "{count} 位成员更新失败。",
+      "retry_failed_members": "重试失败成员",
+      "permission_delete_confirm_title": "删除权限模板",
+      "permission_delete_confirm_message": "确定要删除权限模板「{name}」吗？已应用该模板的成员不会自动回滚。"
     },
     "batch": {
       "selected_count": "已选择 {count} 位",

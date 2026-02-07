@@ -6,17 +6,35 @@ import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Settings, Eye, Plus, Lock, CheckCircle, UserPlus } from 'lucide-react';
-import { usePermissionTemplates, useCreatePermissionTemplate, useUpdatePermissionTemplate, useBatchApplyPermissionTemplate, useMembers } from '@/lib/hooks/use-members';
+import { Settings, Eye, Plus, Lock, CheckCircle, UserPlus, Trash2 } from 'lucide-react';
+import {
+  usePermissionTemplates,
+  useCreatePermissionTemplate,
+  useUpdatePermissionTemplate,
+  useDeletePermissionTemplate,
+  useBatchApplyPermissionTemplate,
+  useMembers,
+} from '@/lib/hooks/use-members';
 import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
 import { useIsOwnerOrAdmin } from '@/lib/hooks/use-permissions';
 import { CreateTemplateDrawer } from './CreateTemplateDrawer';
 import { ApplyTemplateDialog } from './ApplyTemplateDialog';
 import { EditTemplateDrawer } from './EditTemplateDrawer';
 import type { PermissionTemplate } from '@/lib/api/types';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export interface PermissionTemplatesTabProps {
   workspaceId: string;
@@ -36,10 +54,12 @@ export function PermissionTemplatesTab({
   const [selectedTemplate, setSelectedTemplate] = React.useState<PermissionTemplate | null>(null);
   const [editingTemplateId, setEditingTemplateId] = React.useState('');
   const updateTemplate = useUpdatePermissionTemplate(workspaceId, projectId, editingTemplateId);
+  const deleteTemplate = useDeletePermissionTemplate(workspaceId, projectId);
   const [viewDialogOpen, setViewDialogOpen] = React.useState(false);
   const [createDrawerOpen, setCreateDrawerOpen] = React.useState(false);
   const [applyDialogOpen, setApplyDialogOpen] = React.useState(false);
   const [editDrawerOpen, setEditDrawerOpen] = React.useState(false);
+  const [templateToDelete, setTemplateToDelete] = React.useState<PermissionTemplate | null>(null);
 
   const defaultTemplates = React.useMemo((): PermissionTemplate[] => {
     return [
@@ -87,7 +107,7 @@ export function PermissionTemplatesTab({
 
   const handleApplyTemplate = React.useCallback(
     async (memberIds: string[], permissions: string[], templateId?: 'admin' | 'developer' | 'user' | null) => {
-      await batchApplyTemplate.mutateAsync({
+      return batchApplyTemplate.mutateAsync({
         memberIds,
         permissions,
         template: templateId ?? undefined,
@@ -95,6 +115,18 @@ export function PermissionTemplatesTab({
     },
     [batchApplyTemplate]
   );
+
+  const handleConfirmDelete = React.useCallback(async () => {
+    if (!templateToDelete) return;
+    await deleteTemplate.mutateAsync(templateToDelete.id);
+    if (selectedTemplate?.id === templateToDelete.id) {
+      setSelectedTemplate(null);
+      setViewDialogOpen(false);
+      setEditDrawerOpen(false);
+      setApplyDialogOpen(false);
+    }
+    setTemplateToDelete(null);
+  }, [deleteTemplate, selectedTemplate, templateToDelete]);
 
   if (isLoading) {
     return (
@@ -139,6 +171,7 @@ export function PermissionTemplatesTab({
               setEditingTemplateId(template.id);
               setEditDrawerOpen(true);
             }}
+            onDelete={() => setTemplateToDelete(template)}
           />
         ))}
         {customTemplates.length === 0 && (
@@ -196,6 +229,36 @@ export function PermissionTemplatesTab({
           }}
         />
       )}
+
+      <AlertDialog
+        open={!!templateToDelete}
+        onOpenChange={(open) => !open && setTemplateToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('permission_delete_confirm_title')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {templateToDelete
+                ? t('permission_delete_confirm_message', { name: templateToDelete.name })
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmDelete();
+              }}
+              disabled={deleteTemplate.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="members__permission-template-delete-confirm"
+            >
+              {t('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -205,6 +268,7 @@ interface TemplateCardProps {
   canManage: boolean;
   onView: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 }
 
 function TemplateCard({
@@ -212,6 +276,7 @@ function TemplateCard({
   canManage,
   onView,
   onEdit,
+  onDelete,
 }: TemplateCardProps) {
   const t = useTranslations('members.templates');
 
@@ -246,10 +311,22 @@ function TemplateCard({
             {t('view_details')}
           </Button>
           {canManage && !template.is_readonly && (
-            <Button variant="outline" size="sm" onClick={onEdit} className="gap-2">
-              <Settings className="h-4 w-4" />
-              {t('edit')}
-            </Button>
+            <>
+              <Button variant="outline" size="sm" onClick={onEdit} className="gap-2">
+                <Settings className="h-4 w-4" />
+                {t('edit')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onDelete}
+                className="gap-2 text-destructive hover:text-destructive"
+                data-testid={`members__permission-template-delete-btn--${template.id}`}
+              >
+                <Trash2 className="h-4 w-4" />
+                {t('delete')}
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -279,6 +356,9 @@ function TemplateViewDialog({
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{template.name}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {t('view_dialog_description', { name: template.name })}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

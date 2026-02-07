@@ -38,6 +38,22 @@ vi.mock('../use-sources', () => ({
       isPending: false,
     },
   })),
+  useSourceLibraries: vi.fn(() => ({
+    data: { items: [] },
+    isLoading: false,
+  })),
+  useCreateSourceLibrary: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    isPending: false,
+  })),
+  useUpdateSourceLibrary: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    isPending: false,
+  })),
+  useDeleteSourceLibrary: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+  })),
 }));
 
 // Mock other dependencies
@@ -73,6 +89,9 @@ vi.mock('@/lib/query-keys', () => ({
     },
     quota: {
       detail: vi.fn(() => ['quota']),
+    },
+    sourceLibraries: {
+      list: vi.fn(() => ['source-libraries']),
     },
   },
 }));
@@ -119,6 +138,8 @@ describe('useSourcesList', () => {
     expect(result.current.search).toBe('');
     expect(result.current.status).toBe('all');
     expect(result.current.aiReadyOnly).toBe(false);
+    expect(result.current.selectedLibraryId).toBe('all');
+    expect(result.current.libraries).toEqual([]);
     expect(result.current.selectedFileIds).toEqual([]);
     expect(result.current.uploadDialogOpen).toBe(false);
     expect(result.current.deleteDialogOpen).toBe(false);

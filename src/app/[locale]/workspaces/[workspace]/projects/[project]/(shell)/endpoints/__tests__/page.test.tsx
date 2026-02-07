@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 const mockUpdate = vi.fn().mockResolvedValue({});
 const mockList = vi.fn().mockResolvedValue({
@@ -40,7 +41,13 @@ vi.mock('@/components/endpoints/CreateEndpointDialog', () => ({
   CreateEndpointDialog: () => null,
 }));
 
+vi.mock('@/lib/hooks/use-permissions', () => ({
+  useHasPermission: vi.fn(() => true),
+}));
+
 import EndpointsPage from '../page';
+
+const mockUseHasPermission = vi.mocked(useHasPermission);
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -56,6 +63,7 @@ function createWrapper() {
 
 describe('EndpointsPage', () => {
   it('renders header and toolbar layout', async () => {
+    mockUseHasPermission.mockReturnValue(true);
     render(
       <EndpointsPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />,
       { wrapper: createWrapper() }
@@ -72,6 +80,7 @@ describe('EndpointsPage', () => {
   });
 
   it('toggles endpoint status', async () => {
+    mockUseHasPermission.mockReturnValue(true);
     const user = userEvent.setup();
     render(
       <EndpointsPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />,
@@ -84,5 +93,33 @@ describe('EndpointsPage', () => {
     await user.click(disableButton);
 
     expect(mockUpdate).toHaveBeenCalledWith('ws_1', 'prj_1', 'ep_1', { status: 'disabled' });
+  });
+
+  it('shows invalid parameter error state for unsafe route params', async () => {
+    mockUseHasPermission.mockReturnValue(true);
+    render(
+      <EndpointsPage params={Promise.resolve({ workspace: '<script>', project: 'prj_1', locale: 'en-US' })} />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('validation_error')).toBeInTheDocument();
+  });
+
+  it('shows permission denied when user lacks read access', async () => {
+    mockUseHasPermission.mockReturnValue(false);
+    render(
+      <EndpointsPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
   });
 });

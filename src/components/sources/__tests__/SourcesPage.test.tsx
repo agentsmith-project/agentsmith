@@ -31,12 +31,14 @@ vi.mock('@/lib/hooks/use-sources-list', () => ({
 
     // Filters
     search: '',
-    status: 'all',
+selectedLibraryId: 'all',
+status: 'all',
     aiReadyOnly: false,
     sortBy: 'updated_at',
     sortOrder: 'desc',
     setSearch: vi.fn(),
-    setStatus: vi.fn(),
+setSelectedLibraryId: vi.fn(),
+setStatus: vi.fn(),
     setAIReadyOnly: vi.fn(),
     setSortBy: vi.fn(),
     setSortOrder: vi.fn(),
@@ -70,6 +72,10 @@ vi.mock('@/lib/hooks/use-sources-list', () => ({
 
     // Quota status
     quotaStatus: { canStart: true, exceededTypes: [] },
+    libraries: [],
+    creatingLibrary: false,
+    updatingLibrary: false,
+    deletingLibrary: false,
 
     // Actions
     handleUpload: vi.fn(),
@@ -78,6 +84,9 @@ vi.mock('@/lib/hooks/use-sources-list', () => ({
     handleBatchStartAIReady: vi.fn(),
     handleBatchCancelAIReady: vi.fn(),
     handleDownload: vi.fn(),
+      handleCreateLibrary: vi.fn(),
+      handleRenameLibrary: vi.fn(),
+      handleDeleteLibrary: vi.fn(),
   })),
 }));
 
@@ -85,10 +94,17 @@ vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+vi.mock('@/lib/hooks/use-permissions', () => ({
+  useHasPermission: vi.fn(() => true),
+}));
+
 import { SourcesPage } from '../SourcesPage';
 import { useSourcesList } from '@/lib/hooks/use-sources-list';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
+import type { UseSourcesListReturn } from '@/lib/hooks/use-sources-list';
 
 const mockUseSourcesList = vi.mocked(useSourcesList);
+const mockUseHasPermission = vi.mocked(useHasPermission);
 
 describe('SourcesPage', () => {
   const defaultProps = {
@@ -99,6 +115,8 @@ describe('SourcesPage', () => {
   // Reset mock to default before each test to avoid state bleed
   beforeEach(() => {
     mockUseSourcesList.mockReset();
+    mockUseHasPermission.mockReset();
+    mockUseHasPermission.mockReturnValue(true);
     mockUseSourcesList.mockReturnValue({
       quotaData: {
         storage: { used: 1024, limit: 10240 },
@@ -117,12 +135,14 @@ describe('SourcesPage', () => {
       handlePageChange: vi.fn(),
       setPage: vi.fn(),
       search: '',
-      status: 'all',
+selectedLibraryId: 'all',
+status: 'all',
       aiReadyOnly: false,
       sortBy: 'updated_at',
       sortOrder: 'desc',
       setSearch: vi.fn(),
-      setStatus: vi.fn(),
+setSelectedLibraryId: vi.fn(),
+setStatus: vi.fn(),
       setAIReadyOnly: vi.fn(),
       setSortBy: vi.fn(),
       setSortOrder: vi.fn(),
@@ -146,13 +166,20 @@ describe('SourcesPage', () => {
       batchStartPending: false,
       batchCancelPending: false,
       quotaStatus: { canStart: true, exceededTypes: [] },
-      handleUpload: vi.fn(),
+libraries: [],
+creatingLibrary: false,
+updatingLibrary: false,
+deletingLibrary: false,
+handleUpload: vi.fn(),
       handleDeleteClick: vi.fn(),
       handleConfirmDelete: vi.fn(),
       handleBatchStartAIReady: vi.fn(),
       handleBatchCancelAIReady: vi.fn(),
       handleDownload: vi.fn(),
-    } as any);
+      handleCreateLibrary: vi.fn(),
+      handleRenameLibrary: vi.fn(),
+      handleDeleteLibrary: vi.fn(),
+    } as unknown as UseSourcesListReturn);
   });
 
   it('should render main structure', () => {
@@ -186,12 +213,28 @@ describe('SourcesPage', () => {
     expect(uploadButtons.length).toBeGreaterThan(0);
   });
 
+  it('hides upload entry when source upload permission is missing', () => {
+    mockUseHasPermission.mockImplementation((permission: string) => permission !== 'project:source:upload');
+
+    render(<SourcesPage {...defaultProps} />);
+
+    expect(screen.queryByRole('button', { name: /Upload/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /upload_files/i })).not.toBeInTheDocument();
+  });
+
   it('should render search input', () => {
     render(<SourcesPage {...defaultProps} />);
 
     const searchInput = screen.getByRole('textbox');
     expect(searchInput).toBeInTheDocument();
     expect(searchInput).toHaveAttribute('placeholder', 'Search files...');
+  });
+
+  it('renders library selector and manage button', () => {
+    render(<SourcesPage {...defaultProps} />);
+
+    expect(screen.getByTestId('sources__library-select')).toBeInTheDocument();
+    expect(screen.getByTestId('sources__manage-libraries-btn')).toBeInTheDocument();
   });
 
   it('should render filter selects', () => {
@@ -223,12 +266,14 @@ describe('SourcesPage', () => {
       handlePageChange: vi.fn(),
       setPage: vi.fn(),
       search: '',
-      status: 'all',
+selectedLibraryId: 'all',
+status: 'all',
       aiReadyOnly: false,
       sortBy: 'updated_at',
       sortOrder: 'desc',
       setSearch: vi.fn(),
-      setStatus: vi.fn(),
+setSelectedLibraryId: vi.fn(),
+setStatus: vi.fn(),
       setAIReadyOnly: vi.fn(),
       setSortBy: vi.fn(),
       setSortOrder: vi.fn(),
@@ -252,12 +297,19 @@ describe('SourcesPage', () => {
       batchStartPending: false,
       batchCancelPending: false,
       quotaStatus: { canStart: true, exceededTypes: [] },
-      handleUpload: vi.fn(),
+libraries: [],
+creatingLibrary: false,
+updatingLibrary: false,
+deletingLibrary: false,
+handleUpload: vi.fn(),
       handleDeleteClick: vi.fn(),
       handleConfirmDelete: vi.fn(),
       handleBatchStartAIReady: vi.fn(),
       handleBatchCancelAIReady: vi.fn(),
       handleDownload: vi.fn(),
+      handleCreateLibrary: vi.fn(),
+      handleRenameLibrary: vi.fn(),
+      handleDeleteLibrary: vi.fn(),
     });
 
     render(<SourcesPage {...defaultProps} />);
@@ -287,12 +339,14 @@ describe('SourcesPage', () => {
       handlePageChange: vi.fn(),
       setPage: vi.fn(),
       search: '',
-      status: 'all',
+selectedLibraryId: 'all',
+status: 'all',
       aiReadyOnly: false,
       sortBy: 'updated_at',
       sortOrder: 'desc',
       setSearch: vi.fn(),
-      setStatus: vi.fn(),
+setSelectedLibraryId: vi.fn(),
+setStatus: vi.fn(),
       setAIReadyOnly: vi.fn(),
       setSortBy: vi.fn(),
       setSortOrder: vi.fn(),
@@ -316,12 +370,19 @@ describe('SourcesPage', () => {
       batchStartPending: false,
       batchCancelPending: false,
       quotaStatus: { canStart: true, exceededTypes: [] },
-      handleUpload: vi.fn(),
+libraries: [],
+creatingLibrary: false,
+updatingLibrary: false,
+deletingLibrary: false,
+handleUpload: vi.fn(),
       handleDeleteClick: vi.fn(),
       handleConfirmDelete: vi.fn(),
       handleBatchStartAIReady: vi.fn(),
       handleBatchCancelAIReady: vi.fn(),
       handleDownload: vi.fn(),
+      handleCreateLibrary: vi.fn(),
+      handleRenameLibrary: vi.fn(),
+      handleDeleteLibrary: vi.fn(),
     });
 
     render(<SourcesPage {...defaultProps} />);
@@ -350,12 +411,14 @@ describe('SourcesPage', () => {
       handlePageChange: vi.fn(),
       setPage: vi.fn(),
       search: '',
-      status: 'all',
+selectedLibraryId: 'all',
+status: 'all',
       aiReadyOnly: false,
       sortBy: 'updated_at',
       sortOrder: 'desc',
       setSearch: vi.fn(),
-      setStatus: vi.fn(),
+setSelectedLibraryId: vi.fn(),
+setStatus: vi.fn(),
       setAIReadyOnly: vi.fn(),
       setSortBy: vi.fn(),
       setSortOrder: vi.fn(),
@@ -379,12 +442,19 @@ describe('SourcesPage', () => {
       batchStartPending: false,
       batchCancelPending: false,
       quotaStatus: { canStart: true, exceededTypes: [] },
-      handleUpload: vi.fn(),
+libraries: [],
+creatingLibrary: false,
+updatingLibrary: false,
+deletingLibrary: false,
+handleUpload: vi.fn(),
       handleDeleteClick: vi.fn(),
       handleConfirmDelete: vi.fn(),
       handleBatchStartAIReady: vi.fn(),
       handleBatchCancelAIReady: vi.fn(),
       handleDownload: vi.fn(),
+      handleCreateLibrary: vi.fn(),
+      handleRenameLibrary: vi.fn(),
+      handleDeleteLibrary: vi.fn(),
     });
 
     render(<SourcesPage {...defaultProps} />);

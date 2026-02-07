@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 const mockGetSessions = vi.fn().mockResolvedValue({
   items: [],
@@ -79,7 +80,13 @@ vi.mock('@/lib/stores/authStore', () => ({
 }));
 
 vi.mock('@/components/chat/ThreadsPane', () => ({
-  ThreadsPane: () => <div data-testid="chat__threads-pane" />,
+  ThreadsPane: ({ onDelete }: { onDelete: (id: string) => void }) => (
+    <div data-testid="chat__threads-pane">
+      <button type="button" data-testid="chat__thread-delete-btn" onClick={() => onDelete('session_1')}>
+        delete-thread
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('@/components/chat/ChatHeader', () => ({
@@ -94,7 +101,13 @@ vi.mock('@/components/chat/Composer', () => ({
   Composer: () => <div data-testid="chat__composer" />,
 }));
 
+vi.mock('@/lib/hooks/use-permissions', () => ({
+  useHasPermission: vi.fn(() => true),
+}));
+
 import ChatPage from '../page';
+
+const mockUseHasPermission = vi.mocked(useHasPermission);
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -110,6 +123,7 @@ function createWrapper() {
 
 describe('ChatPage', () => {
   it('renders compact header layout with new-thread action', async () => {
+    mockUseHasPermission.mockReturnValue(true);
     render(
       <ChatPage
         params={Promise.resolve({
@@ -132,6 +146,7 @@ describe('ChatPage', () => {
   });
 
   it('triggers new thread creation from toolbar', async () => {
+    mockUseHasPermission.mockReturnValue(true);
     const user = userEvent.setup();
     render(
       <ChatPage
@@ -152,5 +167,71 @@ describe('ChatPage', () => {
     await waitFor(() => {
       expect(mockCreateSession).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('uses dialog confirmation before deleting a thread', async () => {
+    mockUseHasPermission.mockReturnValue(true);
+    const user = userEvent.setup();
+    render(
+      <ChatPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const deleteBtn = await screen.findByTestId('chat__thread-delete-btn');
+    await user.click(deleteBtn);
+
+    expect(screen.getByText(/delete_confirm_title/i)).toBeInTheDocument();
+    const confirmBtn = screen.getByRole('button', { name: /delete_confirm_action/i });
+    await user.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockDeleteSession).toHaveBeenCalledWith('ws_1', 'proj_1', 'session_1');
+    });
+  });
+
+  it('shows invalid parameter error state for unsafe route params', async () => {
+    mockUseHasPermission.mockReturnValue(true);
+    render(
+      <ChatPage
+        params={Promise.resolve({
+          workspace: '<script>',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('validation_error')).toBeInTheDocument();
+  });
+
+  it('shows permission denied when user lacks chat read permission', async () => {
+    mockUseHasPermission.mockReturnValue(false);
+    render(
+      <ChatPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
   });
 });

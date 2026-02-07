@@ -54,7 +54,7 @@ export default function LoginPage() {
       // Mock login: set auth state directly
       setAuth(
         {
-          id: 'user_default',
+          id: 'user_001',
           email: userEmail,
           name: userEmail.split('@')[0],
           locale: locale as 'en-US' | 'zh-CN',

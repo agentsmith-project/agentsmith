@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PermissionTemplatesTab } from './PermissionTemplatesTab';
 import { QuotaTemplatesSection } from './QuotaTemplatesSection';
+import { ProjectGroupsSection } from './ProjectGroupsSection';
 import { useProject } from '@/lib/hooks/use-projects';
 
 export interface TemplatesTabProps {
@@ -22,6 +23,7 @@ export function TemplatesTab({ workspaceId, projectId }: TemplatesTabProps) {
       <TabsList>
         <TabsTrigger value="permission">{t('permission_templates')}</TabsTrigger>
         <TabsTrigger value="quota">{t('quota_templates')}</TabsTrigger>
+        <TabsTrigger value="groups">{t('group_templates')}</TabsTrigger>
       </TabsList>
 
       <TabsContent value="permission" className="mt-4 min-w-0">
@@ -37,6 +39,12 @@ export function TemplatesTab({ workspaceId, projectId }: TemplatesTabProps) {
           projectId={projectId}
           projectGovernance={projectGovernance}
         />
+        </div>
+      </TabsContent>
+
+      <TabsContent value="groups" className="mt-4 min-w-0">
+        <div className="overflow-x-auto">
+          <ProjectGroupsSection workspaceId={workspaceId} projectId={projectId} />
         </div>
       </TabsContent>
     </Tabs>

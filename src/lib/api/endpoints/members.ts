@@ -5,12 +5,14 @@
  */
 
 import type { ApiClient } from '../client';
+import { validatePolicyRulesForResource } from '@/lib/constants/resource-policy';
 import type {
   MemberPermissions,
   QuotaOverride,
   QuotaOverrideHistoryItem,
   QuotaTemplate,
-  ResourceACL,
+  ResourcePolicyUpdateRequest,
+  ResourcePolicy,
   PermissionTemplate,
   ChangeHistoryEntry,
 } from '../types';
@@ -65,6 +67,17 @@ export interface Membership {
   permissions: string[];
   status: 'active' | 'blocked' | 'removed';
   joined_at: string;
+}
+
+export interface ProjectGroup {
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  permission_template_id: string;
+  member_ids: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 export class MemberAPI {
@@ -147,9 +160,16 @@ export class MemberAPI {
     projectId: string,
     memberId: string
   ): Promise<MemberPermissions> {
-    return this.client.get<MemberPermissions>(
+    const response = await this.client.get<{
+      platform_permissions?: string[];
+      resource_permissions?: MemberPermissions['resource_permissions'];
+    }>(
       `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/permissions`
     );
+    return {
+      platform_permissions: response.platform_permissions ?? [],
+      resource_permissions: response.resource_permissions,
+    };
   }
 
   /**
@@ -220,39 +240,53 @@ export class MemberAPI {
   }
 
   /**
-   * Get resource ACL for a resource
+   * Get resource policy for a resource
    */
-  async getResourceACL(
+  async getResourcePolicy(
     workspaceId: string,
     projectId: string,
-    resourceType: 'endpoint',
+    resourceType: 'endpoint' | 'source_library' | 'agent',
     resourceId: string
-  ): Promise<ResourceACL> {
-    return this.client.get<ResourceACL>(
-      `/workspaces/${workspaceId}/projects/${projectId}/resources/${resourceType}/${resourceId}/acl`
+  ): Promise<ResourcePolicy> {
+    return this.client.get<ResourcePolicy>(
+      `/workspaces/${workspaceId}/projects/${projectId}/resources/${resourceType}/${resourceId}/policy`
     );
   }
 
   /**
-   * Update resource ACL
+   * Update resource policy
    */
-  async updateResourceACL(
+  async updateResourcePolicy(
     workspaceId: string,
     projectId: string,
-    resourceType: 'endpoint',
+    resourceType: 'endpoint' | 'source_library' | 'agent',
     resourceId: string,
-    data: {
-      ops: Array<{
-        op: 'allow' | 'deny' | 'remove_deny';
-        subject_type: 'user';
-        subject_id: string;
-        permissions: string[];
-        reason?: string;
-      }>;
-    }
+    data: ResourcePolicyUpdateRequest
   ): Promise<void> {
+    const rootValidation = validatePolicyRulesForResource(
+      resourceType,
+      data.rate_limits,
+      data.quota_limits
+    );
+    if (!rootValidation.valid) {
+      throw new Error(`Invalid policy rules for ${resourceType}: ${rootValidation.invalidKeys.join(', ')}`);
+    }
+
+    for (const subject of data.allowed_subjects) {
+      const subjectValidation = validatePolicyRulesForResource(
+        resourceType,
+        subject.rate_limits,
+        subject.quota_limits
+      );
+      if (!subjectValidation.valid) {
+        throw new Error(
+          `Invalid subject policy rules for ${resourceType}: ${subjectValidation.invalidKeys.join(', ')}`
+        );
+      }
+    }
+
     return this.client.patch<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/resources/${resourceType}/${resourceId}/acl`,
+      `/workspaces/${workspaceId}/projects/${projectId}/resources/${resourceType}/${resourceId}/policy`,
       data
     );
   }
@@ -438,6 +472,78 @@ export class MemberAPI {
   ): Promise<Membership> {
     return this.client.get<Membership>(
       `/workspaces/${workspaceId}/projects/${projectId}/memberships/${userId}`
+    );
+  }
+
+  async listGroups(workspaceId: string, projectId: string): Promise<ProjectGroup[]> {
+    const response = await this.client.get<{ items: ProjectGroup[] }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/groups`
+    );
+    return response.items ?? [];
+  }
+
+  async createGroup(
+    workspaceId: string,
+    projectId: string,
+    data: {
+      name: string;
+      description?: string;
+      permission_template_id: string;
+      member_ids?: string[];
+    }
+  ): Promise<ProjectGroup> {
+    return this.client.post<ProjectGroup>(
+      `/workspaces/${workspaceId}/projects/${projectId}/groups`,
+      data
+    );
+  }
+
+  async updateGroup(
+    workspaceId: string,
+    projectId: string,
+    groupId: string,
+    data: {
+      name?: string;
+      description?: string;
+      permission_template_id?: string;
+      member_ids?: string[];
+    }
+  ): Promise<ProjectGroup> {
+    return this.client.patch<ProjectGroup>(
+      `/workspaces/${workspaceId}/projects/${projectId}/groups/${groupId}`,
+      data
+    );
+  }
+
+  async deleteGroup(workspaceId: string, projectId: string, groupId: string): Promise<void> {
+    await this.client.delete<void>(
+      `/workspaces/${workspaceId}/projects/${projectId}/groups/${groupId}`
+    );
+  }
+
+  async applyGroupTemplate(
+    workspaceId: string,
+    projectId: string,
+    groupId: string,
+    memberIds?: string[]
+  ): Promise<{
+    applied_count: number;
+    results?: Array<{
+      member_id: string;
+      status: 'applied' | 'failed';
+      message?: string;
+    }>;
+  }> {
+    return this.client.post<{
+      applied_count: number;
+      results?: Array<{
+        member_id: string;
+        status: 'applied' | 'failed';
+        message?: string;
+      }>;
+    }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/groups/${groupId}/apply-template`,
+      memberIds ? { member_ids: memberIds } : {}
     );
   }
 }

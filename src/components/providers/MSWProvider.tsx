@@ -43,7 +43,7 @@ export function MSWProvider({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div data-testid="page-state__loading" className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-secondary">Starting mocks...</p>

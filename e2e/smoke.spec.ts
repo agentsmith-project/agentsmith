@@ -10,7 +10,8 @@ import { ROUTES } from './fixtures/routes';
 import { withAuth } from './fixtures/authenticated';
 import { waitForPageReady } from './utils/navigation';
 
-test.describe.configure({ mode: 'parallel' });
+// Keep smoke serial for route-health determinism in local dev server mode.
+test.describe.configure({ mode: 'default' });
 
 // ── Acceptable console errors in MSW-backed dev environment ──────────────────
 

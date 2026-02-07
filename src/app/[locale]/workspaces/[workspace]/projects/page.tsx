@@ -78,7 +78,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const canWorkspaceRead = useHasWorkspacePermission('workspace:read');
   const canProjectRead = useHasWorkspacePermission('project:read');
   const canCreateProjectByWorkspacePermissions = useHasWorkspacePermission('workspace:project:create');
-  const canDeleteProjectByWorkspacePermission = useHasWorkspacePermission('project:delete');
+  const canDeleteProjectByWorkspacePermission = useHasWorkspacePermission('workspace:governance:update');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);

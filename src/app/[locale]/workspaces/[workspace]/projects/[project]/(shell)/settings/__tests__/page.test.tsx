@@ -120,7 +120,8 @@ describe('SettingsPage route', () => {
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
   });
 
-  it('disables delete project when user lacks project:delete permission', async () => {
+  it('disables delete project when user lacks settings manage permission', async () => {
+    mockUseCanUpdateProjectPolicy.mockReturnValue(false);
     mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:settings:manage');
     render(
       <SettingsPage

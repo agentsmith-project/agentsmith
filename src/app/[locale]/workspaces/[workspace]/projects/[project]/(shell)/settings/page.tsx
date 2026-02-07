@@ -27,7 +27,6 @@ import { useProject } from '@/lib/hooks/use-projects-queries';
 import {
   useCanReadProjectPolicy,
   useCanUpdateProjectPolicy,
-  useHasPermission,
 } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
@@ -57,7 +56,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const queryClient = useQueryClient();
   const canReadSettings = useCanReadProjectPolicy();
   const canManageSettings = useCanUpdateProjectPolicy();
-  const canDeleteProject = useHasPermission('project:delete');
+  const canDeleteProject = canManageSettings;
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);
 

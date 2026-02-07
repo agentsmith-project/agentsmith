@@ -159,7 +159,7 @@ describe('AttachedSourcesPanel', () => {
     it('renders description', () => {
       renderComponent();
 
-      expect(screen.getByText('Files attached to this recipe')).toBeInTheDocument();
+      expect(screen.getByText('Files attached to this task')).toBeInTheDocument();
     });
   });
 

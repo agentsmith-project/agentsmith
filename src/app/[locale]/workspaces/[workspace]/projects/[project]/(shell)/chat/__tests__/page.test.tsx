@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanAccessChat, useCanManageChatSessions, useHasPermission } from '@/lib/hooks/use-permissions';
 
 const mockGetSessions = vi.fn().mockResolvedValue({
   items: [],
@@ -103,11 +103,15 @@ vi.mock('@/components/chat/Composer', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
+  useCanAccessChat: vi.fn(() => true),
+  useCanManageChatSessions: vi.fn(() => true),
 }));
 
 import ChatPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseCanAccessChat = vi.mocked(useCanAccessChat);
+const mockUseCanManageChatSessions = vi.mocked(useCanManageChatSessions);
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -122,8 +126,13 @@ function createWrapper() {
 }
 
 describe('ChatPage', () => {
-  it('renders compact header layout with new-thread action', async () => {
+  beforeEach(() => {
     mockUseHasPermission.mockReturnValue(true);
+    mockUseCanAccessChat.mockReturnValue(true);
+    mockUseCanManageChatSessions.mockReturnValue(true);
+  });
+
+  it('renders compact header layout with new-thread action', async () => {
     render(
       <ChatPage
         params={Promise.resolve({
@@ -146,7 +155,6 @@ describe('ChatPage', () => {
   });
 
   it('triggers new thread creation from toolbar', async () => {
-    mockUseHasPermission.mockReturnValue(true);
     const user = userEvent.setup();
     render(
       <ChatPage
@@ -170,7 +178,6 @@ describe('ChatPage', () => {
   });
 
   it('uses dialog confirmation before deleting a thread', async () => {
-    mockUseHasPermission.mockReturnValue(true);
     const user = userEvent.setup();
     render(
       <ChatPage
@@ -196,7 +203,6 @@ describe('ChatPage', () => {
   });
 
   it('shows invalid parameter error state for unsafe route params', async () => {
-    mockUseHasPermission.mockReturnValue(true);
     render(
       <ChatPage
         params={Promise.resolve({
@@ -216,7 +222,7 @@ describe('ChatPage', () => {
   });
 
   it('shows permission denied when user lacks chat read permission', async () => {
-    mockUseHasPermission.mockReturnValue(false);
+    mockUseCanAccessChat.mockReturnValue(false);
     render(
       <ChatPage
         params={Promise.resolve({

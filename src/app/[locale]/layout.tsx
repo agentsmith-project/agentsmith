@@ -44,7 +44,9 @@ export default async function LocaleLayout({
         <RealtimeProvider mode="disabled">
           <QueryProvider>
             <NextIntlClientProvider locale={locale} messages={messages}>
-              {children}
+              <div data-testid="page-layout" className="h-full">
+                {children}
+              </div>
               <ToastContainer />
             </NextIntlClientProvider>
           </QueryProvider>

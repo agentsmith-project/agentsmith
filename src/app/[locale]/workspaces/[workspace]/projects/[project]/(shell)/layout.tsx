@@ -49,7 +49,7 @@ export default function AppShellLayout({
 
   return (
     <ProtectedRoute>
-      <div className="h-screen bg-background flex flex-col overflow-hidden">
+      <div data-testid="page-layout" className="h-screen bg-background flex flex-col overflow-hidden">
         {/* Topbar */}
         <Topbar />
 

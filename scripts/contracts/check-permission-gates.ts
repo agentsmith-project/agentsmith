@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ALL_PLATFORM_PERMISSIONS, RESOURCE_PERMISSIONS } from '@/lib/constants/permissions';
+import { ALL_PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
 
 const ROOT = process.cwd();
 const SHELL_DIR = path.join(
@@ -91,8 +91,7 @@ function hasForbiddenTest(testSource: string): boolean {
 }
 
 function collectKnownPermissions(): Set<string> {
-  const resourcePermissions = Object.values(RESOURCE_PERMISSIONS).flat();
-  return new Set<string>([...ALL_PLATFORM_PERMISSIONS, ...resourcePermissions]);
+  return new Set<string>([...ALL_PLATFORM_PERMISSIONS]);
 }
 
 function hasAuthFallbackGate(pageFile: string, source: string): boolean {

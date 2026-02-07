@@ -9,7 +9,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
   FolderOpen,
@@ -61,22 +61,17 @@ function isProjectAdminRole(role: string | undefined): boolean {
   return role === 'owner' || role === 'admin';
 }
 
-interface ProjectsPageProps {
-  params: Promise<{ workspace: string; locale: string }>;
-}
-
 const columnHelper = createColumnHelper<Project>();
 
-export default function ProjectsPage({ params }: ProjectsPageProps) {
+export default function ProjectsPage() {
+  const routeParams = useParams<{ workspace?: string; locale?: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const t = useTranslations('projects');
   const tErrors = useTranslations('errors');
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; locale: string } | null>(null);
   const { isAuthenticated } = useAuthStore();
   const hydrated = useAuthStoreHydration();
   const canWorkspaceRead = useHasWorkspacePermission('workspace:read');
-  const canProjectRead = useHasWorkspacePermission('project:read');
   const canCreateProjectByWorkspacePermissions = useHasWorkspacePermission('workspace:project:create');
   const canDeleteProjectByWorkspacePermission = useHasWorkspacePermission('workspace:governance:update');
 
@@ -85,20 +80,11 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogProject, setDeleteDialogProject] = useState<Project | null>(null);
 
-  useEffect(() => {
-    params.then((p) => {
-      setResolvedParams({
-        workspace: validateWorkspaceParam(p.workspace),
-        locale: p.locale,
-      });
-    });
-  }, [params]);
-
   // Sync auth store from URL parameters
   useSyncAuthFromUrl();
 
-  const workspaceId = resolvedParams?.workspace || '';
-  const locale = resolvedParams?.locale || 'en-US';
+  const workspaceId = validateWorkspaceParam(routeParams?.workspace);
+  const locale = routeParams?.locale || 'en-US';
 
   // Fetch workspace and projects
   const { data: currentWorkspace } = useWorkspace(workspaceId);
@@ -198,8 +184,8 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const pinnedProjects = filteredProjects.filter((p) => p.pinned);
   const unpinnedProjects = filteredProjects.filter((p) => !p.pinned);
 
-  // Wait for params to resolve and auth to hydrate
-  if (!resolvedParams || !hydrated) {
+  // Wait for auth to hydrate
+  if (!hydrated) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -218,7 +204,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
     );
   }
 
-  const canReadProjects = canWorkspaceRead && canProjectRead;
+  const canReadProjects = canWorkspaceRead;
   const canCreateProject = canCreateProjectByWorkspacePermissions;
 
   if (!canReadProjects) {
@@ -243,7 +229,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-foreground mb-2">{t('title')}</h1>
           <p className="text-tertiary">
-            {t('workspace_label')} {currentWorkspace?.name || resolvedParams.workspace}
+            {t('workspace_label')} {currentWorkspace?.name || workspaceId}
           </p>
         </div>
 

@@ -66,7 +66,7 @@ export const projectHandlers = [
       project_id: created.id,
       user_id: CURRENT_USER_ID,
       role: 'owner',
-      permissions: ['project:*'],
+      permissions: [...ROLE_TEMPLATES.owner],
       status: 'active',
       joined_at: new Date().toISOString(),
     });

@@ -5,9 +5,6 @@ import { useTranslations } from 'next-intl';
 import { AuditPage as AuditPageComponent } from '@/components/audit-usage/AuditPage';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { useProject } from '@/lib/hooks/use-projects-queries';
-import { useAuthStore } from '@/lib/stores/authStore';
-import { validateProjectWithMembership } from '@/lib/utils/validation-zod';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface AuditPageProps {
@@ -20,10 +17,8 @@ export default function AuditPage({ params }: AuditPageProps) {
     workspace?: string;
     project?: string;
   } | null>(null);
-  const currentUser = useAuthStore((s) => s.user);
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const { data: currentProject } = useProject(workspaceId, projectId);
 
   useEffect(() => {
     params.then((p) =>
@@ -53,11 +48,7 @@ export default function AuditPage({ params }: AuditPageProps) {
     );
   }
 
-  const validatedProject = currentProject
-    ? validateProjectWithMembership(currentProject)
-    : null;
-  const defaultEndUserId =
-    validatedProject?.role === 'user' ? currentUser?.id : undefined;
+  const defaultEndUserId = undefined;
 
   return (
     <PageState state="success">

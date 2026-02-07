@@ -22,9 +22,14 @@ const mockUseWorkspace = vi.fn(() => ({ data: mockWorkspaceData }));
 const mockUseAuthStore = vi.fn(() => ({ isAuthenticated: true }));
 
 const mockPush = vi.fn();
+const mockUseParams = vi.fn(() => ({
+  workspace: 'ws_1',
+  locale: 'en',
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
+  useParams: () => mockUseParams(),
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
@@ -92,20 +97,14 @@ describe('ProjectsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPush.mockClear();
+    mockUseParams.mockReturnValue({ workspace: 'ws_1', locale: 'en' });
     mockUseHasWorkspacePermission.mockReturnValue(true);
     mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData }));
     mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: true }));
   });
 
   it('renders projects list when params and permissions are valid', async () => {
-    render(
-      <ProjectsPage
-        params={Promise.resolve({
-          workspace: 'ws_1',
-          locale: 'en',
-        })}
-      />
-    );
+    render(<ProjectsPage />);
 
     await waitFor(() => {
       expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
@@ -114,14 +113,7 @@ describe('ProjectsPage route', () => {
   });
 
   it('navigates to overview when clicking a project table row', async () => {
-    render(
-      <ProjectsPage
-        params={Promise.resolve({
-          workspace: 'ws_1',
-          locale: 'en',
-        })}
-      />
-    );
+    render(<ProjectsPage />);
 
     const row = await screen.findByTestId('projects__table__row');
     fireEvent.click(row);
@@ -130,14 +122,8 @@ describe('ProjectsPage route', () => {
   });
 
   it('shows invalid parameter error for unsafe workspace param', async () => {
-    render(
-      <ProjectsPage
-        params={Promise.resolve({
-          workspace: '<script>',
-          locale: 'en',
-        })}
-      />
-    );
+    mockUseParams.mockReturnValue({ workspace: '<script>', locale: 'en' });
+    render(<ProjectsPage />);
 
     await waitFor(() => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
@@ -149,20 +135,13 @@ describe('ProjectsPage route', () => {
     mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData }));
     mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: false }));
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => {
-      if (permission === 'workspace:read' || permission === 'project:read') {
+      if (permission === 'workspace:read') {
         return false;
       }
       return true;
     });
 
-    render(
-      <ProjectsPage
-        params={Promise.resolve({
-          workspace: 'ws_1',
-          locale: 'en',
-        })}
-      />
-    );
+    render(<ProjectsPage />);
 
     await waitFor(() => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();

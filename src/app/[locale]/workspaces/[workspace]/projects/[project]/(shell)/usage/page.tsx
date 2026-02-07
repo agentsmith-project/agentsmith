@@ -6,8 +6,6 @@ import { UsagePage as UsagePageComponent } from '@/components/audit-usage/UsageP
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useAuthStore } from '@/lib/stores/authStore';
-import { useProject } from '@/lib/hooks/use-projects-queries';
-import { validateProjectWithMembership } from '@/lib/utils/validation-zod';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface UsagePageProps {
@@ -23,7 +21,6 @@ export default function UsagePage({ params }: UsagePageProps) {
   const currentUser = useAuthStore((s) => s.user);
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const { data: currentProject } = useProject(workspaceId, projectId);
 
   useEffect(() => {
     params.then((p) =>
@@ -53,11 +50,7 @@ export default function UsagePage({ params }: UsagePageProps) {
     );
   }
 
-  const validatedProject = currentProject
-    ? validateProjectWithMembership(currentProject)
-    : null;
-  const defaultEndUserId =
-    validatedProject?.role === 'user' ? currentUser?.id : undefined;
+  const defaultEndUserId = undefined;
 
   return (
     <PageState state="success">

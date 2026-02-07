@@ -72,7 +72,7 @@ vi.mock('@/lib/stores/authStore', () => ({
 }));
 
 describe('UsagePage route', () => {
-  it('locks end_user_id for user role', async () => {
+  it('does not force end_user_id by role', async () => {
     render(
       <UsagePage
         params={Promise.resolve({
@@ -89,7 +89,7 @@ describe('UsagePage route', () => {
 
     const props = mockUsageFilters.mock.calls[0]?.[0] as { defaultEndUserId?: string } | undefined;
     expect(props).toBeDefined();
-    expect(props!.defaultEndUserId).toBe('user_001');
+    expect(props!.defaultEndUserId).toBeUndefined();
   });
 
   it('renders header and toolbar layout', async () => {

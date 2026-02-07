@@ -75,6 +75,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const tErrors = useTranslations('errors');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; locale: string } | null>(null);
   const { isAuthenticated } = useAuthStore();
+  const currentUserId = useAuthStore((state) => state.user?.id ?? '');
   const hydrated = useAuthStoreHydration();
   const canWorkspaceRead = useHasWorkspacePermission('workspace:read');
   const canProjectRead = useHasWorkspacePermission('project:read');
@@ -106,31 +107,55 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const { data: currentWorkspace } = useWorkspace(workspaceId);
   const { data: workspaceMembers = [] } = useWorkspaceMembers(workspaceId);
   const { data: allProjects = [] } = useProjects(workspaceId);
+  const pinnedStorageKey = useMemo(
+    () => (workspaceId ? `mbos:projects:pinned:${workspaceId}` : ''),
+    [workspaceId]
+  );
 
   // Initialize projects with pinned status
   useEffect(() => {
     if (!hydrated) return;
+    let pinnedIds = new Set<string>();
+    if (pinnedStorageKey) {
+      try {
+        const raw = window.localStorage.getItem(pinnedStorageKey);
+        const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+        if (Array.isArray(parsed)) {
+          pinnedIds = new Set(parsed.filter((item): item is string => typeof item === 'string'));
+        }
+      } catch {
+        pinnedIds = new Set();
+      }
+    }
     const projectsWithPin = allProjects.map((p) => ({
       ...p,
-      pinned: false,
+      pinned: pinnedIds.has(p.id),
     })) as Project[];
     setProjects(projectsWithPin);
-  }, [hydrated, allProjects]);
+  }, [hydrated, allProjects, pinnedStorageKey]);
 
   const handleProjectClick = (project: Project) => {
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/overview`);
   };
 
+  const canManageProject = (project: Project): boolean =>
+    isProjectAdminRole(project.role) || (!!currentUserId && project.owner_id === currentUserId);
+
   const handleSettingsClick = (project: Project) => {
-    if (!isProjectAdminRole(project.role)) return;
+    if (!canManageProject(project)) return;
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/settings`);
   };
 
   const togglePin = (projectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setProjects((prev) =>
-      prev.map((p) => (p.id === projectId ? { ...p, pinned: !p.pinned } : p))
-    );
+    setProjects((prev) => {
+      const next = prev.map((p) => (p.id === projectId ? { ...p, pinned: !p.pinned } : p));
+      if (pinnedStorageKey) {
+        const pinnedIds = next.filter((p) => p.pinned).map((p) => p.id);
+        window.localStorage.setItem(pinnedStorageKey, JSON.stringify(pinnedIds));
+      }
+      return next;
+    });
   };
 
   const handleDeleteProject = async (wsId: string, projectId: string) => {
@@ -307,6 +332,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                 onSettingsClick={handleSettingsClick}
                 onDeleteClick={(project) => setDeleteDialogProject(project)}
                 onTogglePin={togglePin}
+                canManageProject={canManageProject}
                 canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
                 memberNameById={memberNameById}
                 t={t}
@@ -427,6 +453,7 @@ function ProjectsTable({
   onSettingsClick,
   onDeleteClick,
   onTogglePin,
+  canManageProject,
   canDeleteProjectByWorkspacePermission,
   memberNameById,
   t,
@@ -436,6 +463,7 @@ function ProjectsTable({
   onSettingsClick: (project: Project) => void;
   onDeleteClick: (project: Project) => void;
   onTogglePin: (projectId: string, e: React.MouseEvent) => void;
+  canManageProject: (project: Project) => boolean;
   canDeleteProjectByWorkspacePermission: boolean;
   memberNameById: Map<string, string>;
   t: ReturnType<typeof useTranslations<'projects'>>;
@@ -515,7 +543,7 @@ function ProjectsTable({
         id: 'actions',
         header: '',
         cell: ({ row }) => {
-          const canManageProject = isProjectAdminRole(row.original.role);
+          const canManage = canManageProject(row.original);
           const canDeleteProject =
             isProjectAdminRole(row.original.role) && canDeleteProjectByWorkspacePermission;
           return (
@@ -532,7 +560,7 @@ function ProjectsTable({
                 e.stopPropagation();
                 onSettingsClick(row.original);
               }}
-              disabled={!canManageProject}
+              disabled={!canManage}
               className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
               aria-label={t('actions.settings')}
             >
@@ -568,7 +596,7 @@ function ProjectsTable({
         },
       }),
     ],
-    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, canDeleteProjectByWorkspacePermission, memberNameById, t]
+    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, canManageProject, canDeleteProjectByWorkspacePermission, memberNameById, t]
   );
 
   const table = useReactTable({

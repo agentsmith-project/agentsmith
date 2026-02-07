@@ -14,6 +14,28 @@ const sourceLibraries = [
     created_at: new Date('2026-02-01T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-01T00:00:00Z').toISOString(),
   },
+  {
+    id: 'lib_policy_rules',
+    workspace_id: 'ws_default',
+    project_id: 'proj_001',
+    name: 'Policy Rules',
+    description: 'Shared policy and governance references',
+    visibility: 'shared' as const,
+    created_by_user_id: 'user_001',
+    created_at: new Date('2026-02-02T00:00:00Z').toISOString(),
+    updated_at: new Date('2026-02-02T00:00:00Z').toISOString(),
+  },
+  {
+    id: 'lib_product_specs',
+    workspace_id: 'ws_default',
+    project_id: 'proj_001',
+    name: 'Product Specs',
+    description: 'Shared product and API specifications',
+    visibility: 'shared' as const,
+    created_by_user_id: 'user_001',
+    created_at: new Date('2026-02-03T00:00:00Z').toISOString(),
+    updated_at: new Date('2026-02-03T00:00:00Z').toISOString(),
+  },
 ];
 
 export const sourceHandlers = [

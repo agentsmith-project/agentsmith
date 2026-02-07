@@ -2,6 +2,15 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 
 const agents = [...(p0.agents ?? [])];
+type AgentKeyRecord = {
+  id: string;
+  agent_id: string;
+  key_prefix: string;
+  status: 'active' | 'revoked';
+  created_at: string;
+  key?: string;
+};
+const agentKeys: AgentKeyRecord[] = [];
 
 export const agentHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/agents', () =>
@@ -45,14 +54,33 @@ export const agentHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/agents/:id/diagnostics', () =>
     HttpResponse.json(p0.agent_diagnostics),
   ),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/agents/:id/keys', () =>
-    HttpResponse.json({ items: [] }),
-  ),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/agents/:id/keys', () =>
-    HttpResponse.json({
+  http.get('/api/v1/workspaces/:ws/projects/:prj/agents/:id/keys', ({ params }) => {
+    const agentId = String(params.id ?? '');
+    return HttpResponse.json({
+      items: agentKeys.filter((item) => item.agent_id === agentId && item.status === 'active'),
+      total: agentKeys.filter((item) => item.agent_id === agentId && item.status === 'active').length,
+    });
+  }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/agents/:id/keys', ({ params }) => {
+    const agentId = String(params.id ?? '');
+    const fullKey = `mbos_agent_${Math.random().toString(36).slice(2, 18)}`;
+    const keyPrefix = `${fullKey.slice(0, 10)}***`;
+    const created: AgentKeyRecord = {
       id: `ask_${Date.now()}`,
-      key: `mbos_agent_${Math.random().toString(36).slice(2, 18)}`,
+      agent_id: agentId,
+      key_prefix: keyPrefix,
+      status: 'active',
       created_at: new Date().toISOString(),
-    }, { status: 201 }),
-  ),
+      key: fullKey,
+    };
+    agentKeys.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/agents/:id/keys/:keyId', ({ params }) => {
+    const keyId = String(params.keyId ?? '');
+    const item = agentKeys.find((key) => key.id === keyId);
+    if (!item) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
+    item.status = 'revoked';
+    return HttpResponse.json(null, { status: 204 });
+  }),
 ];

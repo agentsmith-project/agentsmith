@@ -268,5 +268,5 @@ export function MembersTable({
     );
   }
 
-  return <DataTable table={table} testId="members__table" />;
+  return <DataTable table={table} testId="members__table" compact />;
 }

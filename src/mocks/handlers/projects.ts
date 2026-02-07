@@ -6,9 +6,19 @@ import type { Project } from '@/lib/api/types';
 const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
 
 export const projectHandlers = [
-  http.get('/api/v1/workspaces/:ws/projects', () =>
-    HttpResponse.json({ items: projects }),
-  ),
+  http.get('/api/v1/workspaces/:ws/projects', () => {
+    const items = projects.map((project) => {
+      const membership = projectMembershipFixtures.find(
+        (m) => m.project_id === project.id && m.user_id === CURRENT_USER_ID,
+      );
+      return {
+        ...project,
+        role: membership?.role,
+        permissions: membership?.permissions ?? [],
+      };
+    });
+    return HttpResponse.json({ items });
+  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj', ({ params }) => {
     const projectId = params.prj as string;
     const project = projects.find((p) => p.id === projectId) || projectFixtures.find((p) => p.id === projectId);
@@ -43,6 +53,14 @@ export const projectHandlers = [
       updated_at: new Date().toISOString(),
     };
     projects.push(created);
+    projectMembershipFixtures.push({
+      project_id: created.id,
+      user_id: CURRENT_USER_ID,
+      role: 'owner',
+      permissions: ['project:*'],
+      status: 'active',
+      joined_at: new Date().toISOString(),
+    });
     return HttpResponse.json(created, { status: 201 });
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj', async ({ params, request }) => {

@@ -17,10 +17,9 @@ export interface UsageFiltersProps {
 }
 
 const RESOURCE_TYPES = [
-  'endpoints',
+  'endpoint',
   'source_library',
   'agent',
-  'workspace',
 ];
 
 export function UsageFilters({

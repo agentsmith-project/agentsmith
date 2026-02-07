@@ -162,7 +162,10 @@ function createAgentColumns(
         <div className="flex items-center justify-end gap-1.5 min-w-[140px]">
           {canManageAgents && (
             <button
-              onClick={() => onEditClick(agent)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onEditClick(agent);
+              }}
               className="h-8 w-8 flex items-center justify-center text-icon-default hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
               title={t('edit')}
               aria-label={t('edit')}
@@ -172,7 +175,10 @@ function createAgentColumns(
           )}
           {isExternal && canIssueAgentKeys && (
             <button
-              onClick={() => onKeysClick(agent)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onKeysClick(agent);
+              }}
               className="h-8 w-8 flex items-center justify-center text-icon-default hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
               title={t('keys_title')}
               aria-label={t('keys_title')}
@@ -183,7 +189,10 @@ function createAgentColumns(
           {canManageAgents && (
             <>
               <button
-                onClick={() => onDeleteRequest(agent)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteRequest(agent);
+                }}
                 className="h-8 w-8 flex items-center justify-center text-error hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
                 title={t('delete')}
                 aria-label={t('delete')}
@@ -191,7 +200,8 @@ function createAgentColumns(
                 <Trash2 className="w-4 h-4" />
               </button>
               <button
-                onClick={() => {
+                onClick={(event) => {
+                  event.stopPropagation();
                   updateAgentMutation.mutate({
                     agentId: agent.id,
                     data: { status: isEnabled ? 'disabled' : 'enabled' },
@@ -385,7 +395,14 @@ export default function AgentsPage({ params }: AgentsPageProps) {
               } : undefined}
             />
           ) : (
-            <DataTable table={table} testId="agents__table" />
+            <DataTable
+              table={table}
+              testId="agents__table"
+              onRowClick={(agent) => {
+                setDetailsAgent(agent);
+                setDetailsOpen(true);
+              }}
+            />
           )}
 
           {detailsAgent && detailsOpen && (

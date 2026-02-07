@@ -27,6 +27,7 @@ export interface UpdateEndpointRequest {
   description?: string;
   openai_model?: string;
   base_url?: string;
+  credential_ref?: string;
   status?: 'active' | 'disabled';
   limits?: {
     max_requests_per_minute?: number;

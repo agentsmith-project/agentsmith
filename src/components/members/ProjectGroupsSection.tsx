@@ -42,6 +42,7 @@ export interface ProjectGroupsSectionProps {
 
 export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSectionProps) {
   const t = useTranslations('members.templates');
+  const membersT = useTranslations('members');
   const canManage = useCanManageMemberGovernance();
   const { data: groups = [] } = useProjectGroups(workspaceId, projectId);
   const { data: members = [], refetch: refetchMembers } = useMembers(workspaceId, projectId);
@@ -54,6 +55,8 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   const [name, setName] = React.useState('');
   const [templateId, setTemplateId] = React.useState('');
   const [selectedMemberIds, setSelectedMemberIds] = React.useState<string[]>([]);
+  const [memberSearch, setMemberSearch] = React.useState('');
+  const [memberPage, setMemberPage] = React.useState(1);
   const [editingGroupId, setEditingGroupId] = React.useState<string | null>(null);
   const [previewGroupId, setPreviewGroupId] = React.useState<string | null>(null);
   const [groupToDelete, setGroupToDelete] = React.useState<ProjectGroup | null>(null);
@@ -84,6 +87,21 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   }, [defaultTemplates, templates]);
 
   const selectedTemplate = templateOptions.find((tpl) => tpl.id === templateId);
+  const filteredMembers = React.useMemo(() => {
+    const keyword = memberSearch.trim().toLowerCase();
+    if (!keyword) return members;
+    return members.filter((member) => {
+      const name = member.name?.toLowerCase() ?? '';
+      const email = member.email.toLowerCase();
+      return name.includes(keyword) || email.includes(keyword);
+    });
+  }, [memberSearch, members]);
+  const memberPageSize = 8;
+  const memberPageCount = Math.max(1, Math.ceil(filteredMembers.length / memberPageSize));
+  const pagedMembers = React.useMemo(() => {
+    const start = (memberPage - 1) * memberPageSize;
+    return filteredMembers.slice(start, start + memberPageSize);
+  }, [filteredMembers, memberPage]);
 
   const toggleMember = (memberId: string) => {
     setSelectedMemberIds((prev) =>
@@ -95,6 +113,8 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     setName('');
     setTemplateId('');
     setSelectedMemberIds([]);
+    setMemberSearch('');
+    setMemberPage(1);
     setEditingGroupId(null);
   };
 
@@ -129,7 +149,14 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     setName(group.name);
     setTemplateId(group.permission_template_id);
     setSelectedMemberIds(group.member_ids);
+    setMemberPage(1);
   };
+
+  React.useEffect(() => {
+    if (memberPage > memberPageCount) {
+      setMemberPage(memberPageCount);
+    }
+  }, [memberPage, memberPageCount]);
 
   const templateNameMap = new Map(templateOptions.map((tpl) => [tpl.id, tpl.name]));
   const memberNameMap = new Map(
@@ -266,8 +293,19 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
 
         <div>
           <p className="mb-1 text-xs text-tertiary">{t('select_members')}</p>
-          <div className="max-h-28 overflow-auto rounded-sm border border-subtle bg-surface-high p-2">
-            {members.map((member) => (
+          <div className="space-y-2 rounded-sm border border-subtle bg-surface-high p-2">
+            <Input
+              value={memberSearch}
+              onChange={(event) => {
+                setMemberSearch(event.target.value);
+                setMemberPage(1);
+              }}
+              placeholder={membersT('filters.search_placeholder')}
+              className="h-8 bg-surface"
+              data-testid="members__group-member-search"
+            />
+            <div className="max-h-44 overflow-auto">
+              {pagedMembers.map((member) => (
               <label key={member.id} className="flex items-center gap-2 py-1 text-xs text-primary">
                 <input
                   type="checkbox"
@@ -278,7 +316,38 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
                 />
                 {member.name || member.email}
               </label>
-            ))}
+              ))}
+              {pagedMembers.length === 0 && (
+                <p className="px-1 py-3 text-xs text-tertiary">{t('group_empty')}</p>
+              )}
+            </div>
+            <div className="flex items-center justify-between text-xs text-tertiary">
+              <span>{memberPage}/{memberPageCount}</span>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2"
+                  disabled={memberPage <= 1}
+                  onClick={() => setMemberPage((prev) => Math.max(1, prev - 1))}
+                  data-testid="members__group-member-page-prev"
+                >
+                  Prev
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2"
+                  disabled={memberPage >= memberPageCount}
+                  onClick={() => setMemberPage((prev) => Math.min(memberPageCount, prev + 1))}
+                  data-testid="members__group-member-page-next"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -201,6 +201,11 @@ or project settings actions appear non-responsive, verify fixture identity consi
 
 These ids must match, otherwise project membership permissions are resolved as empty arrays.
 
+Permission gate model (MVP) is token-first:
+- Project list visibility checks `workspace:read` and data membership presence.
+- Do not require `project:read` as a workspace-level permission token.
+- Project internal routes use project membership permission tokens.
+
 Pinned project state is persisted in localStorage key:
 `mbos:projects:pinned:<workspaceId>`.
 If pin state does not survive refresh, inspect browser localStorage and workspace id resolution.

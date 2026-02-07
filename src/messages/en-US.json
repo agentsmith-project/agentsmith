@@ -944,7 +944,7 @@
         "concurrency": "concurrency"
       },
       "update_success": "Quota overrides updated successfully",
-      "coming_soon": "Quota editor coming soon...",
+      "coming_soon": "Quota editor is managed in the current panel.",
       "cancel": "Cancel",
       "save_changes": "Save Changes"
     },
@@ -968,7 +968,7 @@
         "reason_required": "Reason is required"
       },
       "update_success": "Resource policy updated successfully",
-      "coming_soon": "Resource policy editor coming soon...",
+      "coming_soon": "Resource policy editor is available in Resource Policy.",
       "cancel": "Cancel"
     },
     "history": {
@@ -1008,10 +1008,10 @@
       "result_count": "{count} member(s)"
     },
     "requests": {
-      "coming_soon": "Join requests coming soon..."
+      "coming_soon": "Join requests are available in this tab."
     },
     "templates": {
-      "coming_soon": "Permission templates coming soon...",
+      "coming_soon": "Permission templates are available in this tab.",
       "title": "Permission Templates",
       "description": "Manage default permission templates for roles.",
       "create_template": "Create Template",
@@ -1024,9 +1024,9 @@
       "permissions_list": "Permissions",
       "default_templates": {
         "owner": "Owner",
-        "owner_description": "All permissions (including project:delete)",
+        "owner_description": "All project permissions for governance, resources, and observability.",
         "admin": "Admin",
-        "admin_description": "All permissions except project:delete",
+        "admin_description": "Full project management permissions.",
         "developer": "Developer",
         "developer_description": "Agent keys, source uploads, and AI Studio operations",
         "user": "User",
@@ -1075,7 +1075,7 @@
       "copy_failed_members_success": "Failed member list copied",
       "group_preview_title": "Permission changes preview (per member)",
       "group_preview_empty": "No members in this group",
-      "quota_coming_soon": "Quota templates coming soon. Create and apply quota presets (e.g. Standard, High Usage) to members.",
+      "quota_coming_soon": "Quota templates are available. Create and apply quota presets (e.g. Standard, High Usage) to members.",
       "template_name": "Template Name",
       "template_description": "Description (optional)",
       "name_required": "Name is required",

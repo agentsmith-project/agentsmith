@@ -1026,9 +1026,9 @@
       "permissions_list": "权限列表",
       "default_templates": {
         "owner": "所有者",
-        "owner_description": "所有权限（包括 project:delete）",
+        "owner_description": "项目治理、资源管理与观测的全部权限。",
         "admin": "管理员",
-        "admin_description": "除 project:delete 外的所有权限",
+        "admin_description": "完整的项目管理权限。",
         "developer": "开发者",
         "developer_description": "代理密钥、文件上传与 AI Studio 操作",
         "user": "用户",

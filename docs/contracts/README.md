@@ -9,6 +9,7 @@ This directory contains frontend-backend permission and gating contracts.
 - `auth-permission-model.md`
 - `frontend-mvp-role-governance-requirements.md`
 - `frontend-token-interaction-contract.md`
+- `frontend-resource-policy-governance-v1.md`
 
 These are living documents and can evolve during development.
 
@@ -34,3 +35,4 @@ Before adding/changing route gates or permission checks, align with:
 
 - Remove outdated contract snapshots instead of keeping parallel versioned docs in-tree.
 - Keep a single active contract set in this directory to avoid terminology and gate drift.
+- Resource policy contract lives at `frontend-resource-policy-governance-v1.md` and is the only active source for policy schema/rule matrix.

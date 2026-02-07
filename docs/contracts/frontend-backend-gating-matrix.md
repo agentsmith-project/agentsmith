@@ -5,7 +5,7 @@ Owner: Frontend
 Audience: Backend auth team, QA, FE
 
 > Target MVP direction is `resource policy` as defined in
-> `docs/contracts/frontend-resource-policy-governance-draft.md`.
+> `docs/contracts/frontend-resource-policy-governance-v1.md`.
 
 ## Purpose
 

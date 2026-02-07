@@ -7,10 +7,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Bot, FolderOpen, Server } from 'lucide-react';
-import { AgentAPI, EndpointAPI, SourcesAPI, getApiClient } from '@/lib/api';
+import { AgentAPI, EndpointAPI, MemberAPI, SourcesAPI, getApiClient } from '@/lib/api';
 import type { Member, ProjectGroup } from '@/lib/api/endpoints/members';
 import type {
   Agent,
@@ -18,6 +18,7 @@ import type {
   PolicyRule,
   PolicyRuleKey,
   PolicyResourceType,
+  ResourcePolicy,
   ResourcePolicyUpdateRequest,
   SourceLibrary,
 } from '@/lib/api/types';
@@ -25,6 +26,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
+import { ResourcePolicyStatusBadge } from '@/components/resource-policy/ResourcePolicyStatusBadge';
 import {
   useMembers,
   useProjectGroups,
@@ -34,6 +36,7 @@ import {
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import {
+  getResourcePolicyStatus,
   getRuleDefinitionsForResource,
   getRuleLabel,
   mergeRuleSets,
@@ -86,6 +89,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const endpointAPI = useMemo(() => new EndpointAPI(getApiClient()), []);
   const sourcesAPI = useMemo(() => new SourcesAPI(getApiClient()), []);
   const agentAPI = useMemo(() => new AgentAPI(getApiClient()), []);
+  const memberAPI = useMemo(() => new MemberAPI(getApiClient()), []);
 
   const { data: endpointsData, isLoading: endpointsLoading } = useQuery({
     queryKey: ['resource-policy', 'endpoints', workspaceId, projectId],
@@ -126,6 +130,26 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     }));
     return [...endpoints, ...sourceLibraries, ...agents];
   }, [agentsData?.items, endpointsData?.items, librariesData?.items]);
+
+  const policyQueries = useQueries({
+    queries: rows.map((row) => ({
+      queryKey: ['resource-policy', 'detail', workspaceId, projectId, row.type, row.id],
+      queryFn: () => memberAPI.getResourcePolicy(workspaceId, projectId, row.type, row.id),
+      enabled: !!workspaceId && !!projectId && canReadPolicy,
+      staleTime: 30 * 1000,
+    })),
+  });
+
+  const policyByResourceKey = useMemo(() => {
+    const map = new Map<string, ResourcePolicy>();
+    rows.forEach((row, index) => {
+      const policy = policyQueries[index]?.data;
+      if (policy) {
+        map.set(`${row.type}:${row.id}`, policy);
+      }
+    });
+    return map;
+  }, [policyQueries, rows]);
 
   const isLoading = endpointsLoading || librariesLoading || agentsLoading;
   const selectedType = selectedResource?.type ?? 'endpoint';
@@ -307,8 +331,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
           </p>
           <div className="grid gap-4 lg:grid-cols-[minmax(280px,360px)_1fr]">
             <div className="space-y-2" data-testid="resource-policy__table">
-              {rows.map((row) => {
+              {rows.map((row, index) => {
                 const isSelected = selectedResource?.id === row.id && selectedResource.type === row.type;
+                const rowKey = `${row.type}:${row.id}`;
+                const rowPolicyQuery = policyQueries[index];
+                const rowPolicy = policyByResourceKey.get(rowKey);
+                const rowStatus = getResourcePolicyStatus(rowPolicy);
                 return (
                   <button
                     key={`${row.type}:${row.id}`}
@@ -330,7 +358,20 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                         {row.subtitle ? <p className="text-xs text-tertiary">{row.subtitle}</p> : null}
                       </div>
                     </div>
-                    <span className="text-xs text-tertiary">{tResource('inherits_defaults')}</span>
+                    <ResourcePolicyStatusBadge
+                      data-testid={`resource-policy__row-status--${row.type}--${row.id}`}
+                      status={rowPolicyQuery?.isLoading ? 'loading' : rowStatus.status}
+                      label={
+                        rowPolicyQuery?.isLoading
+                          ? tResource('resource_status.loading')
+                          : tResource(rowStatus.labelKey)
+                      }
+                      title={
+                        rowPolicyQuery?.isLoading
+                          ? tResource('resource_status_reason.loading')
+                          : tResource(rowStatus.reasonKey)
+                      }
+                    />
                   </button>
                 );
               })}

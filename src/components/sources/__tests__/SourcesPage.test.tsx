@@ -185,14 +185,14 @@ handleUpload: vi.fn(),
   it('should render main structure', () => {
     render(<SourcesPage {...defaultProps} />);
 
-    expect(screen.getByText('Sources')).toBeInTheDocument();
+    expect(screen.getByText('title')).toBeInTheDocument();
   });
 
   it('uses shared layout header without local padding', () => {
     render(<SourcesPage {...defaultProps} />);
 
     const header = screen.getByTestId('page-layout__header');
-    expect(within(header).getByRole('heading', { name: 'Sources' })).toBeInTheDocument();
+    expect(within(header).getByRole('heading', { name: 'title' })).toBeInTheDocument();
     const body = screen.getByTestId('page-layout__body');
     expect(body.classList.contains('p-6')).toBe(false);
   });
@@ -235,6 +235,101 @@ handleUpload: vi.fn(),
 
     expect(screen.getByTestId('sources__library-select')).toBeInTheDocument();
     expect(screen.getByTestId('sources__manage-libraries-btn')).toBeInTheDocument();
+  });
+
+  it('renders library policy status badges in libraries dialog', async () => {
+    const user = userEvent.setup();
+    mockUseSourcesList.mockReturnValue({
+      quotaData: {
+        storage: { used: 1024, limit: 10240 },
+        docdb: { used: 512, limit: 5120 },
+        vectordb: { used: 256, limit: 2560 },
+      },
+      quotaLoading: false,
+      items: [],
+      total: 0,
+      sourcesLoading: false,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+      hasNext: false,
+      hasPrev: false,
+      handlePageChange: vi.fn(),
+      setPage: vi.fn(),
+      search: '',
+      selectedLibraryId: 'all',
+      status: 'all',
+      aiReadyOnly: false,
+      sortBy: 'updated_at',
+      sortOrder: 'desc',
+      setSearch: vi.fn(),
+      setSelectedLibraryId: vi.fn(),
+      setStatus: vi.fn(),
+      setAIReadyOnly: vi.fn(),
+      setSortBy: vi.fn(),
+      setSortOrder: vi.fn(),
+      selectedFileIds: [],
+      allSelected: false,
+      someSelected: false,
+      setSelectedFileIds: vi.fn(),
+      handleToggleSelection: vi.fn(),
+      handleToggleAll: vi.fn(),
+      clearSelection: vi.fn(),
+      uploadDialogOpen: false,
+      deleteDialogOpen: false,
+      filesToDelete: null,
+      setUploadDialogOpen: vi.fn(),
+      setDeleteDialogOpen: vi.fn(),
+      setFilesToDelete: vi.fn(),
+      uploadProgress: {},
+      uploadErrors: {},
+      uploading: false,
+      deleting: false,
+      batchStartPending: false,
+      batchCancelPending: false,
+      quotaStatus: { canStart: true, exceededTypes: [] },
+      libraries: [
+        {
+          id: 'lib_1',
+          workspace_id: 'ws_test',
+          project_id: 'proj_test',
+          name: 'Legal Docs',
+          visibility: 'shared',
+          created_by_user_id: 'u_1',
+          created_at: '2026-02-01T00:00:00Z',
+          updated_at: '2026-02-01T00:00:00Z',
+        },
+      ],
+      libraryPolicyStatusById: {
+        lib_1: {
+          status: 'allow_list',
+          labelKey: 'resource_status.allow_list',
+          reasonKey: 'resource_status_reason.allow_list',
+        },
+      },
+      libraryPolicyLoadingById: {
+        lib_1: false,
+      },
+      creatingLibrary: false,
+      updatingLibrary: false,
+      deletingLibrary: false,
+      handleUpload: vi.fn(),
+      handleDeleteClick: vi.fn(),
+      handleConfirmDelete: vi.fn(),
+      handleBatchStartAIReady: vi.fn(),
+      handleBatchCancelAIReady: vi.fn(),
+      handleDownload: vi.fn(),
+      handleCreateLibrary: vi.fn(),
+      handleRenameLibrary: vi.fn(),
+      handleDeleteLibrary: vi.fn(),
+    } as unknown as UseSourcesListReturn);
+
+    render(<SourcesPage {...defaultProps} />);
+    await user.click(screen.getByTestId('sources__manage-libraries-btn'));
+
+    expect(screen.getByTestId('sources__library-policy-status--lib_1')).toHaveTextContent(
+      'resource_status.allow_list'
+    );
   });
 
   it('should render filter selects', () => {
@@ -474,14 +569,14 @@ handleUpload: vi.fn(),
     render(<SourcesPage {...defaultProps} />);
 
     // Component should render without errors
-    expect(screen.getByText('Sources')).toBeInTheDocument();
+    expect(screen.getByText('title')).toBeInTheDocument();
   });
 
   it('should use SourcesProvider context', () => {
     render(<SourcesPage {...defaultProps} />);
 
     // If the component renders, the context is being used
-    expect(screen.getByText('Sources')).toBeInTheDocument();
+    expect(screen.getByText('title')).toBeInTheDocument();
   });
 
   it('should display empty state when no files', () => {

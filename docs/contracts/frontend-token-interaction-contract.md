@@ -2,7 +2,7 @@
 
 > Note (2026-02-07): This document remains valid for operation-level tokens.
 > Resource access/usage behavior should follow
-> `docs/contracts/frontend-resource-policy-governance-draft.md` (v0.3 draft).
+> `docs/contracts/frontend-resource-policy-governance-v1.md`.
 
 ## Purpose
 

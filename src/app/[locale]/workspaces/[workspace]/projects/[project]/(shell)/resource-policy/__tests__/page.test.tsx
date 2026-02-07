@@ -49,6 +49,33 @@ const mockListAgents = vi.fn().mockResolvedValue({
   ],
 });
 
+const mockGetResourcePolicy = vi.fn().mockImplementation(
+  async (_ws: string, _project: string, resourceType: 'endpoint' | 'source_library' | 'agent', resourceId: string) => {
+    const defaultPolicy = {
+      resource_type: resourceType,
+      resource_id: resourceId,
+      access_mode: 'allow_all_members' as const,
+      allowed_subjects: [],
+      rate_limits: { rules: [] },
+      quota_limits: { rules: [] },
+    };
+    if (resourceType === 'endpoint') {
+      return {
+        ...defaultPolicy,
+        quota_limits: { rules: [{ key: 'endpoint.daily_token_limit', value: 100000, window: 'day' as const }] },
+      };
+    }
+    if (resourceType === 'source_library') {
+      return {
+        ...defaultPolicy,
+        access_mode: 'allow_list' as const,
+        allowed_subjects: [{ subject_type: 'group' as const, subject_id: 'group_001' }],
+      };
+    }
+    return defaultPolicy;
+  }
+);
+
 vi.mock('@/lib/api', () => ({
   getApiClient: vi.fn(() => ({})),
   EndpointAPI: vi.fn().mockImplementation(function () {
@@ -59,6 +86,9 @@ vi.mock('@/lib/api', () => ({
   }),
   AgentAPI: vi.fn().mockImplementation(function () {
     return { list: mockListAgents };
+  }),
+  MemberAPI: vi.fn().mockImplementation(function () {
+    return { getResourcePolicy: mockGetResourcePolicy };
   }),
 }));
 
@@ -135,6 +165,7 @@ describe('ResourcePolicyPage', () => {
   beforeEach(() => {
     mockPolicyData = defaultPolicyData();
     mockMutateAsync.mockClear();
+    mockGetResourcePolicy.mockClear();
   });
 
   it('saves endpoint policy changes', async () => {
@@ -217,6 +248,20 @@ describe('ResourcePolicyPage', () => {
     expect(screen.getByTestId('resource-policy__row--endpoint--ep_1')).toBeInTheDocument();
     expect(screen.getByTestId('resource-policy__row--source_library--lib_1')).toBeInTheDocument();
     expect(screen.getByTestId('resource-policy__row--agent--agent_1')).toBeInTheDocument();
+    expect(screen.getByTestId('resource-policy__row-status--endpoint--ep_1')).toHaveTextContent(
+      'resource_status.overridden'
+    );
+    expect(screen.getByTestId('resource-policy__row-status--source_library--lib_1')).toHaveAttribute(
+      'title',
+      'resource_status_reason.allow_list'
+    );
+    expect(screen.getByTestId('resource-policy__row-status--source_library--lib_1')).toHaveAttribute(
+      'aria-label',
+      'resource_status.allow_list. resource_status_reason.allow_list'
+    );
+    expect(screen.getByTestId('resource-policy__row-status--agent--agent_1')).toHaveTextContent(
+      'resource_status.default'
+    );
   });
 
   it('shows invalid parameter error state for unsafe route params', async () => {

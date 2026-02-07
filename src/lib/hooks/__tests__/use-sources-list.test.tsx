@@ -72,6 +72,18 @@ vi.mock('@/lib/api', () => ({
       download: vi.fn().mockResolvedValue(new Blob()),
     };
   }),
+  MemberAPI: vi.fn().mockImplementation(function() {
+    return {
+      getResourcePolicy: vi.fn().mockResolvedValue({
+        resource_type: 'source_library',
+        resource_id: 'lib_1',
+        access_mode: 'allow_all_members',
+        allowed_subjects: [],
+        rate_limits: { rules: [] },
+        quota_limits: { rules: [] },
+      }),
+    };
+  }),
 }));
 
 vi.mock('@/lib/api/errors', () => ({

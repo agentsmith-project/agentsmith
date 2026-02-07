@@ -1,13 +1,13 @@
-# Frontend MVP Resource Policy & Governance Draft (v0.3, Not Frozen)
+# Frontend MVP Resource Policy & Governance (v1)
 
 Last updated: 2026-02-08
-Status: draft, subject to discussion
+Status: active working contract
 Owner: Frontend
 
 ## Purpose
 
-Define a simplified MVP model for resource access and consumption governance.
-This draft supersedes ACL-first wording in older contracts, but does not freeze the final contract.
+Define the MVP model for resource access and consumption governance.
+This contract supersedes ACL-first wording in older contracts.
 
 ## Scope
 
@@ -51,7 +51,7 @@ Conflict rule:
 - priority: `subject override` > `resource override` > `project defaults`
 - same-level conflicts: `most restrictive wins`
 
-## Policy Schema (Draft)
+## Policy Schema
 
 ```yaml
 project_policy:
@@ -140,7 +140,7 @@ subject_overrides:
 Defaults should be configurable in project policy and not hardcoded in frontend.
 Unset (`null`) means no limit for that field.
 
-## API Contract Direction (Draft)
+## API Contract Direction
 
 1. Read/update project defaults:
 - `GET /workspaces/{ws}/projects/{project}/governance/defaults`
@@ -168,7 +168,7 @@ Every policy mutation should record:
 2. Advanced override conflict UI explainers beyond basic preview.
 3. Cross-project governance templates.
 
-## Open Questions
+## Contract Notes
 
-1. Whether group membership source is only project groups or can include workspace governance groups in same selector.
-2. Exact backend error code naming for limit violations.
+1. Subject selectors in MVP use project members and project groups.
+2. Backend error code naming must stay stable across policy save and runtime limit enforcement paths.

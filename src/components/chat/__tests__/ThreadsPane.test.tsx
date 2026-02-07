@@ -102,9 +102,9 @@ describe('ThreadsPane', () => {
       render(<ThreadsPane {...defaultProps} />);
 
       const pane = screen.getByTestId('chat__threads-pane');
-      expect(pane.className).toContain('w-[248px]');
-      expect(pane.className).toContain('xl:w-[264px]');
-      expect(pane.className).toContain('2xl:w-[280px]');
+      expect(pane.className).toContain('w-[216px]');
+      expect(pane.className).toContain('xl:w-[228px]');
+      expect(pane.className).toContain('2xl:w-[240px]');
     });
   });
 

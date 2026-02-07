@@ -2,6 +2,7 @@ import type {
   PolicyQuotaLimit,
   PolicyRateLimit,
   PolicyResourceType,
+  ResourcePolicy,
   PolicyRule,
   PolicyRuleKey,
 } from '@/lib/api/types';
@@ -101,6 +102,52 @@ export function mergeRuleSets(baseRules: PolicyRule[], subjectRules: PolicyRule[
     merged.set(rule.key, rule);
   }
   return Array.from(merged.values());
+}
+
+export type ResourcePolicyStatus = 'default' | 'overridden' | 'allow_list';
+
+export interface ResourcePolicyStatusMeta {
+  status: ResourcePolicyStatus;
+  labelKey: 'resource_status.default' | 'resource_status.overridden' | 'resource_status.allow_list';
+  reasonKey:
+    | 'resource_status_reason.default'
+    | 'resource_status_reason.overridden'
+    | 'resource_status_reason.allow_list';
+}
+
+export function getResourcePolicyStatus(policy: ResourcePolicy | undefined): ResourcePolicyStatusMeta {
+  if (!policy) {
+    return {
+      status: 'default',
+      labelKey: 'resource_status.default',
+      reasonKey: 'resource_status_reason.default',
+    };
+  }
+
+  if (policy.access_mode === 'allow_list') {
+    return {
+      status: 'allow_list',
+      labelKey: 'resource_status.allow_list',
+      reasonKey: 'resource_status_reason.allow_list',
+    };
+  }
+
+  const hasSubjectOverrides = policy.allowed_subjects.length > 0;
+  const hasRootRateRules = (policy.rate_limits?.rules.length ?? 0) > 0;
+  const hasRootQuotaRules = (policy.quota_limits?.rules.length ?? 0) > 0;
+  if (hasSubjectOverrides || hasRootRateRules || hasRootQuotaRules) {
+    return {
+      status: 'overridden',
+      labelKey: 'resource_status.overridden',
+      reasonKey: 'resource_status_reason.overridden',
+    };
+  }
+
+  return {
+    status: 'default',
+    labelKey: 'resource_status.default',
+    reasonKey: 'resource_status_reason.default',
+  };
 }
 
 function findInvalidRuleKeys(

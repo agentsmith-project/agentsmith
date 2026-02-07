@@ -8,6 +8,7 @@
 
 import * as React from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -53,7 +54,12 @@ function SourcesPageContent({ workspaceId, projectId }: SourcesPageProps) {
     <SourcesProvider value={contextValue}>
       <PageLayout
         header={<SourcesPageHeader canSourceUpload={canSourceUpload} />}
-        toolbar={<SourcesPageToolbar canManageLibraries={canManageLibraries} onManageLibraries={() => setLibrariesDialogOpen(true)} />}
+        toolbar={(
+          <SourcesPageToolbar
+            canManageLibraries={canManageLibraries}
+            onManageLibraries={() => setLibrariesDialogOpen(true)}
+          />
+        )}
       >
         <SourcesPageQuotaSummary />
         <SourcesPageTableSection
@@ -78,11 +84,12 @@ function SourcesPageContent({ workspaceId, projectId }: SourcesPageProps) {
  * Header with Quota and Upload button
  */
 function SourcesPageHeader({ canSourceUpload }: { canSourceUpload: boolean }) {
+  const t = useTranslations('sources');
   const context = useSourcesContext();
 
   return (
     <PageHeader
-      title="Sources"
+      title={t('title')}
       actions={(
         canSourceUpload ? (
         <Button
@@ -91,7 +98,7 @@ function SourcesPageHeader({ canSourceUpload }: { canSourceUpload: boolean }) {
           data-testid="sources__upload-btn"
         >
           <Plus className="h-4 w-4" />
-          Upload
+          {t('upload')}
         </Button>
         ) : undefined
       )}
@@ -109,6 +116,7 @@ function SourcesPageToolbar({
   canManageLibraries: boolean;
   onManageLibraries: () => void;
 }) {
+  const t = useTranslations('sources');
   const context = useSourcesContext();
 
   return (
@@ -119,10 +127,10 @@ function SourcesPageToolbar({
           onValueChange={(value) => context.setSelectedLibraryId(value)}
         >
           <SelectTrigger data-testid="sources__library-select">
-            <SelectValue placeholder="All libraries" />
+            <SelectValue placeholder={t('libraries.all')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All libraries</SelectItem>
+            <SelectItem value="all">{t('libraries.all')}</SelectItem>
             {context.libraries.map((library) => (
               <SelectItem key={library.id} value={library.id}>
                 {library.name}
@@ -151,7 +159,7 @@ function SourcesPageToolbar({
           onClick={onManageLibraries}
           data-testid="sources__manage-libraries-btn"
         >
-          Libraries
+          {t('libraries.manage')}
         </Button>
       )}
     </PageToolbar>
@@ -274,6 +282,8 @@ function SourcesPageDialogs({
         open={librariesDialogOpen}
         onOpenChange={onLibrariesDialogOpenChange}
         libraries={context.libraries}
+        libraryPolicyStatusById={context.libraryPolicyStatusById}
+        libraryPolicyLoadingById={context.libraryPolicyLoadingById}
         selectedLibraryId={context.selectedLibraryId}
         onSelectLibrary={context.setSelectedLibraryId}
         onCreateLibrary={context.handleCreateLibrary}

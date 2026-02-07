@@ -46,7 +46,7 @@ export function ThreadsPane({
 
   return (
     <aside
-      className="w-[248px] xl:w-[264px] 2xl:w-[280px] border-r border-subtle bg-panel/70 backdrop-blur-sm flex flex-col overflow-hidden"
+      className="w-[216px] xl:w-[228px] 2xl:w-[240px] border-r border-subtle bg-panel/70 backdrop-blur-sm flex flex-col overflow-hidden"
       data-testid="chat__threads-pane"
     >
       <div className="p-3 border-b border-subtle">

@@ -8,7 +8,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import {
   useSources,
   useQuota,
@@ -22,9 +22,10 @@ import {
 } from './use-sources';
 import { useErrorHandler } from './use-error-handler';
 import { toast } from '@/components/ui/toast';
-import { SourcesAPI, getApiClient } from '@/lib/api';
+import { MemberAPI, SourcesAPI, getApiClient } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import type { AIReadyStatus } from '@/lib/api/types';
+import { getResourcePolicyStatus, type ResourcePolicyStatusMeta } from '@/lib/constants/resource-policy';
 
 export interface UseSourcesListOptions {
   workspaceId: string;
@@ -70,6 +71,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
   // Data fetching
   const { data: quotaData, isLoading: quotaLoading } = useQuota(workspaceId, projectId);
   const { data: librariesData } = useSourceLibraries(workspaceId, projectId);
+  const memberAPI = useMemo(() => new MemberAPI(getApiClient()), []);
   const { data: sourcesData, isLoading: sourcesLoading } = useSources(workspaceId, projectId, {
     search: search || undefined,
     library_id: selectedLibraryId === 'all' ? undefined : selectedLibraryId,
@@ -308,8 +310,30 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
   }, [deleteLibraryMutation, workspaceId, projectId, selectedLibraryId]);
 
   // Computed values
-  const items = sourcesData?.items ?? [];
-  const libraries = librariesData?.items ?? [];
+  const items = useMemo(() => sourcesData?.items ?? [], [sourcesData?.items]);
+  const libraries = useMemo(() => librariesData?.items ?? [], [librariesData?.items]);
+  const libraryPolicyQueries = useQueries({
+    queries: libraries.map((library) => ({
+      queryKey: ['resource-policy', 'source-library', workspaceId, projectId, library.id],
+      queryFn: () => memberAPI.getResourcePolicy(workspaceId, projectId, 'source_library', library.id),
+      enabled: !!workspaceId && !!projectId && !!library.id,
+      staleTime: 30 * 1000,
+    })),
+  });
+  const libraryPolicyStatusById = useMemo<Record<string, ResourcePolicyStatusMeta>>(() => {
+    const map: Record<string, ResourcePolicyStatusMeta> = {};
+    libraries.forEach((library, index) => {
+      map[library.id] = getResourcePolicyStatus(libraryPolicyQueries[index]?.data);
+    });
+    return map;
+  }, [libraries, libraryPolicyQueries]);
+  const libraryPolicyLoadingById = useMemo<Record<string, boolean>>(() => {
+    const map: Record<string, boolean> = {};
+    libraries.forEach((library, index) => {
+      map[library.id] = !!libraryPolicyQueries[index]?.isLoading;
+    });
+    return map;
+  }, [libraries, libraryPolicyQueries]);
   const total = sourcesData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const hasNext = page < totalPages;
@@ -379,6 +403,8 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
     // Quota status
     quotaStatus,
     libraries,
+    libraryPolicyStatusById,
+    libraryPolicyLoadingById,
     creatingLibrary: createLibraryMutation.isPending,
     updatingLibrary: updateLibraryMutation.isPending,
     deletingLibrary: deleteLibraryMutation.isPending,

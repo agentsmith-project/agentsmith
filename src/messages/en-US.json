@@ -216,6 +216,18 @@
       "upload_success": "Uploaded successfully",
       "upload_button": "Upload {count} file(s)"
     },
+    "libraries": {
+      "all": "All libraries",
+      "manage": "Libraries",
+      "manage_description": "Create, rename, delete, and review policy status for source libraries.",
+      "create_hint": "Create shared file library",
+      "name_placeholder": "Library name",
+      "create": "Create",
+      "save": "Save",
+      "cancel": "Cancel",
+      "rename": "Rename library",
+      "delete": "Delete library"
+    },
     "empty": {
       "title": "No files yet",
       "cta": "Upload your first file",
@@ -777,6 +789,18 @@
       "title": "Effective policy summary",
       "access": "Access",
       "no_explicit_limits": "No explicit limits."
+    },
+    "resource_status": {
+      "loading": "Checking...",
+      "default": "Default",
+      "overridden": "Overridden",
+      "allow_list": "Allow list"
+    },
+    "resource_status_reason": {
+      "loading": "Policy status is being loaded.",
+      "default": "Uses project defaults with no explicit resource-level overrides.",
+      "overridden": "Has explicit resource-level limits or subject overrides.",
+      "allow_list": "Access is restricted to selected users/groups."
     },
     "units": {
       "tokens_per_day": "tokens/day",

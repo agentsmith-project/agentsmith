@@ -1,8 +1,8 @@
 # Frontend MVP Role & Governance Requirements
 
 > Note (2026-02-07): This file is partially superseded by
-> `docs/contracts/frontend-resource-policy-governance-draft.md` (v0.3 draft).
-> For resource access and usage governance, follow v0.3 draft first.
+> `docs/contracts/frontend-resource-policy-governance-v1.md`.
+> For resource access and usage governance, follow v1 contract.
 
 ## Purpose
 

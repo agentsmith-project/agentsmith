@@ -218,6 +218,18 @@
       "upload_success": "上传成功",
       "upload_button": "上传 {count} 个文件"
     },
+    "libraries": {
+      "all": "全部文件库",
+      "manage": "文件库",
+      "manage_description": "创建、重命名、删除并查看文件库的策略状态。",
+      "create_hint": "创建共享文件库",
+      "name_placeholder": "文件库名称",
+      "create": "创建",
+      "save": "保存",
+      "cancel": "取消",
+      "rename": "重命名文件库",
+      "delete": "删除文件库"
+    },
     "empty": {
       "title": "暂无文件",
       "cta": "上传第一个文件",
@@ -779,6 +791,18 @@
       "title": "生效策略摘要",
       "access": "访问模式",
       "no_explicit_limits": "未设置显式限制。"
+    },
+    "resource_status": {
+      "loading": "检查中...",
+      "default": "默认",
+      "overridden": "已覆盖",
+      "allow_list": "允许名单"
+    },
+    "resource_status_reason": {
+      "loading": "策略状态加载中。",
+      "default": "使用项目默认策略，未设置资源级覆盖。",
+      "overridden": "已设置资源级限制或主体覆盖规则。",
+      "allow_list": "仅允许被选中的用户或分组访问。"
     },
     "units": {
       "tokens_per_day": "tokens/天",

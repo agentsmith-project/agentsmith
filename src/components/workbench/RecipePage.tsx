@@ -255,7 +255,7 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
         onLeave={handleLeave}
       />
       <div className="flex-1 flex min-h-0">
-        <div className="w-[260px] flex-shrink-0">
+        <div className="w-[232px] flex-shrink-0">
           <AttachedSourcesPanel
             workspaceId={workspaceId}
             projectId={projectId}
@@ -274,7 +274,7 @@ export function RecipePage({ workspaceId, projectId, recipeId }: RecipePageProps
             sending={sendMessage.isPending}
           />
         </div>
-        <div className="w-[320px] flex-shrink-0">
+        <div className="w-[288px] flex-shrink-0">
           <ArtifactsPanel
             artifacts={artifacts || []}
             onView={handleViewArtifact}

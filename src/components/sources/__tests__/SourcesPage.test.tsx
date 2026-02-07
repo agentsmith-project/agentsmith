@@ -220,7 +220,7 @@ handleUpload: vi.fn(),
   });
 
   it('hides upload entry when source upload permission is missing', () => {
-    mockUseHasPermission.mockImplementation((permission: string) => permission !== 'project:source:upload');
+    mockUseHasPermission.mockImplementation((permission: string) => permission !== 'project:source:manage');
 
     render(<SourcesPage {...defaultProps} />);
 

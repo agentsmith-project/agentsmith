@@ -24,7 +24,7 @@ import { SourcesSelectionBar } from './SourcesSelectionBar';
 import { FileUploadDialog } from './FileUploadDialog';
 import { FileDeleteDialog } from './FileDeleteDialog';
 import { SourceLibrariesDialog } from './SourceLibrariesDialog';
-import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import {
   Select,
   SelectContent,
@@ -40,16 +40,13 @@ export interface SourcesPageProps {
 
 function SourcesPageContent({ workspaceId, projectId }: SourcesPageProps) {
   const contextValue = useSourcesList({ workspaceId, projectId });
-  const canSourceUpload = useHasPermission('project:source:upload');
-  const canSourceDelete = useHasPermission('project:source:delete');
-  const canSourceDownload = useHasPermission('project:source:download');
-  const canSourceLibraryCreate = useHasPermission('project:source:library:create');
-  const canSourceLibraryUpdate = useHasPermission('project:source:library:update');
-  const canSourceLibraryDelete = useHasPermission('project:source:library:delete');
-  const isProjectAdmin = useIsProjectAdmin();
-  const canManageLibraries = isProjectAdmin && (
-    canSourceLibraryCreate || canSourceLibraryUpdate || canSourceLibraryDelete
-  );
+  const canSourceUpload = useHasPermission('project:source:manage');
+  const canSourceDelete = useHasPermission('project:source:manage');
+  const canSourceDownload = useHasPermission('project:source:use');
+  const canSourceLibraryCreate = useHasPermission('project:source:manage');
+  const canSourceLibraryUpdate = useHasPermission('project:source:manage');
+  const canSourceLibraryDelete = useHasPermission('project:source:manage');
+  const canManageLibraries = canSourceLibraryCreate || canSourceLibraryUpdate || canSourceLibraryDelete;
   const canControlAIReady = canSourceUpload || canSourceDelete;
   const [librariesDialogOpen, setLibrariesDialogOpen] = React.useState(false);
 

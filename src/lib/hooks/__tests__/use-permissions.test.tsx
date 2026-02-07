@@ -116,7 +116,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toEqual([]);
     });
 
-    it('should fallback to role template when permissions are empty', () => {
+    it('should return empty permissions when explicit permissions are empty', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -136,8 +136,7 @@ describe('use-permissions hooks', () => {
         wrapper: createWrapper(),
       });
 
-      expect(result.current).toContain('project:read');
-      expect(result.current.length).toBeGreaterThan(0);
+      expect(result.current).toEqual([]);
     });
   });
 
@@ -308,7 +307,7 @@ describe('use-permissions hooks', () => {
   });
 
   describe('useIsOwnerOrAdmin', () => {
-    it('should return true for owner role', () => {
+    it('should return true for member-manage token', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -318,7 +317,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        role: 'owner' as const,
+        permissions: ['project:member:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -330,7 +329,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('should return true for admin role', () => {
+    it('should return true for member-manage token (admin equivalent)', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -340,7 +339,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        role: 'admin' as const,
+        permissions: ['project:member:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -352,7 +351,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('should return false for developer role', () => {
+    it('should return false without member-manage token', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -362,7 +361,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        role: 'developer' as const,
+        permissions: ['project:member:view'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -386,7 +385,7 @@ describe('use-permissions hooks', () => {
   });
 
   describe('useIsOwner', () => {
-    it('should return true only for owner role', () => {
+    it('should return true for settings-manage token', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -396,7 +395,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        role: 'owner' as const,
+        permissions: ['project:settings:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -408,7 +407,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('should return false for admin role', () => {
+    it('should return false without settings-manage token', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -418,7 +417,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        role: 'admin' as const,
+        permissions: ['project:member:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -700,7 +699,7 @@ describe('use-permissions hooks', () => {
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
       const { result: readResult } = renderHook(
-        () => useHasPermission('project:audit:read'),
+        () => useHasPermission('project:audit:view'),
         { wrapper: createWrapper() }
       );
       expect(readResult.current).toBe(true);

@@ -190,6 +190,21 @@ Reason: short-circuiting can change hook call order across renders and cause run
 
 ## Troubleshooting
 
+### Project list click/permission anomalies in MSW mode
+
+If project rows are visible but clicking into a project leads to immediate permission denial,
+or project settings actions appear non-responsive, verify fixture identity consistency first:
+
+1. `src/mocks/fixtures/p0.json` auth user id
+2. `src/mocks/fixtures/projects.ts` `CURRENT_USER_ID`
+3. project membership `user_id` values used by `src/mocks/handlers/projects.ts`
+
+These ids must match, otherwise project membership permissions are resolved as empty arrays.
+
+Pinned project state is persisted in localStorage key:
+`mbos:projects:pinned:<workspaceId>`.
+If pin state does not survive refresh, inspect browser localStorage and workspace id resolution.
+
 ## Visual Baselines (Best Practice)
 
 For reliable full-page screenshots, run visual tests against a production build

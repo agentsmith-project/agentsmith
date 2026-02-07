@@ -90,7 +90,7 @@ export function ProjectNavigation({ basePath, items, columns = 3, translations, 
       label: t('navigation.settings'),
       href: '/settings',
       description: t('navigation.settings_description'),
-      requiresPermission: 'project:settings:edit',
+      requiresPermission: 'project:settings:manage',
     },
   ];
 

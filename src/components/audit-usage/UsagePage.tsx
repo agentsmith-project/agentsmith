@@ -33,7 +33,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
-  const canReadUsage = useHasPermission('project:usage:read');
+  const canReadUsage = useHasPermission('project:usage:view');
 
   // User role: locked to own usage. Owner/admin/developer: can switch scope
   const isScopeLocked = !!defaultEndUserId;

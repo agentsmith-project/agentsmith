@@ -21,9 +21,9 @@ interface MembersPageProps {
 export default function MembersRoute({ params }: MembersPageProps) {
   const tErrors = useTranslations('errors');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
-  const canProjectMemberRead = useHasPermission('project:member:read');
-  const canProjectAdminGrant = useHasPermission('project:admin:grant');
-  const canProjectAdminRevoke = useHasPermission('project:admin:revoke');
+  const canProjectMemberRead = useHasPermission('project:member:view');
+  const canProjectAdminGrant = useHasPermission('project:member:manage');
+  const canProjectAdminRevoke = useHasPermission('project:member:manage');
   const canReadMembers = canProjectMemberRead || canProjectAdminGrant || canProjectAdminRevoke;
 
   useEffect(() => {

@@ -47,7 +47,7 @@ export const projectHandlers = [
       description: (body.description as string) ?? '',
       visibility,
       join_policy: joinPolicy,
-      owner_id: 'user_001',
+      owner_id: CURRENT_USER_ID,
       status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

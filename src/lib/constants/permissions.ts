@@ -1,13 +1,6 @@
 /**
- * Permission Points Constants
- *
- * Defines all permission points according to the standard specification.
- * Reference: 文档/决策/2026-02-02-权限点标准规范-v1-正式版.md
+ * Permission Points Constants (Token-only MVP)
  */
-
-// ============================================================
-// Platform-level Permission Points
-// ============================================================
 
 export const PLATFORM_PERMISSIONS = {
   WORKSPACE: [
@@ -16,100 +9,59 @@ export const PLATFORM_PERMISSIONS = {
     'workspace:governance:update',
   ] as const,
 
-  PROJECT: [
-    'project:read',
-    'project:update',
-    'project:delete',
-    'project:chat:access',
-    'project:studio:access',
-  ] as const,
+  ACCESS: ['project:chat:access', 'project:studio:access'] as const,
 
-  MEMBERSHIP: [
-    'project:join:approve',
-    'project:member:read',
-    'project:admin:grant',
-    'project:admin:revoke',
-  ] as const,
+  SOURCE: ['project:source:use', 'project:source:manage'] as const,
 
-  POLICY: [
-    'project:policy:read',
-    'project:policy:update',
-  ] as const,
-  GOVERNANCE: [
-    'project:audit:read',
-    'project:usage:read',
-  ] as const,
+  ENDPOINT: ['project:endpoint:use', 'project:endpoint:manage'] as const,
 
-  SOURCES: [
-    'project:source:read',
-    'project:source:upload',
-    'project:source:delete',
-    'project:source:download',
-    'project:source:library:read',
-    'project:source:library:create',
-    'project:source:library:update',
-    'project:source:library:delete',
-  ] as const,
+  AGENT: ['project:agent:use', 'project:agent:manage'] as const,
 
-  ENDPOINTS: [
-    'project:endpoint:read',
-    'project:endpoint:create',
-    'project:endpoint:update',
-    'project:endpoint:delete',
-  ] as const,
+  RESOURCE_POLICY: ['project:resource_policy:manage'] as const,
 
-  AGENT: [
-    'project:agent:read',
-    'project:agent:create',
-    'project:agent:update',
-    'project:agent:delete',
-    'project:agent:key:issue',
-    'project:agent:key:revoke',
-  ] as const,
+  CREDENTIAL: ['project:credential:manage'] as const,
+
+  SETTINGS: ['project:settings:manage'] as const,
+
+  MEMBER: ['project:member:view', 'project:member:manage'] as const,
+
+  OBSERVABILITY: ['project:audit:view', 'project:usage:view'] as const,
 } as const;
 
-// Flattened list of all platform permissions
-export const ALL_PLATFORM_PERMISSIONS = Object.values(PLATFORM_PERMISSIONS).flat() as readonly string[];
+export const ALL_PLATFORM_PERMISSIONS = [
+  ...PLATFORM_PERMISSIONS.WORKSPACE,
+  ...PLATFORM_PERMISSIONS.ACCESS,
+  ...PLATFORM_PERMISSIONS.SOURCE,
+  ...PLATFORM_PERMISSIONS.ENDPOINT,
+  ...PLATFORM_PERMISSIONS.AGENT,
+  ...PLATFORM_PERMISSIONS.RESOURCE_POLICY,
+  ...PLATFORM_PERMISSIONS.CREDENTIAL,
+  ...PLATFORM_PERMISSIONS.SETTINGS,
+  ...PLATFORM_PERMISSIONS.MEMBER,
+  ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+] as const;
 
-// Permission descriptions for UI tooltips (from 权限点标准规范-v1)
 export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'workspace:read': 'View workspace info',
   'workspace:project:create': 'Create projects in workspace',
   'workspace:governance:update': 'Update workspace governance groups',
-  'project:read': 'View project info',
-  'project:update': 'Update project config',
-  'project:delete': 'Delete project (irreversible)',
   'project:chat:access': 'Access chat page and features',
   'project:studio:access': 'Access AI Studio page and tasks',
-  'project:join:approve': 'Approve join requests',
-  'project:member:read': 'View member list',
-  'project:admin:grant': 'Grant project admin to a member',
-  'project:admin:revoke': 'Revoke project admin from a member',
-  'project:policy:read': 'View project policy',
-  'project:policy:update': 'Update project policy',
-  'project:audit:read': 'View audit logs',
-  'project:usage:read': 'View usage stats',
-  'project:source:read': 'View file list',
-  'project:source:upload': 'Upload files',
-  'project:source:delete': 'Delete files',
-  'project:source:download': 'Download files',
-  'project:source:library:read': 'View source libraries',
-  'project:source:library:create': 'Create source libraries',
-  'project:source:library:update': 'Update source libraries',
-  'project:source:library:delete': 'Delete source libraries',
-  'project:endpoint:read': 'View endpoints',
-  'project:endpoint:create': 'Create endpoints',
-  'project:endpoint:update': 'Update endpoints',
-  'project:endpoint:delete': 'Delete endpoints',
-  'project:agent:read': 'View agent list and details',
-  'project:agent:create': 'Create agents',
-  'project:agent:update': 'Update/enable/disable agents',
-  'project:agent:delete': 'Delete agents',
-  'project:agent:key:issue': 'Issue agent service keys',
-  'project:agent:key:revoke': 'Revoke agent service keys',
+  'project:source:use': 'Use source libraries and files',
+  'project:source:manage': 'Manage source libraries and files',
+  'project:endpoint:use': 'Use model endpoints',
+  'project:endpoint:manage': 'Manage model endpoints',
+  'project:agent:use': 'Use agents',
+  'project:agent:manage': 'Manage agents and keys',
+  'project:resource_policy:manage': 'Manage resource access and usage policy',
+  'project:credential:manage': 'Manage project credentials',
+  'project:settings:manage': 'Manage project settings',
+  'project:member:view': 'View members',
+  'project:member:manage': 'Manage members and templates',
+  'project:audit:view': 'View audit logs',
+  'project:usage:view': 'View usage data',
 };
 
-// Grouped permissions for UI display
 export const PLATFORM_PERMISSIONS_GROUPED = [
   {
     id: 'workspace',
@@ -117,174 +69,104 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
     permissions: PLATFORM_PERMISSIONS.WORKSPACE,
   },
   {
-    id: 'project',
-    name: 'Project & Membership',
+    id: 'access',
+    name: 'Chat / Studio Access',
+    permissions: PLATFORM_PERMISSIONS.ACCESS,
+  },
+  {
+    id: 'resources',
+    name: 'Resources',
     permissions: [
-      ...PLATFORM_PERMISSIONS.PROJECT,
-      ...PLATFORM_PERMISSIONS.MEMBERSHIP,
+      ...PLATFORM_PERMISSIONS.SOURCE,
+      ...PLATFORM_PERMISSIONS.ENDPOINT,
+      ...PLATFORM_PERMISSIONS.AGENT,
     ],
   },
   {
-    id: 'policy',
-    name: 'Project Policy',
-    permissions: PLATFORM_PERMISSIONS.POLICY,
-  },
-  {
     id: 'governance',
-    name: 'Project Governance',
-    permissions: PLATFORM_PERMISSIONS.GOVERNANCE,
+    name: 'Governance',
+    permissions: [
+      ...PLATFORM_PERMISSIONS.RESOURCE_POLICY,
+      ...PLATFORM_PERMISSIONS.CREDENTIAL,
+      ...PLATFORM_PERMISSIONS.SETTINGS,
+      ...PLATFORM_PERMISSIONS.MEMBER,
+    ],
   },
   {
-    id: 'sources',
-    name: 'Sources & Files',
-    permissions: PLATFORM_PERMISSIONS.SOURCES,
-  },
-  {
-    id: 'agent',
-    name: 'Agent & Keys',
-    permissions: PLATFORM_PERMISSIONS.AGENT,
-  },
-  {
-    id: 'endpoints',
-    name: 'Endpoints',
-    permissions: PLATFORM_PERMISSIONS.ENDPOINTS,
+    id: 'observability',
+    name: 'Audit / Usage',
+    permissions: PLATFORM_PERMISSIONS.OBSERVABILITY,
   },
 ] as const;
 
-// ============================================================
-// Resource-level Permission Points
-// ============================================================
-
-export const RESOURCE_PERMISSIONS = {
-  ENDPOINT: [
-    'endpoint:use',
-  ] as const,
-} as const;
-
-// ============================================================
-// Role Templates
-// ============================================================
-
+// Legacy type name preserved to avoid churn in member-template UI components.
 export const ROLE_TEMPLATES = {
   owner: [
-    'workspace:read',
-    'workspace:project:create',
-    'workspace:governance:update',
-    'project:read',
-    'project:update',
-    'project:chat:access',
-    'project:studio:access',
-    'project:delete',
-    'project:join:approve',
-    'project:member:read',
-    'project:admin:grant',
-    'project:admin:revoke',
-    'project:policy:read',
-    'project:policy:update',
-    'project:audit:read',
-    'project:usage:read',
-    'project:source:read',
-    'project:source:upload',
-    'project:source:delete',
-    'project:source:download',
-    'project:source:library:read',
-    'project:source:library:create',
-    'project:source:library:update',
-    'project:source:library:delete',
-    'project:endpoint:read',
-    'project:endpoint:create',
-    'project:endpoint:update',
-    'project:endpoint:delete',
-    'project:agent:read',
-    'project:agent:create',
-    'project:agent:update',
-    'project:agent:delete',
-    'project:agent:key:issue',
-    'project:agent:key:revoke',
-  ] as const,
-
+    ...PLATFORM_PERMISSIONS.ACCESS,
+    ...PLATFORM_PERMISSIONS.SOURCE,
+    ...PLATFORM_PERMISSIONS.ENDPOINT,
+    ...PLATFORM_PERMISSIONS.AGENT,
+    ...PLATFORM_PERMISSIONS.RESOURCE_POLICY,
+    ...PLATFORM_PERMISSIONS.CREDENTIAL,
+    ...PLATFORM_PERMISSIONS.SETTINGS,
+    ...PLATFORM_PERMISSIONS.MEMBER,
+    ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+  ],
   admin: [
-    'workspace:read',
-    'workspace:project:create',
-    'project:read',
-    'project:chat:access',
-    'project:studio:access',
-    'project:update',
-    'project:join:approve',
-    'project:member:read',
-    'project:admin:grant',
-    'project:admin:revoke',
-    'project:policy:read',
-    'project:policy:update',
-    'project:audit:read',
-    'project:usage:read',
-    'project:source:read',
-    'project:source:upload',
-    'project:source:delete',
-    'project:source:download',
-    'project:source:library:read',
-    'project:source:library:create',
-    'project:source:library:update',
-    'project:source:library:delete',
-    'project:endpoint:read',
-    'project:endpoint:create',
-    'project:endpoint:update',
-    'project:endpoint:delete',
-    'project:agent:read',
-    'project:agent:create',
-    'project:agent:update',
-    'project:agent:delete',
-    'project:agent:key:issue',
-    'project:agent:key:revoke',
-  ] as const,
-
+    ...PLATFORM_PERMISSIONS.ACCESS,
+    ...PLATFORM_PERMISSIONS.SOURCE,
+    ...PLATFORM_PERMISSIONS.ENDPOINT,
+    ...PLATFORM_PERMISSIONS.AGENT,
+    ...PLATFORM_PERMISSIONS.RESOURCE_POLICY,
+    ...PLATFORM_PERMISSIONS.CREDENTIAL,
+    ...PLATFORM_PERMISSIONS.SETTINGS,
+    ...PLATFORM_PERMISSIONS.MEMBER,
+    ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+  ],
   developer: [
-    'project:read',
-    'project:chat:access',
-    'project:studio:access',
-    'project:member:read',
-    'project:policy:read',
-    'project:usage:read',
-    'project:source:read',
-    'project:source:upload',
-    'project:source:download',
-    'project:source:library:read',
-    'project:endpoint:read',
-    'project:agent:read',
-    'project:agent:key:issue',
-  ] as const,
-
+    ...PLATFORM_PERMISSIONS.ACCESS,
+    'project:source:use',
+    'project:endpoint:use',
+    'project:agent:use',
+    ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+  ],
   user: [
-    'project:read',
-    'project:member:read',
-    'project:policy:read',
-    'project:usage:read',
-    'project:source:read',
-    'project:source:download',
-    'project:source:library:read',
-    'project:endpoint:read',
-    'project:agent:read',
-  ] as const,
+    ...PLATFORM_PERMISSIONS.ACCESS,
+    'project:source:use',
+    'project:endpoint:use',
+    'project:agent:use',
+    ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+  ],
 } as const;
 
-// ============================================================
-// High-Risk Permissions
-// ============================================================
+export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
+  project_admin_template: [...ROLE_TEMPLATES.owner],
+  project_operator_template: [
+    ...PLATFORM_PERMISSIONS.ACCESS,
+    ...PLATFORM_PERMISSIONS.SOURCE,
+    ...PLATFORM_PERMISSIONS.ENDPOINT,
+    ...PLATFORM_PERMISSIONS.AGENT,
+    'project:member:view',
+    ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+  ],
+  project_member_template: [...ROLE_TEMPLATES.user],
+  project_viewer_template: [...PLATFORM_PERMISSIONS.OBSERVABILITY],
+} as const;
 
 export const HIGH_RISK_PERMISSIONS = [
-  'project:delete',
-  'project:agent:key:issue',
-  'project:endpoint:delete',
-  'project:source:library:delete',
+  'project:resource_policy:manage',
+  'project:credential:manage',
+  'project:settings:manage',
+  'project:member:manage',
+  'project:agent:manage',
+  'project:endpoint:manage',
+  'project:source:manage',
 ] as const;
 
-// Type helpers
-export type PlatformPermission = typeof ALL_PLATFORM_PERMISSIONS[number];
-export type ResourcePermission = typeof RESOURCE_PERMISSIONS.ENDPOINT[number];
+export type PlatformPermission = (typeof ALL_PLATFORM_PERMISSIONS)[number];
 export type RoleTemplate = keyof typeof ROLE_TEMPLATES;
-export type HighRiskPermission = typeof HIGH_RISK_PERMISSIONS[number];
+export type HighRiskPermission = (typeof HIGH_RISK_PERMISSIONS)[number];
 
-// Helper functions
 export function isHighRiskPermission(permission: string): boolean {
   return HIGH_RISK_PERMISSIONS.includes(permission as HighRiskPermission);
 }

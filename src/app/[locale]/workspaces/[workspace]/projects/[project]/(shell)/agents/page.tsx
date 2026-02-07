@@ -26,7 +26,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import {
   AlertDialog,
@@ -258,16 +258,15 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
-  const canAgentRead = useHasPermission('project:agent:read');
-  const canAgentCreate = useHasPermission('project:agent:create');
-  const canAgentUpdate = useHasPermission('project:agent:update');
-  const canAgentDelete = useHasPermission('project:agent:delete');
-  const canAgentKeyIssue = useHasPermission('project:agent:key:issue');
-  const canAgentKeyRevoke = useHasPermission('project:agent:key:revoke');
-  const isProjectAdmin = useIsProjectAdmin();
+  const canAgentRead = useHasPermission('project:agent:use');
+  const canAgentCreate = useHasPermission('project:agent:manage');
+  const canAgentUpdate = useHasPermission('project:agent:manage');
+  const canAgentDelete = useHasPermission('project:agent:manage');
+  const canAgentKeyIssue = useHasPermission('project:agent:manage');
+  const canAgentKeyRevoke = useHasPermission('project:agent:manage');
   const canReadAgents = canAgentRead || canAgentCreate || canAgentUpdate || canAgentDelete;
-  const canManageAgents = isProjectAdmin && (canAgentCreate || canAgentUpdate || canAgentDelete);
-  const canIssueAgentKeys = isProjectAdmin && (canAgentKeyIssue || canAgentKeyRevoke);
+  const canManageAgents = canAgentCreate || canAgentUpdate || canAgentDelete;
+  const canIssueAgentKeys = canAgentKeyIssue || canAgentKeyRevoke;
 
   useEffect(() => {
     params.then((p) => {

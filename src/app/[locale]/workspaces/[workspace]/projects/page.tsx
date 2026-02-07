@@ -52,7 +52,6 @@ import { ProjectAPI, getApiClient } from '@/lib/api';
 import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
-import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 import { useQueryClient } from '@tanstack/react-query';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
@@ -75,7 +74,6 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const tErrors = useTranslations('errors');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; locale: string } | null>(null);
   const { isAuthenticated } = useAuthStore();
-  const currentUserId = useAuthStore((state) => state.user?.id ?? '');
   const hydrated = useAuthStoreHydration();
   const canWorkspaceRead = useHasWorkspacePermission('workspace:read');
   const canProjectRead = useHasWorkspacePermission('project:read');
@@ -101,7 +99,6 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
 
   const workspaceId = resolvedParams?.workspace || '';
   const locale = resolvedParams?.locale || 'en-US';
-  const { isWheelUser } = useWorkspaceGovernance(workspaceId);
 
   // Fetch workspace and projects
   const { data: currentWorkspace } = useWorkspace(workspaceId);
@@ -138,11 +135,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/overview`);
   };
 
-  const canManageProject = (project: Project): boolean =>
-    isProjectAdminRole(project.role) || (!!currentUserId && project.owner_id === currentUserId);
-
   const handleSettingsClick = (project: Project) => {
-    if (!canManageProject(project)) return;
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/settings`);
   };
 
@@ -226,7 +219,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   }
 
   const canReadProjects = canWorkspaceRead && canProjectRead;
-  const canCreateProject = canCreateProjectByWorkspacePermissions && isWheelUser;
+  const canCreateProject = canCreateProjectByWorkspacePermissions;
 
   if (!canReadProjects) {
     return (
@@ -332,7 +325,6 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                 onSettingsClick={handleSettingsClick}
                 onDeleteClick={(project) => setDeleteDialogProject(project)}
                 onTogglePin={togglePin}
-                canManageProject={canManageProject}
                 canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
                 memberNameById={memberNameById}
                 t={t}
@@ -459,7 +451,6 @@ function ProjectsTable({
   onSettingsClick,
   onDeleteClick,
   onTogglePin,
-  canManageProject,
   canDeleteProjectByWorkspacePermission,
   memberNameById,
   t,
@@ -469,7 +460,6 @@ function ProjectsTable({
   onSettingsClick: (project: Project) => void;
   onDeleteClick: (project: Project) => void;
   onTogglePin: (projectId: string, e: React.MouseEvent) => void;
-  canManageProject: (project: Project) => boolean;
   canDeleteProjectByWorkspacePermission: boolean;
   memberNameById: Map<string, string>;
   t: ReturnType<typeof useTranslations<'projects'>>;
@@ -496,12 +486,19 @@ function ProjectsTable({
       columnHelper.accessor('name', {
         header: t('table.name'),
         cell: (info) => (
-          <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onProjectClick(info.row.original);
+            }}
+            className="flex items-center gap-3 text-left hover:opacity-90"
+          >
             <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
               <FolderOpen className="w-4 h-4 text-icon-default" />
             </div>
             <span className="font-medium text-foreground">{info.getValue()}</span>
-          </div>
+          </button>
         ),
       }),
       columnHelper.display({
@@ -552,7 +549,6 @@ function ProjectsTable({
         id: 'actions',
         header: '',
         cell: ({ row }) => {
-          const canManage = canManageProject(row.original);
           const canDeleteProject =
             isProjectAdminRole(row.original.role) && canDeleteProjectByWorkspacePermission;
           return (
@@ -575,9 +571,9 @@ function ProjectsTable({
                 e.stopPropagation();
                 onSettingsClick(row.original);
               }}
-              disabled={!canManage}
               className="h-8 w-8 rounded-sm hover:bg-surface-high"
               aria-label={t('actions.settings')}
+              data-testid="projects__settings-btn"
             >
               <Settings className="w-4 h-4 text-icon-default" />
             </Button>
@@ -614,7 +610,7 @@ function ProjectsTable({
         },
       }),
     ],
-    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, canManageProject, canDeleteProjectByWorkspacePermission, memberNameById, t]
+    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, canDeleteProjectByWorkspacePermission, memberNameById, t]
   );
 
   const table = useReactTable({

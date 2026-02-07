@@ -18,7 +18,7 @@ export default function SourcesPage({ params }: SourcesPageProps) {
     workspace?: string;
     project?: string;
   } | null>(null);
-  const canReadSources = useHasPermission('project:source:read');
+  const canReadSources = useHasPermission('project:source:use');
 
   useEffect(() => {
     params.then((p) =>

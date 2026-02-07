@@ -6,8 +6,8 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useCanManageResourcePolicy, useHasPermission } from '@/lib/hooks/use-permissions';
-import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 import { useProject } from '@/lib/hooks/use-projects-queries';
+import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -37,14 +37,14 @@ const PROJECT_MENU_ITEMS = [
   { icon: MessageSquare, labelKey: 'chat', href: 'chat' },
   { icon: Wrench, labelKey: 'workbench', href: 'workbench' },
   { icon: FolderOpen, labelKey: 'sources', href: 'sources' },
-  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:read' as const },
+  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use' as const },
   { icon: Server, labelKey: 'endpoints', href: 'endpoints' },
-  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:endpoint:update' as const },
-  { icon: Key, labelKey: 'credentials', href: 'credentials', governance: 'wheel' as const },
-  { icon: Users, labelKey: 'members', href: 'members' },
-  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:read' as const },
-  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:read' as const },
-  { icon: SettingsIcon, labelKey: 'settings', href: 'settings' },
+  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:resource_policy:manage' as const },
+  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:credential:manage' as const },
+  { icon: Users, labelKey: 'members', href: 'members', permission: 'project:member:view' as const },
+  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:view' as const },
+  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:view' as const },
+  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage' as const },
 ];
 
 const WORKSPACE_MENU_ITEMS = [
@@ -61,30 +61,28 @@ export function AppShellSidebar({
   const pathname = usePathname();
   const t = useTranslations('nav');
   const [collapsed, setCollapsed] = React.useState(false);
-  const canReadAudit = useHasPermission('project:audit:read');
-  const canReadUsage = useHasPermission('project:usage:read');
-  const canUpdateEndpointPolicy = useHasPermission('project:endpoint:update');
-  const canUpdateSourceLibraryPolicy = useHasPermission('project:source:library:update');
-  const canUpdateAgentPolicy = useHasPermission('project:agent:update');
-  const canReadAgents = useHasPermission('project:agent:read');
-  const canUpdateResourcePolicy = canUpdateEndpointPolicy || canUpdateSourceLibraryPolicy || canUpdateAgentPolicy;
+  const canReadAudit = useHasPermission('project:audit:view');
+  const canReadUsage = useHasPermission('project:usage:view');
+  const canReadAgents = useHasPermission('project:agent:use');
+  const canManageCredentials = useHasPermission('project:credential:manage');
+  const canViewMembers = useHasPermission('project:member:view');
+  const canManageSettings = useHasPermission('project:settings:manage');
   const canManageResourcePolicy = useCanManageResourcePolicy();
 
   const workspaceId = params?.workspace as string | undefined;
   const projectId = params?.project as string | undefined;
-  const { canViewCredentials } = useWorkspaceGovernance(workspaceId || '');
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
 
   const projectMenuItems = currentProject
     ? PROJECT_MENU_ITEMS.filter((item) => {
         if ('permission' in item && item.permission) {
-          if (item.permission === 'project:audit:read') return canReadAudit;
-          if (item.permission === 'project:usage:read') return canReadUsage;
-          if (item.permission === 'project:endpoint:update') return canUpdateResourcePolicy && canManageResourcePolicy;
-          if (item.permission === 'project:agent:read') return canReadAgents;
-        }
-        if ('governance' in item && item.governance === 'wheel') {
-          return canViewCredentials;
+          if (item.permission === 'project:audit:view') return canReadAudit;
+          if (item.permission === 'project:usage:view') return canReadUsage;
+          if (item.permission === 'project:resource_policy:manage') return canManageResourcePolicy;
+          if (item.permission === 'project:agent:use') return canReadAgents;
+          if (item.permission === 'project:credential:manage') return canManageCredentials;
+          if (item.permission === 'project:member:view') return canViewMembers;
+          if (item.permission === 'project:settings:manage') return canManageSettings;
         }
         return true;
       })
@@ -154,20 +152,18 @@ export function AppShellSidebar({
       </nav>
 
       <div className={cn('p-2 border-t border-subtle', collapsed ? 'flex justify-center' : 'flex justify-end')}>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           data-testid="sidebar__collapse-btn"
           onClick={toggleCollapsed}
-          className={cn(
-            'h-10 w-10 rounded-sm flex items-center justify-center transition-colors duration-200',
-            'text-icon-default hover:bg-hover hover:text-foreground',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
-          )}
+          className={cn('h-10 w-10 rounded-sm text-icon-default hover:bg-hover hover:text-foreground')}
           aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
           title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
         >
           {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
-        </button>
+        </Button>
       </div>
     </aside>
   );

@@ -31,7 +31,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useCanReadProjectPolicy: vi.fn(() => true),
   useCanUpdateProjectPolicy: vi.fn(() => true),
-  useHasPermission: vi.fn((permission: string) => permission === 'project:policy:update'),
+  useHasPermission: vi.fn((permission: string) => permission === 'project:settings:manage'),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -100,7 +100,7 @@ describe('SettingsPage route', () => {
   });
 
   it('renders settings page when params and permission are valid', async () => {
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:policy:update');
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:settings:manage');
     render(
       <SettingsPage
         params={Promise.resolve({
@@ -121,7 +121,7 @@ describe('SettingsPage route', () => {
   });
 
   it('disables delete project when user lacks project:delete permission', async () => {
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:policy:update');
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:settings:manage');
     render(
       <SettingsPage
         params={Promise.resolve({

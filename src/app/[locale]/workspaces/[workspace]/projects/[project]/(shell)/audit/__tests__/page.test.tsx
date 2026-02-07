@@ -15,7 +15,7 @@ const STABLE_PROJECT = {
   created_at: '2026-02-01T00:00:00Z',
   updated_at: '2026-02-01T00:00:00Z',
   role: 'user' as const,
-  permissions: ['project:audit:read'],
+  permissions: ['project:audit:view'],
 };
 
 vi.mock('@/components/audit-usage/AuditFilters', () => ({

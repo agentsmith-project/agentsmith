@@ -18,7 +18,7 @@ export interface PeopleTabProps {
 export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
   const t = useTranslations('members');
   const context = useMembersContext();
-  const canReadMembers = useHasPermission('project:member:read');
+  const canReadMembers = useHasPermission('project:member:view');
   const canManageMembers = useCanManageMemberGovernance();
   const [search, setSearch] = React.useState('');
   const [roleFilter, setRoleFilter] = React.useState<'all' | 'owner' | 'admin' | 'developer' | 'user'>('all');

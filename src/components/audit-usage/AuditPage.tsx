@@ -32,7 +32,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
-  const canReadAudit = useHasPermission('project:audit:read');
+  const canReadAudit = useHasPermission('project:audit:view');
 
   const [filters, setFilters] = React.useState<AuditListParams>(() => ({
     ...getDefaultTimeRange(),

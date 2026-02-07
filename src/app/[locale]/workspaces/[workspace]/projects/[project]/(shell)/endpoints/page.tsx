@@ -23,7 +23,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import {
   AlertDialog,
@@ -205,17 +205,12 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [endpointToDelete, setEndpointToDelete] = useState<Endpoint | null>(null);
-  const canProjectEndpointRead = useHasPermission('project:endpoint:read');
-  const canProjectEndpointUpdate = useHasPermission('project:endpoint:update');
-  const canProjectEndpointCreate = useHasPermission('project:endpoint:create');
-  const canProjectEndpointDelete = useHasPermission('project:endpoint:delete');
-  const isProjectAdmin = useIsProjectAdmin();
+  const canProjectEndpointRead = useHasPermission('project:endpoint:use');
+  const canProjectEndpointUpdate = useHasPermission('project:endpoint:manage');
+  const canProjectEndpointCreate = useHasPermission('project:endpoint:manage');
+  const canProjectEndpointDelete = useHasPermission('project:endpoint:manage');
   const canReadEndpoints = canProjectEndpointRead || canProjectEndpointUpdate;
-  const canManageEndpoints = isProjectAdmin && (
-    canProjectEndpointCreate ||
-    canProjectEndpointUpdate ||
-    canProjectEndpointDelete
-  );
+  const canManageEndpoints = canProjectEndpointCreate || canProjectEndpointUpdate || canProjectEndpointDelete;
 
 
   useEffect(() => {

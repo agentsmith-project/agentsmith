@@ -10,6 +10,8 @@ import { ROUTES } from './fixtures/routes';
 import { withAuth } from './fixtures/authenticated';
 import { waitForPageReady } from './utils/navigation';
 
+test.describe.configure({ mode: 'parallel' });
+
 // ── Acceptable console errors in MSW-backed dev environment ──────────────────
 
 const ACCEPTABLE_ERROR_PATTERNS = [

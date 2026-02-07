@@ -27,6 +27,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { ResourcePolicyStatusBadge } from '@/components/resource-policy/ResourcePolicyStatusBadge';
+import { Button } from '@/components/ui/button';
 import {
   useMembers,
   useProjectGroups,
@@ -359,11 +360,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                       const rowPolicy = policyByResourceKey.get(rowKey);
                       const rowStatus = getResourcePolicyStatus(rowPolicy);
                       return (
-                        <button
+                        <Button
                           key={`${row.type}:${row.id}`}
                           type="button"
                           onClick={() => setSelectedResource(row)}
-                          className={`w-full flex items-center justify-between rounded-sm border p-2.5 text-left ${
+                          variant="secondary"
+                          className={`w-full h-auto justify-between rounded-sm border p-2.5 text-left ${
                             isSelected
                               ? 'border-[rgb(var(--accent))] bg-surface-high'
                               : 'border-subtle bg-surface-high hover:bg-hover'
@@ -393,7 +395,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                                 : tResource(rowStatus.reasonKey)
                             }
                           />
-                        </button>
+                        </Button>
                       );
                     })}
                   </section>
@@ -444,15 +446,17 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                   <div className="rounded-sm border border-subtle bg-surface p-3 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-tertiary">{tResource('subjects.title')}</p>
-                      <button
+                      <Button
                         type="button"
                         onClick={addSubject}
                         disabled={!canUpdatePolicy}
-                        className="h-8 rounded-sm border border-subtle bg-surface px-3 text-xs text-primary hover:bg-hover disabled:opacity-50"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-3 text-xs"
                         data-testid="resource-policy__add-subject"
                       >
                         {tResource('subjects.add')}
-                      </button>
+                      </Button>
                     </div>
                     {subjects.length === 0 ? (
                       <p className="text-xs text-tertiary">{tResource('subjects.empty')}</p>
@@ -502,14 +506,16 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                                   <option value={subject.subject_id}>{subject.subject_id}</option>
                                 ) : null}
                               </select>
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => removeSubject(subject.rowId)}
                                 disabled={!canUpdatePolicy}
-                                className="h-9 rounded-sm border border-subtle bg-surface-high px-3 text-xs text-primary hover:bg-hover disabled:opacity-50"
+                                variant="outline"
+                                size="sm"
+                                className="h-9 px-3 text-xs"
                               >
                                 {tResource('subjects.remove')}
-                              </button>
+                              </Button>
                             </div>
                             <div className="grid gap-2 md:grid-cols-2">
                               {getRuleDefinitionsForResource(selectedResource.type).map((rule) => (
@@ -569,15 +575,17 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                         {tResource('allow_list_required')}
                       </p>
                     ) : null}
-                    <button
+                    <Button
                       type="button"
                       onClick={handleSave}
                       disabled={!canUpdatePolicy || updatePolicyMutation.isPending || allowListInvalid}
-                      className="h-9 rounded-sm border border-subtle bg-surface px-4 text-sm text-primary hover:bg-hover disabled:opacity-50"
+                      variant="action"
+                      size="sm"
+                      className="h-9 px-4"
                       data-testid="resource-policy__save"
                     >
                       {updatePolicyMutation.isPending ? tResource('saving') : tResource('save_policy')}
-                    </button>
+                    </Button>
                   </div>
 
                   <div

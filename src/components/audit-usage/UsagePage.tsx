@@ -136,28 +136,32 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
         <PageToolbar>
           {!isScopeLocked && currentUserId && (
             <div className="flex gap-2">
-              <button
+              <Button
                 type="button"
                 onClick={() => setScope('my')}
-                className={`text-sm px-3 py-1.5 rounded-md transition-colors ${
+                variant={scope === 'my' ? 'secondary' : 'ghost'}
+                size="sm"
+                className={`h-8 px-3 text-sm ${
                   scope === 'my'
-                    ? 'bg-accent/20 text-accent font-medium'
-                    : 'text-tertiary hover:text-foreground'
+                    ? 'bg-accent/20 text-accent'
+                    : 'text-tertiary'
                 }`}
               >
                 {t('scope_my_usage')}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={() => setScope('project')}
-                className={`text-sm px-3 py-1.5 rounded-md transition-colors ${
+                variant={scope === 'project' ? 'secondary' : 'ghost'}
+                size="sm"
+                className={`h-8 px-3 text-sm ${
                   scope === 'project'
-                    ? 'bg-accent/20 text-accent font-medium'
-                    : 'text-tertiary hover:text-foreground'
+                    ? 'bg-accent/20 text-accent'
+                    : 'text-tertiary'
                 }`}
               >
                 {t('scope_project_usage')}
-              </button>
+              </Button>
             </div>
           )}
           <Button variant="outline" onClick={handleRefresh} disabled={isLoading || kpiLoading}>

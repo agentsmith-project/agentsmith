@@ -9,8 +9,8 @@ const buttonVariants = cva(
         default: "bg-surface-high text-foreground border border-subtle hover:bg-hover",
         // Primary: solid accent for main CTA in dialogs (design doc 5.5)
         primary: "bg-accent text-white hover:bg-accent/90",
-        // Action: solid accent for primary actions (dialogs, key CTAs)
-        action: "bg-accent text-white hover:bg-accent/90",
+        // Action: neutral toolbar CTA for page-level "Create/New" actions (design system 5.3)
+        action: "bg-hover border border-subtle text-foreground hover:bg-surface-high",
         outline: "border border-border bg-transparent text-primary hover:bg-hover hover:text-foreground",
         secondary: "bg-surface text-primary border border-subtle hover:bg-hover hover:text-foreground",
         // Ghost: text-only for Cancel in dialogs (design doc 5.5)

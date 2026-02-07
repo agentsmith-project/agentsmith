@@ -17,6 +17,7 @@ import { toast } from '@/components/ui/toast';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
 import { AgentKeysDialog } from '@/components/api-keys/AgentKeysDialog';
 import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { EditAgentDialog } from '@/components/agents/EditAgentDialog';
@@ -161,45 +162,57 @@ function createAgentColumns(
       return (
         <div className="flex items-center justify-end gap-1.5 min-w-[140px]">
           {canManageAgents && (
-            <button
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               onClick={(event) => {
                 event.stopPropagation();
                 onEditClick(agent);
               }}
-              className="h-8 w-8 flex items-center justify-center text-icon-default hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
+              className="h-8 w-8 text-icon-default hover:bg-hover"
               title={t('edit')}
               aria-label={t('edit')}
             >
               <Pencil className="w-4 h-4" />
-            </button>
+            </Button>
           )}
           {isExternal && canIssueAgentKeys && (
-            <button
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               onClick={(event) => {
                 event.stopPropagation();
                 onKeysClick(agent);
               }}
-              className="h-8 w-8 flex items-center justify-center text-icon-default hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
+              className="h-8 w-8 text-icon-default hover:bg-hover"
               title={t('keys_title')}
               aria-label={t('keys_title')}
             >
               <Key className="w-4 h-4" />
-            </button>
+            </Button>
           )}
           {canManageAgents && (
             <>
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
                 onClick={(event) => {
                   event.stopPropagation();
                   onDeleteRequest(agent);
                 }}
-                className="h-8 w-8 flex items-center justify-center text-error hover:bg-hover rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                className="h-8 w-8 text-error hover:bg-hover"
                 title={t('delete')}
                 aria-label={t('delete')}
               >
                 <Trash2 className="w-4 h-4" />
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
                 onClick={(event) => {
                   event.stopPropagation();
                   updateAgentMutation.mutate({
@@ -208,7 +221,7 @@ function createAgentColumns(
                   });
                 }}
                 disabled={updateAgentMutation.isPending}
-                className="h-8 flex items-center gap-1.5 px-3 text-xs font-medium rounded-md border border-subtle bg-surface-high hover:bg-hover text-primary transition-colors duration-200 disabled:opacity-50"
+                className="h-8 gap-1.5 px-3 text-xs"
                 title={isEnabled ? t('disable_hint') : t('enable_hint')}
               >
                 {isEnabled ? (
@@ -222,7 +235,7 @@ function createAgentColumns(
                     {t('enable')}
                   </>
                 )}
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -369,15 +382,17 @@ export default function AgentsPage({ params }: AgentsPageProps) {
         header={<PageHeader title={t('title')} subtitle="Manage AI agents" />}
         toolbar={(
           <PageToolbar>
-            <button
+            <Button
+              type="button"
+              variant="action"
               onClick={() => setCreateDialogOpen(true)}
               disabled={!canManageAgents}
               data-testid="agents__create-btn"
-              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/90 text-foreground rounded-md border border-subtle transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="gap-2"
             >
               <Plus className="w-4 h-4" />
               {t('create')}
-            </button>
+            </Button>
           </PageToolbar>
         )}
       >
@@ -412,12 +427,15 @@ export default function AgentsPage({ params }: AgentsPageProps) {
                   <h2 className="text-lg font-semibold text-foreground">{t('detail_title')}</h2>
                   <p className="text-sm text-tertiary">{detailsAgent.name}</p>
                 </div>
-                <button
-                  className="text-sm text-tertiary hover:text-primary"
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-sm text-tertiary"
                   onClick={() => setDetailsOpen(false)}
                 >
                   {t('cancel')}
-                </button>
+                </Button>
               </div>
 
               <div className="grid grid-cols-2 gap-4 text-sm">

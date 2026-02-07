@@ -146,7 +146,7 @@ export function CreateCredentialDialog({
             >
               {commonT('cancel')}
             </Button>
-            <Button type="submit" variant="action" disabled={!canSubmit}>
+            <Button type="submit" variant="primary" disabled={!canSubmit}>
               {createMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (

@@ -385,27 +385,33 @@ function ProjectCard({
       className="relative group bg-surface border border-border rounded-md p-5 transition-colors duration-200 hover:bg-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
     >
       <div className="absolute top-4 right-4 flex items-center gap-1">
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
           onClick={(e) => {
             e.stopPropagation();
             onSettingsClick();
           }}
-          className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+          className="h-8 w-8 rounded-sm hover:bg-surface-high"
           aria-label={t('actions.settings')}
         >
           <Settings className="w-4 h-4 text-icon-default" />
-        </button>
-        <button
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
           onClick={(e) => {
             e.stopPropagation();
             onTogglePin(e);
           }}
-          className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+          className="h-8 w-8 rounded-sm hover:bg-surface-high"
           aria-label={t('actions.unpin')}
           data-testid="projects__pin-btn"
         >
           <Pin className="w-4 h-4 text-icon-default" />
-        </button>
+        </Button>
       </div>
 
       <div className="flex items-start gap-4 mb-4">
@@ -474,14 +480,17 @@ function ProjectsTable({
         id: 'pin',
         header: '',
         cell: ({ row }) => (
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
             onClick={(e) => onTogglePin(row.original.id, e)}
-            className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+            className="h-8 w-8 rounded-sm hover:bg-surface-high"
             aria-label={t('actions.pin')}
             data-testid="projects__pin-btn"
           >
             <PinOff className="w-4 h-4 text-icon-default" />
-          </button>
+          </Button>
         ),
       }),
       columnHelper.accessor('name', {
@@ -548,34 +557,43 @@ function ProjectsTable({
             isProjectAdminRole(row.original.role) && canDeleteProjectByWorkspacePermission;
           return (
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => onProjectClick(row.original)}
-              className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+              className="h-8 w-8 rounded-sm hover:bg-surface-high"
               aria-label={t('actions.open')}
             >
               <Eye className="w-4 h-4 text-icon-default" />
-            </button>
-            <button
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               onClick={(e) => {
                 e.stopPropagation();
                 onSettingsClick(row.original);
               }}
               disabled={!canManage}
-              className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+              className="h-8 w-8 rounded-sm hover:bg-surface-high"
               aria-label={t('actions.settings')}
             >
               <Settings className="w-4 h-4 text-icon-default" />
-            </button>
+            </Button>
             {canDeleteProject && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={(e) => e.stopPropagation()}
-                    className="p-1.5 rounded-sm hover:bg-surface-high transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+                    className="h-8 w-8 rounded-sm hover:bg-surface-high"
                     aria-label="More actions"
                   >
                     <MoreVertical className="w-4 h-4 text-icon-default" />
-                  </button>
+                  </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem

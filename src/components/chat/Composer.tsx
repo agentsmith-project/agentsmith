@@ -152,7 +152,7 @@ export function Composer({
               Stop
             </Button>
           ) : (
-            <Button type="button" variant="action" onClick={onSend} disabled={!canSend} className="gap-2" data-testid="chat__send-btn">
+            <Button type="button" variant="primary" onClick={onSend} disabled={!canSend} className="gap-2" data-testid="chat__send-btn">
               <Send className="w-4 h-4" />
               {mode === 'edit' ? 'Save' : 'Send'}
             </Button>

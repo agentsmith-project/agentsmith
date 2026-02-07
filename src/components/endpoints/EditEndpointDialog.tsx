@@ -208,7 +208,7 @@ export function EditEndpointDialog({
             <Button variant="ghost" type="button" onClick={() => handleOpenChange(false)}>
               {t('edit_dialog.cancel')}
             </Button>
-            <Button variant="action" type="submit" disabled={!canSubmit}>
+            <Button variant="primary" type="submit" disabled={!canSubmit}>
               {t('edit_dialog.save')}
             </Button>
           </div>

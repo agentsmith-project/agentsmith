@@ -16,6 +16,7 @@ import type { Endpoint } from '@/lib/api/types';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
 import { CreateEndpointDialog } from '@/components/endpoints/CreateEndpointDialog';
 import { EditEndpointDialog } from '@/components/endpoints/EditEndpointDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -132,17 +133,23 @@ function createEndpointColumns(
 
       return (
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => onEdit(info.row.original)}
-            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors text-xs"
+            className="h-8 px-2 text-icon-default hover:bg-hover text-xs"
             aria-label={t('action_edit')}
             title={t('action_edit')}
             data-testid={`endpoints__action-edit--${info.row.original.id}`}
           >
             <Pencil className="w-4 h-4" />
             <span className="hidden lg:inline">{t('action_edit')}</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
             onClick={() =>
               updateEndpointMutation.mutate({
                 endpointId: info.row.original.id,
@@ -150,7 +157,7 @@ function createEndpointColumns(
               })
             }
             disabled={updateEndpointMutation.isPending}
-            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-icon-default hover:bg-hover rounded-sm transition-colors disabled:opacity-50 text-xs"
+            className="h-8 px-2 text-icon-default hover:bg-hover text-xs"
             aria-label={
               info.row.original.status === 'active' ? t('action_disable') : t('action_enable')
             }
@@ -166,18 +173,21 @@ function createEndpointColumns(
             <span className="hidden lg:inline">
               {info.row.original.status === 'active' ? t('action_disable') : t('action_enable')}
             </span>
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => onDeleteRequest(info.row.original)}
             disabled={deleteEndpointMutation.isPending}
-            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50 text-xs"
+            className="h-8 px-2 text-error hover:bg-hover text-xs"
             aria-label={t('action_delete')}
             title={t('action_delete')}
             data-testid={`endpoints__action-delete--${info.row.original.id}`}
           >
             <Trash2 className="w-4 h-4" />
             <span className="hidden lg:inline">{t('action_delete')}</span>
-          </button>
+          </Button>
         </div>
       );
     },
@@ -317,15 +327,15 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
         header={<PageHeader title={t('title')} subtitle="Manage LLM endpoints" />}
         toolbar={(
           <PageToolbar>
-            <button
+            <Button
               onClick={() => setCreateDialogOpen(true)}
               disabled={!canManageEndpoints}
               data-testid="endpoints__create-btn"
-              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              variant="action"
             >
               <Plus className="w-4 h-4" />
               {t('create')}
-            </button>
+            </Button>
           </PageToolbar>
         )}
       >

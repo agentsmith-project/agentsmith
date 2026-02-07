@@ -111,7 +111,7 @@ export function AgentKeysDialog({
           <div className="space-y-4 py-4">
             <div className="flex justify-end">
               <Button
-                variant="action"
+                variant="primary"
                 size="sm"
                 onClick={() => createMutation.mutate()}
                 disabled={createMutation.isPending}

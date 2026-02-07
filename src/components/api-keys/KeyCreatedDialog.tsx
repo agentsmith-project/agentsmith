@@ -89,7 +89,7 @@ export function KeyCreatedDialog({
           )}
         </div>
         <div className="flex justify-end">
-          <Button variant="action" onClick={handleClose}>
+          <Button variant="primary" onClick={handleClose}>
             {commonT('confirm')}
           </Button>
         </div>

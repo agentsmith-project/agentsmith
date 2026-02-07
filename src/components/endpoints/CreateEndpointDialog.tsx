@@ -348,7 +348,7 @@ export function CreateEndpointDialog({
             </Button>
             <Button
               type="submit"
-              variant="action"
+              variant="primary"
               disabled={!canSubmit || credentials.length === 0}
             >
               {createMutation.isPending ? (

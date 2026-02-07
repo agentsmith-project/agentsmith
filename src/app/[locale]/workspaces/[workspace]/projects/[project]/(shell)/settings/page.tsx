@@ -239,7 +239,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               </div>
             </div>
             <div className="mt-6 flex justify-end">
-              <Button onClick={handleSaveGeneral} disabled={!canManageSettings || savingGeneral} variant="action" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveGeneral} disabled={!canManageSettings || savingGeneral} variant="primary" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingGeneral ? 'Saving...' : 'Save'}
               </Button>
@@ -260,7 +260,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               disabled={!canManageSettings}
             />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveRuntimePrefs} disabled={!canManageSettings || savingRuntime} variant="action" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveRuntimePrefs} disabled={!canManageSettings || savingRuntime} variant="primary" size="lg" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingRuntime ? 'Saving...' : 'Save'}
               </Button>

@@ -20,6 +20,7 @@ import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
 import { CreateCredentialDialog } from '@/components/credentials/CreateCredentialDialog';
 import { RotateCredentialDialog } from '@/components/credentials/RotateCredentialDialog';
 import { DeleteCredentialDialog } from '@/components/credentials/DeleteCredentialDialog';
@@ -89,22 +90,28 @@ const createCredentialColumns = (
     header: '',
     cell: (info) => (
       <div className="flex items-center gap-2">
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
           onClick={() => onRotate(info.row.original)}
           disabled={!canManageCredentials || deleteMutation.isPending}
-          className="p-1.5 text-tertiary hover:text-foreground hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
+          className="h-8 w-8 text-tertiary hover:text-foreground hover:bg-hover"
           title={t('rotate')}
         >
           <RotateCcw className="w-4 h-4" />
-        </button>
-        <button
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
           onClick={() => onDelete(info.row.original)}
           disabled={!canManageCredentials || deleteMutation.isPending}
-          className="p-1.5 text-error hover:bg-hover rounded-sm transition-colors disabled:opacity-50"
+          className="h-8 w-8 text-error hover:bg-hover"
           title={t('delete')}
         >
           <Trash2 className="w-4 h-4" />
-        </button>
+        </Button>
       </div>
     ),
   }),
@@ -222,15 +229,15 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
         toolbar={(
           <PageToolbar>
-            <button
+            <Button
               onClick={() => setCreateDialogOpen(true)}
               disabled={!canManageCredentials}
               data-testid="credentials__create-btn"
-              className="flex items-center gap-2 px-4 h-10 bg-hover hover:bg-hover/80 text-foreground rounded-sm border border-subtle transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              variant="action"
             >
               <Plus className="w-4 h-4" />
               {t('create')}
-            </button>
+            </Button>
           </PageToolbar>
         )}
       >

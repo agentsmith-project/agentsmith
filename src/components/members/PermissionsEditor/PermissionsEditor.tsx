@@ -18,14 +18,6 @@ import { AdvancedMode } from './AdvancedMode';
 import { ChangesPreview } from './ChangesPreview';
 import { ROLE_TEMPLATES, isHighRiskPermission, ALL_PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
 
-/** Expand wildcard permissions to explicit platform permissions (v1 design: no wildcards in storage, but defensive handling) */
-function expandPermissions(perms: string[]): string[] {
-  if (perms.some((p) => p === 'project:*' || p === '*')) {
-    return [...ALL_PLATFORM_PERMISSIONS];
-  }
-  return perms;
-}
-
 export interface PermissionsEditorProps {
   initialPermissions: string[];
   onSave: (permissions: string[], mode: 'template' | 'custom', template?: string) => void;
@@ -38,7 +30,10 @@ export function PermissionsEditor({
   onCancel,
 }: PermissionsEditorProps) {
   const t = useTranslations('members.permissions');
-  const expandedInitial = React.useMemo(() => expandPermissions(initialPermissions), [initialPermissions]);
+  const expandedInitial = React.useMemo(
+    () => initialPermissions.filter((permission) => ALL_PLATFORM_PERMISSIONS.includes(permission)),
+    [initialPermissions]
+  );
   // Default to advanced when member has custom permissions (no matching template)
   const initialMode = React.useMemo(() => {
     for (const [, perms] of Object.entries(ROLE_TEMPLATES)) {

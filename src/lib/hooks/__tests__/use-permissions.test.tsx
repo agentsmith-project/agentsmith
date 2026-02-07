@@ -163,50 +163,6 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('should return true when user has wildcard permission', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['*'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasPermission('project:any:thing'), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
-    });
-
-    it('should return true when user has prefix wildcard permission', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:*'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasPermission('project:read'), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
-    });
-
     it('should return false when user does not have permission', () => {
       const mockProject = {
         id: 'proj_001',
@@ -499,29 +455,6 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(false);
     });
 
-    it('should return true when user has wildcard permission', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['*'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(
-        () => useHasAnyPermission(['project:write', 'project:delete']),
-        { wrapper: createWrapper() }
-      );
-
-      expect(result.current).toBe(true);
-    });
-
     it('should return false when requested permissions array is empty', () => {
       const mockProject = {
         id: 'proj_001',
@@ -603,29 +536,6 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(false);
     });
 
-    it('should return true when user has wildcard permission', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['*'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(
-        () => useHasAllPermissions(['project:read', 'project:write', 'project:delete']),
-        { wrapper: createWrapper() }
-      );
-
-      expect(result.current).toBe(true);
-    });
-
     it('should return true when requested permissions array is empty (vacuous truth)', () => {
       const mockProject = {
         id: 'proj_001',
@@ -683,7 +593,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(false);
     });
 
-    it('should handle nested prefix wildcard correctly', () => {
+    it('should require exact token match without wildcard expansion', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -693,7 +603,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:audit:*'],
+        permissions: ['project:audit:view'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -708,14 +618,7 @@ describe('use-permissions hooks', () => {
         () => useHasPermission('project:audit:write'),
         { wrapper: createWrapper() }
       );
-      expect(writeResult.current).toBe(true);
-
-      // Should not match different prefix
-      const { result: otherResult } = renderHook(
-        () => useHasPermission('project:members:read'),
-        { wrapper: createWrapper() }
-      );
-      expect(otherResult.current).toBe(false);
+      expect(writeResult.current).toBe(false);
     });
   });
 });

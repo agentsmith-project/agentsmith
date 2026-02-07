@@ -13,7 +13,7 @@ export interface UsageFiltersProps {
   onChange: (filters: UsageListParams) => void;
   onClear: () => void;
   className?: string;
-  defaultEndUserId?: string; // For project-user permission
+  defaultEndUserId?: string;
 }
 
 const RESOURCE_TYPES = [

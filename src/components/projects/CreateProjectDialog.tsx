@@ -25,6 +25,7 @@ import type { CreateProjectRequest } from '@/lib/api/endpoints/projects';
 import type { Project as ApiProject } from '@/lib/api/types';
 import type { ProjectWithMembership } from '@/lib/hooks/use-permissions';
 import { handleErrorForToast } from '@/lib/api';
+import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
 function mapApiProjectToAuthProject(apiProject: ApiProject): ProjectWithMembership {
   return {
     id: apiProject.id,
@@ -34,7 +35,7 @@ function mapApiProjectToAuthProject(apiProject: ApiProject): ProjectWithMembersh
     visibility: apiProject.visibility,
     owner_id: apiProject.owner_id,
     role: 'owner',
-    permissions: ['project:*'],
+    permissions: [...ROLE_TEMPLATES.owner],
     status: apiProject.status,
     created_at: apiProject.created_at,
     updated_at: apiProject.updated_at,

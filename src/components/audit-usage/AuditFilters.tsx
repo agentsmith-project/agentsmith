@@ -13,7 +13,7 @@ export interface AuditFiltersProps {
   onChange: (filters: AuditListParams) => void;
   onClear: () => void;
   className?: string;
-  defaultEndUserId?: string; // For project-user permission
+  defaultEndUserId?: string;
 }
 
 const ACTIONS = [
@@ -183,7 +183,7 @@ export function AuditFilters({
               placeholder="Filter by end user ID..."
               value={filters.end_user_id || defaultEndUserId || ''}
               onChange={(e) => handleTextFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
-              disabled={!!defaultEndUserId} // Lock for project-user
+              disabled={!!defaultEndUserId}
             />
           </div>
 

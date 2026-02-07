@@ -18,7 +18,7 @@ import { useQueryClient } from '@tanstack/react-query';
 export interface AuditPageProps {
   workspaceId: string;
   projectId: string;
-  defaultEndUserId?: string; // For project-user permission
+  defaultEndUserId?: string;
 }
 
 function getDefaultTimeRange() {

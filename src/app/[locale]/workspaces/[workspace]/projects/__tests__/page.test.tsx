@@ -10,7 +10,7 @@ const mockProjectsData = [
     visibility: 'private',
     owner_id: 'owner_1',
     role: 'admin',
-    permissions: ['project:*'],
+    permissions: ['project:read', 'project:settings:manage'],
     status: 'active' as const,
     created_at: '2026-02-01T00:00:00Z',
     updated_at: '2026-02-01T00:00:00Z',

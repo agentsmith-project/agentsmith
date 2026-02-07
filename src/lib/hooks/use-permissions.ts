@@ -14,9 +14,7 @@ export type ProjectWithMembership = ValidationProjectWithMembership;
 const EMPTY_PERMISSIONS: readonly string[] = Object.freeze([]);
 
 function permissionMatches(granted: readonly string[], required: string): boolean {
-  if (granted.includes('*')) return true;
-  if (granted.includes(required)) return true;
-  return granted.some((p) => p.endsWith(':*') && required.startsWith(p.slice(0, -1)));
+  return granted.includes(required);
 }
 
 export function useIsAuthenticated(): boolean {
@@ -70,7 +68,7 @@ export function useHasAllPermissions(permissions: string[]): boolean {
   return useMemo(() => permissions.every((p) => permissionMatches(currentPermissions, p)), [currentPermissions, permissions]);
 }
 
-// Backward-compatible semantic aliases, now token-driven.
+// Semantic aliases mapped to token checks.
 export function useIsOwnerOrAdmin(): boolean {
   return useHasPermission('project:member:manage');
 }

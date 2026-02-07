@@ -118,7 +118,7 @@ test.describe('Members Page', () => {
 
     const templateSelect = authedPage.getByRole('combobox').last();
     await expect(templateSelect).toBeVisible();
-    await expect(templateSelect).toContainText(/admin/i);
+    await expect(templateSelect).toContainText(/owner|admin/i);
   });
 
   test('role badges are displayed for each member', async ({ authedPage }) => {

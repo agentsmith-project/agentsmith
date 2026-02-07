@@ -11,6 +11,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
+import type { Credential } from '@/lib/api/types';
 
 const mockConfirm = vi.fn();
 
@@ -82,7 +83,7 @@ import { DeleteCredentialDialog } from '../DeleteCredentialDialog';
 describe('DeleteCredentialDialog', () => {
   const user = userEvent.setup();
 
-  const mockCredential = {
+  const mockCredential: Credential = {
     id: 'cred_001',
     workspace_id: 'ws_test',
     project_id: 'proj_001',
@@ -346,7 +347,7 @@ describe('DeleteCredentialDialog', () => {
         workspace_id: '',
         project_id: '',
         name: '',
-        type: '',
+        type: 'api_key' as const,
         fingerprint: '',
         created_at: '',
         last_rotated_at: '',

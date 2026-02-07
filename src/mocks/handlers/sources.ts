@@ -45,7 +45,7 @@ export const sourceHandlers = [
       workspace_id: String(params.ws ?? ''),
       project_id: String(params.prj ?? ''),
       name: body.name,
-      description: body.description,
+      description: body.description ?? '',
       visibility: 'shared' as const,
       created_by_user_id: 'user_001',
       created_at: now,

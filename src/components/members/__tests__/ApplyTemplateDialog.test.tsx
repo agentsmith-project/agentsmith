@@ -31,21 +31,21 @@ describe('ApplyTemplateDialog', () => {
         members={[
           {
             id: 'm_1',
-            user_id: 'u_1',
             name: 'Alice',
             email: 'alice@example.com',
             role: 'developer',
             status: 'active',
             joined_at: '2026-02-01T00:00:00Z',
+            permissions: [],
           },
           {
             id: 'm_2',
-            user_id: 'u_2',
             name: 'Bob',
             email: 'bob@example.com',
             role: 'user',
             status: 'active',
             joined_at: '2026-02-01T00:00:00Z',
+            permissions: [],
           },
         ]}
         onApply={onApply}
@@ -86,21 +86,21 @@ describe('ApplyTemplateDialog', () => {
         members={[
           {
             id: 'm_1',
-            user_id: 'u_1',
             name: 'Alice',
             email: 'alice@example.com',
             role: 'developer',
             status: 'active',
             joined_at: '2026-02-01T00:00:00Z',
+            permissions: [],
           },
           {
             id: 'm_2',
-            user_id: 'u_2',
             name: 'Bob',
             email: 'bob@example.com',
             role: 'user',
             status: 'active',
             joined_at: '2026-02-01T00:00:00Z',
+            permissions: [],
           },
         ]}
         onApply={onApply}

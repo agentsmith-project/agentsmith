@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 import AuditPage from '../page';
 
-const mockAuditFilters = vi.fn(() => <div data-testid="audit-filters" />);
+const mockAuditFilters = vi.fn((_props: unknown) => <div data-testid="audit-filters" />);
 const STABLE_AUDIT_ITEMS: [] = [];
 const STABLE_PROJECT = {
   id: 'proj_1',
@@ -77,8 +77,9 @@ describe('AuditPage route', () => {
       expect(mockAuditFilters).toHaveBeenCalled();
     });
 
-    const props = mockAuditFilters.mock.calls[0][0];
-    expect(props.defaultEndUserId).toBe('user_001');
+    const props = mockAuditFilters.mock.calls[0]?.[0] as { defaultEndUserId?: string } | undefined;
+    expect(props).toBeDefined();
+    expect(props!.defaultEndUserId).toBe('user_001');
   });
 
   it('renders header and toolbar layout', async () => {

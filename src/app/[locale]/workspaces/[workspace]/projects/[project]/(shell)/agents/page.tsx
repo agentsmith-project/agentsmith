@@ -436,12 +436,12 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           onSuccess={invalidateAgents}
         />
 
-        {keysDialogAgent && resolvedParams && (
+        {keysDialogAgent && workspaceId && projectId && (
           <AgentKeysDialog
             open={!!keysDialogAgent}
             onOpenChange={(open) => !open && setKeysDialogAgent(null)}
-            workspaceId={resolvedParams.workspace}
-            projectId={resolvedParams.project}
+            workspaceId={workspaceId}
+            projectId={projectId}
             agentId={keysDialogAgent.id}
             agentName={keysDialogAgent.name}
           />

@@ -184,10 +184,17 @@ const resourceId = 'endpoint_test';
 
 // Test data
 const mockQuotaOverrides: QuotaOverride = {
-  max_endpoints: 10,
-  max_agents: 5,
-  max_recipes: 20,
-  max_sources: 15,
+  endpoint: {
+    requests_per_day_per_end_user: 10_000,
+    requests_per_min_per_end_user: 60,
+  },
+  userdata: {
+    storage: {
+      bytes_per_end_user: 100 * 1024 * 1024,
+      objects_per_end_user: 1_000,
+      max_object_bytes: 10 * 1024 * 1024,
+    },
+  },
 };
 
 function createTestWrapper() {

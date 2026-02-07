@@ -126,7 +126,7 @@ describe('ProjectsPage route', () => {
   });
 
   it('shows permission denied when user lacks project list permissions', async () => {
-    mockUseWorkspace.mockImplementation(() => ({ data: undefined }));
+    mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData }));
     mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: false }));
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => {
       if (permission === 'workspace:read' || permission === 'project:read') {

@@ -81,8 +81,8 @@ export default function OverviewPage() {
     queryKey: ['usage', 'kpi', workspaceId, projectId, timeRange.start_time, timeRange.end_time],
     queryFn: async () => {
       const data = await usageAPI.getKPI(
-        workspaceId,
-        projectId,
+        workspaceId!,
+        projectId!,
         timeRange.start_time,
         timeRange.end_time
       );
@@ -95,7 +95,7 @@ export default function OverviewPage() {
   const { data: auditEvents } = useQuery({
     queryKey: ['audit', workspaceId, projectId, timeRange.start_time, timeRange.end_time],
     queryFn: () =>
-      auditAPI.list(workspaceId, projectId, {
+      auditAPI.list(workspaceId!, projectId!, {
         page: 1,
         page_size: 5,
         start_time: timeRange.start_time,

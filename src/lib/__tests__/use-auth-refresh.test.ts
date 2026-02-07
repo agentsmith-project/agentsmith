@@ -7,11 +7,11 @@ describe('refreshAuth', () => {
       setToken: () => undefined,
       getToken: () => null,
       clearToken: () => undefined,
-      get: async () => ({}),
-      post: async () => ({ access_token: 'atk_mock' }),
-      put: async () => ({}),
-      patch: async () => ({}),
-      delete: async () => ({}),
+      get: async <T>() => ({} as T),
+      post: async <T>() => ({ access_token: 'atk_mock' } as T),
+      put: async <T>() => ({} as T),
+      patch: async <T>() => ({} as T),
+      delete: async <T>() => ({} as T),
       connectSSE: () => new EventSource('http://localhost'),
     };
 

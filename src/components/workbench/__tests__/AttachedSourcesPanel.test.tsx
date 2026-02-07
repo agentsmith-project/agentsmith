@@ -12,38 +12,65 @@ import type { SourceFileWithAIReady } from '@/lib/api/types';
 const mockSources: SourceFileWithAIReady[] = [
   {
     id: 'source-1',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    owner_user_id: 'user-1',
+    object_ref: { bucket: 'test', key: 'source-1.txt' },
+    version: 1,
     filename: 'document1.txt',
     file_type: 'text/plain',
     file_size: 1024,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     ai_ready: {
+      id: 'job-1',
+      source_file_id: 'source-1',
       status: 'ready',
-      tokens: 100,
-      chunks: 5,
+      progress: 100,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
     },
   },
   {
     id: 'source-2',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    owner_user_id: 'user-1',
+    object_ref: { bucket: 'test', key: 'source-2.pdf' },
+    version: 1,
     filename: 'document2.pdf',
     file_type: 'application/pdf',
     file_size: 2048000,
     created_at: '2024-01-01T01:00:00Z',
     updated_at: '2024-01-01T01:00:00Z',
     ai_ready: {
-      status: 'processing',
+      id: 'job-2',
+      source_file_id: 'source-2',
+      status: 'preparing',
+      progress: 30,
+      created_at: '2024-01-01T01:00:00Z',
+      updated_at: '2024-01-01T01:00:00Z',
     },
   },
   {
     id: 'source-3',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    owner_user_id: 'user-1',
+    object_ref: { bucket: 'test', key: 'source-3.docx' },
+    version: 1,
     filename: 'document3.docx',
     file_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     file_size: 512000,
     created_at: '2024-01-01T02:00:00Z',
     updated_at: '2024-01-01T02:00:00Z',
     ai_ready: {
+      id: 'job-3',
+      source_file_id: 'source-3',
       status: 'failed',
-      error: 'Processing failed',
+      error_message: 'Processing failed',
+      created_at: '2024-01-01T02:00:00Z',
+      updated_at: '2024-01-01T02:00:00Z',
     },
   },
 ];
@@ -186,10 +213,10 @@ describe('AttachedSourcesPanel', () => {
       expect(screen.getByTestId('ai-ready-ready')).toBeInTheDocument();
     });
 
-    it('shows processing status', () => {
+    it('shows preparing status', () => {
       renderComponent(['source-2']);
 
-      expect(screen.getByTestId('ai-ready-processing')).toBeInTheDocument();
+      expect(screen.getByTestId('ai-ready-preparing')).toBeInTheDocument();
     });
 
     it('shows failed status', () => {

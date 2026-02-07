@@ -178,7 +178,7 @@ describe('KeyCreatedDialog', () => {
       render(
         <KeyCreatedDialog
           {...defaultProps}
-          keyValue={undefined}
+          keyValue={null}
           keyPrefix="usk-***fallback"
         />
       );

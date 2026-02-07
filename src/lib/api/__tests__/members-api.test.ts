@@ -7,11 +7,11 @@ function createClient(mockGet: ReturnType<typeof vi.fn>): ApiClient {
     setToken: () => undefined,
     getToken: () => null,
     clearToken: () => undefined,
-    get: mockGet,
-    post: vi.fn(),
-    put: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    get: mockGet as ApiClient['get'],
+    post: vi.fn() as ApiClient['post'],
+    put: vi.fn() as ApiClient['put'],
+    patch: vi.fn() as ApiClient['patch'],
+    delete: vi.fn() as ApiClient['delete'],
     connectSSE: () => new EventSource('http://localhost'),
   };
 }

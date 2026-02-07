@@ -3,11 +3,11 @@ import { describe, it, expect, vi } from 'vitest';
 
 import UsagePage from '../page';
 
-const mockUsageFilters = vi.fn(() => <div data-testid="usage-filters" />);
+const mockUsageFilters = vi.fn((_props: unknown) => <div data-testid="usage-filters" />);
 const STABLE_USAGE_KPI_RESULT = { data: undefined, isLoading: false };
 const STABLE_USAGE_RECORDS_RESULT = { data: { items: [] }, isLoading: false, error: null };
-const mockUseUsageKPI = vi.fn(() => STABLE_USAGE_KPI_RESULT);
-const mockUseUsageRecords = vi.fn(() => STABLE_USAGE_RECORDS_RESULT);
+const mockUseUsageKPI = vi.fn((..._args: unknown[]) => STABLE_USAGE_KPI_RESULT);
+const mockUseUsageRecords = vi.fn((..._args: unknown[]) => STABLE_USAGE_RECORDS_RESULT);
 const STABLE_PROJECT = {
   id: 'proj_1',
   workspace_id: 'ws_1',
@@ -87,8 +87,9 @@ describe('UsagePage route', () => {
       expect(mockUsageFilters).toHaveBeenCalled();
     });
 
-    const props = mockUsageFilters.mock.calls[0][0];
-    expect(props.defaultEndUserId).toBe('user_001');
+    const props = mockUsageFilters.mock.calls[0]?.[0] as { defaultEndUserId?: string } | undefined;
+    expect(props).toBeDefined();
+    expect(props!.defaultEndUserId).toBe('user_001');
   });
 
   it('renders header and toolbar layout', async () => {

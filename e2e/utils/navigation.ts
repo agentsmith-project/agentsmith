@@ -17,7 +17,6 @@ export async function gotoAndWait(
     }
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
   }
-  await page.waitForLoadState('load');
 }
 
 /** Wait for the page to reach a ready state */
@@ -26,7 +25,13 @@ export async function waitForPageReady(page: Page, timeout = 30000) {
     '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]',
     { timeout },
   );
-  await page.waitForTimeout(300);
+  // Wait one frame after the ready marker appears to avoid fixed sleeps on every navigation.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      }),
+  );
 }
 
 /** Navigate to a project page section with standard wait */

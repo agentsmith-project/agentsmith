@@ -5,14 +5,16 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const baseURL = process.env.BASE_URL || 'http://localhost:3001';
 const useManagedDevServer = !process.env.BASE_URL;
+const localWorkers = Number(process.env.PW_WORKERS ?? 4);
+const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : 2,
-  reporter: 'html',
+  forbidOnly: isCI,
+  retries: isCI ? 2 : 0,
+  workers: isCI ? 2 : localWorkers,
+  reporter: isCI ? 'html' : 'line',
   timeout: 30000,
   expect: {
     toHaveScreenshot: {
@@ -30,9 +32,9 @@ export default defineConfig({
     : undefined,
   use: {
     baseURL,
-    trace: 'on-first-retry',
+    trace: isCI ? 'on-first-retry' : 'off',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: isCI ? 'retain-on-failure' : 'off',
     actionTimeout: 10000,
     navigationTimeout: 20000,
   },

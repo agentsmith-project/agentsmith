@@ -172,7 +172,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="p-6 max-w-6xl mx-auto w-full space-y-6">
+        <div className="w-full space-y-6">
       <header className="space-y-1">
         <h1 className="text-3xl font-semibold text-foreground flex items-center gap-2">
           <SettingsIcon className="w-6 h-6 text-icon-default" />

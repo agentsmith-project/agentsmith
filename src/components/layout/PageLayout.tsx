@@ -6,9 +6,17 @@ type PageLayoutProps = {
   children: React.ReactNode;
   footer?: React.ReactNode;
   density?: 'default' | 'immersive';
+  contentWidth?: 'full' | 'wide' | 'narrow';
 };
 
-export function PageLayout({ header, toolbar, children, footer, density = 'default' }: PageLayoutProps) {
+export function PageLayout({
+  header,
+  toolbar,
+  children,
+  footer,
+  density = 'default',
+  contentWidth = 'wide',
+}: PageLayoutProps) {
   const chromeClass =
     density === 'immersive'
       ? 'px-[var(--layout-padding-immersive)] py-[var(--layout-padding-immersive)] gap-[var(--layout-gap-immersive)]'
@@ -16,6 +24,12 @@ export function PageLayout({ header, toolbar, children, footer, density = 'defau
 
   const bodyClass = density === 'immersive' ? 'gap-[var(--layout-gap-immersive)]' : 'gap-[var(--layout-gap)]';
   const footerClass = density === 'immersive' ? 'px-[var(--layout-padding-immersive)] pb-[var(--layout-padding-immersive)]' : 'px-[var(--layout-padding)] pb-[var(--layout-padding)]';
+  const contentClass =
+    contentWidth === 'full'
+      ? 'w-full min-h-0 flex-1 flex flex-col'
+      : contentWidth === 'narrow'
+        ? 'w-full max-w-5xl mx-auto min-h-0 flex-1 flex flex-col'
+        : 'w-full max-w-[1600px] mx-auto min-h-0 flex-1 flex flex-col';
 
   return (
     <div data-testid="page-layout" className="h-full flex flex-col">
@@ -23,7 +37,7 @@ export function PageLayout({ header, toolbar, children, footer, density = 'defau
         {header ? <div data-testid="page-layout__header">{header}</div> : null}
         {toolbar ? <div data-testid="page-layout__toolbar">{toolbar}</div> : null}
         <div data-testid="page-layout__body" className={`flex-1 min-h-0 flex flex-col ${bodyClass}`}>
-          {children}
+          <div className={contentClass}>{children}</div>
         </div>
       </div>
       {footer ? (

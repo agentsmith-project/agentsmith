@@ -479,6 +479,7 @@ export default function ChatPage({ params }: ChatPageProps) {
     <PageState state="success">
       <PageLayout
         density="immersive"
+        contentWidth="full"
         header={(
           <PageHeader
             title={t('title')}

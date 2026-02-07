@@ -381,7 +381,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           </PageToolbar>
         )}
       >
-        <div className="max-w-6xl mx-auto w-full flex flex-col gap-6">
+        <div className="w-full flex flex-col gap-6">
           {agentsLoading ? (
             <PageLoading />
           ) : agents.length === 0 ? (

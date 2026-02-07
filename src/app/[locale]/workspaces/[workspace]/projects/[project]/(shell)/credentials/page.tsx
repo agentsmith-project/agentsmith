@@ -234,7 +234,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
           </PageToolbar>
         )}
       >
-        <div className="max-w-6xl mx-auto w-full">
+        <div className="w-full">
           {isLoading ? (
             <PageLoading />
           ) : !credentials || credentials.length === 0 ? (

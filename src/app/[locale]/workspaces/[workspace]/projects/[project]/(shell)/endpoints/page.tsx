@@ -329,7 +329,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
           </PageToolbar>
         )}
       >
-        <div className="max-w-6xl mx-auto w-full">
+        <div className="w-full">
           {endpointsLoading ? (
             <PageLoading />
           ) : endpoints.length === 0 ? (

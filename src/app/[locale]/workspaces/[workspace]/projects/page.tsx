@@ -245,7 +245,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
         <div className="min-h-screen bg-background flex flex-col">
           <Topbar />
 
-          <main className="flex-1 w-full max-w-none px-4 py-4 md:px-5 md:py-5">
+          <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 py-4 md:px-5 md:py-5">
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-foreground mb-2">{t('title')}</h1>

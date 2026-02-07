@@ -70,7 +70,7 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout density="immersive">
+      <PageLayout density="immersive" contentWidth="full">
         <RecipeList
           workspaceId={resolvedParams.workspace}
           projectId={resolvedParams.project}

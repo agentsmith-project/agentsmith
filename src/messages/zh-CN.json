@@ -64,8 +64,8 @@
       "ai_ready_batch_failed": "批量启动 AIReady 失败: {{error}}",
       "ai_ready_batch_cancelled": "已为 {{successCount}} 个文件取消 AIReady，{{failedCount}} 个失败",
       "ai_ready_batch_cancelled_success": "已为 {{count}} 个文件取消 AIReady",
-      "sources_added_to_recipe": "已添加 {{count}} 个源到配方",
-      "source_removed_from_recipe": "已从配方中移除源",
+      "sources_added_to_recipe": "已添加 {{count}} 个来源到任务",
+      "source_removed_from_recipe": "已从任务中移除来源",
       "artifact_saved_to_library": "已保存制品到库",
       "batch_delete_failed": "删除 {{count}} 个文件失败",
       "file_download_success": "文件下载成功",
@@ -77,9 +77,8 @@
   "nav": {
     "overview": "概览",
     "chat": "聊天",
-    "workbench": "工作台",
+    "workbench": "AI Studio",
     "sources": "文件",
-    "userdata": "UserData",
     "agents": "智能体",
     "endpoints": "端点",
     "resource_policy": "资源策略",
@@ -292,7 +291,7 @@
     "no_active_thread_description": "创建一个新会话开始对话。"
   },
   "workbench": {
-    "title": "工作台",
+    "title": "AI Studio",
     "thread_new": "新建线程",
     "thread_close": "关闭线程",
     "thread_status_active": "活跃",
@@ -313,17 +312,17 @@
     "thread_info_status": "状态",
     "thread_info_user": "最终用户",
     "recipe": {
-      "title": "Recipe",
-      "new": "新建 Recipe",
-      "create": "创建 Recipe",
-      "create_title": "Recipe 标题",
+      "title": "任务",
+      "new": "新建任务",
+      "create": "创建任务",
+      "create_title": "任务标题",
       "select_agent": "选择 Agent",
       "agent_fixed_notice": "创建后 Agent 不可更改",
       "history_immutable_notice": "对话历史不可修改",
-      "leave": "离开 Recipe",
-      "leave_tooltip": "返回 Workbench 列表，Recipe 将继续在后台运行",
-      "delete": "删除 Recipe",
-      "delete_confirm_message": "确定要删除此 Recipe 吗？此操作不可撤销。所有消息和生成物将被永久删除。",
+      "leave": "离开任务",
+      "leave_tooltip": "返回 AI Studio 列表，任务将继续在后台运行",
+      "delete": "删除任务",
+      "delete_confirm_message": "确定要删除此任务吗？此操作不可撤销。所有消息和生成物将被永久删除。",
       "delete_cancel": "取消",
       "status": {
         "active": "活跃",
@@ -331,20 +330,20 @@
         "archived": "已归档"
       },
       "edit": "编辑",
-      "edit_title": "编辑 Recipe",
-      "edit_description": "修改 Recipe 的标题与状态。",
+      "edit_title": "编辑任务",
+      "edit_description": "修改任务的标题与状态。",
       "status_label": "状态",
       "save_changes": "保存更改"
     },
     "attached_sources": {
       "title": "已附加来源",
-      "subtitle": "附加到此 Recipe 的文件",
+      "subtitle": "附加到此任务的文件",
       "add": "添加来源",
       "remove": "移除",
       "empty": "未附加任何来源",
       "empty_description": "从您的文件库中添加 AIReady 文件，为 Agent 提供上下文",
       "select_dialog": {
-        "title": "添加来源到 Recipe",
+        "title": "添加来源到任务",
         "description": "从您的文件库中选择 AIReady 文件作为上下文",
         "search_placeholder": "搜索您的文件...",
         "confirm": "添加选中",
@@ -352,8 +351,8 @@
         "from_library": "来自您的文件库"
       },
       "tooltip": {
-        "attached_file": "此文件已附加到此 Recipe 作为上下文",
-        "remove_file": "从 Recipe 中移除（文件仍保留在您的文件库中）"
+        "attached_file": "此文件已附加到此任务作为上下文",
+        "remove_file": "从任务中移除（文件仍保留在您的文件库中）"
       }
     },
     "conversation": {
@@ -437,8 +436,8 @@
     "desired_replicas": "期望副本",
     "admin": "维护人",
     "interaction_chat": "聊天",
-    "interaction_workbench": "工作台",
-    "interaction_both": "聊天 & 工作台",
+    "interaction_workbench": "AI Studio",
+    "interaction_both": "聊天 & AI Studio",
     "diagnostics_backoff": "等待重试",
     "detail_title": "智能体详情",
     "detail_general": "基本信息",
@@ -541,16 +540,6 @@
     "delete_confirm_title": "删除端点",
     "delete_confirm_description": "确定要删除端点 \"{name}\" 吗？此操作无法撤消。"
   },
-  "userdata": {
-    "title": "UserData",
-    "subtitle": "管理终端用户存储与索引",
-    "summary_title": "项目汇总",
-    "summary_storage": "总存储（字节）",
-    "summary_docdb": "DocDB 集合数",
-    "summary_vectordb": "VectorDB 索引数",
-    "end_users_title": "终端用户",
-    "end_users_empty": "暂无终端用户"
-  },
   "audit": {
     "title": "审计",
     "subtitle": "审计事件与合规日志",
@@ -594,8 +583,7 @@
     "kpi": {
       "requests_today": "今日请求数",
       "errors_today": "今日错误数",
-      "tokens_today": "今日 Token 数",
-      "userdata_bytes": "UserData 存储"
+      "tokens_today": "今日 Token 数"
     },
     "filters": {
       "time_range": "时间范围",
@@ -658,7 +646,6 @@
     "tab_limits": "资源限制",
     "limits_title": "资源限制",
     "limits_hint": "这些限制作用于资源整体（不区分用户）。每个 Endpoint/KB 可在资源级别覆盖。未设置 = 无限制。",
-    "limits_userdata_total": "UserData 总量",
     "limits_endpoint_default": "端点默认",
     "governance_save_confirm_title": "保存治理规则更改",
     "governance_save_confirm_body": "更改可能影响活跃会话 (403/429/队列)。确定继续？",
@@ -775,6 +762,11 @@
       "source_library": "文件库",
       "agent": "智能体"
     },
+    "editor_hint": {
+      "endpoint": "配置该模型端点的访问范围与 token 配额。",
+      "source_library": "配置该文件库的可访问主体与文件配额限制。",
+      "agent": "配置该智能体的可访问主体与并发限制。"
+    },
     "subjects": {
       "title": "允许访问主体与主体覆盖规则",
       "add": "添加主体",
@@ -790,7 +782,9 @@
     "effective_summary": {
       "title": "生效策略摘要",
       "access": "访问模式",
-      "no_explicit_limits": "未设置显式限制。"
+      "no_explicit_limits": "未设置显式限制。",
+      "source_resource": "资源级覆盖",
+      "source_subject": "主体覆盖"
     },
     "resource_status": {
       "loading": "检查中...",
@@ -875,7 +869,6 @@
     "role_user": "用户",
     "role_custom": "自定义 ({count} 项权限)",
     "status_active": "活跃",
-    "status_blocked": "已冻结",
     "status_removed": "已移除",
     "join_requests_approve_all": "批准全部 ({count})",
     "table": {
@@ -915,8 +908,8 @@
       "template_description": {
         "owner": "所有者拥有所有项目资源和设置的完全访问权限。",
         "admin": "管理员拥有除项目删除外的完全访问权限。可以管理成员和策略。",
-        "developer": "开发者可以创建配方、管理源文件和签发代理密钥。无法管理成员或策略。",
-        "user": "用户具有只读访问权限，可以创建配方。仅限于基本操作。"
+        "developer": "开发者可访问 AI Studio、管理源文件并签发代理密钥。无法管理成员或策略。",
+        "user": "用户具有只读访问权限，包含聊天与 AI Studio 的基础使用能力。"
       },
       "custom_mode": "自定义权限模式。切换到高级模式以编辑单个权限。",
       "no_permissions_found": "未找到匹配 \"{query}\" 的权限",
@@ -933,6 +926,25 @@
       "use_default": "使用默认值",
       "override": "覆盖",
       "reset_all": "重置全部",
+      "sections": {
+        "endpoint_title": "Endpoint 限额",
+        "endpoint_description": "控制用户在 Endpoint 调用中的每日 token 用量。",
+        "source_library_title": "文件库限额",
+        "source_library_description": "控制用户在文件库中的文件数量与单文件大小。",
+        "agent_title": "Agent 限额",
+        "agent_description": "控制用户可并发执行的 Agent 数量。"
+      },
+      "fields": {
+        "endpoint_daily_token_limit": "Endpoint 每日 token 上限",
+        "source_library_max_total_files": "文件库总文件数上限",
+        "source_library_max_file_size_bytes": "文件库单文件大小上限",
+        "agent_max_concurrency": "Agent 最大并发数"
+      },
+      "units": {
+        "tokens_per_day": "tokens/天",
+        "files": "个文件",
+        "concurrency": "并发"
+      },
       "update_success": "配额覆盖更新成功",
       "coming_soon": "配额编辑器即将推出...",
       "cancel": "取消",
@@ -978,11 +990,25 @@
     "remove_confirm_message": "确定要将 {name} 移出此项目吗？他们将失去对所有项目资源的访问权限。",
     "removing": "移除中...",
     "tabs": {
+      "people": "人员",
       "members": "成员",
       "requests": "加入申请",
-      "templates": "模板"
+      "templates": "模板",
+      "groups": "分组"
     },
     "no_permission_to_view": "您没有权限查看成员",
+    "filters": {
+      "search_placeholder": "按姓名或邮箱搜索",
+      "role_all": "全部角色",
+      "role_owner": "所有者",
+      "role_admin": "管理员",
+      "role_developer": "开发者",
+      "role_user": "用户",
+      "status_all": "全部状态",
+      "status_active": "正常",
+      "status_removed": "已移除",
+      "result_count": "{count} 位成员"
+    },
     "requests": {
       "coming_soon": "加入申请即将推出..."
     },
@@ -1004,9 +1030,9 @@
         "admin": "管理员",
         "admin_description": "除 project:delete 外的所有权限",
         "developer": "开发者",
-        "developer_description": "代理密钥、UserData、AgentThread",
+        "developer_description": "代理密钥、文件上传与 AI Studio 操作",
         "user": "用户",
-        "user_description": "只读 + AgentThread + UserData（受限）"
+        "user_description": "项目只读访问，含聊天/AI Studio 与受限文件使用权限"
       },
       "create_success": "模板创建成功",
       "update_success": "模板更新成功",
@@ -1064,9 +1090,9 @@
       "quota_apply_batch_success": "配额模板已应用到 {count} 位成员",
       "quota_apply_partial_success": "配额模板已部分应用，部分成员更新失败。",
       "quota_title": "配额模板",
-      "quota_description": "管理可复用的配额预设（如标准、高用量、受限）。",
+      "quota_description": "管理可复用的配额预设（如标准、高用量、受限），覆盖 endpoint、文件库与 agent 限额。",
       "quota_empty_title": "暂无配额模板",
-      "quota_empty_description": "创建配额模板以定义存储、DocDB、VectorDB 和端点限制的预设覆盖。",
+      "quota_empty_description": "创建配额模板以定义 endpoint token、文件库文件数/大小、agent 并发的预设覆盖。",
       "save_changes": "保存更改",
       "delete": "删除",
       "delete_confirm_title": "删除模板",
@@ -1121,7 +1147,6 @@
       "requests_today": "今日请求数",
       "errors_today": "今日错误数",
       "tokens_today": "今日 Token 数",
-      "userdata_storage": "UserData 存储",
       "vs_last_period": "对比上期"
     },
     "quick_access": "快速访问",
@@ -1132,8 +1157,8 @@
     "navigation": {
       "chat": "聊天",
       "chat_description": "AI 聊天对话",
-      "workbench": "工作台",
-      "workbench_description": "多轮智能体线程",
+      "workbench": "AI Studio",
+      "workbench_description": "基于任务的智能体工作区",
       "agents": "智能体",
       "agents_description": "管理 AI 智能体",
       "endpoints": "端点",
@@ -1168,6 +1193,7 @@
     "current": "当前",
     "table": {
       "name": "名称",
+      "project_admin": "项目管理员",
       "visibility": "可见性",
       "role": "您的角色",
       "status": "状态"
@@ -1190,10 +1216,13 @@
     "title": "加入项目",
     "description": "您已被邀请加入项目。点击接受继续。",
     "accept": "接受邀请",
+    "accepting": "接受中...",
     "decline": "拒绝",
+    "declining": "处理中...",
     "invalid_title": "邀请无效",
     "invalid_description": "此邀请链接无效或已过期。",
-    "go_home": "返回首页"
+    "go_home": "返回首页",
+    "action_failed": "处理邀请失败"
   },
   "profile": {
     "title": "个人资料",

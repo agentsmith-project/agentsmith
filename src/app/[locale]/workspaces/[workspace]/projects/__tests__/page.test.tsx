@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 
@@ -21,8 +21,10 @@ const mockWorkspaceData = { id: 'ws_1', name: 'Workspace One' };
 const mockUseWorkspace = vi.fn(() => ({ data: mockWorkspaceData }));
 const mockUseAuthStore = vi.fn(() => ({ isAuthenticated: true }));
 
+const mockPush = vi.fn();
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: mockPush }),
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
@@ -89,6 +91,7 @@ const mockUseHasWorkspacePermission = vi.mocked(useHasWorkspacePermission);
 describe('ProjectsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPush.mockClear();
     mockUseHasWorkspacePermission.mockReturnValue(true);
     mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData }));
     mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: true }));
@@ -107,6 +110,23 @@ describe('ProjectsPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
     });
+    expect(screen.getByText('table.project_admin')).toBeInTheDocument();
+  });
+
+  it('navigates to overview when clicking a project table row', async () => {
+    render(
+      <ProjectsPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    const row = await screen.findByTestId('projects__table__row');
+    fireEvent.click(row);
+
+    expect(mockPush).toHaveBeenCalledWith('/en/workspaces/ws_1/projects/proj_1/overview');
   });
 
   it('shows invalid parameter error for unsafe workspace param', async () => {

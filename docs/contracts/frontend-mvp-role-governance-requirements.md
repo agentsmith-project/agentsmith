@@ -76,7 +76,7 @@ This document is the product-facing source for UX behavior; API-level details re
 
 1. Users (including admins) can use:
 - chat
-- workbench
+- AI Studio
 - private file library
 - completion endpoints API
 
@@ -88,6 +88,11 @@ This document is the product-facing source for UX behavior; API-level details re
 - all project members can access resources by default
 - new resources inherit project defaults
 - project admin can add per-resource/per-subject overrides when needed
+4. Chat / AI Studio page access uses dedicated access tokens:
+- `project:chat:access`
+- `project:studio:access`
+5. Chat / AI Studio do not define independent quota/rate rules in MVP.
+- usage constraints are surfaced from endpoint/source_library/agent policy outcomes
 
 ## Resource Policy Model (MVP Draft Alignment)
 
@@ -133,13 +138,19 @@ This document is the product-facing source for UX behavior; API-level details re
 1. Added workspace governance grouping UI in workspace settings (`wheel` / `user`) as frontend prototype state.
 2. Added `wheel`-only visibility gate for credentials module in sidebar and credentials page.
 3. Kept token-based permission checks for project and resource operations.
-4. Credentials gate now follows combined condition: wheel visibility + project permission tokens.
+4. Governance write operations now follow dual gate:
+- user is project admin in current project
+- user has required mutation token(s)
+5. Credentials gate now follows combined condition: wheel visibility + project permission tokens.
+6. Projects list interaction and admin clarity:
+- unpinned project table rows are directly clickable to open project overview
+- pinned project cards and table action buttons are clickable and no longer blocked by row-level event conflicts
+- project list shows `Project Admin` summary (first two admins, then ellipsis)
 
 ## Remaining MVP Gaps
 
 1. Workspace governance group persistence currently frontend-local prototype state; backend contract still needed.
 2. Project admin assignment UX should be explicitly role-centered (template-first) across all member flows.
-3. Project list and project actions should explicitly communicate "wheel != global project admin" (only own-admin projects are manageable).
-4. Shared library first-class CRUD is implemented in Sources page, but advanced governance UX (library ownership transfer, archive lifecycle, bulk policy assignment) is not yet implemented.
-5. Unified `Resource Policy` page should be the single resource-centric policy entry for endpoint/library/agent with subject-based overrides.
-6. Policy stale-subject cleanup UX and governance audit timeline are not yet implemented.
+3. Shared library first-class CRUD is implemented in Sources page, but advanced governance UX (library ownership transfer, archive lifecycle, bulk policy assignment) is not yet implemented.
+4. Unified `Resource Policy` page should be the single resource-centric policy entry for endpoint/library/agent with subject-based overrides.
+5. Policy stale-subject cleanup UX and governance audit timeline are not yet implemented.

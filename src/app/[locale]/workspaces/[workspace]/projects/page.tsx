@@ -51,6 +51,7 @@ import { PageLoading } from '@/components/ui/loading';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
+import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 import { useQueryClient } from '@tanstack/react-query';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
@@ -78,7 +79,6 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   const canWorkspaceRead = useHasWorkspacePermission('workspace:read');
   const canProjectRead = useHasWorkspacePermission('project:read');
   const canCreateProjectByWorkspacePermissions = useHasWorkspacePermission('workspace:project:create');
-  const canProjectPolicyUpdate = useHasWorkspacePermission('project:policy:update');
   const canDeleteProjectByWorkspacePermission = useHasWorkspacePermission('project:delete');
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -104,6 +104,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
 
   // Fetch workspace and projects
   const { data: currentWorkspace } = useWorkspace(workspaceId);
+  const { data: workspaceMembers = [] } = useWorkspaceMembers(workspaceId);
   const { data: allProjects = [] } = useProjects(workspaceId);
 
   // Initialize projects with pinned status
@@ -121,7 +122,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
   };
 
   const handleSettingsClick = (project: Project) => {
-    if (!isProjectAdminRole(project.role) || !canProjectPolicyUpdate) return;
+    if (!isProjectAdminRole(project.role)) return;
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/settings`);
   };
 
@@ -158,6 +159,14 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
     });
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${newProject.id}/overview`);
   };
+
+  const memberNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of workspaceMembers) {
+      map.set(member.user_id, member.name || member.email || member.user_id);
+    }
+    return map;
+  }, [workspaceMembers]);
 
   // Filter projects based on search
   const filteredProjects = useMemo(() => {
@@ -251,6 +260,7 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                       onClick={() => handleProjectClick(project)}
                       onSettingsClick={() => handleSettingsClick(project)}
                       onTogglePin={(e) => togglePin(project.id, e)}
+                      adminSummary={buildProjectAdminSummary(project, memberNameById)}
                       t={t}
                     />
                   ))}
@@ -297,8 +307,8 @@ export default function ProjectsPage({ params }: ProjectsPageProps) {
                 onSettingsClick={handleSettingsClick}
                 onDeleteClick={(project) => setDeleteDialogProject(project)}
                 onTogglePin={togglePin}
-                canProjectPolicyUpdate={canProjectPolicyUpdate}
                 canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
+                memberNameById={memberNameById}
                 t={t}
               />
             </section>
@@ -333,12 +343,14 @@ function ProjectCard({
   onClick,
   onSettingsClick,
   onTogglePin,
+  adminSummary,
   t,
 }: {
   project: Project;
   onClick: () => void;
   onSettingsClick: () => void;
   onTogglePin: (e: React.MouseEvent) => void;
+  adminSummary: string;
   t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
   return (
@@ -391,10 +403,15 @@ function ProjectCard({
         </div>
       </div>
 
-      <div className="flex items-center justify-between pt-4 border-t border-border">
-        <span className="text-xs font-medium text-tertiary uppercase tracking-wide">
-          {project.role}
-        </span>
+      <div className="flex items-center justify-between pt-4 border-t border-border gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium text-tertiary uppercase tracking-wide">
+            {t('table.project_admin')}
+          </p>
+          <p className="text-xs text-primary truncate" title={adminSummary}>
+            {adminSummary}
+          </p>
+        </div>
         <StatusBadge status={project.status === 'active' ? 'active' : 'paused'}>
           {project.status}
         </StatusBadge>
@@ -410,8 +427,8 @@ function ProjectsTable({
   onSettingsClick,
   onDeleteClick,
   onTogglePin,
-  canProjectPolicyUpdate,
   canDeleteProjectByWorkspacePermission,
+  memberNameById,
   t,
 }: {
   projects: Project[];
@@ -419,8 +436,8 @@ function ProjectsTable({
   onSettingsClick: (project: Project) => void;
   onDeleteClick: (project: Project) => void;
   onTogglePin: (projectId: string, e: React.MouseEvent) => void;
-  canProjectPolicyUpdate: boolean;
   canDeleteProjectByWorkspacePermission: boolean;
+  memberNameById: Map<string, string>;
   t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
   const columns = useMemo(
@@ -449,6 +466,18 @@ function ProjectsTable({
             <span className="font-medium text-foreground">{info.getValue()}</span>
           </div>
         ),
+      }),
+      columnHelper.display({
+        id: 'project_admin',
+        header: t('table.project_admin'),
+        cell: ({ row }) => {
+          const summary = buildProjectAdminSummary(row.original, memberNameById);
+          return (
+            <span className="text-primary truncate block max-w-[260px]" title={summary}>
+              {summary}
+            </span>
+          );
+        },
       }),
       columnHelper.accessor('visibility', {
         header: t('table.visibility'),
@@ -486,7 +515,7 @@ function ProjectsTable({
         id: 'actions',
         header: '',
         cell: ({ row }) => {
-          const canManageProject = isProjectAdminRole(row.original.role) && canProjectPolicyUpdate;
+          const canManageProject = isProjectAdminRole(row.original.role);
           const canDeleteProject =
             isProjectAdminRole(row.original.role) && canDeleteProjectByWorkspacePermission;
           return (
@@ -539,7 +568,7 @@ function ProjectsTable({
         },
       }),
     ],
-    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, canProjectPolicyUpdate, canDeleteProjectByWorkspacePermission, t]
+    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, canDeleteProjectByWorkspacePermission, memberNameById, t]
   );
 
   const table = useReactTable({
@@ -556,5 +585,42 @@ function ProjectsTable({
     );
   }
 
-  return <DataTable table={table} testId="projects__table" />;
+  return (
+    <DataTable
+      table={table}
+      testId="projects__table"
+      onRowClick={onProjectClick}
+    />
+  );
+}
+
+function buildProjectAdminSummary(
+  project: Project,
+  memberNameById: Map<string, string>
+): string {
+  const rawAdmins = project.governance_json?.['project_admins'];
+  const ids: string[] = [];
+  const labels: string[] = [];
+
+  if (Array.isArray(rawAdmins)) {
+    for (const item of rawAdmins) {
+      if (typeof item === 'string') {
+        ids.push(item);
+        continue;
+      }
+      if (item && typeof item === 'object') {
+        const maybeId = (item as Record<string, unknown>).id;
+        const maybeName = (item as Record<string, unknown>).name;
+        if (typeof maybeId === 'string') ids.push(maybeId);
+        if (typeof maybeName === 'string' && maybeName.trim()) labels.push(maybeName.trim());
+      }
+    }
+  }
+
+  ids.push(project.owner_id);
+  const resolved = [...labels, ...ids.map((id) => memberNameById.get(id) || id)];
+  const unique = Array.from(new Set(resolved.filter((name) => name.trim().length > 0)));
+  if (unique.length === 0) return '-';
+  if (unique.length <= 2) return unique.join(', ');
+  return `${unique.slice(0, 2).join(', ')}...`;
 }

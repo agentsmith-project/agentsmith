@@ -70,14 +70,6 @@ vi.mock('@/components/settings/RuntimePreferencesEditor', () => ({
   RuntimePreferencesEditor: () => <div data-testid="settings__runtime-editor" />,
 }));
 
-vi.mock('@/components/settings/GovernanceEditor', () => ({
-  GovernanceEditor: () => <div data-testid="settings__governance-editor" />,
-}));
-
-vi.mock('@/components/settings/LimitsEditor', () => ({
-  LimitsEditor: () => <div data-testid="settings__limits-editor" />,
-}));
-
 vi.mock('@/components/settings/SettingsTokenReference', () => ({
   SettingsTokenReference: () => <div data-testid="settings__token-ref" />,
 }));
@@ -122,6 +114,9 @@ describe('SettingsPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('settings__tab--general')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('settings__tab--runtime')).toBeInTheDocument();
+    expect(screen.queryByTestId('settings__tab--governance')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings__tab--limits')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
   });
 

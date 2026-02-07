@@ -20,25 +20,9 @@ import { useTranslations } from 'next-intl';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RuntimePreferencesEditor, type RuntimePreferences } from '@/components/settings/RuntimePreferencesEditor';
-import { GovernanceEditor, type GovernanceJson } from '@/components/settings/GovernanceEditor';
-import { LimitsEditor, type LimitsJson } from '@/components/settings/LimitsEditor';
 import { SettingsTokenReference } from '@/components/settings/SettingsTokenReference';
 import { useApiError } from '@/lib/hooks/use-api-error';
-import {
-  RUNTIME_PREFERENCES_TOKENS,
-  GOVERNANCE_TOKENS,
-  LIMITS_TOKENS,
-} from '@/components/settings/settingsTokenRefs';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { RUNTIME_PREFERENCES_TOKENS } from '@/components/settings/settingsTokenRefs';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import {
   useCanReadProjectPolicy,
@@ -59,17 +43,12 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   } | null>(null);
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [savingRuntime, setSavingRuntime] = useState(false);
-  const [savingGovernance, setSavingGovernance] = useState(false);
-  const [savingLimits, setSavingLimits] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private'>('private');
   const [joinPolicy, setJoinPolicy] = useState<'approval_required' | 'open'>('approval_required');
   const [runtimePreferences, setRuntimePreferences] = useState<RuntimePreferences>({});
-  const [governance, setGovernance] = useState<GovernanceJson>({});
-  const [limits, setLimits] = useState<LimitsJson>({});
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [governanceConfirmOpen, setGovernanceConfirmOpen] = useState(false);
   const router = useRouter();
   const commonT = useTranslations('common');
   const settingsT = useTranslations('settings');
@@ -105,8 +84,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       setVisibility(currentProject.visibility || 'private');
       setJoinPolicy(currentProject.join_policy || 'approval_required');
       setRuntimePreferences((currentProject.runtime_preferences_json as RuntimePreferences) ?? {});
-      setGovernance((currentProject.governance_json as GovernanceJson) ?? {});
-      setLimits((currentProject.limits_json as LimitsJson) ?? {});
     }
   }, [currentProject]);
 
@@ -151,45 +128,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       handleError(error, { context: settingsT('tab_runtime_preferences') });
     } finally {
       setSavingRuntime(false);
-    }
-  };
-
-  const handleSaveGovernanceClick = () => {
-    setGovernanceConfirmOpen(true);
-  };
-
-  const handleSaveGovernanceConfirm = async () => {
-    if (!resolvedParams) return;
-    if (!canManageSettings) return;
-    if (!resolvedParams.workspace || !resolvedParams.project) return;
-    setGovernanceConfirmOpen(false);
-    setSavingGovernance(true);
-    try {
-      await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
-        governance_json: governance as Record<string, unknown>,
-      });
-      toast.success(commonT('refreshed_data'));
-    } catch (error) {
-      handleError(error, { context: settingsT('tab_governance') });
-    } finally {
-      setSavingGovernance(false);
-    }
-  };
-
-  const handleSaveLimits = async () => {
-    if (!resolvedParams) return;
-    if (!canManageSettings) return;
-    if (!resolvedParams.workspace || !resolvedParams.project) return;
-    setSavingLimits(true);
-    try {
-      await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
-        limits_json: limits as Record<string, unknown>,
-      });
-      toast.success(commonT('refreshed_data'));
-    } catch (error) {
-      handleError(error, { context: settingsT('tab_limits') });
-    } finally {
-      setSavingLimits(false);
     }
   };
 
@@ -247,8 +185,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         <TabsList>
           <TabsTrigger value="general" data-testid="settings__tab--general">{settingsT('tab_general')}</TabsTrigger>
           <TabsTrigger value="runtime" data-testid="settings__tab--runtime">{settingsT('tab_runtime_preferences')}</TabsTrigger>
-          <TabsTrigger value="governance" data-testid="settings__tab--governance">{settingsT('tab_governance')}</TabsTrigger>
-          <TabsTrigger value="limits" data-testid="settings__tab--limits">{settingsT('tab_limits')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-6">
@@ -326,62 +262,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             </div>
           </div>
         </TabsContent>
-
-        <TabsContent value="governance" className="space-y-6">
-          <div className="rounded-xl border border-border bg-surface p-6 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('governance_title')}</h2>
-              <p className="text-sm text-tertiary">{settingsT('governance_help')}</p>
-            </div>
-            <SettingsTokenReference tokens={GOVERNANCE_TOKENS} />
-            <GovernanceEditor value={governance} onChange={setGovernance} />
-            <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveGovernanceClick} disabled={!canManageSettings || savingGovernance} variant="action" size="lg" data-testid="settings__save-btn">
-                <Save className="w-4 h-4" />
-                {savingGovernance ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="limits" className="space-y-6">
-          <div className="rounded-xl border border-border bg-surface p-6 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('limits_title')}</h2>
-              <p className="text-sm text-tertiary">{settingsT('limits_help')}</p>
-            </div>
-            <SettingsTokenReference tokens={LIMITS_TOKENS} />
-            <LimitsEditor value={limits} onChange={setLimits} />
-            <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveLimits} disabled={!canManageSettings || savingLimits} variant="action" size="lg" data-testid="settings__save-btn">
-                <Save className="w-4 h-4" />
-                {savingLimits ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </TabsContent>
       </Tabs>
-
-      <AlertDialog open={governanceConfirmOpen} onOpenChange={setGovernanceConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{settingsT('governance_save_confirm_title')}</AlertDialogTitle>
-            <AlertDialogDescription>{settingsT('governance_save_confirm_body')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={savingGovernance}>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                handleSaveGovernanceConfirm();
-              }}
-              disabled={savingGovernance}
-            >
-              {savingGovernance ? 'Saving...' : settingsT('governance_save_confirm_action')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Danger Zone - fixed at bottom */}
       <div className="mt-8 rounded-xl border border-subtle bg-surface-high border-l-2 border-l-error/70 p-6">

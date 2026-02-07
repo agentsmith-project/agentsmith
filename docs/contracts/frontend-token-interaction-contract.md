@@ -142,7 +142,7 @@ Action: Revoke project admin
 
 ## 4) Project Policy
 
-Action: View policy (runtime/governance/limits)
+Action: View policy (runtime/general)
 - Preconditions:
   - token `project:policy:read`
 

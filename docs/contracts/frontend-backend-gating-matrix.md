@@ -70,7 +70,7 @@ Backend should enforce 401/403 according to this matrix. Frontend already applie
 | quota-template | list templates | `project:member:read` | `GET /quota-templates*` | tab visible read-only or blocked |
 | quota-template | create/update/delete/apply | `project:admin:grant` or `project:admin:revoke` | `/quota-templates*`, `/quota-templates/{id}/apply` | actions disabled |
 | settings | view settings | `project:policy:read` or `project:policy:update` | `GET /projects/{id}` | page-level permission denied |
-| settings | update settings/governance/limits | `project:policy:update` | `PATCH /projects/{id}` | save buttons disabled |
+| settings | update settings (general/runtime) | `project:policy:update` | `PATCH /projects/{id}` | save buttons disabled |
 | settings | delete project from settings | `project:delete` (recommended backend strict) | `DELETE /projects/{id}` | delete denied |
 | audit | view audit data | `project:audit:read` | `GET /audit` | component-level permission denied |
 | usage | view usage data | `project:usage:read` | `GET /usage`, `GET /usage/kpi` | component-level permission denied |

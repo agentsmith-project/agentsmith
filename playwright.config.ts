@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const baseURL = process.env.BASE_URL || 'http://localhost:3001';
 const useManagedDevServer = !process.env.BASE_URL;
-const localWorkers = Number(process.env.PW_WORKERS ?? 6);
+const localWorkers = Number(process.env.PW_WORKERS ?? 8);
 const isCI = !!process.env.CI;
 
 export default defineConfig({

@@ -291,7 +291,8 @@ Action: Apply group template to group members
 - do not render resource in list
 
 4. Governance write operations (members/template/group/resource-policy):
-- frontend must enforce dual gate: `is_project_admin && has_required_mutation_token`
+- frontend must enforce required mutation token only
+- role/group names are template labels, not runtime auth conditions
 - optionally show filtered count in diagnostics view only
 
 4. Validation/security errors:
@@ -300,7 +301,7 @@ Action: Apply group template to group members
 ## Backend Contract Expectations (for handoff)
 
 1. Every protected endpoint must declare required token set.
-2. Credentials endpoints must enforce wheel gate + token gate.
+2. Credentials endpoints must enforce token gate (`project:credential:manage`).
 3. Resource policy payload format must support:
 - resource id/type
 - policy mode (`allow_all_members` / `allow_list`)
@@ -313,5 +314,5 @@ Action: Apply group template to group members
 ## Open Items Before Freeze
 
 1. Confirm exact backend endpoint names for project defaults + resource policy updates.
-2. Confirm delete-project token naming remains `project:delete`.
+2. Confirm delete-project token naming remains `project:settings:manage`.
 3. Confirm whether workspace admin has emergency override over project policy/admin assignment.

@@ -94,7 +94,7 @@ export function UsageFilters({
             end_time: filters.end_time,
           }}
           onChange={handleTimeRangeChange}
-          presets={['today', 'last_7d', 'last_30d', 'this_month', 'custom']}
+          presets={['last_24h', 'last_7d', 'last_30d', 'today', 'this_month', 'custom']}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

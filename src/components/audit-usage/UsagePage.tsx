@@ -23,9 +23,11 @@ export interface UsagePageProps {
 }
 
 function getDefaultTimeRange() {
+  const end = new Date();
+  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
   return {
-    start_time: new Date().toISOString().split('T')[0] + 'T00:00:00.000Z', // Today start
-    end_time: new Date().toISOString(), // Now
+    start_time: start.toISOString(),
+    end_time: end.toISOString(),
   };
 }
 

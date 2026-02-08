@@ -112,6 +112,33 @@ describe('UsagePage route', () => {
     expect(props!.defaultEndUserId).toBeUndefined();
   });
 
+  it('defaults usage time range to last 24 hours', async () => {
+    render(
+      <UsagePage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockUseUsageRecords).toHaveBeenCalled();
+    });
+
+    const lastCall = mockUseUsageRecords.mock.calls[mockUseUsageRecords.mock.calls.length - 1];
+    const params = lastCall?.[2] as { start_time?: string; end_time?: string } | undefined;
+    expect(params?.start_time).toBeDefined();
+    expect(params?.end_time).toBeDefined();
+
+    const start = new Date(params!.start_time as string).getTime();
+    const end = new Date(params!.end_time as string).getTime();
+    const hours = (end - start) / (1000 * 60 * 60);
+    expect(hours).toBeGreaterThanOrEqual(23.5);
+    expect(hours).toBeLessThanOrEqual(24.5);
+  });
+
   it('renders header and toolbar layout', async () => {
     render(
       <UsagePage

@@ -8,14 +8,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { DataTable } from '@/components/ui/data-table';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MoreHorizontal } from 'lucide-react';
 import { EmptyState } from './EmptyState';
 import { SourcesTableSkeleton } from '@/components/sources/SourcesTableSkeleton';
 import { formatNumber, formatBytes, formatDuration } from '@/lib/utils/formatters';
@@ -109,23 +102,6 @@ export function UsageTable({ data, loading = false, onClearFilters }: UsageTable
           </div>
         ),
         size: 120,
-      }),
-      columnHelper.display({
-        id: 'actions',
-        header: '',
-        cell: () => (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {/* View Details can be added in v1.5+ */}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ),
-        size: 80,
       }),
     ],
     [t],

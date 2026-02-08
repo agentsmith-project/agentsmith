@@ -4,6 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { Clock } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 export type TimeRangePreset = 'last_24h' | 'last_7d' | 'last_30d' | 'today' | 'this_month' | 'custom';
 
@@ -21,9 +22,8 @@ export interface TimeRangePickerProps {
   maxDays?: number; // Default 90
 }
 
-const PRESETS: Record<TimeRangePreset, { label: string; getRange: () => TimeRange }> = {
+const PRESET_RANGE_BUILDERS: Record<TimeRangePreset, { getRange: () => TimeRange }> = {
   last_24h: {
-    label: 'Last 24 hours',
     getRange: () => {
       const end = new Date();
       const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
@@ -34,7 +34,6 @@ const PRESETS: Record<TimeRangePreset, { label: string; getRange: () => TimeRang
     },
   },
   last_7d: {
-    label: 'Last 7 days',
     getRange: () => {
       const end = new Date();
       const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -45,7 +44,6 @@ const PRESETS: Record<TimeRangePreset, { label: string; getRange: () => TimeRang
     },
   },
   last_30d: {
-    label: 'Last 30 days',
     getRange: () => {
       const end = new Date();
       const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -56,7 +54,6 @@ const PRESETS: Record<TimeRangePreset, { label: string; getRange: () => TimeRang
     },
   },
   today: {
-    label: 'Today',
     getRange: () => {
       const end = new Date();
       const start = new Date(end);
@@ -68,7 +65,6 @@ const PRESETS: Record<TimeRangePreset, { label: string; getRange: () => TimeRang
     },
   },
   this_month: {
-    label: 'This month',
     getRange: () => {
       const end = new Date();
       const start = new Date(end.getFullYear(), end.getMonth(), 1);
@@ -80,7 +76,6 @@ const PRESETS: Record<TimeRangePreset, { label: string; getRange: () => TimeRang
     },
   },
   custom: {
-    label: 'Custom range',
     getRange: () => {
       const end = new Date();
       const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
@@ -100,6 +95,7 @@ export function TimeRangePicker({
   className,
   maxDays = 90,
 }: TimeRangePickerProps) {
+  const commonT = useTranslations('common');
   const [preset, setPreset] = React.useState<TimeRangePreset | 'custom'>('last_24h');
   const [startTime, setStartTime] = React.useState(
     value.start_time ? new Date(value.start_time).toISOString().slice(0, 16) : '',
@@ -126,7 +122,7 @@ export function TimeRangePicker({
     }
 
     const presetKey = newPreset as TimeRangePreset;
-    const range = PRESETS[presetKey].getRange();
+    const range = PRESET_RANGE_BUILDERS[presetKey].getRange();
     setPreset(presetKey);
     onChange(range);
     setError(null);
@@ -139,7 +135,7 @@ export function TimeRangePicker({
   const handleCustomTimeChange = React.useCallback(
     (currentStart: string, currentEnd: string) => {
       if (!currentStart || !currentEnd) {
-        setError('Both start and end times are required');
+        setError(commonT('both_start_end_required'));
         return;
       }
 
@@ -148,18 +144,18 @@ export function TimeRangePicker({
       const now = new Date();
 
       if (end < start) {
-        setError('End time cannot be earlier than start time');
+        setError(commonT('end_time_before_start'));
         return;
       }
 
       if (end > now) {
-        setError('End time cannot be later than current time');
+        setError(commonT('end_time_after_now'));
         return;
       }
 
       const daysDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
       if (daysDiff > maxDays) {
-        setError(`Time range cannot exceed ${maxDays} days`);
+        setError(commonT('max_days_exceeded', { maxDays: maxDays.toString() }));
         return;
       }
 
@@ -169,7 +165,7 @@ export function TimeRangePicker({
         end_time: end.toISOString(),
       });
     },
-    [onChange, maxDays],
+    [commonT, onChange, maxDays],
   );
 
   const formatDateTime = (isoString: string): string => {
@@ -187,7 +183,7 @@ export function TimeRangePicker({
           <SelectContent>
             {presets.map((p) => (
               <SelectItem key={p} value={p}>
-                {PRESETS[p].label}
+                {commonT(`time_preset_${p}`)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -197,7 +193,7 @@ export function TimeRangePicker({
           <div className="flex items-center gap-4 flex-1">
             <div className="flex-1">
               <label htmlFor="start-time" className="text-xs text-tertiary mb-1 block">
-                Start Time
+                {commonT('start_time')}
               </label>
               <div className="relative">
                 <Input
@@ -216,7 +212,7 @@ export function TimeRangePicker({
             </div>
             <div className="flex-1">
               <label htmlFor="end-time" className="text-xs text-tertiary mb-1 block">
-                End Time
+                {commonT('end_time')}
               </label>
               <div className="relative">
                 <Input

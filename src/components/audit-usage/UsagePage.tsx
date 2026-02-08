@@ -99,11 +99,19 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
       setFilters((prev) => ({
         ...prev,
         ...newFilters,
+        page: 1,
         ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
       }));
     },
     [effectiveEndUserId]
   );
+
+  const currentPage = data?.page ?? filters.page ?? 1;
+  const pageSize = data?.page_size ?? filters.page_size ?? 25;
+  const totalItems = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const canGoPrev = currentPage > 1;
+  const canGoNext = !!data?.has_more || currentPage < totalPages;
 
   if (!canReadUsage) {
     return (
@@ -191,6 +199,33 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
           loading={isLoading}
           onClearFilters={handleClearFilters}
         />
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-xs text-tertiary">
+            {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·
+            {' '}
+            {commonT('total_items', { count: String(totalItems) })}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canGoPrev || isLoading}
+              onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
+            >
+              {commonT('previous')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canGoNext || isLoading}
+              onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
+            >
+              {commonT('next')}
+            </Button>
+          </div>
+        </div>
       </div>
     </PageLayout>
   );

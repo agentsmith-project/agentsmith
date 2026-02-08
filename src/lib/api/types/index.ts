@@ -387,7 +387,7 @@ export interface UsageListParams extends PaginationParams {
   start_time: string; // ISO 8601, 必选
   end_time: string; // ISO 8601, 必选
   resource_type?: string;
-  agent_id?: string;
+  resource_id?: string;
   end_user_id?: string;
   group_by?: 'day' | 'hour';
   sort_by?: 'time_bucket' | 'resource_type' | 'requests';

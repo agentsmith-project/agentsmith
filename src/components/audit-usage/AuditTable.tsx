@@ -33,7 +33,7 @@ const columnHelper = createColumnHelper<AuditEvent>();
 
 function formatTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
-  return date.toLocaleString('en-US', {
+  return date.toLocaleString(undefined, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -62,7 +62,9 @@ export function AuditTable({
   onViewDetails,
   onClearFilters,
 }: AuditTableProps) {
-  const t = useTranslations('common.toast');
+  const t = useTranslations('audit');
+  const commonT = useTranslations('common');
+  const toastT = useTranslations('common.toast');
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'timestamp', desc: true },
   ]);
@@ -70,7 +72,7 @@ export function AuditTable({
   const columns = React.useMemo(
     () => [
       columnHelper.accessor('timestamp', {
-        header: 'Timestamp',
+        header: t('table.timestamp'),
         cell: (info) => {
           const timestamp = info.getValue();
           return (
@@ -91,7 +93,7 @@ export function AuditTable({
         size: 180,
       }),
       columnHelper.accessor('action', {
-        header: 'Action',
+        header: t('table.action'),
         cell: (info) => (
           <Badge variant="outline" className="text-xs">
             {info.getValue()}
@@ -100,7 +102,7 @@ export function AuditTable({
       }),
       columnHelper.accessor('actor_type', {
         id: 'actor',
-        header: 'Actor',
+        header: t('table.actor'),
         cell: (info) => {
           const event = info.row.original;
           const actorType = event.actor_type;
@@ -118,7 +120,7 @@ export function AuditTable({
         },
       }),
       columnHelper.accessor('end_user_id', {
-        header: 'End User',
+        header: t('table.end_user'),
         cell: (info) => {
           const endUserId = info.getValue();
           if (!endUserId) return <span className="text-tertiary">—</span>;
@@ -140,7 +142,7 @@ export function AuditTable({
       }),
       columnHelper.accessor('resource_type', {
         id: 'resource',
-        header: 'Resource',
+        header: t('table.resource'),
         cell: (info) => {
           const event = info.row.original;
           const resourceType = event.resource_type;
@@ -172,20 +174,20 @@ export function AuditTable({
         },
       }),
       columnHelper.accessor('result', {
-        header: 'Result',
+        header: t('table.result'),
         cell: (info) => {
           const result = info.getValue();
           const variant = result === 'ok' ? 'default' : 'destructive';
           return (
             <Badge variant={variant} className="text-xs">
-              {result === 'ok' ? 'Success' : 'Error'}
+              {result === 'ok' ? commonT('success') : commonT('error')}
             </Badge>
           );
         },
         size: 100,
       }),
       columnHelper.accessor('request_id', {
-        header: 'Request ID',
+        header: t('table.request_id'),
         cell: (info) => {
           const requestId = info.getValue();
           if (!requestId) return <span className="text-tertiary">—</span>;
@@ -210,7 +212,7 @@ export function AuditTable({
                 className="h-6 w-6"
                 onClick={() => {
                   navigator.clipboard.writeText(requestId);
-                  toast.success(t('copied'));
+                  toast.success(toastT('copied'));
                 }}
               >
                 <Copy className="h-3 w-3" />
@@ -221,7 +223,7 @@ export function AuditTable({
         size: 200,
       }),
       columnHelper.accessor('error_code', {
-        header: 'Error Code',
+        header: t('table.error_code'),
         cell: (info) => {
           const event = info.row.original;
           if (event.result !== 'error' || !event.error_code) {
@@ -254,7 +256,7 @@ export function AuditTable({
                     className="flex items-center gap-2"
                   >
                     <Eye className="h-4 w-4" />
-                    View Details
+                    {commonT('view_details')}
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
@@ -264,7 +266,7 @@ export function AuditTable({
         size: 80,
       }),
     ],
-    [onViewDetails, t],
+    [onViewDetails, t, commonT, toastT],
   );
 
   const table = useReactTable({
@@ -285,8 +287,8 @@ export function AuditTable({
   if (data.length === 0) {
     return (
       <EmptyState
-        title="No audit events found"
-        description="Try adjusting your filters or select a different time range"
+        title={t('empty.title')}
+        description={t('empty.description')}
         onClearFilters={onClearFilters}
       />
     );

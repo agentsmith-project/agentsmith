@@ -29,36 +29,38 @@ export function AuditDetailDrawer({
   onOpenChange,
   event,
 }: AuditDetailDrawerProps) {
-  const t = useTranslations('common.toast');
+  const t = useTranslations('audit');
+  const commonT = useTranslations('common');
+  const toastT = useTranslations('common.toast');
   if (!event) return null;
 
   const handleCopyRequestId = () => {
     navigator.clipboard.writeText(event.request_id);
-    toast.success(t('copied'));
+    toast.success(toastT('copied'));
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Audit Event Details</DialogTitle>
+          <DialogTitle>{t('detail.title')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Basic Info Card */}
           <div className="bg-surface border border-border rounded-md p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-tertiary">Timestamp</span>
+              <span className="text-sm text-tertiary">{t('table.timestamp')}</span>
               <span className="text-sm text-foreground font-mono">
                 {formatFullTimestamp(event.timestamp)}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-tertiary">Action</span>
+              <span className="text-sm text-tertiary">{t('table.action')}</span>
               <Badge variant="outline">{event.action}</Badge>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-tertiary">Actor</span>
+              <span className="text-sm text-tertiary">{t('table.actor')}</span>
               <div className="flex items-center gap-2">
                 <Badge
                   variant={
@@ -76,13 +78,13 @@ export function AuditDetailDrawer({
             </div>
             {event.end_user_id && (
               <div className="flex items-center justify-between">
-                <span className="text-sm text-tertiary">End User</span>
+                <span className="text-sm text-tertiary">{t('table.end_user')}</span>
                 <span className="text-sm text-foreground font-mono">{event.end_user_id}</span>
               </div>
             )}
             {event.resource_type && (
               <div className="flex items-center justify-between">
-                <span className="text-sm text-tertiary">Resource</span>
+                <span className="text-sm text-tertiary">{t('table.resource')}</span>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{event.resource_type}</Badge>
                   {event.resource_id && (
@@ -94,13 +96,13 @@ export function AuditDetailDrawer({
               </div>
             )}
             <div className="flex items-center justify-between">
-              <span className="text-sm text-tertiary">Result</span>
+              <span className="text-sm text-tertiary">{t('table.result')}</span>
               <Badge variant={event.result === 'ok' ? 'default' : 'destructive'}>
-                {event.result === 'ok' ? 'Success' : 'Error'}
+                {event.result === 'ok' ? commonT('success') : commonT('error')}
               </Badge>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-tertiary">Request ID</span>
+              <span className="text-sm text-tertiary">{t('table.request_id')}</span>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-foreground font-mono">{event.request_id}</span>
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopyRequestId}>
@@ -113,16 +115,16 @@ export function AuditDetailDrawer({
           {/* Error Info Card */}
           {event.result === 'error' && (
             <div className="bg-surface border border-border rounded-md p-4 space-y-2">
-              <h4 className="text-sm font-semibold text-foreground">Error Information</h4>
+              <h4 className="text-sm font-semibold text-foreground">{t('detail.error_information')}</h4>
               {event.error_code && (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-tertiary">Error Code:</span>
+                  <span className="text-sm text-tertiary">{t('table.error_code')}:</span>
                   <Badge variant="destructive">{event.error_code}</Badge>
                 </div>
               )}
               {event.error_message && (
                 <div>
-                  <span className="text-sm text-tertiary">Error Message:</span>
+                  <span className="text-sm text-tertiary">{t('detail.error_message')}:</span>
                   <p className="text-sm text-foreground mt-1">{event.error_message}</p>
                 </div>
               )}

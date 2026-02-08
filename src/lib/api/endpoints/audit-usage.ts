@@ -107,7 +107,7 @@ export class UsageAPI {
 
     // Filters
     if (params.resource_type) searchParams.set('resource_type', params.resource_type);
-    if (params.agent_id) searchParams.set('agent_id', params.agent_id);
+    if (params.resource_id) searchParams.set('resource_id', params.resource_id);
     if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
     if (params.group_by) searchParams.set('group_by', params.group_by);
 

@@ -22,14 +22,14 @@ export interface Member {
   email: string;
   name: string;
   avatar?: string;
-  role: 'owner' | 'admin' | 'developer' | 'user';
+  role: 'owner' | 'admin' | 'developer' | 'user'; // group alias id
   permissions: string[]; // 平台层权限点
   quota_overrides?: QuotaOverride;
   status: 'active' | 'removed';
   joined_at: string;
 }
 
-export interface UpdateMemberRoleRequest {
+export interface UpdateMemberGroupRequest {
   role: 'owner' | 'admin' | 'developer' | 'user';
   permissions: string[];
 }
@@ -100,13 +100,14 @@ export class MemberAPI {
   }
 
   /**
-   * Update member role
+   * Update member group alias and resolved permissions.
+   * Backend contract path keeps `/role` for now.
    */
-  async updateRole(
+  async updateMemberGroup(
     workspaceId: string,
     projectId: string,
     memberId: string,
-    data: UpdateMemberRoleRequest
+    data: UpdateMemberGroupRequest
   ): Promise<void> {
     return this.client.put<void>(
       `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/role`,

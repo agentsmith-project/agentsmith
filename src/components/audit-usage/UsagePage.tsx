@@ -35,7 +35,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:usage:view');
 
-  // User role: locked to own usage. Owner/admin/developer: can switch scope
+  // If defaultEndUserId is provided, scope is locked to the current user usage.
   const isScopeLocked = !!defaultEndUserId;
   const [scope, setScope] = React.useState<'my' | 'project'>(defaultEndUserId ? 'my' : 'project');
 

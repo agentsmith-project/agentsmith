@@ -75,7 +75,8 @@
   "nav": {
     "overview": "Overview",
     "chat": "Chat",
-    "workbench": "AI Studio",
+    "studio": "AI Studio",
+    "studio": "AI Studio",
     "sources": "Sources",
     "agents": "Agents",
     "endpoints": "Endpoints",
@@ -288,7 +289,7 @@
     "no_active_thread_title": "No active thread",
     "no_active_thread_description": "Create a new chat to start."
   },
-  "workbench": {
+  "studio": {
     "title": "AI Studio",
     "thread_new": "New Thread",
     "thread_close": "Close Thread",
@@ -435,7 +436,7 @@
     "desired_replicas": "Desired",
     "admin": "Admin",
     "interaction_chat": "Chat",
-    "interaction_workbench": "AI Studio",
+    "interaction_studio": "AI Studio",
     "interaction_both": "Chat & AI Studio",
     "diagnostics_backoff": "Backing off",
     "detail_title": "Agent Details",
@@ -857,10 +858,10 @@
       "title": "Invite Member",
       "email_label": "Email",
       "email_placeholder": "colleague@example.com",
-      "role_label": "Default group",
-      "role_admin": "Manager group",
-      "role_developer": "Operator group",
-      "role_user": "Member group",
+      "group_label": "Default group",
+      "group_admin": "Manager group",
+      "group_developer": "Operator group",
+      "group_user": "Member group",
       "expires_label": "Link expires",
       "expires_24h": "24 hours",
       "expires_72h": "3 days",
@@ -891,6 +892,7 @@
     "join_requests_approve_all": "Approve All ({count})",
     "table": {
       "user": "User",
+      "group_alias": "Group Alias",
       "role": "Group Alias",
       "status": "Status",
       "joined": "Joined",
@@ -1182,8 +1184,8 @@
     "navigation": {
       "chat": "Chat",
       "chat_description": "AI chat conversations",
-      "workbench": "AI Studio",
-      "workbench_description": "Task-based agent workspace",
+      "studio": "AI Studio",
+      "studio_description": "Task-based agent workspace",
       "agents": "Agents",
       "agents_description": "Manage AI agents",
       "endpoints": "Endpoints",

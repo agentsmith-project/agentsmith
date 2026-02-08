@@ -77,7 +77,8 @@
   "nav": {
     "overview": "概览",
     "chat": "聊天",
-    "workbench": "AI Studio",
+    "studio": "AI Studio",
+    "studio": "AI Studio",
     "sources": "文件",
     "agents": "智能体",
     "endpoints": "端点",
@@ -290,7 +291,7 @@
     "no_active_thread_title": "暂无活跃会话",
     "no_active_thread_description": "创建一个新会话开始对话。"
   },
-  "workbench": {
+  "studio": {
     "title": "AI Studio",
     "thread_new": "新建线程",
     "thread_close": "关闭线程",
@@ -437,7 +438,7 @@
     "desired_replicas": "期望副本",
     "admin": "维护人",
     "interaction_chat": "聊天",
-    "interaction_workbench": "AI Studio",
+    "interaction_studio": "AI Studio",
     "interaction_both": "聊天 & AI Studio",
     "diagnostics_backoff": "等待重试",
     "detail_title": "智能体详情",
@@ -859,10 +860,10 @@
       "title": "邀请成员",
       "email_label": "邮箱",
       "email_placeholder": "colleague@example.com",
-      "role_label": "默认分组",
-      "role_admin": "管理分组",
-      "role_developer": "操作分组",
-      "role_user": "成员分组",
+      "group_label": "默认分组",
+      "group_admin": "管理分组",
+      "group_developer": "操作分组",
+      "group_user": "成员分组",
       "expires_label": "链接有效期",
       "expires_24h": "24 小时",
       "expires_72h": "3 天",
@@ -893,6 +894,7 @@
     "join_requests_approve_all": "批准全部 ({count})",
     "table": {
       "user": "用户",
+      "group_alias": "分组别名",
       "role": "分组别名",
       "status": "状态",
       "joined": "加入时间",
@@ -1184,8 +1186,8 @@
     "navigation": {
       "chat": "聊天",
       "chat_description": "AI 聊天对话",
-      "workbench": "AI Studio",
-      "workbench_description": "基于任务的智能体工作区",
+      "studio": "AI Studio",
+      "studio_description": "基于任务的智能体工作区",
       "agents": "智能体",
       "agents_description": "管理 AI 智能体",
       "endpoints": "端点",

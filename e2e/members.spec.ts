@@ -73,9 +73,9 @@ test.describe('Members Page', () => {
     const dialog = authedPage.getByTestId('members__invite-dialog');
     await expect(dialog).toBeVisible();
 
-    // Verify the dialog has email input and role selector
+    // Verify the dialog has email input and group selector
     await expect(dialog.locator('#invite-email')).toBeVisible();
-    await expect(dialog.locator('#invite-role')).toBeVisible();
+    await expect(dialog.locator('#invite-group')).toBeVisible();
   });
 
   test('member detail drawer opens with tabs', async ({ authedPage }) => {

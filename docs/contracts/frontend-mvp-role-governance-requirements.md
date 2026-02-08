@@ -1,4 +1,4 @@
-# Frontend MVP Role & Governance Requirements
+# Frontend MVP Governance Requirements
 
 > Note (2026-02-07): This file is partially superseded by
 > `docs/contracts/frontend-resource-policy-governance-v1.md`.
@@ -6,14 +6,14 @@
 
 ## Purpose
 
-Capture the current business requirements for frontend MVP around identity, role governance, and resource access.
+Capture the current business requirements for frontend MVP around identity, group governance, and resource access.
 This document is the product-facing source for UX behavior; API-level details remain in existing contract documents.
 
 ## Identity Boundary
 
 1. Keycloak handles:
-- user -> workspace membership (0..N workspaces) via workspace-scoped roles
-- workspace admin identity via `ws_admin_{workspace_id}` style role
+- user -> workspace membership (0..N workspaces)
+- workspace admin identity via `ws_admin_{workspace_id}` style claim/group mapping
 
 2. Keycloak stops at AuthN/AuthZ boundary above.
 - All project-level and resource-level authorization is handled by MBOS domain policy.
@@ -26,11 +26,9 @@ This document is the product-facing source for UX behavior; API-level details re
 
 2. Workspace admin is always treated as `wheel`.
 
-3. `wheel` capabilities in frontend:
-- create/delete projects
-- become project admin when creating project
-- assign/remove project admin for other members, but only in projects where this wheel user is already project admin
-- `wheel` is not a cross-project admin role; for projects created by other wheel users, access remains same as normal user unless explicitly granted project admin
+3. Governance group is a management label only.
+- Frontend runtime gates are token-only.
+- Group names are not used as authorization conditions.
 
 ## Project Governance
 
@@ -61,16 +59,14 @@ This document is the product-facing source for UX behavior; API-level details re
 
 ## Credentials Visibility Rule
 
-1. Credentials module is `wheel`-only in frontend navigation and page access.
+1. Credentials module gate is token-only in frontend navigation and page access.
 2. Effective access condition for credentials is:
-- must be `wheel`
-- and must satisfy project credential permissions/tokens
-3. If user is project admin but not `wheel`, credentials module remains hidden.
-4. Even for `wheel`, credentials display is metadata-only:
+- must have `project:credential:manage`
+3. Even for authorized users, credentials display is metadata-only:
 - name
 - fingerprint
 - timestamps
-5. Secret values are never shown after creation.
+4. Secret values are never shown after creation.
 
 ## Resource Access Rule
 
@@ -103,7 +99,7 @@ This document is the product-facing source for UX behavior; API-level details re
 - no file-level policy in MVP
 
 2. Policy subjects:
-- governance group: `wheel` / `user`
+- project groups (group alias)
 - individual members
 
 3. Default policy:
@@ -125,24 +121,21 @@ This document is the product-facing source for UX behavior; API-level details re
 - target resource
 - action type (create/update/delete/policy-change)
 
-## Token & Template Strategy
+## Token & Template Strategy (Canonical)
 
 1. Keep permission tokens as system contract language.
 2. Simplify configuration with:
-- default role groups/templates
+- default group templates
 - custom templates for advanced cases
 3. UI default path must be template-first; raw token editing is advanced mode.
 
 ## Current Frontend Prototype Scope (2026-02-07)
 
 1. Added workspace governance grouping UI in workspace settings (`wheel` / `user`) as frontend prototype state.
-2. Added `wheel`-only visibility gate for credentials module in sidebar and credentials page.
-3. Kept token-based permission checks for project and resource operations.
-4. Governance write operations now follow dual gate:
-- user is project admin in current project
-- user has required mutation token(s)
-5. Credentials gate now follows combined condition: wheel visibility + project permission tokens.
-6. Projects list interaction and admin clarity:
+2. Runtime permission checks are token-only for project and resource operations.
+3. Governance write operations follow token gates at route/action level.
+4. Credentials gate follows token condition: `project:credential:manage`.
+5. Projects list interaction and admin clarity:
 - unpinned project table rows are directly clickable to open project overview
 - pinned project cards and table action buttons are clickable and no longer blocked by row-level event conflicts
 - project list shows `Project Admin` summary (first two admins, then ellipsis)
@@ -150,7 +143,7 @@ This document is the product-facing source for UX behavior; API-level details re
 ## Remaining MVP Gaps
 
 1. Workspace governance group persistence currently frontend-local prototype state; backend contract still needed.
-2. Project admin assignment UX should be explicitly role-centered (template-first) across all member flows.
+2. Project admin assignment UX should be template-first across all member flows.
 3. Shared library first-class CRUD is implemented in Sources page, but advanced governance UX (library ownership transfer, archive lifecycle, bulk policy assignment) is not yet implemented.
 4. Unified `Resource Policy` page should be the single resource-centric policy entry for endpoint/library/agent with subject-based overrides.
 5. Policy stale-subject cleanup UX and governance audit timeline are not yet implemented.

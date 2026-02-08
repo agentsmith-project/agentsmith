@@ -18,10 +18,11 @@ export const ROUTES = {
   project: [
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', title: /Overview|概览/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/chat', testId: 'chat__main-pane' },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/studio', testId: 'workbench__recipe-list' },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/studio/recipes/recipe_001', testId: 'workbench__recipe-header' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/studio', testId: 'studio__recipe-list' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/studio/recipes/recipe_001', testId: 'studio__recipe-header' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/agents', title: /Agents|代理|智能体/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/endpoints', title: /Endpoints|端点/i },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/resource-policy', title: /Resource Policy|资源策略/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/members', title: /Members|成员/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/audit', title: /Audit|审计/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/usage', title: /Usage|用量/i },

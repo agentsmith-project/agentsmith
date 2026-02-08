@@ -129,7 +129,7 @@ export const chatMessageFixtures: ChatMessageWithMeta[] = [
     id: 'msg_005',
     session_id: 'chat_001',
     role: 'assistant',
-    content: 'MBOS (Microservices-Based Operating System) is a platform for building and managing AI agents. It provides a flexible architecture for creating external and internal agents, managing endpoints, and handling multi-turn conversations through workbenches.',
+    content: 'MBOS (Microservices-Based Operating System) is a platform for building and managing AI agents. It provides a flexible architecture for creating external and internal agents, managing endpoints, and handling multi-turn conversations through studios.',
     created_at: '2026-01-28T10:02:08Z',
     tokens: 45,
     finish_reason: 'stop',

@@ -15,11 +15,11 @@ export * from './usage';
 export * from './user-keys';
 export * from './me';
 export * from './chat';
-export * from './workbench';
+export * from './studio';
 
 // Re-export Recipe fixtures
 export {
   recipeFixtures,
   recipeMessageFixtures,
   artifactFixtures,
-} from './workbench';
+} from './studio';

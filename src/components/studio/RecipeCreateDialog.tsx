@@ -37,7 +37,7 @@ export function RecipeCreateDialog({
   projectId,
   onSuccess,
 }: RecipeCreateDialogProps) {
-  const t = useTranslations('workbench.recipe');
+  const t = useTranslations('studio.recipe');
   const commonT = useTranslations('common');
   const [title, setTitle] = React.useState('');
   const [agentId, setAgentId] = React.useState<string>('');

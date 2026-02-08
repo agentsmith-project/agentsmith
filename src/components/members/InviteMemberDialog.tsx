@@ -168,19 +168,19 @@ export function InviteMemberDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="invite-role">{t('role_label')}</Label>
+              <Label htmlFor="invite-group">{t('group_label')}</Label>
               <Select
                 value={groupTemplate}
                 onValueChange={(v) => setGroupTemplate(v as 'admin' | 'developer' | 'user')}
                 disabled={createInvite.isPending}
               >
-                <SelectTrigger id="invite-role" className="rounded-lg">
+                <SelectTrigger id="invite-group" className="rounded-lg">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin">{t('role_admin')}</SelectItem>
-                  <SelectItem value="developer">{t('role_developer')}</SelectItem>
-                  <SelectItem value="user">{t('role_user')}</SelectItem>
+                  <SelectItem value="admin">{t('group_admin')}</SelectItem>
+                  <SelectItem value="developer">{t('group_developer')}</SelectItem>
+                  <SelectItem value="user">{t('group_user')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -55,7 +55,7 @@ export function RecipeHeader({
   const router = useRouter();
   const params = useParams();
   const locale = (params?.locale as string) || 'en-US';
-  const t = useTranslations('workbench.recipe');
+  const t = useTranslations('studio.recipe');
   const deleteRecipe = useDeleteRecipe();
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
 
@@ -63,7 +63,7 @@ export function RecipeHeader({
     if (onLeave) {
       onLeave();
     } else {
-      // Default behavior: navigate to workbench list
+      // Default behavior: navigate to studio list
       router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/studio`);
     }
   };
@@ -91,7 +91,7 @@ export function RecipeHeader({
   return (
     <div
       className="border-b border-border bg-surface px-6 py-4 flex items-center justify-between"
-      data-testid="workbench__recipe-header"
+      data-testid="studio__recipe-header"
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {/* Leave Recipe Button */}

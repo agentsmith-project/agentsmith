@@ -1,7 +1,7 @@
 /**
  * Workbench Page E2E Tests
  *
- * Tests the workbench recipe list, create recipe dialog,
+ * Tests the studio recipe list, create recipe dialog,
  * navigation to recipe detail, and recipe detail page elements.
  */
 
@@ -14,11 +14,11 @@ test.describe('Workbench Page', () => {
     });
 
     test('should display recipe list with recipe cards', async ({ authedPage }) => {
-      const recipeList = authedPage.getByTestId('workbench__recipe-list');
+      const recipeList = authedPage.getByTestId('studio__recipe-list');
       await expect(recipeList).toBeVisible({ timeout: 10000 });
 
       // MSW should provide at least one recipe card
-      const recipeCards = authedPage.getByTestId('workbench__recipe-card');
+      const recipeCards = authedPage.getByTestId('studio__recipe-card');
       await expect(recipeCards.first()).toBeVisible({ timeout: 10000 });
 
       // Each recipe card should have a data-recipe-id attribute
@@ -27,13 +27,13 @@ test.describe('Workbench Page', () => {
     });
 
     test('should display create recipe button', async ({ authedPage }) => {
-      const createBtn = authedPage.getByTestId('workbench__create-recipe-btn');
+      const createBtn = authedPage.getByTestId('studio__create-recipe-btn');
       await expect(createBtn).toBeVisible({ timeout: 10000 });
       await expect(createBtn).toBeEnabled();
     });
 
     test('should open create recipe dialog', async ({ authedPage }) => {
-      const createBtn = authedPage.getByTestId('workbench__create-recipe-btn');
+      const createBtn = authedPage.getByTestId('studio__create-recipe-btn');
       await expect(createBtn).toBeVisible({ timeout: 10000 });
       await createBtn.click();
 
@@ -52,7 +52,7 @@ test.describe('Workbench Page', () => {
     });
 
     test('should navigate to recipe detail on card click', async ({ authedPage }) => {
-      const recipeCards = authedPage.getByTestId('workbench__recipe-card');
+      const recipeCards = authedPage.getByTestId('studio__recipe-card');
       await expect(recipeCards.first()).toBeVisible({ timeout: 10000 });
 
       // Get the recipe ID from the card for URL verification
@@ -65,7 +65,7 @@ test.describe('Workbench Page', () => {
       await authedPage.waitForURL(/\/studio\/recipes\//, { timeout: 10000 });
 
       // Recipe header should be visible on detail page
-      await expect(authedPage.getByTestId('workbench__recipe-header')).toBeVisible();
+      await expect(authedPage.getByTestId('studio__recipe-header')).toBeVisible();
     });
   });
 
@@ -76,13 +76,13 @@ test.describe('Workbench Page', () => {
     });
 
     test('should display recipe header', async ({ authedPage }) => {
-      const header = authedPage.getByTestId('workbench__recipe-header');
+      const header = authedPage.getByTestId('studio__recipe-header');
       await expect(header).toBeVisible({ timeout: 10000 });
     });
 
     test('should display conversation input and send button', async ({ authedPage }) => {
-      const conversationInput = authedPage.getByTestId('workbench__conversation-input');
-      const sendBtn = authedPage.getByTestId('workbench__send-btn');
+      const conversationInput = authedPage.getByTestId('studio__conversation-input');
+      const sendBtn = authedPage.getByTestId('studio__send-btn');
 
       await expect(conversationInput).toBeVisible({ timeout: 10000 });
       await expect(sendBtn).toBeVisible();
@@ -90,7 +90,7 @@ test.describe('Workbench Page', () => {
 
     test('should display artifact cards if available', async ({ authedPage }) => {
       // Artifacts may or may not be present depending on MSW data
-      const artifactCards = authedPage.getByTestId('workbench__artifact-card');
+      const artifactCards = authedPage.getByTestId('studio__artifact-card');
       const count = await artifactCards.count();
 
       if (count > 0) {
@@ -101,7 +101,7 @@ test.describe('Workbench Page', () => {
     });
 
     test('should allow typing in conversation input', async ({ authedPage }) => {
-      const conversationInput = authedPage.getByTestId('workbench__conversation-input');
+      const conversationInput = authedPage.getByTestId('studio__conversation-input');
       await expect(conversationInput).toBeVisible({ timeout: 10000 });
 
       const input = conversationInput.locator(
@@ -111,7 +111,7 @@ test.describe('Workbench Page', () => {
 
       await input.first().fill('Test recipe prompt');
 
-      const sendBtn = authedPage.getByTestId('workbench__send-btn');
+      const sendBtn = authedPage.getByTestId('studio__send-btn');
       await expect(sendBtn).toBeEnabled();
     });
 
@@ -125,12 +125,12 @@ test.describe('Workbench Page', () => {
       const dialog = authedPage.getByRole('dialog');
       await expect(dialog).toBeVisible();
 
-      const titleInput = dialog.getByTestId('workbench__edit-recipe-title');
+      const titleInput = dialog.getByTestId('studio__edit-recipe-title');
       await titleInput.fill('Updated Recipe From E2E');
 
-      await dialog.getByTestId('workbench__edit-recipe-status').click();
+      await dialog.getByTestId('studio__edit-recipe-status').click();
       await authedPage.getByRole('option', { name: /closed/i }).click();
-      await dialog.getByTestId('workbench__edit-recipe-save').click();
+      await dialog.getByTestId('studio__edit-recipe-save').click();
 
       const request = await patchRequestPromise;
       const payload = request.postDataJSON() as { title?: string; status?: string };
@@ -141,7 +141,7 @@ test.describe('Workbench Page', () => {
     test('should navigate back to list when clicking leave button', async ({ authedPage }) => {
       await authedPage.getByRole('button', { name: /leave/i }).click();
       await authedPage.waitForURL(/\/studio$/);
-      await expect(authedPage.getByTestId('workbench__recipe-list')).toBeVisible();
+      await expect(authedPage.getByTestId('studio__recipe-list')).toBeVisible();
     });
 
     test('should open add sources dialog with disabled confirm before selection', async ({ authedPage }) => {

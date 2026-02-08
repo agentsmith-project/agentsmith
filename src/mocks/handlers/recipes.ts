@@ -4,7 +4,7 @@ import {
   recipeMessageFixtures,
   artifactFixtures,
   sourceFileFixtures,
-} from '../fixtures/workbench';
+} from '../fixtures/studio';
 
 const recipes = [...recipeFixtures];
 const recipeMessages = [...recipeMessageFixtures];

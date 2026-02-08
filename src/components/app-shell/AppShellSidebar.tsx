@@ -35,7 +35,7 @@ interface AppShellSidebarProps {
 const PROJECT_MENU_ITEMS = [
   { icon: LayoutDashboard, labelKey: 'overview', href: 'overview', permission: 'project:read' as const },
   { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:chat:access' as const },
-  { icon: Wrench, labelKey: 'workbench', href: 'studio', permission: 'project:studio:access' as const },
+  { icon: Wrench, labelKey: 'studio', href: 'studio', permission: 'project:studio:access' as const },
   { icon: FolderOpen, labelKey: 'sources', href: 'sources', permission: 'project:source:use' as const },
   { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use' as const },
   { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use' as const },

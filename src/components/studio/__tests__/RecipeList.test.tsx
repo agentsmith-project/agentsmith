@@ -347,7 +347,7 @@ describe('RecipeList', () => {
   });
 
   describe('Header Content', () => {
-    it('renders workbench title and description', () => {
+    it('renders studio title and description', () => {
       vi.mocked(useRecipes).mockReturnValue({
         data: { items: mockRecipes, total: 3, page: 1, page_size: 10 },
         isLoading: false,

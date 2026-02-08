@@ -23,7 +23,7 @@ export function ArtifactCard({
   disabled = false,
 }: ArtifactCardProps) {
   const t = useTranslations('common.toast');
-  const tWorkbench = useTranslations('workbench');
+  const tWorkbench = useTranslations('studio');
   const tCommon = useTranslations('common');
 
   const handleCopy = async () => {
@@ -100,7 +100,7 @@ export function ArtifactCard({
   };
 
   return (
-    <div className="p-3 rounded-md border border-border bg-surface hover:bg-hover transition-colors" data-testid="workbench__artifact-card" data-artifact-id={artifact.id}>
+    <div className="p-3 rounded-md border border-border bg-surface hover:bg-hover transition-colors" data-testid="studio__artifact-card" data-artifact-id={artifact.id}>
       {renderContent()}
       <div className="flex items-center gap-1 mt-3 flex-wrap">
         {artifact.type === 'text' && (

@@ -383,7 +383,7 @@ describe('RecipePage', () => {
       );
     });
 
-    it('navigates to workbench after recipe deletion', async () => {
+    it('navigates to studio after recipe deletion', async () => {
       const user = userEvent.setup();
       renderComponent();
 

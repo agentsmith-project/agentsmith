@@ -123,7 +123,7 @@ describe('RecipeHeader', () => {
     it('has data-testid for easy selection', () => {
       renderComponent();
 
-      expect(screen.getByTestId('workbench__recipe-header')).toBeInTheDocument();
+      expect(screen.getByTestId('studio__recipe-header')).toBeInTheDocument();
     });
   });
 
@@ -145,7 +145,7 @@ describe('RecipeHeader', () => {
       expect(mockOnLeave).toHaveBeenCalledTimes(1);
     });
 
-    it('navigates to workbench list when onLeave is not provided', async () => {
+    it('navigates to studio list when onLeave is not provided', async () => {
       const user = userEvent.setup();
       render(
         <RecipeHeader
@@ -296,7 +296,7 @@ describe('RecipeHeader', () => {
     it('has correct styling classes', () => {
       const { container } = renderComponent();
 
-      const header = container.querySelector('[data-testid="workbench__recipe-header"]');
+      const header = container.querySelector('[data-testid="studio__recipe-header"]');
       expect(header).toHaveClass('border-b', 'border-border', 'bg-surface');
     });
 

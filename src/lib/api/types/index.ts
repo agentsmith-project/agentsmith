@@ -104,8 +104,8 @@ export interface AgentDiagnostics {
   memory_mb?: number;
 }
 
-/** Expected interaction mode: chat, workbench, or both */
-export type AgentInteractionMode = 'chat' | 'workbench' | 'both';
+/** Expected interaction mode: chat, studio, or both */
+export type AgentInteractionMode = 'chat' | 'studio' | 'both';
 
 export interface Agent {
   id: string;
@@ -130,7 +130,7 @@ export interface Agent {
   /** Maintainer (admin) */
   admin_id?: string;
   admin_name?: string;
-  /** Expected interaction: chat, workbench, or both */
+  /** Expected interaction: chat, studio, or both */
   interaction_mode?: AgentInteractionMode;
   created_at: string;
   updated_at: string;

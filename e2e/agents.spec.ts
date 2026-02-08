@@ -72,7 +72,7 @@ test.describe('Agents Page', () => {
     await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
 
     await expect(authedPage.getByText(/chat/i).first()).toBeVisible();
-    await expect(authedPage.getByText(/AI Studio|workbench/i).first()).toBeVisible();
+    await expect(authedPage.getByText(/AI Studio|studio/i).first()).toBeVisible();
     await expect(authedPage.getByText(/active|paused/i).first()).toBeVisible();
   });
 
@@ -119,7 +119,7 @@ test.describe('Agents Page', () => {
     await dialog.getByLabel(/internal/i).click();
     await dialog.locator('#agent-image').fill('ghcr.io/acme/agent:1.0.0');
     await dialog.locator('#agent-max-sessions').fill('3');
-    await dialog.getByRole('combobox').selectOption('workbench');
+    await dialog.getByRole('combobox').selectOption('studio');
 
     const createRequestPromise = authedPage.waitForRequest((req) => {
       return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents$/.test(req.url());
@@ -136,7 +136,7 @@ test.describe('Agents Page', () => {
 
     expect(payload.name).toBe('E2E Internal Agent');
     expect(payload.mode).toBe('internal');
-    expect(payload.interaction_mode).toBe('workbench');
+    expect(payload.interaction_mode).toBe('studio');
     expect(payload.config?.image).toBe('ghcr.io/acme/agent:1.0.0');
     expect(payload.config?.max_concurrent_sessions_override).toBe(3);
   });

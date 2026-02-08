@@ -21,7 +21,7 @@ export { RecipeAPI } from './recipes';
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';
 export type { CreateAgentRequest, UpdateAgentRequest } from './agents';
 export type { CreateEndpointRequest, UpdateEndpointRequest } from './endpoints';
-export type { UpdateMemberRoleRequest, JoinRequest, Member } from './members';
+export type { UpdateMemberGroupRequest, JoinRequest, Member } from './members';
 export type { UsageKPI } from '../types';
 export type { CreateUserKeyRequest } from './user-keys';
 export type { CreateSessionRequest, CreateMessageRequest } from './chat';

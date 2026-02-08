@@ -9,7 +9,7 @@ import { sourceHandlers } from './handlers/sources';
 import { auditHandlers } from './handlers/audit';
 import { usageHandlers } from './handlers/usage';
 import { chatHandlers } from './handlers/chat';
-import { workbenchHandlers } from './handlers/workbench';
+import { studioHandlers } from './handlers/studio';
 import { recipeHandlers } from './handlers/recipes';
 import { meHandlers } from './handlers/me';
 import { userKeyHandlers } from './handlers/user-keys';
@@ -27,7 +27,7 @@ export const handlers = [
   ...auditHandlers,
   ...usageHandlers,
   ...chatHandlers,
-  ...workbenchHandlers,
+  ...studioHandlers,
   ...recipeHandlers,
   ...userKeyHandlers,
 ];

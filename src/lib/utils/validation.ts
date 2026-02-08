@@ -43,7 +43,7 @@ export function isReservedRouteName(id: string): boolean {
     'settings',
     'audit',
     'usage',
-    'workbench',
+    'studio',
     'recipes',
     'api',
     'auth',

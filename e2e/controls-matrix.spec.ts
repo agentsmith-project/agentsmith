@@ -24,13 +24,13 @@ test.describe('Controls Matrix', () => {
     await expect(authedPage.getByTestId('chat__send-btn')).toBeVisible();
 
     await goToProject(authedPage, 'studio');
-    await expect(authedPage.getByTestId('workbench__recipe-list')).toBeVisible();
-    await expect(authedPage.getByTestId('workbench__create-recipe-btn')).toBeVisible();
+    await expect(authedPage.getByTestId('studio__recipe-list')).toBeVisible();
+    await expect(authedPage.getByTestId('studio__create-recipe-btn')).toBeVisible();
 
     await goToProject(authedPage, 'studio/recipes/recipe_001');
-    await expect(authedPage.getByTestId('workbench__recipe-header')).toBeVisible();
-    await expect(authedPage.getByTestId('workbench__conversation-input')).toBeVisible();
-    await expect(authedPage.getByTestId('workbench__send-btn')).toBeVisible();
+    await expect(authedPage.getByTestId('studio__recipe-header')).toBeVisible();
+    await expect(authedPage.getByTestId('studio__conversation-input')).toBeVisible();
+    await expect(authedPage.getByTestId('studio__send-btn')).toBeVisible();
 
     await goToProject(authedPage, 'sources');
     await expect(authedPage.getByTestId('sources__library-select')).toBeVisible();

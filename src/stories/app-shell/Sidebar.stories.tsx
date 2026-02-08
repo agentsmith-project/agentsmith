@@ -36,7 +36,7 @@ export const ChatMode: Story = {
 };
 
 /*
- * Sidebar with workbench mode active
+ * Sidebar with studio mode active
  */
 export const WorkbenchMode: Story = {
   args: {},

@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { RecipeList } from '@/components/workbench/RecipeList';
+import { RecipeList } from '@/components/studio/RecipeList';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';

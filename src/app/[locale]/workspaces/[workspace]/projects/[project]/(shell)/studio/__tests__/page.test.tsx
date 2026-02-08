@@ -2,9 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 
-vi.mock('@/components/workbench/RecipeList', () => ({
+vi.mock('@/components/studio/RecipeList', () => ({
   RecipeList: ({ workspaceId, projectId, canCreateRecipe }: { workspaceId: string; projectId: string; canCreateRecipe: boolean }) => (
-    <div data-testid="workbench__recipe-list-route">
+    <div data-testid="studio__recipe-list-route">
       {workspaceId}:{projectId}:{String(canCreateRecipe)}
     </div>
   ),
@@ -32,7 +32,7 @@ describe('WorkbenchPage route', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('workbench__recipe-list-route')).toBeInTheDocument();
+      expect(screen.getByTestId('studio__recipe-list-route')).toBeInTheDocument();
     });
     expect(screen.getByText('ws_1:proj_1:true')).toBeInTheDocument();
   });

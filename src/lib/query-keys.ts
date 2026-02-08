@@ -138,7 +138,7 @@ export const queryKeys = {
       ['source-libraries', workspaceId, projectId] as const,
   },
 
-  /** Recipes (workbench) */
+  /** Recipes (studio) */
   recipes: {
     _def: ['recipes'] as const,
     list: (workspaceId: string, projectId: string, params?: object) =>

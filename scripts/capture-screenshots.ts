@@ -139,11 +139,11 @@ async function main() {
     await capture(page, '06-chat');
 
     // 7. Workbench
-    await page.goto(`${BASE_URL}/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/workbench`, {
+    await page.goto(`${BASE_URL}/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/studio`, {
       waitUntil: 'networkidle',
     });
     await page.waitForTimeout(800);
-    await capture(page, '07-workbench');
+    await capture(page, '07-studio');
 
     // 8. Agents
     await page.goto(`${BASE_URL}/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agents`, {

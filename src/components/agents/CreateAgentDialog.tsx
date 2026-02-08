@@ -44,7 +44,7 @@ export function CreateAgentDialog({
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [mode, setMode] = React.useState<'external' | 'internal'>('external');
-  const [interactionMode, setInteractionMode] = React.useState<'chat' | 'workbench' | 'both'>('both');
+  const [interactionMode, setInteractionMode] = React.useState<'chat' | 'studio' | 'both'>('both');
   const [image, setImage] = React.useState('');
   const [envEntries, setEnvEntries] = React.useState<EnvEntry[]>([{ key: '', value: '' }]);
   const [maxConcurrentSessions, setMaxConcurrentSessions] = React.useState<string>('');
@@ -207,12 +207,12 @@ export function CreateAgentDialog({
             <label className="text-sm font-medium text-foreground">{t('create_dialog.interaction_mode')}</label>
             <select
               value={interactionMode}
-              onChange={(e) => setInteractionMode(e.target.value as 'chat' | 'workbench' | 'both')}
+              onChange={(e) => setInteractionMode(e.target.value as 'chat' | 'studio' | 'both')}
               disabled={createMutation.isPending}
               className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
             >
               <option value="chat">{t('interaction_chat')}</option>
-              <option value="workbench">{t('interaction_workbench')}</option>
+              <option value="studio">{t('interaction_studio')}</option>
               <option value="both">{t('interaction_both')}</option>
             </select>
           </div>

@@ -26,8 +26,8 @@ import { formatRelativeTime } from '@/lib/utils/formatters';
 
 const columnHelper = createColumnHelper<Member>();
 
-function formatRole(role: string): string {
-  switch (role) {
+function formatGroupAlias(groupAlias: string): string {
+  switch (groupAlias) {
     case 'owner':
       return 'Governance';
     case 'admin':
@@ -37,12 +37,12 @@ function formatRole(role: string): string {
     case 'user':
       return 'Member';
     default:
-      return role.charAt(0).toUpperCase() + role.slice(1);
+      return groupAlias.charAt(0).toUpperCase() + groupAlias.slice(1);
   }
 }
 
-function getRoleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' | 'destructive' {
-  switch (role) {
+function getGroupBadgeVariant(groupAlias: string): 'default' | 'secondary' | 'outline' | 'destructive' {
+  switch (groupAlias) {
     case 'owner':
       return 'default';
     case 'admin':
@@ -167,12 +167,12 @@ export function MembersTable({
         },
       }),
       columnHelper.accessor('role', {
-        header: t('table.role'),
+        header: t('table.group_alias'),
         cell: (info) => {
-          const role = info.getValue();
+          const groupAlias = info.getValue();
           return (
-            <Badge variant={getRoleBadgeVariant(role)} className="text-xs font-medium">
-              {formatRole(role)}
+            <Badge variant={getGroupBadgeVariant(groupAlias)} className="text-xs font-medium">
+              {formatGroupAlias(groupAlias)}
             </Badge>
           );
         },

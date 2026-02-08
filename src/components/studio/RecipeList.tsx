@@ -61,7 +61,7 @@ export function RecipeList({
   };
 
   return (
-    <div className="h-full flex flex-col bg-background" data-testid="workbench__recipe-list">
+    <div className="h-full flex flex-col bg-background" data-testid="studio__recipe-list">
       <div className="px-4 py-3 md:px-5 border-b border-subtle flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">AI Studio</h1>
@@ -70,7 +70,7 @@ export function RecipeList({
         <Button
           onClick={() => setCreateDialogOpen(true)}
           disabled={!canCreateRecipe}
-          data-testid="workbench__create-recipe-btn"
+          data-testid="studio__create-recipe-btn"
         >
           <Plus className="h-4 w-4 mr-2" />
           New Task
@@ -105,7 +105,7 @@ export function RecipeList({
                   key={recipe.id}
                   onClick={() => handleRecipeClick(recipe.id)}
                   className="rounded-md border border-border bg-surface hover:bg-hover transition-colors cursor-pointer"
-                  data-testid="workbench__recipe-card"
+                  data-testid="studio__recipe-card"
                   data-recipe-id={recipe.id}
                 >
                   <div className="px-4 py-2.5 md:px-5 md:py-2.5 flex items-center justify-between gap-3">

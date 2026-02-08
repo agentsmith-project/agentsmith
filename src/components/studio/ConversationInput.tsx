@@ -43,7 +43,7 @@ export function ConversationInput({
   }, [value]);
 
   return (
-    <div className="border-t border-subtle bg-background px-4 py-4" data-testid="workbench__conversation-input">
+    <div className="border-t border-subtle bg-background px-4 py-4" data-testid="studio__conversation-input">
       <div className="flex items-end gap-2">
         <div className="flex-1">
           <textarea
@@ -68,7 +68,7 @@ export function ConversationInput({
           onClick={onSend}
           disabled={!canSend}
           className="gap-2"
-          data-testid="workbench__send-btn"
+          data-testid="studio__send-btn"
         >
           {sending ? (
             <Loader2 className="h-4 w-4 animate-spin" />

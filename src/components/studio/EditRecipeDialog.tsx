@@ -36,7 +36,7 @@ export function EditRecipeDialog({
   saving = false,
   onSubmit,
 }: EditRecipeDialogProps) {
-  const t = useTranslations('workbench.recipe');
+  const t = useTranslations('studio.recipe');
   const commonT = useTranslations('common');
   const [title, setTitle] = React.useState(recipe.title);
   const [status, setStatus] = React.useState<RecipeStatus>(recipe.status);
@@ -72,7 +72,7 @@ export function EditRecipeDialog({
               onChange={(e) => setTitle(e.target.value)}
               disabled={saving}
               required
-              data-testid="workbench__edit-recipe-title"
+              data-testid="studio__edit-recipe-title"
             />
           </div>
           <div className="space-y-2">
@@ -80,7 +80,7 @@ export function EditRecipeDialog({
               {t('status_label')}
             </label>
             <Select value={status} onValueChange={(v) => setStatus(v as RecipeStatus)} disabled={saving}>
-              <SelectTrigger id="recipe-edit-status" data-testid="workbench__edit-recipe-status">
+              <SelectTrigger id="recipe-edit-status" data-testid="studio__edit-recipe-status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -94,7 +94,7 @@ export function EditRecipeDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
               {commonT('cancel')}
             </Button>
-            <Button type="submit" disabled={saving || !title.trim()} data-testid="workbench__edit-recipe-save">
+            <Button type="submit" disabled={saving || !title.trim()} data-testid="studio__edit-recipe-save">
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('save_changes')}
             </Button>

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MessageItem } from '../MessageItem';
 import type { ChatMessage } from '@/lib/api/types';
@@ -565,7 +565,9 @@ describe('MessageItem', () => {
       expect(screen.getByText('Regenerating…')).toBeInTheDocument();
 
       // Advance timers
-      vi.advanceTimersByTime(2000);
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
 
       // Should still be showing streaming indicator
       expect(screen.getByText('Regenerating…')).toBeInTheDocument();

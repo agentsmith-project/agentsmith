@@ -1,7 +1,7 @@
 /**
  * Workbench Page Loading Skeleton
  *
- * Loading placeholder for the workbench/recipes page.
+ * Loading placeholder for the studio/recipes page.
  * Shows skeleton UI for recipe list and recipe details.
  */
 

@@ -221,7 +221,7 @@ export function RecipePage({
   };
 
   const handleLeave = () => {
-    // Navigate to workbench list
+    // Navigate to studio list
     // SSE connection will be automatically cleaned up when component unmounts
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/studio`);
   };

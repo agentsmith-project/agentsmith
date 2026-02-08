@@ -61,7 +61,7 @@ export type {
   UpdateAgentRequest,
   CreateEndpointRequest,
   UpdateEndpointRequest,
-  UpdateMemberRoleRequest,
+  UpdateMemberGroupRequest,
   JoinRequest,
   Member,
   UsageKPI,

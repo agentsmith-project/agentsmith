@@ -57,9 +57,9 @@ export function ProjectNavigation({ basePath, items, columns = 3, translations, 
     },
     {
       icon: Wrench,
-      label: t('navigation.workbench'),
+      label: t('navigation.studio'),
       href: '/studio',
-      description: t('navigation.workbench_description'),
+      description: t('navigation.studio_description'),
     },
     {
       icon: Bot,

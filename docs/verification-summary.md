@@ -14,7 +14,7 @@
 
 - This is the current best-confidence regression signal for frontend-only MVP quality.
 - Route-gate assertions have been aligned with the current naming and filter semantics:
-  - sidebar key uses `workbench` test id family for AI Studio nav item
+  - sidebar key uses `studio` test id family for AI Studio nav item
   - usage filter label/placeholder uses `Resource ID`
 
 ## Manual UAT Script (MVP)

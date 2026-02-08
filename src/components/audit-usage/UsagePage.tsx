@@ -168,11 +168,9 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
         </PageToolbar>
       )}
     >
-      <div className="w-full max-w-[1240px] mx-auto space-y-3 min-h-0 flex-1 flex flex-col">
-        {/* KPI Cards */}
+      <div className="w-full space-y-3 min-h-0 flex-1 flex flex-col">
         <UsageKPICards kpi={kpiData} loading={kpiLoading} />
 
-        {/* Filters */}
         <div data-testid="usage__filters">
           <UsageFilters
             filters={apiFilters}
@@ -182,7 +180,6 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
           />
         </div>
 
-        {/* Table */}
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="rounded-xl border border-border bg-surface p-3">
             <UsageTable

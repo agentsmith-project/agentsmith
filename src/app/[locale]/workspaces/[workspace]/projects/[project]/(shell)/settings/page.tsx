@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings as SettingsIcon, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -173,7 +173,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   return (
     <PageState state="success">
       <PageLayout
-        contentWidth="narrow"
         header={(
           <PageHeader
             title={settingsT('title')}

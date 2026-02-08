@@ -47,16 +47,21 @@ export const ErrorResponseSchema = z.object({
 });
 
 export const SourceStatusSchema = z.enum(['ready', 'deleted']);
+export const AIReadyStatusSchema = z.enum(['idle', 'preparing', 'ready', 'failed', 'cancelled']);
 
 export const SourceSchema = z.object({
   id: z.string().min(1),
   workspace_id: z.string().min(1),
   project_id: z.string().min(1),
+  library_id: z.string().min(1).optional(),
   name: z.string().min(1),
   object_key: z.string().min(1),
   content_type: z.string().min(1),
   size_bytes: z.number().int().nonnegative(),
   status: SourceStatusSchema,
+  ai_ready_status: AIReadyStatusSchema.optional(),
+  docdb_bytes: z.number().int().nonnegative().optional(),
+  vectordb_bytes: z.number().int().nonnegative().optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
@@ -65,6 +70,7 @@ export const CreateSourceRequestSchema = z.object({
   name: z.string().min(1).max(255),
   content_type: z.string().min(1).max(255),
   content_base64: z.string().min(1),
+  library_id: z.string().min(1).max(255).optional(),
 });
 
 export const ListSourcesResponseSchema = z.object({

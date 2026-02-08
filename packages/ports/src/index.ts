@@ -46,9 +46,19 @@ export interface ObjectStorePort {
 }
 
 export interface SourceRepoPort {
-  listByProject(workspaceId: string, projectId: string): Promise<SourceDTO[]>;
+  listByProject(
+    workspaceId: string,
+    projectId: string,
+    options?: { libraryId?: string },
+  ): Promise<SourceDTO[]>;
   getById(workspaceId: string, projectId: string, sourceId: string): Promise<SourceDTO | null>;
   save(source: SourceDTO): Promise<void>;
+  update(
+    workspaceId: string,
+    projectId: string,
+    sourceId: string,
+    patch: Partial<SourceDTO>,
+  ): Promise<SourceDTO | null>;
   delete(workspaceId: string, projectId: string, sourceId: string): Promise<boolean>;
 }
 

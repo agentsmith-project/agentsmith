@@ -211,7 +211,7 @@ export const queryKeys = {
   /** Quota */
   quota: {
     _def: ['quota'] as const,
-    detail: (workspaceId: string, projectId: string) =>
-      ['quota', workspaceId, projectId] as const,
+    detail: (workspaceId: string, projectId: string, libraryId?: string) =>
+      ['quota', workspaceId, projectId, libraryId ?? 'all'] as const,
   },
 } as const;

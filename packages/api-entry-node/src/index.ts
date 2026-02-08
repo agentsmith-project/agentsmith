@@ -9,6 +9,9 @@ import {
   UpdateProjectRequestSchema,
 } from '@mbos/contracts';
 import {
+  BatchCancelSourceAIReadyUseCase,
+  BatchStartSourceAIReadyUseCase,
+  CancelSourceAIReadyUseCase,
   CreateSourceLibraryUseCase,
   CreateProjectUseCase,
   CreateSourceUseCase,
@@ -22,6 +25,8 @@ import {
   ListProjectsUseCase,
   ListSourceLibrariesUseCase,
   ListSourcesUseCase,
+  RetrySourceAIReadyUseCase,
+  StartSourceAIReadyUseCase,
   UpdateSourceLibraryUseCase,
   UpdateProjectUseCase,
 } from '@mbos/application';
@@ -81,6 +86,11 @@ export interface NodeApiDeps {
   downloadSourceUseCase: DownloadSourceUseCase;
   getSourceUseCase: GetSourceUseCase;
   getSourcesQuotaUseCase: GetSourcesQuotaUseCase;
+  startSourceAIReadyUseCase: StartSourceAIReadyUseCase;
+  cancelSourceAIReadyUseCase: CancelSourceAIReadyUseCase;
+  retrySourceAIReadyUseCase: RetrySourceAIReadyUseCase;
+  batchStartSourceAIReadyUseCase: BatchStartSourceAIReadyUseCase;
+  batchCancelSourceAIReadyUseCase: BatchCancelSourceAIReadyUseCase;
   deleteProjectUseCase: DeleteProjectUseCase;
   getProjectUseCase: GetProjectUseCase;
   listProjectsUseCase: ListProjectsUseCase;
@@ -93,10 +103,13 @@ export interface NodeApiDeps {
 export function createDefaultNodeApiDeps(): NodeApiDeps {
   const projectRepo = createProjectRepoFactoryResult({}).projectRepo;
   const cache = new InMemoryCache();
+  const clock = new SystemClock();
   const docStore = new InMemoryJsonDocStore();
   const sourceRepo = new JsonDocSourceRepo(docStore);
   const sourceLibraryRepo = new JsonDocSourceLibraryRepo(docStore);
   const objectStore = new InMemoryObjectStore();
+  const startSourceAIReadyUseCase = new StartSourceAIReadyUseCase(sourceRepo, clock, cache);
+  const cancelSourceAIReadyUseCase = new CancelSourceAIReadyUseCase(sourceRepo, clock, cache);
 
   return {
     createSourceLibraryUseCase: new CreateSourceLibraryUseCase(
@@ -120,6 +133,11 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     deleteProjectUseCase: new DeleteProjectUseCase(projectRepo),
     getSourceUseCase: new GetSourceUseCase(sourceRepo),
     getSourcesQuotaUseCase: new GetSourcesQuotaUseCase(sourceRepo),
+    startSourceAIReadyUseCase,
+    cancelSourceAIReadyUseCase,
+    retrySourceAIReadyUseCase: new RetrySourceAIReadyUseCase(startSourceAIReadyUseCase),
+    batchStartSourceAIReadyUseCase: new BatchStartSourceAIReadyUseCase(startSourceAIReadyUseCase),
+    batchCancelSourceAIReadyUseCase: new BatchCancelSourceAIReadyUseCase(cancelSourceAIReadyUseCase),
     getProjectUseCase: new GetProjectUseCase(projectRepo),
     listProjectsUseCase: new ListProjectsUseCase(projectRepo),
     listSourceLibrariesUseCase: new ListSourceLibrariesUseCase(sourceLibraryRepo, cache),
@@ -293,6 +311,11 @@ type ProjectsRoute =
   | { kind: 'sourceLibraries'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourcesQuota'; workspaceId: string; projectId: string }
+  | { kind: 'sourceAIReadyStart'; workspaceId: string; projectId: string; sourceId: string }
+  | { kind: 'sourceAIReadyCancel'; workspaceId: string; projectId: string; sourceId: string }
+  | { kind: 'sourceAIReadyRetry'; workspaceId: string; projectId: string; sourceId: string }
+  | { kind: 'sourceBatchAIReadyStart'; workspaceId: string; projectId: string }
+  | { kind: 'sourceBatchAIReadyCancel'; workspaceId: string; projectId: string }
   | { kind: 'sourceItem'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'sourceDownload'; workspaceId: string; projectId: string; sourceId: string };
 
@@ -375,6 +398,64 @@ function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
+  const sourceAIReadyStartMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/([^/]+)\/ai-ready\/start\/?$/,
+  );
+  if (sourceAIReadyStartMatched) {
+    return {
+      kind: 'sourceAIReadyStart',
+      workspaceId: decodeURIComponent(sourceAIReadyStartMatched[1]),
+      projectId: decodeURIComponent(sourceAIReadyStartMatched[2]),
+      sourceId: decodeURIComponent(sourceAIReadyStartMatched[3]),
+    };
+  }
+
+  const sourceAIReadyCancelMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/([^/]+)\/ai-ready\/cancel\/?$/,
+  );
+  if (sourceAIReadyCancelMatched) {
+    return {
+      kind: 'sourceAIReadyCancel',
+      workspaceId: decodeURIComponent(sourceAIReadyCancelMatched[1]),
+      projectId: decodeURIComponent(sourceAIReadyCancelMatched[2]),
+      sourceId: decodeURIComponent(sourceAIReadyCancelMatched[3]),
+    };
+  }
+
+  const sourceAIReadyRetryMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/([^/]+)\/ai-ready\/retry\/?$/,
+  );
+  if (sourceAIReadyRetryMatched) {
+    return {
+      kind: 'sourceAIReadyRetry',
+      workspaceId: decodeURIComponent(sourceAIReadyRetryMatched[1]),
+      projectId: decodeURIComponent(sourceAIReadyRetryMatched[2]),
+      sourceId: decodeURIComponent(sourceAIReadyRetryMatched[3]),
+    };
+  }
+
+  const sourceBatchAIReadyStartMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/batch\/ai-ready\/start\/?$/,
+  );
+  if (sourceBatchAIReadyStartMatched) {
+    return {
+      kind: 'sourceBatchAIReadyStart',
+      workspaceId: decodeURIComponent(sourceBatchAIReadyStartMatched[1]),
+      projectId: decodeURIComponent(sourceBatchAIReadyStartMatched[2]),
+    };
+  }
+
+  const sourceBatchAIReadyCancelMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/batch\/ai-ready\/cancel\/?$/,
+  );
+  if (sourceBatchAIReadyCancelMatched) {
+    return {
+      kind: 'sourceBatchAIReadyCancel',
+      workspaceId: decodeURIComponent(sourceBatchAIReadyCancelMatched[1]),
+      projectId: decodeURIComponent(sourceBatchAIReadyCancelMatched[2]),
+    };
+  }
+
   const sourceItemMatched = pathname.match(
     /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/([^/]+)\/?$/,
   );
@@ -418,6 +499,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   try {
+    const requestUrl = new URL(req.url ?? '', 'http://localhost');
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
@@ -531,9 +613,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     if (route.kind === 'sources' && method === 'GET') {
+      const libraryId = requestUrl.searchParams.get('library_id') ?? undefined;
       const listed = await deps.listSourcesUseCase.execute({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
+        libraryId,
       });
       json(res, 200, listed);
       return;
@@ -598,11 +682,67 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     if (route.kind === 'sourcesQuota' && method === 'GET') {
+      const libraryId = requestUrl.searchParams.get('library_id') ?? undefined;
       const quota = await deps.getSourcesQuotaUseCase.execute({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
+        libraryId,
       });
       json(res, 200, quota);
+      return;
+    }
+
+    if (route.kind === 'sourceAIReadyStart' && method === 'POST') {
+      const job = await deps.startSourceAIReadyUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sourceId: route.sourceId,
+      });
+      json(res, 200, job);
+      return;
+    }
+
+    if (route.kind === 'sourceAIReadyCancel' && method === 'POST') {
+      const job = await deps.cancelSourceAIReadyUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sourceId: route.sourceId,
+      });
+      json(res, 200, job);
+      return;
+    }
+
+    if (route.kind === 'sourceAIReadyRetry' && method === 'POST') {
+      const job = await deps.retrySourceAIReadyUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sourceId: route.sourceId,
+      });
+      json(res, 200, job);
+      return;
+    }
+
+    if (route.kind === 'sourceBatchAIReadyStart' && method === 'POST') {
+      const raw = (await readBody(req)) as { file_ids?: string[] };
+      const sourceIds = Array.isArray(raw.file_ids) ? raw.file_ids : [];
+      const jobs = await deps.batchStartSourceAIReadyUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sourceIds,
+      });
+      json(res, 200, jobs);
+      return;
+    }
+
+    if (route.kind === 'sourceBatchAIReadyCancel' && method === 'POST') {
+      const raw = (await readBody(req)) as { file_ids?: string[] };
+      const sourceIds = Array.isArray(raw.file_ids) ? raw.file_ids : [];
+      const jobs = await deps.batchCancelSourceAIReadyUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sourceIds,
+      });
+      json(res, 200, jobs);
       return;
     }
 
@@ -700,6 +840,7 @@ function startFromCli(): void {
   const cache = process.env.REDIS_URL
     ? new RedisCache({ url: process.env.REDIS_URL })
     : new InMemoryCache();
+  const clock = new SystemClock();
   const docStore = process.env.MONGO_URL
     ? new MongoJsonDocStore({
       url: process.env.MONGO_URL,
@@ -718,6 +859,8 @@ function startFromCli(): void {
   const sourceRepo = new JsonDocSourceRepo(docStore);
   const sourceLibraryRepo = new JsonDocSourceLibraryRepo(docStore);
   const sourceBucket = process.env.MINIO_BUCKET ?? 'mbos-dev';
+  const startSourceAIReadyUseCase = new StartSourceAIReadyUseCase(sourceRepo, clock, cache);
+  const cancelSourceAIReadyUseCase = new CancelSourceAIReadyUseCase(sourceRepo, clock, cache);
   const deps: NodeApiDeps = {
     createSourceLibraryUseCase: new CreateSourceLibraryUseCase(
       sourceLibraryRepo,
@@ -740,6 +883,11 @@ function startFromCli(): void {
     deleteProjectUseCase: new DeleteProjectUseCase(factory.projectRepo),
     getSourceUseCase: new GetSourceUseCase(sourceRepo),
     getSourcesQuotaUseCase: new GetSourcesQuotaUseCase(sourceRepo),
+    startSourceAIReadyUseCase,
+    cancelSourceAIReadyUseCase,
+    retrySourceAIReadyUseCase: new RetrySourceAIReadyUseCase(startSourceAIReadyUseCase),
+    batchStartSourceAIReadyUseCase: new BatchStartSourceAIReadyUseCase(startSourceAIReadyUseCase),
+    batchCancelSourceAIReadyUseCase: new BatchCancelSourceAIReadyUseCase(cancelSourceAIReadyUseCase),
     getProjectUseCase: new GetProjectUseCase(factory.projectRepo),
     listProjectsUseCase: new ListProjectsUseCase(factory.projectRepo),
     listSourceLibrariesUseCase: new ListSourceLibrariesUseCase(sourceLibraryRepo, cache),

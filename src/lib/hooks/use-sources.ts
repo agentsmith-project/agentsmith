@@ -50,12 +50,12 @@ export function useSourceFile(
 /**
  * Hook to query quota summary
  */
-export function useQuota(workspaceId: string, projectId: string) {
+export function useQuota(workspaceId: string, projectId: string, libraryId?: string) {
   const sourcesAPI = new SourcesAPI(getApiClient());
 
   return useQuery({
-    queryKey: queryKeys.quota.detail(workspaceId, projectId),
-    queryFn: () => sourcesAPI.getQuota(workspaceId, projectId),
+    queryKey: queryKeys.quota.detail(workspaceId, projectId, libraryId),
+    queryFn: () => sourcesAPI.getQuota(workspaceId, projectId, libraryId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 30000, // 30 seconds
   });
@@ -91,7 +91,7 @@ export function useUploadFile() {
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
+        queryKey: queryKeys.quota._def,
       });
       toast.success(t('upload_success'));
     },
@@ -239,7 +239,7 @@ export function useDeleteFile() {
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
+        queryKey: queryKeys.quota._def,
       });
       toast.success(t('delete_success'));
     },
@@ -296,7 +296,7 @@ export function useAIReadyActions() {
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
+        queryKey: queryKeys.quota._def,
       });
       toast.success(t('ai_ready_cancelled'));
     },
@@ -352,7 +352,7 @@ export function useBatchAIReadyActions() {
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
+        queryKey: queryKeys.quota._def,
       });
 
       // Show detailed results if available
@@ -387,7 +387,7 @@ export function useBatchAIReadyActions() {
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
+        queryKey: queryKeys.quota._def,
       });
 
       // Show detailed results if available

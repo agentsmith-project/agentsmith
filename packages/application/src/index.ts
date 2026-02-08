@@ -42,7 +42,7 @@ export interface UpdateProjectCommand extends GetProjectCommand {
   input: UpdateProjectRequest;
 }
 
-export interface DeleteProjectCommand extends GetProjectCommand {}
+export type DeleteProjectCommand = GetProjectCommand;
 
 export interface CreateSourceCommand {
   workspaceId: string;
@@ -53,6 +53,7 @@ export interface CreateSourceCommand {
 export interface ListSourcesCommand {
   workspaceId: string;
   projectId: string;
+  libraryId?: string;
 }
 
 export interface DeleteSourceCommand {
@@ -61,9 +62,9 @@ export interface DeleteSourceCommand {
   sourceId: string;
 }
 
-export interface GetSourceCommand extends DeleteSourceCommand {}
+export type GetSourceCommand = DeleteSourceCommand;
 
-export interface DownloadSourceCommand extends DeleteSourceCommand {}
+export type DownloadSourceCommand = DeleteSourceCommand;
 
 export interface ListSourceLibrariesCommand {
   workspaceId: string;
@@ -82,6 +83,16 @@ export interface UpdateSourceLibraryCommand extends ListSourceLibrariesCommand {
 
 export interface DeleteSourceLibraryCommand extends ListSourceLibrariesCommand {
   libraryId: string;
+}
+
+export interface SourceAIReadyJob {
+  id: string;
+  source_file_id: string;
+  status: 'idle' | 'preparing' | 'ready' | 'failed' | 'cancelled';
+  progress?: number;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export class ListProjectsUseCase {
@@ -190,8 +201,8 @@ export class DeleteProjectUseCase {
   }
 }
 
-function sourcesCacheKey(workspaceId: string, projectId: string): string {
-  return `sources:${workspaceId}:${projectId}`;
+function sourcesCacheKey(workspaceId: string, projectId: string, libraryId?: string): string {
+  return `sources:${workspaceId}:${projectId}:${libraryId ?? 'all'}`;
 }
 
 function sourceLibrariesCacheKey(workspaceId: string, projectId: string): string {
@@ -226,13 +237,15 @@ export class ListSourcesUseCase {
   ) {}
 
   async execute(command: ListSourcesCommand): Promise<ListSourcesResponse> {
-    const cacheKey = sourcesCacheKey(command.workspaceId, command.projectId);
+    const cacheKey = sourcesCacheKey(command.workspaceId, command.projectId, command.libraryId);
     const cached = await this.cache.get(cacheKey);
     if (cached) {
       return JSON.parse(cached) as ListSourcesResponse;
     }
 
-    const items = await this.sourceRepo.listByProject(command.workspaceId, command.projectId);
+    const items = await this.sourceRepo.listByProject(command.workspaceId, command.projectId, {
+      libraryId: command.libraryId,
+    });
     const payload: ListSourcesResponse = { items };
     await this.cache.set(cacheKey, JSON.stringify(payload), 30);
     return payload;
@@ -267,17 +280,24 @@ export class CreateSourceUseCase {
       id: sourceId,
       workspace_id: command.workspaceId,
       project_id: command.projectId,
+      library_id: input.library_id,
       name: input.name.trim(),
       object_key: objectKey,
       content_type: input.content_type,
       size_bytes: content.byteLength,
       status: 'ready',
+      ai_ready_status: 'idle',
+      docdb_bytes: 0,
+      vectordb_bytes: 0,
       created_at: now,
       updated_at: now,
     };
 
     await this.sourceRepo.save(source);
     await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId));
+    if (input.library_id) {
+      await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId, input.library_id));
+    }
     return source;
   }
 }
@@ -319,6 +339,9 @@ export class DeleteSourceUseCase {
     await this.objectStore.deleteObject(this.bucket, existing.object_key);
     await this.sourceRepo.delete(command.workspaceId, command.projectId, command.sourceId);
     await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId));
+    if (existing.library_id) {
+      await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId, existing.library_id));
+    }
   }
 }
 
@@ -362,13 +385,16 @@ export class GetSourcesQuotaUseCase {
     const sources = await this.sourceRepo.listByProject(
       command.workspaceId,
       command.projectId,
+      { libraryId: command.libraryId },
     );
     const storageUsed = sources.reduce((acc, item) => acc + item.size_bytes, 0);
+    const docdbUsed = sources.reduce((acc, item) => acc + (item.docdb_bytes ?? 0), 0);
+    const vectordbUsed = sources.reduce((acc, item) => acc + (item.vectordb_bytes ?? 0), 0);
 
     return {
       storage: { used: storageUsed, limit: 1_073_741_824 },
-      docdb: { used: 0, limit: 536_870_912 },
-      vectordb: { used: 0, limit: 536_870_912 },
+      docdb: { used: docdbUsed, limit: 536_870_912 },
+      vectordb: { used: vectordbUsed, limit: 536_870_912 },
     };
   }
 }
@@ -476,5 +502,122 @@ export class DeleteSourceLibraryUseCase {
     }
 
     await this.cache.del(sourceLibrariesCacheKey(command.workspaceId, command.projectId));
+  }
+}
+
+export type SourceAIReadyCommand = DeleteSourceCommand;
+
+export interface SourceBatchAIReadyCommand {
+  workspaceId: string;
+  projectId: string;
+  sourceIds: string[];
+}
+
+function buildSourceJob(sourceId: string, now: string, status: SourceAIReadyJob['status']): SourceAIReadyJob {
+  return {
+    id: `ai_ready_${sourceId}_${Date.now()}`,
+    source_file_id: sourceId,
+    status,
+    progress: status === 'ready' ? 100 : 0,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+export class StartSourceAIReadyUseCase {
+  constructor(
+    private readonly sourceRepo: SourceRepoPort,
+    private readonly clock: ClockPort,
+    private readonly cache: CachePort,
+  ) {}
+
+  async execute(command: SourceAIReadyCommand): Promise<SourceAIReadyJob> {
+    const source = await this.sourceRepo.getById(command.workspaceId, command.projectId, command.sourceId);
+    if (!source) {
+      throw new Error('source_not_found');
+    }
+    const now = this.clock.nowIso();
+    const docdbBytes = Math.max(1, Math.floor(source.size_bytes * 0.75));
+    const vectordbBytes = Math.max(1, Math.floor(source.size_bytes * 1.25));
+    await this.sourceRepo.update(command.workspaceId, command.projectId, command.sourceId, {
+      ai_ready_status: 'ready',
+      docdb_bytes: docdbBytes,
+      vectordb_bytes: vectordbBytes,
+      updated_at: now,
+    });
+    await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId));
+    if (source.library_id) {
+      await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId, source.library_id));
+    }
+    return buildSourceJob(command.sourceId, now, 'ready');
+  }
+}
+
+export class CancelSourceAIReadyUseCase {
+  constructor(
+    private readonly sourceRepo: SourceRepoPort,
+    private readonly clock: ClockPort,
+    private readonly cache: CachePort,
+  ) {}
+
+  async execute(command: SourceAIReadyCommand): Promise<SourceAIReadyJob> {
+    const source = await this.sourceRepo.getById(command.workspaceId, command.projectId, command.sourceId);
+    if (!source) {
+      throw new Error('source_not_found');
+    }
+    const now = this.clock.nowIso();
+    await this.sourceRepo.update(command.workspaceId, command.projectId, command.sourceId, {
+      ai_ready_status: 'cancelled',
+      docdb_bytes: 0,
+      vectordb_bytes: 0,
+      updated_at: now,
+    });
+    await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId));
+    if (source.library_id) {
+      await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId, source.library_id));
+    }
+    return buildSourceJob(command.sourceId, now, 'cancelled');
+  }
+}
+
+export class RetrySourceAIReadyUseCase {
+  constructor(private readonly startUseCase: StartSourceAIReadyUseCase) {}
+
+  async execute(command: SourceAIReadyCommand): Promise<SourceAIReadyJob> {
+    return this.startUseCase.execute(command);
+  }
+}
+
+export class BatchStartSourceAIReadyUseCase {
+  constructor(private readonly startUseCase: StartSourceAIReadyUseCase) {}
+
+  async execute(command: SourceBatchAIReadyCommand): Promise<{ jobs: SourceAIReadyJob[] }> {
+    const jobs = await Promise.all(
+      command.sourceIds.map((sourceId) =>
+        this.startUseCase.execute({
+          workspaceId: command.workspaceId,
+          projectId: command.projectId,
+          sourceId,
+        }),
+      ),
+    );
+    return { jobs };
+  }
+}
+
+export class BatchCancelSourceAIReadyUseCase {
+  constructor(private readonly cancelUseCase: CancelSourceAIReadyUseCase) {}
+
+  async execute(command: SourceBatchAIReadyCommand): Promise<{ jobs: SourceAIReadyJob[] }> {
+    const jobs = await Promise.all(
+      command.sourceIds.map((sourceId) =>
+        this.cancelUseCase.execute({
+          workspaceId: command.workspaceId,
+          projectId: command.projectId,
+          sourceId,
+        }),
+      ),
+    );
+    return { jobs };
   }
 }

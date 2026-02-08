@@ -473,11 +473,19 @@ export class JsonDocSourceRepo implements SourceRepoPort {
 
   constructor(private readonly docStore: JsonDocStorePort) {}
 
-  async listByProject(workspaceId: string, projectId: string): Promise<SourceDTO[]> {
-    return this.docStore.list<SourceDTO>(JsonDocSourceRepo.collection, {
+  async listByProject(
+    workspaceId: string,
+    projectId: string,
+    options?: { libraryId?: string },
+  ): Promise<SourceDTO[]> {
+    const items = await this.docStore.list<SourceDTO>(JsonDocSourceRepo.collection, {
       workspace_id: workspaceId,
       project_id: projectId,
     });
+    if (!options?.libraryId) {
+      return items;
+    }
+    return items.filter((item) => item.library_id === options.libraryId);
   }
 
   async getById(
@@ -499,6 +507,25 @@ export class JsonDocSourceRepo implements SourceRepoPort {
 
   async save(source: SourceDTO): Promise<void> {
     await this.docStore.upsert<SourceDTO>(JsonDocSourceRepo.collection, source.id, source);
+  }
+
+  async update(
+    workspaceId: string,
+    projectId: string,
+    sourceId: string,
+    patch: Partial<SourceDTO>,
+  ): Promise<SourceDTO | null> {
+    const existing = await this.getById(workspaceId, projectId, sourceId);
+    if (!existing) {
+      return null;
+    }
+
+    const updated: SourceDTO = {
+      ...existing,
+      ...patch,
+    };
+    await this.save(updated);
+    return updated;
   }
 
   async delete(workspaceId: string, projectId: string, sourceId: string): Promise<boolean> {

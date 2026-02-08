@@ -24,11 +24,15 @@ interface BackendSourceItem {
   id: string;
   workspace_id: string;
   project_id: string;
+  library_id?: string;
   name: string;
   object_key: string;
   content_type: string;
   size_bytes: number;
   status: 'ready' | 'deleted';
+  ai_ready_status?: 'idle' | 'preparing' | 'ready' | 'failed' | 'cancelled';
+  docdb_bytes?: number;
+  vectordb_bytes?: number;
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +51,7 @@ export class SourcesAPI {
       id: item.id,
       workspace_id: item.workspace_id,
       project_id: item.project_id,
+      library_id: item.library_id,
       owner_user_id: 'unknown',
       filename: item.name,
       file_type: item.content_type,
@@ -58,6 +63,23 @@ export class SourcesAPI {
       version: 1,
       created_at: item.created_at,
       updated_at: item.updated_at,
+      ai_ready_usage: item.docdb_bytes || item.vectordb_bytes
+        ? {
+            docdb_bytes: item.docdb_bytes ?? 0,
+            vectordb_bytes: item.vectordb_bytes ?? 0,
+            chunks_count: 0,
+          }
+        : undefined,
+      ai_ready: item.ai_ready_status
+        ? {
+            id: `ai_ready_${item.id}`,
+            source_file_id: item.id,
+            status: item.ai_ready_status,
+            progress: item.ai_ready_status === 'ready' ? 100 : undefined,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+          }
+        : undefined,
     };
   }
 
@@ -335,9 +357,18 @@ export class SourcesAPI {
   /**
    * Get quota summary for the project
    */
-  async getQuota(workspaceId: string, projectId: string): Promise<QuotaSummary> {
+  async getQuota(
+    workspaceId: string,
+    projectId: string,
+    libraryId?: string,
+  ): Promise<QuotaSummary> {
+    const searchParams = new URLSearchParams();
+    if (libraryId) {
+      searchParams.set('library_id', libraryId);
+    }
+    const query = searchParams.toString();
     return this.client.get<QuotaSummary>(
-      `/workspaces/${workspaceId}/projects/${projectId}/sources/quota`,
+      `/workspaces/${workspaceId}/projects/${projectId}/sources/quota${query ? `?${query}` : ''}`,
     );
   }
 

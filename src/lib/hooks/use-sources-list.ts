@@ -69,7 +69,11 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
   }, []);
 
   // Data fetching
-  const { data: quotaData, isLoading: quotaLoading } = useQuota(workspaceId, projectId);
+  const { data: quotaData, isLoading: quotaLoading } = useQuota(
+    workspaceId,
+    projectId,
+    selectedLibraryId === 'all' ? undefined : selectedLibraryId,
+  );
   const { data: librariesData } = useSourceLibraries(workspaceId, projectId);
   const memberAPI = useMemo(() => new MemberAPI(getApiClient()), []);
   const { data: sourcesData, isLoading: sourcesLoading } = useSources(workspaceId, projectId, {

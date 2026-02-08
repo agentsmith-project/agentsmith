@@ -28,9 +28,9 @@ export function UsageKPICards({ kpi, loading, className }: UsageKPICardsProps) {
 
   if (loading) {
     return (
-      <div className={cn(`grid grid-cols-1 md:grid-cols-2 ${gridColsClass} gap-4`, className)}>
+      <div className={cn(`grid grid-cols-1 md:grid-cols-2 ${gridColsClass} gap-3`, className)}>
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-surface border border-border rounded-md p-4 animate-pulse">
+          <div key={i} className="bg-surface border border-border rounded-xl p-4 animate-pulse">
             <div className="h-4 w-20 bg-surface-high rounded mb-2" />
             <div className="h-8 w-16 bg-surface-high rounded" />
           </div>
@@ -47,9 +47,9 @@ export function UsageKPICards({ kpi, loading, className }: UsageKPICardsProps) {
   const errorsTrend = calculateTrend(kpi.errors_today, kpi.errors_yesterday);
 
   return (
-    <div className={cn(`grid grid-cols-1 md:grid-cols-2 ${gridColsClass} gap-4`, className)}>
+    <div className={cn(`grid grid-cols-1 md:grid-cols-2 ${gridColsClass} gap-3`, className)}>
       {/* Requests Today */}
-      <div className="bg-surface border border-border rounded-md p-4">
+      <div className="bg-surface border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <Activity className="h-5 w-5 text-tertiary" />
           {requestsTrend && (
@@ -66,7 +66,7 @@ export function UsageKPICards({ kpi, loading, className }: UsageKPICardsProps) {
       </div>
 
       {/* Errors Today */}
-      <div className="bg-surface border border-border rounded-md p-4">
+      <div className="bg-surface border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <AlertCircle className="h-5 w-5 text-error" />
           {errorsTrend && (
@@ -84,7 +84,7 @@ export function UsageKPICards({ kpi, loading, className }: UsageKPICardsProps) {
 
       {/* Tokens Today */}
       {kpi.tokens_today !== undefined && (
-        <div className="bg-surface border border-border rounded-md p-4">
+        <div className="bg-surface border border-border rounded-xl p-4 md:col-span-2 lg:col-span-1">
           <div className="flex items-center justify-between mb-2">
             <Sparkles className="h-5 w-5 text-tertiary" />
           </div>

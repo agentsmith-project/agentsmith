@@ -2,13 +2,23 @@
 
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { SourceLibrary } from '@/lib/api/types';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { ResourcePolicyStatusBadge } from '@/components/resource-policy/ResourcePolicyStatusBadge';
 import type { ResourcePolicyStatusMeta } from '@/lib/constants/resource-policy';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface SourceLibrariesDialogProps {
   open: boolean;
@@ -46,6 +56,8 @@ export function SourceLibrariesDialog({
   const [newLibraryName, setNewLibraryName] = React.useState('');
   const [editingLibraryId, setEditingLibraryId] = React.useState<string | null>(null);
   const [editingName, setEditingName] = React.useState('');
+  const [deletingLibrary, setDeletingLibrary] = React.useState<SourceLibrary | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = React.useState('');
 
   const handleCreate = async () => {
     const name = newLibraryName.trim();
@@ -67,6 +79,27 @@ export function SourceLibrariesDialog({
     setEditingLibraryId(null);
     setEditingName('');
   };
+
+  const openDeleteConfirm = (library: SourceLibrary) => {
+    setDeletingLibrary(library);
+    setDeleteConfirmInput('');
+  };
+
+  const closeDeleteConfirm = (open: boolean) => {
+    if (!open) {
+      setDeletingLibrary(null);
+      setDeleteConfirmInput('');
+    }
+  };
+
+  const handleDeleteConfirmed = async () => {
+    if (!deletingLibrary) return;
+    await onDeleteLibrary(deletingLibrary.id);
+    setDeletingLibrary(null);
+    setDeleteConfirmInput('');
+  };
+
+  const canConfirmDelete = deletingLibrary ? deleteConfirmInput.trim() === deletingLibrary.name : false;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -191,7 +224,7 @@ export function SourceLibrariesDialog({
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7 text-error hover:text-error"
-                          onClick={() => onDeleteLibrary(library.id)}
+                          onClick={() => openDeleteConfirm(library)}
                           disabled={deleting}
                           data-testid={`sources__library-delete-btn--${library.id}`}
                           aria-label={tSources('libraries.delete')}
@@ -206,6 +239,50 @@ export function SourceLibrariesDialog({
             ))}
           </div>
         </div>
+
+        <AlertDialog open={!!deletingLibrary} onOpenChange={closeDeleteConfirm}>
+          <AlertDialogContent data-testid="sources__library-delete-confirm-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle>{tSources('libraries.delete_confirm_title')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {tSources('libraries.delete_confirm_description')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            {deletingLibrary ? (
+              <div className="space-y-3">
+                <div className="rounded-md border border-error/40 bg-error/10 px-3 py-2 text-xs text-error">
+                  {tSources('libraries.delete_confirm_warning')}
+                </div>
+                <p className="text-sm text-primary">
+                  {tSources('libraries.delete_confirm_type_label', { name: deletingLibrary.name })}
+                </p>
+                <Input
+                  value={deleteConfirmInput}
+                  onChange={(event) => setDeleteConfirmInput(event.target.value)}
+                  placeholder={tSources('libraries.delete_confirm_input_placeholder')}
+                  autoFocus
+                  data-testid="sources__library-delete-confirm-input"
+                />
+              </div>
+            ) : null}
+
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>
+                {tSources('libraries.cancel')}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={deleting || !canConfirmDelete}
+                onClick={handleDeleteConfirmed}
+                data-testid="sources__library-delete-confirm-action"
+              >
+                {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {tSources('libraries.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

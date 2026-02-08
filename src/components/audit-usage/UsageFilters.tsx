@@ -87,66 +87,68 @@ export function UsageFilters({
   }, [filters.resource_type, filters.resource_id, filters.end_user_id, hasNonDefaultTimeRange]);
 
   return (
-    <div className={cn('bg-surface border border-border rounded-md p-4 space-y-4', className)}>
-      <div className="flex items-center justify-between mb-4">
+    <div className={cn('bg-surface border border-border rounded-xl p-4 space-y-4', className)}>
+      <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">{commonT('filters')}</h3>
         {hasActiveFilters && (
-          <Button variant="outline" size="sm" onClick={onClear}>
+          <Button variant="outline" size="sm" className="h-8" onClick={onClear}>
             <X className="h-4 w-4 mr-2" />
             {commonT('clear_filters')}
           </Button>
         )}
       </div>
 
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
         <TimeRangePicker
+          className="lg:col-span-1"
           value={{
             start_time: filters.start_time,
             end_time: filters.end_time,
           }}
           onChange={handleTimeRangeChange}
           presets={['last_24h', 'last_7d', 'last_30d', 'today', 'this_month', 'custom']}
+          showResolvedRangeLabel={false}
         />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.resource_type')}</label>
-            <Select
-              value={filters.resource_type || 'all'}
-              onValueChange={(value) => handleSelectFilterChange('resource_type', value === 'all' ? undefined : value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={commonT('all_types')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{commonT('all')}</SelectItem>
-                {USAGE_RESOURCE_TYPE_OPTIONS.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {formatFilterToken(type)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.resource_type')}</label>
+          <Select
+            value={filters.resource_type || 'all'}
+            onValueChange={(value) => handleSelectFilterChange('resource_type', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger className="h-10">
+              <SelectValue placeholder={commonT('all_types')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{commonT('all')}</SelectItem>
+              {USAGE_RESOURCE_TYPE_OPTIONS.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {formatFilterToken(type)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-          <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.resource_id')}</label>
-            <Input
-              placeholder={commonT('filter_by_resource_id')}
-              value={filters.resource_id || ''}
-              onChange={(e) => handleTextFilterChange('resource_id', e.target.value || undefined)}
-            />
-          </div>
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.resource_id')}</label>
+          <Input
+            className="h-10"
+            placeholder={commonT('filter_by_resource_id')}
+            value={filters.resource_id || ''}
+            onChange={(e) => handleTextFilterChange('resource_id', e.target.value || undefined)}
+          />
+        </div>
 
-          <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.end_user_id')}</label>
-            <Input
-              placeholder={commonT('filter_by_end_user_id')}
-              value={filters.end_user_id || defaultEndUserId || ''}
-              onChange={(e) => handleTextFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
-              disabled={!!defaultEndUserId}
-            />
-          </div>
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.end_user_id')}</label>
+          <Input
+            className="h-10"
+            placeholder={commonT('filter_by_end_user_id')}
+            value={filters.end_user_id || defaultEndUserId || ''}
+            onChange={(e) => handleTextFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
+            disabled={!!defaultEndUserId}
+          />
         </div>
       </div>
     </div>

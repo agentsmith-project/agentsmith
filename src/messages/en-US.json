@@ -254,7 +254,12 @@
       "save": "Save",
       "cancel": "Cancel",
       "rename": "Rename library",
-      "delete": "Delete library"
+      "delete": "Delete library",
+      "delete_confirm_title": "Delete source library",
+      "delete_confirm_description": "This will remove the library and all files inside it. This action cannot be undone.",
+      "delete_confirm_warning": "High risk action: all library files and related indexes will be permanently removed.",
+      "delete_confirm_type_label": "Type \"{name}\" to confirm deletion.",
+      "delete_confirm_input_placeholder": "Enter library name exactly"
     },
     "empty": {
       "title": "No files yet",

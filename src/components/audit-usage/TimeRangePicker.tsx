@@ -18,6 +18,7 @@ export interface TimeRangePickerProps {
   onChange: (range: TimeRange) => void;
   presets?: TimeRangePreset[];
   showCustom?: boolean;
+  showResolvedRangeLabel?: boolean;
   className?: string;
   maxDays?: number; // Default 90
 }
@@ -130,6 +131,7 @@ export function TimeRangePicker({
   onChange,
   presets = ['last_24h', 'last_7d', 'last_30d', 'custom'],
   showCustom: _showCustom = true,
+  showResolvedRangeLabel = true,
   className,
   maxDays = 90,
 }: TimeRangePickerProps) {
@@ -212,10 +214,10 @@ export function TimeRangePicker({
   );
 
   return (
-    <div className={cn('space-y-4', className)}>
-      <div className="flex items-center gap-4">
+    <div className={cn('space-y-3', className)}>
+      <div className="flex items-center gap-3">
         <Select value={preset} onValueChange={handlePresetChange}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="h-10 w-full min-w-[180px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -228,7 +230,7 @@ export function TimeRangePicker({
         </Select>
 
         {preset === 'custom' && (
-          <div className="flex items-center gap-4 flex-1">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center flex-1">
             <div className="flex-1">
               <label htmlFor="start-time" className="text-xs text-tertiary mb-1 block">
                 {commonT('start_time')}
@@ -277,7 +279,7 @@ export function TimeRangePicker({
         </div>
       )}
 
-      {preset !== 'custom' && (
+      {preset !== 'custom' && showResolvedRangeLabel && (
         <div className="text-xs text-tertiary">
           {formatDateTime(value.start_time)} → {formatDateTime(value.end_time)}
         </div>

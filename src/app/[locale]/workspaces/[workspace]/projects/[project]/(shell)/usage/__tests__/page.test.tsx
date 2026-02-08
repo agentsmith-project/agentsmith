@@ -156,8 +156,9 @@ describe('UsagePage route', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: /refresh/i })).toBeInTheDocument();
     const toolbar = screen.getByTestId('page-layout__toolbar');
-    expect(within(toolbar).getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('tablist')).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', async () => {

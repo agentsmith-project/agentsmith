@@ -11,9 +11,13 @@ import { useRouter } from 'next/navigation';
 import { Settings as SettingsIcon, Save } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useTranslations } from 'next-intl';
@@ -48,6 +52,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const router = useRouter();
   const commonT = useTranslations('common');
   const settingsT = useTranslations('settings');
+  const projectT = useTranslations('project');
   const tErrors = useTranslations('errors');
   const { handleError } = useApiError();
   const queryClient = useQueryClient();
@@ -167,84 +172,82 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout>
+      <PageLayout
+        contentWidth="narrow"
+        header={(
+          <PageHeader
+            title={settingsT('title')}
+            subtitle={settingsT('subtitle')}
+            className="[&>div>h1]:flex [&>div>h1]:items-center [&>div>h1]:gap-2"
+          />
+        )}
+      >
         <div className="w-full space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-3xl font-semibold text-foreground flex items-center gap-2">
-          <SettingsIcon className="w-6 h-6 text-icon-default" />
-          {settingsT('title')}
-        </h1>
-        <p className="text-sm text-tertiary">{settingsT('subtitle')}</p>
-      </header>
-
-      <Tabs defaultValue="general" className="space-y-6">
+      <Tabs defaultValue="general" className="space-y-5">
         <TabsList>
           <TabsTrigger value="general" data-testid="settings__tab--general">{settingsT('tab_general')}</TabsTrigger>
           <TabsTrigger value="runtime" data-testid="settings__tab--runtime">{settingsT('tab_runtime_preferences')}</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="general" className="space-y-6">
-          <div className="rounded-xl border border-border bg-surface p-6">
+        <TabsContent value="general">
+          <div className="rounded-xl border border-border bg-surface p-5 md:p-6">
             <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('general_access_title')}</h2>
             <p className="text-sm text-tertiary mb-4">{settingsT('general_help')}</p>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('project_name')}</label>
-                <input
-                  type="text"
+                <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   disabled={!canManageSettings}
-                  className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
               </div>
               <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('visibility')}</label>
-                <select
-                  value={visibility}
-                  onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}
-                  disabled={!canManageSettings}
-                  className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
-                >
-                  <option value="public">Public</option>
-                  <option value="private">Private</option>
-                </select>
+                <Select value={visibility} onValueChange={(value) => setVisibility(value as 'public' | 'private')} disabled={!canManageSettings}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">{projectT('public')}</SelectItem>
+                    <SelectItem value="private">{projectT('private')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('description')}</label>
-                <textarea
+                <Textarea
                   placeholder="Add a description..."
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   disabled={!canManageSettings}
-                  className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
               </div>
               <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('join_policy')}</label>
-                <select
-                  value={joinPolicy}
-                  onChange={(e) => setJoinPolicy(e.target.value as 'approval_required' | 'open')}
-                  disabled={!canManageSettings}
-                  className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
-                >
-                  <option value="approval_required">Approval Required</option>
-                  <option value="open">Open</option>
-                </select>
+                <Select value={joinPolicy} onValueChange={(value) => setJoinPolicy(value as 'approval_required' | 'open')} disabled={!canManageSettings}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="approval_required">{projectT('approval_required')}</SelectItem>
+                    <SelectItem value="open">{projectT('open')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="mt-6 flex justify-end">
-              <Button onClick={handleSaveGeneral} disabled={!canManageSettings || savingGeneral} variant="primary" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveGeneral} disabled={!canManageSettings || savingGeneral} variant="primary" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
-                {savingGeneral ? 'Saving...' : 'Save'}
+                {savingGeneral ? 'Saving...' : commonT('save')}
               </Button>
             </div>
           </div>
         </TabsContent>
 
-        <TabsContent value="runtime" className="space-y-6">
-          <div className="rounded-xl border border-border bg-surface p-6 space-y-4">
+        <TabsContent value="runtime">
+          <div className="rounded-xl border border-border bg-surface p-5 md:p-6 space-y-4">
             <div>
               <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('runtime_preferences_title')}</h2>
               <p className="text-sm text-tertiary">{settingsT('runtime_help')}</p>
@@ -256,9 +259,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               disabled={!canManageSettings}
             />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveRuntimePrefs} disabled={!canManageSettings || savingRuntime} variant="primary" size="lg" data-testid="settings__save-btn">
+              <Button onClick={handleSaveRuntimePrefs} disabled={!canManageSettings || savingRuntime} variant="primary" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
-                {savingRuntime ? 'Saving...' : 'Save'}
+                {savingRuntime ? 'Saving...' : commonT('save')}
               </Button>
             </div>
           </div>

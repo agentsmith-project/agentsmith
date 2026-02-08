@@ -99,7 +99,7 @@ export const projectHandlers = [
     const invite = {
       id: `inv_${Date.now()}`,
       email: (body.email as string) ?? '',
-      role_template: (body.role_template as string) ?? 'user',
+      group_template: (body.group_template as string) ?? 'user',
       invite_url: `/join?token=mock_token_${Date.now()}`,
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       created_at: new Date().toISOString(),

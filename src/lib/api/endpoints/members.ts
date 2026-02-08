@@ -50,7 +50,7 @@ export interface JoinRequest {
 
 export interface CreateInviteRequest {
   email: string;
-  role_template?: string;
+  group_template?: string;
   expires_in_hours?: number;
 }
 

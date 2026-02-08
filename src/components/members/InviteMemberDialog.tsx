@@ -65,7 +65,7 @@ export function InviteMemberDialog({
     try {
       const result = await createInvite.mutateAsync({
         email: email.trim(),
-        role_template: groupTemplate,
+        group_template: groupTemplate,
         expires_in_hours: expiresInHours,
       });
       const path = result.invite_url.startsWith('/') ? result.invite_url.slice(1) : result.invite_url;

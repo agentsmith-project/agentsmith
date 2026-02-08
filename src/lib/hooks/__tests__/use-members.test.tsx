@@ -218,7 +218,7 @@ describe('useCreateInvite', () => {
     await act(async () => {
       await result.current.mutateAsync({
         email: 'newuser@example.com',
-        role_template: 'developer',
+        group_template: 'developer',
       });
     });
 

@@ -18,7 +18,28 @@ import type { UsageRecord } from '@/lib/api/types';
 const columnHelper = createColumnHelper<UsageRecord>();
 
 function formatTimeBucket(timeBucket: string): string {
-  // YYYY-MM-DD or YYYY-MM-DD HH:mm
+  // Supports YYYY-MM-DD and YYYY-MM-DD HH:mm.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(timeBucket)) {
+    const date = new Date(`${timeBucket}T00:00:00Z`);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' });
+    }
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/.test(timeBucket)) {
+    const date = new Date(`${timeBucket.replace(' ', 'T')}:00Z`);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+    }
+  }
+
   return timeBucket;
 }
 
@@ -31,9 +52,10 @@ export interface UsageTableProps {
   data: UsageRecord[];
   loading?: boolean;
   onClearFilters?: () => void;
+  hasActiveFilters?: boolean;
 }
 
-export function UsageTable({ data, loading = false, onClearFilters }: UsageTableProps) {
+export function UsageTable({ data, loading = false, onClearFilters, hasActiveFilters = false }: UsageTableProps) {
   const t = useTranslations('usage');
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'time_bucket', desc: true },
@@ -62,7 +84,9 @@ export function UsageTable({ data, loading = false, onClearFilters }: UsageTable
           const resourceId = info.getValue();
           if (!resourceId) return <span className="text-tertiary">—</span>;
           return (
-            <span className="text-sm text-foreground font-mono">{truncateId(resourceId, 8)}</span>
+            <span className="text-sm text-foreground font-mono" title={resourceId}>
+              {truncateId(resourceId, 8)}
+            </span>
           );
         },
       }),
@@ -76,7 +100,7 @@ export function UsageTable({ data, loading = false, onClearFilters }: UsageTable
       columnHelper.accessor('duration_p95_ms', {
         header: t('table.duration_p95'),
         cell: (info) => (
-          <div className="text-right text-sm text-foreground">{formatDuration(info.getValue())}</div>
+        <div className="text-right text-sm text-foreground">{formatDuration(info.getValue())}</div>
         ),
         size: 120,
       }),
@@ -125,8 +149,8 @@ export function UsageTable({ data, loading = false, onClearFilters }: UsageTable
   if (data.length === 0) {
     return (
       <EmptyState
-        title={t('empty.title')}
-        description={t('empty.description')}
+        title={hasActiveFilters ? t('empty.filtered_title') : t('empty.title')}
+        description={hasActiveFilters ? t('empty.filtered_description') : t('empty.description')}
         onClearFilters={onClearFilters}
       />
     );

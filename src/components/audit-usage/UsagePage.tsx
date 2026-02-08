@@ -1,6 +1,7 @@
 'use client';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { UsageKPICards } from './UsageKPICards';
@@ -14,6 +15,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import type { UsageListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -29,6 +31,18 @@ function getDefaultTimeRange() {
     start_time: start.toISOString(),
     end_time: end.toISOString(),
   };
+}
+
+function formatDateTimeLabel(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUserId }: UsagePageProps) {
@@ -114,6 +128,17 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const canGoPrev = currentPage > 1;
   const canGoNext = !!data?.has_more || currentPage < totalPages;
+  const hasActiveFilters =
+    !!apiFilters.resource_type ||
+    !!apiFilters.resource_id ||
+    !!apiFilters.end_user_id;
+  const filterSummaryItems = [
+    `${formatDateTimeLabel(apiFilters.start_time)} - ${formatDateTimeLabel(apiFilters.end_time)}`,
+    ...(scope === 'my' ? [t('scope_my_usage')] : [t('scope_project_usage')]),
+    ...(apiFilters.resource_type ? [apiFilters.resource_type] : []),
+    ...(apiFilters.resource_id ? [`resource:${apiFilters.resource_id}`] : []),
+    ...(apiFilters.end_user_id ? [`user:${apiFilters.end_user_id}`] : []),
+  ];
 
   if (!canReadUsage) {
     return (
@@ -143,41 +168,23 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
     <PageLayout
       header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
       toolbar={(
-        <PageToolbar>
-          {!isScopeLocked && currentUserId && (
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                onClick={() => setScope('my')}
-                variant={scope === 'my' ? 'secondary' : 'ghost'}
-                size="sm"
-                className={`h-8 px-3 text-sm ${
-                  scope === 'my'
-                    ? 'bg-accent/20 text-accent'
-                    : 'text-tertiary'
-                }`}
-              >
-                {t('scope_my_usage')}
-              </Button>
-              <Button
-                type="button"
-                onClick={() => setScope('project')}
-                variant={scope === 'project' ? 'secondary' : 'ghost'}
-                size="sm"
-                className={`h-8 px-3 text-sm ${
-                  scope === 'project'
-                    ? 'bg-accent/20 text-accent'
-                    : 'text-tertiary'
-                }`}
-              >
-                {t('scope_project_usage')}
-              </Button>
-            </div>
-          )}
-          <Button variant="outline" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || kpiLoading ? 'animate-spin' : ''}`} />
-            {commonT('refresh')}
-          </Button>
+        <PageToolbar className="w-full justify-between">
+          <div className="flex items-center gap-2">
+            {!isScopeLocked && currentUserId && (
+              <Tabs value={scope} onValueChange={(value) => setScope(value as 'my' | 'project')}>
+                <TabsList>
+                  <TabsTrigger value="my">{t('scope_my_usage')}</TabsTrigger>
+                  <TabsTrigger value="project">{t('scope_project_usage')}</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || kpiLoading ? 'animate-spin' : ''}`} />
+              {commonT('refresh')}
+            </Button>
+          </div>
         </PageToolbar>
       )}
     >
@@ -194,38 +201,55 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
         />
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface p-3">
+        <span className="text-xs text-tertiary">{t('summary.title')}</span>
+        {filterSummaryItems.map((item) => (
+          <Badge key={item} variant="outline" className="text-[11px]">
+            {item}
+          </Badge>
+        ))}
+        {hasActiveFilters && (
+          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 ml-auto" onClick={handleClearFilters}>
+            {commonT('clear_filters')}
+          </Button>
+        )}
+      </div>
+
       {/* Table */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <UsageTable
-          data={data?.items || []}
-          loading={isLoading}
-          onClearFilters={handleClearFilters}
-        />
-        <div className="mt-4 flex items-center justify-between">
-          <p className="text-xs text-tertiary">
-            {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·
-            {' '}
-            {commonT('total_items', { count: String(totalItems) })}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!canGoPrev || isLoading}
-              onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
-            >
-              {commonT('previous')}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!canGoNext || isLoading}
-              onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
-            >
-              {commonT('next')}
-            </Button>
+        <div className="rounded-md border border-border bg-surface p-3">
+          <UsageTable
+            data={data?.items || []}
+            loading={isLoading}
+            onClearFilters={handleClearFilters}
+            hasActiveFilters={hasActiveFilters}
+          />
+          <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
+            <p className="text-xs text-tertiary">
+              {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·
+              {' '}
+              {commonT('total_items', { count: String(totalItems) })}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canGoPrev || isLoading}
+                onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
+              >
+                {commonT('previous')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canGoNext || isLoading}
+                onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
+              >
+                {commonT('next')}
+              </Button>
+            </div>
           </div>
         </div>
       </div>

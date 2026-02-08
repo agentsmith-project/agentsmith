@@ -3,6 +3,7 @@ import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { FileX } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 
 export interface EmptyStateProps {
   title: string;
@@ -12,6 +13,7 @@ export interface EmptyStateProps {
 }
 
 export function EmptyState({ title, description, onClearFilters, className }: EmptyStateProps) {
+  const commonT = useTranslations('common');
   return (
     <div className={cn('flex flex-col items-center justify-center py-12 px-4', className)}>
       <FileX className="h-12 w-12 text-tertiary mb-4" />
@@ -19,7 +21,7 @@ export function EmptyState({ title, description, onClearFilters, className }: Em
       <p className="text-sm text-tertiary text-center mb-6 max-w-md">{description}</p>
       {onClearFilters && (
         <Button variant="outline" onClick={onClearFilters}>
-          Clear Filters
+          {commonT('clear_filters')}
         </Button>
       )}
     </div>

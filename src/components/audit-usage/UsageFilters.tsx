@@ -71,9 +71,20 @@ export function UsageFilters({
     };
   }, []);
 
+  const hasNonDefaultTimeRange = React.useMemo(() => {
+    const start = new Date(filters.start_time).getTime();
+    const end = new Date(filters.end_time).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return true;
+
+    const durationHours = (end - start) / (1000 * 60 * 60);
+    const endOffsetMinutes = Math.abs(Date.now() - end) / (1000 * 60);
+
+    return Math.abs(durationHours - 24) > 0.2 || endOffsetMinutes > 10;
+  }, [filters.start_time, filters.end_time]);
+
   const hasActiveFilters = React.useMemo(() => {
-    return !!(filters.resource_type || filters.resource_id || filters.end_user_id);
-  }, [filters]);
+    return !!(hasNonDefaultTimeRange || filters.resource_type || filters.resource_id || filters.end_user_id);
+  }, [filters.resource_type, filters.resource_id, filters.end_user_id, hasNonDefaultTimeRange]);
 
   return (
     <div className={cn('bg-surface border border-border rounded-md p-4 space-y-4', className)}>
@@ -97,7 +108,7 @@ export function UsageFilters({
           presets={['last_24h', 'last_7d', 'last_30d', 'today', 'this_month', 'custom']}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div>
             <label className="text-xs text-tertiary mb-1 block">{t('filters.resource_type')}</label>
             <Select

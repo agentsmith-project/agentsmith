@@ -633,8 +633,11 @@
     "filters": {
       "time_range": "Time Range",
       "resource_type": "Resource Type",
-      "agent_id": "Agent ID",
+      "resource_id": "Resource ID",
       "end_user_id": "End User ID"
+    },
+    "summary": {
+      "title": "Active filters"
     },
     "table": {
       "time_bucket": "Time Bucket",
@@ -648,7 +651,9 @@
     },
     "empty": {
       "title": "No usage data found",
-      "description": "Try adjusting your filters or select a different time range"
+      "description": "There is no usage record in the selected time range.",
+      "filtered_title": "No matching usage records",
+      "filtered_description": "No records match the current filter conditions."
     },
     "permission_denied": "You don't have permission to view usage statistics.",
     "scope_my_usage": "My Usage",

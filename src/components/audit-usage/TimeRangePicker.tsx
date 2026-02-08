@@ -22,6 +22,19 @@ export interface TimeRangePickerProps {
   maxDays?: number; // Default 90
 }
 
+function formatDateTime(isoString: string): string {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return isoString;
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 const PRESET_RANGE_BUILDERS: Record<TimeRangePreset, { getRange: () => TimeRange }> = {
   last_24h: {
     getRange: () => {
@@ -87,6 +100,31 @@ const PRESET_RANGE_BUILDERS: Record<TimeRangePreset, { getRange: () => TimeRange
   },
 };
 
+function isWithinTolerance(actual: string, expected: string, toleranceMs: number): boolean {
+  const actualTime = new Date(actual).getTime();
+  const expectedTime = new Date(expected).getTime();
+  return Number.isFinite(actualTime) && Number.isFinite(expectedTime) && Math.abs(actualTime - expectedTime) <= toleranceMs;
+}
+
+function detectPresetFromRange(
+  range: TimeRange,
+  allowedPresets: TimeRangePreset[],
+  toleranceMs: number = 3 * 60 * 1000,
+): TimeRangePreset | 'custom' {
+  for (const preset of allowedPresets) {
+    if (preset === 'custom') continue;
+    const expected = PRESET_RANGE_BUILDERS[preset].getRange();
+    if (
+      isWithinTolerance(range.start_time, expected.start_time, toleranceMs) &&
+      isWithinTolerance(range.end_time, expected.end_time, toleranceMs)
+    ) {
+      return preset;
+    }
+  }
+  if (allowedPresets.includes('custom')) return 'custom';
+  return allowedPresets[0] ?? 'last_24h';
+}
+
 export function TimeRangePicker({
   value,
   onChange,
@@ -104,6 +142,10 @@ export function TimeRangePicker({
     value.end_time ? new Date(value.end_time).toISOString().slice(0, 16) : '',
   );
   const [error, setError] = React.useState<string | null>(null);
+  const availablePresets = React.useMemo(
+    () => (_showCustom ? presets : presets.filter((preset) => preset !== 'custom')),
+    [presets, _showCustom],
+  );
 
   // Update local state when value prop changes
   React.useEffect(() => {
@@ -113,7 +155,8 @@ export function TimeRangePicker({
     if (value.end_time) {
       setEndTime(new Date(value.end_time).toISOString().slice(0, 16));
     }
-  }, [value.start_time, value.end_time]);
+    setPreset(detectPresetFromRange(value, availablePresets));
+  }, [value, availablePresets]);
 
   const handlePresetChange = (newPreset: string) => {
     if (newPreset === 'custom') {
@@ -168,11 +211,6 @@ export function TimeRangePicker({
     [commonT, onChange, maxDays],
   );
 
-  const formatDateTime = (isoString: string): string => {
-    const date = new Date(isoString);
-    return date.toISOString().slice(0, 16);
-  };
-
   return (
     <div className={cn('space-y-4', className)}>
       <div className="flex items-center gap-4">
@@ -181,7 +219,7 @@ export function TimeRangePicker({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {presets.map((p) => (
+            {availablePresets.map((p) => (
               <SelectItem key={p} value={p}>
                 {commonT(`time_preset_${p}`)}
               </SelectItem>

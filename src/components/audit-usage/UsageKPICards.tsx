@@ -23,11 +23,13 @@ function calculateTrend(current: number, previous?: number): { value: number; is
 
 export function UsageKPICards({ kpi, loading, className }: UsageKPICardsProps) {
   const t = useTranslations('usage');
+  const hasTokensCard = kpi?.tokens_today !== undefined;
+  const gridColsClass = hasTokensCard ? 'lg:grid-cols-3' : 'lg:grid-cols-2';
 
   if (loading) {
     return (
-      <div className={cn('grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4', className)}>
-        {[1, 2, 3, 4].map((i) => (
+      <div className={cn(`grid grid-cols-1 md:grid-cols-2 ${gridColsClass} gap-4`, className)}>
+        {[1, 2, 3].map((i) => (
           <div key={i} className="bg-surface border border-border rounded-md p-4 animate-pulse">
             <div className="h-4 w-20 bg-surface-high rounded mb-2" />
             <div className="h-8 w-16 bg-surface-high rounded" />
@@ -45,7 +47,7 @@ export function UsageKPICards({ kpi, loading, className }: UsageKPICardsProps) {
   const errorsTrend = calculateTrend(kpi.errors_today, kpi.errors_yesterday);
 
   return (
-    <div className={cn('grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4', className)}>
+    <div className={cn(`grid grid-cols-1 md:grid-cols-2 ${gridColsClass} gap-4`, className)}>
       {/* Requests Today */}
       <div className="bg-surface border border-border rounded-md p-4">
         <div className="flex items-center justify-between mb-2">

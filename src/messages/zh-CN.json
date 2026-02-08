@@ -635,8 +635,11 @@
     "filters": {
       "time_range": "时间范围",
       "resource_type": "资源类型",
-      "agent_id": "智能体 ID",
+      "resource_id": "资源 ID",
       "end_user_id": "最终用户 ID"
+    },
+    "summary": {
+      "title": "当前筛选"
     },
     "table": {
       "time_bucket": "时间桶",
@@ -650,7 +653,9 @@
     },
     "empty": {
       "title": "未找到用量数据",
-      "description": "尝试调整筛选条件或选择不同的时间范围"
+      "description": "所选时间范围内暂无用量记录。",
+      "filtered_title": "没有匹配的用量记录",
+      "filtered_description": "当前筛选条件下没有符合的数据。"
     },
     "permission_denied": "您没有权限查看用量统计。",
     "scope_my_usage": "我的用量",

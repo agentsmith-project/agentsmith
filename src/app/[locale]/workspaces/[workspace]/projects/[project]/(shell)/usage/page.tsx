@@ -63,14 +63,11 @@ export default function UsagePage({ params }: UsagePageProps) {
     );
   }
 
-  const defaultEndUserId = undefined;
-
   return (
     <PageState state="success">
       <UsagePageComponent
         workspaceId={workspaceId}
         projectId={projectId}
-        defaultEndUserId={defaultEndUserId}
         currentUserId={currentUser?.id}
       />
     </PageState>

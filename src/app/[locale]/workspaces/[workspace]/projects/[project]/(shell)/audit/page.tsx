@@ -61,14 +61,11 @@ export default function AuditPage({ params }: AuditPageProps) {
     );
   }
 
-  const defaultEndUserId = undefined;
-
   return (
     <PageState state="success">
       <AuditPageComponent
         workspaceId={workspaceId}
         projectId={projectId}
-        defaultEndUserId={defaultEndUserId}
       />
     </PageState>
   );

@@ -351,7 +351,6 @@ export interface UsageRecord {
   project_id: string;
   resource_type: string;
   resource_id?: string;
-  agent_id?: string;
   end_user_id?: string;
   requests: number;
   duration_p95_ms?: number;

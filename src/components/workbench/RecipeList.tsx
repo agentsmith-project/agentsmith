@@ -38,11 +38,11 @@ export function RecipeList({
   const recipes = recipesData?.items || [];
 
   const handleCreateSuccess = (recipeId: string) => {
-    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/workbench/recipes/${recipeId}`);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/studio/recipes/${recipeId}`);
   };
 
   const handleRecipeClick = (recipeId: string) => {
-    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/workbench/recipes/${recipeId}`);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/studio/recipes/${recipeId}`);
   };
 
   const formatTime = (dateString: string) => {

@@ -387,6 +387,7 @@
   },
   "agents": {
     "title": "智能体",
+    "subtitle": "管理 AI 智能体",
     "create": "创建智能体",
     "create_dialog": {
       "title": "创建智能体",
@@ -445,6 +446,10 @@
     "detail_diagnostics": "诊断信息",
     "detail_diagnostics_empty": "暂无诊断信息。",
     "detail_config": "配置",
+    "empty": {
+      "title": "暂无智能体",
+      "description": "创建你的第一个智能体以开始使用"
+    },
     "delete": "删除",
     "delete_confirm_title": "删除 Agent",
     "delete_confirm_message": "确定要删除 Agent「{name}」吗？此操作不可撤销。",
@@ -493,6 +498,7 @@
   },
   "endpoints": {
     "title": "端点",
+    "subtitle": "管理 LLM 端点",
     "create": "创建端点",
     "create_dialog": {
       "title": "创建端点",
@@ -524,6 +530,14 @@
     "action_edit": "编辑",
     "action_rotate_credential": "轮换凭据",
     "action_delete": "删除",
+    "table": {
+      "name": "名称",
+      "url": "URL",
+      "type": "类型",
+      "model": "模型",
+      "rate_limit": "速率限制",
+      "status": "状态"
+    },
     "edit_dialog": {
       "title": "编辑端点",
       "description": "更新端点配置与状态。",
@@ -537,6 +551,10 @@
     "acl_remove_deny": "移除",
     "detail_limits": "限制",
     "detail_credential": "凭据",
+    "empty": {
+      "title": "暂无端点",
+      "description": "添加你的第一个 LLM 端点以开始使用"
+    },
     "delete_confirm_title": "删除端点",
     "delete_confirm_description": "确定要删除端点 \"{name}\" 吗？此操作无法撤消。"
   },

@@ -385,6 +385,7 @@
   },
   "agents": {
     "title": "Agents",
+    "subtitle": "Manage AI agents",
     "create": "Create Agent",
     "create_dialog": {
       "title": "Create Agent",
@@ -443,6 +444,10 @@
     "detail_diagnostics": "Diagnostics",
     "detail_diagnostics_empty": "No diagnostics available.",
     "detail_config": "Config",
+    "empty": {
+      "title": "No agents yet",
+      "description": "Create your first agent to get started"
+    },
     "delete": "Delete",
     "delete_confirm_title": "Delete Agent",
     "delete_confirm_message": "Delete agent \"{name}\"? This action cannot be undone.",
@@ -491,6 +496,7 @@
   },
   "endpoints": {
     "title": "Endpoints",
+    "subtitle": "Manage LLM endpoints",
     "create": "Create Endpoint",
     "create_dialog": {
       "title": "Create Endpoint",
@@ -522,6 +528,14 @@
     "action_edit": "Edit",
     "action_rotate_credential": "Rotate Credential",
     "action_delete": "Delete",
+    "table": {
+      "name": "Name",
+      "url": "URL",
+      "type": "Type",
+      "model": "Model",
+      "rate_limit": "Rate Limit",
+      "status": "Status"
+    },
     "edit_dialog": {
       "title": "Edit Endpoint",
       "description": "Update endpoint settings and status.",
@@ -535,6 +549,10 @@
     "acl_remove_deny": "Remove",
     "detail_limits": "Limits",
     "detail_credential": "Credential",
+    "empty": {
+      "title": "No endpoints yet",
+      "description": "Add your first LLM endpoint to get started"
+    },
     "delete_confirm_title": "Delete Endpoint",
     "delete_confirm_description": "Are you sure you want to delete endpoint \"{name}\"? This action cannot be undone."
   },

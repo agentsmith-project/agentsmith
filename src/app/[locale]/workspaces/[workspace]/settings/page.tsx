@@ -10,19 +10,32 @@ import { PageState } from '@/components/layout/PageState';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
+import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 export default function WorkspaceSettingsPage() {
   const params = useParams();
   const t = useTranslations('settings');
-  const workspaceId = params?.workspace as string;
-  const { data: currentWorkspace } = useWorkspace(workspaceId);
-  const { data: members = [] } = useWorkspaceMembers(workspaceId);
+  const tErrors = useTranslations('errors');
+  const workspaceId = validateWorkspaceParam(params?.workspace);
+  const { data: currentWorkspace } = useWorkspace(workspaceId ?? '');
+  const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
   const {
     canManageGovernance,
     getMemberGovernanceGroup,
     updateMemberGovernanceGroup,
-  } = useWorkspaceGovernance(workspaceId);
+  } = useWorkspaceGovernance(workspaceId ?? '');
   useSyncAuthFromUrl();
+
+  if (!workspaceId) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
 
   const workspace = currentWorkspace || { id: workspaceId, name: workspaceId };
 

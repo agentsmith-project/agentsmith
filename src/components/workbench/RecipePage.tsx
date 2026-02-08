@@ -204,11 +204,11 @@ export function RecipePage({
   };
 
   const handleRecipeCreated = (newRecipeId: string) => {
-    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/workbench/recipes/${newRecipeId}`);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/studio/recipes/${newRecipeId}`);
   };
 
   const handleRecipeDeleted = () => {
-    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/workbench`);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/studio`);
   };
 
   const handleRecipeUpdated = async (data: { title: string; status: 'active' | 'closed' | 'archived' }) => {
@@ -223,7 +223,7 @@ export function RecipePage({
   const handleLeave = () => {
     // Navigate to workbench list
     // SSE connection will be automatically cleaned up when component unmounts
-    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/workbench`);
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/studio`);
   };
 
   if (recipeLoading) {
@@ -241,7 +241,7 @@ export function RecipePage({
           <h2 className="text-lg font-semibold text-foreground mb-2">Task not found</h2>
           <p className="text-sm text-tertiary mb-4">The task you're looking for doesn't exist or has been deleted.</p>
           <button
-            onClick={() => router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/workbench`)}
+            onClick={() => router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/studio`)}
             className="text-sm text-accent hover:underline"
           >
             Go back to AI Studio

@@ -234,7 +234,7 @@ describe('RecipeList', () => {
       recipeCard?.click();
 
       expect(mockPush).toHaveBeenCalledWith(
-        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/workbench/recipes/recipe-1`
+        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/studio/recipes/recipe-1`
       );
     });
   });

@@ -23,11 +23,11 @@ test.describe('Controls Matrix', () => {
     await expect(authedPage.getByTestId('chat__composer')).toBeVisible();
     await expect(authedPage.getByTestId('chat__send-btn')).toBeVisible();
 
-    await goToProject(authedPage, 'workbench');
+    await goToProject(authedPage, 'studio');
     await expect(authedPage.getByTestId('workbench__recipe-list')).toBeVisible();
     await expect(authedPage.getByTestId('workbench__create-recipe-btn')).toBeVisible();
 
-    await goToProject(authedPage, 'workbench/recipes/recipe_001');
+    await goToProject(authedPage, 'studio/recipes/recipe_001');
     await expect(authedPage.getByTestId('workbench__recipe-header')).toBeVisible();
     await expect(authedPage.getByTestId('workbench__conversation-input')).toBeVisible();
     await expect(authedPage.getByTestId('workbench__send-btn')).toBeVisible();
@@ -85,9 +85,9 @@ test.describe('Controls Matrix', () => {
     await expect(authedPage).toHaveURL(
       new RegExp(`/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/chat$`)
     );
-    await authedPage.getByRole('link', { name: /workbench|ai studio/i }).first().click();
+    await authedPage.getByRole('link', { name: /studio|ai studio/i }).first().click();
     await expect(authedPage).toHaveURL(
-      new RegExp(`/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/workbench$`)
+      new RegExp(`/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/studio$`)
     );
   });
 });

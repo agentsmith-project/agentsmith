@@ -10,7 +10,7 @@ import { test, expect, goToProject } from './fixtures/test-base';
 test.describe('Workbench Page', () => {
   test.describe('Recipe List', () => {
     test.beforeEach(async ({ authedPage }) => {
-      await goToProject(authedPage, 'workbench');
+      await goToProject(authedPage, 'studio');
     });
 
     test('should display recipe list with recipe cards', async ({ authedPage }) => {
@@ -62,7 +62,7 @@ test.describe('Workbench Page', () => {
       await recipeCards.first().click();
 
       // Should navigate to the recipe detail page
-      await authedPage.waitForURL(/\/workbench\/recipes\//, { timeout: 10000 });
+      await authedPage.waitForURL(/\/studio\/recipes\//, { timeout: 10000 });
 
       // Recipe header should be visible on detail page
       await expect(authedPage.getByTestId('workbench__recipe-header')).toBeVisible();
@@ -72,7 +72,7 @@ test.describe('Workbench Page', () => {
   test.describe('Recipe Detail', () => {
     test.beforeEach(async ({ authedPage }) => {
       // Navigate directly to a known recipe detail page
-      await goToProject(authedPage, 'workbench/recipes/recipe_001');
+      await goToProject(authedPage, 'studio/recipes/recipe_001');
     });
 
     test('should display recipe header', async ({ authedPage }) => {
@@ -140,7 +140,7 @@ test.describe('Workbench Page', () => {
 
     test('should navigate back to list when clicking leave button', async ({ authedPage }) => {
       await authedPage.getByRole('button', { name: /leave/i }).click();
-      await authedPage.waitForURL(/\/workbench$/);
+      await authedPage.waitForURL(/\/studio$/);
       await expect(authedPage.getByTestId('workbench__recipe-list')).toBeVisible();
     });
 

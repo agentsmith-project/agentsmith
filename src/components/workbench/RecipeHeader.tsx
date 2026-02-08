@@ -64,7 +64,7 @@ export function RecipeHeader({
       onLeave();
     } else {
       // Default behavior: navigate to workbench list
-      router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/workbench`);
+      router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/studio`);
     }
   };
 

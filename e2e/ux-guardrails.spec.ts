@@ -11,7 +11,7 @@ import { gotoAndWait } from './utils/navigation';
 const PROJECT_SECTIONS = [
   'overview',
   'chat',
-  'workbench',
+  'studio',
   'agents',
   'endpoints',
   'members',

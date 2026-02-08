@@ -364,7 +364,7 @@ describe('RecipePage', () => {
       await user.click(leaveButton);
 
       expect(mockPush).toHaveBeenCalledWith(
-        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/workbench`
+        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/studio`
       );
     });
 
@@ -379,7 +379,7 @@ describe('RecipePage', () => {
       await user.click(createButton);
 
       expect(mockPush).toHaveBeenCalledWith(
-        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/workbench/recipes/new-recipe-id`
+        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/studio/recipes/new-recipe-id`
       );
     });
 
@@ -391,7 +391,7 @@ describe('RecipePage', () => {
       await user.click(deleteButton);
 
       expect(mockPush).toHaveBeenCalledWith(
-        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/workbench`
+        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/studio`
       );
     });
   });

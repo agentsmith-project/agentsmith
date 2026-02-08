@@ -122,7 +122,7 @@ test.describe('Screenshot Capture', () => {
     await page.screenshot({ path: path.join(BASE, '04-chat', 'chat.png'), fullPage: true });
 
     // === 05-workbench ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/workbench`, { waitUntil: 'networkidle' });
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/studio`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(BASE, '05-workbench', 'workbench.png'), fullPage: true });
 
@@ -134,7 +134,7 @@ test.describe('Screenshot Capture', () => {
       await page.keyboard.press('Escape');
     }
 
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/workbench/recipes/recipe_001`, { waitUntil: 'networkidle' });
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/studio/recipes/recipe_001`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(BASE, '05-workbench', 'recipe-detail.png'), fullPage: true });
 

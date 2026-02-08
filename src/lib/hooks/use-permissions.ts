@@ -8,6 +8,7 @@ import { useWorkspaceMembers } from './use-workspaces';
 import { useParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { validateProjectWithMembership, type ProjectWithMembership as ValidationProjectWithMembership } from '@/lib/utils/validation-zod';
+import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 export type ProjectWithMembership = ValidationProjectWithMembership;
 
@@ -23,29 +24,30 @@ export function useIsAuthenticated(): boolean {
 
 export function useCurrentPermissions() {
   const { workspace, project } = useParams();
-  const workspaceId = workspace as string;
-  const projectId = project as string;
-  const { data: currentProject } = useProject(workspaceId, projectId);
+  const workspaceId = validateWorkspaceParam(workspace);
+  const projectId = validateProjectParam(project);
+  const { data: currentProject } = useProject(workspaceId ?? '', projectId ?? '');
 
   return useMemo(() => {
+    if (!workspaceId || !projectId) return EMPTY_PERMISSIONS;
     const validated = currentProject ? validateProjectWithMembership(currentProject) : null;
     if (!validated) return EMPTY_PERMISSIONS;
     return validated.permissions ?? EMPTY_PERMISSIONS;
-  }, [currentProject]);
+  }, [currentProject, workspaceId, projectId]);
 }
 
 export function useCurrentWorkspacePermissions() {
   const { workspace } = useParams();
-  const workspaceId = workspace as string;
+  const workspaceId = validateWorkspaceParam(workspace);
   const userId = useAuthStore((state) => state.user?.id);
-  const { data: members = [] } = useWorkspaceMembers(workspaceId);
+  const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
 
   return useMemo(() => {
-    if (!userId) return EMPTY_PERMISSIONS;
+    if (!workspaceId || !userId) return EMPTY_PERMISSIONS;
     const currentMember = members.find((m) => m.user_id === userId);
     if (!currentMember) return EMPTY_PERMISSIONS;
     return currentMember.permissions ?? EMPTY_PERMISSIONS;
-  }, [members, userId]);
+  }, [members, userId, workspaceId]);
 }
 
 export function useHasPermission(permission: string): boolean {

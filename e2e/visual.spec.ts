@@ -90,13 +90,13 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('chat.png', { fullPage: true });
   });
 
-  test('workbench', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('workbench'));
+  test('studio', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('studio'));
     await expect(authedPage).toHaveScreenshot('workbench.png', { fullPage: true });
   });
 
   test('workbench recipe detail', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('workbench/recipes/recipe_001'));
+    await stableNavigate(authedPage, projectPath('studio/recipes/recipe_001'));
     await expect(authedPage).toHaveScreenshot('workbench-recipe-detail.png', { fullPage: true });
   });
 

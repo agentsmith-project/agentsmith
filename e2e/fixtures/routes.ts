@@ -18,8 +18,8 @@ export const ROUTES = {
   project: [
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', title: /Overview|概览/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/chat', testId: 'chat__main-pane' },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/workbench', testId: 'workbench__recipe-list' },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/workbench/recipes/recipe_001', testId: 'workbench__recipe-header' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/studio', testId: 'workbench__recipe-list' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/studio/recipes/recipe_001', testId: 'workbench__recipe-header' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/agents', title: /Agents|代理|智能体/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/endpoints', title: /Endpoints|端点/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/members', title: /Members|成员/i },

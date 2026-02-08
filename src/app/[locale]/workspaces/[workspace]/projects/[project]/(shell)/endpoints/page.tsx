@@ -55,7 +55,7 @@ function createEndpointColumns(
 ) {
   return [
   columnHelper.accessor('name', {
-    header: 'Name',
+    header: t('table.name'),
     cell: (info) => (
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
@@ -73,7 +73,7 @@ function createEndpointColumns(
     ),
   }),
   columnHelper.accessor('base_url', {
-    header: 'URL',
+    header: t('table.url'),
     cell: (info) => (
       <div className="flex items-center gap-2">
         <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
@@ -84,7 +84,7 @@ function createEndpointColumns(
     ),
   }),
   columnHelper.accessor('type', {
-    header: 'Type',
+    header: t('table.type'),
     cell: (info) => (
       <span className="text-tertiary text-sm capitalize">
         {info.getValue()}
@@ -92,7 +92,7 @@ function createEndpointColumns(
     ),
   }),
   columnHelper.accessor('openai_model', {
-    header: 'Model',
+    header: t('table.model'),
     cell: (info) => (
       <span className="text-tertiary text-sm font-mono">
         {info.getValue()}
@@ -101,7 +101,7 @@ function createEndpointColumns(
   }),
   columnHelper.accessor((row) => row.limits, {
     id: 'limits',
-    header: 'Rate Limit',
+    header: t('table.rate_limit'),
     cell: (info) => (
       <div className="text-xs text-tertiary leading-5">
         <p>
@@ -120,7 +120,7 @@ function createEndpointColumns(
     ),
   }),
   columnHelper.accessor('status', {
-    header: 'Status',
+    header: t('table.status'),
     cell: (info) => <StatusBadge status={info.getValue() === 'active' ? 'active' : 'paused'} />,
   }),
   columnHelper.display({
@@ -319,7 +319,7 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   return (
     <PageState state="success">
       <PageLayout
-        header={<PageHeader title={t('title')} subtitle="Manage LLM endpoints" />}
+        header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
         toolbar={(
           <PageToolbar>
             <Button
@@ -340,8 +340,8 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
           ) : endpoints.length === 0 ? (
             <EmptyState
               icon={Server}
-              title={`No ${t('title').toLowerCase()} yet`}
-              description={`Add your first LLM ${t('title').toLowerCase()} to get started`}
+              title={t('empty.title')}
+              description={t('empty.description')}
               action={canManageEndpoints ? {
                 label: `Add ${t('title')}`,
                 onClick: () => setCreateDialogOpen(true),

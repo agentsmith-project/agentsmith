@@ -159,7 +159,7 @@ describe('RecipeHeader', () => {
       await user.click(leaveButton);
 
       expect(mockPush).toHaveBeenCalledWith(
-        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/workbench`
+        `/en-US/workspaces/${mockWorkspaceId}/projects/${mockProjectId}/studio`
       );
     });
 

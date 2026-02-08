@@ -378,7 +378,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   return (
     <PageState state="success">
       <PageLayout
-        header={<PageHeader title={t('title')} subtitle="Manage AI agents" />}
+        header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
         toolbar={(
           <PageToolbar>
             <Button
@@ -401,8 +401,8 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           ) : agents.length === 0 ? (
             <EmptyState
               icon={Bot}
-              title={`No ${t('title').toLowerCase()} yet`}
-              description={`Create your first ${t('title').toLowerCase()} to get started`}
+              title={t('empty.title')}
+              description={t('empty.description')}
               action={canManageAgents ? {
                 label: t('create'),
                 onClick: () => setCreateDialogOpen(true),

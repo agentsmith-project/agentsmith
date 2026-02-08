@@ -10,7 +10,7 @@ import { test, expect, goToProject, goTo, LOCALE, WS_ID, PROJECT_ID } from './fi
 const SIDEBAR_NAV_ITEMS = [
   'overview',
   'chat',
-  'workbench',
+  'studio',
   'resource_policy',
   'agents',
   'endpoints',

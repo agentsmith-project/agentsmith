@@ -17,9 +17,9 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Custom: invalid recipe ID -> redirect to workbench list
-  // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/workbench/recipes/[recipeId]
+  // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/studio/recipes/[recipeId]
   const recipeMatch = pathname.match(
-    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/workbench\/recipes\/([^/]+)/,
+    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/studio\/recipes\/([^/]+)/,
   );
 
   if (recipeMatch) {
@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
     const validation = validateRecipeId(recipeId);
     if (!validation.valid) {
       const redirectUrl = new URL(
-        `/${locale}/workspaces/${workspace}/projects/${project}/workbench`,
+        `/${locale}/workspaces/${workspace}/projects/${project}/studio`,
         request.url,
       );
       return NextResponse.redirect(redirectUrl);

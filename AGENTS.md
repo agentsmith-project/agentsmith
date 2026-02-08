@@ -55,7 +55,7 @@ app/
 │       └── [workspace]/
 │           └── projects/
 │               ├── [project]/
-│               │   └── (app)/      # App shell routes (overview, chat, workbench, sources, agents, endpoints, members, audit, usage, settings)
+│               │   └── (shell)/    # App shell routes (overview, chat, studio, sources, agents, endpoints, members, audit, usage, settings)
 │               └── page.tsx        # Project list
 └── globals.css          # Design system tokens
 ```
@@ -154,7 +154,7 @@ src/
 │   ├── ui/                 # Design system (Radix primitives + custom)
 │   ├── app-shell/         # Layout (Topbar, Sidebar, navigation)
 │   ├── chat/              # Chat components
-│   ├── workbench/         # Workbench/Recipe components
+│   ├── workbench/         # AI Studio/Task components
 │   ├── sources/           # File/source management
 │   ├── members/           # Member management
 │   └── audit-usage/       # Audit & usage reports

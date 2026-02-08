@@ -106,7 +106,7 @@ export function PermissionTemplatesTab({
   const customTemplates = allTemplates.filter((t) => !t.is_default);
 
   const handleApplyTemplate = React.useCallback(
-    async (memberIds: string[], permissions: string[], templateId?: 'admin' | 'developer' | 'user' | null) => {
+    async (memberIds: string[], permissions: string[], templateId?: string | null) => {
       return batchApplyTemplate.mutateAsync({
         memberIds,
         permissions,

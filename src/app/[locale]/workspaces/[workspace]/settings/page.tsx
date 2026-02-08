@@ -8,22 +8,35 @@ import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
+import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
+
+function formatWorkspaceGroupAlias(role: string): string {
+  switch (role) {
+    case 'owner':
+      return 'governance';
+    case 'admin':
+      return 'manager';
+    case 'developer':
+      return 'operator';
+    case 'user':
+      return 'member';
+    default:
+      return role;
+  }
+}
 
 export default function WorkspaceSettingsPage() {
   const params = useParams();
   const t = useTranslations('settings');
   const tErrors = useTranslations('errors');
   const workspaceId = validateWorkspaceParam(params?.workspace);
+  const canManageGovernance = useHasWorkspacePermission('workspace:governance:update');
   const { data: currentWorkspace } = useWorkspace(workspaceId ?? '');
   const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
-  const {
-    canManageGovernance,
-    getMemberGovernanceGroup,
-    updateMemberGovernanceGroup,
-  } = useWorkspaceGovernance(workspaceId ?? '');
+  const { getMemberGovernanceGroup, updateMemberGovernanceGroup } = useWorkspaceGovernance(workspaceId ?? '');
   useSyncAuthFromUrl();
 
   if (!workspaceId) {
@@ -77,7 +90,7 @@ export default function WorkspaceSettingsPage() {
                         <p className="text-xs text-tertiary truncate">{member.email}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-xs text-tertiary capitalize">{member.role}</span>
+                        <span className="text-xs text-tertiary">group: {formatWorkspaceGroupAlias(member.role)}</span>
                         <select
                           data-testid={`ws-settings__governance--${member.id}`}
                           value={getMemberGovernanceGroup(member)}

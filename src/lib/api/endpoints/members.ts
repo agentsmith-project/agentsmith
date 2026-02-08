@@ -50,7 +50,7 @@ export interface JoinRequest {
 
 export interface CreateInviteRequest {
   email: string;
-  role_template?: 'developer' | 'user';
+  role_template?: string;
   expires_in_hours?: number;
 }
 
@@ -186,7 +186,7 @@ export class MemberAPI {
     projectId: string,
     memberId: string,
     data: {
-      template?: 'admin' | 'developer' | 'user' | null;
+      template?: string | null;
       permissions?: string[];
       mode: 'template' | 'custom';
     }

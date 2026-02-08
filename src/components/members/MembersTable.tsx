@@ -27,7 +27,18 @@ import { formatRelativeTime } from '@/lib/utils/formatters';
 const columnHelper = createColumnHelper<Member>();
 
 function formatRole(role: string): string {
-  return role.charAt(0).toUpperCase() + role.slice(1);
+  switch (role) {
+    case 'owner':
+      return 'Governance';
+    case 'admin':
+      return 'Manager';
+    case 'developer':
+      return 'Operator';
+    case 'user':
+      return 'Member';
+    default:
+      return role.charAt(0).toUpperCase() + role.slice(1);
+  }
 }
 
 function getRoleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' | 'destructive' {
@@ -76,7 +87,7 @@ export function MembersTable({
     () =>
       new Set(
         data
-          .filter((m) => m.status === 'active' && m.role !== 'owner')
+          .filter((m) => m.status === 'active')
           .map((m) => m.id),
       ),
     [data],
@@ -108,7 +119,7 @@ export function MembersTable({
               },
               cell: ({ row }) => {
                 const member = row.original;
-                if (member.role === 'owner' || member.status !== 'active') {
+                if (member.status !== 'active') {
                   return <div className="w-4" />;
                 }
                 const isSelected = selectedMemberIds.includes(member.id);
@@ -217,7 +228,7 @@ export function MembersTable({
                 {t('actions.view_history')}
               </DropdownMenuItem>
                 )}
-                {onRemove && member.role !== 'owner' && (
+                {onRemove && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

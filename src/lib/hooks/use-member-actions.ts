@@ -54,7 +54,7 @@ export interface UseMemberActionsReturn {
   handleBatchApplyPermission: (
     templateId: string,
     permissions: string[],
-    template?: 'admin' | 'developer' | 'user' | null
+    template?: string | null
   ) => Promise<void>;
   /** Batch apply quota template */
   handleBatchApplyQuota: (templateId: string) => Promise<void>;
@@ -98,7 +98,7 @@ export function useMemberActions({
       await updatePermissions.mutateAsync({
         permissions,
         mode,
-        template: template as 'admin' | 'developer' | 'user' | null | undefined,
+        template,
       });
       closeDrawer();
     },
@@ -126,7 +126,7 @@ export function useMemberActions({
   );
 
   const handleBatchApplyPermission = useCallback(
-    async (templateId: string, permissions: string[], template?: 'admin' | 'developer' | 'user' | null) => {
+    async (templateId: string, permissions: string[], template?: string | null) => {
       await batchApplyPermission.mutateAsync({
         memberIds: selectedMemberIds,
         permissions,

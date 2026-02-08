@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 
 type GovernanceGroup = 'wheel' | 'user';
@@ -8,8 +8,8 @@ type GovernanceMap = Record<string, GovernanceGroup>;
 
 const KEY_PREFIX = 'mbos.workspace.governance';
 
-function storageKey(workspaceId: string): string {
-  return `${KEY_PREFIX}.${workspaceId}`;
+function storageKey(workspaceId: string, userId: string): string {
+  return `${KEY_PREFIX}.${workspaceId}.${userId}`;
 }
 
 export function useWorkspaceGovernance(workspaceId: string) {
@@ -31,56 +31,51 @@ export function useWorkspaceGovernance(workspaceId: string) {
   }, []);
 
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId || !userId) return;
     try {
-      const raw = localStorage.getItem(storageKey(workspaceId));
+      const raw = localStorage.getItem(storageKey(workspaceId, userId));
       setOverrides(raw ? (JSON.parse(raw) as GovernanceMap) : {});
     } catch {
       setOverrides({});
     }
-  }, [workspaceId]);
+  }, [workspaceId, userId]);
 
   const getMemberGovernanceGroup = useCallback(
-    (member: { id: string; role: 'owner' | 'admin' | 'developer' | 'user'; governance_group?: GovernanceGroup }) => {
+    (
+      member: {
+        id: string;
+        role: 'owner' | 'admin' | 'developer' | 'user';
+        governance_group?: GovernanceGroup;
+        permissions?: string[];
+      }
+    ) => {
       const saved = overrides[member.id];
       if (saved) return saved;
       if (member.governance_group) return member.governance_group;
-      return member.role === 'owner' || member.role === 'admin' ? 'wheel' : 'user';
+      const permissions = new Set(member.permissions ?? []);
+      return permissions.has('workspace:governance:update') ? 'wheel' : 'user';
     },
     [overrides]
   );
 
   const updateMemberGovernanceGroup = useCallback(
     (memberId: string, group: GovernanceGroup) => {
-      if (!workspaceId) return;
+      if (!workspaceId || !userId) return;
       setOverrides((prev) => {
         const next = { ...prev, [memberId]: group };
         try {
-          localStorage.setItem(storageKey(workspaceId), JSON.stringify(next));
+          localStorage.setItem(storageKey(workspaceId, userId), JSON.stringify(next));
         } catch {
           // ignore persistence errors in prototype mode
         }
         return next;
       });
     },
-    [workspaceId]
+    [workspaceId, userId]
   );
-
-  const currentMember = useMemo(
-    () => members.find((member) => member.user_id === userId),
-    [members, userId]
-  );
-
-  const isWorkspaceAdmin = currentMember?.role === 'owner' || currentMember?.role === 'admin';
-  const isWheelUser = currentMember ? getMemberGovernanceGroup(currentMember) === 'wheel' : false;
 
   return {
     members,
-    currentMember,
-    isWorkspaceAdmin,
-    isWheelUser,
-    canManageGovernance: isWorkspaceAdmin,
-    canViewCredentials: isWheelUser,
     getMemberGovernanceGroup,
     updateMemberGovernanceGroup,
   };

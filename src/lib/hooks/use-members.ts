@@ -109,7 +109,7 @@ export function useUpdateMemberPermissions(
 
   return useMutation({
     mutationFn: async (data: {
-      template?: 'admin' | 'developer' | 'user' | null;
+      template?: string | null;
       permissions?: string[];
       mode: 'template' | 'custom';
     }) => {
@@ -139,7 +139,7 @@ export function useApplyTemplateToMember(workspaceId: string, projectId: string)
     }: {
       memberId: string;
       permissions: string[];
-      template?: 'admin' | 'developer' | 'user' | null;
+      template?: string | null;
     }) => {
       const mode = template ? 'template' : 'custom';
       return getMemberAPI().updatePermissions(workspaceId, projectId, memberId, {
@@ -174,7 +174,7 @@ export function useBatchApplyPermissionTemplate(workspaceId: string, projectId: 
     }: {
       memberIds: string[];
       permissions: string[];
-      template?: 'admin' | 'developer' | 'user' | null;
+      template?: string | null;
     }) => {
       const mode = template ? 'template' : 'custom';
       const appliedMemberIds: string[] = [];

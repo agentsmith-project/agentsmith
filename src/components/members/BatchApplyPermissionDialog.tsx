@@ -26,7 +26,7 @@ export interface BatchApplyPermissionDialogProps {
   onOpenChange: (open: boolean) => void;
   templates: PermissionTemplate[];
   selectedCount: number;
-  onApply: (templateId: string, permissions: string[], template?: 'admin' | 'developer' | 'user' | null) => Promise<void>;
+  onApply: (templateId: string, permissions: string[], template?: string | null) => Promise<void>;
 }
 
 const DEFAULT_TEMPLATE_IDS = ['owner', 'admin', 'developer', 'user'];
@@ -44,6 +44,7 @@ export function BatchApplyPermissionDialog({
 
   const defaultTemplates = React.useMemo((): PermissionTemplate[] => {
     return [
+      { id: 'owner', name: t('default_templates.owner'), permissions: [...ROLE_TEMPLATES.owner], is_default: true, is_readonly: true },
       { id: 'admin', name: t('default_templates.admin'), permissions: [...ROLE_TEMPLATES.admin], is_default: true, is_readonly: true },
       { id: 'developer', name: t('default_templates.developer'), permissions: [...ROLE_TEMPLATES.developer], is_default: true, is_readonly: true },
       { id: 'user', name: t('default_templates.user'), permissions: [...ROLE_TEMPLATES.user], is_default: true, is_readonly: true },
@@ -58,11 +59,7 @@ export function BatchApplyPermissionDialog({
 
   const handleApply = React.useCallback(async () => {
     if (!selectedTemplate) return;
-    const templateId: 'admin' | 'developer' | 'user' | null = DEFAULT_TEMPLATE_IDS.includes(
-      selectedTemplate.id
-    )
-      ? (selectedTemplate.id as 'admin' | 'developer' | 'user')
-      : null;
+    const templateId = DEFAULT_TEMPLATE_IDS.includes(selectedTemplate.id) ? selectedTemplate.id : null;
     setSubmitting(true);
     try {
       await onApply(selectedTemplate.id, selectedTemplate.permissions, templateId);
@@ -99,13 +96,11 @@ export function BatchApplyPermissionDialog({
                 <SelectValue placeholder={t('select_template')} />
               </SelectTrigger>
               <SelectContent>
-                {allTemplates
-                  .filter((tpl) => tpl.id !== 'owner')
-                  .map((tpl) => (
-                    <SelectItem key={tpl.id} value={tpl.id}>
-                      {tpl.name} ({tpl.permissions.length} {t('permissions_list').toLowerCase()})
-                    </SelectItem>
-                  ))}
+                {allTemplates.map((tpl) => (
+                  <SelectItem key={tpl.id} value={tpl.id}>
+                    {tpl.name} ({tpl.permissions.length} {t('permissions_list').toLowerCase()})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

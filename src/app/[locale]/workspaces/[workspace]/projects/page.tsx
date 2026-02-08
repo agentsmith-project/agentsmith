@@ -58,8 +58,19 @@ import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 type Project = ProjectWithMembership & { pinned: boolean };
 
-function isProjectAdminRole(role: string | undefined): boolean {
-  return role === 'owner' || role === 'admin';
+function formatProjectGroupAlias(role: string | undefined): string {
+  switch (role) {
+    case 'owner':
+      return 'governance';
+    case 'admin':
+      return 'manager';
+    case 'developer':
+      return 'operator';
+    case 'user':
+      return 'member';
+    default:
+      return role ? role.charAt(0).toUpperCase() + role.slice(1) : '-';
+  }
 }
 
 const columnHelper = createColumnHelper<Project>();
@@ -140,7 +151,7 @@ export default function ProjectsPage() {
 
   const handleDeleteProject = async (wsId: string, projectId: string) => {
     const target = projects.find((project) => project.id === projectId);
-    if (!target || !isProjectAdminRole(target.role) || !canDeleteProjectByWorkspacePermission) return;
+    if (!target || !canDeleteProjectByWorkspacePermission) return;
     const projectAPI = new ProjectAPI(getApiClient());
     await projectAPI.delete(wsId, projectId);
   };
@@ -539,7 +550,7 @@ function ProjectsTable({
       columnHelper.accessor('role', {
         header: t('table.role'),
         cell: (info) => (
-          <span className="capitalize text-primary">{info.getValue()}</span>
+          <span className="text-primary">{formatProjectGroupAlias(info.getValue())}</span>
         ),
       }),
       columnHelper.accessor('status', {
@@ -554,8 +565,7 @@ function ProjectsTable({
         id: 'actions',
         header: '',
         cell: ({ row }) => {
-          const canDeleteProject =
-            isProjectAdminRole(row.original.role) && canDeleteProjectByWorkspacePermission;
+          const canDeleteProject = canDeleteProjectByWorkspacePermission;
           return (
           <div className="flex items-center gap-1">
             <Button

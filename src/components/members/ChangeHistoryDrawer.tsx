@@ -49,7 +49,7 @@ export function ChangeHistoryDrawer({
       case 'resource_policy':
         return t('acl_updated');
       case 'role':
-        return 'Role updated';
+        return 'Group alias updated';
       default:
         return type;
     }

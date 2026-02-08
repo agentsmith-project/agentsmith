@@ -23,7 +23,7 @@ export interface ApplyTemplateDialogProps {
   onApply: (
     memberIds: string[],
     permissions: string[],
-    template?: 'admin' | 'developer' | 'user' | null
+    template?: string | null
   ) => Promise<{ failedMemberIds?: string[]; failedCount?: number } | void>;
 }
 
@@ -43,7 +43,7 @@ export function ApplyTemplateDialog({
   const [failedCount, setFailedCount] = React.useState(0);
 
   const applicableMembers = React.useMemo(() => {
-    return members.filter((m) => m.status === 'active' && m.role !== 'owner');
+    return members.filter((m) => m.status === 'active');
   }, [members]);
 
   const allSelected = applicableMembers.length > 0 && selectedMemberIds.size === applicableMembers.length;
@@ -70,11 +70,7 @@ export function ApplyTemplateDialog({
 
   const handleApply = React.useCallback(async () => {
     if (selectedMemberIds.size === 0) return;
-    const templateId: 'admin' | 'developer' | 'user' | null = DEFAULT_TEMPLATE_IDS.includes(
-      template.id
-    )
-      ? (template.id as 'admin' | 'developer' | 'user')
-      : null;
+    const templateId = DEFAULT_TEMPLATE_IDS.includes(template.id) ? template.id : null;
     setSubmitting(true);
     try {
       const result = await onApply(Array.from(selectedMemberIds), template.permissions, templateId);
@@ -96,11 +92,7 @@ export function ApplyTemplateDialog({
 
   const handleRetryFailed = React.useCallback(async () => {
     if (failedMemberIds.length === 0) return;
-    const templateId: 'admin' | 'developer' | 'user' | null = DEFAULT_TEMPLATE_IDS.includes(
-      template.id
-    )
-      ? (template.id as 'admin' | 'developer' | 'user')
-      : null;
+    const templateId = DEFAULT_TEMPLATE_IDS.includes(template.id) ? template.id : null;
 
     setSubmitting(true);
     try {
@@ -187,7 +179,7 @@ export function ApplyTemplateDialog({
                       <span className="text-sm text-foreground flex-1">
                         {m.name || m.email}
                       </span>
-                      <span className="text-xs text-tertiary">({m.role})</span>
+                      <span className="text-xs text-tertiary">ID: {m.id}</span>
                     </label>
                   ))}
                 </div>

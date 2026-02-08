@@ -49,7 +49,22 @@ export interface MemberDetailDrawerProps {
   className?: string;
 }
 
-const PERM_TEMPLATE_IDS = ['admin', 'developer', 'user'] as const;
+const PERM_TEMPLATE_IDS = ['owner', 'admin', 'developer', 'user'] as const;
+
+function formatGroupAlias(role: string): string {
+  switch (role) {
+    case 'owner':
+      return 'governance';
+    case 'admin':
+      return 'manager';
+    case 'developer':
+      return 'operator';
+    case 'user':
+      return 'member';
+    default:
+      return role;
+  }
+}
 
 export function MemberDetailDrawer({
   open,
@@ -161,7 +176,7 @@ export function MemberDetailDrawer({
             <p className="text-sm text-tertiary mt-1">{member.email}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline">{member.role}</Badge>
+            <Badge variant="outline">group: {formatGroupAlias(member.role)}</Badge>
             {onViewHistory && (
               <Button
                 variant="outline"

@@ -22,9 +22,29 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
   const canReadMembers = useHasPermission('project:member:view');
   const canManageMembers = useCanManageMemberGovernance();
   const [search, setSearch] = React.useState('');
-  const [roleFilter, setRoleFilter] = React.useState<'all' | 'owner' | 'admin' | 'developer' | 'user'>('all');
+  const [accessFilter, setAccessFilter] = React.useState<'all' | 'governance' | 'resource_manage' | 'access_only'>(
+    'all'
+  );
   const [statusFilter, setStatusFilter] = React.useState<'all' | 'active' | 'removed'>('all');
   const [page, setPage] = React.useState(1);
+
+  const getAccessProfile = React.useCallback((member: { permissions?: string[] }) => {
+    const permissions = new Set(member.permissions ?? []);
+    const hasGovernanceManage =
+      permissions.has('project:member:manage') ||
+      permissions.has('project:settings:manage') ||
+      permissions.has('project:resource_policy:manage') ||
+      permissions.has('project:credential:manage');
+    if (hasGovernanceManage) return 'governance';
+
+    const hasResourceManage =
+      permissions.has('project:source:manage') ||
+      permissions.has('project:endpoint:manage') ||
+      permissions.has('project:agent:manage');
+    if (hasResourceManage) return 'resource_manage';
+
+    return 'access_only';
+  }, []);
 
   const filteredMembers = React.useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -32,17 +52,17 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
       const matchesSearch = keyword.length === 0
         || member.name?.toLowerCase().includes(keyword)
         || member.email.toLowerCase().includes(keyword);
-      const matchesRole = roleFilter === 'all' || member.role === roleFilter;
+      const matchesAccess = accessFilter === 'all' || getAccessProfile(member) === accessFilter;
       const matchesStatus = statusFilter === 'all' || member.status === statusFilter;
-      return matchesSearch && matchesRole && matchesStatus;
+      return matchesSearch && matchesAccess && matchesStatus;
     });
-  }, [context.members, roleFilter, search, statusFilter]);
+  }, [context.members, accessFilter, getAccessProfile, search, statusFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filteredMembers.length / PAGE_SIZE));
 
   React.useEffect(() => {
     setPage(1);
-  }, [search, roleFilter, statusFilter]);
+  }, [search, accessFilter, statusFilter]);
 
   React.useEffect(() => {
     if (page > pageCount) setPage(pageCount);
@@ -66,15 +86,16 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
           />
           <select
             className="h-9 rounded-md border border-subtle bg-surface px-3 text-sm text-primary"
-            value={roleFilter}
-            onChange={(event) => setRoleFilter(event.target.value as 'all' | 'owner' | 'admin' | 'developer' | 'user')}
+            value={accessFilter}
+            onChange={(event) =>
+              setAccessFilter(event.target.value as 'all' | 'governance' | 'resource_manage' | 'access_only')
+            }
             data-testid="members__role-filter"
           >
-            <option value="all">{t('filters.role_all')}</option>
-            <option value="owner">{t('filters.role_owner')}</option>
-            <option value="admin">{t('filters.role_admin')}</option>
-            <option value="developer">{t('filters.role_developer')}</option>
-            <option value="user">{t('filters.role_user')}</option>
+            <option value="all">{t('filters.access_all')}</option>
+            <option value="governance">{t('filters.access_governance')}</option>
+            <option value="resource_manage">{t('filters.access_resource_manage')}</option>
+            <option value="access_only">{t('filters.access_only')}</option>
           </select>
           <select
             className="h-9 rounded-md border border-subtle bg-surface px-3 text-sm text-primary"

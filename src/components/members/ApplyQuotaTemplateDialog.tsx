@@ -38,7 +38,7 @@ export function ApplyQuotaTemplateDialog({
   const [failedCount, setFailedCount] = React.useState(0);
 
   const applicableMembers = React.useMemo(() => {
-    return members.filter((m) => m.status === 'active' && m.role !== 'owner');
+    return members.filter((m) => m.status === 'active');
   }, [members]);
 
   const allSelected =
@@ -175,7 +175,7 @@ export function ApplyQuotaTemplateDialog({
                       <span className="text-sm text-foreground flex-1">
                         {m.name || m.email}
                       </span>
-                      <span className="text-xs text-tertiary">({m.role})</span>
+                      <span className="text-xs text-tertiary">ID: {m.id}</span>
                     </label>
                   ))}
                 </div>

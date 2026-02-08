@@ -37,7 +37,7 @@ export function InviteMemberDialog({
   const t = useTranslations('members.invite');
   const locale = useLocale();
   const [email, setEmail] = React.useState('');
-  const [roleTemplate, setRoleTemplate] = React.useState<'developer' | 'user'>('user');
+  const [groupTemplate, setGroupTemplate] = React.useState<'admin' | 'developer' | 'user'>('user');
   const [expiresInHours, setExpiresInHours] = React.useState<number>(168); // 7 days
   const [inviteUrl, setInviteUrl] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
@@ -46,7 +46,7 @@ export function InviteMemberDialog({
 
   const resetForm = React.useCallback(() => {
     setEmail('');
-    setRoleTemplate('user');
+    setGroupTemplate('user');
     setExpiresInHours(168);
     setInviteUrl(null);
     setCopied(false);
@@ -65,7 +65,7 @@ export function InviteMemberDialog({
     try {
       const result = await createInvite.mutateAsync({
         email: email.trim(),
-        role_template: roleTemplate,
+        role_template: groupTemplate,
         expires_in_hours: expiresInHours,
       });
       const path = result.invite_url.startsWith('/') ? result.invite_url.slice(1) : result.invite_url;
@@ -170,14 +170,15 @@ export function InviteMemberDialog({
             <div className="space-y-2">
               <Label htmlFor="invite-role">{t('role_label')}</Label>
               <Select
-                value={roleTemplate}
-                onValueChange={(v) => setRoleTemplate(v as 'developer' | 'user')}
+                value={groupTemplate}
+                onValueChange={(v) => setGroupTemplate(v as 'admin' | 'developer' | 'user')}
                 disabled={createInvite.isPending}
               >
                 <SelectTrigger id="invite-role" className="rounded-lg">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="admin">{t('role_admin')}</SelectItem>
                   <SelectItem value="developer">{t('role_developer')}</SelectItem>
                   <SelectItem value="user">{t('role_user')}</SelectItem>
                 </SelectContent>

@@ -168,6 +168,30 @@ When tests fail, inspect:
 
 This is usually faster than changing selectors blindly.
 
+## Manual UAT Runbook (MVP Freeze)
+
+When business logic changes are large, run this manual flow once before freeze:
+
+1. Login and select workspace.
+2. Open projects list, enter a project, verify no unexpected permission denial.
+3. Verify project shell navigation and topbar switchers remain stable.
+4. Validate members governance flow:
+   - invite member
+   - create/apply template
+   - create/delete group
+5. Validate resource management:
+   - endpoints create/edit/toggle/delete
+   - sources upload/manage libraries
+   - agents create/edit/toggle and key management
+6. Validate resource policy:
+   - edit default/resource/subject rules
+   - save and confirm effective summary update
+7. Validate audit/usage filters and table rendering.
+8. Validate settings save and delete-project confirmation flow.
+
+For step-by-step details and freeze-ready gate, see:
+- `docs/verification-summary.md`
+
 ## Permission Gate Hook Rule (Important)
 
 Never short-circuit React hooks in permission guards.

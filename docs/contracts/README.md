@@ -1,39 +1,33 @@
 # Contracts Index
 
-This directory contains frontend-backend permission and gating contracts.
+This directory is the single source of truth for frontend permission and governance contracts.
 
-## Working Documents (Latest Editable)
+## Canonical Documents (Read in this order)
 
-- `frontend-backend-gating-matrix.md`
-- `route-gate-test-checklist.md`
-- `auth-permission-model.md`
-- `frontend-mvp-role-governance-requirements.md`
-- `frontend-token-interaction-contract.md`
-- `frontend-resource-policy-governance-v1.md`
+1. `frontend-token-interaction-contract.md`
+2. `frontend-resource-policy-governance-v1.md`
+3. `frontend-backend-gating-matrix.md`
+4. `auth-permission-model.md`
+5. `route-gate-test-checklist.md`
 
-These are living documents and can evolve during development.
+## Current MVP Contract Baseline
 
-## Operational References (Do Not Skip)
+- Runtime authorization is token-only.
+- Role/group names are governance template labels, not runtime gate inputs.
+- Chat and AI Studio are access-only gated modules.
+- Resource usage control is defined by resource policy (defaults + resource override + subject override).
+- Active resource types: `endpoint`, `source_library`, `agent`.
+
+## Operational References
 
 - `../../DEVELOPMENT.md`
-  - `Playwright E2E Runbook (Recommended)` for stable `BASE_URL` test execution and triage flow.
-  - `Permission Gate Hook Rule (Important)` for safe permission-hook usage.
-- `../../AGENTS.md`
-  - `Playwright Execution Notes (2026-02)` for practical routing/debugging patterns used in this repo.
+  - Playwright runbook and gate-hook safety rule.
+  - Manual UAT flow and freeze-ready criteria.
+- `../../docs/verification-summary.md`
+  - Latest automated verification status and business-flow UAT script.
 
-## Critical Contract Rules
+## Update Policy
 
-Before adding/changing route gates or permission checks, align with:
-
-- `route-gate-test-checklist.md`
-  - Includes permission hook safety rule (no hook short-circuit patterns).
-  - Includes workspace-scoped projects route fallback expectations.
-- `frontend-backend-gating-matrix.md`
-  - Includes backend-authoritative note for workspace projects bootstrap fallback.
-  - Includes access-only gating for Chat/AI Studio (`project:chat:access`, `project:studio:access`).
-
-## Cleanup Policy
-
-- Remove outdated contract snapshots instead of keeping parallel versioned docs in-tree.
-- Keep a single active contract set in this directory to avoid terminology and gate drift.
-- Resource policy contract lives at `frontend-resource-policy-governance-v1.md` and is the only active source for policy schema/rule matrix.
+- Update existing canonical docs in place.
+- Do not create parallel snapshot versions for active contracts.
+- Remove stale or conflicting contract documents instead of keeping both old and new wording.

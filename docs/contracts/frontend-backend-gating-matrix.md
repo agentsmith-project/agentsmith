@@ -29,7 +29,7 @@ Backend should enforce 401/403 according to this matrix. Frontend already applie
 
 | Page | User Operation | Required Permission(s) | Backend API Group | FE Expected on 403 |
 |---|---|---|---|---|
-| projects list | view projects | `workspace:read` + `project:read` | `/workspaces/{ws}/projects` | error state or empty permissions fallback |
+| projects list | view projects | `workspace:read` | `/workspaces/{ws}/projects` | error state or empty permissions fallback |
 | projects list | read workspace context | `workspace:read` | `GET /workspaces/{ws}`, `GET /workspaces/{ws}/members` | page context degraded/fallback |
 | projects list | create project | `workspace:project:create` | `POST /workspaces/{ws}/projects` | disable create button + toast/error |
 | projects list | delete project | `project:settings:manage` | `DELETE /workspaces/{ws}/projects/{project}` | destructive dialog fails gracefully |

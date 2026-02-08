@@ -1,112 +1,88 @@
-# E2E Test Verification Summary
-> Historical snapshot (2026-02-06).  
-> Terminology has been aligned to current naming (`AI Studio` / `studio` route).
-**Project:** mbos-frontend-v1
-**Date:** 2026-02-06
-**Task:** Comprehensive E2E Testing Overhaul
+# Frontend Verification Summary
 
-## Executive Summary
+**Project:** `mbos-frontend-v1`  
+**Last updated:** 2026-02-08
 
-All E2E tests pass across three Playwright projects (smoke, chromium, visual).
+## Current Automated Verification Status
 
-### Overall Status: PASS
+### Latest run (local)
 
-- **Smoke Tests:** 26/26 passing
-- **Chromium E2E Tests:** 146/146 passing
-- **Visual Regression Tests:** 29/29 passing
-- **Total:** 201 tests passing
+- `npm run test:e2e -- --project=chromium`
+- Result: `213 passed`, `1 skipped`, `0 failed`
 
----
+### Notes
 
-## 1. Test Projects
+- This is the current best-confidence regression signal for frontend-only MVP quality.
+- Route-gate assertions have been aligned with the current naming and filter semantics:
+  - sidebar key uses `workbench` test id family for AI Studio nav item
+  - usage filter label/placeholder uses `Resource ID`
 
-### Smoke Tests (26 tests)
-Covers all routes (public, workspace, project pages) in both `en-US` and `zh-CN` locales.
-Validates page load, app shell rendering, and absence of critical console errors.
+## Manual UAT Script (MVP)
 
-### Chromium E2E Tests (146 tests)
-Full functional testing across all pages and features:
+Use this script for business-flow validation before freeze.  
+Assumption: backend/edge auth is healthy; focus on frontend behavior, gating, and UX continuity.
 
-| Test File | Tests | Description |
-|-----------|-------|-------------|
-| `login.spec.ts` | 7 | Login page display, workspace selection, quick login flow, full journey |
-| `projects.spec.ts` | 6 | Projects list, search, create/delete dialog, pin/unpin, navigation |
-| `overview.spec.ts` | 4 | KPI cards, time range selector, quick access, activity timeline |
-| `chat.spec.ts` | 4 | Three-pane layout, thread selection, composer, send message |
-| `workbench.spec.ts` | 8 | AI Studio task list, create task, task detail, conversation input, artifacts (legacy filename) |
-| `agents.spec.ts` | 8 | Table rendering, create dialog, toggle, validation |
-| `endpoints.spec.ts` | 7 | Table rendering, create dialog, validation |
-| `credentials.spec.ts` | 9 | Table rendering, create/rotate/delete dialogs |
-| `members.spec.ts` | 7 | Table rendering, invite dialog, member drawer, validation |
-| `sources.spec.ts` | 5 | Table rendering, upload dialog, file selection |
-| `audit.spec.ts` | 4 | Table rendering, audit events, filter controls, page header |
-| `usage.spec.ts` | 4 | Table rendering, KPI cards, filter controls, page header |
-| `settings.spec.ts` | 7 | Tab navigation, form fields, save buttons, danger zone |
-| `account.spec.ts` | 8 | Profile page, API key management, create/revoke |
-| `navigation.spec.ts` | 10 | Sidebar navigation, collapse, topbar, workspace/project switchers, user menu |
-| `ux-guardrails.spec.ts` | 5 | Login CTA, app shell structure, overflow, loading states, page indicators |
-| `console-errors.spec.ts` | 3 | General console errors, hydration errors, network failures |
-| `join.spec.ts` | 5 | Invitation flow (valid/invalid), locale coverage |
-| `workspace-settings.spec.ts` | 5 | Workspace info and members |
-| `interactions.spec.ts` | 12 | Notifications, language switch, dialogs, selection |
+### 1) Login and Workspace Bootstrap
 
-### Visual Regression Tests (29 tests)
-Full-page screenshots for all pages and 7 dialog states:
+1. Open login page and complete quick login.
+2. Switch workspace from topbar selector.
+3. Confirm projects list loads and row click enters project shell.
+4. Confirm no unexpected permission-denied page for valid member.
 
-**Pages:** login, join, workspace-select, projects-list, workspace-settings, overview, chat, AI Studio, agents, endpoints, credentials, members, sources, audit, usage, settings (2 tabs), profile, api-keys
+### 2) Project Navigation and Baseline UX
 
-**Dialogs:** create-project, create-agent, create-endpoint, create-credential, invite-member, upload-source, create-api-key
+1. Verify sidebar routes: `Overview`, `Chat`, `AI Studio`, `Sources`, `Agents`, `Endpoints`, `Resource Policy`, `Credentials`, `Members`, `Audit`, `Usage`, `Settings`.
+2. Verify topbar workspace/project switchers remain functional after route changes.
+3. Verify no hard layout break on wide screen (except immersive pages: Chat/AI Studio).
 
-Baselines stored in `e2e/__screenshots__/visual.spec.ts/`.
+### 3) Members and Governance
 
----
+1. Open Members page and validate People/Templates/Groups tabs.
+2. Invite member flow: validation, submit success/failure handling.
+3. Group flow: create group, select members, apply template, delete group.
+4. Ensure status filter does not include unsupported state values.
 
-## 2. Test Infrastructure
+### 4) Resource and Policy Flows
 
-### Shared Fixtures (`e2e/fixtures/`)
-- **`test-base.ts`**: Extended Playwright `test` with `authedPage` fixture, helper functions `goToProject()`, `goTo()`, `projectUrl()`
-- **`authenticated.ts`**: `withAuth()` injects mock auth state into Zustand store via `addInitScript`
-- **`routes.ts`**: Canonical route definitions with expected testIds
+1. Endpoints: create, edit, toggle, delete.
+2. Sources: upload, library switch, manage libraries dialog, selection bar.
+3. Agents: create/edit/toggle; external agent key flow and listing.
+4. Resource Policy: edit endpoint/source/agent policies, add/remove subject overrides, save, and verify summary updates.
 
-### MSW Mock Data (`src/mocks/`)
-- **`fixtures/p0.json`**: Central mock data fixture with realistic data for all entities
-- **`handlers/`**: Modular handlers for all API endpoints (auth, workspace, projects, agents, endpoints, credentials, members, sources, audit, usage, chat, recipes, user-keys, me)
+### 5) Usage and Audit
 
-### Playwright Config
-- 3 projects: `smoke`, `chromium`, `visual`
-- Visual regression: `maxDiffPixelRatio: 0.01`
-- Screenshots stored at `e2e/__screenshots__/`
-- Videos retained on failure
+1. Validate filters and table structure are consistent across Audit and Usage.
+2. Validate KPI cards render and refresh behavior is stable.
+3. Validate text filters and clear behavior.
 
----
+### 6) Settings and Project Lifecycle
 
-## 3. Component Fixes Made During Testing
+1. Verify General and Runtime Preferences tabs.
+2. Save settings and confirm success feedback.
+3. Validate project delete confirmation flow and cancellation path.
 
-1. **`AuditTable.tsx`**: Fixed null reference in `request_id` column - added null check before calling `truncateId()` on potentially undefined value
-2. **i18n**: Added missing translation keys `endpoints.delete_confirm_title` and `endpoints.delete_confirm_description` to `en-US.json` and `zh-CN.json`
+### 7) Smoke Visual Sanity
 
----
+1. Open each core page once and check for:
+   - broken primary actions
+   - major spacing misalignment
+   - unreadable contrast
+   - permission gate mismatch
 
-## 4. Running Tests
+## Freeze Readiness Criteria
 
-```bash
-# Run all E2E tests
-npx playwright test
+Frontend can be considered freeze-ready when all conditions hold:
 
-# Run specific projects
-npx playwright test --project=smoke
-npx playwright test --project=chromium
-npx playwright test --project=visual
+1. `npm run lint` passes.
+2. `npx tsc --noEmit` passes.
+3. `npm run test:run` passes.
+4. `npm run test:e2e -- --project=smoke` passes.
+5. `npm run test:e2e -- --project=chromium` passes.
+6. Manual UAT script above completed with no P0/P1 defects.
 
-# Update visual baselines
-npx playwright test --project=visual --update-snapshots
+## Related Canonical Docs
 
-# Run a specific test file
-npx playwright test e2e/agents.spec.ts --project=chromium
-```
-
----
-
-## 5. data-testid Coverage
-
-38+ test IDs added across 26+ component files. See `docs/UXUI/2026-02-05-前端-testid-规范.md` for the full specification.
+- `docs/contracts/frontend-token-interaction-contract.md`
+- `docs/contracts/frontend-resource-policy-governance-v1.md`
+- `docs/contracts/frontend-backend-gating-matrix.md`
+- `docs/contracts/auth-permission-model.md`

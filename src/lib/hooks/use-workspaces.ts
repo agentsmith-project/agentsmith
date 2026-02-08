@@ -4,7 +4,7 @@
  * Server state management for workspaces using React Query.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApiClient } from '@/lib/api/client';
 import { WorkspaceAPI } from '@/lib/api/endpoints/workspaces';
 
@@ -59,5 +59,49 @@ export function useWorkspaceMembers(id: string) {
     },
     enabled: !!id,
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Update governance group for a workspace member.
+ * Uses optimistic cache update to keep UI stable.
+ */
+export function useUpdateWorkspaceMemberGovernanceGroup(workspaceId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      memberId,
+      governanceGroup,
+    }: {
+      memberId: string;
+      governanceGroup: 'wheel' | 'user';
+    }) => {
+      const client = getApiClient();
+      const api = new WorkspaceAPI(client);
+      return api.updateMemberGovernanceGroup(workspaceId, memberId, governanceGroup);
+    },
+    onMutate: async ({ memberId, governanceGroup }) => {
+      const key = workspaceKeys.members(workspaceId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<Array<{ id: string; governance_group?: 'wheel' | 'user' }>>(key);
+      if (previous) {
+        queryClient.setQueryData(
+          key,
+          previous.map((member) =>
+            member.id === memberId ? { ...member, governance_group: governanceGroup } : member
+          )
+        );
+      }
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(workspaceKeys.members(workspaceId), context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.members(workspaceId) });
+    },
   });
 }

@@ -36,7 +36,7 @@ export default function WorkspaceSettingsPage() {
   const canManageGovernance = useHasWorkspacePermission('workspace:governance:update');
   const { data: currentWorkspace } = useWorkspace(workspaceId ?? '');
   const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
-  const { getMemberGovernanceGroup, updateMemberGovernanceGroup } = useWorkspaceGovernance(workspaceId ?? '');
+  const { getMemberGovernanceGroup, updateMemberGovernanceGroup, isUpdating } = useWorkspaceGovernance(workspaceId ?? '');
   useSyncAuthFromUrl();
 
   if (!workspaceId) {
@@ -94,8 +94,10 @@ export default function WorkspaceSettingsPage() {
                         <select
                           data-testid={`ws-settings__governance--${member.id}`}
                           value={getMemberGovernanceGroup(member)}
-                          onChange={(event) => updateMemberGovernanceGroup(member.id, event.target.value as 'wheel' | 'user')}
-                          disabled={!canManageGovernance}
+                          onChange={(event) => {
+                            void updateMemberGovernanceGroup(member.id, event.target.value as 'wheel' | 'user');
+                          }}
+                          disabled={!canManageGovernance || isUpdating}
                           className="h-8 min-w-24 rounded-sm border border-subtle bg-surface px-2 text-xs text-primary disabled:opacity-50"
                         >
                           <option value="wheel">{t('workspace_governance_wheel')}</option>

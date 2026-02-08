@@ -61,4 +61,17 @@ export const workspaceHandlers = [
   }),
   http.get('/api/v1/workspaces/:ws/members', () =>
     HttpResponse.json({ items: workspaceMembers, total: workspaceMembers.length })),
+  http.patch('/api/v1/workspaces/:ws/members/:memberId/governance', async ({ params, request }) => {
+    const memberId = String(params.memberId ?? '');
+    const body = (await request.json().catch(() => ({}))) as { governance_group?: 'wheel' | 'user' };
+    const target = workspaceMembers.find((member) => member.id === memberId || member.user_id === memberId);
+    if (!target) {
+      return HttpResponse.json({ error: 'workspace_member_not_found' }, { status: 404 });
+    }
+    if (body.governance_group !== 'wheel' && body.governance_group !== 'user') {
+      return HttpResponse.json({ error: 'invalid_governance_group' }, { status: 400 });
+    }
+    target.governance_group = body.governance_group;
+    return HttpResponse.json(target);
+  }),
 ];

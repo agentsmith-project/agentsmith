@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button';
 import { CreateCredentialDialog } from '@/components/credentials/CreateCredentialDialog';
 import { RotateCredentialDialog } from '@/components/credentials/RotateCredentialDialog';
 import { DeleteCredentialDialog } from '@/components/credentials/DeleteCredentialDialog';
-import { useCanAccessCredentials } from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface CredentialsPageProps {
@@ -128,7 +128,8 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   const [rotateDialogOpen, setRotateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCredential, setSelectedCredential] = useState<Credential | null>(null);
-  const { canRead: canReadCredentials, canManage: canManageCredentials } = useCanAccessCredentials();
+  const canManageCredentials = useHasPermission('project:credential:manage');
+  const canReadCredentials = canManageCredentials;
 
 
   useEffect(() => {

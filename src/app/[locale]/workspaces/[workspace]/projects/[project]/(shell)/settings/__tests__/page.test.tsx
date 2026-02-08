@@ -1,10 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  useCanReadProjectPolicy,
-  useCanUpdateProjectPolicy,
-  useHasPermission,
-} from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 const mockPush = vi.fn();
 
@@ -29,8 +25,6 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useCanReadProjectPolicy: vi.fn(() => true),
-  useCanUpdateProjectPolicy: vi.fn(() => true),
   useHasPermission: vi.fn((permission: string) => permission === 'project:settings:manage'),
 }));
 
@@ -89,14 +83,11 @@ vi.mock('@/components/ui/tabs', () => ({
 import SettingsPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
-const mockUseCanReadProjectPolicy = vi.mocked(useCanReadProjectPolicy);
-const mockUseCanUpdateProjectPolicy = vi.mocked(useCanUpdateProjectPolicy);
 
 describe('SettingsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseCanReadProjectPolicy.mockReturnValue(true);
-    mockUseCanUpdateProjectPolicy.mockReturnValue(true);
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:settings:manage');
   });
 
   it('renders settings page when params and permission are valid', async () => {
@@ -120,9 +111,8 @@ describe('SettingsPage route', () => {
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
   });
 
-  it('disables delete project when user lacks settings manage permission', async () => {
-    mockUseCanUpdateProjectPolicy.mockReturnValue(false);
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:settings:manage');
+  it('shows permission denied when user lacks settings manage permission', async () => {
+    mockUseHasPermission.mockReturnValue(false);
     render(
       <SettingsPage
         params={Promise.resolve({
@@ -134,10 +124,9 @@ describe('SettingsPage route', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
-
-    expect(screen.getByTestId('settings__delete-project-btn')).toBeDisabled();
+    expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', async () => {
@@ -159,8 +148,6 @@ describe('SettingsPage route', () => {
   });
 
   it('shows permission denied when user lacks settings read permission', async () => {
-    mockUseCanReadProjectPolicy.mockReturnValue(false);
-    mockUseCanUpdateProjectPolicy.mockReturnValue(false);
     mockUseHasPermission.mockReturnValue(false);
     render(
       <SettingsPage

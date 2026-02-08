@@ -5,9 +5,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { RecipePage } from '@/components/workbench/RecipePage';
-import {
-  useCanAccessStudio,
-} from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface RecipePageParams {
@@ -31,7 +29,7 @@ export default function RecipeDetailPage({ params }: RecipePageParams) {
     project?: string;
     recipeId?: string;
   } | null>(null);
-  const canAccessStudio = useCanAccessStudio();
+  const canAccessStudio = useHasPermission('project:studio:access');
 
   useEffect(() => {
     params.then((p) =>

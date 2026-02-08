@@ -36,7 +36,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
-import { useCanAccessChat, useCanManageChatSessions } from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import {
   AlertDialog,
@@ -61,9 +61,10 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const token = useAuthStore((s) => s.token);
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
-  const canReadThreads = useCanAccessChat();
-  const canUseChat = useCanAccessChat();
-  const canManageChatSessions = useCanManageChatSessions();
+  const canAccessChat = useHasPermission('project:chat:access');
+  const canReadThreads = canAccessChat;
+  const canUseChat = canAccessChat;
+  const canManageChatSessions = canAccessChat;
 
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');

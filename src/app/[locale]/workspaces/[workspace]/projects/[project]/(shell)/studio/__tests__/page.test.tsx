@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { useCanAccessStudio } from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 vi.mock('@/components/workbench/RecipeList', () => ({
   RecipeList: ({ workspaceId, projectId, canCreateRecipe }: { workspaceId: string; projectId: string; canCreateRecipe: boolean }) => (
@@ -11,16 +11,16 @@ vi.mock('@/components/workbench/RecipeList', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useCanAccessStudio: vi.fn(() => true),
+  useHasPermission: vi.fn((permission: string) => permission === 'project:studio:access'),
 }));
 
 import WorkbenchPage from '../page';
 
-const mockUseCanAccessStudio = vi.mocked(useCanAccessStudio);
+const mockUseHasPermission = vi.mocked(useHasPermission);
 
 describe('WorkbenchPage route', () => {
   it('renders recipe list when params and permission are valid', async () => {
-    mockUseCanAccessStudio.mockReturnValue(true);
+    mockUseHasPermission.mockReturnValue(true);
     render(
       <WorkbenchPage
         params={Promise.resolve({
@@ -38,7 +38,7 @@ describe('WorkbenchPage route', () => {
   });
 
   it('shows invalid parameter error for unsafe workspace/project', async () => {
-    mockUseCanAccessStudio.mockReturnValue(true);
+    mockUseHasPermission.mockReturnValue(true);
     render(
       <WorkbenchPage
         params={Promise.resolve({
@@ -56,7 +56,7 @@ describe('WorkbenchPage route', () => {
   });
 
   it('shows permission denied when user lacks studio access', async () => {
-    mockUseCanAccessStudio.mockReturnValue(false);
+    mockUseHasPermission.mockReturnValue(false);
     render(
       <WorkbenchPage
         params={Promise.resolve({

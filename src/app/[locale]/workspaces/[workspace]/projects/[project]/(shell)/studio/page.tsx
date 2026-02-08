@@ -12,9 +12,7 @@ import { RecipeList } from '@/components/workbench/RecipeList';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import {
-  useCanAccessStudio,
-} from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface WorkbenchPageProps {
@@ -27,7 +25,7 @@ export default function WorkbenchPage({ params }: WorkbenchPageProps) {
     workspace?: string;
     project?: string;
   } | null>(null);
-  const canAccessStudio = useCanAccessStudio();
+  const canAccessStudio = useHasPermission('project:studio:access');
 
   useEffect(() => {
     params.then((p) =>

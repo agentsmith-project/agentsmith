@@ -34,7 +34,7 @@ import {
   useResourcePolicy,
   useUpdateResourcePolicy,
 } from '@/lib/hooks/use-members';
-import { useCanManageResourcePolicy } from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import {
   getResourcePolicyStatus,
@@ -72,7 +72,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const [accessMode, setAccessMode] = useState<'allow_all_members' | 'allow_list'>('allow_all_members');
   const [rootDraftRules, setRootDraftRules] = useState<Partial<Record<PolicyRuleKey, string>>>({});
   const [subjects, setSubjects] = useState<EditableSubject[]>([]);
-  const canUpdatePolicy = useCanManageResourcePolicy();
+  const canUpdatePolicy = useHasPermission('project:resource_policy:manage');
   const canReadPolicy = canUpdatePolicy;
 
   useEffect(() => {

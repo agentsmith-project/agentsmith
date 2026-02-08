@@ -13,7 +13,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useCanAccessCredentials } from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 const mockList = vi.fn();
 const mockDelete = vi.fn();
@@ -30,10 +30,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useCanAccessCredentials: vi.fn(() => ({
-    canRead: true,
-    canManage: true,
-  })),
+  useHasPermission: vi.fn((permission: string) => permission === 'project:credential:manage'),
 }));
 
 vi.mock('@/components/credentials/CreateCredentialDialog', () => ({
@@ -125,7 +122,7 @@ vi.mock('next-intl', () => ({
 
 import CredentialsPage from '../page';
 
-const mockUseCanAccessCredentials = vi.mocked(useCanAccessCredentials);
+const mockUseHasPermission = vi.mocked(useHasPermission);
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -168,7 +165,7 @@ describe('CredentialsPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseCanAccessCredentials.mockReturnValue({ canRead: true, canManage: true });
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:credential:manage');
     mockList.mockResolvedValue(mockCredentials);
     mockDelete.mockResolvedValue(undefined);
   });
@@ -935,7 +932,7 @@ describe('CredentialsPage', () => {
     });
 
     it('shows permission denied when user lacks read access', async () => {
-      mockUseCanAccessCredentials.mockReturnValue({ canRead: false, canManage: false });
+      mockUseHasPermission.mockReturnValue(false);
       render(
         <CredentialsPage
           params={Promise.resolve({

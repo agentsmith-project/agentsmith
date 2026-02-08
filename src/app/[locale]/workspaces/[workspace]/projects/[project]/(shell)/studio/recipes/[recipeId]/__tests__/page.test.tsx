@@ -1,8 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import {
-  useCanAccessStudio,
-} from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 vi.mock('@/components/workbench/RecipePage', () => ({
   RecipePage: ({
@@ -27,16 +25,16 @@ vi.mock('@/components/workbench/RecipePage', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useCanAccessStudio: vi.fn(() => true),
+  useHasPermission: vi.fn((permission: string) => permission === 'project:studio:access'),
 }));
 
 import RecipeDetailPage from '../page';
 
-const mockUseCanAccessStudio = vi.mocked(useCanAccessStudio);
+const mockUseHasPermission = vi.mocked(useHasPermission);
 
 describe('RecipeDetailPage route', () => {
   it('renders recipe page with validated params', async () => {
-    mockUseCanAccessStudio.mockReturnValue(true);
+    mockUseHasPermission.mockReturnValue(true);
     render(
       <RecipeDetailPage
         params={Promise.resolve({
@@ -55,7 +53,7 @@ describe('RecipeDetailPage route', () => {
   });
 
   it('shows invalid parameter error for unsafe recipeId', async () => {
-    mockUseCanAccessStudio.mockReturnValue(true);
+    mockUseHasPermission.mockReturnValue(true);
     render(
       <RecipeDetailPage
         params={Promise.resolve({
@@ -74,7 +72,7 @@ describe('RecipeDetailPage route', () => {
   });
 
   it('shows permission denied when user lacks studio access', async () => {
-    mockUseCanAccessStudio.mockReturnValue(false);
+    mockUseHasPermission.mockReturnValue(false);
     render(
       <RecipeDetailPage
         params={Promise.resolve({

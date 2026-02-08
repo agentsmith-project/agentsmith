@@ -24,10 +24,7 @@ import { SettingsTokenReference } from '@/components/settings/SettingsTokenRefer
 import { useApiError } from '@/lib/hooks/use-api-error';
 import { RUNTIME_PREFERENCES_TOKENS } from '@/components/settings/settingsTokenRefs';
 import { useProject } from '@/lib/hooks/use-projects-queries';
-import {
-  useCanReadProjectPolicy,
-  useCanUpdateProjectPolicy,
-} from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface SettingsPageProps {
@@ -54,8 +51,8 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const tErrors = useTranslations('errors');
   const { handleError } = useApiError();
   const queryClient = useQueryClient();
-  const canReadSettings = useCanReadProjectPolicy();
-  const canManageSettings = useCanUpdateProjectPolicy();
+  const canReadSettings = useHasPermission('project:settings:manage');
+  const canManageSettings = useHasPermission('project:settings:manage');
   const canDeleteProject = canManageSettings;
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);

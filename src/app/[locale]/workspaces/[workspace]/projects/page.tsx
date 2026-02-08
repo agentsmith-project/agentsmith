@@ -73,6 +73,10 @@ function formatProjectGroupAlias(role: string | undefined): string {
   }
 }
 
+function hasProjectPermission(project: Project, permission: string): boolean {
+  return Array.isArray(project.permissions) && project.permissions.includes(permission);
+}
+
 const columnHelper = createColumnHelper<Project>();
 
 export default function ProjectsPage() {
@@ -382,30 +386,33 @@ function ProjectCard({
 }: {
   project: Project;
   onClick: () => void;
-  onSettingsClick: () => void;
+  onSettingsClick?: () => void;
   onTogglePin: (e: React.MouseEvent) => void;
   adminSummary: string;
   t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
+  const canManageSettings = hasProjectPermission(project, 'project:settings:manage');
   return (
     <div
       onClick={onClick}
       className="relative group bg-surface border border-border rounded-md p-5 transition-colors duration-200 hover:bg-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
     >
       <div className="absolute top-4 right-4 flex items-center gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSettingsClick();
-          }}
-          className="h-8 w-8 rounded-sm hover:bg-surface-high"
-          aria-label={t('actions.settings')}
-        >
-          <Settings className="w-4 h-4 text-icon-default" />
-        </Button>
+        {canManageSettings && onSettingsClick && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSettingsClick();
+            }}
+            className="h-8 w-8 rounded-sm hover:bg-surface-high"
+            aria-label={t('actions.settings')}
+          >
+            <Settings className="w-4 h-4 text-icon-default" />
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"
@@ -566,6 +573,7 @@ function ProjectsTable({
         header: '',
         cell: ({ row }) => {
           const canDeleteProject = canDeleteProjectByWorkspacePermission;
+          const canManageSettings = hasProjectPermission(row.original, 'project:settings:manage');
           return (
           <div className="flex items-center gap-1">
             <Button
@@ -578,20 +586,22 @@ function ProjectsTable({
             >
               <Eye className="w-4 h-4 text-icon-default" />
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSettingsClick(row.original);
-              }}
-              className="h-8 w-8 rounded-sm hover:bg-surface-high"
-              aria-label={t('actions.settings')}
-              data-testid="projects__settings-btn"
-            >
-              <Settings className="w-4 h-4 text-icon-default" />
-            </Button>
+            {canManageSettings && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSettingsClick(row.original);
+                }}
+                className="h-8 w-8 rounded-sm hover:bg-surface-high"
+                aria-label={t('actions.settings')}
+                data-testid="projects__settings-btn"
+              >
+                <Settings className="w-4 h-4 text-icon-default" />
+              </Button>
+            )}
             {canDeleteProject && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

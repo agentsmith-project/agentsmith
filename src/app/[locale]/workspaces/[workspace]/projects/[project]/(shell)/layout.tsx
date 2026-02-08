@@ -13,6 +13,9 @@ import { AppShellSidebar } from '@/components/app-shell/AppShellSidebar';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
+import { useProject } from '@/lib/hooks/use-projects-queries';
+import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
+import { PageLoading } from '@/components/ui/loading';
 
 export default function AppShellLayout({
   children,
@@ -23,8 +26,10 @@ export default function AppShellLayout({
   const router = useRouter();
   const pathname = usePathname();
   const locale = (params?.locale as string) || 'en-US';
-  const workspaceId = params?.workspace as string;
-  const projectId = params?.project as string;
+  const workspaceId = validateWorkspaceParam(params?.workspace);
+  const projectId = validateProjectParam(params?.project);
+  const isValidProjectRoute = !!workspaceId && !!projectId;
+  const { isLoading: isProjectLoading } = useProject(workspaceId ?? '', projectId ?? '');
 
   // Sync currentProject from URL so permission checks work on all project pages
   useSyncAuthFromUrl();
@@ -43,12 +48,18 @@ export default function AppShellLayout({
   }, [pathname]);
 
   const handleSidebarChange = (pageId: string) => {
+    if (!workspaceId || !projectId) return;
     const newPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/${pageId}`;
     router.push(newPath);
   };
 
   return (
     <ProtectedRoute>
+      {isValidProjectRoute && isProjectLoading ? (
+        <div data-testid="page-layout" className="h-screen bg-background flex items-center justify-center">
+          <PageLoading />
+        </div>
+      ) : (
       <div data-testid="page-layout" className="h-screen bg-background flex flex-col overflow-hidden">
         {/* Topbar */}
         <Topbar />
@@ -64,6 +75,7 @@ export default function AppShellLayout({
           </main>
         </div>
       </div>
+      )}
     </ProtectedRoute>
   );
 }

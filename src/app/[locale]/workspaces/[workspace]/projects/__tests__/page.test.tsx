@@ -2,7 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 
-const mockProjectsData = [
+let mockProjectsData = [
   {
     id: 'proj_1',
     workspace_id: 'ws_1',
@@ -96,6 +96,20 @@ const mockUseHasWorkspacePermission = vi.mocked(useHasWorkspacePermission);
 describe('ProjectsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProjectsData = [
+      {
+        id: 'proj_1',
+        workspace_id: 'ws_1',
+        name: 'Project One',
+        visibility: 'private',
+        owner_id: 'owner_1',
+        role: 'admin',
+        permissions: ['project:read', 'project:settings:manage'],
+        status: 'active' as const,
+        created_at: '2026-02-01T00:00:00Z',
+        updated_at: '2026-02-01T00:00:00Z',
+      },
+    ];
     mockPush.mockClear();
     mockUseParams.mockReturnValue({ workspace: 'ws_1', locale: 'en' });
     mockUseHasWorkspacePermission.mockReturnValue(true);
@@ -119,6 +133,27 @@ describe('ProjectsPage route', () => {
     fireEvent.click(row);
 
     expect(mockPush).toHaveBeenCalledWith('/en/workspaces/ws_1/projects/proj_1/overview');
+  });
+
+  it('hides settings action when project lacks settings manage permission', async () => {
+    mockProjectsData = [
+      {
+        id: 'proj_1',
+        workspace_id: 'ws_1',
+        name: 'Project One',
+        visibility: 'private',
+        owner_id: 'owner_1',
+        role: 'admin',
+        permissions: ['project:read'],
+        status: 'active' as const,
+        created_at: '2026-02-01T00:00:00Z',
+        updated_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+
+    render(<ProjectsPage />);
+    await screen.findByTestId('projects__table__row');
+    expect(screen.queryByTestId('projects__settings-btn')).not.toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe workspace param', async () => {

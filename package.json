@@ -2,6 +2,9 @@
   "name": "mbos-frontend",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev --turbopack",
     "dev:test": "next dev",
@@ -16,11 +19,25 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
+    "integration:deps:up": "docker compose -f infra/integration/docker-compose.yml up -d",
+    "integration:deps:up:env": "docker compose --env-file infra/integration/.env -f infra/integration/docker-compose.yml up -d",
+    "integration:deps:down": "docker compose -f infra/integration/docker-compose.yml down",
+    "integration:deps:down:volumes": "docker compose -f infra/integration/docker-compose.yml down -v",
+    "integration:deps:logs": "docker compose -f infra/integration/docker-compose.yml logs -f --tail=200",
+    "integration:deps:ps": "docker compose -f infra/integration/docker-compose.yml ps",
+    "integration:deps:init:postgres": "bash scripts/integration-db-init.sh",
+    "integration:deps:smoke": "tsx scripts/integration-deps-smoke.ts",
+    "integration:test:adapters": "npm run test -w @mbos/adapters-private",
+    "api:node:dev:pg": "DATABASE_URL=postgresql://mbos:mbos_dev_password@localhost:15432/mbos npm run api:node:dev",
     "contracts:check": "tsx scripts/contracts/check-permission-gates.ts",
     "contracts:check-release-sync": "tsx scripts/contracts/check-release-sync.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "openapi:generate": "tsx scripts/openapi/generate-types.ts"
+    "openapi:generate": "tsx scripts/openapi/generate-types.ts",
+    "api:node:dev": "npm run dev -w @mbos/api-entry-node",
+    "ws:typecheck": "npm run --workspaces typecheck --if-present",
+    "ws:build": "npm run --workspaces build --if-present",
+    "ws:test": "npm run --workspaces test --if-present"
   },
   "msw": {
     "workerDirectory": "public"

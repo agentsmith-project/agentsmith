@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "strict": true,
+    "declaration": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "types": ["node"],
+    "paths": {
+      "@mbos/contracts": ["../contracts/src/index.ts"],
+      "@mbos/domain": ["../domain/src/index.ts"],
+      "@mbos/ports": ["../ports/src/index.ts"],
+      "@mbos/application": ["../application/src/index.ts"],
+      "@mbos/adapters-cf": ["../adapters-cf/src/index.ts"],
+      "@mbos/adapters-private": ["../adapters-private/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

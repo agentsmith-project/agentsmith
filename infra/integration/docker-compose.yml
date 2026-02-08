@@ -1,0 +1,135 @@
+name: mbos-integration-deps
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mbos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mbos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mbos_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-mbos}
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mbos} -d ${POSTGRES_DB:-mbos}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  mongo:
+    image: mongo:7
+    container_name: mbos-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-mbos}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-mbos_dev_password}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-mbos}
+    ports:
+      - "${MONGO_PORT:-17017}:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "echo 'db.runCommand({ping:1}).ok' | mongosh --quiet mongodb://${MONGO_ROOT_USERNAME:-mbos}:${MONGO_ROOT_PASSWORD:-mbos_dev_password}@localhost:27017/admin | grep 1",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: mbos-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  minio:
+    image: minio/minio:latest
+    container_name: mbos-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mbos}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-mbos_dev_password}
+    ports:
+      - "${MINIO_API_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: mbos-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/scripts/init-minio.sh"]
+    volumes:
+      - ./minio/init-minio.sh:/scripts/init-minio.sh:ro
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mbos}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-mbos_dev_password}
+      MINIO_BUCKET: ${MINIO_BUCKET:-mbos-dev}
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: mbos-keycloak
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${KEYCLOAK_DB:-keycloak}
+      KC_DB_USERNAME: ${POSTGRES_USER:-mbos}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-mbos_dev_password}
+      KC_HEALTH_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+    ports:
+      - "${KEYCLOAK_PORT:-18080}:8080"
+    volumes:
+      - ./keycloak/realm-mbos-dev.json:/opt/keycloak/data/import/realm-mbos-dev.json:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-lc",
+          "exec 3<>/dev/tcp/127.0.0.1/8080",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+  minio_data:

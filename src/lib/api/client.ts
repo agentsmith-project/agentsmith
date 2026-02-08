@@ -83,13 +83,15 @@ export interface ApiClient {
   connectSSE(path: string, options?: ApiRequestOptions): EventSource;
 }
 
+const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
+
 /**
  * API Base URL configuration
  *
  * When using MSW (development), use relative paths so MSW can intercept requests.
  * Otherwise, use the configured backend URL.
  */
-export const API_BASE = process.env.NEXT_PUBLIC_USE_MSW === 'true'
+export const API_BASE = useMsw
   ? '/api/v1'  // Use relative path for MSW interception
   : (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000');
 
@@ -105,7 +107,7 @@ export const API_BASE = process.env.NEXT_PUBLIC_USE_MSW === 'true'
 export function createApiClient(): ApiClient {
   // This condition is evaluated at build time by Next.js
   // When false, the entire if block is tree-shaken from the bundle
-  if (process.env.NEXT_PUBLIC_USE_MSW === 'true') {
+  if (useMsw) {
     // Dynamic require - only executed when MSW is enabled
     const { MSWApiClient } = require('./adapters/msw-adapter');
     return new MSWApiClient();

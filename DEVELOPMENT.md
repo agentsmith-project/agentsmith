@@ -26,6 +26,9 @@ Copy `.env.local.example` to `.env.local` and configure:
 NEXT_PUBLIC_API_BASE=http://localhost:20000
 NEXT_PUBLIC_USE_MSW=true
 NEXT_PUBLIC_BYPASS_AUTH=false
+NEXT_PUBLIC_SOURCES_REAL_READ_ENABLED=false
+NEXT_PUBLIC_SOURCES_REAL_WRITE_ENABLED=false
+NEXT_PUBLIC_SOURCES_REAL_BASE=
 
 # For local development with Keycloak
 NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms
@@ -72,6 +75,24 @@ The frontend uses an adapter pattern for easy switching between MSW mocks and re
 - `lib/api/adapters/msw-adapter.ts` - MSW mock implementation
 
 Switch via `NEXT_PUBLIC_USE_MSW` environment variable.
+
+### Hybrid sources read (optional, incremental backend integration)
+
+When you want only the sources list to read from real backend while other APIs stay on MSW:
+
+```bash
+NEXT_PUBLIC_USE_MSW=true
+NEXT_PUBLIC_SOURCES_REAL_READ_ENABLED=true
+NEXT_PUBLIC_SOURCES_REAL_WRITE_ENABLED=true
+NEXT_PUBLIC_SOURCES_REAL_BASE=http://localhost:3022/api/v1
+```
+
+Behavior:
+
+- `sources.list/get/download/quota` try real backend first.
+- `sources.upload/delete` try real backend first.
+- `source-libraries list/create/update/delete` also try real backend first.
+- If real backend fails/unreachable, it falls back to current adapter (MSW/fetch).
 
 ## Authentication Flow
 

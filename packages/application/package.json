@@ -1,0 +1,16 @@
+{
+  "name": "@mbos/application",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@mbos/domain": "0.1.0",
+    "@mbos/ports": "0.1.0"
+  }
+}

@@ -43,6 +43,7 @@ export interface ProjectGroupsSectionProps {
 export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSectionProps) {
   const t = useTranslations('members.templates');
   const membersT = useTranslations('members');
+  const commonT = useTranslations('common');
   const canManage = useCanManageMemberGovernance();
   const { data: groups = [] } = useProjectGroups(workspaceId, projectId);
   const { data: members = [], refetch: refetchMembers } = useMembers(workspaceId, projectId);
@@ -107,6 +108,22 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     setSelectedMemberIds((prev) =>
       prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId],
     );
+  };
+
+  const allPagedMemberIds = React.useMemo(() => pagedMembers.map((member) => member.id), [pagedMembers]);
+  const allPagedSelected = allPagedMemberIds.length > 0 && allPagedMemberIds.every((id) => selectedMemberIds.includes(id));
+  const hasAnyPagedSelected = allPagedMemberIds.some((id) => selectedMemberIds.includes(id));
+
+  const selectAllPagedMembers = () => {
+    setSelectedMemberIds((prev) => {
+      const next = new Set(prev);
+      for (const memberId of allPagedMemberIds) next.add(memberId);
+      return Array.from(next);
+    });
+  };
+
+  const deselectAllPagedMembers = () => {
+    setSelectedMemberIds((prev) => prev.filter((memberId) => !allPagedMemberIds.includes(memberId)));
   };
 
   const resetForm = () => {
@@ -322,7 +339,36 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
               )}
             </div>
             <div className="flex items-center justify-between text-xs text-tertiary">
-              <span>{memberPage}/{memberPageCount}</span>
+              <span>{t('selected_count', { count: selectedMemberIds.length })}</span>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2"
+                  disabled={!canManage || allPagedSelected || pagedMembers.length === 0}
+                  onClick={selectAllPagedMembers}
+                  data-testid="members__group-member-select-page"
+                >
+                  {t('select_all')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2"
+                  disabled={!canManage || !hasAnyPagedSelected}
+                  onClick={deselectAllPagedMembers}
+                  data-testid="members__group-member-clear-page"
+                >
+                  {t('deselect_all')}
+                </Button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between text-xs text-tertiary">
+              <span>
+                {memberPage}/{memberPageCount} · {filteredMembers.length}
+              </span>
               <div className="flex items-center gap-1">
                 <Button
                   type="button"
@@ -333,7 +379,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
                   onClick={() => setMemberPage((prev) => Math.max(1, prev - 1))}
                   data-testid="members__group-member-page-prev"
                 >
-                  Prev
+                  {commonT('previous')}
                 </Button>
                 <Button
                   type="button"
@@ -344,7 +390,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
                   onClick={() => setMemberPage((prev) => Math.min(memberPageCount, prev + 1))}
                   data-testid="members__group-member-page-next"
                 >
-                  Next
+                  {commonT('next')}
                 </Button>
               </div>
             </div>

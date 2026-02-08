@@ -32,12 +32,27 @@ export { expect } from '@playwright/test';
 
 /** Navigate to a project page with auth already set up */
 export async function goToProject(page: Page, section: string) {
-  await gotoAndWait(page, projectUrl(section));
-  await waitForPageReady(page);
+  const url = projectUrl(section);
+  await gotoAndWait(page, url);
+  try {
+    await waitForPageReady(page);
+  } catch {
+    const is404 = await page.getByRole('heading', { name: '404' }).isVisible().catch(() => false);
+    if (!is404) throw new Error(`Failed to load project route: ${url}`);
+    await gotoAndWait(page, url);
+    await waitForPageReady(page);
+  }
 }
 
 /** Navigate to any page and wait for ready */
 export async function goTo(page: Page, path: string) {
   await gotoAndWait(page, path);
-  await waitForPageReady(page);
+  try {
+    await waitForPageReady(page);
+  } catch {
+    const is404 = await page.getByRole('heading', { name: '404' }).isVisible().catch(() => false);
+    if (!is404) throw new Error(`Failed to load route: ${path}`);
+    await gotoAndWait(page, path);
+    await waitForPageReady(page);
+  }
 }

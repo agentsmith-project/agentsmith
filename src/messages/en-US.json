@@ -787,6 +787,7 @@
       "title": "Allowed subjects and subject overrides",
       "add": "Add subject",
       "empty": "No subject overrides.",
+      "duplicate": "Duplicate subject entries are not allowed.",
       "user": "User",
       "group": "Group",
       "select_subject": "Select subject",

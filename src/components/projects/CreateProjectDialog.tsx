@@ -22,31 +22,13 @@ import { Loader2 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import type { CreateProjectRequest } from '@/lib/api/endpoints/projects';
-import type { Project as ApiProject } from '@/lib/api/types';
-import type { ProjectWithMembership } from '@/lib/hooks/use-permissions';
 import { handleErrorForToast } from '@/lib/api';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
-function mapApiProjectToAuthProject(apiProject: ApiProject): ProjectWithMembership {
-  return {
-    id: apiProject.id,
-    workspace_id: apiProject.workspace_id,
-    name: apiProject.name,
-    description: apiProject.description,
-    visibility: apiProject.visibility,
-    owner_id: apiProject.owner_id,
-    role: 'owner',
-    permissions: [...ROLE_TEMPLATES.owner],
-    status: apiProject.status,
-    created_at: apiProject.created_at,
-    updated_at: apiProject.updated_at,
-  };
-}
 
 export interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
-  onSuccess?: (project: ProjectWithMembership) => void;
+  onSuccess?: (projectId: string) => void;
   onCancel?: () => void;
 }
 
@@ -71,10 +53,9 @@ export function CreateProjectDialog({
       return projectAPI.create(workspaceId, data);
     },
     onSuccess: (apiProject) => {
-      const authProject = mapApiProjectToAuthProject(apiProject);
       onOpenChange(false);
       resetForm();
-      onSuccess?.(authProject);
+      onSuccess?.(apiProject.id);
     },
     onError: (error) => {
       handleErrorForToast(error);

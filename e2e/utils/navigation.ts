@@ -21,10 +21,24 @@ export async function gotoAndWait(
 
 /** Wait for the page to reach a ready state */
 export async function waitForPageReady(page: Page, timeout = 30000) {
+  // Some routes briefly render an MSW bootstrapping screen before the app layout is mounted.
+  // Accept loading marker first, then wait for terminal page markers.
   await page.waitForSelector(
-    '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]',
+    '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"], [data-testid="page-state__loading"]',
     { timeout },
   );
+  const hasTerminalMarker = await page
+    .locator('[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]')
+    .first()
+    .isVisible()
+    .catch(() => false);
+
+  if (!hasTerminalMarker) {
+    await page.waitForSelector(
+      '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]',
+      { timeout },
+    );
+  }
   // Wait one frame after the ready marker appears to avoid fixed sleeps on every navigation.
   await page.evaluate(
     () =>

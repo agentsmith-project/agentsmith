@@ -4,7 +4,9 @@ import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
 
 export const usageHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage', () => {
-    const items = p0.usage.length ? p0.usage : usageRecordFixtures;
+    const usageItems = p0.usage as Array<{ resource_type?: string | null }> | undefined;
+    const hasStructuredUsage = Array.isArray(usageItems) && usageItems.some((item) => Boolean(item?.resource_type));
+    const items = hasStructuredUsage ? p0.usage : usageRecordFixtures;
     return HttpResponse.json({
       items,
       total: items.length,

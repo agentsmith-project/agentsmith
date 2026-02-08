@@ -3,6 +3,8 @@
 import * as React from 'react';
 import { Plus, File, Search, X } from 'lucide-react';
 import { useState } from 'react';
+import Link from 'next/link';
+import { useLocale } from 'next-intl';
 import { Input } from '@/components/ui/input';
 import { AIReadyStatusBadge } from '@/components/sources/AIReadyStatusBadge';
 import { useSources } from '@/lib/hooks/use-sources';
@@ -25,6 +27,7 @@ export function SourcesPanel({
   onAttach,
   onDetach,
 }: SourcesPanelProps) {
+  const locale = useLocale();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -80,15 +83,13 @@ export function SourcesPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        <button
+        <Link
           className="w-full flex items-center gap-2 px-3 h-10 rounded-sm text-sm text-primary hover:bg-hover transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-          onClick={() => {
-            // TODO: Wire up to parent's upload dialog handler via onUpload prop
-          }}
+          href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/sources`}
         >
           <Plus className="w-4 h-4" />
-          Add Source
-        </button>
+          Manage Sources
+        </Link>
 
         {isLoading ? (
           <PageLoading />

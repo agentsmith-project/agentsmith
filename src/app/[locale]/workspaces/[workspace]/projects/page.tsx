@@ -49,6 +49,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { ProjectAPI, getApiClient } from '@/lib/api';
+import { toast } from '@/components/ui/toast';
 import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
@@ -154,14 +155,32 @@ export default function ProjectsPage() {
     router.push(`/${locale}/workspaces/${workspaceId}/projects`);
   };
 
-  const handleCreateProjectSuccess = (newProject: ProjectWithMembership) => {
-    const projectWithPin: Project = { ...newProject, pinned: false };
-    setProjects((prev) => [...prev, projectWithPin]);
-    // Invalidate and refetch projects
-    queryClient.invalidateQueries({
+  const handleCreateProjectSuccess = async (projectId: string) => {
+    if (!workspaceId) return;
+
+    await queryClient.invalidateQueries({
       queryKey: ['workspaces', workspaceId, 'projects'],
     });
-    router.push(`/${locale}/workspaces/${workspaceId}/projects/${newProject.id}/overview`);
+
+    const projectAPI = new ProjectAPI(getApiClient());
+    const refreshed = await projectAPI.list(workspaceId);
+    const items = (refreshed.items ?? []) as ProjectWithMembership[];
+    const createdProject = items.find((project) => project.id === projectId);
+
+    setProjects((prev) => {
+      const pinnedMap = new Map(prev.map((project) => [project.id, project.pinned]));
+      return items.map((project) => ({
+        ...project,
+        pinned: pinnedMap.get(project.id) ?? false,
+      }));
+    });
+
+    if (!createdProject) {
+      toast.error(tErrors('permission_denied_hint'));
+      return;
+    }
+
+    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/overview`);
   };
 
   const memberNameById = useMemo(() => {

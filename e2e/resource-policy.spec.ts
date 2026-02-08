@@ -38,6 +38,19 @@ test.describe('Resource Policy Page', () => {
     await expect(authedPage.getByTestId('resource-policy__save')).toBeDisabled();
   });
 
+  test('duplicate subject entries are rejected and disable save', async ({ authedPage }) => {
+    await authedPage.getByTestId('resource-policy__add-subject').click();
+    await authedPage.getByTestId('resource-policy__add-subject').click();
+
+    const subjectSelects = authedPage.getByTestId('resource-policy__subject-id-select');
+    await subjectSelects.nth(0).selectOption({ index: 1 });
+    const selectedValue = await subjectSelects.nth(0).inputValue();
+    await subjectSelects.nth(1).selectOption(selectedValue);
+
+    await expect(authedPage.getByTestId('resource-policy__duplicate-subjects')).toBeVisible();
+    await expect(authedPage.getByTestId('resource-policy__save')).toBeDisabled();
+  });
+
   test('switching access mode back to allow_all_members clears validation warning', async ({ authedPage }) => {
     const accessMode = authedPage.getByTestId('resource-policy__access-mode');
     await accessMode.selectOption('allow_list');

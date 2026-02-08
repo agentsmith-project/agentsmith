@@ -174,6 +174,7 @@ describe('ResourcePolicyPage', () => {
     mockPolicyData = defaultPolicyData();
     mockMutateAsync.mockClear();
     mockGetResourcePolicy.mockClear();
+    mockUseHasPermission.mockReturnValue(true);
     mockUseCanManageResourcePolicy.mockReturnValue(true);
   });
 
@@ -238,6 +239,31 @@ describe('ResourcePolicyPage', () => {
 
     await user.selectOptions(screen.getByTestId('resource-policy__access-mode'), 'allow_list');
     expect(screen.getByTestId('resource-policy__allow-list-required')).toBeInTheDocument();
+    expect(screen.getByTestId('resource-policy__save')).toBeDisabled();
+  });
+
+  it('blocks save when duplicate subjects are present', async () => {
+    mockUseHasPermission.mockReturnValue(true);
+    const user = userEvent.setup();
+    render(
+      <ResourcePolicyPage
+        params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__add-subject')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('resource-policy__add-subject'));
+    await user.click(screen.getByTestId('resource-policy__add-subject'));
+
+    const subjectSelects = screen.getAllByTestId('resource-policy__subject-id-select');
+    await user.selectOptions(subjectSelects[0], 'user_123');
+    await user.selectOptions(subjectSelects[1], 'user_123');
+
+    expect(screen.getByTestId('resource-policy__duplicate-subjects')).toBeInTheDocument();
     expect(screen.getByTestId('resource-policy__save')).toBeDisabled();
   });
 
@@ -307,7 +333,10 @@ describe('ResourcePolicyPage', () => {
   });
 
   it('shows permission denied when user lacks governance access', async () => {
-    mockUseCanManageResourcePolicy.mockReturnValue(false);
+    mockUseHasPermission.mockImplementation((permission) => {
+      if (permission === 'project:resource_policy:manage') return false;
+      return true;
+    });
     render(
       <ResourcePolicyPage
         params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}

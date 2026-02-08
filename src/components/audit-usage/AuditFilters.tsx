@@ -7,6 +7,11 @@ import { TimeRangePicker, type TimeRange } from './TimeRangePicker';
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
 import type { AuditListParams } from '@/lib/api/types';
+import {
+  AUDIT_ACTION_OPTIONS,
+  AUDIT_RESOURCE_TYPE_OPTIONS,
+  formatFilterToken,
+} from './filter-options';
 
 export interface AuditFiltersProps {
   filters: AuditListParams;
@@ -15,35 +20,6 @@ export interface AuditFiltersProps {
   className?: string;
   defaultEndUserId?: string;
 }
-
-const ACTIONS = [
-  'project.create',
-  'project.update',
-  'project.delete',
-  'member.add',
-  'member.remove',
-  'chat.session.create',
-  'chat.message.create',
-  'recipe.create',
-  'recipe.update',
-  'agent.thread.create',
-  'source.file.upload',
-  'endpoint.invoke',
-  'key.create',
-  'key.revoke',
-];
-
-const RESOURCE_TYPES = [
-  'chat_session',
-  'chat_message',
-  'recipe',
-  'agent_thread',
-  'endpoint',
-  'source_file',
-  'key',
-  'project',
-  'member',
-];
 
 export function AuditFilters({
   filters,
@@ -141,9 +117,9 @@ export function AuditFilters({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
-                {ACTIONS.map((action) => (
+                {AUDIT_ACTION_OPTIONS.map((action) => (
                   <SelectItem key={action} value={action}>
-                    {action}
+                    {formatFilterToken(action)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -198,9 +174,9 @@ export function AuditFilters({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
-                {RESOURCE_TYPES.map((type) => (
+                {AUDIT_RESOURCE_TYPE_OPTIONS.map((type) => (
                   <SelectItem key={type} value={type}>
-                    {type}
+                    {formatFilterToken(type)}
                   </SelectItem>
                 ))}
               </SelectContent>

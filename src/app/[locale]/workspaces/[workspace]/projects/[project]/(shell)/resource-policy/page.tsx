@@ -42,6 +42,11 @@ import {
   getRuleLabel,
   mergeRuleSets,
 } from '@/lib/constants/resource-policy';
+import {
+  findDuplicateSubjects,
+  normalizeSubjectId,
+  type EditableSubjectDraft,
+} from '@/lib/utils/resource-policy-subjects';
 
 interface ResourcePolicyPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -54,7 +59,7 @@ type ResourceRow = {
   subtitle?: string;
 };
 
-type EditableSubject = {
+type EditableSubject = EditableSubjectDraft & {
   rowId: string;
   subject_type: 'group' | 'user';
   subject_id: string;
@@ -214,6 +219,9 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     );
   }, [selectedPolicy, selectedResource?.type]);
 
+  const duplicateSubjects = findDuplicateSubjects(subjects);
+  const duplicateSubjectRowIds = new Set(duplicateSubjects.flatMap((subject) => subject.rows));
+
   const validSubjects = subjects
     .filter((subject) => subject.subject_id.trim().length > 0)
     .map((subject) => {
@@ -225,12 +233,13 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       );
       return {
         subject_type: subject.subject_type,
-        subject_id: subject.subject_id.trim(),
+        subject_id: normalizeSubjectId(subject.subject_id),
         rate_limits: subjectRuleSet.rateRules.length > 0 ? { rules: subjectRuleSet.rateRules } : undefined,
         quota_limits: subjectRuleSet.quotaRules.length > 0 ? { rules: subjectRuleSet.quotaRules } : undefined,
       };
     });
   const allowListInvalid = accessMode === 'allow_list' && validSubjects.length === 0;
+  const hasDuplicateSubjects = duplicateSubjects.length > 0;
   const draftRootRuleSet = buildRuleSetFromDraft(
     selectedType,
     selectedPolicy?.rate_limits?.rules,
@@ -240,7 +249,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
 
   const handleSave = async () => {
     if (!selectedResource || !selectedPolicy) return;
-    if (allowListInvalid) return;
+    if (allowListInvalid || hasDuplicateSubjects) return;
 
     const nextRuleSet = buildRuleSetFromDraft(
       selectedResource.type,
@@ -465,7 +474,9 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                         {subjects.map((subject) => (
                           <div
                             key={subject.rowId}
-                            className="rounded-sm border border-subtle bg-surface p-3 space-y-2"
+                            className={`rounded-sm border bg-surface p-3 space-y-2 ${
+                              duplicateSubjectRowIds.has(subject.rowId) ? 'border-error/60' : 'border-subtle'
+                            }`}
                             data-testid={`resource-policy__subject--${subject.rowId}`}
                           >
                             <div className="grid gap-2 md:grid-cols-[120px_1fr_auto]">
@@ -517,6 +528,14 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                                 {tResource('subjects.remove')}
                               </Button>
                             </div>
+                            {duplicateSubjectRowIds.has(subject.rowId) ? (
+                              <p
+                                className="text-xs text-error"
+                                data-testid={`resource-policy__subject-duplicate--${subject.rowId}`}
+                              >
+                                {tResource('subjects.duplicate')}
+                              </p>
+                            ) : null}
                             <div className="grid gap-2 md:grid-cols-2">
                               {getRuleDefinitionsForResource(selectedResource.type).map((rule) => (
                                 <input
@@ -575,10 +594,18 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                         {tResource('allow_list_required')}
                       </p>
                     ) : null}
+                    {hasDuplicateSubjects ? (
+                      <p
+                        className="mr-3 self-center text-xs text-error"
+                        data-testid="resource-policy__duplicate-subjects"
+                      >
+                        {tResource('subjects.duplicate')}
+                      </p>
+                    ) : null}
                     <Button
                       type="button"
                       onClick={handleSave}
-                      disabled={!canUpdatePolicy || updatePolicyMutation.isPending || allowListInvalid}
+                      disabled={!canUpdatePolicy || updatePolicyMutation.isPending || allowListInvalid || hasDuplicateSubjects}
                       variant="action"
                       size="sm"
                       className="h-9 px-4"
@@ -626,7 +653,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                           );
                           return (
                             <div
-                              key={`${subject.subject_type}:${subject.subject_id}`}
+                              key={`${subject.subject_type}:${subject.subject_id}:${index}`}
                               className="space-y-1"
                               data-testid={`resource-policy__effective-subject--${index}`}
                             >

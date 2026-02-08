@@ -7,6 +7,7 @@ import { TimeRangePicker, type TimeRange } from './TimeRangePicker';
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
 import type { UsageListParams } from '@/lib/api/types';
+import { USAGE_RESOURCE_TYPE_OPTIONS, formatFilterToken } from './filter-options';
 
 export interface UsageFiltersProps {
   filters: UsageListParams;
@@ -15,12 +16,6 @@ export interface UsageFiltersProps {
   className?: string;
   defaultEndUserId?: string;
 }
-
-const RESOURCE_TYPES = [
-  'endpoint',
-  'source_library',
-  'agent',
-];
 
 export function UsageFilters({
   filters,
@@ -111,9 +106,9 @@ export function UsageFilters({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
-                {RESOURCE_TYPES.map((type) => (
+                {USAGE_RESOURCE_TYPE_OPTIONS.map((type) => (
                   <SelectItem key={type} value={type}>
-                    {type}
+                    {formatFilterToken(type)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -121,9 +116,9 @@ export function UsageFilters({
           </div>
 
           <div>
-            <label className="text-xs text-tertiary mb-1 block">Agent ID</label>
+            <label className="text-xs text-tertiary mb-1 block">Resource ID</label>
             <Input
-              placeholder="Filter by agent ID..."
+              placeholder="Filter by resource ID..."
               value={filters.agent_id || ''}
               onChange={(e) => handleTextFilterChange('agent_id', e.target.value || undefined)}
             />

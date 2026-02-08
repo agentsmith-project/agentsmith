@@ -23,12 +23,12 @@ Copy `.env.local.example` to `.env.local` and configure:
 
 ```bash
 # For local development with backend
-NEXT_PUBLIC_API_BASE=http://localhost:20000
-NEXT_PUBLIC_USE_MSW=true
+NEXT_PUBLIC_API_BASE=http://localhost:20000/api/v1
+NEXT_PUBLIC_USE_MSW=false
 NEXT_PUBLIC_BYPASS_AUTH=false
-NEXT_PUBLIC_SOURCES_REAL_READ_ENABLED=false
-NEXT_PUBLIC_SOURCES_REAL_WRITE_ENABLED=false
-NEXT_PUBLIC_SOURCES_REAL_BASE=
+NEXT_PUBLIC_SOURCES_REAL_READ_ENABLED=true
+NEXT_PUBLIC_SOURCES_REAL_WRITE_ENABLED=true
+NEXT_PUBLIC_SOURCES_REAL_BASE=http://localhost:20000/api/v1
 
 # For local development with Keycloak
 NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms
@@ -96,16 +96,17 @@ Behavior:
 
 ## Authentication Flow
 
-### Development (Current)
-1. User enters email on login page
-2. Quick Login generates mock token and sets auth state
-3. User can access protected routes
+### Development (MSW)
+1. Enable `NEXT_PUBLIC_USE_MSW=true`
+2. Use Quick Login on login page
+3. Auth state is mocked and persisted locally
 
-### Production (Future)
+### Real Mode (Keycloak)
 1. User clicks "Login with Keycloak"
-2. Redirect to Keycloak
-3. Keycloak redirects back with JWT
-4. JWT is stored and used for API calls
+2. Frontend uses OIDC Authorization Code + PKCE
+3. Keycloak redirects to `/[locale]/login/callback`
+4. Callback exchanges code for token, loads user info, stores token in auth store
+5. API requests include Bearer token
 
 ## State Management
 
@@ -167,6 +168,14 @@ This bypasses Playwright-managed `webServer` startup ambiguity and is more stabl
 BASE_URL=http://localhost:3001 npx playwright test --project=smoke e2e/smoke.spec.ts \
   --grep "loads /zh-CN/workspaces/ws_default/projects/proj_001/agents$" \
   --workers=1 --max-failures=1
+```
+
+### Real minimal integration E2E
+
+Run dependencies and API first, then:
+
+```bash
+BASE_URL=http://localhost:3001 npm run test:e2e:integration:minimal
 ```
 
 ### 4) Distinguish infra failure from app failure

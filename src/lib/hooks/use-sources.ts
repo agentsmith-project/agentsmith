@@ -83,11 +83,14 @@ export function useUploadFile() {
       libraryId?: string;
       onProgress?: (progress: number) => void;
     }) => sourcesAPI.upload(workspaceId, projectId, file, libraryId, onProgress),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.sources._def,
+      });
+      await queryClient.invalidateQueries({
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
-      queryClient.invalidateQueries({
+      await queryClient.invalidateQueries({
         queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
       });
       toast.success(t('upload_success'));
@@ -228,11 +231,14 @@ export function useDeleteFile() {
       fileId: string;
       deleteAIReady?: boolean;
     }) => sourcesAPI.delete(workspaceId, projectId, fileId, deleteAIReady),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.sources._def,
+      });
+      await queryClient.invalidateQueries({
         queryKey: queryKeys.sources.list(variables.workspaceId, variables.projectId),
       });
-      queryClient.invalidateQueries({
+      await queryClient.invalidateQueries({
         queryKey: queryKeys.quota.detail(variables.workspaceId, variables.projectId),
       });
       toast.success(t('delete_success'));

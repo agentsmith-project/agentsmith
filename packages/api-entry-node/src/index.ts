@@ -40,6 +40,38 @@ import {
   SystemClock,
 } from '@mbos/adapters-private';
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+interface KeycloakUserInfoResponse {
+  sub?: string;
+  email?: string;
+  name?: string;
+  preferred_username?: string;
+}
+
+interface WorkspaceRecord {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface WorkspaceMemberRecord {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  role: 'owner' | 'admin' | 'developer' | 'user';
+  governance_group?: 'wheel' | 'user';
+  permissions: string[];
+  status: 'active' | 'removed';
+  joined_at: string;
+}
+
 export interface NodeApiDeps {
   createSourceLibraryUseCase: CreateSourceLibraryUseCase;
   createProjectUseCase: CreateProjectUseCase;
@@ -101,6 +133,126 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   };
 }
 
+const OWNER_PROJECT_PERMISSIONS = [
+  'project:read',
+  'project:chat:access',
+  'project:studio:access',
+  'project:source:use',
+  'project:source:manage',
+  'project:endpoint:use',
+  'project:endpoint:manage',
+  'project:agent:use',
+  'project:agent:manage',
+  'project:resource_policy:manage',
+  'project:credential:manage',
+  'project:settings:manage',
+  'project:member:view',
+  'project:member:manage',
+  'project:audit:view',
+  'project:usage:view',
+] as const;
+
+const OWNER_WORKSPACE_PERMISSIONS = [
+  'workspace:read',
+  'workspace:project:create',
+  'workspace:governance:update',
+] as const;
+
+function buildWorkspaceRecords(): WorkspaceRecord[] {
+  const now = new Date().toISOString();
+  const workspaceId = process.env.MBOS_DEFAULT_WORKSPACE_ID ?? 'ws_default';
+  const workspaceName = process.env.MBOS_DEFAULT_WORKSPACE_NAME ?? 'Default Workspace';
+  return [{
+    id: workspaceId,
+    name: workspaceName,
+    created_at: now,
+    updated_at: now,
+  }];
+}
+
+function keycloakRealmBaseFromEnv(): string | null {
+  const directIssuer = process.env.KEYCLOAK_ISSUER_URL?.trim();
+  if (directIssuer) {
+    return directIssuer.replace(/\/$/, '');
+  }
+
+  const base = process.env.KEYCLOAK_BASE_URL?.trim();
+  const realm = process.env.KEYCLOAK_REALM?.trim();
+  if (!base || !realm) {
+    return null;
+  }
+
+  if (base.endsWith('/realms')) {
+    return `${base}/${realm}`;
+  }
+
+  if (base.includes('/realms/')) {
+    return base.replace(/\/$/, '');
+  }
+
+  return `${base.replace(/\/$/, '')}/realms/${realm}`;
+}
+
+function extractBearerToken(req: http.IncomingMessage): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+    return null;
+  }
+  const token = authHeader.slice('bearer '.length).trim();
+  return token || null;
+}
+
+const userInfoCache = new Map<string, { user: AuthenticatedUser; expiresAt: number }>();
+
+async function verifyBearerToken(req: http.IncomingMessage): Promise<AuthenticatedUser | null> {
+  const token = extractBearerToken(req);
+  if (!token) {
+    return null;
+  }
+
+  const now = Date.now();
+  const cached = userInfoCache.get(token);
+  if (cached && cached.expiresAt > now) {
+    return cached.user;
+  }
+
+  const realmBase = keycloakRealmBaseFromEnv();
+  if (!realmBase) {
+    // Local fallback when Keycloak is intentionally not configured.
+    return {
+      id: 'user_local',
+      email: 'local@example.com',
+      name: 'Local User',
+    };
+  }
+
+  const userinfoUrl = `${realmBase}/protocol/openid-connect/userinfo`;
+  const response = await fetch(userinfoUrl, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as KeycloakUserInfoResponse;
+  if (!payload.sub) {
+    return null;
+  }
+
+  const user: AuthenticatedUser = {
+    id: payload.sub,
+    email: payload.email ?? `${payload.sub}@unknown.local`,
+    name: payload.name ?? payload.preferred_username ?? payload.email ?? payload.sub,
+  };
+  userInfoCache.set(token, { user, expiresAt: now + 60_000 });
+  return user;
+}
+
+function unauthorized(res: http.ServerResponse): void {
+  json(res, 401, { code: 'UNAUTHORIZED', message: 'Missing or invalid bearer token' });
+}
+
 function json(res: http.ServerResponse, status: number, data: unknown): void {
   res.statusCode = status;
   res.setHeader('content-type', 'application/json; charset=utf-8');
@@ -132,6 +284,9 @@ async function readBody(req: http.IncomingMessage): Promise<unknown> {
 }
 
 type ProjectsRoute =
+  | { kind: 'workspacesCollection' }
+  | { kind: 'workspaceItem'; workspaceId: string }
+  | { kind: 'workspaceMembers'; workspaceId: string }
   | { kind: 'collection'; workspaceId: string }
   | { kind: 'item'; workspaceId: string; projectId: string }
   | { kind: 'sources'; workspaceId: string; projectId: string }
@@ -143,6 +298,26 @@ type ProjectsRoute =
 
 function matchProjectsRoute(url: string): ProjectsRoute | null {
   const pathname = new URL(url, 'http://localhost').pathname;
+  if (pathname === '/api/v1/workspaces' || pathname === '/api/v1/workspaces/') {
+    return { kind: 'workspacesCollection' };
+  }
+
+  const workspaceItemMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/?$/);
+  if (workspaceItemMatched) {
+    return {
+      kind: 'workspaceItem',
+      workspaceId: decodeURIComponent(workspaceItemMatched[1]),
+    };
+  }
+
+  const workspaceMembersMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/members\/?$/);
+  if (workspaceMembersMatched) {
+    return {
+      kind: 'workspaceMembers',
+      workspaceId: decodeURIComponent(workspaceMembersMatched[1]),
+    };
+  }
+
   const collectionMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/?$/);
   if (collectionMatched) {
     return { kind: 'collection', workspaceId: decodeURIComponent(collectionMatched[1]) };
@@ -243,16 +418,72 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   try {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+
+    const workspaces = buildWorkspaceRecords();
+    const defaultWorkspace = workspaces[0];
+
+    if (route.kind === 'workspacesCollection' && method === 'GET') {
+      json(res, 200, { items: workspaces, total: workspaces.length });
+      return;
+    }
+
+    if (route.kind === 'workspaceItem' && method === 'GET') {
+      const found = workspaces.find((item) => item.id === route.workspaceId);
+      if (!found) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+        return;
+      }
+      json(res, 200, found);
+      return;
+    }
+
+    if (route.kind === 'workspaceMembers' && method === 'GET') {
+      if (!defaultWorkspace || route.workspaceId !== defaultWorkspace.id) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+        return;
+      }
+      const member: WorkspaceMemberRecord = {
+        id: `wm_${user.id}`,
+        user_id: user.id,
+        name: user.name,
+        email: user.email,
+        role: 'owner',
+        governance_group: 'wheel',
+        permissions: [...OWNER_WORKSPACE_PERMISSIONS],
+        status: 'active',
+        joined_at: defaultWorkspace.created_at,
+      };
+      json(res, 200, { items: [member], total: 1 });
+      return;
+    }
+
+    const workspaceIdInRoute = 'workspaceId' in route ? route.workspaceId : null;
+    if (workspaceIdInRoute && !workspaces.some((item) => item.id === workspaceIdInRoute)) {
+      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+      return;
+    }
+
     if (route.kind === 'collection' && method === 'GET') {
       const listed = await deps.listProjectsUseCase.execute(route.workspaceId);
-      json(res, 200, listed);
+      json(res, 200, {
+        items: listed.items.map((item) => ({
+          ...item,
+          role: item.owner_id === user.id ? 'owner' : 'developer',
+          permissions: item.owner_id === user.id ? [...OWNER_PROJECT_PERMISSIONS] : ['project:read'],
+        })),
+      });
       return;
     }
 
     if (route.kind === 'collection' && method === 'POST') {
       const raw = await readBody(req);
       const input = CreateProjectRequestSchema.parse(raw);
-      const actorId = 'user_mock_owner';
+      const actorId = user.id;
 
       const created = await deps.createProjectUseCase.execute({
         workspaceId: route.workspaceId,
@@ -269,7 +500,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         workspaceId: route.workspaceId,
         projectId: route.projectId,
       });
-      json(res, 200, found);
+      json(res, 200, {
+        ...found,
+        role: found.owner_id === user.id ? 'owner' : 'developer',
+        permissions: found.owner_id === user.id ? [...OWNER_PROJECT_PERMISSIONS] : ['project:read'],
+      });
       return;
     }
 
@@ -331,7 +566,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       const created = await deps.createSourceLibraryUseCase.execute({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
-        actorId: 'user_mock_owner',
+        actorId: user.id,
         input,
       });
       json(res, 201, created);

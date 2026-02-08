@@ -44,8 +44,11 @@ npm start
 Copy `.env.example` to `.env.local` and configure:
 
 ```bash
-NEXT_PUBLIC_API_BASE=http://localhost:20000
-NEXT_PUBLIC_USE_MSW=true
+NEXT_PUBLIC_API_BASE=http://localhost:20000/api/v1
+NEXT_PUBLIC_USE_MSW=false
+NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms
+NEXT_PUBLIC_KEYCLOAK_REALM=mbos
+NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
 ```
 
 ## Project Structure

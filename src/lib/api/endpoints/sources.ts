@@ -357,6 +357,7 @@ export class SourcesAPI {
     onProgress?: (progress: number) => void,
   ): Promise<SourceFile> {
     const realBase = this.getHybridRealBase();
+    const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
     if (realBase && this.isHybridWriteEnabled()) {
       try {
         const created = await this.tryHybridUpload(realBase, workspaceId, projectId, file);
@@ -364,6 +365,18 @@ export class SourcesAPI {
         return created;
       } catch {
         // Fall back to current adapter behavior.
+      }
+    }
+
+    // Real backend mode: align with backend /sources JSON contract before legacy multipart fallback.
+    if (!useMsw) {
+      try {
+        const { API_BASE } = await import('../client');
+        const created = await this.tryHybridUpload(API_BASE, workspaceId, projectId, file);
+        if (onProgress) onProgress(100);
+        return created;
+      } catch {
+        // Keep legacy fallback below for backward compatibility.
       }
     }
 

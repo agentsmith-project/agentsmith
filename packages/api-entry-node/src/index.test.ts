@@ -25,15 +25,41 @@ function startServer(): { server: Server; baseUrl: string } {
   return { server, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
+function apiFetch(baseUrl: string, path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  headers.set('Authorization', 'Bearer test-token');
+  return fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers,
+  });
+}
+
 describe('api-entry-node projects routes', () => {
+  it('returns authenticated workspace and member payload', async () => {
+    const { baseUrl } = startServer();
+
+    const workspaces = await apiFetch(baseUrl, '/api/v1/workspaces');
+    expect(workspaces.status).toBe(200);
+    const workspaceBody = (await workspaces.json()) as { items: Array<{ id: string }> };
+    expect(workspaceBody.items[0]?.id).toBe('ws_default');
+
+    const members = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/members');
+    expect(members.status).toBe(200);
+    const membersBody = (await members.json()) as {
+      items: Array<{ user_id: string; permissions: string[] }>;
+    };
+    expect(membersBody.items[0]?.user_id).toBe('user_local');
+    expect(membersBody.items[0]?.permissions).toContain('workspace:project:create');
+  });
+
   it('supports create then list flow', async () => {
     const { baseUrl } = startServer();
 
-    const listBefore = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects`);
+    const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects');
     expect(listBefore.status).toBe(200);
     expect(await listBefore.json()).toEqual({ items: [] });
 
-    const createRes = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects`, {
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -51,19 +77,19 @@ describe('api-entry-node projects routes', () => {
     expect(created.name).toBe('Demo Project');
     expect(created.workspace_id).toBe('ws_default');
 
-    const listAfter = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects?from=test`);
+    const listAfter = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects?from=test');
     const listed = (await listAfter.json()) as { items: Array<{ id: string }> };
     expect(listAfter.status).toBe(200);
     expect(listed.items).toHaveLength(1);
     expect(listed.items[0].id).toBe(created.id);
 
-    const getRes = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects/${created.id}`);
+    const getRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
     expect(getRes.status).toBe(200);
     const got = (await getRes.json()) as { id: string; name: string };
     expect(got.id).toBe(created.id);
     expect(got.name).toBe('Demo Project');
 
-    const patchRes = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects/${created.id}`, {
+    const patchRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
       method: 'PATCH',
       headers: {
         'content-type': 'application/json',
@@ -79,25 +105,25 @@ describe('api-entry-node projects routes', () => {
     expect(patched.name).toBe('Renamed Project');
     expect(patched.description).toBe('Updated from patch');
 
-    const getAfterPatch = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects/${created.id}`);
+    const getAfterPatch = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
     const gotAfterPatch = (await getAfterPatch.json()) as { name: string; description: string };
     expect(getAfterPatch.status).toBe(200);
     expect(gotAfterPatch.name).toBe('Renamed Project');
     expect(gotAfterPatch.description).toBe('Updated from patch');
 
-    const deleteRes = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects/${created.id}`, {
+    const deleteRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
       method: 'DELETE',
     });
     expect(deleteRes.status).toBe(204);
 
-    const getAfterDelete = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects/${created.id}`);
+    const getAfterDelete = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
     expect(getAfterDelete.status).toBe(404);
   });
 
   it('returns validation error for invalid payload', async () => {
     const { baseUrl } = startServer();
 
-    const res = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects`, {
+    const res = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -116,7 +142,7 @@ describe('api-entry-node projects routes', () => {
   it('returns 404 for unknown project id', async () => {
     const { baseUrl } = startServer();
 
-    const res = await fetch(`${baseUrl}/api/v1/workspaces/ws_default/projects/proj_missing`);
+    const res = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_missing');
     expect(res.status).toBe(404);
     const body = (await res.json()) as { code: string; message: string };
     expect(body.code).toBe('RESOURCE_NOT_FOUND');
@@ -126,14 +152,13 @@ describe('api-entry-node projects routes', () => {
   it('supports create and list sources flow', async () => {
     const { baseUrl } = startServer();
 
-    const listBefore = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/sources`,
-    );
+    const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources');
     expect(listBefore.status).toBe(200);
     expect(await listBefore.json()).toEqual({ items: [] });
 
-    const createdRes = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/sources`,
+    const createdRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
       {
         method: 'POST',
         headers: {
@@ -152,42 +177,33 @@ describe('api-entry-node projects routes', () => {
     expect(created.name).toBe('hello.txt');
     expect(created.size_bytes).toBe(5);
 
-    const listAfter = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/sources`,
-    );
+    const listAfter = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources');
     expect(listAfter.status).toBe(200);
     const listed = (await listAfter.json()) as { items: Array<{ id: string }> };
     expect(listed.items).toHaveLength(1);
     expect(listed.items[0].id).toBe(created.id);
 
-    const detail = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}`,
-    );
+    const detail = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}`);
     expect(detail.status).toBe(200);
 
-    const quota = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/sources/quota`,
-    );
+    const quota = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources/quota');
     expect(quota.status).toBe(200);
     const quotaJson = (await quota.json()) as { storage: { used: number } };
     expect(quotaJson.storage.used).toBe(5);
 
-    const download = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}/download`,
-    );
+    const download = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}/download`);
     expect(download.status).toBe(200);
     const text = await download.text();
     expect(text).toBe('hello');
 
-    const deleteRes = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}`,
+    const deleteRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}`,
       { method: 'DELETE' },
     );
     expect(deleteRes.status).toBe(204);
 
-    const listAfterDelete = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/sources`,
-    );
+    const listAfterDelete = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources');
     expect(listAfterDelete.status).toBe(200);
     const listedAfterDelete = (await listAfterDelete.json()) as { items: Array<{ id: string }> };
     expect(listedAfterDelete.items).toHaveLength(0);
@@ -196,14 +212,13 @@ describe('api-entry-node projects routes', () => {
   it('supports source libraries CRUD flow', async () => {
     const { baseUrl } = startServer();
 
-    const listBefore = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/source-libraries`,
-    );
+    const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
     expect(listBefore.status).toBe(200);
     expect(await listBefore.json()).toEqual({ items: [] });
 
-    const createRes = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/source-libraries`,
+    const createRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -215,8 +230,9 @@ describe('api-entry-node projects routes', () => {
     expect(created.id).toContain('lib_');
     expect(created.name).toBe('Shared Docs');
 
-    const updateRes = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${created.id}`,
+    const updateRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${created.id}`,
       {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
@@ -227,16 +243,15 @@ describe('api-entry-node projects routes', () => {
     const updated = (await updateRes.json()) as { description?: string };
     expect(updated.description).toBe('policy docs');
 
-    const listAfter = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/source-libraries`,
-    );
+    const listAfter = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
     const listed = (await listAfter.json()) as { items: Array<{ id: string }> };
     expect(listAfter.status).toBe(200);
     expect(listed.items).toHaveLength(1);
     expect(listed.items[0].id).toBe(created.id);
 
-    const deleteRes = await fetch(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${created.id}`,
+    const deleteRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${created.id}`,
       { method: 'DELETE' },
     );
     expect(deleteRes.status).toBe(204);

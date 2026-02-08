@@ -41,6 +41,22 @@
         }
       ],
       "realmRoles": ["offline_access"]
+    },
+    {
+      "username": "integration-user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Integration",
+      "lastName": "User",
+      "email": "integration-user@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "integration-user-123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["offline_access"]
     }
   ]
 }

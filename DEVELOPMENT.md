@@ -17,6 +17,35 @@ npm run build
 npm start
 ```
 
+## Manual Runbook (Makefile)
+
+推荐直接用 `make`，少记环境变量。
+
+```bash
+# 1) 启动依赖
+make deps-up
+make deps-smoke
+
+# 2) 启动 API（新终端）
+make api-dev
+
+# 3) 启动前端（新终端）
+make web
+
+# 4) 打开地址与测试账号
+make urls
+```
+
+常用命令：
+
+```bash
+make help          # 查看所有命令
+make web-msw       # 前端 mock 模式
+make e2e-minimal   # 最小集成测试
+make deps-down     # 关闭依赖
+make deps-reset    # 关闭并清空依赖数据卷
+```
+
 ## Environment Setup
 
 Copy `.env.local.example` to `.env.local` and configure:
@@ -26,9 +55,6 @@ Copy `.env.local.example` to `.env.local` and configure:
 NEXT_PUBLIC_API_BASE=http://localhost:20000/api/v1
 NEXT_PUBLIC_USE_MSW=false
 NEXT_PUBLIC_BYPASS_AUTH=false
-NEXT_PUBLIC_SOURCES_REAL_READ_ENABLED=true
-NEXT_PUBLIC_SOURCES_REAL_WRITE_ENABLED=true
-NEXT_PUBLIC_SOURCES_REAL_BASE=http://localhost:20000/api/v1
 
 # For local development with Keycloak
 NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms
@@ -76,24 +102,6 @@ The frontend uses an adapter pattern for easy switching between MSW mocks and re
 
 Switch via `NEXT_PUBLIC_USE_MSW` environment variable.
 
-### Hybrid sources read (optional, incremental backend integration)
-
-When you want only the sources list to read from real backend while other APIs stay on MSW:
-
-```bash
-NEXT_PUBLIC_USE_MSW=true
-NEXT_PUBLIC_SOURCES_REAL_READ_ENABLED=true
-NEXT_PUBLIC_SOURCES_REAL_WRITE_ENABLED=true
-NEXT_PUBLIC_SOURCES_REAL_BASE=http://localhost:3022/api/v1
-```
-
-Behavior:
-
-- `sources.list/get/download/quota` try real backend first.
-- `sources.upload/delete` try real backend first.
-- `source-libraries list/create/update/delete` also try real backend first.
-- If real backend fails/unreachable, it falls back to current adapter (MSW/fetch).
-
 ## Authentication Flow
 
 ### Development (MSW)
@@ -101,7 +109,7 @@ Behavior:
 2. Use Quick Login on login page
 3. Auth state is mocked and persisted locally
 
-### Real Mode (Keycloak)
+### Backend Mode (Keycloak)
 1. User clicks "Login with Keycloak"
 2. Frontend uses OIDC Authorization Code + PKCE
 3. Keycloak redirects to `/[locale]/login/callback`
@@ -170,7 +178,7 @@ BASE_URL=http://localhost:3001 npx playwright test --project=smoke e2e/smoke.spe
   --workers=1 --max-failures=1
 ```
 
-### Real minimal integration E2E
+### Minimal integration E2E
 
 Run dependencies and API first, then:
 

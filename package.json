@@ -17,7 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "bash scripts/integration-test.sh",
     "test:e2e": "playwright test",
-    "test:e2e:integration:minimal": "RUN_REAL_INTEGRATION_E2E=true NEXT_PUBLIC_USE_MSW=false NEXT_PUBLIC_API_BASE=http://localhost:20000/api/v1 NEXT_PUBLIC_SOURCES_REAL_READ_ENABLED=true NEXT_PUBLIC_SOURCES_REAL_WRITE_ENABLED=true NEXT_PUBLIC_SOURCES_REAL_BASE=http://localhost:20000/api/v1 playwright test e2e/integration-minimal.spec.ts --project=chromium --workers=1",
+    "test:e2e:integration:minimal": "RUN_INTEGRATION_E2E=true playwright test e2e/integration-minimal.spec.ts --project=chromium --workers=1",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "integration:deps:up": "docker compose -f infra/integration/docker-compose.yml up -d",

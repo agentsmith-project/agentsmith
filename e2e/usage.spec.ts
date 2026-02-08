@@ -26,7 +26,7 @@ test.describe('Usage Page', () => {
     const filters = authedPage.getByTestId('usage__filters');
     await expect(filters).toBeVisible();
     await expect(filters.getByText(/Resource Type/i)).toBeVisible();
-    await expect(filters.getByText(/Agent ID/i)).toBeVisible();
+    await expect(filters.getByText(/Resource ID/i)).toBeVisible();
     await expect(filters.getByText(/End User ID/i)).toBeVisible();
   });
 
@@ -54,8 +54,8 @@ test.describe('Usage Page', () => {
     const filters = authedPage.getByTestId('usage__filters');
     await expect(filters).toBeVisible({ timeout: 10000 });
 
-    const agentIdInput = filters.getByPlaceholder(/filter by agent id/i);
-    await agentIdInput.fill('agent_1');
+    const resourceIdInput = filters.getByPlaceholder(/filter by resource id/i);
+    await resourceIdInput.fill('agent_1');
     await expect(filters.getByRole('button', { name: /clear filters/i })).toBeVisible();
   });
 });

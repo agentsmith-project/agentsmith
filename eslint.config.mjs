@@ -39,6 +39,8 @@ const eslintConfig = [
       "node_modules/**",
       ".next/**",
       "out/**",
+      "test-results/**",
+      "playwright-report/**",
       "e2e/**",
       "scripts/**",
       "public/mockServiceWorker.js",

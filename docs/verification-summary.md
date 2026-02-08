@@ -1,4 +1,6 @@
 # E2E Test Verification Summary
+> Historical snapshot (2026-02-06).  
+> Terminology has been aligned to current naming (`AI Studio` / `studio` route).
 **Project:** mbos-frontend-v1
 **Date:** 2026-02-06
 **Task:** Comprehensive E2E Testing Overhaul
@@ -31,7 +33,7 @@ Full functional testing across all pages and features:
 | `projects.spec.ts` | 6 | Projects list, search, create/delete dialog, pin/unpin, navigation |
 | `overview.spec.ts` | 4 | KPI cards, time range selector, quick access, activity timeline |
 | `chat.spec.ts` | 4 | Three-pane layout, thread selection, composer, send message |
-| `workbench.spec.ts` | 8 | Recipe list, create recipe, recipe detail, conversation input, artifacts |
+| `workbench.spec.ts` | 8 | AI Studio task list, create task, task detail, conversation input, artifacts |
 | `agents.spec.ts` | 8 | Table rendering, create dialog, toggle, validation |
 | `endpoints.spec.ts` | 7 | Table rendering, create dialog, validation |
 | `credentials.spec.ts` | 9 | Table rendering, create/rotate/delete dialogs |
@@ -45,14 +47,13 @@ Full functional testing across all pages and features:
 | `ux-guardrails.spec.ts` | 5 | Login CTA, app shell structure, overflow, loading states, page indicators |
 | `console-errors.spec.ts` | 3 | General console errors, hydration errors, network failures |
 | `join.spec.ts` | 5 | Invitation flow (valid/invalid), locale coverage |
-| `userdata.spec.ts` | 4 | Summary, end users table |
 | `workspace-settings.spec.ts` | 5 | Workspace info and members |
 | `interactions.spec.ts` | 12 | Notifications, language switch, dialogs, selection |
 
 ### Visual Regression Tests (29 tests)
 Full-page screenshots for all pages and 7 dialog states:
 
-**Pages:** login, join, workspace-select, projects-list, workspace-settings, overview, chat, workbench, agents, endpoints, credentials, members, sources, userdata, audit, usage, settings (2 tabs), profile, api-keys
+**Pages:** login, join, workspace-select, projects-list, workspace-settings, overview, chat, AI Studio, agents, endpoints, credentials, members, sources, audit, usage, settings (2 tabs), profile, api-keys
 
 **Dialogs:** create-project, create-agent, create-endpoint, create-credential, invite-member, upload-source, create-api-key
 
@@ -69,7 +70,7 @@ Baselines stored in `e2e/__screenshots__/visual.spec.ts/`.
 
 ### MSW Mock Data (`src/mocks/`)
 - **`fixtures/p0.json`**: Central mock data fixture with realistic data for all entities
-- **`handlers/`**: Modular handlers for all API endpoints (auth, workspace, projects, agents, endpoints, credentials, members, sources, userdata, audit, usage, chat, workbench, recipes, user-keys, me)
+- **`handlers/`**: Modular handlers for all API endpoints (auth, workspace, projects, agents, endpoints, credentials, members, sources, audit, usage, chat, recipes, user-keys, me)
 
 ### Playwright Config
 - 3 projects: `smoke`, `chromium`, `visual`

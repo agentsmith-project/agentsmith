@@ -16,7 +16,7 @@ const intlMiddleware = createMiddleware(routing);
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Custom: invalid recipe ID -> redirect to workbench list
+  // Custom: invalid recipe ID -> redirect to studio list
   // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/studio/recipes/[recipeId]
   const recipeMatch = pathname.match(
     /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/studio\/recipes\/([^/]+)/,

@@ -1,5 +1,5 @@
 /**
- * Workbench Page
+ * AI Studio Page
  *
  * Recipe list view - displays all Recipes and allows navigation to individual Recipe details.
  */
@@ -15,11 +15,11 @@ import { PageLoading } from '@/components/ui/loading';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
-interface WorkbenchPageProps {
+interface StudioPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
 
-export default function WorkbenchPage({ params }: WorkbenchPageProps) {
+export default function StudioPage({ params }: StudioPageProps) {
   const tErrors = useTranslations('errors');
   const [resolvedParams, setResolvedParams] = useState<{
     workspace?: string;

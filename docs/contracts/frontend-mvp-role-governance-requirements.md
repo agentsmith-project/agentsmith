@@ -1,9 +1,5 @@
 # Frontend MVP Governance Requirements
 
-> Note (2026-02-07): This file is partially superseded by
-> `docs/contracts/frontend-resource-policy-governance-v1.md`.
-> For resource access and usage governance, follow v1 contract.
-
 ## Purpose
 
 Capture the current business requirements for frontend MVP around identity, group governance, and resource access.
@@ -129,9 +125,9 @@ This document is the product-facing source for UX behavior; API-level details re
 - custom templates for advanced cases
 3. UI default path must be template-first; raw token editing is advanced mode.
 
-## Current Frontend Prototype Scope (2026-02-07)
+## Current Frontend Scope
 
-1. Added workspace governance grouping UI in workspace settings (`wheel` / `user`) as frontend prototype state.
+1. Workspace settings includes governance grouping UI (`wheel` / `user`).
 2. Runtime permission checks are token-only for project and resource operations.
 3. Governance write operations follow token gates at route/action level.
 4. Credentials gate follows token condition: `project:credential:manage`.
@@ -142,7 +138,7 @@ This document is the product-facing source for UX behavior; API-level details re
 
 ## Remaining MVP Gaps
 
-1. Workspace governance group persistence currently frontend-local prototype state; backend contract still needed.
+1. Workspace governance group persistence is frontend-local state; backend persistence contract is required for release freeze.
 2. Project admin assignment UX should be template-first across all member flows.
 3. Shared library first-class CRUD is implemented in Sources page, but advanced governance UX (library ownership transfer, archive lifecycle, bulk policy assignment) is not yet implemented.
 4. Unified `Resource Policy` page should be the single resource-centric policy entry for endpoint/library/agent with subject-based overrides.

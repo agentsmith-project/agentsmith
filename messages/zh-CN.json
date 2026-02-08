@@ -20,7 +20,7 @@
   "nav": {
     "overview": "概览",
     "chat": "聊天",
-    "workbench": "工作台",
+    "studio": "AI Studio",
     "sources": "文件",
     "agents": "智能体",
     "endpoints": "端点",
@@ -174,8 +174,8 @@
     "threads_yesterday": "昨天",
     "threads_days_ago": "{days} 天前"
   },
-  "workbench": {
-    "title": "工作台",
+  "studio": {
+    "title": "AI Studio",
     "thread_new": "新建线程",
     "thread_close": "关闭线程",
     "thread_status_active": "活跃",
@@ -204,7 +204,7 @@
       "agent_fixed_notice": "创建后 Agent 不可更改",
       "history_immutable_notice": "对话历史不可修改",
       "leave": "离开 Recipe",
-      "leave_tooltip": "返回 Workbench 列表，Recipe 将继续在后台运行",
+      "leave_tooltip": "返回 AI Studio 列表，任务将在后台继续运行",
       "delete": "删除 Recipe",
       "delete_confirm_message": "确定要删除此 Recipe 吗？此操作不可撤销。所有消息和生成物将被永久删除。",
       "delete_cancel": "取消",

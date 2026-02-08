@@ -1,5 +1,5 @@
 /**
- * Workbench Fixtures
+ * AI Studio Fixtures
  *
  * Mock agent thread, turn, source file, and recipe data for development and testing.
  */

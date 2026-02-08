@@ -14,15 +14,15 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn((permission: string) => permission === 'project:studio:access'),
 }));
 
-import WorkbenchPage from '../page';
+import StudioPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
 
-describe('WorkbenchPage route', () => {
+describe('StudioPage route', () => {
   it('renders recipe list when params and permission are valid', async () => {
     mockUseHasPermission.mockReturnValue(true);
     render(
-      <WorkbenchPage
+      <StudioPage
         params={Promise.resolve({
           workspace: 'ws_1',
           project: 'proj_1',
@@ -40,7 +40,7 @@ describe('WorkbenchPage route', () => {
   it('shows invalid parameter error for unsafe workspace/project', async () => {
     mockUseHasPermission.mockReturnValue(true);
     render(
-      <WorkbenchPage
+      <StudioPage
         params={Promise.resolve({
           workspace: '<script>',
           project: 'proj_1',
@@ -58,7 +58,7 @@ describe('WorkbenchPage route', () => {
   it('shows permission denied when user lacks studio access', async () => {
     mockUseHasPermission.mockReturnValue(false);
     render(
-      <WorkbenchPage
+      <StudioPage
         params={Promise.resolve({
           workspace: 'ws_1',
           project: 'proj_1',

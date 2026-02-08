@@ -1,5 +1,5 @@
 /**
- * Workbench Page Loading Skeleton
+ * AI Studio Page Loading Skeleton
  *
  * Loading placeholder for the studio/recipes page.
  * Shows skeleton UI for recipe list and recipe details.
@@ -7,7 +7,7 @@
 
 import { Skeleton } from '@/components/ui/skeleton';
 
-export default function WorkbenchLoading() {
+export default function StudioLoading() {
   return (
     <div className="h-full flex overflow-hidden">
       {/* Recipes List */}

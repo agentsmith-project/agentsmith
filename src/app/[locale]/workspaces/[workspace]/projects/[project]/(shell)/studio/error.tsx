@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { AlertCircle } from 'lucide-react';
 
-export default function WorkbenchError({
+export default function StudioError({
   error,
   reset,
 }: {
@@ -15,7 +15,7 @@ export default function WorkbenchError({
   const t = useTranslations('errors');
 
   useEffect(() => {
-    console.error('Workbench page error:', error);
+    console.error('AI Studio page error:', error);
   }, [error]);
 
   return (

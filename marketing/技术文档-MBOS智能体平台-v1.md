@@ -73,7 +73,7 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 **Quota 覆盖**
 - 项目策略提供默认配额
 - 成员级 **Quota Override** 可为单用户定制
-- 支持配额历史追溯
+- 支持完整审计追溯
 
 ### 2.4 多维限流
 
@@ -112,8 +112,8 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 | `/zh-CN/login` | 登录入口 | 01-login-page.png |
 | `/workspaces/{ws}/projects` | 项目列表 | 03-projects-list.png |
 | `.../overview` | 项目概览、KPI、快捷入口 | 05-overview.png |
-| `.../chat` | 对话工作区（OpenAI SDK 兼容） | 06-chat.png |
-| `.../workbench` | 与 Agent 交互、配方 | 07-workbench.png |
+| `.../chat` | 对话工作区（OpenAI SDK） | 06-chat.png |
+| `.../studio` | AI Studio 任务工作区 | 07-studio.png |
 | `.../agents` | Agent 管理、Keys 签发 | 08-agents.png |
 | `.../endpoints` | 共享 Endpoint 管理 | 09-endpoints.png |
 | `.../members` | 成员、权限、配额 | 10-members-list.png |
@@ -186,7 +186,7 @@ E2E 脚本生成到 `test-results/screenshots/`（临时）。用于 marketing �
 | 02-projects | projects-list.png | 项目列表 |
 | 03-overview | overview.png | 项目概览、KPI |
 | 04-chat | chat.png | 对话工作区 |
-| 05-workbench | workbench.png | 工作台 |
+| 05-studio | studio.png | AI Studio |
 | 06-agents | agents.png | 智能体管理 |
 | 07-endpoints | endpoints.png | 端点管理 |
 | 08-members | members-list.png, member-detail-overview.png, member-permissions-template.png, member-permissions-advanced.png, member-quota.png, member-resource-acl.png | 成员、权限配置详情、配额覆盖、资源 ACL |

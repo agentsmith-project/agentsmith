@@ -16,7 +16,7 @@ const modes: Array<{
   icon: LucideIcon;
 }> = [
   { value: 'chat', label: 'Chat', icon: MessageSquare },
-  { value: 'studio', label: 'Workbench', icon: Workflow },
+  { value: 'studio', label: 'AI Studio', icon: Workflow },
 ];
 
 export function ModeSwitcher({ value, onChange, className = '' }: ModeSwitcherProps) {

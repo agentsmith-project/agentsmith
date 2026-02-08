@@ -17,8 +17,8 @@ screenshots/   # 手动拷贝后使用
 │   └── overview.png
 ├── 04-chat/                    # 对话
 │   └── chat.png
-├── 05-workbench/               # 工作台
-│   └── workbench.png
+├── 05-studio/                  # AI Studio
+│   └── studio.png
 ├── 06-agents/                  # 智能体管理
 │   └── agents.png
 ├── 07-endpoints/               # 端点管理

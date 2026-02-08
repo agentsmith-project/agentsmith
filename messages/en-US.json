@@ -20,7 +20,7 @@
   "nav": {
     "overview": "Overview",
     "chat": "Chat",
-    "workbench": "Workbench",
+    "studio": "AI Studio",
     "sources": "Sources",
     "agents": "Agents",
     "endpoints": "Endpoints",
@@ -174,8 +174,8 @@
     "threads_yesterday": "Yesterday",
     "threads_days_ago": "{days} days ago"
   },
-  "workbench": {
-    "title": "Workbench",
+  "studio": {
+    "title": "AI Studio",
     "thread_new": "New Thread",
     "thread_close": "Close Thread",
     "thread_status_active": "Active",
@@ -204,7 +204,7 @@
       "agent_fixed_notice": "Agent cannot be changed after creation",
       "history_immutable_notice": "Conversation history cannot be modified",
       "leave": "Leave Recipe",
-      "leave_tooltip": "Return to Workbench list. Recipe will continue running in the background.",
+      "leave_tooltip": "Return to AI Studio list. Task will continue running in the background.",
       "delete": "Delete Recipe",
       "delete_confirm_message": "Are you sure you want to delete this recipe? This action cannot be undone. All messages and artifacts will be permanently deleted.",
       "delete_cancel": "Cancel",

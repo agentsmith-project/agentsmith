@@ -23,7 +23,7 @@ export function ArtifactCard({
   disabled = false,
 }: ArtifactCardProps) {
   const t = useTranslations('common.toast');
-  const tWorkbench = useTranslations('studio');
+  const tStudio = useTranslations('studio');
   const tCommon = useTranslations('common');
 
   const handleCopy = async () => {
@@ -45,7 +45,7 @@ export function ArtifactCard({
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-icon-default" />
               <span className="text-sm font-medium text-foreground">
-                {artifact.title || tWorkbench('artifact.text_default')}
+                {artifact.title || tStudio('artifact.text_default')}
               </span>
             </div>
             {artifact.content && (
@@ -60,13 +60,13 @@ export function ArtifactCard({
               {artifact.thumbnail_url ? (
                 <img
                   src={artifact.thumbnail_url}
-                  alt={artifact.title || tWorkbench('artifact.image_default')}
+                  alt={artifact.title || tStudio('artifact.image_default')}
                   className="w-full h-full object-cover"
                 />
               ) : artifact.content ? (
                 <img
                   src={artifact.content}
-                  alt={artifact.title || tWorkbench('artifact.image_default')}
+                  alt={artifact.title || tStudio('artifact.image_default')}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -86,7 +86,7 @@ export function ArtifactCard({
             <div className="flex items-center gap-2">
               <File className="h-4 w-4 text-icon-default" />
               <span className="text-sm font-medium text-foreground">
-                {artifact.title || tWorkbench('artifact.file_default')}
+                {artifact.title || tStudio('artifact.file_default')}
               </span>
             </div>
             {artifact.file_size && (

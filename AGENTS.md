@@ -154,7 +154,7 @@ src/
 │   ├── ui/                 # Design system (Radix primitives + custom)
 │   ├── app-shell/         # Layout (Topbar, Sidebar, navigation)
 │   ├── chat/              # Chat components
-│   ├── workbench/         # AI Studio/Task components
+│   ├── studio/            # AI Studio/Task components
 │   ├── sources/           # File/source management
 │   ├── members/           # Member management
 │   └── audit-usage/       # Audit & usage reports
@@ -201,7 +201,7 @@ See `DESIGN_SYSTEM.md` and `docs/UXUI/00-设计系统/视觉设计系统-v1.md` 
 - One key per meaning (reuse across project)
 - Common strings in `common` namespace
 - User-visible strings only (not variables, comments, console.log)
-- Namespace structure: `common`, `nav`, `auth`, `workspace`, `project`, `sources`, `members`, `workbench`, `chat`, `audit`, `usage`, `overview`, `agents`, `endpoints`, `settings`, `errors`
+- Namespace structure: `common`, `nav`, `auth`, `workspace`, `project`, `sources`, `members`, `studio`, `chat`, `audit`, `usage`, `overview`, `agents`, `endpoints`, `settings`, `errors`
 
 **DO NOT modify**: `src/i18n/request.ts`, `next.config.ts`, middleware, routing config
 
@@ -275,7 +275,7 @@ Use `data-testid` attributes for stable test selectors. Format: `scope__element_
 
 Examples:
 - `login__submit`, `projects__create-button`, `agents__row`
-- `page-state__error`, `workbench__recipe-header`
+- `page-state__error`, `studio__task-header`
 
 Rules:
 - Must be stable (not depend on text/styles)
@@ -321,7 +321,7 @@ Important rules enforced:
 
 ### Coverage Targets
 - Chat components: 80%+
-- Workbench components: 75%+
+- AI Studio components: 75%+
 - Security components: 90%+
 
 ### Test ID Conventions
@@ -331,7 +331,7 @@ Important rules enforced:
 
 ### Critical Features Tested
 - Chat system: Message rendering, threading, markdown with security tests
-- Workbench: Recipe execution, SSE handling, progress updates
+- AI Studio: Task execution, SSE handling, progress updates
 - Security: API keys, credentials, permission checks
 - Sources: File upload, quota management, AI Ready operations
 
@@ -393,7 +393,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 - Path aliases: `@/*`, `@/components/*`, `@/lib/*`, `@/app/*`, `@/types/*`
 - TypeScript strict mode enabled
 - Always prefer editing existing files over creating new ones
-- Pre-release rule: do not add backward-compatibility shims for old payloads/contracts unless explicitly requested. Keep frontend and contract strict, then align mocks/backend to the current schema.
+- Pre-release rule: enforce strict current contract and remove obsolete payload paths immediately.
 
 ## Running Single Tests
 

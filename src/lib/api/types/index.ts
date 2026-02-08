@@ -276,7 +276,7 @@ export interface Attachment {
 }
 
 // ============================================================
-// Workbench (Agent Thread & Turn)
+// AI Studio (Agent Thread & Turn)
 // ============================================================
 
 export interface AgentThread {

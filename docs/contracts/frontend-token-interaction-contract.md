@@ -108,5 +108,5 @@ Related docs:
 ## Freeze Checklist
 
 - No route gate depends on role names.
-- No contracts include deprecated tokens (`project:policy:*`, `project:admin:*`, `project:endpoint:update`, etc.).
+- Canonical token set contains only active tokens in this contract.
 - `npm run contracts:check` and `npm run contracts:check-release-sync` pass.

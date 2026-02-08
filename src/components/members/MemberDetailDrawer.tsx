@@ -21,7 +21,7 @@ import {
 import { History } from 'lucide-react';
 import { PermissionsEditor } from './PermissionsEditor/PermissionsEditor';
 import { QuotaOverridesEditor } from './QuotaOverridesEditor';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import type { Member } from '@/lib/api/endpoints/members';
 import type { MemberPermissions, QuotaOverride, PermissionTemplate, QuotaTemplate } from '@/lib/api/types';
 
@@ -95,7 +95,7 @@ export function MemberDetailDrawer({
     const defaults = PERM_TEMPLATE_IDS.map((id) => ({
       id,
       name: tTpl(`default_templates.${id}`),
-      permissions: [...ROLE_TEMPLATES[id]],
+      permissions: [...GROUP_TEMPLATES[id]],
     }));
     const custom = permissionTemplates.filter((tpl) => !PERM_TEMPLATE_IDS.includes(tpl.id as typeof PERM_TEMPLATE_IDS[number]));
     return [...defaults, ...custom];
@@ -124,11 +124,14 @@ export function MemberDetailDrawer({
     if (initializedPermTemplateMemberIdRef.current === member.id) return;
 
     const currentSet = new Set(permissions.platform_permissions ?? []);
-    const matchedTemplate = permTemplatesForDropdown.find((tpl) => {
+    const matchedTemplates = permTemplatesForDropdown.filter((tpl) => {
       const templateSet = new Set(tpl.permissions);
       if (templateSet.size !== currentSet.size) return false;
       return Array.from(templateSet).every((perm) => currentSet.has(perm));
     });
+    const matchedTemplate =
+      matchedTemplates.find((tpl) => tpl.id === member.role) ??
+      matchedTemplates[0];
 
     setAppliedPermTemplateId(matchedTemplate?.id ?? null);
     initializedPermTemplateMemberIdRef.current = member.id;

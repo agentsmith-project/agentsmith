@@ -19,7 +19,7 @@ import {
   useBatchApplyPermissionTemplate,
   useMembers,
 } from '@/lib/hooks/use-members';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import { CreateTemplateDrawer } from './CreateTemplateDrawer';
 import { ApplyTemplateDialog } from './ApplyTemplateDialog';
@@ -67,7 +67,7 @@ export function PermissionTemplatesTab({
         id: 'owner',
         name: t('default_templates.owner'),
         description: t('default_templates.owner_description'),
-        permissions: [...ROLE_TEMPLATES.owner],
+        permissions: [...GROUP_TEMPLATES.owner],
         is_default: true,
         is_readonly: true,
       },
@@ -75,7 +75,7 @@ export function PermissionTemplatesTab({
         id: 'admin',
         name: t('default_templates.admin'),
         description: t('default_templates.admin_description'),
-        permissions: [...ROLE_TEMPLATES.admin],
+        permissions: [...GROUP_TEMPLATES.admin],
         is_default: true,
         is_readonly: true,
       },
@@ -83,7 +83,7 @@ export function PermissionTemplatesTab({
         id: 'developer',
         name: t('default_templates.developer'),
         description: t('default_templates.developer_description'),
-        permissions: [...ROLE_TEMPLATES.developer],
+        permissions: [...GROUP_TEMPLATES.developer],
         is_default: true,
         is_readonly: true,
       },
@@ -91,7 +91,7 @@ export function PermissionTemplatesTab({
         id: 'user',
         name: t('default_templates.user'),
         description: t('default_templates.user_description'),
-        permissions: [...ROLE_TEMPLATES.user],
+        permissions: [...GROUP_TEMPLATES.user],
         is_default: true,
         is_readonly: true,
       },

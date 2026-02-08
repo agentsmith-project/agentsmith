@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { PermissionTemplate } from '@/lib/api/types';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 
 export interface BatchApplyPermissionDialogProps {
   open: boolean;
@@ -44,10 +44,10 @@ export function BatchApplyPermissionDialog({
 
   const defaultTemplates = React.useMemo((): PermissionTemplate[] => {
     return [
-      { id: 'owner', name: t('default_templates.owner'), permissions: [...ROLE_TEMPLATES.owner], is_default: true, is_readonly: true },
-      { id: 'admin', name: t('default_templates.admin'), permissions: [...ROLE_TEMPLATES.admin], is_default: true, is_readonly: true },
-      { id: 'developer', name: t('default_templates.developer'), permissions: [...ROLE_TEMPLATES.developer], is_default: true, is_readonly: true },
-      { id: 'user', name: t('default_templates.user'), permissions: [...ROLE_TEMPLATES.user], is_default: true, is_readonly: true },
+      { id: 'owner', name: t('default_templates.owner'), permissions: [...GROUP_TEMPLATES.owner], is_default: true, is_readonly: true },
+      { id: 'admin', name: t('default_templates.admin'), permissions: [...GROUP_TEMPLATES.admin], is_default: true, is_readonly: true },
+      { id: 'developer', name: t('default_templates.developer'), permissions: [...GROUP_TEMPLATES.developer], is_default: true, is_readonly: true },
+      { id: 'user', name: t('default_templates.user'), permissions: [...GROUP_TEMPLATES.user], is_default: true, is_readonly: true },
     ];
   }, [t]);
 

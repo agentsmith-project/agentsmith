@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { memberFixtures, memberProjectMembershipFixtures, joinRequestFixtures } from '../fixtures/members';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import type {
   ChangeHistoryEntry,
   QuotaOverride,
@@ -198,23 +198,17 @@ export const memberHandlers = [
     return HttpResponse.json({ ok: true });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/members/:id/permissions', ({ params }) => {
-    const member = members.find((m) => m.id === params.id);
-    const memberRole = member?.role;
-    const rolePermissions =
-      memberRole === 'owner' || memberRole === 'admin' || memberRole === 'developer' || memberRole === 'user'
-        ? [...ROLE_TEMPLATES[memberRole]]
-        : null;
     const membership = memberProjectMembershipFixtures.find((m) => m.user_id === params.id);
 
     return HttpResponse.json({
-      platform_permissions: rolePermissions ?? membership?.permissions ?? ['project:read'],
+      platform_permissions: membership?.permissions ?? ['project:read'],
     });
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj/members/:id/permissions', async ({ params, request }) => {
     const projectId = String(params.prj ?? '');
     const memberId = String(params.id ?? '');
     const body = (await request.json().catch(() => ({}))) as {
-      template?: 'admin' | 'developer' | 'user' | null;
+      template?: keyof typeof GROUP_TEMPLATES | null;
       permissions?: string[];
       mode?: 'template' | 'custom';
     };
@@ -224,8 +218,8 @@ export const memberHandlers = [
     if (!membership) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
 
     let nextPermissions = membership.permissions;
-    if (body.mode === 'template' && body.template && ROLE_TEMPLATES[body.template]) {
-      nextPermissions = [...ROLE_TEMPLATES[body.template]];
+    if (body.mode === 'template' && body.template && GROUP_TEMPLATES[body.template]) {
+      nextPermissions = [...GROUP_TEMPLATES[body.template]];
     } else if (Array.isArray(body.permissions)) {
       nextPermissions = body.permissions;
     }
@@ -442,7 +436,7 @@ export const memberHandlers = [
         id: 'owner',
         name: 'Owner',
         description: 'Full access to all project resources',
-        permissions: [...ROLE_TEMPLATES.owner],
+        permissions: [...GROUP_TEMPLATES.owner],
         is_default: true,
         is_readonly: true,
       },
@@ -450,7 +444,7 @@ export const memberHandlers = [
         id: 'admin',
         name: 'Admin',
         description: 'Project admin permissions',
-        permissions: [...ROLE_TEMPLATES.admin],
+        permissions: [...GROUP_TEMPLATES.admin],
         is_default: true,
         is_readonly: true,
       },
@@ -458,7 +452,7 @@ export const memberHandlers = [
         id: 'developer',
         name: 'Developer',
         description: 'Development permissions',
-        permissions: [...ROLE_TEMPLATES.developer],
+        permissions: [...GROUP_TEMPLATES.developer],
         is_default: true,
         is_readonly: true,
       },
@@ -466,7 +460,7 @@ export const memberHandlers = [
         id: 'user',
         name: 'User',
         description: 'Basic permissions',
-        permissions: [...ROLE_TEMPLATES.user],
+        permissions: [...GROUP_TEMPLATES.user],
         is_default: true,
         is_readonly: true,
       },
@@ -568,8 +562,8 @@ export const memberHandlers = [
     if (!group) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
 
     const custom = customPermissionTemplates.find((item) => item.id === group.permission_template_id);
-    const roleKey = group.permission_template_id as keyof typeof ROLE_TEMPLATES;
-    const templatePermissions = custom?.permissions ?? (ROLE_TEMPLATES[roleKey] ? [...ROLE_TEMPLATES[roleKey]] : []);
+    const roleKey = group.permission_template_id as keyof typeof GROUP_TEMPLATES;
+    const templatePermissions = custom?.permissions ?? (GROUP_TEMPLATES[roleKey] ? [...GROUP_TEMPLATES[roleKey]] : []);
 
     const body = (await request.json().catch(() => ({}))) as { member_ids?: string[] };
     const targetMemberIds =

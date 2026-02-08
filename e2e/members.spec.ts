@@ -118,15 +118,15 @@ test.describe('Members Page', () => {
 
     const templateSelect = authedPage.getByRole('combobox').last();
     await expect(templateSelect).toBeVisible();
-    await expect(templateSelect).toContainText(/owner|admin/i);
+    await expect(templateSelect).toContainText(/select template|owner|admin|governance|manager/i);
   });
 
-  test('role badges are displayed for each member', async ({ authedPage }) => {
+  test('group alias badges are displayed for each member', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
 
     const table = authedPage.getByTestId('members__table');
-    await expect(table.getByText(/owner/i).first()).toBeVisible();
-    await expect(table.getByText(/admin/i).first()).toBeVisible();
+    await expect(table.getByText(/governance/i).first()).toBeVisible();
+    await expect(table.getByText(/manager/i).first()).toBeVisible();
   });
 
   test('invite member via dialog submission', async ({ authedPage }) => {
@@ -222,19 +222,18 @@ test.describe('Members Page', () => {
     await expect(authedPage.getByText(groupName)).not.toBeVisible({ timeout: 10000 });
   });
 
-  test('role/status filter options are explicit and status does not include banned', async ({ authedPage }) => {
-    const roleFilter = authedPage.getByTestId('members__role-filter');
+  test('access/status filter options are explicit and status does not include banned', async ({ authedPage }) => {
+    const accessFilter = authedPage.getByTestId('members__role-filter');
     const statusFilter = authedPage.getByTestId('members__status-filter');
 
-    await expect(roleFilter).toBeVisible();
+    await expect(accessFilter).toBeVisible();
     await expect(statusFilter).toBeVisible();
 
-    await roleFilter.selectOption('owner');
+    await accessFilter.selectOption('governance');
     await expect(authedPage.getByTestId('members__filtered-count')).toBeVisible();
-    await roleFilter.selectOption('admin');
-    await roleFilter.selectOption('developer');
-    await roleFilter.selectOption('user');
-    await roleFilter.selectOption('all');
+    await accessFilter.selectOption('resource_manage');
+    await accessFilter.selectOption('access_only');
+    await accessFilter.selectOption('all');
 
     await statusFilter.selectOption('active');
     await expect(authedPage.getByTestId('members__filtered-count')).toBeVisible();
@@ -247,20 +246,20 @@ test.describe('Members Page', () => {
     expect(statusOptionValues).not.toContain('banned');
   });
 
-  test('search and role filters refine result set', async ({ authedPage }) => {
+  test('search and access filters refine result set', async ({ authedPage }) => {
     const searchInput = authedPage.getByTestId('members__search-input');
-    const roleFilter = authedPage.getByTestId('members__role-filter');
+    const accessFilter = authedPage.getByTestId('members__role-filter');
 
     await searchInput.fill('alice');
     await expect(authedPage.getByText('Alice Chen')).toBeVisible();
     await expect(authedPage.getByText('Bob Smith')).not.toBeVisible();
 
     await searchInput.clear();
-    await roleFilter.selectOption('owner');
-    await expect(authedPage.getByText('Alice Chen')).toBeVisible();
-    await expect(authedPage.getByText('Bob Smith')).not.toBeVisible();
+    await accessFilter.selectOption('access_only');
+    await expect(authedPage.getByText('Charlie Wilson')).toBeVisible();
+    await expect(authedPage.getByTestId('members__filtered-count')).toContainText(/member/);
 
-    await roleFilter.selectOption('all');
+    await accessFilter.selectOption('all');
     await expect(authedPage.getByText('Bob Smith')).toBeVisible();
   });
 

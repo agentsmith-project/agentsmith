@@ -25,6 +25,10 @@ vi.mock('@/lib/hooks/use-workspaces', () => ({
   useWorkspaceMembers: () => ({
     data: STABLE_MEMBERS,
   }),
+  useUpdateWorkspaceMemberGovernanceGroup: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 vi.mock('@/components/app-shell/Topbar', () => ({

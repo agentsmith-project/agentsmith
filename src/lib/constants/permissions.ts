@@ -105,7 +105,7 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
 ] as const;
 
 // Legacy type name preserved to avoid churn in member-template UI components.
-export const ROLE_TEMPLATES = {
+export const GROUP_TEMPLATES = {
   owner: [
     ...PLATFORM_PERMISSIONS.WORKSPACE,
     ...PLATFORM_PERMISSIONS.PROJECT_BASE,
@@ -153,7 +153,7 @@ export const ROLE_TEMPLATES = {
 } as const;
 
 export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
-  project_admin_template: [...ROLE_TEMPLATES.owner],
+  project_admin_template: [...GROUP_TEMPLATES.owner],
   project_operator_template: [
     ...PLATFORM_PERMISSIONS.ACCESS,
     ...PLATFORM_PERMISSIONS.SOURCE,
@@ -162,7 +162,7 @@ export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
     'project:member:view',
     ...PLATFORM_PERMISSIONS.OBSERVABILITY,
   ],
-  project_member_template: [...ROLE_TEMPLATES.user],
+  project_member_template: [...GROUP_TEMPLATES.user],
   project_viewer_template: [...PLATFORM_PERMISSIONS.OBSERVABILITY],
 } as const;
 
@@ -177,17 +177,17 @@ export const HIGH_RISK_PERMISSIONS = [
 ] as const;
 
 export type PlatformPermission = (typeof ALL_PLATFORM_PERMISSIONS)[number];
-export type RoleTemplate = keyof typeof ROLE_TEMPLATES;
+export type GroupTemplate = keyof typeof GROUP_TEMPLATES;
 export type HighRiskPermission = (typeof HIGH_RISK_PERMISSIONS)[number];
 
 export function isHighRiskPermission(permission: string): boolean {
   return HIGH_RISK_PERMISSIONS.includes(permission as HighRiskPermission);
 }
 
-export function getRoleTemplatePermissions(role: RoleTemplate): readonly string[] {
-  return ROLE_TEMPLATES[role];
+export function getGroupTemplatePermissions(role: GroupTemplate): readonly string[] {
+  return GROUP_TEMPLATES[role];
 }
 
-export function getAllPermissionsForRole(role: RoleTemplate): string[] {
-  return [...ROLE_TEMPLATES[role]];
+export function getAllPermissionsForGroup(role: GroupTemplate): string[] {
+  return [...GROUP_TEMPLATES[role]];
 }

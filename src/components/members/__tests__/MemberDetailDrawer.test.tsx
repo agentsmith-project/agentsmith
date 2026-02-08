@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
@@ -61,7 +61,7 @@ describe('MemberDetailDrawer', () => {
         open
         onOpenChange={() => {}}
         member={baseMember}
-        permissions={{ platform_permissions: [...ROLE_TEMPLATES.admin] }}
+        permissions={{ platform_permissions: [...GROUP_TEMPLATES.admin] }}
       />
     );
 

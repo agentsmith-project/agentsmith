@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { projectFixtures, projectMembershipFixtures, CURRENT_USER_ID } from '../fixtures/projects';
 import type { Project } from '@/lib/api/types';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 
 const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
 
@@ -19,7 +19,7 @@ export const projectHandlers = [
       return {
         ...project,
         role: membership?.role ?? 'owner',
-        permissions: membership?.permissions ?? [...ROLE_TEMPLATES.owner],
+        permissions: membership?.permissions ?? [...GROUP_TEMPLATES.owner],
       };
     });
     return HttpResponse.json({ items });
@@ -40,7 +40,7 @@ export const projectHandlers = [
     return HttpResponse.json({
       ...project,
       role: membership?.role ?? 'owner',
-      permissions: membership?.permissions ?? [...ROLE_TEMPLATES.owner],
+      permissions: membership?.permissions ?? [...GROUP_TEMPLATES.owner],
     });
   }),
   http.post('/api/v1/workspaces/:ws/projects', async ({ params, request }) => {
@@ -66,7 +66,7 @@ export const projectHandlers = [
       project_id: created.id,
       user_id: CURRENT_USER_ID,
       role: 'owner',
-      permissions: [...ROLE_TEMPLATES.owner],
+      permissions: [...GROUP_TEMPLATES.owner],
       status: 'active',
       joined_at: new Date().toISOString(),
     });

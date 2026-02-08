@@ -17,7 +17,7 @@ import { TemplateMode } from './TemplateMode';
 import { AdvancedMode } from './AdvancedMode';
 import { ChangesPreview } from './ChangesPreview';
 import {
-  ROLE_TEMPLATES,
+  GROUP_TEMPLATES,
   isHighRiskPermission,
   ALL_PLATFORM_PERMISSIONS,
   type PlatformPermission,
@@ -46,7 +46,7 @@ export function PermissionsEditor({
   );
   // Default to advanced when member has custom permissions (no matching template)
   const initialMode = React.useMemo(() => {
-    for (const [, perms] of Object.entries(ROLE_TEMPLATES)) {
+    for (const [, perms] of Object.entries(GROUP_TEMPLATES)) {
       const templateSet = new Set(perms);
       const currentSet = new Set(expandedInitial);
       if (templateSet.size === currentSet.size && Array.from(templateSet).every((p) => currentSet.has(p))) {
@@ -79,7 +79,7 @@ export function PermissionsEditor({
 
   // Detect initial template (use expanded initial for comparison)
   React.useEffect(() => {
-    for (const [template, perms] of Object.entries(ROLE_TEMPLATES)) {
+    for (const [template, perms] of Object.entries(GROUP_TEMPLATES)) {
       const templateSet = new Set(perms);
       const currentSet = new Set(expandedInitial);
       if (templateSet.size === currentSet.size &&
@@ -116,7 +116,7 @@ export function PermissionsEditor({
     });
     // If template mode, mark as custom when permission diverges from template
     if (selectedTemplate) {
-      const templatePerms = new Set<string>(ROLE_TEMPLATES[selectedTemplate]);
+      const templatePerms = new Set<string>(GROUP_TEMPLATES[selectedTemplate]);
       if (checked ? !templatePerms.has(permission) : templatePerms.has(permission)) {
         setSelectedTemplate(null);
       }
@@ -126,13 +126,13 @@ export function PermissionsEditor({
   const handleTemplateChange = React.useCallback((template: 'owner' | 'admin' | 'developer' | 'user' | null) => {
     setSelectedTemplate(template);
     if (template) {
-      setSelectedPermissions(new Set(ROLE_TEMPLATES[template]));
+      setSelectedPermissions(new Set(GROUP_TEMPLATES[template]));
     }
   }, []);
 
   const handleReset = React.useCallback(() => {
     if (selectedTemplate) {
-      setSelectedPermissions(new Set(ROLE_TEMPLATES[selectedTemplate]));
+      setSelectedPermissions(new Set(GROUP_TEMPLATES[selectedTemplate]));
     }
   }, [selectedTemplate]);
 

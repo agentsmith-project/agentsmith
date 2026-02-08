@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useCanAccessChat, useCanManageChatSessions, useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanManageChatSessions, useHasPermission } from '@/lib/hooks/use-permissions';
 
 const mockGetSessions = vi.fn().mockResolvedValue({
   items: [],
@@ -103,14 +103,12 @@ vi.mock('@/components/chat/Composer', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
-  useCanAccessChat: vi.fn(() => true),
   useCanManageChatSessions: vi.fn(() => true),
 }));
 
 import ChatPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
-const mockUseCanAccessChat = vi.mocked(useCanAccessChat);
 const mockUseCanManageChatSessions = vi.mocked(useCanManageChatSessions);
 
 function createWrapper() {
@@ -128,7 +126,6 @@ function createWrapper() {
 describe('ChatPage', () => {
   beforeEach(() => {
     mockUseHasPermission.mockReturnValue(true);
-    mockUseCanAccessChat.mockReturnValue(true);
     mockUseCanManageChatSessions.mockReturnValue(true);
   });
 
@@ -222,7 +219,7 @@ describe('ChatPage', () => {
   });
 
   it('shows permission denied when user lacks chat read permission', async () => {
-    mockUseCanAccessChat.mockReturnValue(false);
+    mockUseHasPermission.mockImplementation((permission: string) => permission !== 'project:chat:access');
     render(
       <ChatPage
         params={Promise.resolve({

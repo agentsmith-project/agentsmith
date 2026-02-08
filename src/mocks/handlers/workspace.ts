@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { workspaceFixtures } from '../fixtures/workspaces';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import { CURRENT_USER_ID } from '../fixtures/projects';
 
 const workspaceItems = (() => {
@@ -15,18 +15,26 @@ const workspaceItems = (() => {
 
 const workspaceMembers = (() => {
   const fromP0 = (p0.workspace_members ?? []).map((member) => {
+    const memberRecord = member as Record<string, unknown>;
     const userId = String(member.id ?? '');
     const role = member.role === 'owner' || member.role === 'admin' || member.role === 'developer'
       ? member.role
       : 'user';
+    const governanceGroup = memberRecord['governance_group'];
+    const explicitPermissions = memberRecord['permissions'];
     return {
       id: `wm_${userId}`,
       user_id: userId,
       name: member.name ?? member.email ?? userId,
       email: member.email ?? `${userId}@example.com`,
       role,
-      governance_group: role === 'owner' || role === 'admin' ? 'wheel' : 'user',
-      permissions: [...ROLE_TEMPLATES[role]],
+      governance_group:
+        governanceGroup === 'wheel' || governanceGroup === 'user'
+          ? governanceGroup
+          : role === 'owner' || role === 'admin'
+            ? 'wheel'
+            : 'user',
+      permissions: Array.isArray(explicitPermissions) ? explicitPermissions : [...GROUP_TEMPLATES[role]],
       status: 'active' as const,
       joined_at: '2026-01-01T00:00:00Z',
     };
@@ -40,7 +48,7 @@ const workspaceMembers = (() => {
       email: p0.auth.user.email,
       role: 'owner',
       governance_group: 'wheel',
-      permissions: [...ROLE_TEMPLATES.owner],
+      permissions: [...GROUP_TEMPLATES.owner],
       status: 'active' as const,
       joined_at: '2026-01-01T00:00:00Z',
     });

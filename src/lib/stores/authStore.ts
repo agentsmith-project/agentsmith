@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Locale } from '@/lib/i18n/config';
+import { getApiClient } from '@/lib/api/client';
 
 // ============================================================
 // Types
@@ -126,10 +127,7 @@ export const useAuthStore = createAuthStore();
  * to remember to sync manually.
  */
 if (typeof window !== 'undefined') {
-  // Lazy import avoids circular dependency at module-parse time.
-  // getApiClient is cheap (returns singleton) so this is safe.
   const syncTokenToClient = () => {
-    const { getApiClient } = require('../api/client') as typeof import('../api/client');
     const client = getApiClient();
     const { token } = useAuthStore.getState();
     if (token) {

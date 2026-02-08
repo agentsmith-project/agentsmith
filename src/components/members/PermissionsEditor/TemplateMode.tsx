@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import { Check } from 'lucide-react';
 
 export interface TemplateModeProps {
@@ -26,7 +26,7 @@ export function TemplateMode({
   const t = useTranslations('members.permissions');
   const templatePermissions = React.useMemo(() => {
     if (!selectedTemplate) return [];
-    return ROLE_TEMPLATES[selectedTemplate];
+    return GROUP_TEMPLATES[selectedTemplate];
   }, [selectedTemplate]);
 
   const isCustom = React.useMemo(() => {

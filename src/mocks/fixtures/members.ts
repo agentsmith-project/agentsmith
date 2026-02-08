@@ -5,7 +5,7 @@
  */
 
 import type { ProjectMembership } from '@/lib/api/types';
-import { ROLE_TEMPLATES } from '@/lib/constants/permissions';
+import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 
 export interface Member {
   id: string;
@@ -76,7 +76,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
     project_id: 'proj_001',
     user_id: 'user_001',
     role: 'owner',
-    permissions: [...ROLE_TEMPLATES.owner],
+    permissions: [...GROUP_TEMPLATES.owner],
     status: 'active',
     joined_at: '2026-01-15T10:00:00Z',
   },
@@ -116,7 +116,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
     project_id: 'proj_002',
     user_id: 'user_001',
     role: 'owner',
-    permissions: [...ROLE_TEMPLATES.owner],
+    permissions: [...GROUP_TEMPLATES.owner],
     status: 'active',
     joined_at: '2026-01-10T09:00:00Z',
   },

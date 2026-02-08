@@ -33,9 +33,9 @@ This document is the product-facing source for UX behavior; API-level details re
 - governance policy
 - resource limits
 
-2. Project admin can manage shared resources:
-- shared sources library
-- shared LLM endpoints
+2. Project admin can manage project resources:
+- source library
+- LLM endpoints
 - project-scoped credentials
 
 3. Project admin can manage project groups:
@@ -49,7 +49,7 @@ This document is the product-facing source for UX behavior; API-level details re
 - project admin rights do not automatically grant rights in other projects
 - wheel users manage/delete only projects where they are project admin
 
-5. Shared sources behavior:
+5. Source library behavior:
 - any project member can upload files
 - uploader identity and timestamp must be retained
 
@@ -69,7 +69,7 @@ This document is the product-facing source for UX behavior; API-level details re
 1. Users (including admins) can use:
 - chat
 - AI Studio
-- private file library
+- source library
 - completion endpoints API
 
 2. MVP resource types are unified and do not distinguish private/shared in data model:

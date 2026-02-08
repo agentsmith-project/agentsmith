@@ -36,7 +36,10 @@ Backend should enforce 401/403 according to this matrix. Frontend already applie
 | chat | access chat page and all chat operations | `project:chat:access` | `/chat/sessions`, `/messages`, `/attachments` | page-level permission denied |
 | ai-studio list/detail | access studio page and task operations | `project:studio:access` | `GET/POST/PATCH/DELETE /recipes*`, `GET /recipes/{id}/events` | page-level permission denied |
 | sources | view/use sources and libraries | `project:source:use` | `GET /sources*`, `GET /source-libraries*` | page-level permission denied |
+| sources | switch source library context | `project:source:use` | `GET /source-libraries*`, `GET /source-libraries/{libraryId}/files*`, `GET /source-libraries/{libraryId}/ai-ready-jobs*` | keep page visible, block unavailable context with deterministic error |
 | sources | create/update/delete source or library | `project:source:manage` | `POST/PATCH/DELETE /sources*`, `POST/PATCH/DELETE /source-libraries*` | mutating controls disabled |
+| sources | file CRUD in selected library | `project:source:manage` | `POST/PATCH/DELETE /source-libraries/{libraryId}/files*` | mutating controls disabled |
+| sources | start/cancel AIReady job | `project:source:manage` | `POST /source-libraries/{libraryId}/ai-ready-jobs`, `POST /source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel` | mutating controls disabled; keep job status visible |
 | agents | view/use agents | `project:agent:use` | `GET /agents*`, `GET /agents/{id}/runtime-config` | page-level permission denied |
 | agents | create/update/delete agent and keys | `project:agent:manage` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
 | endpoints | view/use endpoints | `project:endpoint:use` | `GET /endpoints*` | page-level permission denied |
@@ -59,3 +62,4 @@ Backend should enforce 401/403 according to this matrix. Frontend already applie
 5. Workspace-scoped project list route has no `[project]` param. FE must use workspace membership-derived permissions and must not use authenticated fallback for access decisions.
 6. MVP target model: default allow for all project members + project-default limits + resource/subject overrides.
 7. Governance write actions are token-only in FE; role/group names are just template labels and must not be used as runtime gate conditions.
+8. Source library requests and AIReady tasks must remain in the selected `source_library_id` context and must not mix tuple namespaces across libraries.

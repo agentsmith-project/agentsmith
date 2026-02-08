@@ -4,14 +4,16 @@ This directory is the single source of truth for frontend permission and governa
 
 ## Canonical Documents (Read in this order)
 
-1. `frontend-token-interaction-contract.md`
-2. `frontend-resource-policy-governance-v1.md`
-3. `frontend-backend-gating-matrix.md`
-4. `auth-permission-model.md`
-5. `route-gate-test-checklist.md`
+1. `cf-private-hybrid-architecture-guide-v1.md`
+2. `frontend-token-interaction-contract.md`
+3. `frontend-resource-policy-governance-v1.md`
+4. `frontend-backend-gating-matrix.md`
+5. `auth-permission-model.md`
+6. `route-gate-test-checklist.md`
 
 ## Current MVP Contract Baseline
 
+- Dual-deploy architecture is contract-first: Cloudflare trial path + private deployment path share the same domain/application semantics.
 - Runtime authorization is token-only.
 - Role/group names are governance template labels, not runtime gate inputs.
 - Chat and AI Studio are access-only gated modules.

@@ -40,6 +40,10 @@ This contract supersedes ACL-first wording in older contracts.
 3. `project defaults`: baseline governance per resource type.
 4. `resource override`: per-resource exception to defaults.
 5. `subject override`: per-user/per-group exception to resource/default policy.
+6. `source_library tuple`: a bound triple for one library instance:
+- object namespace (`object_prefix`)
+- document namespace (`doc_namespace`)
+- vector namespace (`vector_namespace`)
 
 ## Policy Resolution Order
 
@@ -135,7 +139,20 @@ subject_overrides:
    - if `access_mode=allow_list`, at least one subject must be present
 4. Check rate limits.
 5. Check quota limits.
-6. Return standard deny/limit errors when blocked.
+6. For `source_library`, resolve and lock the tuple context (`object_prefix`, `doc_namespace`, `vector_namespace`) for this request.
+7. Return standard deny/limit errors when blocked.
+
+## Source Library Tuple Consistency Rules
+
+1. Every `source_library` must persist tuple metadata:
+- `object_prefix`
+- `doc_namespace`
+- `vector_namespace`
+
+2. All file and AIReady operations must carry `source_library_id`.
+3. Backend must reject tuple mismatch with a deterministic validation/business error.
+4. Frontend must reset list/detail/task panels after library switch and re-fetch under the new `source_library_id`.
+5. AIReady ingestion result must be traceable to the same tuple as the source file.
 
 ## Default Limits (To Be Decided)
 

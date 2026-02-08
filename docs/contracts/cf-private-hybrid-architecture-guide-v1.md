@@ -297,6 +297,22 @@ packages/
 4. 安全
 - 私有化支持离线 license、审计日志导出、对象存储加密、密钥轮换。
 
+### 8.3 当前阶段范围（P0）与目标阶段（P1）
+
+为了避免团队在最小验证期过早复杂化，按阶段约束能力边界：
+
+1. P0（当前最小验证范围）
+- 目标：打通真实登录与核心业务闭环，不追求高并发与复杂编排。
+- 依赖：Keycloak + MinIO（后端可先用 Node API + 进程内任务 worker）。
+- 功能闭环：登录、workspace/project 进入、source library CRUD、file CRUD、AIReady 最小链路。
+- 要求：所有接口保持最终契约形态（路径、字段、错误码、幂等语义），避免后续重写前端。
+
+2. P1（扩展到生产级私有化能力）
+- 目标：提升可靠性、可扩展性和运维可观测性。
+- 依赖：Postgres + Redis + MongoDB + Queue + MinIO。
+- 增强：Outbox、DLQ、回放工具、任务并发治理、复杂查询与聚合能力。
+- 要求：不修改 domain/application 语义，仅替换和扩展 adapter。
+
 ---
 
 ## 9. 关键非功能设计
@@ -353,6 +369,46 @@ packages/
 4. 密钥管理
 - CF Secrets / K8s Secret + 外部 KMS（企业客户可选）。
 
+### 9.5 后台任务统一模型（文档处理 / 异步 Chat / 离线 Agent）
+
+统一任务域模型，避免每个模块自建状态机：
+
+1. 任务类型
+- `document_ingest`：文件解析、切片、embedding、索引入库。
+- `chat_async_turn`：允许前端断线后继续推理，重连后恢复会话状态。
+- `agent_offline_run`：离线 agent 批处理执行。
+
+2. 标准状态机
+- `queued -> running -> retrying -> succeeded | failed | cancelled | dead_lettered`
+- 所有任务都必须记录 `retry_count`、`last_error`、`updated_at`。
+
+3. 幂等规则
+- 写接口必须接受 `Idempotency-Key`。
+- 建议任务幂等键：`{workspace}:{project}:{resource}:{operation}:{version}`
+
+4. 失败恢复规则
+- 明确最大重试次数和退避策略（指数退避 + 抖动）。
+- 超过阈值进入 `dead_lettered`，支持人工回放。
+- 回放必须保留原始上下文快照，避免“当前配置污染历史任务”。
+
+### 9.6 Source Library 三元组一致性（强约束）
+
+每个 `source_library` 实例绑定一套三元组资源，切换库时必须一起切换：
+
+1. 三元组定义
+- 文件对象存储命名空间：`object_prefix`（MinIO/R2）
+- 文档存储命名空间：`doc_namespace`（Mongo 或同类文档库）
+- 向量存储命名空间：`vector_namespace`（向量库或同类服务）
+
+2. 一致性约束
+- 任何文件查询、AIReady 入库、向量检索都必须显式携带 `source_library_id`。
+- 禁止跨库混读（例如文件属于 A 库，向量写入 B 库）。
+- 库切换后，前端应清空旧库视图并按新库上下文重拉数据。
+
+3. 审计要求
+- 记录 `source_library_id`、`doc_namespace`、`vector_namespace`、`object_prefix` 到任务审计日志。
+- 任务失败时输出可定位到具体库三元组的错误上下文。
+
 ---
 
 ## 10. API 与前端协同（你当前阶段最重要）
@@ -374,6 +430,30 @@ packages/
 4. 引入回归测试
 - 前端 E2E 复用现有用例。
 - 增加 API contract tests + integration tests。
+
+### 10.1 Source Library / File / AIReady 最小契约（P0 必做）
+
+1. Source library
+- `GET /workspaces/{ws}/projects/{project}/source-libraries`
+- `POST /workspaces/{ws}/projects/{project}/source-libraries`
+- `PATCH /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}`
+- `DELETE /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}`
+
+2. File CRUD（强制 library 作用域）
+- `GET /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/files`
+- `POST /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/files`
+- `PATCH /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/files/{fileId}`
+- `DELETE /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/files/{fileId}`
+
+3. AIReady job
+- `POST /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs`
+- `GET /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}`
+- `POST /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel`
+
+4. 字段约束
+- `source_library_id`, `object_prefix`, `doc_namespace`, `vector_namespace` 为跨端必备字段。
+- 任务字段：`job_status`, `retry_count`, `error_code`, `error_message`, `idempotency_key`。
+- 错误语义统一 `401/403/422/5xx`，并保持稳定业务错误码。
 
 ---
 
@@ -473,4 +553,3 @@ packages/
 5. 用一组 E2E 用例同时打两套入口，确保行为一致。
 
 当这 5 步跑通后，再扩展到 agents/sources/studio 等复杂模块，风险会明显下降。
-

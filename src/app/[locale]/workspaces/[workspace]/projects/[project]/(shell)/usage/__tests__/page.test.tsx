@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import UsagePage from '../page';
 
 const mockUsageFilters = vi.fn((_props: unknown) => <div data-testid="usage-filters" />);
+const mockHasPermission = vi.fn((_permission?: string) => true);
 const STABLE_USAGE_KPI_RESULT = { data: undefined, isLoading: false };
 const STABLE_USAGE_RECORDS_RESULT = { data: { items: [] }, isLoading: false, error: null };
 const mockUseUsageKPI = vi.fn((..._args: unknown[]) => STABLE_USAGE_KPI_RESULT);
@@ -34,7 +35,7 @@ vi.mock('@/components/audit-usage/UsageTable', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: () => true,
+  useHasPermission: (permission: string) => mockHasPermission(permission),
 }));
 
 vi.mock('@/lib/hooks/use-audit-usage', () => ({
@@ -72,6 +73,25 @@ vi.mock('@/lib/stores/authStore', () => ({
 }));
 
 describe('UsagePage route', () => {
+  it('shows permission error when usage token is missing', async () => {
+    mockHasPermission.mockReturnValue(false);
+    render(
+      <UsagePage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+    });
+    expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+    mockHasPermission.mockReturnValue(true);
+  });
+
   it('does not force end_user_id by role', async () => {
     render(
       <UsagePage

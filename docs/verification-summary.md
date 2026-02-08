@@ -33,7 +33,7 @@ Full functional testing across all pages and features:
 | `projects.spec.ts` | 6 | Projects list, search, create/delete dialog, pin/unpin, navigation |
 | `overview.spec.ts` | 4 | KPI cards, time range selector, quick access, activity timeline |
 | `chat.spec.ts` | 4 | Three-pane layout, thread selection, composer, send message |
-| `workbench.spec.ts` | 8 | AI Studio task list, create task, task detail, conversation input, artifacts |
+| `workbench.spec.ts` | 8 | AI Studio task list, create task, task detail, conversation input, artifacts (legacy filename) |
 | `agents.spec.ts` | 8 | Table rendering, create dialog, toggle, validation |
 | `endpoints.spec.ts` | 7 | Table rendering, create dialog, validation |
 | `credentials.spec.ts` | 9 | Table rendering, create/rotate/delete dialogs |

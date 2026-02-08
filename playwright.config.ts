@@ -24,7 +24,8 @@ export default defineConfig({
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
   webServer: useManagedDevServer
     ? {
-        command: 'npm run dev:test -- --port 3001',
+        // Use local next binary directly to avoid npm/npx config arg injection warnings.
+        command: './node_modules/.bin/next dev --port 3001',
         url: 'http://localhost:3001',
         reuseExistingServer: true,
         timeout: 120000,

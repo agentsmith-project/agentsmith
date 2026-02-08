@@ -19,7 +19,7 @@ This directory contains all React components for the MBOS frontend application.
 
 **Examples**:
 - `components/sources/` - Sources module components
-- `components/workbench/` - Workbench/Recipe module components
+- `components/workbench/` - AI Studio / Task module components (directory name kept for compatibility)
 - `components/audit-usage/` - Audit & Usage module components
 
 ### Shared Components

@@ -18,6 +18,10 @@ vi.mock('@/lib/hooks/use-sync-auth-from-url', () => ({
   useSyncAuthFromUrl: () => undefined,
 }));
 
+vi.mock('@/lib/hooks/use-permissions', () => ({
+  useHasWorkspacePermission: vi.fn((permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update'),
+}));
+
 vi.mock('@/lib/hooks/use-workspaces', () => ({
   useWorkspace: () => ({
     data: STABLE_WORKSPACE,

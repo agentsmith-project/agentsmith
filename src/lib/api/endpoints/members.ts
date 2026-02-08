@@ -22,7 +22,7 @@ export interface Member {
   email: string;
   name: string;
   avatar?: string;
-  role: 'owner' | 'admin' | 'developer' | 'user'; // group alias id
+  role: 'owner' | 'admin' | 'developer' | 'user'; // project group alias id (template key)
   permissions: string[]; // 平台层权限点
   quota_overrides?: QuotaOverride;
   status: 'active' | 'removed';
@@ -30,7 +30,7 @@ export interface Member {
 }
 
 export interface UpdateMemberGroupRequest {
-  role: 'owner' | 'admin' | 'developer' | 'user';
+  role: 'owner' | 'admin' | 'developer' | 'user'; // group alias id
   permissions: string[];
 }
 
@@ -69,7 +69,7 @@ export interface JoinInviteActionResponse {
 export interface Membership {
   project_id: string;
   user_id: string;
-  role: 'owner' | 'admin' | 'developer' | 'user';
+  role: 'owner' | 'admin' | 'developer' | 'user'; // group alias id
   permissions: string[];
   status: 'active' | 'removed';
   joined_at: string;

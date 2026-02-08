@@ -17,7 +17,7 @@ import { getApiClient } from '@/lib/api';
 import { validateUsageKPI } from '@/lib/api/validators';
 import { formatNumber } from '@/lib/utils/formatters';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useHasPermission, useCurrentPermissions } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -64,6 +64,7 @@ export default function OverviewPage() {
   const projectId = validateProjectParam(params.project);
   const locale = (params.locale as string) || 'en-US';
   const canReadOverview = useHasPermission('project:read');
+  const currentPermissions = useCurrentPermissions();
   const isValidParams = !!workspaceId && !!projectId;
 
   // Must run on every render to keep hooks order stable
@@ -196,7 +197,12 @@ export default function OverviewPage() {
         {/* Project Navigation */}
         <div data-testid="overview__quick-access">
           <h2 className="text-lg font-semibold text-primary mb-4">{t('quick_access')}</h2>
-          <ProjectNavigation basePath={basePath} columns={3} translations={t} />
+          <ProjectNavigation
+            basePath={basePath}
+            columns={3}
+            translations={t}
+            userPermissions={Array.from(currentPermissions)}
+          />
         </div>
 
         {/* Recent Activity */}

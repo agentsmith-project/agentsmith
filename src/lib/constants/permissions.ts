@@ -104,7 +104,6 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
   },
 ] as const;
 
-// Legacy type name preserved to avoid churn in member-template UI components.
 export const GROUP_TEMPLATES = {
   owner: [
     ...PLATFORM_PERMISSIONS.WORKSPACE,
@@ -184,10 +183,10 @@ export function isHighRiskPermission(permission: string): boolean {
   return HIGH_RISK_PERMISSIONS.includes(permission as HighRiskPermission);
 }
 
-export function getGroupTemplatePermissions(role: GroupTemplate): readonly string[] {
-  return GROUP_TEMPLATES[role];
+export function getGroupTemplatePermissions(groupTemplate: GroupTemplate): readonly string[] {
+  return GROUP_TEMPLATES[groupTemplate];
 }
 
-export function getAllPermissionsForGroup(role: GroupTemplate): string[] {
-  return [...GROUP_TEMPLATES[role]];
+export function getAllPermissionsForGroup(groupTemplate: GroupTemplate): string[] {
+  return [...GROUP_TEMPLATES[groupTemplate]];
 }

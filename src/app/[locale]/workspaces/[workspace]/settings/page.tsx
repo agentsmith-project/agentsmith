@@ -13,8 +13,8 @@ import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
-function formatWorkspaceGroupAlias(role: string): string {
-  switch (role) {
+function formatWorkspaceGroupAlias(groupAlias: string): string {
+  switch (groupAlias) {
     case 'owner':
       return 'governance';
     case 'admin':
@@ -24,7 +24,7 @@ function formatWorkspaceGroupAlias(role: string): string {
     case 'user':
       return 'member';
     default:
-      return role;
+      return groupAlias;
   }
 }
 
@@ -33,6 +33,7 @@ export default function WorkspaceSettingsPage() {
   const t = useTranslations('settings');
   const tErrors = useTranslations('errors');
   const workspaceId = validateWorkspaceParam(params?.workspace);
+  const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canManageGovernance = useHasWorkspacePermission('workspace:governance:update');
   const { data: currentWorkspace } = useWorkspace(workspaceId ?? '');
   const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
@@ -45,6 +46,17 @@ export default function WorkspaceSettingsPage() {
         <div className="max-w-md text-center space-y-2">
           <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
           <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (!canReadWorkspace) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
+          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
         </div>
       </PageState>
     );

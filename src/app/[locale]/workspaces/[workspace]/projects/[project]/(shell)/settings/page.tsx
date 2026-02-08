@@ -296,8 +296,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
           description: currentProject.description,
           visibility: currentProject.visibility,
           owner_id: currentProject.owner_id,
-          role: currentProject.role,
-          permissions: currentProject.permissions ?? [],
           status: currentProject.status,
           created_at: currentProject.created_at,
           updated_at: currentProject.updated_at,

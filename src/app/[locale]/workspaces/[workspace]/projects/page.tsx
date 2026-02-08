@@ -87,9 +87,9 @@ export default function ProjectsPage() {
   const locale = routeParams?.locale || 'en-US';
 
   // Fetch workspace and projects
-  const { data: currentWorkspace } = useWorkspace(workspaceId);
-  const { data: workspaceMembers = [] } = useWorkspaceMembers(workspaceId);
-  const { data: allProjects = [] } = useProjects(workspaceId);
+  const { data: currentWorkspace } = useWorkspace(workspaceId ?? '');
+  const { data: workspaceMembers = [] } = useWorkspaceMembers(workspaceId ?? '');
+  const { data: allProjects = [] } = useProjects(workspaceId ?? '');
   const pinnedStorageKey = useMemo(
     () => (workspaceId ? `mbos:projects:pinned:${workspaceId}` : ''),
     [workspaceId]

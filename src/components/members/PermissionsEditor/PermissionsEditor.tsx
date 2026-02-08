@@ -16,7 +16,12 @@ import {
 import { TemplateMode } from './TemplateMode';
 import { AdvancedMode } from './AdvancedMode';
 import { ChangesPreview } from './ChangesPreview';
-import { ROLE_TEMPLATES, isHighRiskPermission, ALL_PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
+import {
+  ROLE_TEMPLATES,
+  isHighRiskPermission,
+  ALL_PLATFORM_PERMISSIONS,
+  type PlatformPermission,
+} from '@/lib/constants/permissions';
 
 export interface PermissionsEditorProps {
   initialPermissions: string[];
@@ -30,9 +35,14 @@ export function PermissionsEditor({
   onCancel,
 }: PermissionsEditorProps) {
   const t = useTranslations('members.permissions');
+  const isPlatformPermission = React.useCallback(
+    (permission: string): permission is PlatformPermission =>
+      (ALL_PLATFORM_PERMISSIONS as readonly string[]).includes(permission),
+    []
+  );
   const expandedInitial = React.useMemo(
-    () => initialPermissions.filter((permission) => ALL_PLATFORM_PERMISSIONS.includes(permission)),
-    [initialPermissions]
+    () => initialPermissions.filter(isPlatformPermission),
+    [initialPermissions, isPlatformPermission]
   );
   // Default to advanced when member has custom permissions (no matching template)
   const initialMode = React.useMemo(() => {
@@ -83,7 +93,7 @@ export function PermissionsEditor({
 
   // Calculate changes (use expanded initial as baseline)
   const changes = React.useMemo(() => {
-    const initialSet = new Set(expandedInitial);
+    const initialSet = new Set<string>(expandedInitial);
     const added = Array.from(selectedPermissions).filter((p) => !initialSet.has(p));
     const removed = expandedInitial.filter((p) => !selectedPermissions.has(p));
     return { added, removed };

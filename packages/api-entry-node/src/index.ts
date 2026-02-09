@@ -1183,12 +1183,7 @@ async function verifyBearerToken(req: http.IncomingMessage): Promise<Authenticat
 
   const realmBase = keycloakRealmBaseFromEnv();
   if (!realmBase) {
-    // Local fallback when Keycloak is intentionally not configured.
-    return {
-      id: 'user_local',
-      email: 'local@example.com',
-      name: 'Local User',
-    };
+    return null;
   }
 
   const userinfoUrl = `${realmBase}/protocol/openid-connect/userinfo`;

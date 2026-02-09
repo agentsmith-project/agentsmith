@@ -68,6 +68,15 @@ interface SessionStreamState {
   assistant: SessionStreamingAssistant | null;
 }
 
+function mapRuntimeStatusToStreamStatus(
+  runtimeStatus: ChatSession['runtime_status'] | undefined,
+): SessionStreamStatus {
+  if (runtimeStatus === 'running' || runtimeStatus === 'stopping') return 'streaming';
+  if (runtimeStatus === 'failed') return 'error';
+  if (runtimeStatus === 'stopped') return 'stopped';
+  return 'idle';
+}
+
 export default function ChatPage({ params }: ChatPageProps) {
   const queryClient = useQueryClient();
   const t = useTranslations('chat');
@@ -733,7 +742,11 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
   const activeStreamStatus: SessionStreamStatus = currentSessionId
-    ? (streamStateBySession[currentSessionId]?.status ?? 'idle')
+    ? (() => {
+        const localStatus = streamStateBySession[currentSessionId]?.status ?? 'idle';
+        if (localStatus !== 'idle') return localStatus;
+        return mapRuntimeStatusToStreamStatus(activeSession?.runtime_status);
+      })()
     : 'idle';
   const activeStreamingAssistant = currentSessionId
     ? (streamStateBySession[currentSessionId]?.assistant ?? null)

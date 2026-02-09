@@ -4,6 +4,7 @@ import http, { type Server } from 'node:http';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
 
 const servers: Server[] = [];
+const originalKeycloakIssuer = process.env.KEYCLOAK_ISSUER_URL;
 
 afterEach(async () => {
   await Promise.all(
@@ -15,9 +16,35 @@ afterEach(async () => {
     ),
   );
   servers.length = 0;
+  if (originalKeycloakIssuer === undefined) {
+    delete process.env.KEYCLOAK_ISSUER_URL;
+  } else {
+    process.env.KEYCLOAK_ISSUER_URL = originalKeycloakIssuer;
+  }
 });
 
+function startMockKeycloakServer(): { server: Server; issuerUrl: string } {
+  const server = http.createServer((_req, res) => {
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    res.end(
+      JSON.stringify({
+        sub: 'user_test',
+        email: 'test@example.com',
+        preferred_username: 'test-user',
+        name: 'Test User',
+      }),
+    );
+  });
+  server.listen(0);
+  servers.push(server);
+  const address = server.address() as AddressInfo;
+  return { server, issuerUrl: `http://127.0.0.1:${address.port}` };
+}
+
 function startServer(): { server: Server; baseUrl: string } {
+  const keycloak = startMockKeycloakServer();
+  process.env.KEYCLOAK_ISSUER_URL = keycloak.issuerUrl;
   const server = createNodeApiServer(0, createDefaultNodeApiDeps());
   servers.push(server);
 
@@ -26,6 +53,8 @@ function startServer(): { server: Server; baseUrl: string } {
 }
 
 function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>): { server: Server; baseUrl: string } {
+  const keycloak = startMockKeycloakServer();
+  process.env.KEYCLOAK_ISSUER_URL = keycloak.issuerUrl;
   const server = createNodeApiServer(0, deps);
   servers.push(server);
 
@@ -143,7 +172,7 @@ describe('api-entry-node projects routes', () => {
     const membersBody = (await members.json()) as {
       items: Array<{ user_id: string; permissions: string[] }>;
     };
-    expect(membersBody.items[0]?.user_id).toBe('user_local');
+    expect(membersBody.items[0]?.user_id).toBe('user_test');
     expect(membersBody.items[0]?.permissions).toContain('workspace:project:create');
   });
 

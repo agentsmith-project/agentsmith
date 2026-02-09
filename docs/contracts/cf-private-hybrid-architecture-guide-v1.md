@@ -499,6 +499,12 @@ packages/
     - assistant 重生成产生 variant（同 parent，不同 variant_index）
     - 携带 `branch_leaf_message_id` + 相同 input 时不得重复创建 user message
   - `messages/streams/{streamId}/stop` 需幂等（重复调用返回 202）
+  - `chat/sessions` 响应可携带 `runtime_status`（`running|stopping|completed|stopped|failed`）用于前端刷新后的运行态展示
+  - 删除 session 前必须先中止该 session 的活跃 stream，避免后台悬挂写入
+
+5. 认证策略（当前约束）
+- API 必须依赖 Keycloak `userinfo` 校验 Bearer Token。
+- 不允许 “Keycloak 未配置时本地用户回退” 的兼容路径；未配置即按未认证返回 401（快速失败）。
 
 ---
 

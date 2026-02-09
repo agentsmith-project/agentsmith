@@ -481,25 +481,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       <PageLayout
         density="immersive"
         contentWidth="full"
-        header={(
-          <PageHeader
-            title={t('title')}
-            actions={(
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (!canUseChat) return;
-                  createSessionMutation.mutate();
-                }}
-                disabled={!canUseChat || createSessionMutation.isPending}
-                data-testid="chat__new-thread-btn"
-              >
-                <Plus className="w-4 h-4" />
-                {t('new_thread')}
-              </Button>
-            )}
-          />
-        )}
+        header={<PageHeader title={t('title')} />}
       >
         <div className="h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40">
           <ThreadsPane
@@ -529,6 +511,12 @@ export default function ChatPage({ params }: ChatPageProps) {
               setThreadToDelete({ id, title: thread?.title });
               setDeleteThreadDialogOpen(true);
             }}
+            onCreate={() => {
+              if (!canUseChat) return;
+              createSessionMutation.mutate();
+            }}
+            canCreate={canUseChat}
+            createPending={createSessionMutation.isPending}
             isLoading={sessionsLoading}
           />
 
@@ -556,6 +544,19 @@ export default function ChatPage({ params }: ChatPageProps) {
                     <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
                     <div className="text-foreground font-medium mb-1">{t('no_active_thread_title')}</div>
                     <div className="text-tertiary text-sm">{t('no_active_thread_description')}</div>
+                    <Button
+                      className="mt-4"
+                      variant="outline"
+                      onClick={() => {
+                        if (!canUseChat) return;
+                        createSessionMutation.mutate();
+                      }}
+                      disabled={!canUseChat || createSessionMutation.isPending}
+                      data-testid="chat__empty-create-btn"
+                    >
+                      <Plus className="w-4 h-4" />
+                      {t('new_thread')}
+                    </Button>
                   </div>
                 </div>
               ) : messagesLoading ? (
@@ -642,45 +643,47 @@ export default function ChatPage({ params }: ChatPageProps) {
 
             <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePicked} />
 
-            <Composer
-              value={composerValue}
-              onChange={(v) => {
-                if (!currentSessionId) return;
-                setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
-              }}
-              onSend={handleSend}
-              onStop={stopStreaming}
-              mode="compose"
-              autoFocus={!editingMessageId && streamStatus === 'idle'}
-              onPickFiles={() => {
-                if (editingMessageId) {
-                  toast.info(t('attachments.disabled_while_editing'));
-                  return;
+            {currentSessionId && (
+              <Composer
+                value={composerValue}
+                onChange={(v) => {
+                  if (!currentSessionId) return;
+                  setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
+                }}
+                onSend={handleSend}
+                onStop={stopStreaming}
+                mode="compose"
+                autoFocus={!editingMessageId && streamStatus === 'idle'}
+                onPickFiles={() => {
+                  if (editingMessageId) {
+                    toast.info(t('attachments.disabled_while_editing'));
+                    return;
+                  }
+                  onPickFiles();
+                }}
+                attachments={attachments}
+                onRemoveAttachment={(id) => {
+                  if (!canUseChat) return;
+                  if (!currentSessionId) return;
+                  deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
+                }}
+                onRetryAttachment={(id) => {
+                  if (!canUseChat) return;
+                  if (!currentSessionId) return;
+                  retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
+                }}
+                disabled={
+                  !currentSessionId ||
+                  !canUseChat ||
+                  createMessageMutation.isPending ||
+                  editMessageMutation.isPending ||
+                  initAttachmentMutation.isPending ||
+                  disabled ||
+                  !!editingMessageId
                 }
-                onPickFiles();
-              }}
-              attachments={attachments}
-              onRemoveAttachment={(id) => {
-                if (!canUseChat) return;
-                if (!currentSessionId) return;
-                deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
-              }}
-              onRetryAttachment={(id) => {
-                if (!canUseChat) return;
-                if (!currentSessionId) return;
-                retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
-              }}
-              disabled={
-                !currentSessionId ||
-                !canUseChat ||
-                createMessageMutation.isPending ||
-                editMessageMutation.isPending ||
-                initAttachmentMutation.isPending ||
-                disabled ||
-                !!editingMessageId
-              }
-              streaming={disabled}
-            />
+                streaming={disabled}
+              />
+            )}
           </section>
         </div>
         <AlertDialog open={deleteThreadDialogOpen} onOpenChange={setDeleteThreadDialogOpen}>

@@ -80,8 +80,11 @@ vi.mock('@/lib/stores/authStore', () => ({
 }));
 
 vi.mock('@/components/chat/ThreadsPane', () => ({
-  ThreadsPane: ({ onDelete }: { onDelete: (id: string) => void }) => (
+  ThreadsPane: ({ onDelete, onCreate }: { onDelete: (id: string) => void; onCreate: () => void }) => (
     <div data-testid="chat__threads-pane">
+      <button type="button" data-testid="chat__new-thread-btn" onClick={onCreate}>
+        new-thread
+      </button>
       <button type="button" data-testid="chat__thread-delete-btn" onClick={() => onDelete('session_1')}>
         delete-thread
       </button>
@@ -147,7 +150,7 @@ describe('ChatPage', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
-    expect(within(header).getByTestId('chat__new-thread-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('chat__new-thread-btn')).toBeInTheDocument();
     expect(screen.queryByTestId('page-layout__toolbar')).not.toBeInTheDocument();
   });
 

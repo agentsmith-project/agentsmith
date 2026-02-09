@@ -1,11 +1,13 @@
 'use client';
 
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import { Virtuoso } from 'react-virtuoso';
-import { Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 
 import type { ChatSession } from '@/lib/api/types';
 
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ThreadItem } from './ThreadItem';
 
@@ -19,6 +21,9 @@ export function ThreadsPane({
   onToggleStar,
   onTogglePin,
   onDelete,
+  onCreate,
+  canCreate,
+  createPending,
   isLoading,
 }: {
   sessions: ChatSession[];
@@ -30,8 +35,13 @@ export function ThreadsPane({
   onToggleStar: (sessionId: string, next: boolean) => void;
   onTogglePin: (sessionId: string, next: boolean) => void;
   onDelete: (sessionId: string) => void;
+  onCreate: () => void;
+  canCreate: boolean;
+  createPending: boolean;
   isLoading: boolean;
 }) {
+  const t = useTranslations('chat');
+
   const filtered = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const base = sessions;
@@ -50,12 +60,22 @@ export function ThreadsPane({
       data-testid="chat__threads-pane"
     >
       <div className="p-3 border-b border-subtle">
+        <Button
+          variant="outline"
+          className="w-full mb-3 justify-center"
+          onClick={onCreate}
+          disabled={!canCreate || createPending}
+          data-testid="chat__new-thread-btn"
+        >
+          <Plus className="w-4 h-4" />
+          {t('new_thread')}
+        </Button>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-icon-default" />
           <Input
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder="Search threads..."
+            placeholder={t('search_threads_placeholder')}
             className="pl-9"
           />
         </div>
@@ -63,9 +83,9 @@ export function ThreadsPane({
 
       <div className="flex-1 min-h-0">
         {isLoading ? (
-          <div className="text-sm text-tertiary text-center py-6">Loading...</div>
+          <div className="text-sm text-tertiary text-center py-6">{t('loading')}</div>
         ) : filtered.length === 0 ? (
-          <div className="text-sm text-tertiary text-center py-6">No threads</div>
+          <div className="text-sm text-tertiary text-center py-6">{t('no_threads')}</div>
         ) : (
           <Virtuoso
             style={{ height: '100%' }}

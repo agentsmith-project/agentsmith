@@ -312,6 +312,8 @@
     "attachments_title": "Attachments",
     "attachments_clear": "Clear Attachments",
     "new_thread": "New Chat",
+    "search_threads_placeholder": "Search threads...",
+    "no_threads": "No threads",
     "threads_title": "Chats",
     "threads_today": "Today",
     "threads_yesterday": "Yesterday",

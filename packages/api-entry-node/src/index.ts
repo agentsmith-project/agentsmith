@@ -1147,6 +1147,19 @@ function sseWrite(res: http.ServerResponse, event: string, data: unknown): void 
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+function splitTextForStreaming(text: string, chunkSize = 24): string[] {
+  if (!text) return [];
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function safeAssistantContent(payload: unknown): string {
   if (!payload || typeof payload !== 'object') {
     return '';
@@ -2404,10 +2417,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         model: endpoint.openai_model,
         endpoint_id: endpoint.id,
       });
-      sseWrite(res, 'delta', {
-        message_id: created.id,
-        delta: assistantText,
-      });
+      for (const delta of splitTextForStreaming(assistantText)) {
+        sseWrite(res, 'delta', {
+          message_id: created.id,
+          delta,
+        });
+        // Simulate token-like delivery for visible streaming UX.
+        await sleep(14);
+      }
       sseWrite(res, 'done', {
         message_id: created.id,
         finish_reason: 'stop',

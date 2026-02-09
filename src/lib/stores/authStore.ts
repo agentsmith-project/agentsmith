@@ -66,46 +66,32 @@ const initialData: AuthData = {
 };
 
 // ============================================================
-// Store Factory (environment-aware)
+// Store Factory
 // ============================================================
 
-const usePersist = process.env.NEXT_PUBLIC_USE_MSW === 'true';
-
 const createAuthStore = (): AuthStoreWithPersist => {
-  if (usePersist) {
-    return create<AuthState>()(
-      persist(
-        (set) => ({
-          ...initialData,
-          setAuth: (user: User, token: string) => {
-            set({ user, token, isAuthenticated: true });
-          },
-          clearAuth: () => {
-            set(initialData);
-          },
+  return create<AuthState>()(
+    persist(
+      (set) => ({
+        ...initialData,
+        setAuth: (user: User, token: string) => {
+          set({ user, token, isAuthenticated: true });
+        },
+        clearAuth: () => {
+          set(initialData);
+        },
+      }),
+      {
+        name: 'mbos-auth',
+        storage: createJSONStorage(() => localStorage),
+        partialize: (state) => ({
+          user: state.user,
+          token: state.token,
+          isAuthenticated: state.isAuthenticated,
         }),
-        {
-          name: 'mbos-auth',
-          storage: createJSONStorage(() => localStorage),
-          partialize: (state) => ({
-            user: state.user,
-            token: state.token,
-            isAuthenticated: state.isAuthenticated,
-          }),
-        }
-      )
-    ) as AuthStoreWithPersist;
-  }
-
-  return create<AuthState>()((set) => ({
-    ...initialData,
-    setAuth: (user: User, token: string) => {
-      set({ user, token, isAuthenticated: true });
-    },
-    clearAuth: () => {
-      set(initialData);
-    },
-  })) as AuthStoreWithPersist;
+      }
+    )
+  ) as AuthStoreWithPersist;
 };
 
 export const useAuthStore = createAuthStore();
@@ -159,24 +145,17 @@ if (typeof window !== 'undefined') {
 /**
  * Hook to check if the auth store has been hydrated from storage.
  *
- * In development mode (with persist middleware), this waits for
- * localStorage data to be loaded. In production (without persist),
- * hydration is immediate.
+ * This waits for localStorage data to be loaded by persist middleware.
  *
  * @returns boolean - true when store is ready to use
  */
 export const useAuthStoreHydration = (): boolean => {
   const [hydrated, setHydrated] = useState(() => {
-    // If persist middleware is not enabled, hydration is immediate
-    if (!useAuthStore.persist) {
-      return true;
-    }
     // Check if already hydrated (for fast refresh scenarios)
-    return useAuthStore.persist.hasHydrated();
+    return useAuthStore.persist?.hasHydrated() ?? true;
   });
 
   useEffect(() => {
-    // If no persist middleware, nothing to wait for
     if (!useAuthStore.persist) {
       setHydrated(true);
       return;

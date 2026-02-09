@@ -314,6 +314,8 @@
     "attachments_title": "附件",
     "attachments_clear": "清空附件",
     "new_thread": "新建聊天",
+    "search_threads_placeholder": "搜索会话...",
+    "no_threads": "暂无会话",
     "threads_title": "聊天记录",
     "threads_today": "今天",
     "threads_yesterday": "昨天",

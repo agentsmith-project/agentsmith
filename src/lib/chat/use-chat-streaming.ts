@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { ChatMessage, ChatSession } from '@/lib/api/types';
-import { postChatStream, streamSseJson } from '@/lib/chat/stream';
+import { postChatStream, streamSseJson } from '@/lib/chat/stream'; 
 import { createThrottle } from '@/lib/chat/throttle';
+import { chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
 import type { SessionStreamState } from '@/lib/chat/stream-state';
 import { toast } from '@/components/ui/toast';
 
@@ -353,21 +354,21 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         setSessionStreamState(runArgs.sessionId, { status: 'idle', assistant: null });
       }
 
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, runArgs.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, runArgs.sessionId) });
+      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
     } catch (e: unknown) {
       if (controller.signal.aborted) {
         if (streamStillActive()) {
           setSessionStreamState(runArgs.sessionId, { status: 'stopped', assistant: null });
         }
-        queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, runArgs.sessionId] });
-        queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+        queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, runArgs.sessionId) });
+        queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
         return;
       }
       setSessionStreamState(runArgs.sessionId, { status: 'error', assistant: null });
       toast.error(e instanceof Error ? e.message : messages.streamingFailed);
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, runArgs.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, runArgs.sessionId) });
+      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
     } finally {
       if (streamControllersRef.current.get(runArgs.sessionId) === controller) {
         streamControllersRef.current.delete(runArgs.sessionId);

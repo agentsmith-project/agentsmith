@@ -23,6 +23,7 @@ import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
 import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
+import { chatAttachmentsKey, chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
 import {
   mapRuntimeStatusToStreamStatus,
   type SessionStreamStatus,
@@ -100,7 +101,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const endpointAPI = useMemo(() => new EndpointAPI(apiClient), [apiClient]);
 
   const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
-    queryKey: ['chat', 'sessions', workspaceId, projectId],
+    queryKey: chatSessionsKey(workspaceId, projectId),
     queryFn: () => chatAPI.getSessions(workspaceId, projectId, { page: 1, page_size: 1000 }),
     enabled: !!workspaceId && !!projectId && canReadThreads,
   });
@@ -124,7 +125,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const endpoints = endpointsData?.items ?? [];
 
   const { data: messagesData, isLoading: messagesLoading } = useQuery({
-    queryKey: ['chat', 'messages', workspaceId, projectId, currentSessionId],
+    queryKey: chatMessagesKey(workspaceId, projectId, currentSessionId ?? ''),
     queryFn: () => {
       if (!currentSessionId) return { items: [], total: 0, page: 1, page_size: 500, has_more: false };
       return chatAPI.getMessages(workspaceId, projectId, currentSessionId, { page: 1, page_size: 500 });
@@ -154,7 +155,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   }, [currentSessionId]);
 
   const { data: attachmentsData } = useQuery({
-    queryKey: ['chat', 'attachments', workspaceId, projectId, currentSessionId],
+    queryKey: chatAttachmentsKey(workspaceId, projectId, currentSessionId ?? ''),
     queryFn: () => {
       if (!currentSessionId) return { items: [], total: 0 };
       return chatAPI.getAttachments(workspaceId, projectId, currentSessionId);
@@ -182,7 +183,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       setCurrentSessionId(data.id);
       setSearchQuery('');
       setEditingMessageId(null);
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
     },
   });
 
@@ -191,15 +192,15 @@ export default function ChatPage({ params }: ChatPageProps) {
       sessionId: string;
       data: Partial<Pick<ChatSession, 'title' | 'model' | 'endpoint_id' | 'pinned' | 'starred'>>;
     }) => chatAPI.updateSession(workspaceId, projectId, args.sessionId, args.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) }),
   });
 
   const deleteSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => chatAPI.deleteSession(workspaceId, projectId, sessionId),
     onSuccess: (_data, sessionId) => {
       if (currentSessionId === sessionId) setCurrentSessionId(null);
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, sessionId] });
+      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, sessionId) });
     },
   });
 
@@ -212,8 +213,8 @@ export default function ChatPage({ params }: ChatPageProps) {
         parent_id: args.parent_id ?? null,
       }),
     onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, vars.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, vars.sessionId) });
+      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
     },
   });
 
@@ -221,8 +222,8 @@ export default function ChatPage({ params }: ChatPageProps) {
     mutationFn: async (args: { sessionId: string; messageId: string; content: string }) =>
       chatAPI.editMessage(workspaceId, projectId, args.sessionId, args.messageId, { content: args.content }),
     onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, vars.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
+      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, vars.sessionId) });
+      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
     },
   });
 
@@ -236,7 +237,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       return { ...res, sessionId: args.sessionId, file: args.file };
     },
     onSuccess: async ({ attachment, upload_url, sessionId, file }) => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, sessionId] });
+      queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, sessionId) });
       if (!upload_url) return;
       try {
         const put = await fetch(upload_url, {
@@ -246,7 +247,7 @@ export default function ChatPage({ params }: ChatPageProps) {
         });
         if (!put.ok) throw new Error(`Upload failed (${put.status})`);
         await chatAPI.completeAttachment(workspaceId, projectId, sessionId, attachment.id, {});
-        queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, sessionId] });
+        queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, sessionId) });
       } catch (e: unknown) {
         toast.error(e instanceof Error ? e.message : t('upload_failed'));
       }
@@ -257,20 +258,20 @@ export default function ChatPage({ params }: ChatPageProps) {
     mutationFn: async (args: { sessionId: string; attachmentId: string }) =>
       chatAPI.deleteAttachment(workspaceId, projectId, args.sessionId, args.attachmentId),
     onSuccess: (_data, vars) =>
-      queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, vars.sessionId] }),
+      queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, vars.sessionId) }),
   });
 
   const retryAttachmentMutation = useMutation({
     mutationFn: async (args: { sessionId: string; attachmentId: string }) =>
       chatAPI.retryAttachment(workspaceId, projectId, args.sessionId, args.attachmentId),
     onSuccess: (_data, vars) =>
-      queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, vars.sessionId] }),
+      queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, vars.sessionId) }),
   });
 
   const upsertStreamAssistantToCache = (sessionId: string, message: ChatMessage) => {
     upsertChatMessageInCache(
       queryClient,
-      ['chat', 'messages', workspaceId, projectId, sessionId],
+      chatMessagesKey(workspaceId, projectId, sessionId),
       message,
     );
   };
@@ -282,7 +283,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   ) => {
     patchChatMessageInCache(
       queryClient,
-      ['chat', 'messages', workspaceId, projectId, sessionId],
+      chatMessagesKey(workspaceId, projectId, sessionId),
       messageId,
       patch,
     );

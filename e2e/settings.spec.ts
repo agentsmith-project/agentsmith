@@ -159,17 +159,21 @@ test.describe('Settings Page', () => {
     await goToProject(authedPage, 'settings');
     await expect(authedPage.getByTestId('settings__tab--general')).toBeVisible({ timeout: 10000 });
 
-    const visibilitySelect = authedPage.locator('select').first();
-    const joinPolicySelect = authedPage.locator('select').nth(1);
+    const visibilitySelect = authedPage.getByTestId('settings__visibility-select');
+    const joinPolicySelect = authedPage.getByTestId('settings__join-policy-select');
 
-    await visibilitySelect.selectOption('private');
-    await expect(visibilitySelect).toHaveValue('private');
-    await visibilitySelect.selectOption('public');
-    await expect(visibilitySelect).toHaveValue('public');
+    await visibilitySelect.click();
+    await authedPage.getByRole('option', { name: /public/i }).click();
+    await expect(visibilitySelect).toContainText(/public/i);
+    await visibilitySelect.click();
+    await authedPage.getByRole('option', { name: /private/i }).click();
+    await expect(visibilitySelect).toContainText(/private/i);
 
-    await joinPolicySelect.selectOption('open');
-    await expect(joinPolicySelect).toHaveValue('open');
-    await joinPolicySelect.selectOption('approval_required');
-    await expect(joinPolicySelect).toHaveValue('approval_required');
+    await joinPolicySelect.click();
+    await authedPage.getByRole('option', { name: /open/i }).click();
+    await expect(joinPolicySelect).toContainText(/open/i);
+    await joinPolicySelect.click();
+    await authedPage.getByRole('option', { name: /approval/i }).click();
+    await expect(joinPolicySelect).toContainText(/approval/i);
   });
 });

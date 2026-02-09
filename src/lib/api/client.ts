@@ -85,6 +85,12 @@ export interface ApiClient {
 
 const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
 
+function normalizeApiBase(base: string): string {
+  const trimmed = base.trim().replace(/\/+$/, '');
+  if (!trimmed) return 'http://localhost:20000/api/v1';
+  return /\/api\/v1$/i.test(trimmed) ? trimmed : `${trimmed}/api/v1`;
+}
+
 /**
  * API Base URL configuration
  *
@@ -93,7 +99,7 @@ const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
  */
 export const API_BASE = useMsw
   ? '/api/v1'  // Use relative path for MSW interception
-  : (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000');
+  : normalizeApiBase(process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000');
 
 /**
  * Create API client instance.

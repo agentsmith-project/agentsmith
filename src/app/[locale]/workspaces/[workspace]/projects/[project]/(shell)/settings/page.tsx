@@ -204,7 +204,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('visibility')}</label>
                 <Select value={visibility} onValueChange={(value) => setVisibility(value as 'public' | 'private')} disabled={!canManageSettings}>
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="settings__visibility-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -226,7 +226,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('join_policy')}</label>
                 <Select value={joinPolicy} onValueChange={(value) => setJoinPolicy(value as 'approval_required' | 'open')} disabled={!canManageSettings}>
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="settings__join-policy-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

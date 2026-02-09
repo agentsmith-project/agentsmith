@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useAuthStore } from '@/lib/stores/authStore';
+import { getApiClient } from '@/lib/api/client';
 
 interface KeycloakTokenResponse {
   access_token: string;
@@ -146,6 +147,8 @@ export default function LoginCallbackPage() {
         },
         token.access_token,
       );
+      // Ensure authenticated API calls in the immediate next route after callback.
+      getApiClient().setToken(token.access_token);
 
       sessionStorage.removeItem('mbos:keycloak:pkce');
       if (!cancelled) {

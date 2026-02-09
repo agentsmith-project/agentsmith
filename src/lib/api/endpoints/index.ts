@@ -20,7 +20,12 @@ export { RecipeAPI } from './recipes';
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';
 export type { CreateAgentRequest, UpdateAgentRequest } from './agents';
-export type { CreateEndpointRequest, UpdateEndpointRequest } from './endpoints';
+export type {
+  CreateEndpointRequest,
+  UpdateEndpointRequest,
+  OpenAICompatibleImportItem,
+  ImportOpenAICompatibleRequest,
+} from './endpoints';
 export type { UpdateMemberGroupRequest, JoinRequest, Member } from './members';
 export type { UsageKPI } from '../types';
 export type { CreateUserKeyRequest } from './user-keys';

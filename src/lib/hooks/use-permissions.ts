@@ -32,6 +32,7 @@ export function useCurrentPermissions() {
     if (!workspaceId || !projectId) return EMPTY_PERMISSIONS;
     const validated = currentProject ? validateProjectWithMembership(currentProject) : null;
     if (!validated) return EMPTY_PERMISSIONS;
+
     return validated.permissions ?? EMPTY_PERMISSIONS;
   }, [currentProject, workspaceId, projectId]);
 }

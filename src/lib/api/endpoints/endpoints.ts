@@ -37,6 +37,20 @@ export interface UpdateEndpointRequest {
   };
 }
 
+export interface OpenAICompatibleImportItem {
+  model: string;
+  source_model?: string;
+  api_base: string;
+  api_key: string;
+  mode?: 'openai';
+}
+
+export interface ImportOpenAICompatibleRequest {
+  reranker?: OpenAICompatibleImportItem;
+  embedding?: OpenAICompatibleImportItem;
+  completion?: OpenAICompatibleImportItem;
+}
+
 export class EndpointAPI {
   constructor(private client: ApiClient) {}
 
@@ -82,5 +96,19 @@ export class EndpointAPI {
    */
   async delete(workspaceId: string, projectId: string, endpointId: string): Promise<void> {
     return this.client.delete<void>(`/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}`);
+  }
+
+  /**
+   * Import reranker/embedding/completion endpoint config in one request
+   */
+  async importOpenAICompatible(
+    workspaceId: string,
+    projectId: string,
+    payload: ImportOpenAICompatibleRequest,
+  ): Promise<{ items: Endpoint[] }> {
+    return this.client.post<{ items: Endpoint[] }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/import-openai-compatible`,
+      payload,
+    );
   }
 }

@@ -430,7 +430,23 @@ export default function ChatPage({ params }: ChatPageProps) {
   ): Promise<boolean> => {
     const streamId = streamIdsRef.current.get(sessionId);
     const controller = streamControllersRef.current.get(sessionId);
-    if (!streamId && !controller) return true;
+    if (!streamId && !controller) {
+      try {
+        await chatAPI.stopSessionStream(workspaceId, projectId, sessionId);
+      } catch {
+        const message =
+          reason === 'replace'
+            ? t('stream_stop_required_before_replace_failed')
+            : t('stream_stop_failed_retry');
+        toast.error(message);
+        return false;
+      }
+      setSessionStreamState(sessionId, {
+        status: reason === 'user' ? 'stopped' : 'idle',
+        assistant: null,
+      });
+      return true;
+    }
 
     if (streamId) {
       try {

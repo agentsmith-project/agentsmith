@@ -275,4 +275,15 @@ export class ChatAPI {
       {},
     );
   }
+
+  async stopSessionStream(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+  ): Promise<{ success: true; session_id: string; state: 'stopping' | 'not_found_or_finished' }> {
+    return this.client.post<{ success: true; session_id: string; state: 'stopping' | 'not_found_or_finished' }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/stop`,
+      {},
+    );
+  }
 }

@@ -36,6 +36,7 @@ const mockInitAttachment = vi.fn().mockResolvedValue({ attachment: { id: 'att_1'
 const mockCompleteAttachment = vi.fn().mockResolvedValue({});
 const mockDeleteAttachment = vi.fn().mockResolvedValue({});
 const mockRetryAttachment = vi.fn().mockResolvedValue({});
+const mockStopSessionStream = vi.fn().mockResolvedValue({ success: true, session_id: 'session_1', state: 'not_found_or_finished' });
 const mockEndpointList = vi.fn().mockResolvedValue({
   items: [],
   total: 0,
@@ -63,6 +64,7 @@ vi.mock('@/lib/api/endpoints/chat', () => ({
       completeAttachment: mockCompleteAttachment,
       deleteAttachment: mockDeleteAttachment,
       retryAttachment: mockRetryAttachment,
+      stopSessionStream: mockStopSessionStream,
     };
   }),
 }));

@@ -139,6 +139,53 @@ function startOpenAICompatibleUpstreamServer(): {
   return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
 }
 
+function startSlowOpenAICompatibleUpstreamServer(): {
+  server: Server;
+  baseUrl: string;
+  lastBody: () => unknown;
+} {
+  let body: unknown = null;
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const text = Buffer.concat(chunks).toString('utf-8');
+      body = text ? JSON.parse(text) : {};
+
+      if (!req.url?.includes('/chat/completions')) {
+        res.statusCode = 404;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: 'not_found' }));
+        return;
+      }
+
+      res.statusCode = 200;
+      res.setHeader('content-type', 'text/event-stream');
+      res.write(
+        'data: {"id":"chatcmpl_slow","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}\n\n',
+      );
+      setTimeout(() => {
+        res.write(
+          'data: {"id":"chatcmpl_slow","object":"chat.completion.chunk","choices":[{"delta":{"content":" world"},"finish_reason":null}]}\n\n',
+        );
+      }, 300);
+      setTimeout(() => {
+        res.write(
+          'data: {"id":"chatcmpl_slow","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":12}}\n\n',
+        );
+        res.write('data: [DONE]\n\n');
+        res.end();
+      }, 1_200);
+    })();
+  });
+  server.listen(0);
+  servers.push(server);
+  const address = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
+}
+
 function parseSseEventPayload(text: string, event: string): Record<string, unknown> | null {
   const blocks = text.split('\n\n').map((item) => item.trim()).filter(Boolean);
   for (const block of blocks) {
@@ -745,6 +792,110 @@ describe('api-entry-node projects routes', () => {
     const upstreamBody = upstream.lastBody() as { model?: string; messages?: Array<{ role: string }> };
     expect(upstreamBody.model).toBe('deepseek-chat');
     expect(upstreamBody.messages?.at(-1)?.role).toBe('user');
+  });
+
+  it('supports stopping an active stream by session id', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startSlowOpenAICompatibleUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-key',
+          type: 'api_key',
+          value: 'sk-chat',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-endpoint',
+          openai_model: 'deepseek-chat',
+          source_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+        }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    const createUser = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'hello from user',
+        }),
+      },
+    );
+    expect(createUser.status).toBe(201);
+    const userMessage = (await createUser.json()) as { id: string };
+
+    const stream = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+          branch_leaf_message_id: userMessage.id,
+          input: { role: 'user', content: 'hello from user' },
+        }),
+      },
+    );
+    expect(stream.status).toBe(200);
+
+    const stopBySession = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/stop`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(stopBySession.status).toBe(202);
+    const stopBody = (await stopBySession.json()) as { state: string };
+    expect(stopBody.state).toBe('stopping');
+
+    const sse = await stream.text();
+    const done = parseSseEventPayload(sse, 'done');
+    expect(done?.message_status).toBe('stopped');
   });
 
   it('supports user revision and assistant variants for chat branching', async () => {

@@ -257,11 +257,13 @@ async function stopActiveSessionStreams(
   workspaceId: string,
   projectId: string,
   sessionId: string,
-): Promise<void> {
+): Promise<number> {
+  let stopped = 0;
   for (const [streamId, stream] of ACTIVE_CHAT_STREAMS.entries()) {
     if (stream.workspaceId !== workspaceId || stream.projectId !== projectId || stream.sessionId !== sessionId) {
       continue;
     }
+    stopped += 1;
     stream.status = 'stopping';
     stream.abortController.abort();
     await writeStreamRegistry(
@@ -277,7 +279,10 @@ async function stopActiveSessionStreams(
       STREAM_REGISTRY_TTL_SECONDS,
     );
   }
-  await writeSessionStreamState(cache, workspaceId, projectId, sessionId, 'stopping', STREAM_REGISTRY_TTL_SECONDS);
+  if (stopped > 0) {
+    await writeSessionStreamState(cache, workspaceId, projectId, sessionId, 'stopping', STREAM_REGISTRY_TTL_SECONDS);
+  }
+  return stopped;
 }
 
 interface ChatAttachmentRecord {
@@ -1432,6 +1437,7 @@ type ProjectsRoute =
   | { kind: 'sourceDownload'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'chatSessions'; workspaceId: string; projectId: string }
   | { kind: 'chatSessionItem'; workspaceId: string; projectId: string; sessionId: string }
+  | { kind: 'chatSessionStop'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatMessages'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatMessageItem'; workspaceId: string; projectId: string; sessionId: string; messageId: string }
   | { kind: 'chatMessagesStream'; workspaceId: string; projectId: string; sessionId: string }
@@ -1683,6 +1689,18 @@ function matchProjectsRoute(url: string): ProjectsRoute | null {
       projectId: decodeURIComponent(chatMessagesStreamStopMatched[2]),
       sessionId: decodeURIComponent(chatMessagesStreamStopMatched[3]),
       streamId: decodeURIComponent(chatMessagesStreamStopMatched[4]),
+    };
+  }
+
+  const chatSessionStopMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/stop\/?$/,
+  );
+  if (chatSessionStopMatched) {
+    return {
+      kind: 'chatSessionStop',
+      workspaceId: decodeURIComponent(chatSessionStopMatched[1]),
+      projectId: decodeURIComponent(chatSessionStopMatched[2]),
+      sessionId: decodeURIComponent(chatSessionStopMatched[3]),
     };
   }
 
@@ -2350,6 +2368,30 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return;
       }
       json(res, 200, { success: true });
+      return;
+    }
+
+    if (route.kind === 'chatSessionStop' && method === 'POST') {
+      const session = await deps.chatResourceService.getSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      if (!session) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+      const stopped = await stopActiveSessionStreams(
+        deps.cache,
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      json(res, 202, {
+        success: true,
+        session_id: route.sessionId,
+        state: stopped > 0 ? 'stopping' : 'not_found_or_finished',
+      });
       return;
     }
 

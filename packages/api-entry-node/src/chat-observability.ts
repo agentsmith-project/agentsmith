@@ -16,6 +16,9 @@ export function logChatStreamEvent(input: {
   durationMs?: number;
   stopReason?: 'user_stop' | 'session_stop' | 'upstream_error' | 'timeout' | 'session_stream_conflict';
 }): void {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
   const payload: Record<string, unknown> = {
     event: 'chat_stream_lifecycle',
     workspace_id: input.workspaceId,

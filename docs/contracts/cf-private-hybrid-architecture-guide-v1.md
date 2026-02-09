@@ -503,6 +503,8 @@ packages/
   - `messages/streams/{streamId}/stop` 需幂等（重复调用返回 202）
   - `sessions/{sessionId}/stop` 需支持无 `stream_id` 停止（用于页面刷新后仅有 `runtime_status` 的场景）
   - `sessions/{sessionId}/streams` 返回当前活跃流列表（`stream_id/status/started_at`），用于浏览器刷新或切线程后的 stream 恢复
+  - 同一 `session_id` 在任一时刻只允许一个活跃 stream（`running|stopping`）
+  - 若同 session 已有活跃 stream，`POST .../messages/stream` 必须快速失败并返回 `409 CHAT_SESSION_STREAM_CONFLICT`
   - 控制语义采用双层：
     - `sessions/{sessionId}/stop` = 粗粒度，停止该 session 全部活跃流
     - `messages/streams/{streamId}/stop` = 细粒度，仅停止指定 stream
@@ -510,6 +512,10 @@ packages/
   - `chat/sessions` 与 `chat/sessions/{sessionId}/messages` 必须支持 `page`/`page_size` 分页参数，并返回准确 `total/page/page_size/has_more`
   - `done.tokens` 与落库 `tokens` 应优先使用上游 `usage.total_tokens`；无 usage 时可为空，不得使用字符长度估算 token
   - 删除 session 前必须先中止该 session 的活跃 stream，避免后台悬挂写入
+  - `GET .../sessions/{sessionId}/streams` 行为契约：
+    - session 不存在返回 `404 chat_session_not_found`
+    - active stream 运行中返回 `total>0`
+    - stream 完成/停止后返回空列表 `total=0`
 
 5. 认证策略（当前约束）
 - API 必须依赖 Keycloak `userinfo` 校验 Bearer Token。

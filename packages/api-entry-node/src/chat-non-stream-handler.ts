@@ -5,6 +5,7 @@ import { parsePagination } from './pagination.js';
 import {
   ACTIVE_CHAT_STREAMS,
   STREAM_REGISTRY_TTL_SECONDS,
+  listActiveSessionStreams,
   readSessionStreamState,
   readStreamRegistry,
   stopActiveSessionStreams,
@@ -178,16 +179,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
-    const items = Array.from(ACTIVE_CHAT_STREAMS.entries())
-      .filter(([, stream]) =>
-        stream.workspaceId === route.workspaceId &&
-        stream.projectId === route.projectId &&
-        stream.sessionId === route.sessionId &&
-        (stream.status === 'running' || stream.status === 'stopping'))
-      .map(([streamId, stream]) => ({
-        stream_id: streamId,
-        status: stream.status,
-        started_at: stream.startedAt,
+    const items = listActiveSessionStreams(route.workspaceId, route.projectId, route.sessionId)
+      .map((item) => ({
+        stream_id: item.streamId,
+        status: item.status,
+        started_at: item.startedAt,
       }));
     json(res, 200, { items, total: items.length });
     return true;

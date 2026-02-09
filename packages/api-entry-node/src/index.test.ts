@@ -1011,6 +1011,236 @@ describe('api-entry-node projects routes', () => {
     await stream.text();
   });
 
+  it('returns 404 when listing streams for unknown session', async () => {
+    const { baseUrl } = startServer();
+    const res = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/chat_sess_unknown/streams',
+    );
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string; message: string };
+    expect(body.code).toBe('RESOURCE_NOT_FOUND');
+    expect(body.message).toBe('chat_session_not_found');
+  });
+
+  it('returns empty active stream list after stream completion', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startOpenAICompatibleUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-key',
+          type: 'api_key',
+          value: 'sk-chat',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-endpoint',
+          openai_model: 'deepseek-chat',
+          source_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+        }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    const createUser = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'hello from user',
+        }),
+      },
+    );
+    expect(createUser.status).toBe(201);
+    const userMessage = (await createUser.json()) as { id: string };
+
+    const stream = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+          branch_leaf_message_id: userMessage.id,
+          input: { role: 'user', content: 'hello from user' },
+        }),
+      },
+    );
+    expect(stream.status).toBe(200);
+    await stream.text();
+
+    const activeStreams = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/streams`,
+    );
+    expect(activeStreams.status).toBe(200);
+    const activeBody = (await activeStreams.json()) as {
+      items: Array<{ stream_id: string; status: string; started_at: string }>;
+      total: number;
+    };
+    expect(activeBody.total).toBe(0);
+    expect(activeBody.items).toHaveLength(0);
+  });
+
+  it('rejects starting a second active stream for the same session', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startSlowOpenAICompatibleUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-key',
+          type: 'api_key',
+          value: 'sk-chat',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-endpoint',
+          openai_model: 'deepseek-chat',
+          source_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+        }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    const createUser = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'hello from user',
+        }),
+      },
+    );
+    expect(createUser.status).toBe(201);
+    const userMessage = (await createUser.json()) as { id: string };
+
+    const firstStream = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+          branch_leaf_message_id: userMessage.id,
+          input: { role: 'user', content: 'hello from user' },
+        }),
+      },
+    );
+    expect(firstStream.status).toBe(200);
+
+    const secondStream = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+          branch_leaf_message_id: userMessage.id,
+          input: { role: 'user', content: 'hello from user again' },
+        }),
+      },
+    );
+    expect(secondStream.status).toBe(409);
+    const secondBody = (await secondStream.json()) as { code: string; message: string };
+    expect(secondBody.code).toBe('CHAT_SESSION_STREAM_CONFLICT');
+    expect(secondBody.message).toBe('chat_session_stream_conflict');
+
+    const stopBySession = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/stop`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(stopBySession.status).toBe(202);
+    await firstStream.text();
+  });
+
   it('supports user revision and assistant variants for chat branching', async () => {
     const { baseUrl } = startServer();
     const upstream = startOpenAICompatibleUpstreamServer();

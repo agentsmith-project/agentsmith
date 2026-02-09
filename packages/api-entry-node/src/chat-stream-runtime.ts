@@ -123,3 +123,21 @@ export async function stopActiveSessionStreams(
   }
   return stopped;
 }
+
+export function listActiveSessionStreams(
+  workspaceId: string,
+  projectId: string,
+  sessionId: string,
+): Array<{ streamId: string; status: 'running' | 'stopping'; startedAt: string }> {
+  return Array.from(ACTIVE_CHAT_STREAMS.entries())
+    .filter(([, stream]) =>
+      stream.workspaceId === workspaceId &&
+      stream.projectId === projectId &&
+      stream.sessionId === sessionId &&
+      (stream.status === 'running' || stream.status === 'stopping'))
+    .map(([streamId, stream]) => ({
+      streamId,
+      status: stream.status,
+      startedAt: stream.startedAt,
+    }));
+}

@@ -5,6 +5,7 @@ import {
   ACTIVE_CHAT_STREAMS,
   STREAM_REGISTRY_FINAL_TTL_SECONDS,
   STREAM_REGISTRY_TTL_SECONDS,
+  listActiveSessionStreams,
   readStreamRegistry,
   writeSessionStreamState,
   writeStreamRegistry,
@@ -41,6 +42,14 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   );
   if (!session) {
     json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+    return true;
+  }
+  const runningStreams = listActiveSessionStreams(route.workspaceId, route.projectId, route.sessionId);
+  if (runningStreams.length > 0) {
+    json(res, 409, {
+      code: 'CHAT_SESSION_STREAM_CONFLICT',
+      message: 'chat_session_stream_conflict',
+    });
     return true;
   }
 

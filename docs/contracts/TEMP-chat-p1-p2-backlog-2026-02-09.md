@@ -9,6 +9,7 @@
 ## P1 (High Priority)
 
 1. Add E2E for stream recovery after refresh/switch
+- Status: partial (API-level coverage done, browser-level E2E pending)
 - Verify `GET /chat/sessions/{sessionId}/streams` can recover active `stream_id`.
 - Verify stop works after refresh when frontend had no in-memory `stream_id`.
 - Cover both stop paths:
@@ -16,6 +17,7 @@
   - stream-level stop (`/messages/streams/{streamId}/stop`)
 
 2. Enforce and document stream concurrency invariant
+- Status: done
 - Decide and enforce one of:
   - single active stream per session (current practical behavior), or
   - multi-active streams per session (future mode)
@@ -23,11 +25,13 @@
 - If multi-active is deferred, fail fast with deterministic error when violated.
 
 3. Fix integration script route contract drift
+- Status: done
 - `scripts/integration-test.sh` currently has route assertions that can produce false negatives.
 - Align paths and labels with current route contract and fixtures.
 - Ensure script reflects actual runtime assumptions (project id, locale route behavior, page existence).
 
 4. Add API-level contract test for `chat/sessions/{id}/streams`
+- Status: done
 - Cases:
   - returns active streams while running
   - returns empty after completion/stopped
@@ -66,4 +70,3 @@
 - Added session-level stop API.
 - Added recoverable stream discovery API (`GET .../sessions/{sessionId}/streams`).
 - Updated chat contract docs with dual control semantics.
-

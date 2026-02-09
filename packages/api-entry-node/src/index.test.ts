@@ -1241,6 +1241,112 @@ describe('api-entry-node projects routes', () => {
     await firstStream.text();
   });
 
+  it('applies chat pagination defaults and bounds consistently', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startOpenAICompatibleUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-key',
+          type: 'api_key',
+          value: 'sk-chat',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-endpoint',
+          openai_model: 'deepseek-chat',
+          source_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+        }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    const createMessage = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'hello from user',
+        }),
+      },
+    );
+    expect(createMessage.status).toBe(201);
+
+    const listSessionsInvalid = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions?page=abc&page_size=xyz',
+    );
+    expect(listSessionsInvalid.status).toBe(200);
+    const sessionsInvalidBody = (await listSessionsInvalid.json()) as { page: number; page_size: number };
+    expect(sessionsInvalidBody.page).toBe(1);
+    expect(sessionsInvalidBody.page_size).toBe(100);
+
+    const listSessionsBounded = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions?page=0&page_size=9999',
+    );
+    expect(listSessionsBounded.status).toBe(200);
+    const sessionsBoundedBody = (await listSessionsBounded.json()) as { page: number; page_size: number };
+    expect(sessionsBoundedBody.page).toBe(1);
+    expect(sessionsBoundedBody.page_size).toBe(500);
+
+    const listMessagesInvalid = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages?page=abc&page_size=xyz`,
+    );
+    expect(listMessagesInvalid.status).toBe(200);
+    const messagesInvalidBody = (await listMessagesInvalid.json()) as { page: number; page_size: number };
+    expect(messagesInvalidBody.page).toBe(1);
+    expect(messagesInvalidBody.page_size).toBe(200);
+
+    const listMessagesBounded = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages?page=0&page_size=9999`,
+    );
+    expect(listMessagesBounded.status).toBe(200);
+    const messagesBoundedBody = (await listMessagesBounded.json()) as { page: number; page_size: number };
+    expect(messagesBoundedBody.page).toBe(1);
+    expect(messagesBoundedBody.page_size).toBe(500);
+  });
+
   it('supports user revision and assistant variants for chat branching', async () => {
     const { baseUrl } = startServer();
     const upstream = startOpenAICompatibleUpstreamServer();

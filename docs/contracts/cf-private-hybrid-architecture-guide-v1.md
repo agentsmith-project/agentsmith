@@ -510,6 +510,11 @@ packages/
     - `messages/streams/{streamId}/stop` = 细粒度，仅停止指定 stream
   - `chat/sessions` 响应可携带 `runtime_status`（`running|stopping|completed|stopped|failed`）用于前端刷新后的运行态展示
   - `chat/sessions` 与 `chat/sessions/{sessionId}/messages` 必须支持 `page`/`page_size` 分页参数，并返回准确 `total/page/page_size/has_more`
+  - 分页参数契约：
+    - `chat/sessions` 默认 `page=1,page_size=100,max_page_size=500`
+    - `chat/sessions/{sessionId}/messages` 默认 `page=1,page_size=200,max_page_size=500`
+    - 非法 `page/page_size`（非数字、<=0）按默认值处理
+    - 过大 `page_size` 按 `max_page_size` 截断
   - `done.tokens` 与落库 `tokens` 应优先使用上游 `usage.total_tokens`；无 usage 时可为空，不得使用字符长度估算 token
   - 删除 session 前必须先中止该 session 的活跃 stream，避免后台悬挂写入
   - `GET .../sessions/{sessionId}/streams` 行为契约：

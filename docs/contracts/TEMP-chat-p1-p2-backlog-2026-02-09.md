@@ -57,6 +57,7 @@
 - Ensure stop reason is explicit (`user_stop`, `session_stop`, `upstream_error`, `timeout`).
 
 4. Tighten pagination defaults consistency
+- Status: done
 - Align FE request defaults and BE defaults for sessions/messages.
 - Add tests for boundary cases (`page=0`, `page_size>max`, invalid query types).
 

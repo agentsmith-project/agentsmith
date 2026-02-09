@@ -385,6 +385,73 @@ async function openChatAndSend(
   return selectedThreadId!;
 }
 
+async function openChatAttachAndSend(
+  page: import('@playwright/test').Page,
+  locale: string,
+  projectId: string,
+  args: {
+    text: string;
+    fileName: string;
+    fileContent: string;
+    expectedReply: string;
+    sessionId?: string | null;
+  },
+): Promise<string> {
+  const { text, fileName, fileContent, expectedReply, sessionId } = args;
+  await page.getByRole('link', { name: /chat|对话/i }).first().click();
+  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('chat__main-pane')).toBeVisible({ timeout: 30_000 });
+
+  if (await page.getByTestId('chat__thread-item').count() === 0) {
+    await page.getByTestId('chat__new-thread-btn').click();
+  }
+  const firstThread = page.getByTestId('chat__thread-item').first();
+  await expect(firstThread).toBeVisible({ timeout: 30_000 });
+
+  const targetThread = sessionId
+    ? page.locator(`[data-testid="chat__thread-item"][data-thread-id="${sessionId}"]`).first()
+    : firstThread;
+  await expect(targetThread).toBeVisible({ timeout: 30_000 });
+  const selectedThreadId = await targetThread.getAttribute('data-thread-id');
+  expect(selectedThreadId).toBeTruthy();
+  await targetThread.locator('div[role="button"]').first().click();
+
+  const fileInput = page.locator('input[type="file"]').first();
+  await fileInput.setInputFiles({
+    name: fileName,
+    mimeType: 'text/plain',
+    buffer: Buffer.from(fileContent, 'utf8'),
+  });
+  await expect(page.getByText(fileName)).toBeVisible({ timeout: 30_000 });
+
+  const composer = page.getByTestId('chat__composer');
+  const textarea = composer.locator('textarea');
+  await expect(textarea).toBeVisible();
+  await textarea.fill(text);
+  const sendBtn = page.getByTestId('chat__send-btn');
+  await expect(sendBtn).toBeEnabled({ timeout: 15_000 });
+
+  const createMessageRequest = page.waitForRequest((req) =>
+    req.method() === 'POST' &&
+    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages$/.test(req.url()),
+  );
+  const streamResponse = page.waitForResponse((res) =>
+    res.request().method() === 'POST' &&
+    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages\/stream$/.test(res.url()) &&
+    res.status() === 200,
+  );
+  await sendBtn.click();
+  const msgReq = await createMessageRequest;
+  const body = msgReq.postDataJSON() as { attachments?: string[] } | null;
+  expect(Array.isArray(body?.attachments)).toBeTruthy();
+  expect((body?.attachments ?? []).length).toBeGreaterThan(0);
+  await streamResponse;
+  await expect(page.getByText(expectedReply).first()).toBeVisible({ timeout: 60_000 });
+  return selectedThreadId!;
+}
+
 test.describe('integration chat flow', () => {
   test.skip(!RUN_INTEGRATION, 'Enable with RUN_INTEGRATION_E2E=true');
 
@@ -766,6 +833,30 @@ test.describe('integration chat flow', () => {
       await expect(threadA.getByText(renamedTitle)).toBeVisible({ timeout: 30_000 });
       await expect(page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadBId}"]`)).toHaveCount(0);
       expect(upstream.getRequestCount()).toBeGreaterThanOrEqual(beforeResume + 1);
+    } finally {
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+    }
+  });
+
+  test('chat sends message with attachment ids when file is attached', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const upstream = await startOpenAICompatibleUpstreamWith({ replyText: 'Attachment reply' });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
+
+      await openChatAttachAndSend(page, locale, projectId, {
+        text: 'Message with attached file',
+        fileName: `integration-note-${Date.now()}.txt`,
+        fileContent: 'integration attachment body',
+        expectedReply: 'Attachment reply',
+      });
+      expect(upstream.getRequestCount()).toBeGreaterThanOrEqual(1);
     } finally {
       await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
     }

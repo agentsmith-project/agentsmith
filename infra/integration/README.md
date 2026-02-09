@@ -43,6 +43,10 @@ Current chat integration verification scope:
   - rename thread and verify name persists after route switch
   - delete another thread and verify it is removed
   - continue chatting on the remaining thread successfully
+- Attachment flow:
+  - attach a file in chat composer
+  - send message and verify request includes non-empty `attachments` ids
+  - verify upstream reply is returned normally
 
 Current AIReady API status:
 

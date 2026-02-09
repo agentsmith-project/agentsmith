@@ -12,7 +12,7 @@
 
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -20,7 +20,7 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
-import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
+import type { Attachment, ChatMessage, Endpoint } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
 import { chatAttachmentsKey, chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
@@ -29,6 +29,7 @@ import {
   type SessionStreamStatus,
 } from '@/lib/chat/stream-state';
 import { useChatStreaming } from '@/lib/chat/use-chat-streaming';
+import { useChatMutations } from '@/lib/chat/use-chat-mutations';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -170,102 +171,33 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const attachments = attachmentsData?.items ?? [];
 
-  const createSessionMutation = useMutation({
-    mutationFn: async () => {
-      const firstActive = endpoints.find((e) => e.status === 'active') || null;
-      return chatAPI.createSession(
-        workspaceId,
-        projectId,
-        firstActive ? { endpoint_id: firstActive.id, model: firstActive.openai_model } : {},
-      );
+  const {
+    createSessionMutation,
+    updateSessionMutation,
+    deleteSessionMutation,
+    createMessageMutation,
+    editMessageMutation,
+    initAttachmentMutation,
+    deleteAttachmentMutation,
+    retryAttachmentMutation,
+  } = useChatMutations({
+    chatAPI,
+    queryClient,
+    workspaceId,
+    projectId,
+    endpoints,
+    currentSessionId,
+    onSessionCreated: (sessionId) => {
+      setCurrentSessionId(sessionId);
     },
-    onSuccess: (data: ChatSession) => {
-      setCurrentSessionId(data.id);
+    onSessionDeleted: () => {
+      setCurrentSessionId(null);
+    },
+    onResetSessionUi: () => {
       setSearchQuery('');
       setEditingMessageId(null);
-      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
     },
-  });
-
-  const updateSessionMutation = useMutation({
-    mutationFn: async (args: {
-      sessionId: string;
-      data: Partial<Pick<ChatSession, 'title' | 'model' | 'endpoint_id' | 'pinned' | 'starred'>>;
-    }) => chatAPI.updateSession(workspaceId, projectId, args.sessionId, args.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) }),
-  });
-
-  const deleteSessionMutation = useMutation({
-    mutationFn: async (sessionId: string) => chatAPI.deleteSession(workspaceId, projectId, sessionId),
-    onSuccess: (_data, sessionId) => {
-      if (currentSessionId === sessionId) setCurrentSessionId(null);
-      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
-      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, sessionId) });
-    },
-  });
-
-  const createMessageMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; content: string; attachments?: string[]; parent_id?: string | null }) =>
-      chatAPI.createMessage(workspaceId, projectId, args.sessionId, {
-        role: 'user',
-        content: args.content,
-        attachments: args.attachments,
-        parent_id: args.parent_id ?? null,
-      }),
-    onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, vars.sessionId) });
-      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
-    },
-  });
-
-  const editMessageMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; messageId: string; content: string }) =>
-      chatAPI.editMessage(workspaceId, projectId, args.sessionId, args.messageId, { content: args.content }),
-    onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, vars.sessionId) });
-      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
-    },
-  });
-
-  const initAttachmentMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; file: File }) => {
-      const res = await chatAPI.initAttachment(workspaceId, projectId, args.sessionId, {
-        file_name: args.file.name,
-        file_type: args.file.type || 'application/octet-stream',
-        file_size: args.file.size,
-      });
-      return { ...res, sessionId: args.sessionId, file: args.file };
-    },
-    onSuccess: async ({ attachment, upload_url, sessionId, file }) => {
-      queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, sessionId) });
-      if (!upload_url) return;
-      try {
-        const put = await fetch(upload_url, {
-          method: 'PUT',
-          body: file,
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        });
-        if (!put.ok) throw new Error(`Upload failed (${put.status})`);
-        await chatAPI.completeAttachment(workspaceId, projectId, sessionId, attachment.id, {});
-        queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, sessionId) });
-      } catch (e: unknown) {
-        toast.error(e instanceof Error ? e.message : t('upload_failed'));
-      }
-    },
-  });
-
-  const deleteAttachmentMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; attachmentId: string }) =>
-      chatAPI.deleteAttachment(workspaceId, projectId, args.sessionId, args.attachmentId),
-    onSuccess: (_data, vars) =>
-      queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, vars.sessionId) }),
-  });
-
-  const retryAttachmentMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; attachmentId: string }) =>
-      chatAPI.retryAttachment(workspaceId, projectId, args.sessionId, args.attachmentId),
-    onSuccess: (_data, vars) =>
-      queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, vars.sessionId) }),
+    uploadFailedMessage: t('upload_failed'),
   });
 
   const upsertStreamAssistantToCache = (sessionId: string, message: ChatMessage) => {

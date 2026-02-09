@@ -9,6 +9,20 @@ async function startOpenAICompatibleUpstream(): Promise<{
   baseUrl: string;
   getRequestCount: () => number;
 }> {
+  return startOpenAICompatibleUpstreamWith({
+    replyText: 'Hello from integration upstream.',
+  });
+}
+
+async function startOpenAICompatibleUpstreamWith(args: {
+  replyText: string;
+  delayMs?: number;
+}): Promise<{
+  server: Server;
+  baseUrl: string;
+  getRequestCount: () => number;
+}> {
+  const { replyText, delayMs = 0 } = args;
   let requestCount = 0;
   const server = http.createServer((req, res) => {
     void (async () => {
@@ -24,6 +38,9 @@ async function startOpenAICompatibleUpstream(): Promise<{
         res.end(JSON.stringify({ error: 'not_found' }));
         return;
       }
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
 
       res.statusCode = 200;
       res.setHeader('content-type', 'application/json');
@@ -36,7 +53,7 @@ async function startOpenAICompatibleUpstream(): Promise<{
           choices: [
             {
               index: 0,
-              message: { role: 'assistant', content: 'Hello from integration upstream.' },
+              message: { role: 'assistant', content: replyText },
               finish_reason: 'stop',
             },
           ],
@@ -103,6 +120,28 @@ async function provisionCredentialAndEndpoint(
   projectId: string,
   upstreamBaseUrl: string,
 ) {
+  await createCredential(page, locale, projectId, {
+    credentialName: 'Integration Credential',
+    credentialValue: 'integration-secret-key',
+  });
+  await createEndpoint(page, locale, projectId, {
+    endpointName: 'Integration Endpoint',
+    endpointModel: 'integration-chat-model',
+    upstreamBaseUrl,
+    credentialName: 'Integration Credential',
+  });
+}
+
+async function createCredential(
+  page: import('@playwright/test').Page,
+  locale: string,
+  projectId: string,
+  args: {
+    credentialName: string;
+    credentialValue: string;
+  },
+) {
+  const { credentialName, credentialValue } = args;
   await page.getByRole('link', { name: /credentials|凭据/i }).first().click();
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/credentials`), {
     timeout: 30_000,
@@ -111,8 +150,8 @@ async function provisionCredentialAndEndpoint(
   await page.getByTestId('credentials__create-btn').click();
   const credDialog = page.getByTestId('credentials__create-dialog');
   await expect(credDialog).toBeVisible();
-  await credDialog.locator('#cred-name').fill('Integration Credential');
-  await credDialog.locator('#cred-value').fill('integration-secret-key');
+  await credDialog.locator('#cred-name').fill(credentialName);
+  await credDialog.locator('#cred-value').fill(credentialValue);
   const createCredentialResponse = page.waitForResponse((res) =>
     res.request().method() === 'POST' &&
     /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/credentials$/.test(res.url()),
@@ -123,8 +162,21 @@ async function provisionCredentialAndEndpoint(
   if (await credDialog.isVisible().catch(() => false)) {
     await page.keyboard.press('Escape');
   }
-  await expect(page.getByText('Integration Credential')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(credentialName)).toBeVisible({ timeout: 30_000 });
+}
 
+async function createEndpoint(
+  page: import('@playwright/test').Page,
+  locale: string,
+  projectId: string,
+  args: {
+    endpointName: string;
+    endpointModel: string;
+    upstreamBaseUrl: string;
+    credentialName: string;
+  },
+): Promise<string> {
+  const { endpointName, endpointModel, upstreamBaseUrl, credentialName } = args;
   await page.getByRole('link', { name: /endpoints|端点/i }).first().click();
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/endpoints`), {
     timeout: 30_000,
@@ -133,8 +185,8 @@ async function provisionCredentialAndEndpoint(
   await page.getByTestId('endpoints__create-btn').click();
   const endpointDialog = page.getByTestId('endpoints__create-dialog');
   await expect(endpointDialog).toBeVisible();
-  await endpointDialog.locator('#endpoint-name').fill('Integration Endpoint');
-  await endpointDialog.locator('#endpoint-model').fill('integration-chat-model');
+  await endpointDialog.locator('#endpoint-name').fill(endpointName);
+  await endpointDialog.locator('#endpoint-model').fill(endpointModel);
 
   const providerSelect = endpointDialog.locator('[role="combobox"]').first();
   await providerSelect.click();
@@ -143,7 +195,7 @@ async function provisionCredentialAndEndpoint(
 
   const credentialSelect = endpointDialog.locator('[role="combobox"]').last();
   await credentialSelect.click();
-  await page.getByRole('option', { name: /Integration Credential/i }).click();
+  await page.getByRole('option', { name: new RegExp(credentialName, 'i') }).click();
 
   const createEndpointResponse = page.waitForResponse((res) =>
     res.request().method() === 'POST' &&
@@ -152,10 +204,30 @@ async function provisionCredentialAndEndpoint(
   await endpointDialog.getByRole('button', { name: /^create$/i }).click();
   const endpointRes = await createEndpointResponse;
   expect(endpointRes.ok()).toBeTruthy();
+  const endpointJson = (await endpointRes.json().catch(() => null)) as
+    | { id?: string; data?: { id?: string } }
+    | null;
+  const endpointId = endpointJson?.id ?? endpointJson?.data?.id;
+  expect(endpointId).toBeTruthy();
   if (await endpointDialog.isVisible().catch(() => false)) {
     await page.keyboard.press('Escape');
   }
-  await expect(page.getByText('Integration Endpoint')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(endpointName)).toBeVisible({ timeout: 30_000 });
+  return endpointId!;
+}
+
+async function selectEndpointInChat(
+  page: import('@playwright/test').Page,
+  endpointId: string,
+) {
+  const updateSessionResponse = page.waitForResponse((res) =>
+    res.request().method() === 'PATCH' &&
+    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+$/.test(res.url()) &&
+    res.status() === 200,
+  );
+  await page.getByTestId('chat__model-trigger').click();
+  await page.getByTestId(`chat__model-item--${endpointId}`).click();
+  await updateSessionResponse;
 }
 
 async function openChatAndSend(
@@ -164,6 +236,7 @@ async function openChatAndSend(
   projectId: string,
   text: string,
   sessionId?: string | null,
+  expectedReply = 'Hello from integration upstream.',
 ): Promise<string> {
   await page.getByRole('link', { name: /chat|对话/i }).first().click();
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
@@ -202,7 +275,7 @@ async function openChatAndSend(
   );
   await sendBtn.click();
   await streamResponse;
-  await expect(page.getByText('Hello from integration upstream.').first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(expectedReply).first()).toBeVisible({ timeout: 60_000 });
   return selectedThreadId!;
 }
 
@@ -262,6 +335,61 @@ test.describe('integration chat flow', () => {
       expect(upstream.getRequestCount()).toBeGreaterThanOrEqual(beforeSecondSend + 1);
     } finally {
       await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+    }
+  });
+
+  test('chat can switch endpoint and route next message to selected upstream', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const upstreamA = await startOpenAICompatibleUpstreamWith({ replyText: 'Reply from endpoint A' });
+    const upstreamB = await startOpenAICompatibleUpstreamWith({ replyText: 'Reply from endpoint B' });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+
+      await createCredential(page, locale, projectId, {
+        credentialName: 'Integration Credential',
+        credentialValue: 'integration-secret-key',
+      });
+      await createEndpoint(page, locale, projectId, {
+        endpointName: 'Integration Endpoint A',
+        endpointModel: 'integration-chat-model-a',
+        upstreamBaseUrl: upstreamA.baseUrl,
+        credentialName: 'Integration Credential',
+      });
+      const endpointBId = await createEndpoint(page, locale, projectId, {
+        endpointName: 'Integration Endpoint B',
+        endpointModel: 'integration-chat-model-b',
+        upstreamBaseUrl: upstreamB.baseUrl,
+        credentialName: 'Integration Credential',
+      });
+
+      const threadId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Route to endpoint A',
+        null,
+        'Reply from endpoint A',
+      );
+      expect(upstreamA.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, endpointBId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Route to endpoint B',
+        threadId,
+        'Reply from endpoint B',
+      );
+      expect(upstreamB.getRequestCount()).toBeGreaterThanOrEqual(1);
+    } finally {
+      await new Promise<void>((resolve) => upstreamA.server.close(() => resolve()));
+      await new Promise<void>((resolve) => upstreamB.server.close(() => resolve()));
     }
   });
 });

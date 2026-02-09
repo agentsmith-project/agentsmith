@@ -23,6 +23,10 @@ Current chat integration verification scope:
 - Session continuity across route switch:
   - leave `/chat` and return
   - continue conversation in the same thread
+- Endpoint switch routing:
+  - two custom endpoints with different upstream base URLs
+  - switch endpoint from chat header model selector
+  - verify next chat turn is routed to the selected endpoint upstream
 
 Current AIReady API status:
 

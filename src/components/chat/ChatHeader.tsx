@@ -120,7 +120,7 @@ export function ChatHeader({
         <div className="flex items-center gap-2">
           <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2">
+              <Button variant="outline" size="sm" className="gap-2" data-testid="chat__model-trigger">
                 <span className="max-w-[220px] truncate">
                   {currentEndpoint?.openai_model || session?.model || 'Select model'}
                 </span>
@@ -139,6 +139,7 @@ export function ChatHeader({
                   return (
                     <DropdownMenuItem
                       key={e.id}
+                      data-testid={`chat__model-item--${e.id}`}
                       data-disabled={disabled ? '' : undefined}
                       onSelect={(ev) => {
                         ev.preventDefault();

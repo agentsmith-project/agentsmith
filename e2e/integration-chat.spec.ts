@@ -3,6 +3,15 @@ import type { AddressInfo } from 'node:net';
 import { test, expect } from '@playwright/test';
 
 const RUN_INTEGRATION = process.env.RUN_INTEGRATION_E2E === 'true';
+let lastApiAuthContext: { apiBase: string; authHeader: string } | null = null;
+
+function captureApiAuthContextFromResponse(response: import('@playwright/test').Response): void {
+  const authHeader = response.request().headers()['authorization'];
+  const match = response.url().match(/^(https?:\/\/[^/]+\/api\/v1)\//);
+  if (authHeader && match?.[1]) {
+    lastApiAuthContext = { apiBase: match[1], authHeader };
+  }
+}
 
 async function startOpenAICompatibleUpstream(): Promise<{
   server: Server;
@@ -207,7 +216,7 @@ async function createCredential(
     credentialName: string;
     credentialValue: string;
   },
-) {
+): Promise<string> {
   const { credentialName, credentialValue } = args;
   await page.getByRole('link', { name: /credentials|凭据/i }).first().click();
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/credentials`), {
@@ -229,10 +238,17 @@ async function createCredential(
     const errorBody = await credentialRes.text().catch(() => '');
     throw new Error(`Create credential failed (${credentialRes.status()}): ${errorBody}`);
   }
+  captureApiAuthContextFromResponse(credentialRes);
+  const credentialJson = (await credentialRes.json().catch(() => null)) as
+    | { id?: string; data?: { id?: string } }
+    | null;
+  const credentialId = credentialJson?.id ?? credentialJson?.data?.id;
+  expect(credentialId).toBeTruthy();
   if (await credDialog.isVisible().catch(() => false)) {
     await page.keyboard.press('Escape');
   }
   await expect(page.getByText(credentialName)).toBeVisible({ timeout: 30_000 });
+  return credentialId!;
 }
 
 async function createEndpoint(
@@ -274,6 +290,7 @@ async function createEndpoint(
   await endpointDialog.getByRole('button', { name: /^create$/i }).click();
   const endpointRes = await createEndpointResponse;
   expect(endpointRes.ok()).toBeTruthy();
+  captureApiAuthContextFromResponse(endpointRes);
   const endpointJson = (await endpointRes.json().catch(() => null)) as
     | { id?: string; data?: { id?: string } }
     | null;
@@ -284,6 +301,48 @@ async function createEndpoint(
   }
   await expect(page.getByText(endpointName)).toBeVisible({ timeout: 30_000 });
   return endpointId!;
+}
+
+async function disableEndpointViaApi(
+  page: import('@playwright/test').Page,
+  projectId: string,
+  endpointId: string,
+) {
+  expect(lastApiAuthContext).toBeTruthy();
+  const { apiBase, authHeader } = lastApiAuthContext!;
+  const patchRes = await page.request.put(
+    `${apiBase}/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}`,
+    {
+      headers: {
+        Authorization: authHeader,
+        'Content-Type': 'application/json',
+      },
+      data: { status: 'disabled' },
+    },
+  );
+  expect(patchRes.ok()).toBeTruthy();
+}
+
+async function deleteCredentialFromUi(
+  page: import('@playwright/test').Page,
+  locale: string,
+  projectId: string,
+  credentialId: string,
+) {
+  await page.getByRole('link', { name: /credentials|凭据/i }).first().click();
+  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/credentials`), {
+    timeout: 30_000,
+  });
+  await page.getByTestId(`credentials__action-delete--${credentialId}`).click();
+  const dialog = page.getByTestId('credentials__delete-dialog');
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  const deleteResponse = page.waitForResponse((res) =>
+    res.request().method() === 'DELETE' &&
+    new RegExp(`/api/v1/workspaces/[^/]+/projects/[^/]+/credentials/${credentialId}$`).test(res.url()),
+  );
+  await page.getByTestId('credentials__delete-dialog__confirm-btn').click();
+  const deleteRes = await deleteResponse;
+  expect(deleteRes.ok()).toBeTruthy();
 }
 
 async function selectEndpointInChat(
@@ -1091,6 +1150,145 @@ test.describe('integration chat flow', () => {
       expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(2);
     } finally {
       await new Promise<void>((resolve) => forbiddenUpstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
+    }
+  });
+
+  test('chat surfaces platform 422 when selected endpoint is disabled and can recover', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const healthyUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'Recovered after disabled endpoint',
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      const suffix = Date.now();
+      const credentialName = `Integration Credential ${suffix}`;
+
+      await createCredential(page, locale, projectId, {
+        credentialName,
+        credentialValue: 'integration-secret-key',
+      });
+      const healthyEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Healthy ${suffix}`,
+        endpointModel: 'integration-chat-model-healthy',
+        upstreamBaseUrl: healthyUpstream.baseUrl,
+        credentialName,
+      });
+      const toDisableEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Disabled ${suffix}`,
+        endpointModel: 'integration-chat-model-disabled',
+        upstreamBaseUrl: healthyUpstream.baseUrl,
+        credentialName,
+      });
+
+      const threadId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Warmup on healthy endpoint',
+        null,
+        'Recovered after disabled endpoint',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await disableEndpointViaApi(page, projectId, toDisableEndpointId);
+      await selectEndpointInChat(page, toDisableEndpointId);
+      await sendExpectStreamErrorMessage(
+        page,
+        'This request should fail because endpoint disabled',
+        'chat_endpoint_unavailable',
+      );
+
+      await selectEndpointInChat(page, healthyEndpointId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Recover after disabled endpoint',
+        threadId,
+        'Recovered after disabled endpoint',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(2);
+    } finally {
+      await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
+    }
+  });
+
+  test('chat surfaces platform 422 when endpoint credential is deleted and can recover', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const healthyUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'Recovered after missing credential',
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      const suffix = Date.now();
+      const healthyCredentialName = `Integration Credential Healthy ${suffix}`;
+      const toDeleteCredentialName = `Integration Credential Delete ${suffix}`;
+
+      await createCredential(page, locale, projectId, {
+        credentialName: healthyCredentialName,
+        credentialValue: 'integration-secret-key',
+      });
+      const credentialId = await createCredential(page, locale, projectId, {
+        credentialName: toDeleteCredentialName,
+        credentialValue: 'integration-secret-key',
+      });
+      const healthyEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Healthy ${suffix}`,
+        endpointModel: 'integration-chat-model-healthy',
+        upstreamBaseUrl: healthyUpstream.baseUrl,
+        credentialName: healthyCredentialName,
+      });
+      const missingCredentialEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Missing Credential ${suffix}`,
+        endpointModel: 'integration-chat-model-missing-cred',
+        upstreamBaseUrl: healthyUpstream.baseUrl,
+        credentialName: toDeleteCredentialName,
+      });
+
+      const threadId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Warmup on healthy endpoint',
+        null,
+        'Recovered after missing credential',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await deleteCredentialFromUi(page, locale, projectId, credentialId);
+      await page.getByRole('link', { name: /chat|对话/i }).first().click();
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+        timeout: 30_000,
+      });
+      await selectEndpointInChat(page, missingCredentialEndpointId);
+      await sendExpectStreamErrorMessage(
+        page,
+        'This request should fail due to deleted credential',
+        'chat_endpoint_credential_missing',
+      );
+
+      await selectEndpointInChat(page, healthyEndpointId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Recover after missing credential',
+        threadId,
+        'Recovered after missing credential',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(2);
+    } finally {
       await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
     }
   });

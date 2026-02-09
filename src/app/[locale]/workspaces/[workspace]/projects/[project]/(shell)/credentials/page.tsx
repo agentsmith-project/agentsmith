@@ -98,6 +98,7 @@ const createCredentialColumns = (
           disabled={!canManageCredentials || deleteMutation.isPending}
           className="h-8 w-8 text-tertiary hover:text-foreground hover:bg-hover"
           title={t('rotate')}
+          data-testid={`credentials__action-rotate--${info.row.original.id}`}
         >
           <RotateCcw className="w-4 h-4" />
         </Button>
@@ -109,6 +110,7 @@ const createCredentialColumns = (
           disabled={!canManageCredentials || deleteMutation.isPending}
           className="h-8 w-8 text-error hover:bg-hover"
           title={t('delete')}
+          data-testid={`credentials__action-delete--${info.row.original.id}`}
         >
           <Trash2 className="w-4 h-4" />
         </Button>

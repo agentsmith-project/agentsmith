@@ -33,8 +33,13 @@ export async function* streamSseJson(
     } catch {
       // ignore
     }
-    if (body?.error_code) {
-      throw new ApiError(body.error_code, body.message || 'Request failed', body.request_id);
+    const errorCode = typeof body?.error_code === 'string'
+      ? body.error_code
+      : (body && typeof (body as { code?: unknown }).code === 'string'
+          ? (body as { code: string }).code
+          : null);
+    if (errorCode) {
+      throw new ApiError(errorCode, body?.message || 'Request failed', body?.request_id);
     }
     throw new Error(`Request failed (${response.status})`);
   }

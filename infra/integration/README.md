@@ -55,6 +55,10 @@ Current chat integration verification scope:
   - upstream returns `401` / `403` with explicit `error_code/message`
   - verify chat enters error state and shows exact upstream message
   - switch endpoint to healthy upstream and recover in same thread
+- Platform validation visibility (`422`):
+  - disable selected endpoint and verify stream error shows `chat_endpoint_unavailable`
+  - delete endpoint credential and verify stream error shows `chat_endpoint_credential_missing`
+  - switch endpoint to healthy one and recover in same thread
 
 Current AIReady API status:
 

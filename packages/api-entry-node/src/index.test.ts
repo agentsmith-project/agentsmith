@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import http, { type Server } from 'node:http';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
 
 const servers: Server[] = [];
@@ -32,6 +32,93 @@ function apiFetch(baseUrl: string, path: string, init?: RequestInit): Promise<Re
     ...init,
     headers,
   });
+}
+
+function startUpstreamServer(): { server: Server; baseUrl: string; lastBody: () => unknown } {
+  let body: unknown = null;
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const text = Buffer.concat(chunks).toString('utf-8');
+      body = text ? JSON.parse(text) : {};
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ ok: true, echoed: body }));
+    })();
+  });
+  server.listen(0);
+  servers.push(server);
+  const address = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
+}
+
+function startOpenAICompatibleUpstreamServer(): {
+  server: Server;
+  baseUrl: string;
+  lastBody: () => unknown;
+} {
+  let body: unknown = null;
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const text = Buffer.concat(chunks).toString('utf-8');
+      body = text ? JSON.parse(text) : {};
+
+      if (req.url?.includes('/chat/completions')) {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            id: 'chatcmpl_test',
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: 'deepseek-chat',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'Hello from upstream.' },
+                finish_reason: 'stop',
+              },
+            ],
+          }),
+        );
+        return;
+      }
+
+      res.statusCode = 404;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'not_found' }));
+    })();
+  });
+  server.listen(0);
+  servers.push(server);
+  const address = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
+}
+
+function parseSseEventPayload(text: string, event: string): Record<string, unknown> | null {
+  const blocks = text.split('\n\n').map((item) => item.trim()).filter(Boolean);
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    const eventLine = lines.find((line) => line.startsWith('event:'));
+    if (!eventLine) continue;
+    const name = eventLine.slice('event:'.length).trim();
+    if (name !== event) continue;
+    const dataLine = lines.find((line) => line.startsWith('data:'));
+    if (!dataLine) continue;
+    try {
+      return JSON.parse(dataLine.slice('data:'.length).trim()) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 describe('api-entry-node projects routes', () => {
@@ -271,9 +358,18 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(createRes.status).toBe(201);
-    const created = (await createRes.json()) as { id: string; name: string };
+    const created = (await createRes.json()) as {
+      id: string;
+      name: string;
+      object_prefix?: string;
+      doc_namespace?: string;
+      vector_namespace?: string;
+    };
     expect(created.id).toContain('lib_');
     expect(created.name).toBe('Shared Docs');
+    expect(created.object_prefix).toContain(`/libraries/${created.id}`);
+    expect(created.doc_namespace).toContain(created.id);
+    expect(created.vector_namespace).toContain(created.id);
 
     const updateRes = await apiFetch(
       baseUrl,
@@ -300,5 +396,445 @@ describe('api-entry-node projects routes', () => {
       { method: 'DELETE' },
     );
     expect(deleteRes.status).toBe(204);
+  });
+
+  it('supports library scoped ai-ready-jobs create/get/cancel flow', async () => {
+    const { baseUrl } = startServer();
+
+    const createLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'RAG Docs', visibility: 'shared' }),
+      },
+    );
+    expect(createLibraryRes.status).toBe(201);
+    const library = (await createLibraryRes.json()) as { id: string };
+
+    const createSourceRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'rag.txt',
+          library_id: library.id,
+          content_type: 'text/plain',
+          content_base64: Buffer.from('rag-source', 'utf-8').toString('base64'),
+        }),
+      },
+    );
+    expect(createSourceRes.status).toBe(201);
+    const source = (await createSourceRes.json()) as { id: string };
+
+    const createJobRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/ai-ready-jobs`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': 'idem-job-1' },
+        body: JSON.stringify({ source_ids: [source.id] }),
+      },
+    );
+    expect(createJobRes.status).toBe(201);
+    const job = (await createJobRes.json()) as { id: string; status: string; type: string };
+    expect(job.type).toBe('document_ingest');
+    expect(['queued', 'running', 'succeeded']).toContain(job.status);
+
+    let found: { id: string; source_ids: string[]; status: string } | null = null;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const getJobRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/ai-ready-jobs/${job.id}`,
+      );
+      expect(getJobRes.status).toBe(200);
+      found = (await getJobRes.json()) as { id: string; source_ids: string[]; status: string };
+      if (found.status === 'succeeded') {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(found?.id).toBe(job.id);
+    expect(found?.source_ids).toEqual([source.id]);
+    expect(found?.status).toBe('succeeded');
+
+    const cancelRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/ai-ready-jobs/${job.id}:cancel`,
+      { method: 'POST' },
+    );
+    expect(cancelRes.status).toBe(200);
+    const cancelled = (await cancelRes.json()) as { status: string };
+    expect(cancelled.status).toBe('cancelled');
+  });
+
+  it('supports credentials and endpoints CRUD plus openai-compatible proxy', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'deepseek-key',
+          type: 'api_key',
+          value: 'sk-test',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string; fingerprint: string };
+    expect(credential.id).toContain('cred_');
+    expect(credential.fingerprint.length).toBeGreaterThan(0);
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'deepseek-chat',
+          openai_model: 'deepseek-chat',
+          source_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+    expect(endpoint.id).toContain('ep_');
+
+    const proxy = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'will-be-overridden',
+          messages: [{ role: 'user', content: 'hello' }],
+        }),
+      },
+    );
+    expect(proxy.status).toBe(200);
+    const proxied = (await proxy.json()) as { ok: boolean };
+    expect(proxied.ok).toBe(true);
+    const echoed = upstream.lastBody() as { model?: string };
+    expect(echoed.model).toBe('deepseek-chat');
+  });
+
+  it('imports openai-compatible endpoint config in one request', async () => {
+    const { baseUrl } = startServer();
+    const importRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/import-openai-compatible',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          reranker: {
+            model: 'qwen3-reranker-0.6b',
+            source_model: 'qwen3-reranker-0.6b',
+            api_base: 'http://pullot.com:20551/v1',
+            api_key: '20552055',
+            mode: 'openai',
+          },
+          embedding: {
+            model: 'qwen3-embedding-0.6b',
+            source_model: 'qwen3-embedding-0.6b',
+            api_base: 'http://pullot.com:20553/v1',
+            api_key: '20552055',
+          },
+          completion: {
+            model: 'deepseek-chat',
+            source_model: 'deepseek-chat',
+            api_base: 'https://api.deepseek.com',
+            api_key: 'sk-test',
+          },
+        }),
+      },
+    );
+    expect(importRes.status).toBe(201);
+    const imported = (await importRes.json()) as { items: Array<{ id: string }> };
+    expect(imported.items.length).toBe(3);
+
+    const listed = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+    );
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as { items: Array<{ id: string }> };
+    expect(body.items.length).toBe(3);
+  });
+
+  it('supports chat stream via project endpoint and persists assistant reply', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startOpenAICompatibleUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-key',
+          type: 'api_key',
+          value: 'sk-chat',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-endpoint',
+          openai_model: 'deepseek-chat',
+          source_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+        }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    const createUser = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'hello from user',
+        }),
+      },
+    );
+    expect(createUser.status).toBe(201);
+    const userMessage = (await createUser.json()) as { id: string };
+
+    const stream = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+          branch_leaf_message_id: userMessage.id,
+          input: { role: 'user', content: 'hello from user' },
+        }),
+      },
+    );
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get('content-type')).toContain('text/event-stream');
+    const sse = await stream.text();
+    expect(sse).toContain('event: meta');
+    expect(sse).toContain('event: delta');
+    expect(sse).toContain('Hello from upstream.');
+    expect(sse).toContain('event: done');
+
+    const history = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+    );
+    expect(history.status).toBe(200);
+    const messages = (await history.json()) as {
+      items: Array<{ role: 'user' | 'assistant'; content: string }>;
+    };
+    expect(messages.items.length).toBe(2);
+    expect(messages.items[0]).toMatchObject({ role: 'user', content: 'hello from user' });
+    expect(messages.items[1]).toMatchObject({ role: 'assistant', content: 'Hello from upstream.' });
+
+    const upstreamBody = upstream.lastBody() as { model?: string; messages?: Array<{ role: string }> };
+    expect(upstreamBody.model).toBe('deepseek-chat');
+    expect(upstreamBody.messages?.at(-1)?.role).toBe('user');
+  });
+
+  it('supports user revision and assistant variants for chat branching', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startOpenAICompatibleUpstreamServer();
+
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'branch-key', type: 'api_key', value: 'sk-branch' }),
+      },
+    );
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const endpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'branch-endpoint',
+          openai_model: 'deepseek-chat',
+          source_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    const endpoint = (await endpointRes.json()) as { id: string };
+
+    const sessionRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint_id: endpoint.id, model: 'deepseek-chat' }),
+      },
+    );
+    const session = (await sessionRes.json()) as { id: string };
+
+    const userMsgRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ role: 'user', content: 'draft question' }),
+      },
+    );
+    expect(userMsgRes.status).toBe(201);
+    const userMessage = (await userMsgRes.json()) as {
+      id: string;
+      logical_id?: string;
+      revision_index?: number;
+    };
+    expect(userMessage.logical_id).toBeTruthy();
+    expect(userMessage.revision_index).toBe(0);
+
+    const revisedRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/${userMessage.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ content: 'revised question' }),
+      },
+    );
+    expect(revisedRes.status).toBe(200);
+    const revised = (await revisedRes.json()) as {
+      id: string;
+      logical_id?: string;
+      revision_of?: string | null;
+      revision_index?: number;
+    };
+    expect(revised.id).not.toBe(userMessage.id);
+    expect(revised.logical_id).toBe(userMessage.logical_id);
+    expect(revised.revision_of).toBe(userMessage.id);
+    expect(revised.revision_index).toBe(1);
+
+    const firstStream = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+          from_message_id: revised.id,
+        }),
+      },
+    );
+    expect(firstStream.status).toBe(200);
+    const firstSse = await firstStream.text();
+    const firstDone = parseSseEventPayload(firstSse, 'done');
+    expect(firstDone).toBeTruthy();
+    const firstAssistantId = String(firstDone?.message_id ?? '');
+    expect(firstAssistantId).toContain('chat_msg_');
+
+    const secondStream = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+          from_message_id: firstAssistantId,
+        }),
+      },
+    );
+    expect(secondStream.status).toBe(200);
+    const secondSse = await secondStream.text();
+    const secondDone = parseSseEventPayload(secondSse, 'done');
+    const secondAssistantId = String(secondDone?.message_id ?? '');
+    expect(secondAssistantId).toContain('chat_msg_');
+    expect(secondAssistantId).not.toBe(firstAssistantId);
+
+    const history = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+    );
+    expect(history.status).toBe(200);
+    const messages = (await history.json()) as {
+      items: Array<{
+        id: string;
+        role: 'user' | 'assistant';
+        parent_id?: string | null;
+        revision_index?: number;
+        variant_group_id?: string;
+        variant_index?: number;
+      }>;
+    };
+
+    const userRevisions = messages.items.filter((item) => item.role === 'user');
+    expect(userRevisions.length).toBe(2);
+
+    const assistantVariants = messages.items.filter((item) => item.role === 'assistant');
+    expect(assistantVariants.length).toBe(2);
+    expect(assistantVariants[0].parent_id).toBe(revised.id);
+    expect(assistantVariants[1].parent_id).toBe(revised.id);
+    expect(assistantVariants[0].variant_group_id).toBe(assistantVariants[1].variant_group_id);
+    expect(assistantVariants[0].variant_index).toBe(0);
+    expect(assistantVariants[1].variant_index).toBe(1);
   });
 });

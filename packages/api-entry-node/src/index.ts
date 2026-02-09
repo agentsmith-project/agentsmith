@@ -1,6 +1,8 @@
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
+  CreateAIReadyJobRequestSchema,
   CreateSourceLibraryRequestSchema,
   CreateProjectRequestSchema,
   CreateSourceRequestSchema,
@@ -9,9 +11,11 @@ import {
   UpdateProjectRequestSchema,
 } from '@mbos/contracts';
 import {
+  CancelAIReadyJobUseCase,
   BatchCancelSourceAIReadyUseCase,
   BatchStartSourceAIReadyUseCase,
   CancelSourceAIReadyUseCase,
+  CreateAIReadyJobUseCase,
   CreateSourceLibraryUseCase,
   CreateProjectUseCase,
   CreateSourceUseCase,
@@ -20,30 +24,41 @@ import {
   DeleteProjectUseCase,
   DownloadSourceUseCase,
   GetSourceUseCase,
+  GetAIReadyJobUseCase,
   GetSourcesQuotaUseCase,
   GetProjectUseCase,
   ListProjectsUseCase,
   ListSourceLibrariesUseCase,
   ListSourcesUseCase,
+  RunQueuedAIReadyJobUseCase,
   RetrySourceAIReadyUseCase,
   StartSourceAIReadyUseCase,
   UpdateSourceLibraryUseCase,
   UpdateProjectUseCase,
+  drainJobQueue,
 } from '@mbos/application';
 import {
+  DeterministicEmbeddingProvider,
+  FixedCharTextChunker,
+  InMemoryJobQueue,
   InMemoryCache,
   InMemoryJsonDocStore,
   InMemoryObjectStore,
+  JsonDocAIReadyJobRepo,
   JsonDocSourceRepo,
   JsonDocSourceLibraryRepo,
   MinioObjectStore,
   MongoJsonDocStore,
+  NoopVectorStore,
+  PgVectorStore,
   RedisCache,
   createProjectRepoFactoryResult,
   type ProjectRepoFactoryResult,
   SimpleIdGenerator,
   SystemClock,
+  Utf8DocumentParser,
 } from '@mbos/adapters-private';
+import type { JsonDocStorePort } from '@mbos/ports';
 
 interface AuthenticatedUser {
   id: string;
@@ -77,7 +92,742 @@ interface WorkspaceMemberRecord {
   joined_at: string;
 }
 
+interface CredentialRecord {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  name: string;
+  type: 'api_key';
+  fingerprint: string;
+  created_at: string;
+  last_rotated_at?: string;
+}
+
+interface CredentialSecretRecord {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  value: string;
+  updated_at: string;
+}
+
+interface EndpointRecord {
+  id: string;
+  project_id: string;
+  workspace_id: string;
+  name: string;
+  description?: string;
+  openai_model: string;
+  source_model?: string;
+  type: 'openai' | 'anthropic' | 'custom';
+  mode?: 'openai';
+  base_url: string;
+  status: 'active' | 'disabled';
+  credential_ref?: string;
+  limits?: {
+    max_requests_per_minute?: number;
+    max_requests_per_day?: number;
+    max_tokens_per_day?: number;
+    timeout_seconds?: number;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+interface EndpointImportItem {
+  model: string;
+  source_model?: string;
+  api_base: string;
+  api_key: string;
+  mode?: 'openai';
+}
+
+interface EndpointImportPayload {
+  reranker?: EndpointImportItem;
+  embedding?: EndpointImportItem;
+  completion?: EndpointImportItem;
+}
+
+interface ChatSessionRecord {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  title: string;
+  model: string;
+  endpoint_id: string;
+  pinned?: boolean;
+  starred?: boolean;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  total_tokens: number;
+}
+
+interface ChatMessageRecord {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  session_id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  created_at: string;
+  tokens?: number;
+  finish_reason?: string | null;
+  parent_id?: string | null;
+  logical_id?: string;
+  revision_of?: string | null;
+  revision_index?: number;
+  variant_group_id?: string;
+  variant_index?: number;
+  is_stale?: boolean;
+}
+
+interface ChatAttachmentRecord {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  session_id: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  upload_status: 'uploading' | 'processing' | 'ready' | 'failed';
+  created_at: string;
+  error_message?: string;
+}
+
+class EndpointResourceService {
+  private static readonly credentialsCollection = 'credentials';
+  private static readonly credentialSecretsCollection = 'credential_secrets';
+  private static readonly endpointsCollection = 'endpoints';
+
+  constructor(private readonly docStore: JsonDocStorePort) {}
+
+  private hashFingerprint(secret: string): string {
+    return createHash('sha256').update(secret).digest('hex').slice(0, 12);
+  }
+
+  private normalizeBaseUrl(baseUrl: string): string {
+    return baseUrl.replace(/\/+$/, '');
+  }
+
+  private endpointId(): string {
+    return `ep_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  }
+
+  private credentialId(): string {
+    return `cred_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  }
+
+  async listCredentials(workspaceId: string, projectId: string): Promise<CredentialRecord[]> {
+    return this.docStore.list<CredentialRecord>(EndpointResourceService.credentialsCollection, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+    });
+  }
+
+  async createCredential(
+    workspaceId: string,
+    projectId: string,
+    input: { name: string; value: string; type?: 'api_key' },
+  ): Promise<CredentialRecord> {
+    const id = this.credentialId();
+    const now = new Date().toISOString();
+    const credential: CredentialRecord = {
+      id,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: input.name.trim(),
+      type: 'api_key',
+      fingerprint: this.hashFingerprint(input.value),
+      created_at: now,
+      last_rotated_at: now,
+    };
+    const secret: CredentialSecretRecord = {
+      id,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      value: input.value,
+      updated_at: now,
+    };
+    await this.docStore.upsert(EndpointResourceService.credentialsCollection, id, credential);
+    await this.docStore.upsert(EndpointResourceService.credentialSecretsCollection, id, secret);
+    return credential;
+  }
+
+  async rotateCredential(
+    workspaceId: string,
+    projectId: string,
+    credentialId: string,
+    value: string,
+  ): Promise<CredentialRecord | null> {
+    const credential = await this.docStore.get<CredentialRecord>(
+      EndpointResourceService.credentialsCollection,
+      credentialId,
+    );
+    if (!credential) {
+      return null;
+    }
+    if (credential.workspace_id !== workspaceId || credential.project_id !== projectId) {
+      return null;
+    }
+    const now = new Date().toISOString();
+    const updated: CredentialRecord = {
+      ...credential,
+      fingerprint: this.hashFingerprint(value),
+      last_rotated_at: now,
+    };
+    const secret: CredentialSecretRecord = {
+      id: credentialId,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      value,
+      updated_at: now,
+    };
+    await this.docStore.upsert(EndpointResourceService.credentialsCollection, credentialId, updated);
+    await this.docStore.upsert(EndpointResourceService.credentialSecretsCollection, credentialId, secret);
+    return updated;
+  }
+
+  async deleteCredential(workspaceId: string, projectId: string, credentialId: string): Promise<boolean> {
+    const existing = await this.docStore.get<CredentialRecord>(
+      EndpointResourceService.credentialsCollection,
+      credentialId,
+    );
+    if (!existing) {
+      return false;
+    }
+    if (existing.workspace_id !== workspaceId || existing.project_id !== projectId) {
+      return false;
+    }
+    await this.docStore.delete(EndpointResourceService.credentialsCollection, credentialId);
+    await this.docStore.delete(EndpointResourceService.credentialSecretsCollection, credentialId);
+    return true;
+  }
+
+  async getCredentialSecret(
+    workspaceId: string,
+    projectId: string,
+    credentialId: string,
+  ): Promise<string | null> {
+    const secret = await this.docStore.get<CredentialSecretRecord>(
+      EndpointResourceService.credentialSecretsCollection,
+      credentialId,
+    );
+    if (!secret) {
+      return null;
+    }
+    if (secret.workspace_id !== workspaceId || secret.project_id !== projectId) {
+      return null;
+    }
+    return secret.value;
+  }
+
+  async listEndpoints(workspaceId: string, projectId: string): Promise<EndpointRecord[]> {
+    return this.docStore.list<EndpointRecord>(EndpointResourceService.endpointsCollection, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+    });
+  }
+
+  async getEndpoint(
+    workspaceId: string,
+    projectId: string,
+    endpointId: string,
+  ): Promise<EndpointRecord | null> {
+    const endpoint = await this.docStore.get<EndpointRecord>(
+      EndpointResourceService.endpointsCollection,
+      endpointId,
+    );
+    if (!endpoint) {
+      return null;
+    }
+    if (endpoint.workspace_id !== workspaceId || endpoint.project_id !== projectId) {
+      return null;
+    }
+    return endpoint;
+  }
+
+  async createEndpoint(
+    workspaceId: string,
+    projectId: string,
+    input: Partial<EndpointRecord>,
+  ): Promise<EndpointRecord> {
+    const existing = await this.listEndpoints(workspaceId, projectId);
+    if (existing.some((item) => item.openai_model === String(input.openai_model ?? '').trim())) {
+      throw new Error('endpoint_model_conflict');
+    }
+    const now = new Date().toISOString();
+    const endpoint: EndpointRecord = {
+      id: this.endpointId(),
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: String(input.name ?? '').trim(),
+      description: input.description?.trim() || undefined,
+      openai_model: String(input.openai_model ?? '').trim(),
+      source_model: input.source_model?.trim() || undefined,
+      type: (input.type as EndpointRecord['type']) ?? 'openai',
+      mode: input.mode,
+      base_url: this.normalizeBaseUrl(String(input.base_url ?? '')),
+      status: (input.status as EndpointRecord['status']) ?? 'active',
+      credential_ref: input.credential_ref?.trim() || undefined,
+      limits: input.limits,
+      created_at: now,
+      updated_at: now,
+    };
+    await this.docStore.upsert(EndpointResourceService.endpointsCollection, endpoint.id, endpoint);
+    return endpoint;
+  }
+
+  async updateEndpoint(
+    workspaceId: string,
+    projectId: string,
+    endpointId: string,
+    patch: Partial<EndpointRecord>,
+  ): Promise<EndpointRecord | null> {
+    const existing = await this.getEndpoint(workspaceId, projectId, endpointId);
+    if (!existing) {
+      return null;
+    }
+    const updated: EndpointRecord = {
+      ...existing,
+      ...patch,
+      name: patch.name !== undefined ? String(patch.name).trim() : existing.name,
+      openai_model:
+        patch.openai_model !== undefined
+          ? String(patch.openai_model).trim()
+          : existing.openai_model,
+      source_model:
+        patch.source_model !== undefined
+          ? String(patch.source_model).trim()
+          : existing.source_model,
+      base_url:
+        patch.base_url !== undefined
+          ? this.normalizeBaseUrl(String(patch.base_url))
+          : existing.base_url,
+      updated_at: new Date().toISOString(),
+    };
+    await this.docStore.upsert(EndpointResourceService.endpointsCollection, endpointId, updated);
+    return updated;
+  }
+
+  async deleteEndpoint(workspaceId: string, projectId: string, endpointId: string): Promise<boolean> {
+    const existing = await this.getEndpoint(workspaceId, projectId, endpointId);
+    if (!existing) {
+      return false;
+    }
+    await this.docStore.delete(EndpointResourceService.endpointsCollection, endpointId);
+    return true;
+  }
+
+  async importOpenAICompatible(
+    workspaceId: string,
+    projectId: string,
+    payload: EndpointImportPayload,
+  ): Promise<{ items: EndpointRecord[] }> {
+    const pairs: Array<{ name: string; item: EndpointImportItem | undefined; type: EndpointRecord['type'] }> = [
+      { name: 'reranker', item: payload.reranker, type: 'custom' },
+      { name: 'embedding', item: payload.embedding, type: 'openai' },
+      { name: 'completion', item: payload.completion, type: 'openai' },
+    ];
+    const created: EndpointRecord[] = [];
+
+    for (const pair of pairs) {
+      if (!pair.item) continue;
+      const credential = await this.createCredential(workspaceId, projectId, {
+        name: `${pair.name}-key`,
+        value: pair.item.api_key,
+      });
+      const endpoint = await this.createEndpoint(workspaceId, projectId, {
+        name: `${pair.name}-${pair.item.model}`,
+        openai_model: pair.item.model,
+        source_model: pair.item.source_model ?? pair.item.model,
+        type: pair.type,
+        mode: pair.item.mode,
+        base_url: pair.item.api_base,
+        credential_ref: credential.id,
+        status: 'active',
+      });
+      created.push(endpoint);
+    }
+    return { items: created };
+  }
+}
+
+class ChatResourceService {
+  private static readonly sessionsCollection = 'chat_sessions';
+  private static readonly messagesCollection = 'chat_messages';
+  private static readonly attachmentsCollection = 'chat_attachments';
+
+  constructor(private readonly docStore: JsonDocStorePort) {}
+
+  private sessionId(): string {
+    return `chat_sess_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  }
+
+  private messageId(): string {
+    return `chat_msg_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  }
+
+  private attachmentId(): string {
+    return `chat_att_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  }
+
+  async listSessions(workspaceId: string, projectId: string): Promise<ChatSessionRecord[]> {
+    const items = await this.docStore.list<ChatSessionRecord>(ChatResourceService.sessionsCollection, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+    });
+    return items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  }
+
+  async getSession(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+  ): Promise<ChatSessionRecord | null> {
+    const session = await this.docStore.get<ChatSessionRecord>(ChatResourceService.sessionsCollection, sessionId);
+    if (!session) {
+      return null;
+    }
+    if (session.workspace_id !== workspaceId || session.project_id !== projectId) {
+      return null;
+    }
+    return session;
+  }
+
+  async createSession(input: {
+    workspaceId: string;
+    projectId: string;
+    model: string;
+    endpointId: string;
+    title?: string;
+  }): Promise<ChatSessionRecord> {
+    const now = new Date().toISOString();
+    const session: ChatSessionRecord = {
+      id: this.sessionId(),
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      title: input.title?.trim() || 'New Chat',
+      model: input.model,
+      endpoint_id: input.endpointId,
+      pinned: false,
+      starred: false,
+      created_at: now,
+      updated_at: now,
+      message_count: 0,
+      total_tokens: 0,
+    };
+    await this.docStore.upsert(ChatResourceService.sessionsCollection, session.id, session);
+    return session;
+  }
+
+  async updateSession(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    patch: Partial<ChatSessionRecord>,
+  ): Promise<ChatSessionRecord | null> {
+    const existing = await this.getSession(workspaceId, projectId, sessionId);
+    if (!existing) return null;
+    const next: ChatSessionRecord = {
+      ...existing,
+      ...patch,
+      updated_at: new Date().toISOString(),
+    };
+    await this.docStore.upsert(ChatResourceService.sessionsCollection, sessionId, next);
+    return next;
+  }
+
+  async deleteSession(workspaceId: string, projectId: string, sessionId: string): Promise<boolean> {
+    const existing = await this.getSession(workspaceId, projectId, sessionId);
+    if (!existing) return false;
+    await this.docStore.delete(ChatResourceService.sessionsCollection, sessionId);
+    const messages = await this.listMessages(workspaceId, projectId, sessionId);
+    for (const message of messages) {
+      await this.docStore.delete(ChatResourceService.messagesCollection, message.id);
+    }
+    const attachments = await this.listAttachments(workspaceId, projectId, sessionId);
+    for (const attachment of attachments) {
+      await this.docStore.delete(ChatResourceService.attachmentsCollection, attachment.id);
+    }
+    return true;
+  }
+
+  async listMessages(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+  ): Promise<ChatMessageRecord[]> {
+    const items = await this.docStore.list<ChatMessageRecord>(ChatResourceService.messagesCollection, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      session_id: sessionId,
+    });
+    return items.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+
+  async createMessage(input: {
+    workspaceId: string;
+    projectId: string;
+    sessionId: string;
+    role: ChatMessageRecord['role'];
+    content: string;
+    tokens?: number;
+    finishReason?: string | null;
+    parentId?: string | null;
+    logicalId?: string;
+    revisionOf?: string | null;
+    revisionIndex?: number;
+    variantGroupId?: string;
+    variantIndex?: number;
+    isStale?: boolean;
+  }): Promise<ChatMessageRecord> {
+    const now = new Date().toISOString();
+    const generatedId = this.messageId();
+    const resolvedLogicalId =
+      input.role === 'user'
+        ? input.logicalId ?? (input.revisionOf ? `log_${input.revisionOf}` : `log_${generatedId}`)
+        : input.logicalId;
+    const resolvedRevisionIndex =
+      input.role === 'user' ? input.revisionIndex ?? (input.revisionOf ? 1 : 0) : input.revisionIndex;
+    const message: ChatMessageRecord = {
+      id: generatedId,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      session_id: input.sessionId,
+      role: input.role,
+      content: input.content,
+      created_at: now,
+      tokens: input.tokens,
+      finish_reason: input.finishReason ?? null,
+      parent_id: input.parentId ?? null,
+      logical_id: resolvedLogicalId,
+      revision_of: input.revisionOf ?? null,
+      revision_index: resolvedRevisionIndex,
+      variant_group_id: input.variantGroupId,
+      variant_index: input.variantIndex,
+      is_stale: input.isStale ?? false,
+    };
+    await this.docStore.upsert(ChatResourceService.messagesCollection, message.id, message);
+    const session = await this.getSession(input.workspaceId, input.projectId, input.sessionId);
+    if (session) {
+      await this.updateSession(input.workspaceId, input.projectId, input.sessionId, {
+        message_count: session.message_count + 1,
+        title:
+          session.title === 'New Chat' && input.role === 'user'
+            ? input.content.slice(0, 40)
+            : session.title,
+      });
+    }
+    return message;
+  }
+
+  async listAllProjectMessages(workspaceId: string, projectId: string): Promise<ChatMessageRecord[]> {
+    return this.docStore.list<ChatMessageRecord>(ChatResourceService.messagesCollection, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+    });
+  }
+
+  async getMessage(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    messageId: string,
+  ): Promise<ChatMessageRecord | null> {
+    const message = await this.docStore.get<ChatMessageRecord>(ChatResourceService.messagesCollection, messageId);
+    if (!message) {
+      return null;
+    }
+    if (
+      message.workspace_id !== workspaceId ||
+      message.project_id !== projectId ||
+      message.session_id !== sessionId
+    ) {
+      return null;
+    }
+    return message;
+  }
+
+  async updateMessage(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    messageId: string,
+    content: string,
+  ): Promise<ChatMessageRecord | null> {
+    const existing = await this.getMessage(workspaceId, projectId, sessionId, messageId);
+    if (!existing) {
+      return null;
+    }
+    if (existing.role !== 'user') {
+      return null;
+    }
+
+    const allProjectMessages = await this.listAllProjectMessages(workspaceId, projectId);
+    const rootMessageId = existing.revision_of ?? existing.id;
+    const logicalId = existing.logical_id ?? `log_${rootMessageId}`;
+    const revisionMessages = allProjectMessages.filter(
+      (item) => item.session_id === sessionId && item.logical_id === logicalId,
+    );
+    const nextRevisionIndex =
+      revisionMessages.length === 0
+        ? 1
+        : Math.max(...revisionMessages.map((item) => item.revision_index ?? 0)) + 1;
+
+    const revised = await this.createMessage({
+      workspaceId,
+      projectId,
+      sessionId,
+      role: 'user',
+      content,
+      parentId: existing.parent_id ?? null,
+      logicalId,
+      revisionOf: rootMessageId,
+      revisionIndex: nextRevisionIndex,
+    });
+    return revised;
+  }
+
+  async buildNextAssistantVariant(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    parentId: string,
+    fromMessage?: ChatMessageRecord | null,
+  ): Promise<{ variantGroupId: string; variantIndex: number }> {
+    const allMessages = await this.listAllProjectMessages(workspaceId, projectId);
+    const baseGroupId =
+      fromMessage?.variant_group_id ??
+      (fromMessage?.role === 'assistant' && fromMessage.parent_id
+        ? `asst_${fromMessage.parent_id}`
+        : `asst_${parentId}`);
+    const variants = allMessages.filter(
+      (item) =>
+        item.session_id === sessionId &&
+        item.role === 'assistant' &&
+        (item.variant_group_id ?? `asst_${item.parent_id ?? ''}`) === baseGroupId,
+    );
+    const nextVariantIndex =
+      variants.length === 0
+        ? 0
+        : Math.max(...variants.map((item) => item.variant_index ?? 0)) + 1;
+    return { variantGroupId: baseGroupId, variantIndex: nextVariantIndex };
+  }
+
+  async listAttachments(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+  ): Promise<ChatAttachmentRecord[]> {
+    const items = await this.docStore.list<ChatAttachmentRecord>(ChatResourceService.attachmentsCollection, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      session_id: sessionId,
+    });
+    return items.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+
+  async initAttachment(input: {
+    workspaceId: string;
+    projectId: string;
+    sessionId: string;
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+  }): Promise<ChatAttachmentRecord> {
+    const now = new Date().toISOString();
+    const attachment: ChatAttachmentRecord = {
+      id: this.attachmentId(),
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      session_id: input.sessionId,
+      file_name: input.fileName,
+      file_type: input.fileType,
+      file_size: input.fileSize,
+      upload_status: 'ready',
+      created_at: now,
+    };
+    await this.docStore.upsert(ChatResourceService.attachmentsCollection, attachment.id, attachment);
+    return attachment;
+  }
+
+  async completeAttachment(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    attachmentId: string,
+  ): Promise<ChatAttachmentRecord | null> {
+    const attachment = await this.docStore.get<ChatAttachmentRecord>(
+      ChatResourceService.attachmentsCollection,
+      attachmentId,
+    );
+    if (!attachment) return null;
+    if (
+      attachment.workspace_id !== workspaceId ||
+      attachment.project_id !== projectId ||
+      attachment.session_id !== sessionId
+    ) {
+      return null;
+    }
+    const updated: ChatAttachmentRecord = {
+      ...attachment,
+      upload_status: 'ready',
+    };
+    await this.docStore.upsert(ChatResourceService.attachmentsCollection, attachmentId, updated);
+    return updated;
+  }
+
+  async getAttachment(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    attachmentId: string,
+  ): Promise<ChatAttachmentRecord | null> {
+    const attachment = await this.docStore.get<ChatAttachmentRecord>(
+      ChatResourceService.attachmentsCollection,
+      attachmentId,
+    );
+    if (!attachment) return null;
+    if (
+      attachment.workspace_id !== workspaceId ||
+      attachment.project_id !== projectId ||
+      attachment.session_id !== sessionId
+    ) {
+      return null;
+    }
+    return attachment;
+  }
+
+  async deleteAttachment(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    attachmentId: string,
+  ): Promise<boolean> {
+    const attachment = await this.docStore.get<ChatAttachmentRecord>(
+      ChatResourceService.attachmentsCollection,
+      attachmentId,
+    );
+    if (!attachment) return false;
+    if (
+      attachment.workspace_id !== workspaceId ||
+      attachment.project_id !== projectId ||
+      attachment.session_id !== sessionId
+    ) {
+      return false;
+    }
+    await this.docStore.delete(ChatResourceService.attachmentsCollection, attachmentId);
+    return true;
+  }
+}
+
 export interface NodeApiDeps {
+  chatResourceService: ChatResourceService;
+  endpointResourceService: EndpointResourceService;
+  sourceBucket: string;
+  aiReadyJobQueue: InMemoryJobQueue;
+  createAIReadyJobUseCase: CreateAIReadyJobUseCase;
   createSourceLibraryUseCase: CreateSourceLibraryUseCase;
   createProjectUseCase: CreateProjectUseCase;
   createSourceUseCase: CreateSourceUseCase;
@@ -85,6 +835,7 @@ export interface NodeApiDeps {
   deleteSourceUseCase: DeleteSourceUseCase;
   downloadSourceUseCase: DownloadSourceUseCase;
   getSourceUseCase: GetSourceUseCase;
+  getAIReadyJobUseCase: GetAIReadyJobUseCase;
   getSourcesQuotaUseCase: GetSourcesQuotaUseCase;
   startSourceAIReadyUseCase: StartSourceAIReadyUseCase;
   cancelSourceAIReadyUseCase: CancelSourceAIReadyUseCase;
@@ -98,6 +849,8 @@ export interface NodeApiDeps {
   listSourcesUseCase: ListSourcesUseCase;
   updateSourceLibraryUseCase: UpdateSourceLibraryUseCase;
   updateProjectUseCase: UpdateProjectUseCase;
+  cancelAIReadyJobUseCase: CancelAIReadyJobUseCase;
+  runQueuedAIReadyJobUseCase: RunQueuedAIReadyJobUseCase;
 }
 
 export function createDefaultNodeApiDeps(): NodeApiDeps {
@@ -105,13 +858,47 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   const cache = new InMemoryCache();
   const clock = new SystemClock();
   const docStore = new InMemoryJsonDocStore();
+  const chatResourceService = new ChatResourceService(docStore);
   const sourceRepo = new JsonDocSourceRepo(docStore);
   const sourceLibraryRepo = new JsonDocSourceLibraryRepo(docStore);
+  const aiReadyJobRepo = new JsonDocAIReadyJobRepo(docStore);
+  const aiReadyJobQueue = new InMemoryJobQueue();
   const objectStore = new InMemoryObjectStore();
+  const endpointResourceService = new EndpointResourceService(docStore);
+  const sourceBucket = 'mbos-dev';
+  const vectorStore = new NoopVectorStore();
+  const parser = new Utf8DocumentParser();
+  const chunker = new FixedCharTextChunker();
+  const embeddings = new DeterministicEmbeddingProvider();
   const startSourceAIReadyUseCase = new StartSourceAIReadyUseCase(sourceRepo, clock, cache);
   const cancelSourceAIReadyUseCase = new CancelSourceAIReadyUseCase(sourceRepo, clock, cache);
+  const runQueuedAIReadyJobUseCase = new RunQueuedAIReadyJobUseCase(
+    sourceRepo,
+    sourceLibraryRepo,
+    aiReadyJobRepo,
+    objectStore,
+    parser,
+    chunker,
+    embeddings,
+    vectorStore,
+    clock,
+    cache,
+    sourceBucket,
+  );
 
   return {
+    chatResourceService,
+    endpointResourceService,
+    sourceBucket,
+    aiReadyJobQueue,
+    createAIReadyJobUseCase: new CreateAIReadyJobUseCase(
+      sourceRepo,
+      sourceLibraryRepo,
+      aiReadyJobRepo,
+      aiReadyJobQueue,
+      clock,
+      cache,
+    ),
     createSourceLibraryUseCase: new CreateSourceLibraryUseCase(
       sourceLibraryRepo,
       new SimpleIdGenerator(),
@@ -125,13 +912,14 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
       new SimpleIdGenerator(),
       new SystemClock(),
       cache,
-      'mbos-dev',
+      sourceBucket,
     ),
     deleteSourceLibraryUseCase: new DeleteSourceLibraryUseCase(sourceLibraryRepo, cache),
-    deleteSourceUseCase: new DeleteSourceUseCase(sourceRepo, objectStore, cache, 'mbos-dev'),
-    downloadSourceUseCase: new DownloadSourceUseCase(sourceRepo, objectStore, 'mbos-dev'),
+    deleteSourceUseCase: new DeleteSourceUseCase(sourceRepo, objectStore, cache, sourceBucket),
+    downloadSourceUseCase: new DownloadSourceUseCase(sourceRepo, objectStore, sourceBucket),
     deleteProjectUseCase: new DeleteProjectUseCase(projectRepo),
     getSourceUseCase: new GetSourceUseCase(sourceRepo),
+    getAIReadyJobUseCase: new GetAIReadyJobUseCase(aiReadyJobRepo, cache),
     getSourcesQuotaUseCase: new GetSourcesQuotaUseCase(sourceRepo),
     startSourceAIReadyUseCase,
     cancelSourceAIReadyUseCase,
@@ -148,6 +936,8 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
       cache,
     ),
     updateProjectUseCase: new UpdateProjectUseCase(projectRepo, new SystemClock()),
+    cancelAIReadyJobUseCase: new CancelAIReadyJobUseCase(aiReadyJobRepo, clock, cache),
+    runQueuedAIReadyJobUseCase,
   };
 }
 
@@ -301,6 +1091,72 @@ async function readBody(req: http.IncomingMessage): Promise<unknown> {
   return JSON.parse(text) as unknown;
 }
 
+function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
+  const cleanBase = baseUrl.replace(/\/+$/, '');
+  const cleanPath = proxyPath.replace(/^\/+/, '');
+  return `${cleanBase}/${cleanPath}`;
+}
+
+async function proxyJsonRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  options: {
+    upstreamUrl: string;
+    apiKey: string;
+    sourceModel?: string;
+    timeoutSeconds?: number;
+  },
+): Promise<void> {
+  const method = req.method ?? 'POST';
+  const rawBody = await readBody(req);
+  const body =
+    rawBody && typeof rawBody === 'object'
+      ? ({ ...(rawBody as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+
+  if (options.sourceModel) {
+    body.model = options.sourceModel;
+  }
+
+  const abortController = new AbortController();
+  const timeoutMs = Math.max(1, options.timeoutSeconds ?? 120) * 1000;
+  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+
+  try {
+    const upstreamRes = await fetch(options.upstreamUrl, {
+      method,
+      headers: {
+        Authorization: `Bearer ${options.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: abortController.signal,
+    });
+    const payload = Buffer.from(await upstreamRes.arrayBuffer());
+    const contentType = upstreamRes.headers.get('content-type') ?? 'application/json';
+    res.statusCode = upstreamRes.status;
+    res.setHeader('content-type', contentType);
+    res.end(payload);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function sseWrite(res: http.ServerResponse, event: string, data: unknown): void {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function safeAssistantContent(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
+  const choices = (payload as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
+  const first = choices?.[0];
+  const content = first?.message?.content;
+  return typeof content === 'string' ? content : '';
+}
+
 type ProjectsRoute =
   | { kind: 'workspacesCollection' }
   | { kind: 'workspaceItem'; workspaceId: string }
@@ -310,6 +1166,9 @@ type ProjectsRoute =
   | { kind: 'sources'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibraries'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryAIReadyJobs'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryAIReadyJobItem'; workspaceId: string; projectId: string; libraryId: string; jobId: string }
+  | { kind: 'sourceLibraryAIReadyJobCancel'; workspaceId: string; projectId: string; libraryId: string; jobId: string }
   | { kind: 'sourcesQuota'; workspaceId: string; projectId: string }
   | { kind: 'sourceAIReadyStart'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'sourceAIReadyCancel'; workspaceId: string; projectId: string; sourceId: string }
@@ -317,7 +1176,31 @@ type ProjectsRoute =
   | { kind: 'sourceBatchAIReadyStart'; workspaceId: string; projectId: string }
   | { kind: 'sourceBatchAIReadyCancel'; workspaceId: string; projectId: string }
   | { kind: 'sourceItem'; workspaceId: string; projectId: string; sourceId: string }
-  | { kind: 'sourceDownload'; workspaceId: string; projectId: string; sourceId: string };
+  | { kind: 'sourceDownload'; workspaceId: string; projectId: string; sourceId: string }
+  | { kind: 'chatSessions'; workspaceId: string; projectId: string }
+  | { kind: 'chatSessionItem'; workspaceId: string; projectId: string; sessionId: string }
+  | { kind: 'chatMessages'; workspaceId: string; projectId: string; sessionId: string }
+  | { kind: 'chatMessageItem'; workspaceId: string; projectId: string; sessionId: string; messageId: string }
+  | { kind: 'chatMessagesStream'; workspaceId: string; projectId: string; sessionId: string }
+  | { kind: 'chatRegenerate'; workspaceId: string; projectId: string; sessionId: string }
+  | { kind: 'chatAttachments'; workspaceId: string; projectId: string; sessionId: string }
+  | { kind: 'chatAttachmentInit'; workspaceId: string; projectId: string; sessionId: string }
+  | { kind: 'chatAttachmentComplete'; workspaceId: string; projectId: string; sessionId: string; attachmentId: string }
+  | { kind: 'chatAttachmentItem'; workspaceId: string; projectId: string; sessionId: string; attachmentId: string }
+  | { kind: 'chatAttachmentRetry'; workspaceId: string; projectId: string; sessionId: string; attachmentId: string }
+  | { kind: 'endpoints'; workspaceId: string; projectId: string }
+  | { kind: 'endpointItem'; workspaceId: string; projectId: string; endpointId: string }
+  | {
+    kind: 'endpointProxy';
+    workspaceId: string;
+    projectId: string;
+    endpointId: string;
+    proxyPath: string;
+  }
+  | { kind: 'endpointImportOpenAICompatible'; workspaceId: string; projectId: string }
+  | { kind: 'credentials'; workspaceId: string; projectId: string }
+  | { kind: 'credentialItem'; workspaceId: string; projectId: string; credentialId: string }
+  | { kind: 'credentialRotate'; workspaceId: string; projectId: string; credentialId: string };
 
 function matchProjectsRoute(url: string): ProjectsRoute | null {
   const pathname = new URL(url, 'http://localhost').pathname;
@@ -384,6 +1267,44 @@ function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(sourceLibraryItemMatched[1]),
       projectId: decodeURIComponent(sourceLibraryItemMatched[2]),
       libraryId: decodeURIComponent(sourceLibraryItemMatched[3]),
+    };
+  }
+
+  const sourceLibraryAIReadyJobsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/ai-ready-jobs\/?$/,
+  );
+  if (sourceLibraryAIReadyJobsMatched) {
+    return {
+      kind: 'sourceLibraryAIReadyJobs',
+      workspaceId: decodeURIComponent(sourceLibraryAIReadyJobsMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryAIReadyJobsMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryAIReadyJobsMatched[3]),
+    };
+  }
+
+  const sourceLibraryAIReadyJobCancelMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/ai-ready-jobs\/([^/]+):cancel\/?$/,
+  );
+  if (sourceLibraryAIReadyJobCancelMatched) {
+    return {
+      kind: 'sourceLibraryAIReadyJobCancel',
+      workspaceId: decodeURIComponent(sourceLibraryAIReadyJobCancelMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryAIReadyJobCancelMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryAIReadyJobCancelMatched[3]),
+      jobId: decodeURIComponent(sourceLibraryAIReadyJobCancelMatched[4]),
+    };
+  }
+
+  const sourceLibraryAIReadyJobItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/ai-ready-jobs\/([^/]+)\/?$/,
+  );
+  if (sourceLibraryAIReadyJobItemMatched) {
+    return {
+      kind: 'sourceLibraryAIReadyJobItem',
+      workspaceId: decodeURIComponent(sourceLibraryAIReadyJobItemMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryAIReadyJobItemMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryAIReadyJobItemMatched[3]),
+      jobId: decodeURIComponent(sourceLibraryAIReadyJobItemMatched[4]),
     };
   }
 
@@ -477,6 +1398,223 @@ function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(sourceDownloadMatched[1]),
       projectId: decodeURIComponent(sourceDownloadMatched[2]),
       sourceId: decodeURIComponent(sourceDownloadMatched[3]),
+    };
+  }
+
+  const chatMessagesStreamMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/messages\/stream\/?$/,
+  );
+  if (chatMessagesStreamMatched) {
+    return {
+      kind: 'chatMessagesStream',
+      workspaceId: decodeURIComponent(chatMessagesStreamMatched[1]),
+      projectId: decodeURIComponent(chatMessagesStreamMatched[2]),
+      sessionId: decodeURIComponent(chatMessagesStreamMatched[3]),
+    };
+  }
+
+  const chatMessageItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/messages\/([^/]+)\/?$/,
+  );
+  if (chatMessageItemMatched) {
+    return {
+      kind: 'chatMessageItem',
+      workspaceId: decodeURIComponent(chatMessageItemMatched[1]),
+      projectId: decodeURIComponent(chatMessageItemMatched[2]),
+      sessionId: decodeURIComponent(chatMessageItemMatched[3]),
+      messageId: decodeURIComponent(chatMessageItemMatched[4]),
+    };
+  }
+
+  const chatMessagesMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/messages\/?$/,
+  );
+  if (chatMessagesMatched) {
+    return {
+      kind: 'chatMessages',
+      workspaceId: decodeURIComponent(chatMessagesMatched[1]),
+      projectId: decodeURIComponent(chatMessagesMatched[2]),
+      sessionId: decodeURIComponent(chatMessagesMatched[3]),
+    };
+  }
+
+  const chatAttachmentRetryMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/attachments\/([^/]+)\/retry\/?$/,
+  );
+  if (chatAttachmentRetryMatched) {
+    return {
+      kind: 'chatAttachmentRetry',
+      workspaceId: decodeURIComponent(chatAttachmentRetryMatched[1]),
+      projectId: decodeURIComponent(chatAttachmentRetryMatched[2]),
+      sessionId: decodeURIComponent(chatAttachmentRetryMatched[3]),
+      attachmentId: decodeURIComponent(chatAttachmentRetryMatched[4]),
+    };
+  }
+
+  const chatAttachmentCompleteMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/attachments\/([^/]+)\/complete\/?$/,
+  );
+  if (chatAttachmentCompleteMatched) {
+    return {
+      kind: 'chatAttachmentComplete',
+      workspaceId: decodeURIComponent(chatAttachmentCompleteMatched[1]),
+      projectId: decodeURIComponent(chatAttachmentCompleteMatched[2]),
+      sessionId: decodeURIComponent(chatAttachmentCompleteMatched[3]),
+      attachmentId: decodeURIComponent(chatAttachmentCompleteMatched[4]),
+    };
+  }
+
+  const chatAttachmentInitMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/attachments\/init\/?$/,
+  );
+  if (chatAttachmentInitMatched) {
+    return {
+      kind: 'chatAttachmentInit',
+      workspaceId: decodeURIComponent(chatAttachmentInitMatched[1]),
+      projectId: decodeURIComponent(chatAttachmentInitMatched[2]),
+      sessionId: decodeURIComponent(chatAttachmentInitMatched[3]),
+    };
+  }
+
+  const chatAttachmentItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/attachments\/([^/]+)\/?$/,
+  );
+  if (chatAttachmentItemMatched) {
+    return {
+      kind: 'chatAttachmentItem',
+      workspaceId: decodeURIComponent(chatAttachmentItemMatched[1]),
+      projectId: decodeURIComponent(chatAttachmentItemMatched[2]),
+      sessionId: decodeURIComponent(chatAttachmentItemMatched[3]),
+      attachmentId: decodeURIComponent(chatAttachmentItemMatched[4]),
+    };
+  }
+
+  const chatAttachmentsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/attachments\/?$/,
+  );
+  if (chatAttachmentsMatched) {
+    return {
+      kind: 'chatAttachments',
+      workspaceId: decodeURIComponent(chatAttachmentsMatched[1]),
+      projectId: decodeURIComponent(chatAttachmentsMatched[2]),
+      sessionId: decodeURIComponent(chatAttachmentsMatched[3]),
+    };
+  }
+
+  const chatRegenerateMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/regenerate\/?$/,
+  );
+  if (chatRegenerateMatched) {
+    return {
+      kind: 'chatRegenerate',
+      workspaceId: decodeURIComponent(chatRegenerateMatched[1]),
+      projectId: decodeURIComponent(chatRegenerateMatched[2]),
+      sessionId: decodeURIComponent(chatRegenerateMatched[3]),
+    };
+  }
+
+  const chatSessionItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/?$/,
+  );
+  if (chatSessionItemMatched) {
+    return {
+      kind: 'chatSessionItem',
+      workspaceId: decodeURIComponent(chatSessionItemMatched[1]),
+      projectId: decodeURIComponent(chatSessionItemMatched[2]),
+      sessionId: decodeURIComponent(chatSessionItemMatched[3]),
+    };
+  }
+
+  const chatSessionsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/?$/,
+  );
+  if (chatSessionsMatched) {
+    return {
+      kind: 'chatSessions',
+      workspaceId: decodeURIComponent(chatSessionsMatched[1]),
+      projectId: decodeURIComponent(chatSessionsMatched[2]),
+    };
+  }
+
+  const endpointImportMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/import-openai-compatible\/?$/,
+  );
+  if (endpointImportMatched) {
+    return {
+      kind: 'endpointImportOpenAICompatible',
+      workspaceId: decodeURIComponent(endpointImportMatched[1]),
+      projectId: decodeURIComponent(endpointImportMatched[2]),
+    };
+  }
+
+  const endpointProxyMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/([^/]+)\/proxy\/(.+)$/,
+  );
+  if (endpointProxyMatched) {
+    return {
+      kind: 'endpointProxy',
+      workspaceId: decodeURIComponent(endpointProxyMatched[1]),
+      projectId: decodeURIComponent(endpointProxyMatched[2]),
+      endpointId: decodeURIComponent(endpointProxyMatched[3]),
+      proxyPath: endpointProxyMatched[4],
+    };
+  }
+
+  const endpointItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/([^/]+)\/?$/,
+  );
+  if (endpointItemMatched) {
+    return {
+      kind: 'endpointItem',
+      workspaceId: decodeURIComponent(endpointItemMatched[1]),
+      projectId: decodeURIComponent(endpointItemMatched[2]),
+      endpointId: decodeURIComponent(endpointItemMatched[3]),
+    };
+  }
+
+  const endpointsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/?$/,
+  );
+  if (endpointsMatched) {
+    return {
+      kind: 'endpoints',
+      workspaceId: decodeURIComponent(endpointsMatched[1]),
+      projectId: decodeURIComponent(endpointsMatched[2]),
+    };
+  }
+
+  const credentialRotateMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/credentials\/([^/]+)\/rotate\/?$/,
+  );
+  if (credentialRotateMatched) {
+    return {
+      kind: 'credentialRotate',
+      workspaceId: decodeURIComponent(credentialRotateMatched[1]),
+      projectId: decodeURIComponent(credentialRotateMatched[2]),
+      credentialId: decodeURIComponent(credentialRotateMatched[3]),
+    };
+  }
+
+  const credentialItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/credentials\/([^/]+)\/?$/,
+  );
+  if (credentialItemMatched) {
+    return {
+      kind: 'credentialItem',
+      workspaceId: decodeURIComponent(credentialItemMatched[1]),
+      projectId: decodeURIComponent(credentialItemMatched[2]),
+      credentialId: decodeURIComponent(credentialItemMatched[3]),
+    };
+  }
+
+  const credentialsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/credentials\/?$/,
+  );
+  if (credentialsMatched) {
+    return {
+      kind: 'credentials',
+      workspaceId: decodeURIComponent(credentialsMatched[1]),
+      projectId: decodeURIComponent(credentialsMatched[2]),
     };
   }
 
@@ -681,6 +1819,51 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    if (route.kind === 'sourceLibraryAIReadyJobs' && method === 'POST') {
+      const raw = await readBody(req);
+      const input = CreateAIReadyJobRequestSchema.parse(raw);
+      const created = await deps.createAIReadyJobUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        libraryId: route.libraryId,
+        actorId: user.id,
+        idempotencyKey: req.headers['idempotency-key']?.toString(),
+        input,
+      });
+      json(res, 201, created);
+      return;
+    }
+
+    if (route.kind === 'sourceLibraryAIReadyJobItem' && method === 'GET') {
+      await drainJobQueue(deps.aiReadyJobQueue, async (item) => {
+        await deps.runQueuedAIReadyJobUseCase.execute({
+          workspaceId: item.workspaceId,
+          projectId: item.projectId,
+          libraryId: item.libraryId,
+          jobId: item.jobId,
+        });
+      });
+      const found = await deps.getAIReadyJobUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        libraryId: route.libraryId,
+        jobId: route.jobId,
+      });
+      json(res, 200, found);
+      return;
+    }
+
+    if (route.kind === 'sourceLibraryAIReadyJobCancel' && method === 'POST') {
+      const updated = await deps.cancelAIReadyJobUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        libraryId: route.libraryId,
+        jobId: route.jobId,
+      });
+      json(res, 200, updated);
+      return;
+    }
+
     if (route.kind === 'sourcesQuota' && method === 'GET') {
       const libraryId = requestUrl.searchParams.get('library_id') ?? undefined;
       const quota = await deps.getSourcesQuotaUseCase.execute({
@@ -783,6 +1966,644 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    if (route.kind === 'chatSessions' && method === 'GET') {
+      const items = await deps.chatResourceService.listSessions(route.workspaceId, route.projectId);
+      json(res, 200, {
+        items,
+        total: items.length,
+        page: 1,
+        page_size: items.length || 1000,
+        has_more: false,
+      });
+      return;
+    }
+
+    if (route.kind === 'chatSessions' && method === 'POST') {
+      const raw = (await readBody(req)) as {
+        title?: string;
+        model?: string;
+        endpoint_id?: string;
+      };
+      const endpoints = await deps.endpointResourceService.listEndpoints(route.workspaceId, route.projectId);
+      const chosenEndpoint =
+        (raw.endpoint_id
+          ? endpoints.find((item) => item.id === raw.endpoint_id)
+          : endpoints.find((item) => item.status === 'active')) ?? null;
+      if (!chosenEndpoint) {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'active_endpoint_required' });
+        return;
+      }
+      const created = await deps.chatResourceService.createSession({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        title: raw.title,
+        model: raw.model ?? chosenEndpoint.openai_model,
+        endpointId: chosenEndpoint.id,
+      });
+      json(res, 201, created);
+      return;
+    }
+
+    if (route.kind === 'chatSessionItem' && method === 'GET') {
+      const session = await deps.chatResourceService.getSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      if (!session) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+      json(res, 200, session);
+      return;
+    }
+
+    if (route.kind === 'chatSessionItem' && method === 'PATCH') {
+      const raw = (await readBody(req)) as Partial<ChatSessionRecord>;
+      const updated = await deps.chatResourceService.updateSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        raw,
+      );
+      if (!updated) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+      json(res, 200, updated);
+      return;
+    }
+
+    if (route.kind === 'chatSessionItem' && method === 'DELETE') {
+      const deleted = await deps.chatResourceService.deleteSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      if (!deleted) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+      json(res, 200, { success: true });
+      return;
+    }
+
+    if (route.kind === 'chatMessages' && method === 'GET') {
+      const session = await deps.chatResourceService.getSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      if (!session) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+      const items = await deps.chatResourceService.listMessages(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      json(res, 200, {
+        items,
+        total: items.length,
+        page: 1,
+        page_size: items.length || 500,
+        has_more: false,
+      });
+      return;
+    }
+
+    if (route.kind === 'chatMessages' && method === 'POST') {
+      const session = await deps.chatResourceService.getSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      if (!session) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+      const raw = (await readBody(req)) as {
+        role?: 'user';
+        content?: string;
+        parent_id?: string | null;
+      };
+      if (raw.role !== 'user' || !raw.content?.trim()) {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'chat_message_content_required' });
+        return;
+      }
+      const parentId = raw.parent_id ?? null;
+      if (parentId) {
+        const parent = await deps.chatResourceService.getMessage(
+          route.workspaceId,
+          route.projectId,
+          route.sessionId,
+          parentId,
+        );
+        if (!parent) {
+          json(res, 422, { code: 'VALIDATION_ERROR', message: 'chat_parent_message_not_found' });
+          return;
+        }
+      }
+      const created = await deps.chatResourceService.createMessage({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        role: 'user',
+        content: raw.content,
+        parentId,
+      });
+      json(res, 201, created);
+      return;
+    }
+
+    if (route.kind === 'chatMessageItem' && method === 'PATCH') {
+      const raw = (await readBody(req)) as { content?: string };
+      if (!raw.content?.trim()) {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'chat_message_content_required' });
+        return;
+      }
+      const revised = await deps.chatResourceService.updateMessage(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        route.messageId,
+        raw.content,
+      );
+      if (!revised) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_message_not_found' });
+        return;
+      }
+      json(res, 200, revised);
+      return;
+    }
+
+    if (route.kind === 'chatRegenerate' && method === 'POST') {
+      json(res, 200, { stream_id: `stream_${Date.now()}` });
+      return;
+    }
+
+    if (route.kind === 'chatAttachments' && method === 'GET') {
+      const session = await deps.chatResourceService.getSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      if (!session) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+      const items = await deps.chatResourceService.listAttachments(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      json(res, 200, { items, total: items.length });
+      return;
+    }
+
+    if (route.kind === 'chatAttachmentInit' && method === 'POST') {
+      const session = await deps.chatResourceService.getSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      if (!session) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+      const raw = (await readBody(req)) as {
+        file_name?: string;
+        file_type?: string;
+        file_size?: number;
+      };
+      if (
+        !raw.file_name ||
+        !raw.file_type ||
+        typeof raw.file_size !== 'number' ||
+        raw.file_size < 0
+      ) {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'attachment_fields_required' });
+        return;
+      }
+      const attachment = await deps.chatResourceService.initAttachment({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        fileName: raw.file_name,
+        fileType: raw.file_type,
+        fileSize: raw.file_size,
+      });
+      json(res, 200, { attachment });
+      return;
+    }
+
+    if (route.kind === 'chatAttachmentComplete' && method === 'POST') {
+      const attachment = await deps.chatResourceService.completeAttachment(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        route.attachmentId,
+      );
+      if (!attachment) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'attachment_not_found' });
+        return;
+      }
+      json(res, 200, attachment);
+      return;
+    }
+
+    if (route.kind === 'chatAttachmentItem' && method === 'DELETE') {
+      const deleted = await deps.chatResourceService.deleteAttachment(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        route.attachmentId,
+      );
+      if (!deleted) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'attachment_not_found' });
+        return;
+      }
+      json(res, 200, { success: true });
+      return;
+    }
+
+    if (route.kind === 'chatAttachmentRetry' && method === 'POST') {
+      const attachment = await deps.chatResourceService.completeAttachment(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        route.attachmentId,
+      );
+      if (!attachment) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'attachment_not_found' });
+        return;
+      }
+      json(res, 200, attachment);
+      return;
+    }
+
+    if (route.kind === 'chatMessagesStream' && method === 'POST') {
+      const session = await deps.chatResourceService.getSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      if (!session) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+
+      const raw = (await readBody(req)) as {
+        model?: string;
+        endpoint_id?: string;
+        from_message_id?: string;
+        branch_leaf_message_id?: string;
+        input?: { role?: 'user'; content?: string; attachments?: string[] };
+      };
+      const endpointId = raw.endpoint_id ?? session.endpoint_id;
+      const endpoint = await deps.endpointResourceService.getEndpoint(
+        route.workspaceId,
+        route.projectId,
+        endpointId,
+      );
+      if (!endpoint || endpoint.status !== 'active' || !endpoint.credential_ref) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_unavailable' });
+        return;
+      }
+      const apiKey = await deps.endpointResourceService.getCredentialSecret(
+        route.workspaceId,
+        route.projectId,
+        endpoint.credential_ref,
+      );
+      if (!apiKey) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_credential_missing' });
+        return;
+      }
+
+      const fromMessage = raw.from_message_id
+        ? await deps.chatResourceService.getMessage(
+            route.workspaceId,
+            route.projectId,
+            route.sessionId,
+            raw.from_message_id,
+          )
+        : null;
+      if (raw.from_message_id && !fromMessage) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_from_message_not_found' });
+        return;
+      }
+
+      let parentForAssistant: string | null = null;
+      if (fromMessage?.role === 'assistant') {
+        parentForAssistant = fromMessage.parent_id ?? null;
+      } else if (fromMessage?.role === 'user') {
+        parentForAssistant = fromMessage.id;
+      } else if (raw.branch_leaf_message_id) {
+        parentForAssistant = raw.branch_leaf_message_id;
+      }
+
+      if (raw.input?.content?.trim()) {
+        let branchLeaf: ChatMessageRecord | null = null;
+        if (raw.branch_leaf_message_id) {
+          branchLeaf = await deps.chatResourceService.getMessage(
+            route.workspaceId,
+            route.projectId,
+            route.sessionId,
+            raw.branch_leaf_message_id,
+          );
+          if (!branchLeaf) {
+            json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_branch_leaf_not_found' });
+            return;
+          }
+        }
+        const canReuseLeafUser =
+          !!branchLeaf &&
+          branchLeaf.role === 'user' &&
+          branchLeaf.content === raw.input.content;
+        if (canReuseLeafUser && branchLeaf) {
+          parentForAssistant = branchLeaf.id;
+        } else {
+          const createdInput = await deps.chatResourceService.createMessage({
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            sessionId: route.sessionId,
+            role: 'user',
+            content: raw.input.content,
+            parentId: raw.branch_leaf_message_id ?? null,
+            logicalId: undefined,
+          });
+          parentForAssistant = createdInput.id;
+        }
+      }
+
+      if (!parentForAssistant) {
+        const history = await deps.chatResourceService.listMessages(
+          route.workspaceId,
+          route.projectId,
+          route.sessionId,
+        );
+        const latestUser = [...history].reverse().find((item) => item.role === 'user');
+        parentForAssistant = latestUser?.id ?? null;
+      }
+      if (!parentForAssistant) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_parent_message_not_found' });
+        return;
+      }
+
+      const messages = await deps.chatResourceService.listMessages(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+
+      const upstreamUrl = buildUpstreamUrl(endpoint.base_url, 'chat/completions');
+      const upstreamRes = await fetch(upstreamUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: raw.model ?? endpoint.source_model ?? endpoint.openai_model,
+          stream: false,
+          messages: messages.map((item) => ({ role: item.role, content: item.content })),
+        }),
+      });
+      const completionPayload = await upstreamRes.json().catch(() => ({}));
+      if (!upstreamRes.ok) {
+        json(res, upstreamRes.status, completionPayload);
+        return;
+      }
+      const variantMeta = await deps.chatResourceService.buildNextAssistantVariant(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        parentForAssistant,
+        fromMessage,
+      );
+      const assistantText = safeAssistantContent(completionPayload);
+      const created = await deps.chatResourceService.createMessage({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        role: 'assistant',
+        content: assistantText,
+        parentId: parentForAssistant,
+        variantGroupId: variantMeta.variantGroupId,
+        variantIndex: variantMeta.variantIndex,
+      });
+
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      sseWrite(res, 'meta', {
+        stream_id: `stream_${Date.now()}`,
+        session_id: route.sessionId,
+        model: endpoint.openai_model,
+        endpoint_id: endpoint.id,
+      });
+      sseWrite(res, 'delta', {
+        message_id: created.id,
+        delta: assistantText,
+      });
+      sseWrite(res, 'done', {
+        message_id: created.id,
+        finish_reason: 'stop',
+        tokens: assistantText.length,
+      });
+      res.end();
+      return;
+    }
+
+    if (route.kind === 'credentials' && method === 'GET') {
+      const items = await deps.endpointResourceService.listCredentials(
+        route.workspaceId,
+        route.projectId,
+      );
+      json(res, 200, { items });
+      return;
+    }
+
+    if (route.kind === 'credentials' && method === 'POST') {
+      const raw = (await readBody(req)) as { name?: string; type?: string; value?: string };
+      if (!raw.name?.trim() || !raw.value?.trim()) {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'credential_name_and_value_required' });
+        return;
+      }
+      const created = await deps.endpointResourceService.createCredential(
+        route.workspaceId,
+        route.projectId,
+        {
+          name: raw.name,
+          value: raw.value,
+          type: 'api_key',
+        },
+      );
+      json(res, 201, created);
+      return;
+    }
+
+    if (route.kind === 'credentialRotate' && method === 'POST') {
+      const raw = (await readBody(req)) as { value?: string };
+      if (!raw.value?.trim()) {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'credential_value_required' });
+        return;
+      }
+      const updated = await deps.endpointResourceService.rotateCredential(
+        route.workspaceId,
+        route.projectId,
+        route.credentialId,
+        raw.value,
+      );
+      if (!updated) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
+        return;
+      }
+      json(res, 200, updated);
+      return;
+    }
+
+    if (route.kind === 'credentialItem' && method === 'DELETE') {
+      const deleted = await deps.endpointResourceService.deleteCredential(
+        route.workspaceId,
+        route.projectId,
+        route.credentialId,
+      );
+      if (!deleted) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
+        return;
+      }
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    if (route.kind === 'endpoints' && method === 'GET') {
+      const items = await deps.endpointResourceService.listEndpoints(
+        route.workspaceId,
+        route.projectId,
+      );
+      json(res, 200, { items });
+      return;
+    }
+
+    if (route.kind === 'endpoints' && method === 'POST') {
+      const raw = (await readBody(req)) as Partial<EndpointRecord>;
+      if (!raw.name?.trim() || !raw.openai_model?.trim() || !raw.base_url?.trim()) {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_required_fields_missing' });
+        return;
+      }
+      try {
+        const created = await deps.endpointResourceService.createEndpoint(
+          route.workspaceId,
+          route.projectId,
+          raw,
+        );
+        json(res, 201, created);
+      } catch (error) {
+        if (error instanceof Error && error.message === 'endpoint_model_conflict') {
+          json(res, 409, { code: 'ENDPOINT_MODEL_CONFLICT', message: 'endpoint_model_conflict' });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    if (route.kind === 'endpointItem' && method === 'GET') {
+      const endpoint = await deps.endpointResourceService.getEndpoint(
+        route.workspaceId,
+        route.projectId,
+        route.endpointId,
+      );
+      if (!endpoint) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+        return;
+      }
+      json(res, 200, endpoint);
+      return;
+    }
+
+    if (route.kind === 'endpointItem' && method === 'PUT') {
+      const raw = (await readBody(req)) as Partial<EndpointRecord>;
+      const updated = await deps.endpointResourceService.updateEndpoint(
+        route.workspaceId,
+        route.projectId,
+        route.endpointId,
+        raw,
+      );
+      if (!updated) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+        return;
+      }
+      json(res, 200, updated);
+      return;
+    }
+
+    if (route.kind === 'endpointItem' && method === 'DELETE') {
+      const deleted = await deps.endpointResourceService.deleteEndpoint(
+        route.workspaceId,
+        route.projectId,
+        route.endpointId,
+      );
+      if (!deleted) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+        return;
+      }
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    if (route.kind === 'endpointImportOpenAICompatible' && method === 'POST') {
+      const raw = (await readBody(req)) as EndpointImportPayload;
+      const imported = await deps.endpointResourceService.importOpenAICompatible(
+        route.workspaceId,
+        route.projectId,
+        raw,
+      );
+      json(res, 201, imported);
+      return;
+    }
+
+    if (route.kind === 'endpointProxy' && method === 'POST') {
+      const endpoint = await deps.endpointResourceService.getEndpoint(
+        route.workspaceId,
+        route.projectId,
+        route.endpointId,
+      );
+      if (!endpoint) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+        return;
+      }
+      if (endpoint.status !== 'active') {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_disabled' });
+        return;
+      }
+      if (!endpoint.credential_ref) {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_credential_missing' });
+        return;
+      }
+      const apiKey = await deps.endpointResourceService.getCredentialSecret(
+        route.workspaceId,
+        route.projectId,
+        endpoint.credential_ref,
+      );
+      if (!apiKey) {
+        json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_credential_not_found' });
+        return;
+      }
+      await proxyJsonRequest(req, res, {
+        upstreamUrl: buildUpstreamUrl(endpoint.base_url, route.proxyPath),
+        apiKey,
+        sourceModel: endpoint.source_model ?? endpoint.openai_model,
+        timeoutSeconds: endpoint.limits?.timeout_seconds,
+      });
+      return;
+    }
+
     json(res, 405, { code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
   } catch (error) {
     if (error instanceof Error && error.message === 'project_not_found') {
@@ -795,6 +2616,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
     if (error instanceof Error && error.message === 'source_library_not_found') {
       json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'source_library_not_found' });
+      return;
+    }
+    if (error instanceof Error && error.message === 'ai_ready_job_not_found') {
+      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'ai_ready_job_not_found' });
+      return;
+    }
+    if (error instanceof Error && error.message === 'source_library_mismatch') {
+      json(res, 422, { code: 'VALIDATION_ERROR', message: 'source_library_mismatch' });
       return;
     }
 
@@ -816,9 +2645,25 @@ export function createNodeApiServer(
     void handleRequest(req, res, deps);
   });
 
+  const jobWorkerInterval = setInterval(() => {
+    void drainJobQueue(deps.aiReadyJobQueue, async (item) => {
+      await deps.runQueuedAIReadyJobUseCase.execute({
+        workspaceId: item.workspaceId,
+        projectId: item.projectId,
+        libraryId: item.libraryId,
+        jobId: item.jobId,
+      });
+    });
+  }, 200);
+
   if (lifecycle) {
     server.on('close', () => {
+      clearInterval(jobWorkerInterval);
       void lifecycle.shutdown();
+    });
+  } else {
+    server.on('close', () => {
+      clearInterval(jobWorkerInterval);
     });
   }
 
@@ -847,6 +2692,7 @@ function startFromCli(): void {
       dbName: process.env.MONGO_DB_NAME ?? 'mbos',
     })
     : new InMemoryJsonDocStore();
+  const chatResourceService = new ChatResourceService(docStore);
   const objectStore = process.env.MINIO_ENDPOINT
     ? new MinioObjectStore({
       endPoint: process.env.MINIO_ENDPOINT,
@@ -858,10 +2704,58 @@ function startFromCli(): void {
     : new InMemoryObjectStore();
   const sourceRepo = new JsonDocSourceRepo(docStore);
   const sourceLibraryRepo = new JsonDocSourceLibraryRepo(docStore);
+  const aiReadyJobRepo = new JsonDocAIReadyJobRepo(docStore);
+  const aiReadyJobQueue = new InMemoryJobQueue();
+  const endpointResourceService = new EndpointResourceService(docStore);
   const sourceBucket = process.env.MINIO_BUCKET ?? 'mbos-dev';
+  const parser = new Utf8DocumentParser();
+  const chunker = new FixedCharTextChunker({
+    chunkSize: Number(process.env.AIREADY_CHUNK_SIZE ?? '1000'),
+    overlap: Number(process.env.AIREADY_CHUNK_OVERLAP ?? '100'),
+  });
+  const embeddings = new DeterministicEmbeddingProvider(
+    Number(process.env.AIREADY_EMBEDDING_DIMENSIONS ?? '1536'),
+  );
+  const vectorStore = process.env.DATABASE_URL
+    ? new PgVectorStore({
+      databaseUrl: process.env.DATABASE_URL,
+      embeddingDimensions: embeddings.dimensions(),
+    })
+    : new NoopVectorStore();
+  if (vectorStore instanceof PgVectorStore) {
+    void vectorStore.ensureSchema().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'unknown_error';
+      process.stderr.write(`[api-entry-node] pgvector schema init failed: ${message}\n`);
+    });
+  }
   const startSourceAIReadyUseCase = new StartSourceAIReadyUseCase(sourceRepo, clock, cache);
   const cancelSourceAIReadyUseCase = new CancelSourceAIReadyUseCase(sourceRepo, clock, cache);
+  const runQueuedAIReadyJobUseCase = new RunQueuedAIReadyJobUseCase(
+    sourceRepo,
+    sourceLibraryRepo,
+    aiReadyJobRepo,
+    objectStore,
+    parser,
+    chunker,
+    embeddings,
+    vectorStore,
+    clock,
+    cache,
+    sourceBucket,
+  );
   const deps: NodeApiDeps = {
+    chatResourceService,
+    endpointResourceService,
+    sourceBucket,
+    aiReadyJobQueue,
+    createAIReadyJobUseCase: new CreateAIReadyJobUseCase(
+      sourceRepo,
+      sourceLibraryRepo,
+      aiReadyJobRepo,
+      aiReadyJobQueue,
+      clock,
+      cache,
+    ),
     createSourceLibraryUseCase: new CreateSourceLibraryUseCase(
       sourceLibraryRepo,
       new SimpleIdGenerator(),
@@ -882,6 +2776,7 @@ function startFromCli(): void {
     downloadSourceUseCase: new DownloadSourceUseCase(sourceRepo, objectStore, sourceBucket),
     deleteProjectUseCase: new DeleteProjectUseCase(factory.projectRepo),
     getSourceUseCase: new GetSourceUseCase(sourceRepo),
+    getAIReadyJobUseCase: new GetAIReadyJobUseCase(aiReadyJobRepo, cache),
     getSourcesQuotaUseCase: new GetSourcesQuotaUseCase(sourceRepo),
     startSourceAIReadyUseCase,
     cancelSourceAIReadyUseCase,
@@ -898,6 +2793,8 @@ function startFromCli(): void {
       cache,
     ),
     updateProjectUseCase: new UpdateProjectUseCase(factory.projectRepo, new SystemClock()),
+    cancelAIReadyJobUseCase: new CancelAIReadyJobUseCase(aiReadyJobRepo, clock, cache),
+    runQueuedAIReadyJobUseCase,
   };
   createNodeApiServer(port, deps, factory);
   // Keep log compact and machine-readable for local integration.

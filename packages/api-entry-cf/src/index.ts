@@ -1,8 +1,6 @@
 import type { ListProjectsResponse } from '@mbos/contracts';
 
-export interface Env {}
-
-export default {
+const workerHandler = {
   async fetch(): Promise<Response> {
     const body: ListProjectsResponse = { items: [] };
     return new Response(JSON.stringify(body), {
@@ -13,3 +11,5 @@ export default {
     });
   },
 };
+
+export default workerHandler;

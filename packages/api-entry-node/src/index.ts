@@ -161,6 +161,7 @@ interface ChatSessionRecord {
   updated_at: string;
   message_count: number;
   total_tokens: number;
+  runtime_status?: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
 }
 
 interface ChatMessageRecord {
@@ -209,6 +210,74 @@ const STREAM_REGISTRY_FINAL_TTL_SECONDS = 5 * 60;
 
 function streamRegistryKey(streamId: string): string {
   return `chat:stream:${streamId}`;
+}
+
+function sessionStreamStateKey(
+  workspaceId: string,
+  projectId: string,
+  sessionId: string,
+): string {
+  return `chat:session-stream:${workspaceId}:${projectId}:${sessionId}`;
+}
+
+type SessionStreamRuntimeStatus = 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
+
+async function readSessionStreamState(
+  cache: CachePort,
+  workspaceId: string,
+  projectId: string,
+  sessionId: string,
+): Promise<SessionStreamRuntimeStatus | null> {
+  const raw = await cache.get(sessionStreamStateKey(workspaceId, projectId, sessionId));
+  if (
+    raw === 'running' ||
+    raw === 'stopping' ||
+    raw === 'completed' ||
+    raw === 'stopped' ||
+    raw === 'failed'
+  ) {
+    return raw;
+  }
+  return null;
+}
+
+async function writeSessionStreamState(
+  cache: CachePort,
+  workspaceId: string,
+  projectId: string,
+  sessionId: string,
+  status: SessionStreamRuntimeStatus,
+  ttlSeconds: number,
+): Promise<void> {
+  await cache.set(sessionStreamStateKey(workspaceId, projectId, sessionId), status, ttlSeconds);
+}
+
+async function stopActiveSessionStreams(
+  cache: CachePort,
+  workspaceId: string,
+  projectId: string,
+  sessionId: string,
+): Promise<void> {
+  for (const [streamId, stream] of ACTIVE_CHAT_STREAMS.entries()) {
+    if (stream.workspaceId !== workspaceId || stream.projectId !== projectId || stream.sessionId !== sessionId) {
+      continue;
+    }
+    stream.status = 'stopping';
+    stream.abortController.abort();
+    await writeStreamRegistry(
+      cache,
+      {
+        streamId,
+        workspaceId,
+        projectId,
+        sessionId,
+        status: 'stopping',
+        updatedAt: new Date().toISOString(),
+      },
+      STREAM_REGISTRY_TTL_SECONDS,
+    );
+  }
+  await writeSessionStreamState(cache, workspaceId, projectId, sessionId, 'stopping', STREAM_REGISTRY_TTL_SECONDS);
 }
 
 interface ChatAttachmentRecord {
@@ -2146,11 +2215,22 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     if (route.kind === 'chatSessions' && method === 'GET') {
       const items = await deps.chatResourceService.listSessions(route.workspaceId, route.projectId);
+      const itemsWithRuntime = await Promise.all(
+        items.map(async (item) => ({
+          ...item,
+          runtime_status: await readSessionStreamState(
+            deps.cache,
+            route.workspaceId,
+            route.projectId,
+            item.id,
+          ) ?? undefined,
+        })),
+      );
       json(res, 200, {
-        items,
-        total: items.length,
+        items: itemsWithRuntime,
+        total: itemsWithRuntime.length,
         page: 1,
-        page_size: items.length || 1000,
+        page_size: itemsWithRuntime.length || 1000,
         has_more: false,
       });
       return;
@@ -2192,7 +2272,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
         return;
       }
-      json(res, 200, session);
+      const runtimeStatus = await readSessionStreamState(
+        deps.cache,
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      json(res, 200, {
+        ...session,
+        runtime_status: runtimeStatus ?? undefined,
+      });
       return;
     }
 
@@ -2213,6 +2302,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     if (route.kind === 'chatSessionItem' && method === 'DELETE') {
+      await stopActiveSessionStreams(
+        deps.cache,
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
       const deleted = await deps.chatResourceService.deleteSession(
         route.workspaceId,
         route.projectId,
@@ -2450,6 +2545,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         },
         STREAM_REGISTRY_TTL_SECONDS,
       );
+      await writeSessionStreamState(
+        deps.cache,
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        'stopping',
+        STREAM_REGISTRY_TTL_SECONDS,
+      );
       if (running) {
         running.status = 'stopping';
         running.abortController.abort();
@@ -2612,6 +2715,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         },
         STREAM_REGISTRY_TTL_SECONDS,
       );
+      await writeSessionStreamState(
+        deps.cache,
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        'running',
+        STREAM_REGISTRY_TTL_SECONDS,
+      );
       let clientDisconnected = false;
       const onResClose = () => {
         clientDisconnected = true;
@@ -2657,9 +2768,52 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             createdAssistant.id,
             { messageStatus: 'stopped', tokens: 0 },
           );
+          await writeSessionStreamState(
+            deps.cache,
+            route.workspaceId,
+            route.projectId,
+            route.sessionId,
+            'stopped',
+            STREAM_REGISTRY_FINAL_TTL_SECONDS,
+          );
           return;
         }
-        throw error;
+        await writeStreamRegistry(
+          deps.cache,
+          {
+            streamId,
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            sessionId: route.sessionId,
+            status: 'failed',
+            updatedAt: new Date().toISOString(),
+          },
+          STREAM_REGISTRY_FINAL_TTL_SECONDS,
+        );
+        await writeSessionStreamState(
+          deps.cache,
+          route.workspaceId,
+          route.projectId,
+          route.sessionId,
+          'failed',
+          STREAM_REGISTRY_FINAL_TTL_SECONDS,
+        );
+        await deps.chatResourceService.updateAssistantMessage(
+          route.workspaceId,
+          route.projectId,
+          route.sessionId,
+          createdAssistant.id,
+          {
+            content: '',
+            finishReason: null,
+            tokens: 0,
+            messageStatus: 'failed',
+            errorCode: 'STREAM_UPSTREAM_CONNECT_ERROR',
+            errorMessage: error instanceof Error ? error.message : 'stream_upstream_connect_error',
+          },
+        );
+        json(res, 502, { error_code: 'STREAM_UPSTREAM_CONNECT_ERROR', message: 'chat_upstream_unreachable' });
+        return;
       }
 
       if (!upstreamRes.ok) {
@@ -2676,6 +2830,28 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             updatedAt: new Date().toISOString(),
           },
           STREAM_REGISTRY_FINAL_TTL_SECONDS,
+        );
+        await writeSessionStreamState(
+          deps.cache,
+          route.workspaceId,
+          route.projectId,
+          route.sessionId,
+          'failed',
+          STREAM_REGISTRY_FINAL_TTL_SECONDS,
+        );
+        await deps.chatResourceService.updateAssistantMessage(
+          route.workspaceId,
+          route.projectId,
+          route.sessionId,
+          createdAssistant.id,
+          {
+            content: '',
+            finishReason: null,
+            tokens: 0,
+            messageStatus: 'failed',
+            errorCode: `STREAM_UPSTREAM_${upstreamRes.status}`,
+            errorMessage: `chat_upstream_status_${upstreamRes.status}`,
+          },
         );
         const completionPayload = await upstreamRes.json().catch(() => ({}));
         json(res, upstreamRes.status, completionPayload);
@@ -2847,6 +3023,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             },
             STREAM_REGISTRY_FINAL_TTL_SECONDS,
           );
+          await writeSessionStreamState(
+            deps.cache,
+            route.workspaceId,
+            route.projectId,
+            route.sessionId,
+            'failed',
+            STREAM_REGISTRY_FINAL_TTL_SECONDS,
+          );
           ACTIVE_CHAT_STREAMS.delete(streamId);
           throw error;
         }
@@ -2882,6 +3066,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           status: messageStatus === 'stopped' ? 'stopped' : 'completed',
           updatedAt: new Date().toISOString(),
         },
+        STREAM_REGISTRY_FINAL_TTL_SECONDS,
+      );
+      await writeSessionStreamState(
+        deps.cache,
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        messageStatus === 'stopped' ? 'stopped' : 'completed',
         STREAM_REGISTRY_FINAL_TTL_SECONDS,
       );
 

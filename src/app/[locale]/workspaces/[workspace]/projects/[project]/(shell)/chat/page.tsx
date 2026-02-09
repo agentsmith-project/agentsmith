@@ -642,6 +642,8 @@ export default function ChatPage({ params }: ChatPageProps) {
       }
       setSessionStreamState(args.sessionId, { status: 'error', assistant: null });
       toast.error(e instanceof Error ? e.message : 'Streaming failed');
+      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
     } finally {
       if (streamControllersRef.current.get(args.sessionId) === controller) {
         streamControllersRef.current.delete(args.sessionId);
@@ -739,6 +741,10 @@ export default function ChatPage({ params }: ChatPageProps) {
   const streamingSessionIds = Object.entries(streamStateBySession)
     .filter(([, state]) => state.status === 'connecting' || state.status === 'streaming')
     .map(([sessionId]) => sessionId);
+  const runtimeStreamingSessionIds = sessions
+    .filter((s) => s.runtime_status === 'running' || s.runtime_status === 'stopping')
+    .map((s) => s.id);
+  const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...runtimeStreamingSessionIds]));
   const disabled =
     (activeStreamStatus === 'connecting' || activeStreamStatus === 'streaming') &&
     !!activeStreamingAssistant;
@@ -760,7 +766,7 @@ export default function ChatPage({ params }: ChatPageProps) {
               setCurrentSessionId(id);
               setEditingMessageId(null);
             }}
-            streamingSessionIds={streamingSessionIds}
+            streamingSessionIds={mergedStreamingSessionIds}
               onRename={(id, title) => {
               if (!canManageChatSessions) return;
               updateSessionMutation.mutate({ sessionId: id, data: { title } });
@@ -983,9 +989,11 @@ export default function ChatPage({ params }: ChatPageProps) {
               <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
               <AlertDialogAction
                 data-testid="chat__delete-thread-confirm"
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.preventDefault();
                   if (!threadToDelete) return;
+                  const stopped = await stopStreamingSession(threadToDelete.id, 'replace');
+                  if (!stopped) return;
                   deleteSessionMutation.mutate(threadToDelete.id);
                   setDeleteThreadDialogOpen(false);
                   setThreadToDelete(null);

@@ -221,6 +221,7 @@ export interface ChatSession {
   updated_at: string;
   message_count: number;
   total_tokens: number;
+  runtime_status?: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
 }
 
 export interface ChatMessage {

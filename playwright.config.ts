@@ -7,6 +7,18 @@ const baseURL = process.env.BASE_URL || 'http://localhost:3001';
 const useManagedDevServer = !process.env.BASE_URL;
 const localWorkers = Number(process.env.PW_WORKERS ?? 8);
 const isCI = !!process.env.CI;
+const runIntegrationE2E = process.env.RUN_INTEGRATION_E2E === 'true';
+const integrationApiBase = process.env.INTEGRATION_API_BASE || 'http://localhost:20000';
+const webServerCommand = runIntegrationE2E
+  ? [
+      'NEXT_PUBLIC_USE_MSW=false',
+      `NEXT_PUBLIC_API_BASE=${integrationApiBase}`,
+      'NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms',
+      'NEXT_PUBLIC_KEYCLOAK_REALM=mbos',
+      'NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend',
+      './node_modules/.bin/next dev --port 3001',
+    ].join(' ')
+  : 'NEXT_PUBLIC_USE_MSW=true ./node_modules/.bin/next dev --port 3001';
 
 export default defineConfig({
   testDir: './e2e',
@@ -25,7 +37,7 @@ export default defineConfig({
   webServer: useManagedDevServer
     ? {
         // Use local next binary directly to avoid npm/npx config arg injection warnings.
-        command: './node_modules/.bin/next dev --port 3001',
+        command: webServerCommand,
         url: 'http://localhost:3001',
         reuseExistingServer: true,
         timeout: 120000,

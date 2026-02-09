@@ -14,16 +14,27 @@ test.describe('minimal integration flow', () => {
     await page.goto(`/${locale}/login`);
     await page.getByTestId('login__keycloak-btn').click();
 
-    const usernameInput = page.getByLabel(/Username|Email|用户名|邮箱/i).first();
+    const keycloakError = page.getByTestId('login__keycloak-error');
+    if (await keycloakError.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      throw new Error(`Keycloak login bootstrap failed: ${await keycloakError.textContent()}`);
+    }
+
+    await page.waitForURL(/\/realms\/.+\/protocol\/openid-connect\/auth|\/login-actions\/authenticate/i, {
+      timeout: 30_000,
+    });
+
+    const usernameInput = page.locator('input#username, input[name="username"], input[name="email"]').first();
     await usernameInput.waitFor({ state: 'visible', timeout: 30_000 });
     await usernameInput.fill(username);
-    await page.getByLabel(/Password|密码/i).first().fill(password);
+    await page.locator('input#password, input[name="password"]').first().fill(password);
     await Promise.all([
       page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
-      page.getByRole('button', { name: /Sign In|Log in|登录/i }).first().click(),
+      page.locator('#kc-login, button[type="submit"]').first().click(),
     ]);
 
-    await page.getByTestId('workspace-select__card--ws_default').click();
+    const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
+    await workspaceCard.waitFor({ state: 'visible', timeout: 30_000 });
+    await workspaceCard.click();
     await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`));
 
     const projectName = `it-proj-${Date.now()}`;

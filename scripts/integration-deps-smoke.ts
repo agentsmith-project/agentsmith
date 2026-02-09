@@ -41,6 +41,18 @@ async function smokePostgres(url: string): Promise<void> {
   }
 }
 
+async function smokePgvector(url: string): Promise<void> {
+  const client = new PgClient({ connectionString: url });
+  await client.connect();
+  const result = await client.query<{ extname?: string }>(
+    "SELECT extname FROM pg_extension WHERE extname = 'vector' LIMIT 1",
+  );
+  await client.end();
+  if (!result.rows[0]?.extname) {
+    throw new Error('pgvector_extension_missing');
+  }
+}
+
 async function smokeMongo(url: string): Promise<void> {
   const client = new MongoClient(url);
   await client.connect();
@@ -100,6 +112,9 @@ async function main(): Promise<void> {
 
   await smokePostgres(config.postgresUrl);
   process.stdout.write('[smoke] postgres ok\n');
+
+  await smokePgvector(config.postgresUrl);
+  process.stdout.write('[smoke] pgvector extension ok\n');
 
   await smokeMongo(config.mongoUrl);
   process.stdout.write('[smoke] mongo ok\n');

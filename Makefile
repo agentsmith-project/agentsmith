@@ -1,4 +1,4 @@
-.PHONY: help deps-up deps-down deps-reset deps-smoke deps-logs deps-ps api-dev web web-msw e2e-minimal urls
+.PHONY: help deps-up deps-down deps-reset deps-smoke deps-logs deps-ps api-dev web web-msw e2e-minimal e2e-minimal-local-api e2e-chat-local-api urls
 
 NPM ?= npm
 
@@ -24,7 +24,7 @@ help:
 	@echo "MBOS Dev Commands"
 	@echo ""
 	@echo "Dependencies:"
-	@echo "  make deps-up       # start docker deps (postgres/mongo/redis/minio/keycloak)"
+	@echo "  make deps-up       # start docker deps (postgres+pgvector/mongo/redis/minio/keycloak)"
 	@echo "  make deps-smoke    # verify deps health"
 	@echo "  make deps-down     # stop deps"
 	@echo "  make deps-reset    # stop deps and remove volumes"
@@ -38,6 +38,8 @@ help:
 	@echo ""
 	@echo "Tests:"
 	@echo "  make e2e-minimal   # run minimal integration e2e"
+	@echo "  make e2e-minimal-local-api  # run minimal integration e2e with current node api"
+	@echo "  make e2e-chat-local-api     # run chat integration e2e with current node api"
 	@echo ""
 	@echo "Utility:"
 	@echo "  make urls          # print local URLs and test users"
@@ -87,6 +89,18 @@ web-msw:
 e2e-minimal:
 	BASE_URL=$(BASE_URL) \
 	$(NPM) run test:e2e:integration:minimal
+
+e2e-minimal-local-api:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	$(NPM) run test:e2e:integration:minimal:with-api
+
+e2e-chat-local-api:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	$(NPM) run test:e2e:integration:chat:with-api
 
 urls:
 	@echo "Frontend:         http://localhost:$(PORT_WEB)/$(LOCALE)/login"

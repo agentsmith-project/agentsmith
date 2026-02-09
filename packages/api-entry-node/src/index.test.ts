@@ -25,6 +25,14 @@ function startServer(): { server: Server; baseUrl: string } {
   return { server, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
+function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>): { server: Server; baseUrl: string } {
+  const server = createNodeApiServer(0, deps);
+  servers.push(server);
+
+  const address = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${address.port}` };
+}
+
 function apiFetch(baseUrl: string, path: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
   headers.set('Authorization', 'Bearer test-token');
@@ -205,6 +213,30 @@ describe('api-entry-node projects routes', () => {
 
     const getAfterDelete = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
     expect(getAfterDelete.status).toBe(404);
+  });
+
+  it('returns operator permissions for non-owner project in minimal mode', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const created = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_external',
+      input: {
+        name: 'Shared Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const getRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
+    expect(getRes.status).toBe(200);
+    const got = (await getRes.json()) as { owner_id: string; permissions: string[] };
+    expect(got.owner_id).toBe('user_external');
+    expect(got.permissions).toContain('project:chat:access');
+    expect(got.permissions).toContain('project:source:manage');
+    expect(got.permissions).toContain('project:endpoint:manage');
+    expect(got.permissions).toContain('project:credential:manage');
+    expect(got.permissions).not.toContain('project:member:manage');
   });
 
   it('returns validation error for invalid payload', async () => {

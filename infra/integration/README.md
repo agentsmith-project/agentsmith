@@ -13,6 +13,9 @@ Current minimal validation scope:
 - Auth: Keycloak (real user login)
 - Object storage: MinIO (source file binary storage)
 - Metadata and cache in this phase: in-memory inside `@mbos/api-entry-node`
+- Project permissions in minimal mode:
+  - owner keeps full project permissions
+  - non-owner gets operator permissions for chat/sources/endpoints/credentials (no member governance/settings)
 
 Current chat integration verification scope:
 
@@ -76,6 +79,7 @@ Current AIReady API status:
 ```bash
 npm run integration:deps:up
 npm run integration:deps:init:postgres
+npm run integration:deps:init:keycloak
 npm run integration:deps:smoke
 npm run integration:test:adapters
 npm run test:e2e:integration:minimal
@@ -98,6 +102,11 @@ npm run test:e2e:integration:chat:with-api
 `integration:deps:init:postgres` now applies every SQL file under
 `packages/adapters-private/sql/`, including `source_embeddings.sql`
 (`CREATE EXTENSION vector` and vector table bootstrap).
+
+`integration:deps:init:keycloak` ensures test users exist and always resets:
+
+- `dev-admin` / `dev-admin-123`
+- `integration-user` / `integration-user-123`
 
 Optional env overrides:
 
@@ -129,12 +138,21 @@ docker compose -f infra/integration/docker-compose.yml down -v
 - integration user: `integration-user` / `integration-user-123`
 - dev admin user: `dev-admin` / `dev-admin-123`
 - real completion e2e payload file: `secrets/e2e-openai-compatible.json`
-  - if missing, create it with your completion provider config and `api_key`
+  - demo template (checked in): `secrets/e2e-openai-compatible.demo.json`
+  - if missing, copy the demo file and replace `api_key`
 
 ## Run API with Postgres
 
 ```bash
 npm run api:node:dev:pg
+```
+
+## Fix Keycloak credentials drift
+
+If Keycloak says `Invalid username or password` for integration users:
+
+```bash
+npm run integration:deps:init:keycloak
 ```
 
 ## Verify pgvector

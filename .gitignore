@@ -50,3 +50,4 @@ test-results
 # Local secrets (for manual integration/e2e only)
 secrets/*
 !secrets/.gitkeep
+!secrets/e2e-openai-compatible.demo.json

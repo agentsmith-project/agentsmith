@@ -32,6 +32,7 @@
     "integration:deps:logs": "docker compose -f infra/integration/docker-compose.yml logs -f --tail=200",
     "integration:deps:ps": "docker compose -f infra/integration/docker-compose.yml ps",
     "integration:deps:init:postgres": "bash scripts/integration-db-init.sh",
+    "integration:deps:init:keycloak": "tsx scripts/integration-keycloak-init.ts",
     "integration:deps:smoke": "tsx scripts/integration-deps-smoke.ts",
     "integration:test:adapters": "npm run test -w @mbos/adapters-private",
     "api:node:dev:pg": "DATABASE_URL=postgresql://mbos:mbos_dev_password@localhost:15432/mbos npm run api:node:dev",

@@ -960,11 +960,28 @@ const OWNER_PROJECT_PERMISSIONS = [
   'project:usage:view',
 ] as const;
 
+const OPERATOR_PROJECT_PERMISSIONS = [
+  'project:read',
+  'project:chat:access',
+  'project:source:use',
+  'project:source:manage',
+  'project:endpoint:use',
+  'project:endpoint:manage',
+  'project:credential:manage',
+] as const;
+
 const OWNER_WORKSPACE_PERMISSIONS = [
   'workspace:read',
   'workspace:project:create',
   'workspace:governance:update',
 ] as const;
+
+function resolveProjectPermissions(ownerId: string, actorId: string): readonly string[] {
+  if (ownerId === actorId) {
+    return OWNER_PROJECT_PERMISSIONS;
+  }
+  return OPERATOR_PROJECT_PERMISSIONS;
+}
 
 function buildWorkspaceRecords(): WorkspaceRecord[] {
   const now = new Date().toISOString();
@@ -1719,15 +1736,15 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     if (route.kind === 'collection' && method === 'GET') {
       const listed = await deps.listProjectsUseCase.execute(route.workspaceId);
-      json(res, 200, {
-        items: listed.items.map((item) => ({
-          ...item,
-          role: item.owner_id === user.id ? 'owner' : 'developer',
-          permissions: item.owner_id === user.id ? [...OWNER_PROJECT_PERMISSIONS] : ['project:read'],
-        })),
-      });
-      return;
-    }
+        json(res, 200, {
+          items: listed.items.map((item) => ({
+            ...item,
+            role: item.owner_id === user.id ? 'owner' : 'developer',
+            permissions: [...resolveProjectPermissions(item.owner_id, user.id)],
+          })),
+        });
+        return;
+      }
 
     if (route.kind === 'collection' && method === 'POST') {
       const raw = await readBody(req);
@@ -1752,7 +1769,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       json(res, 200, {
         ...found,
         role: found.owner_id === user.id ? 'owner' : 'developer',
-        permissions: found.owner_id === user.id ? [...OWNER_PROJECT_PERMISSIONS] : ['project:read'],
+        permissions: [...resolveProjectPermissions(found.owner_id, user.id)],
       });
       return;
     }

@@ -1,4 +1,4 @@
-.PHONY: help bootstrap deps-up deps-down deps-reset deps-smoke deps-logs deps-ps deps-init \
+.PHONY: help bootstrap deps-up deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw e2e-minimal e2e-chat e2e-chat-real \
 	e2e-minimal-local-api e2e-chat-local-api e2e-chat-real-local-api urls
 
@@ -35,7 +35,9 @@ help:
 	@echo ""
 	@echo "Dependencies:"
 	@echo "  make deps-up       # start docker deps (postgres+pgvector/mongo/redis/minio/keycloak)"
-	@echo "  make deps-init     # apply postgres schemas (projects + pgvector tables)"
+	@echo "  make deps-init     # apply postgres schemas + seed/reset keycloak users"
+	@echo "  make deps-init-postgres # apply postgres schemas (projects + pgvector tables)"
+	@echo "  make deps-init-keycloak # ensure/reset keycloak integration users"
 	@echo "  make deps-smoke    # verify deps health"
 	@echo "  make deps-down     # stop deps"
 	@echo "  make deps-reset    # stop deps and remove volumes"
@@ -81,6 +83,13 @@ deps-ps:
 
 deps-init:
 	$(NPM) run integration:deps:init:postgres
+	$(NPM) run integration:deps:init:keycloak
+
+deps-init-postgres:
+	$(NPM) run integration:deps:init:postgres
+
+deps-init-keycloak:
+	$(NPM) run integration:deps:init:keycloak
 
 check-api-port:
 	@PORT="$(PORT_API)"; \

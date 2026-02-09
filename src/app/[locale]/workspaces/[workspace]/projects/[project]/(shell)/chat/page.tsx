@@ -11,7 +11,7 @@
 'use client';
 
 import * as React from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -148,15 +148,15 @@ export default function ChatPage({ params }: ChatPageProps) {
     uploadFailedMessage: t('upload_failed'),
   });
 
-  const upsertStreamAssistantToCache = (sessionId: string, message: ChatMessage) => {
+  const upsertStreamAssistantToCache = useCallback((sessionId: string, message: ChatMessage) => {
     upsertChatMessageInCache(
       queryClient,
       chatMessagesKey(workspaceId, projectId, sessionId),
       message,
     );
-  };
+  }, [projectId, queryClient, workspaceId]);
 
-  const patchStreamAssistantInCache = (
+  const patchStreamAssistantInCache = useCallback((
     sessionId: string,
     messageId: string,
     patch: Partial<Pick<ChatMessage, 'content' | 'finish_reason' | 'tokens'>>,
@@ -167,7 +167,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       messageId,
       patch,
     );
-  };
+  }, [projectId, queryClient, workspaceId]);
 
   const { streamStateBySession, stopStreamingSession, stopStreaming, runStream } = useChatStreaming({
     token,
@@ -199,6 +199,18 @@ export default function ChatPage({ params }: ChatPageProps) {
     streamStateBySession,
   });
 
+  const {
+    activeStreamStatus,
+    activeStreamingAssistant,
+    mergedStreamingSessionIds,
+    disabled,
+  } = buildChatViewModel({
+    currentSessionId,
+    activeSession,
+    sessions,
+    streamStateBySession,
+  });
+
   const visibleLeafId = useMemo(() => {
     if (messages.length === 0) return null;
     const groups = buildVariantGroups(messages);
@@ -221,6 +233,147 @@ export default function ChatPage({ params }: ChatPageProps) {
     initAttachment: (input) => initAttachmentMutation.mutateAsync(input),
     fileInputRef,
   });
+
+  const handleSelectThread = useCallback((id: string) => {
+    setCurrentSessionId(id);
+    setEditingMessageId(null);
+  }, []);
+
+  const handleCreateThread = useCallback(() => {
+    if (!canUseChat) return;
+    createSessionMutation.mutate();
+  }, [canUseChat, createSessionMutation]);
+
+  const handleRenameThread = useCallback((sessionId: string, title: string) => {
+    if (!canManageChatSessions) return;
+    updateSessionMutation.mutate({ sessionId, data: { title } });
+  }, [canManageChatSessions, updateSessionMutation]);
+
+  const handleToggleThreadStar = useCallback((sessionId: string, next: boolean) => {
+    if (!canManageChatSessions) return;
+    updateSessionMutation.mutate({ sessionId, data: { starred: next } });
+  }, [canManageChatSessions, updateSessionMutation]);
+
+  const handleToggleThreadPin = useCallback((sessionId: string, next: boolean) => {
+    if (!canManageChatSessions) return;
+    updateSessionMutation.mutate({ sessionId, data: { pinned: next } });
+  }, [canManageChatSessions, updateSessionMutation]);
+
+  const handleDeleteThreadRequest = useCallback((sessionId: string) => {
+    if (!canManageChatSessions) return;
+    const thread = sessions.find((session) => session.id === sessionId) || null;
+    setThreadToDelete({ id: sessionId, title: thread?.title });
+    setDeleteThreadDialogOpen(true);
+  }, [canManageChatSessions, sessions]);
+
+  const handleRenameActiveSession = useCallback((title: string) => {
+    if (!canManageChatSessions || !activeSession) return;
+    updateSessionMutation.mutate({ sessionId: activeSession.id, data: { title } });
+  }, [activeSession, canManageChatSessions, updateSessionMutation]);
+
+  const handleSelectActiveEndpoint = useCallback((endpoint: Endpoint) => {
+    if (!canManageChatSessions || !activeSession) return;
+    updateSessionMutation.mutate({
+      sessionId: activeSession.id,
+      data: { endpoint_id: endpoint.id, model: endpoint.openai_model },
+    });
+  }, [activeSession, canManageChatSessions, updateSessionMutation]);
+
+  const handleSelectVariant = useCallback((groupId: string, nextIndex: number) => {
+    onManualSelectVariant(groupId, nextIndex);
+  }, [onManualSelectVariant]);
+
+  const handleEditMessage = useCallback((message: ChatMessage) => {
+    if (disabled || !canUseChat || message.role !== 'user') return;
+    setEditingMessageId(message.id);
+  }, [canUseChat, disabled]);
+
+  const handleEditCommit = useCallback(async (message: ChatMessage, nextContent: string) => {
+    if (disabled || !canUseChat || !currentSessionId) return;
+    const edited = await editMessageMutation.mutateAsync({
+      sessionId: currentSessionId,
+      messageId: message.id,
+      content: nextContent,
+    });
+    upsertStreamAssistantToCache(currentSessionId, edited);
+    if (edited.logical_id && typeof edited.revision_index === 'number') {
+      applyVariantFromMeta(edited.logical_id, edited.revision_index);
+    }
+    markPendingAutoGroup(edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null));
+    setEditingMessageId(null);
+    if (activeSession?.model && activeSession?.endpoint_id) {
+      const groups = buildVariantGroups(messages);
+      const { chain } = buildVisibleChain(messages, groups, activeVariantIndexByGroup);
+      const editedIndex = chain.findIndex((item) => item.id === message.id);
+      const previewAssistant =
+        editedIndex >= 0
+          ? chain.slice(editedIndex + 1).find((item) => item.role === 'assistant')
+          : undefined;
+      await runStream({
+        sessionId: currentSessionId,
+        model: activeSession.model,
+        endpointId: activeSession.endpoint_id,
+        fromMessageId: edited.id,
+        displayMessageId: previewAssistant?.id ?? null,
+        mode: 'replace',
+      });
+    }
+  }, [
+    activeSession,
+    activeVariantIndexByGroup,
+    applyVariantFromMeta,
+    canUseChat,
+    currentSessionId,
+    disabled,
+    editMessageMutation,
+    markPendingAutoGroup,
+    messages,
+    runStream,
+    upsertStreamAssistantToCache,
+  ]);
+
+  const handleRegenerate = useCallback(async (message: ChatMessage) => {
+    if (disabled || !canUseChat || !activeSession || !currentSessionId) return;
+    if (messages.length) {
+      const groups = buildVariantGroups(messages);
+      markPendingAutoGroup(getGroupIdForMessageId(groups, message.id));
+    }
+    await runStream({
+      sessionId: currentSessionId,
+      model: activeSession.model,
+      endpointId: activeSession.endpoint_id,
+      fromMessageId: message.id,
+      mode: 'replace',
+    });
+  }, [activeSession, canUseChat, currentSessionId, disabled, markPendingAutoGroup, messages, runStream]);
+
+  const handlePickFiles = useCallback(() => {
+    if (editingMessageId) {
+      toast.info(t('attachments.disabled_while_editing'));
+      return;
+    }
+    onPickFiles();
+  }, [editingMessageId, onPickFiles, t]);
+
+  const handleRemoveAttachment = useCallback((attachmentId: string) => {
+    if (!canUseChat || !currentSessionId) return;
+    deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
+  }, [canUseChat, currentSessionId, deleteAttachmentMutation]);
+
+  const handleRetryAttachment = useCallback((attachmentId: string) => {
+    if (!canUseChat || !currentSessionId) return;
+    retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
+  }, [canUseChat, currentSessionId, retryAttachmentMutation]);
+
+  const handleConfirmDeleteThread = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    if (!threadToDelete) return;
+    const stopped = await stopStreamingSession(threadToDelete.id, 'replace');
+    if (!stopped) return;
+    deleteSessionMutation.mutate(threadToDelete.id);
+    setDeleteThreadDialogOpen(false);
+    setThreadToDelete(null);
+  }, [deleteSessionMutation, stopStreamingSession, threadToDelete]);
 
   if (!resolvedParams) {
     return (
@@ -255,17 +408,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   }
 
   const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
-  const {
-    activeStreamStatus,
-    activeStreamingAssistant,
-    mergedStreamingSessionIds,
-    disabled,
-  } = buildChatViewModel({
-    currentSessionId,
-    activeSession,
-    sessions,
-    streamStateBySession,
-  });
 
   return (
     <PageState state="success">
@@ -280,33 +422,13 @@ export default function ChatPage({ params }: ChatPageProps) {
             activeSessionId={currentSessionId}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
-            onSelect={(id) => {
-              setCurrentSessionId(id);
-              setEditingMessageId(null);
-            }}
+            onSelect={handleSelectThread}
             streamingSessionIds={mergedStreamingSessionIds}
-              onRename={(id, title) => {
-              if (!canManageChatSessions) return;
-              updateSessionMutation.mutate({ sessionId: id, data: { title } });
-            }}
-            onToggleStar={(id, next) => {
-              if (!canManageChatSessions) return;
-              updateSessionMutation.mutate({ sessionId: id, data: { starred: next } });
-            }}
-            onTogglePin={(id, next) => {
-              if (!canManageChatSessions) return;
-              updateSessionMutation.mutate({ sessionId: id, data: { pinned: next } });
-            }}
-            onDelete={(id) => {
-              if (!canManageChatSessions) return;
-              const thread = sessions.find((s) => s.id === id) || null;
-              setThreadToDelete({ id, title: thread?.title });
-              setDeleteThreadDialogOpen(true);
-            }}
-            onCreate={() => {
-              if (!canUseChat) return;
-              createSessionMutation.mutate();
-            }}
+            onRename={handleRenameThread}
+            onToggleStar={handleToggleThreadStar}
+            onTogglePin={handleToggleThreadPin}
+            onDelete={handleDeleteThreadRequest}
+            onCreate={handleCreateThread}
             canCreate={canUseChat}
             createPending={createSessionMutation.isPending}
             isLoading={sessionsLoading}
@@ -317,16 +439,8 @@ export default function ChatPage({ params }: ChatPageProps) {
               session={activeSession}
               endpoints={endpoints}
               streamStatus={activeStreamStatus}
-              onRename={(title) => {
-                if (!canManageChatSessions) return;
-                if (!activeSession) return;
-                updateSessionMutation.mutate({ sessionId: activeSession.id, data: { title } });
-              }}
-              onSelectEndpoint={(e: Endpoint) => {
-                if (!canManageChatSessions) return;
-                if (!activeSession) return;
-                updateSessionMutation.mutate({ sessionId: activeSession.id, data: { endpoint_id: e.id, model: e.openai_model } });
-              }}
+              onRename={handleRenameActiveSession}
+              onSelectEndpoint={handleSelectActiveEndpoint}
             />
 
             <div className="flex-1 min-h-0">
@@ -339,10 +453,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                     <Button
                       className="mt-4"
                       variant="outline"
-                      onClick={() => {
-                        if (!canUseChat) return;
-                        createSessionMutation.mutate();
-                      }}
+                      onClick={handleCreateThread}
                       disabled={!canUseChat || createSessionMutation.isPending}
                       data-testid="chat__empty-create-btn"
                     >
@@ -360,65 +471,11 @@ export default function ChatPage({ params }: ChatPageProps) {
                   messages={messages}
                   activeVariantIndexByGroup={activeVariantIndexByGroup}
                   editingMessageId={editingMessageId}
-                  onSelectVariant={(groupId, nextIndex) => {
-                    onManualSelectVariant(groupId, nextIndex);
-                  }}
-                  onEdit={(m) => {
-                    if (disabled) return;
-                    if (!canUseChat) return;
-                    if (m.role !== 'user') return;
-                    setEditingMessageId(m.id);
-                  }}
-                  onEditCommit={async (m, nextContent) => {
-                    if (disabled) return;
-                    if (!canUseChat) return;
-                    if (!currentSessionId) return;
-                    const edited = await editMessageMutation.mutateAsync({
-                      sessionId: currentSessionId,
-                      messageId: m.id,
-                      content: nextContent,
-                    });
-                    upsertStreamAssistantToCache(currentSessionId, edited);
-                    if (edited.logical_id && typeof edited.revision_index === 'number') {
-                      applyVariantFromMeta(edited.logical_id, edited.revision_index);
-                    }
-                    markPendingAutoGroup(edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null));
-                    setEditingMessageId(null);
-                    if (activeSession?.model && activeSession?.endpoint_id) {
-                      const groups = buildVariantGroups(messages);
-                      const { chain } = buildVisibleChain(messages, groups, activeVariantIndexByGroup);
-                      const editedIndex = chain.findIndex((item) => item.id === m.id);
-                      const previewAssistant =
-                        editedIndex >= 0
-                          ? chain.slice(editedIndex + 1).find((item) => item.role === 'assistant')
-                          : undefined;
-                      await runStream({
-                        sessionId: currentSessionId,
-                        model: activeSession.model,
-                        endpointId: activeSession.endpoint_id,
-                        fromMessageId: edited.id,
-                        displayMessageId: previewAssistant?.id ?? null,
-                        mode: 'replace',
-                      });
-                    }
-                  }}
+                  onSelectVariant={handleSelectVariant}
+                  onEdit={handleEditMessage}
+                  onEditCommit={handleEditCommit}
                   onEditCancel={() => setEditingMessageId(null)}
-                  onRegenerate={async (m) => {
-                    if (disabled) return;
-                    if (!canUseChat) return;
-                    if (!activeSession || !currentSessionId) return;
-                    if (messages.length) {
-                      const groups = buildVariantGroups(messages);
-                      markPendingAutoGroup(getGroupIdForMessageId(groups, m.id));
-                    }
-                    await runStream({
-                      sessionId: currentSessionId,
-                      model: activeSession.model,
-                      endpointId: activeSession.endpoint_id,
-                      fromMessageId: m.id,
-                      mode: 'replace',
-                    });
-                  }}
+                  onRegenerate={handleRegenerate}
                   disabled={disabled}
                   footer={
                     activeStreamingAssistant && activeStreamingAssistant.mode === 'append' ? (
@@ -454,24 +511,10 @@ export default function ChatPage({ params }: ChatPageProps) {
                 onStop={stopStreaming}
                 mode="compose"
                 autoFocus={!editingMessageId && activeStreamStatus === 'idle'}
-                onPickFiles={() => {
-                  if (editingMessageId) {
-                    toast.info(t('attachments.disabled_while_editing'));
-                    return;
-                  }
-                  onPickFiles();
-                }}
+                onPickFiles={handlePickFiles}
                 attachments={attachments}
-                onRemoveAttachment={(id) => {
-                  if (!canUseChat) return;
-                  if (!currentSessionId) return;
-                  deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
-                }}
-                onRetryAttachment={(id) => {
-                  if (!canUseChat) return;
-                  if (!currentSessionId) return;
-                  retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
-                }}
+                onRemoveAttachment={handleRemoveAttachment}
+                onRetryAttachment={handleRetryAttachment}
                 disabled={
                   !currentSessionId ||
                   !canUseChat ||
@@ -498,15 +541,7 @@ export default function ChatPage({ params }: ChatPageProps) {
               <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
               <AlertDialogAction
                 data-testid="chat__delete-thread-confirm"
-                onClick={async (e) => {
-                  e.preventDefault();
-                  if (!threadToDelete) return;
-                  const stopped = await stopStreamingSession(threadToDelete.id, 'replace');
-                  if (!stopped) return;
-                  deleteSessionMutation.mutate(threadToDelete.id);
-                  setDeleteThreadDialogOpen(false);
-                  setThreadToDelete(null);
-                }}
+                onClick={handleConfirmDeleteThread}
                 className="bg-error text-white hover:bg-error/90"
               >
                 {t('delete_confirm_action')}

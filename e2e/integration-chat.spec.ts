@@ -485,4 +485,5 @@ test.describe('integration chat flow', () => {
       await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
     }
   });
+
 });

@@ -332,7 +332,72 @@
     "no_active_thread_title": "暂无活跃会话",
     "no_active_thread_description": "创建一个新会话开始对话。",
     "stream_stop_failed_retry": "停止生成失败，请重试停止。",
-    "stream_stop_required_before_replace_failed": "停止上一个生成失败，已取消重新生成。"
+    "stream_stop_required_before_replace_failed": "停止上一个生成失败，已取消重新生成。",
+    "stream_error": "流式响应异常",
+    "streaming_failed": "流式生成失败",
+    "upload_failed": "上传失败",
+    "assistant": "助手",
+    "composer": {
+      "editing_message": "编辑消息",
+      "cancel": "取消",
+      "helper_failed_attachments": "请移除或重试失败附件后再发送。",
+      "helper_attachments_preparing": "附件仍在准备中...",
+      "attachment_status_uploading": "上传中...",
+      "attachment_status_processing": "处理中...",
+      "attachment_status_failed": "失败",
+      "retry": "重试",
+      "remove": "移除",
+      "attach_files": "添加附件",
+      "placeholder_edit": "编辑消息...",
+      "placeholder_compose": "输入消息...",
+      "stop": "停止",
+      "save": "保存",
+      "send": "发送",
+      "hotkey_edit": "Enter 保存 · Shift+Enter 换行",
+      "hotkey_compose": "Enter 发送 · Shift+Enter 换行"
+    },
+    "header": {
+      "status_generating": "生成中...",
+      "status_stopped": "已停止",
+      "status_error": "错误",
+      "rename_thread": "重命名会话",
+      "default_title": "聊天",
+      "select_model": "选择模型",
+      "models": "模型",
+      "no_endpoints": "暂无端点",
+      "disabled": "已禁用"
+    },
+    "thread_item": {
+      "untitled": "未命名",
+      "actions": "会话操作",
+      "rename": "重命名",
+      "star": "收藏",
+      "unstar": "取消收藏",
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "delete": "删除"
+    },
+    "message_list": {
+      "empty": "开始一段对话...",
+      "jump_to_latest": "跳到最新"
+    },
+    "message_item": {
+      "older_branch": "旧分支",
+      "regenerating": "重新生成中...",
+      "preview_changes": "预览改动",
+      "hide_diff": "隐藏对比",
+      "show_diff": "显示对比",
+      "original": "原始内容",
+      "edited": "编辑后",
+      "branch": "分支 {current}/{total}",
+      "edit": "编辑",
+      "save": "保存",
+      "cancel": "取消",
+      "regenerate": "重新生成",
+      "prev_variant": "上一个变体",
+      "next_variant": "下一个变体",
+      "copy": "复制"
+    }
   },
   "studio": {
     "title": "AI Studio",

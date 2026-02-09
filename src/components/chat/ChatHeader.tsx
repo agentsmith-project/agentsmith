@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import type { ChatSession, Endpoint } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ export function ChatHeader({
   onRename: (title: string) => void;
   onSelectEndpoint: (endpoint: Endpoint) => void;
 }) {
+  const t = useTranslations('chat');
   const [editing, setEditing] = React.useState(false);
   const [draftTitle, setDraftTitle] = React.useState(session?.title || '');
   const [modelOpen, setModelOpen] = React.useState(false);
@@ -43,11 +45,11 @@ export function ChatHeader({
   }, [endpoints, session]);
 
   const statusText = React.useMemo(() => {
-    if (streamStatus === 'connecting' || streamStatus === 'streaming') return 'Generating…';
-    if (streamStatus === 'stopped') return 'Stopped';
-    if (streamStatus === 'error') return 'Error';
+    if (streamStatus === 'connecting' || streamStatus === 'streaming') return t('header.status_generating');
+    if (streamStatus === 'stopped') return t('header.status_stopped');
+    if (streamStatus === 'error') return t('header.status_error');
     return '';
-  }, [streamStatus]);
+  }, [streamStatus, t]);
 
   const commitRename = () => {
     const title = draftTitle.trim();
@@ -98,9 +100,9 @@ export function ChatHeader({
                   'hover:text-foreground/90 transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm px-1 -mx-1',
                 )}
-                title="Rename thread"
+                title={t('header.rename_thread')}
               >
-                {session?.title || 'Chat'}
+                {session?.title || t('header.default_title')}
               </button>
             )}
 
@@ -122,16 +124,16 @@ export function ChatHeader({
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2" data-testid="chat__model-trigger">
                 <span className="max-w-[220px] truncate">
-                  {currentEndpoint?.openai_model || session?.model || 'Select model'}
+                  {currentEndpoint?.openai_model || session?.model || t('header.select_model')}
                 </span>
                 <ChevronDown className="w-4 h-4 text-icon-default" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[18rem]">
-              <div className="px-3 py-2 text-xs text-tertiary">Models</div>
+              <div className="px-3 py-2 text-xs text-tertiary">{t('header.models')}</div>
               <DropdownMenuSeparator />
               {endpoints.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-tertiary">No endpoints</div>
+                <div className="px-3 py-2 text-sm text-tertiary">{t('header.no_endpoints')}</div>
               ) : (
                 endpoints.map((e) => {
                   const disabled = e.status === 'disabled';
@@ -155,7 +157,7 @@ export function ChatHeader({
                         </div>
                         <div className="text-xs text-tertiary truncate">{e.name}</div>
                       </div>
-                      {disabled && <span className="text-xs text-tertiary">Disabled</span>}
+                      {disabled && <span className="text-xs text-tertiary">{t('header.disabled')}</span>}
                     </DropdownMenuItem>
                   );
                 })

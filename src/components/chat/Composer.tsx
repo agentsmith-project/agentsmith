@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Paperclip, Send, Square } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import type { Attachment } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
@@ -41,6 +42,7 @@ export function Composer({
   streaming: boolean;
   autoFocus?: boolean;
 }) {
+  const t = useTranslations('chat');
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const blocked = hasBlockingAttachment(attachments);
 
@@ -54,10 +56,12 @@ export function Composer({
   const canStop = streaming;
 
   const helperText = React.useMemo(() => {
-    if (attachments.some((a) => a.upload_status === 'failed')) return 'Remove or retry failed attachments to send.';
-    if (attachments.some((a) => a.upload_status === 'uploading' || a.upload_status === 'processing')) return 'Attachments are still preparing…';
+    if (attachments.some((a) => a.upload_status === 'failed')) return t('composer.helper_failed_attachments');
+    if (attachments.some((a) => a.upload_status === 'uploading' || a.upload_status === 'processing')) {
+      return t('composer.helper_attachments_preparing');
+    }
     return '';
-  }, [attachments]);
+  }, [attachments, t]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -76,9 +80,9 @@ export function Composer({
     >
       {mode === 'edit' && (
         <div className="mx-auto w-full max-w-[980px] px-4 pt-3 flex items-center justify-between">
-          <div className="text-xs text-tertiary">Editing message</div>
+          <div className="text-xs text-tertiary">{t('composer.editing_message')}</div>
           <Button type="button" variant="ghost" size="sm" onClick={onCancelEdit} disabled={disabled || streaming}>
-            Cancel
+            {t('composer.cancel')}
           </Button>
         </div>
       )}
@@ -97,17 +101,21 @@ export function Composer({
                   <div className="text-xs text-primary truncate max-w-[260px]">{a.file_name}</div>
                   {status !== 'ready' && (
                     <div className={cn('text-[11px]', status === 'failed' ? 'text-error' : 'text-tertiary')}>
-                      {status === 'uploading' ? 'Uploading…' : status === 'processing' ? 'Processing…' : 'Failed'}
+                      {status === 'uploading'
+                        ? t('composer.attachment_status_uploading')
+                        : status === 'processing'
+                          ? t('composer.attachment_status_processing')
+                          : t('composer.attachment_status_failed')}
                     </div>
                   )}
                 </div>
                 {status === 'failed' && (
                   <Button type="button" variant="ghost" size="sm" onClick={() => onRetryAttachment(a.id)}>
-                    Retry
+                    {t('composer.retry')}
                   </Button>
                 )}
                 <Button type="button" variant="ghost" size="sm" onClick={() => onRemoveAttachment(a.id)}>
-                  Remove
+                  {t('composer.remove')}
                 </Button>
               </div>
             );
@@ -123,8 +131,8 @@ export function Composer({
             size="icon"
             onClick={onPickFiles}
             disabled={disabled || streaming}
-            aria-label="Attach files"
-            title="Attach files"
+            aria-label={t('composer.attach_files')}
+            title={t('composer.attach_files')}
           >
             <Paperclip className="w-4 h-4" />
           </Button>
@@ -136,7 +144,7 @@ export function Composer({
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={onKeyDown}
               rows={2}
-              placeholder={mode === 'edit' ? 'Edit message…' : 'Message…'}
+              placeholder={mode === 'edit' ? t('composer.placeholder_edit') : t('composer.placeholder_compose')}
               className={cn(
                 'w-full resize-none rounded-md border border-subtle bg-surface-high px-3 py-2 text-sm text-primary',
                 'placeholder:text-tertiary',
@@ -149,18 +157,18 @@ export function Composer({
           {canStop ? (
             <Button type="button" variant="outline" onClick={onStop} className="gap-2">
               <Square className="w-4 h-4" />
-              Stop
+              {t('composer.stop')}
             </Button>
           ) : (
             <Button type="button" variant="primary" onClick={onSend} disabled={!canSend} className="gap-2" data-testid="chat__send-btn">
               <Send className="w-4 h-4" />
-              {mode === 'edit' ? 'Save' : 'Send'}
+              {mode === 'edit' ? t('composer.save') : t('composer.send')}
             </Button>
           )}
         </div>
 
         <div className="mt-3 text-xs text-tertiary">
-          {mode === 'edit' ? 'Enter to save · Shift+Enter for newline' : 'Enter to send · Shift+Enter for newline'}
+          {mode === 'edit' ? t('composer.hotkey_edit') : t('composer.hotkey_compose')}
         </div>
       </div>
     </div>

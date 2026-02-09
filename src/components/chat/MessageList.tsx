@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Virtuoso } from 'react-virtuoso';
+import { useTranslations } from 'next-intl';
 
 import type { ChatMessage } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain, buildBranchBadgesForChain } from '@/lib/chat/branch';
@@ -43,6 +44,7 @@ export function MessageList({
   suppressAutoScroll?: boolean;
   disabled: boolean;
 }) {
+  const t = useTranslations('chat');
   const groups = React.useMemo(() => buildVariantGroups(messages), [messages]);
   const { chain } = React.useMemo(
     () => buildVisibleChain(messages, groups, activeVariantIndexByGroup),
@@ -59,10 +61,10 @@ export function MessageList({
 
   if (chain.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center px-6">
-        <div className="text-tertiary text-sm">Start a conversation…</div>
-      </div>
-    );
+        <div className="h-full flex items-center justify-center px-6">
+        <div className="text-tertiary text-sm">{t('message_list.empty')}</div>
+        </div>
+      );
   }
 
   const shouldFollow = followOutput && isAtBottom && !suppressAutoScroll;
@@ -122,7 +124,7 @@ export function MessageList({
           }}
           className="absolute bottom-5 right-5 px-3 py-1.5 text-xs rounded-sm border border-subtle bg-surface-high text-primary hover:bg-hover transition-colors"
         >
-          Jump to latest
+          {t('message_list.jump_to_latest')}
         </button>
       )}
     </div>

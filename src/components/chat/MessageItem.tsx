@@ -41,6 +41,7 @@ export const MessageItem = React.memo(function MessageItem({
   disabled: boolean;
 }) {
   const t = useTranslations('common.toast');
+  const tChat = useTranslations('chat');
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
 
@@ -83,11 +84,11 @@ export const MessageItem = React.memo(function MessageItem({
         )}
       >
         {message.is_stale && (
-          <div className="text-[11px] text-tertiary mb-1">Older branch</div>
+          <div className="text-[11px] text-tertiary mb-1">{tChat('message_item.older_branch')}</div>
         )}
         {streamingOverride && (
           <div className="text-[11px] text-tertiary mb-1 flex items-center gap-2">
-            <span>Regenerating…</span>
+            <span>{tChat('message_item.regenerating')}</span>
             {isStalled && (
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse" />
@@ -112,22 +113,22 @@ export const MessageItem = React.memo(function MessageItem({
                 )}
               />
               <div className="flex items-center justify-between text-[11px] text-tertiary">
-                <span>Preview changes</span>
+                <span>{tChat('message_item.preview_changes')}</span>
                 <button
                   type="button"
                   onClick={() => setShowDiff((v) => !v)}
                   className="underline decoration-dashed"
                 >
-                  {showDiff ? 'Hide diff' : 'Show diff'}
+                  {showDiff ? tChat('message_item.hide_diff') : tChat('message_item.show_diff')}
                 </button>
               </div>
               {showDiff && (
                 <div className="rounded-sm border border-subtle bg-surface-high/60 p-2 text-[11px] text-tertiary">
-                  <div className="mb-1 text-tertiary">Original</div>
+                  <div className="mb-1 text-tertiary">{tChat('message_item.original')}</div>
                   <div className="whitespace-pre-wrap text-tertiary line-through/30">
                     {message.content}
                   </div>
-                  <div className="mt-2 mb-1 text-tertiary">Edited</div>
+                  <div className="mt-2 mb-1 text-tertiary">{tChat('message_item.edited')}</div>
                   <div className="whitespace-pre-wrap text-primary">
                     {draft}
                   </div>
@@ -154,7 +155,7 @@ export const MessageItem = React.memo(function MessageItem({
         <div className={cn('mt-2 flex items-center gap-1 justify-end')}>
           {branchBadge && (
             <div className="mr-auto text-[11px] text-tertiary">
-              Branch {branchBadge.index + 1}/{branchBadge.total}
+              {tChat('message_item.branch', { current: branchBadge.index + 1, total: branchBadge.total })}
             </div>
           )}
           {isUser && !isEditing && (
@@ -165,8 +166,8 @@ export const MessageItem = React.memo(function MessageItem({
               className="h-8 w-8"
               onClick={() => onEdit(message)}
               disabled={disabled}
-              aria-label="Edit message"
-              title="Edit"
+              aria-label={tChat('message_item.edit')}
+              title={tChat('message_item.edit')}
             >
               <Pencil className="w-4 h-4" />
             </Button>
@@ -180,7 +181,7 @@ export const MessageItem = React.memo(function MessageItem({
                 className="h-8 w-8"
                 onClick={() => onEditCommit(message, draft)}
                 disabled={disabled || draft.trim().length === 0}
-                aria-label="Save"
+                aria-label={tChat('message_item.save')}
               >
                 <Check className="w-4 h-4" />
               </Button>
@@ -191,7 +192,7 @@ export const MessageItem = React.memo(function MessageItem({
                 className="h-8 w-8"
                 onClick={onEditCancel}
                 disabled={disabled}
-                aria-label="Cancel"
+                aria-label={tChat('message_item.cancel')}
               >
                 <X className="w-4 h-4" />
               </Button>
@@ -205,8 +206,8 @@ export const MessageItem = React.memo(function MessageItem({
               className="h-8 w-8"
               onClick={() => onRegenerate(message)}
               disabled={disabled}
-              aria-label="Regenerate"
-              title="Regenerate"
+              aria-label={tChat('message_item.regenerate')}
+              title={tChat('message_item.regenerate')}
             >
               <RotateCcw className="w-4 h-4" />
             </Button>
@@ -220,7 +221,7 @@ export const MessageItem = React.memo(function MessageItem({
                 className="h-8 w-8"
                 onClick={() => onSelectVariant(variantMeta.groupId, Math.max(0, (activeVariantIndex ?? 0) - 1))}
                 disabled={disabled || (activeVariantIndex ?? 0) <= 0}
-                aria-label="Previous variant"
+                aria-label={tChat('message_item.prev_variant')}
               >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
@@ -236,7 +237,7 @@ export const MessageItem = React.memo(function MessageItem({
                   onSelectVariant(variantMeta.groupId, Math.min(variantMeta.total - 1, (activeVariantIndex ?? 0) + 1))
                 }
                 disabled={disabled || (activeVariantIndex ?? variantMeta.index) >= variantMeta.total - 1}
-                aria-label="Next variant"
+                aria-label={tChat('message_item.next_variant')}
               >
                 <ChevronRight className="w-4 h-4" />
               </Button>
@@ -249,8 +250,8 @@ export const MessageItem = React.memo(function MessageItem({
             size="icon"
             className="h-8 w-8"
             onClick={handleCopy}
-            aria-label="Copy"
-            title="Copy"
+            aria-label={tChat('message_item.copy')}
+            title={tChat('message_item.copy')}
           >
             <Copy className="w-4 h-4" />
           </Button>

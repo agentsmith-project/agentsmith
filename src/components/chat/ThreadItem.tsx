@@ -111,7 +111,7 @@ export function ThreadItem({
               />
             ) : (
               <div className={cn('text-sm truncate', isActive ? 'text-foreground' : 'text-primary')}>
-                {session.title || 'Untitled'}
+                {session.title || t('thread_item.untitled')}
               </div>
             )}
             <div className="flex items-center gap-2 text-xs text-tertiary mt-0.5">
@@ -143,7 +143,7 @@ export function ThreadItem({
                     'text-icon-default hover:text-foreground',
                   )}
                   onClick={(e) => e.stopPropagation()}
-                  aria-label="Thread actions"
+                  aria-label={t('thread_item.actions')}
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </Button>
@@ -156,7 +156,7 @@ export function ThreadItem({
                     setEditing(true);
                   }}
                 >
-                  Rename
+                  {t('thread_item.rename')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={(e) => {
@@ -165,7 +165,7 @@ export function ThreadItem({
                   }}
                 >
                   <Star className="w-4 h-4" />
-                  {session.starred ? 'Unstar' : 'Star'}
+                  {session.starred ? t('thread_item.unstar') : t('thread_item.star')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={(e) => {
@@ -174,7 +174,7 @@ export function ThreadItem({
                   }}
                 >
                   <Pin className="w-4 h-4" />
-                  {session.pinned ? 'Unpin' : 'Pin'}
+                  {session.pinned ? t('thread_item.unpin') : t('thread_item.pin')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -186,7 +186,7 @@ export function ThreadItem({
                   }}
                 >
                   <Trash2 className="w-4 h-4" />
-                  Delete
+                  {t('thread_item.delete')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -330,7 +330,72 @@
     "no_active_thread_title": "No active thread",
     "no_active_thread_description": "Create a new chat to start.",
     "stream_stop_failed_retry": "Failed to stop generation. Please try stopping again.",
-    "stream_stop_required_before_replace_failed": "Failed to stop previous generation, regenerate is canceled."
+    "stream_stop_required_before_replace_failed": "Failed to stop previous generation, regenerate is canceled.",
+    "stream_error": "Stream error",
+    "streaming_failed": "Streaming failed",
+    "upload_failed": "Upload failed",
+    "assistant": "Assistant",
+    "composer": {
+      "editing_message": "Editing message",
+      "cancel": "Cancel",
+      "helper_failed_attachments": "Remove or retry failed attachments to send.",
+      "helper_attachments_preparing": "Attachments are still preparing...",
+      "attachment_status_uploading": "Uploading...",
+      "attachment_status_processing": "Processing...",
+      "attachment_status_failed": "Failed",
+      "retry": "Retry",
+      "remove": "Remove",
+      "attach_files": "Attach files",
+      "placeholder_edit": "Edit message...",
+      "placeholder_compose": "Message...",
+      "stop": "Stop",
+      "save": "Save",
+      "send": "Send",
+      "hotkey_edit": "Enter to save · Shift+Enter for newline",
+      "hotkey_compose": "Enter to send · Shift+Enter for newline"
+    },
+    "header": {
+      "status_generating": "Generating...",
+      "status_stopped": "Stopped",
+      "status_error": "Error",
+      "rename_thread": "Rename thread",
+      "default_title": "Chat",
+      "select_model": "Select model",
+      "models": "Models",
+      "no_endpoints": "No endpoints",
+      "disabled": "Disabled"
+    },
+    "thread_item": {
+      "untitled": "Untitled",
+      "actions": "Thread actions",
+      "rename": "Rename",
+      "star": "Star",
+      "unstar": "Unstar",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "delete": "Delete"
+    },
+    "message_list": {
+      "empty": "Start a conversation...",
+      "jump_to_latest": "Jump to latest"
+    },
+    "message_item": {
+      "older_branch": "Older branch",
+      "regenerating": "Regenerating...",
+      "preview_changes": "Preview changes",
+      "hide_diff": "Hide diff",
+      "show_diff": "Show diff",
+      "original": "Original",
+      "edited": "Edited",
+      "branch": "Branch {current}/{total}",
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "regenerate": "Regenerate",
+      "prev_variant": "Previous variant",
+      "next_variant": "Next variant",
+      "copy": "Copy"
+    }
   },
   "studio": {
     "title": "AI Studio",

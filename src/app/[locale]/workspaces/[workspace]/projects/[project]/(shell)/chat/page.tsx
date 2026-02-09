@@ -298,7 +298,7 @@ export default function ChatPage({ params }: ChatPageProps) {
         await chatAPI.completeAttachment(workspaceId, projectId, sessionId, attachment.id, {});
         queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, sessionId] });
       } catch (e: unknown) {
-        toast.error(e instanceof Error ? e.message : 'Upload failed');
+        toast.error(e instanceof Error ? e.message : t('upload_failed'));
       }
     },
   });
@@ -617,7 +617,7 @@ export default function ChatPage({ params }: ChatPageProps) {
           }
         } else if (ev.event === 'error') {
           const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
-          const message = data && typeof data.message === 'string' ? data.message : 'Stream error';
+          const message = data && typeof data.message === 'string' ? data.message : t('stream_error');
           throw new Error(message);
         } else if (ev.event === 'done') {
           break;
@@ -641,7 +641,7 @@ export default function ChatPage({ params }: ChatPageProps) {
         return;
       }
       setSessionStreamState(args.sessionId, { status: 'error', assistant: null });
-      toast.error(e instanceof Error ? e.message : 'Streaming failed');
+      toast.error(e instanceof Error ? e.message : t('streaming_failed'));
       queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
       queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
     } finally {
@@ -916,7 +916,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                       <div className="px-4 py-2">
                         <div className="flex justify-start">
                           <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
-                            <div className="text-xs text-tertiary mb-1">Assistant</div>
+                            <div className="text-xs text-tertiary mb-1">{t('assistant')}</div>
                             <div className="space-y-2">
                               <Markdown content={activeStreamingAssistant.content || '…'} />
                             </div>

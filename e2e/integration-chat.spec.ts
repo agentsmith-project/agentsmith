@@ -133,15 +133,18 @@ async function provisionCredentialAndEndpoint(
   projectId: string,
   upstreamBaseUrl: string,
 ) {
+  const suffix = Date.now();
+  const credentialName = `Integration Credential ${suffix}`;
+  const endpointName = `Integration Endpoint ${suffix}`;
   await createCredential(page, locale, projectId, {
-    credentialName: 'Integration Credential',
+    credentialName,
     credentialValue: 'integration-secret-key',
   });
   await createEndpoint(page, locale, projectId, {
-    endpointName: 'Integration Endpoint',
+    endpointName,
     endpointModel: 'integration-chat-model',
     upstreamBaseUrl,
-    credentialName: 'Integration Credential',
+    credentialName,
   });
 }
 
@@ -158,6 +161,25 @@ async function sendExpectStreamError(
   await expect(sendBtn).toBeEnabled({ timeout: 15_000 });
   await sendBtn.click();
   await expect(page.getByTestId('chat__stream-status')).toHaveText('Error', { timeout: 60_000 });
+}
+
+async function sendAndStopDuringGeneration(
+  page: import('@playwright/test').Page,
+  text: string,
+) {
+  const composer = page.getByTestId('chat__composer');
+  const textarea = composer.locator('textarea');
+  await expect(textarea).toBeVisible();
+  await expect(textarea).toBeEditable();
+  await textarea.fill(text);
+  const sendBtn = page.getByTestId('chat__send-btn');
+  await expect(sendBtn).toBeEnabled({ timeout: 15_000 });
+  await sendBtn.click();
+
+  const stopBtn = page.getByRole('button', { name: /Stop/i });
+  await expect(stopBtn).toBeVisible({ timeout: 10_000 });
+  await stopBtn.click();
+  await expect(page.getByTestId('chat__stream-status')).toHaveText('Stopped', { timeout: 30_000 });
 }
 
 async function createCredential(
@@ -186,7 +208,10 @@ async function createCredential(
   );
   await credDialog.getByRole('button', { name: /create|创建/i }).click();
   const credentialRes = await createCredentialResponse;
-  expect(credentialRes.ok()).toBeTruthy();
+  if (!credentialRes.ok()) {
+    const errorBody = await credentialRes.text().catch(() => '');
+    throw new Error(`Create credential failed (${credentialRes.status()}): ${errorBody}`);
+  }
   if (await credDialog.isVisible().catch(() => false)) {
     await page.keyboard.press('Escape');
   }
@@ -379,22 +404,24 @@ test.describe('integration chat flow', () => {
     try {
       await keycloakLogin(page, locale, username, password);
       const projectId = await createProjectFromUi(page, locale);
+      const suffix = Date.now();
+      const credentialName = `Integration Credential ${suffix}`;
 
       await createCredential(page, locale, projectId, {
-        credentialName: 'Integration Credential',
+        credentialName,
         credentialValue: 'integration-secret-key',
       });
       await createEndpoint(page, locale, projectId, {
-        endpointName: 'Integration Endpoint A',
+        endpointName: `Integration Endpoint A ${suffix}`,
         endpointModel: 'integration-chat-model-a',
         upstreamBaseUrl: upstreamA.baseUrl,
-        credentialName: 'Integration Credential',
+        credentialName,
       });
       const endpointBId = await createEndpoint(page, locale, projectId, {
-        endpointName: 'Integration Endpoint B',
+        endpointName: `Integration Endpoint B ${suffix}`,
         endpointModel: 'integration-chat-model-b',
         upstreamBaseUrl: upstreamB.baseUrl,
-        credentialName: 'Integration Credential',
+        credentialName,
       });
 
       const threadId = await openChatAndSend(
@@ -440,22 +467,24 @@ test.describe('integration chat flow', () => {
     try {
       await keycloakLogin(page, locale, username, password);
       const projectId = await createProjectFromUi(page, locale);
+      const suffix = Date.now();
+      const credentialName = `Integration Credential ${suffix}`;
 
       await createCredential(page, locale, projectId, {
-        credentialName: 'Integration Credential',
+        credentialName,
         credentialValue: 'integration-secret-key',
       });
       const healthyEndpointId = await createEndpoint(page, locale, projectId, {
-        endpointName: 'Integration Endpoint Healthy',
+        endpointName: `Integration Endpoint Healthy ${suffix}`,
         endpointModel: 'integration-chat-model-healthy',
         upstreamBaseUrl: healthyUpstream.baseUrl,
-        credentialName: 'Integration Credential',
+        credentialName,
       });
       const failingEndpointId = await createEndpoint(page, locale, projectId, {
-        endpointName: 'Integration Endpoint Failing',
+        endpointName: `Integration Endpoint Failing ${suffix}`,
         endpointModel: 'integration-chat-model-fail',
         upstreamBaseUrl: failingUpstream.baseUrl,
-        credentialName: 'Integration Credential',
+        credentialName,
       });
 
       const threadId = await openChatAndSend(
@@ -484,6 +513,72 @@ test.describe('integration chat flow', () => {
       expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(2);
     } finally {
       await new Promise<void>((resolve) => failingUpstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
+    }
+  });
+
+  test('chat can stop generation and continue via healthy endpoint', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const slowUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'Slow upstream response',
+      delayMs: 12_000,
+    });
+    const healthyUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'Recovered after stop',
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      const suffix = Date.now();
+      const credentialName = `Integration Credential ${suffix}`;
+
+      await createCredential(page, locale, projectId, {
+        credentialName,
+        credentialValue: 'integration-secret-key',
+      });
+      const healthyEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Healthy ${suffix}`,
+        endpointModel: 'integration-chat-model-healthy',
+        upstreamBaseUrl: healthyUpstream.baseUrl,
+        credentialName,
+      });
+      const slowEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Slow ${suffix}`,
+        endpointModel: 'integration-chat-model-slow',
+        upstreamBaseUrl: slowUpstream.baseUrl,
+        credentialName,
+      });
+
+      const threadId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Warmup on healthy endpoint',
+        null,
+        'Recovered after stop',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, slowEndpointId);
+      await sendAndStopDuringGeneration(page, 'Stop this slow request');
+      expect(slowUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, healthyEndpointId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Continue after stop with healthy endpoint',
+        threadId,
+        'Recovered after stop',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(2);
+    } finally {
+      await new Promise<void>((resolve) => slowUpstream.server.close(() => resolve()));
       await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
     }
   });

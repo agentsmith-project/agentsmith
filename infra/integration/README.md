@@ -31,6 +31,10 @@ Current chat integration verification scope:
   - route one turn to a failing upstream (HTTP 5xx)
   - verify chat stream enters error state
   - switch to healthy endpoint and continue in same thread
+- Stop and resume:
+  - route one turn to a delayed upstream
+  - click `Stop` during generation
+  - switch to healthy endpoint and continue in same thread
 
 Current AIReady API status:
 

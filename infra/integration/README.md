@@ -2,7 +2,7 @@
 
 Docker Compose stack for integration testing:
 
-- PostgreSQL (`localhost:15432`)
+- PostgreSQL + pgvector extension (`localhost:15432`)
 - MongoDB (`localhost:17017`)
 - Redis (`localhost:16379`)
 - MinIO API (`localhost:19000`) and console (`localhost:19001`)
@@ -14,6 +14,27 @@ Current minimal validation scope:
 - Object storage: MinIO (source file binary storage)
 - Metadata and cache in this phase: in-memory inside `@mbos/api-entry-node`
 
+Current chat integration verification scope:
+
+- OpenAI-compatible endpoint proxy path is working end-to-end:
+  - create credential
+  - create custom endpoint
+  - send chat message via `/chat/sessions/{id}/messages/stream`
+- Session continuity across route switch:
+  - leave `/chat` and return
+  - continue conversation in the same thread
+
+Current AIReady API status:
+
+- New library-scoped job APIs are available:
+  - `POST /api/v1/workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs`
+  - `GET /api/v1/workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}`
+  - `POST /api/v1/workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel`
+- Legacy source-scoped APIs are still kept for compatibility during migration.
+- Current worker behavior (Node entry):
+  - job status transitions: `queued -> running -> succeeded|failed` (cancel path supported)
+  - in-process queue + worker for minimal validation, without external MQ yet
+
 ## Quick start
 
 ```bash
@@ -21,7 +42,25 @@ npm run integration:deps:up
 npm run integration:deps:init:postgres
 npm run integration:deps:smoke
 npm run integration:test:adapters
+npm run test:e2e:integration:minimal
+npm run test:e2e:integration:chat
+npm run test:e2e:integration:minimal:with-api
+npm run test:e2e:integration:chat:with-api
 ```
+
+`*:with-api` scripts will start `@mbos/api-entry-node` from current workspace
+on `INTEGRATION_API_PORT` (default `20010`) and stop it automatically after test run.
+
+Recommended execution order:
+
+```bash
+npm run test:e2e:integration:minimal:with-api
+npm run test:e2e:integration:chat:with-api
+```
+
+`integration:deps:init:postgres` now applies every SQL file under
+`packages/adapters-private/sql/`, including `source_embeddings.sql`
+(`CREATE EXTENSION vector` and vector table bootstrap).
 
 Optional env overrides:
 
@@ -59,6 +98,13 @@ docker compose -f infra/integration/docker-compose.yml down -v
 npm run api:node:dev:pg
 ```
 
+## Verify pgvector
+
+```bash
+docker compose -f infra/integration/docker-compose.yml exec -T postgres \
+  psql -U mbos -d mbos -c "SELECT extname FROM pg_extension WHERE extname='vector';"
+```
+
 ## Run API for minimal verification (Keycloak + MinIO only)
 
 ```bash
@@ -73,3 +119,10 @@ MINIO_SECRET_KEY=mbos_dev_password \
 MINIO_BUCKET=mbos-dev \
 npm run api:node:dev
 ```
+
+## Frontend API base note
+
+- `NEXT_PUBLIC_API_BASE` can be configured as either:
+  - `http://localhost:20000`
+  - `http://localhost:20000/api/v1`
+- Frontend now normalizes this value and appends `/api/v1` when missing.

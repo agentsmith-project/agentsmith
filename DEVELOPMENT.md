@@ -22,9 +22,8 @@ npm start
 推荐直接用 `make`，少记环境变量。
 
 ```bash
-# 1) 启动依赖
-make deps-up
-make deps-smoke
+# 1) 一键准备依赖（启动 + 健康检查 + PG 初始化）
+make bootstrap
 
 # 2) 启动 API（新终端）
 make api-dev
@@ -40,8 +39,11 @@ make urls
 
 ```bash
 make help          # 查看所有命令
+make deps-init     # 只执行 postgres schema 初始化（含 pgvector）
+make api-dev-min   # 仅 keycloak + minio 的最小 API 启动
 make web-msw       # 前端 mock 模式
 make e2e-minimal   # 最小集成测试
+make e2e-chat      # chat 集成测试
 make deps-down     # 关闭依赖
 make deps-reset    # 关闭并清空依赖数据卷
 ```
@@ -52,7 +54,7 @@ Copy `.env.local.example` to `.env.local` and configure:
 
 ```bash
 # For local development with backend
-NEXT_PUBLIC_API_BASE=http://localhost:20000/api/v1
+NEXT_PUBLIC_API_BASE=http://localhost:20000
 NEXT_PUBLIC_USE_MSW=false
 NEXT_PUBLIC_BYPASS_AUTH=false
 
@@ -184,6 +186,15 @@ Run dependencies and API first, then:
 
 ```bash
 BASE_URL=http://localhost:3001 npm run test:e2e:integration:minimal
+```
+
+Makefile shortcuts:
+
+```bash
+make e2e-minimal
+make e2e-chat
+make e2e-minimal-local-api
+make e2e-chat-local-api
 ```
 
 ### 4) Distinguish infra failure from app failure

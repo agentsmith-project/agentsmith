@@ -38,9 +38,7 @@ export function buildChatViewModel(args: {
     .filter((session) => session.runtime_status === 'running' || session.runtime_status === 'stopping')
     .map((session) => session.id);
   const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...runtimeStreamingSessionIds]));
-  const disabled =
-    (activeStreamStatus === 'connecting' || activeStreamStatus === 'streaming') &&
-    !!activeStreamingAssistant;
+  const disabled = activeStreamStatus === 'connecting' || activeStreamStatus === 'streaming';
 
   return {
     activeStreamStatus,

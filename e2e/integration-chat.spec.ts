@@ -699,6 +699,18 @@ async function openChatAttachAndSend(
   return selectedThreadId!;
 }
 
+function isSessionStreamsRequestFor(url: string, sessionId: string): boolean {
+  return new RegExp(`/api/v1/workspaces/[^/]+/projects/[^/]+/chat/sessions/${sessionId}/streams/?$`).test(url);
+}
+
+function isSessionStopRequestFor(url: string, sessionId: string): boolean {
+  return new RegExp(`/api/v1/workspaces/[^/]+/projects/[^/]+/chat/sessions/${sessionId}/stop/?$`).test(url);
+}
+
+function isStreamStopRequestFor(url: string, sessionId: string): boolean {
+  return new RegExp(`/api/v1/workspaces/[^/]+/projects/[^/]+/chat/sessions/${sessionId}/messages/streams/[^/]+/stop/?$`).test(url);
+}
+
 test.describe('integration chat flow', () => {
   test.skip(!RUN_INTEGRATION, 'Enable with RUN_INTEGRATION_E2E=true');
 
@@ -990,6 +1002,151 @@ test.describe('integration chat flow', () => {
       await expect(page.getByTestId('chat__main-pane')).toBeVisible({ timeout: 30_000 });
       await page.getByTestId('chat__thread-item').filter({ hasText: 'stream and stop, then refresh' }).first().locator('div[role="button"]').first().click();
       await expect(page.getByText('persist-part-1').first()).toBeVisible({ timeout: 30_000 });
+    } finally {
+      await new Promise<void>((resolve) => streamingUpstream.server.close(() => resolve()));
+    }
+  });
+
+  test('refresh recovers stream id and stop uses stream-level route', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const streamingUpstream = await startOpenAIStreamingUpstreamWith({
+      chunks: ['recover-stream-1 ', 'recover-stream-2 ', 'recover-stream-3'],
+      chunkDelayMs: 1_500,
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await provisionCredentialAndEndpoint(page, locale, projectId, streamingUpstream.baseUrl);
+
+      await page.getByRole('link', { name: /chat|对话/i }).first().click();
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+        timeout: 30_000,
+      });
+      if (await page.getByTestId('chat__thread-item').count() === 0) {
+        await page.getByTestId('chat__new-thread-btn').click();
+      }
+      const thread = page.getByTestId('chat__thread-item').first();
+      await thread.locator('div[role="button"]').first().click();
+      const threadId = await thread.getAttribute('data-thread-id');
+      expect(threadId).toBeTruthy();
+
+      const textarea = page.getByTestId('chat__composer').locator('textarea');
+      await textarea.fill('recover stream id then stop');
+      await page.getByTestId('chat__send-btn').click();
+      await expect(page.getByText('recover-stream-1').first()).toBeVisible({ timeout: 30_000 });
+
+      const streamsRecoveryReq = page.waitForRequest(
+        (req) => req.method() === 'GET' && isSessionStreamsRequestFor(req.url(), threadId!),
+        { timeout: 60_000 },
+      );
+      const streamStopReq = page.waitForRequest(
+        (req) => req.method() === 'POST' && isStreamStopRequestFor(req.url(), threadId!),
+        { timeout: 60_000 },
+      );
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+        timeout: 30_000,
+      });
+      await page
+        .locator(`[data-testid="chat__thread-item"][data-thread-id="${threadId}"]`)
+        .first()
+        .locator('div[role="button"]')
+        .first()
+        .click();
+      await streamsRecoveryReq;
+
+      const stopBtn = page.getByTestId('chat__composer').getByRole('button', { name: /^Stop$/i });
+      await expect(stopBtn).toBeVisible({ timeout: 20_000 });
+      await stopBtn.click();
+
+      await streamStopReq;
+      await expect(page.getByTestId('chat__stream-status')).toHaveText('Stopped', { timeout: 30_000 });
+    } finally {
+      await new Promise<void>((resolve) => streamingUpstream.server.close(() => resolve()));
+    }
+  });
+
+  test('refresh without recovered stream id falls back to session-level stop route', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const streamingUpstream = await startOpenAIStreamingUpstreamWith({
+      chunks: ['fallback-stop-1 ', 'fallback-stop-2 ', 'fallback-stop-3'],
+      chunkDelayMs: 1_500,
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await provisionCredentialAndEndpoint(page, locale, projectId, streamingUpstream.baseUrl);
+
+      await page.getByRole('link', { name: /chat|对话/i }).first().click();
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+        timeout: 30_000,
+      });
+      if (await page.getByTestId('chat__thread-item').count() === 0) {
+        await page.getByTestId('chat__new-thread-btn').click();
+      }
+      const thread = page.getByTestId('chat__thread-item').first();
+      await thread.locator('div[role="button"]').first().click();
+      const threadId = await thread.getAttribute('data-thread-id');
+      expect(threadId).toBeTruthy();
+
+      const textarea = page.getByTestId('chat__composer').locator('textarea');
+      await textarea.fill('break stream recovery and stop by session');
+      await page.getByTestId('chat__send-btn').click();
+      await expect(page.getByText('fallback-stop-1').first()).toBeVisible({ timeout: 30_000 });
+
+      await page.route(
+        new RegExp(`/api/v1/workspaces/[^/]+/projects/[^/]+/chat/sessions/${threadId}/streams/?$`),
+        async (route) => {
+          await route.fulfill({
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ error_code: 'forced_failure', message: 'forced stream recovery failure' }),
+          });
+        },
+      );
+
+      const sessionStopReq = page.waitForRequest(
+        (req) => req.method() === 'POST' && isSessionStopRequestFor(req.url(), threadId!),
+        { timeout: 60_000 },
+      );
+      const streamStopUrls: string[] = [];
+      const requestListener = (req: import('@playwright/test').Request) => {
+        if (req.method() === 'POST' && isStreamStopRequestFor(req.url(), threadId!)) {
+          streamStopUrls.push(req.url());
+        }
+      };
+      page.on('request', requestListener);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+        timeout: 30_000,
+      });
+      await page
+        .locator(`[data-testid="chat__thread-item"][data-thread-id="${threadId}"]`)
+        .first()
+        .locator('div[role="button"]')
+        .first()
+        .click();
+
+      const stopBtn = page.getByTestId('chat__composer').getByRole('button', { name: /^Stop$/i });
+      await expect(stopBtn).toBeVisible({ timeout: 20_000 });
+      await stopBtn.click();
+
+      await sessionStopReq;
+      await expect.poll(() => streamStopUrls.length, { timeout: 5_000 }).toBe(0);
+      await expect(page.getByTestId('chat__stream-status')).toHaveText('Stopped', { timeout: 30_000 });
+
+      page.off('request', requestListener);
+      await page.unroute(new RegExp(`/api/v1/workspaces/[^/]+/projects/[^/]+/chat/sessions/${threadId}/streams/?$`));
     } finally {
       await new Promise<void>((resolve) => streamingUpstream.server.close(() => resolve()));
     }

@@ -55,7 +55,7 @@ describe('buildChatViewModel', () => {
     });
 
     expect(model.activeStreamStatus).toBe('streaming');
-    expect(model.disabled).toBe(false);
+    expect(model.disabled).toBe(true);
     expect(model.activeStreamingAssistant).toBeNull();
     expect(model.mergedStreamingSessionIds).toContain(session.id);
   });

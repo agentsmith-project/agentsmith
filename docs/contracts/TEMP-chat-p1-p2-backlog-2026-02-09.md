@@ -44,7 +44,7 @@
 - Keep `index.ts` as composition/bootstrap only.
 
 2. Split oversized chat page file (`src/app/.../chat/page.tsx`)
-- Status: in progress (state/model/cache + data query + stream orchestration + chat mutations + variant hooks extracted; final view-model cleanup pending)
+- Status: in progress (state/model/cache + data query + stream orchestration + chat mutations + variant + composer/view-model hooks extracted; final wiring cleanup pending)
 - Extract concerns:
   - stream orchestration hook
   - thread/session management hook

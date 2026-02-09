@@ -24,14 +24,12 @@ import type { ChatMessage, Endpoint } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
 import { chatMessagesKey } from '@/lib/chat/query-keys';
-import {
-  mapRuntimeStatusToStreamStatus,
-  type SessionStreamStatus,
-} from '@/lib/chat/stream-state';
 import { useChatStreaming } from '@/lib/chat/use-chat-streaming';
 import { useChatMutations } from '@/lib/chat/use-chat-mutations';
 import { useChatVariants } from '@/lib/chat/use-chat-variants';
 import { useChatData } from '@/lib/chat/use-chat-data';
+import { useChatComposerActions } from '@/lib/chat/use-chat-composer-actions';
+import { buildChatViewModel } from '@/lib/chat/chat-view-model';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -209,52 +207,20 @@ export default function ChatPage({ params }: ChatPageProps) {
     return last?.id ?? null;
   }, [messages, activeVariantIndexByGroup]);
 
-  const handleSend = async () => {
-    if (!canUseChat) return;
-    if (!currentSessionId) return;
-    if (!activeSession) return;
-
-    const composerValue = composerBySession[currentSessionId] || '';
-    const content = composerValue.trim();
-    if (!content) return;
-
-    const readyAttachmentIds = attachments.filter((a) => a.upload_status === 'ready').map((a) => a.id);
-    const hasBlocking = attachments.some((a) => a.upload_status !== 'ready');
-    if (hasBlocking) return;
-
-    if (editingMessageId) return;
-
-    const userMsg = await createMessageMutation.mutateAsync({
-      sessionId: currentSessionId,
-      content,
-      attachments: readyAttachmentIds,
-      parent_id: visibleLeafId,
-    });
-    setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
-      await runStream({
-        sessionId: currentSessionId,
-        model: activeSession.model,
-        endpointId: activeSession.endpoint_id,
-        branchLeafMessageId: userMsg.id,
-        input: { role: 'user', content, attachments: readyAttachmentIds },
-        mode: 'append',
-      });
-  };
-
-  const onPickFiles = () => {
-    if (!canUseChat) return;
-    fileInputRef.current?.click();
-  };
-  const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    if (!canUseChat) return;
-    if (!currentSessionId) return;
-    if (files.length === 0) return;
-    for (const f of files) {
-      await initAttachmentMutation.mutateAsync({ sessionId: currentSessionId, file: f });
-    }
-  };
+  const { handleSend, onPickFiles, onFilePicked } = useChatComposerActions({
+    canUseChat,
+    currentSessionId,
+    activeSession,
+    composerBySession,
+    setComposerBySession,
+    attachments,
+    editingMessageId,
+    visibleLeafId,
+    createMessage: (input) => createMessageMutation.mutateAsync(input),
+    runStream,
+    initAttachment: (input) => initAttachmentMutation.mutateAsync(input),
+    fileInputRef,
+  });
 
   if (!resolvedParams) {
     return (
@@ -289,26 +255,17 @@ export default function ChatPage({ params }: ChatPageProps) {
   }
 
   const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
-  const activeStreamStatus: SessionStreamStatus = currentSessionId
-    ? (() => {
-        const localStatus = streamStateBySession[currentSessionId]?.status ?? 'idle';
-        if (localStatus !== 'idle') return localStatus;
-        return mapRuntimeStatusToStreamStatus(activeSession?.runtime_status);
-      })()
-    : 'idle';
-  const activeStreamingAssistant = currentSessionId
-    ? (streamStateBySession[currentSessionId]?.assistant ?? null)
-    : null;
-  const streamingSessionIds = Object.entries(streamStateBySession)
-    .filter(([, state]) => state.status === 'connecting' || state.status === 'streaming')
-    .map(([sessionId]) => sessionId);
-  const runtimeStreamingSessionIds = sessions
-    .filter((s) => s.runtime_status === 'running' || s.runtime_status === 'stopping')
-    .map((s) => s.id);
-  const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...runtimeStreamingSessionIds]));
-  const disabled =
-    (activeStreamStatus === 'connecting' || activeStreamStatus === 'streaming') &&
-    !!activeStreamingAssistant;
+  const {
+    activeStreamStatus,
+    activeStreamingAssistant,
+    mergedStreamingSessionIds,
+    disabled,
+  } = buildChatViewModel({
+    currentSessionId,
+    activeSession,
+    sessions,
+    streamStateBySession,
+  });
 
   return (
     <PageState state="success">

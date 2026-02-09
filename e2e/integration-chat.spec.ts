@@ -1,8 +1,11 @@
 import http, { type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import fs from 'node:fs';
+import path from 'node:path';
 import { test, expect } from '@playwright/test';
 
 const RUN_INTEGRATION = process.env.RUN_INTEGRATION_E2E === 'true';
+const RUN_REAL_COMPLETION = process.env.INTEGRATION_REAL_COMPLETION_E2E === 'true';
 let lastApiAuthContext: { apiBase: string; authHeader: string } | null = null;
 
 function captureApiAuthContextFromResponse(response: import('@playwright/test').Response): void {
@@ -121,6 +124,112 @@ async function keycloakLogin(page: import('@playwright/test').Page, locale: stri
   ]);
   await page.getByTestId('workspace-select__card--ws_default').click();
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 30_000 });
+}
+
+function loadOpenAICompatiblePayloadForE2E() {
+  const customPath = process.env.INTEGRATION_OPENAI_CONFIG_PATH;
+  const filePath = customPath
+    ? path.resolve(customPath)
+    : path.resolve(process.cwd(), 'infra/integration/e2e-openai-compatible.json');
+  const raw = fs.readFileSync(filePath, 'utf8');
+  return JSON.parse(raw) as {
+    reranker?: {
+      model: string;
+      source_model?: string;
+      api_base: string;
+      api_key: string;
+      mode?: 'openai';
+    };
+    embedding?: {
+      model: string;
+      source_model?: string;
+      api_base: string;
+      api_key: string;
+      mode?: 'openai';
+    };
+    completion?: {
+      model: string;
+      source_model?: string;
+      api_base: string;
+      api_key: string;
+      mode?: 'openai';
+    };
+  };
+}
+
+async function getAuthTokenFromStorage(page: import('@playwright/test').Page): Promise<string> {
+  const token = await page.evaluate(() => {
+    const raw = window.localStorage.getItem('mbos-auth');
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as { state?: { token?: string | null } };
+      return parsed.state?.token ?? null;
+    } catch {
+      return null;
+    }
+  });
+  expect(token).toBeTruthy();
+  return token!;
+}
+
+async function importOpenAICompatibleViaApi(
+  page: import('@playwright/test').Page,
+  projectId: string,
+  payload: ReturnType<typeof loadOpenAICompatiblePayloadForE2E>,
+) {
+  const token = await getAuthTokenFromStorage(page);
+  const apiBase = process.env.INTEGRATION_API_BASE || 'http://localhost:20010';
+  const response = await page.request.post(
+    `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/import-openai-compatible`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: payload,
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+}
+
+async function openChatAndSendExpectAssistantAny(
+  page: import('@playwright/test').Page,
+  locale: string,
+  projectId: string,
+  text: string,
+) {
+  await page.getByRole('link', { name: /chat|对话/i }).first().click();
+  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('chat__main-pane')).toBeVisible({ timeout: 30_000 });
+
+  if (await page.getByTestId('chat__thread-item').count() === 0) {
+    await page.getByTestId('chat__new-thread-btn').click();
+  }
+
+  const firstThread = page.getByTestId('chat__thread-item').first();
+  await expect(firstThread).toBeVisible({ timeout: 30_000 });
+  await firstThread.locator('div[role="button"]').first().click();
+
+  const beforeCount = await page.getByTestId('chat__message').count();
+  const composer = page.getByTestId('chat__composer');
+  const textarea = composer.locator('textarea');
+  await expect(textarea).toBeVisible();
+  await textarea.fill(text);
+
+  const streamResponse = page.waitForResponse((res) =>
+    res.request().method() === 'POST' &&
+    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages\/stream$/.test(res.url()) &&
+    res.status() === 200,
+  );
+  await page.getByTestId('chat__send-btn').click();
+  await streamResponse;
+  await expect
+    .poll(async () => page.getByTestId('chat__message').count(), { timeout: 90_000 })
+    .toBeGreaterThanOrEqual(beforeCount + 2);
+  const lastMessageText = await page.getByTestId('chat__message').last().textContent();
+  expect((lastMessageText ?? '').trim().length).toBeGreaterThan(0);
 }
 
 async function createProjectFromUi(page: import('@playwright/test').Page, locale: string): Promise<string> {
@@ -1291,6 +1400,27 @@ test.describe('integration chat flow', () => {
     } finally {
       await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
     }
+  });
+
+  test('chat works with real deepseek completion endpoint imported from integration resource', async ({ page }) => {
+    test.skip(!RUN_REAL_COMPLETION, 'Enable with INTEGRATION_REAL_COMPLETION_E2E=true');
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const payload = loadOpenAICompatiblePayloadForE2E();
+    expect(payload.completion).toBeTruthy();
+
+    await keycloakLogin(page, locale, username, password);
+    const projectId = await createProjectFromUi(page, locale);
+    await importOpenAICompatibleViaApi(page, projectId, payload);
+    await openChatAndSendExpectAssistantAny(
+      page,
+      locale,
+      projectId,
+      'Reply with one short sentence to confirm end-to-end chat works.',
+    );
   });
 
 });

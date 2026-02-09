@@ -82,6 +82,7 @@ npm run test:e2e:integration:minimal
 npm run test:e2e:integration:chat
 npm run test:e2e:integration:minimal:with-api
 npm run test:e2e:integration:chat:with-api
+npm run test:e2e:integration:chat:real:with-api
 ```
 
 `*:with-api` scripts will start `@mbos/api-entry-node` from current workspace
@@ -125,8 +126,9 @@ docker compose -f infra/integration/docker-compose.yml down -v
 - MinIO API: `http://localhost:19000` (user `mbos`, password `mbos_dev_password`, bucket `mbos-dev`)
 - MinIO Console: `http://localhost:19001`
 - Keycloak: `http://localhost:18080` (admin `admin` / `admin`, realm `mbos`, client `mbos-frontend`)
-  - integration user: `integration-user` / `integration-user-123`
-  - dev admin user: `dev-admin` / `dev-admin-123`
+- integration user: `integration-user` / `integration-user-123`
+- dev admin user: `dev-admin` / `dev-admin-123`
+- real completion e2e payload file: `infra/integration/e2e-openai-compatible.json`
 
 ## Run API with Postgres
 

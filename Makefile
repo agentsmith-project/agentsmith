@@ -1,5 +1,6 @@
 .PHONY: help bootstrap deps-up deps-down deps-reset deps-smoke deps-logs deps-ps deps-init \
-	api-dev api-dev-min web web-msw e2e-minimal e2e-chat e2e-minimal-local-api e2e-chat-local-api urls
+	check-api-port api-dev api-dev-min web web-msw e2e-minimal e2e-chat e2e-chat-real \
+	e2e-minimal-local-api e2e-chat-local-api e2e-chat-real-local-api urls
 
 NPM ?= npm
 
@@ -50,8 +51,10 @@ help:
 	@echo "Tests:"
 	@echo "  make e2e-minimal   # run minimal integration e2e"
 	@echo "  make e2e-chat      # run chat integration e2e"
+	@echo "  make e2e-chat-real # run real deepseek chat integration e2e"
 	@echo "  make e2e-minimal-local-api  # run minimal integration e2e with current node api"
 	@echo "  make e2e-chat-local-api     # run chat integration e2e with current node api"
+	@echo "  make e2e-chat-real-local-api # run real deepseek chat e2e with current node api"
 	@echo ""
 	@echo "Utility:"
 	@echo "  make urls          # print local URLs and test users"
@@ -79,7 +82,25 @@ deps-ps:
 deps-init:
 	$(NPM) run integration:deps:init:postgres
 
-api-dev:
+check-api-port:
+	@PORT="$(PORT_API)"; \
+	if command -v lsof >/dev/null 2>&1; then \
+		if lsof -iTCP:$${PORT} -sTCP:LISTEN -Pn >/dev/null 2>&1; then \
+			echo "[make] API port $${PORT} is already in use."; \
+			echo "[make] Listening process:"; \
+			lsof -iTCP:$${PORT} -sTCP:LISTEN -Pn; \
+			echo "[make] Use another port, e.g. 'make api-dev-min PORT_API=20010'."; \
+			exit 1; \
+		fi; \
+	elif command -v ss >/dev/null 2>&1; then \
+		if ss -ltn "( sport = :$${PORT} )" | grep -q ":$${PORT}"; then \
+			echo "[make] API port $${PORT} is already in use."; \
+			echo "[make] Use another port, e.g. 'make api-dev-min PORT_API=20010'."; \
+			exit 1; \
+		fi; \
+	fi
+
+api-dev: check-api-port
 	PORT=$(PORT_API) \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
@@ -95,7 +116,7 @@ api-dev:
 	MINIO_BUCKET=$(MINIO_BUCKET) \
 	$(NPM) run api:node:dev
 
-api-dev-min:
+api-dev-min: check-api-port
 	PORT=$(PORT_API) \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
@@ -127,6 +148,10 @@ e2e-chat:
 	BASE_URL=$(BASE_URL) \
 	$(NPM) run test:e2e:integration:chat
 
+e2e-chat-real:
+	BASE_URL=$(BASE_URL) \
+	$(NPM) run test:e2e:integration:chat:real
+
 e2e-minimal-local-api:
 	INTEGRATION_API_PORT=$(PORT_API) \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
@@ -138,6 +163,12 @@ e2e-chat-local-api:
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
 	$(NPM) run test:e2e:integration:chat:with-api
+
+e2e-chat-real-local-api:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	$(NPM) run test:e2e:integration:chat:real:with-api
 
 urls:
 	@echo "Frontend:         http://localhost:$(PORT_WEB)/$(LOCALE)/login"

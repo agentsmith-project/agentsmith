@@ -1,0 +1,9 @@
+{
+  "completion": {
+    "model": "deepseek-chat",
+    "source_model": "deepseek-chat",
+    "api_base": "https://api.deepseek.com",
+    "api_key": "sk-d5ad8808d0f54c599f523b4e1d13c82c",
+    "mode": "openai"
+  }
+}

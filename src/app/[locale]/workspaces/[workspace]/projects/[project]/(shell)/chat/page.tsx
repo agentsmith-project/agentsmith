@@ -22,14 +22,12 @@ import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
 import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
-import { postChatStream, streamSseJson } from '@/lib/chat/stream';
-import { createThrottle } from '@/lib/chat/throttle';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
 import {
   mapRuntimeStatusToStreamStatus,
-  type SessionStreamState,
   type SessionStreamStatus,
 } from '@/lib/chat/stream-state';
+import { useChatStreaming } from '@/lib/chat/use-chat-streaming';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -85,10 +83,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   const suppressTimerRef = useRef<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const streamControllersRef = useRef<Map<string, AbortController>>(new Map());
-  const streamIdsRef = useRef<Map<string, string>>(new Map());
-  const streamCleanupTimersRef = useRef<Map<string, number>>(new Map());
-  const [streamStateBySession, setStreamStateBySession] = useState<Record<string, SessionStreamState>>({});
 
   useEffect(() => {
     params.then((p) => {
@@ -158,41 +152,6 @@ export default function ChatPage({ params }: ChatPageProps) {
       suppressTimerRef.current = null;
     }
   }, [currentSessionId]);
-
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const status = currentSessionId ? (streamStateBySession[currentSessionId]?.status ?? 'idle') : 'idle';
-    if (status !== 'idle') return;
-    const groups = buildVariantGroups(messages);
-    const nextMap = new Map(lastVariantTailRef.current);
-    const updates: Record<string, number> = {};
-
-    for (const [groupId, group] of groups.groups.entries()) {
-      if (group.items.length === 0) continue;
-      const last = group.items[group.items.length - 1];
-      const lastId = last.id;
-      const prevId = lastVariantTailRef.current.get(groupId);
-      nextMap.set(groupId, lastId);
-
-      const shouldAuto =
-        pendingAutoGroupRef.current === groupId ||
-        !manualVariantGroupsRef.current.has(groupId);
-
-      if (
-        shouldAuto &&
-        (!Object.prototype.hasOwnProperty.call(activeVariantIndexByGroup, groupId) || (prevId && prevId !== lastId))
-      ) {
-        const idx = last.variant_index ?? last.revision_index ?? group.items.length - 1;
-        updates[groupId] = idx;
-      }
-    }
-
-    if (Object.keys(updates).length > 0) {
-      setActiveVariantIndexByGroup((prev) => ({ ...prev, ...updates }));
-    }
-    if (pendingAutoGroupRef.current) pendingAutoGroupRef.current = null;
-    lastVariantTailRef.current = nextMap;
-  }, [messages, activeVariantIndexByGroup, currentSessionId, streamStateBySession]);
 
   const { data: attachmentsData } = useQuery({
     queryKey: ['chat', 'attachments', workspaceId, projectId, currentSessionId],
@@ -329,327 +288,63 @@ export default function ChatPage({ params }: ChatPageProps) {
     );
   };
 
-  const setSessionStreamState = (
-    sessionId: string,
-    updater: SessionStreamState | ((prev: SessionStreamState) => SessionStreamState),
-  ) => {
-    setStreamStateBySession((prev) => {
-      const current = prev[sessionId] ?? { status: 'idle' as SessionStreamStatus, assistant: null };
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const cleanupTimers = streamCleanupTimersRef.current;
-      const existingTimer = cleanupTimers.get(sessionId);
-      if (existingTimer) {
-        window.clearTimeout(existingTimer);
-        cleanupTimers.delete(sessionId);
+  const { streamStateBySession, stopStreamingSession, stopStreaming, runStream } = useChatStreaming({
+    token,
+    workspaceId,
+    projectId,
+    sessions,
+    currentSessionId,
+    chatAPI,
+    queryClient,
+    messages: {
+      streamError: t('stream_error'),
+      streamingFailed: t('streaming_failed'),
+      stopRequiredBeforeReplaceFailed: t('stream_stop_required_before_replace_failed'),
+      stopFailedRetry: t('stream_stop_failed_retry'),
+    },
+    onReplaceStreamMeta: ({ variantGroupId, variantIndex }) => {
+      if (variantGroupId && typeof variantIndex === 'number') {
+        setActiveVariantIndexByGroup((prev) => ({ ...prev, [variantGroupId]: variantIndex }));
       }
-      if ((next.status === 'stopped' || next.status === 'error') && !next.assistant) {
-        const timer = window.setTimeout(() => {
-          setStreamStateBySession((statePrev) => {
-            const currentState = statePrev[sessionId];
-            if (!currentState) return statePrev;
-            if (currentState.status === 'connecting' || currentState.status === 'streaming') {
-              return statePrev;
-            }
-            const { [sessionId]: _removed, ...rest } = statePrev;
-            return rest;
-          });
-          cleanupTimers.delete(sessionId);
-        }, 60_000);
-        cleanupTimers.set(sessionId, timer);
-      }
-      if (next.status === 'idle' && !next.assistant) {
-        if (!prev[sessionId]) return prev;
-        const { [sessionId]: _removed, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [sessionId]: next };
-    });
-  };
+    },
+    upsertStreamAssistantToCache,
+    patchStreamAssistantInCache,
+  });
 
   useEffect(() => {
-    if (!workspaceId || !projectId || sessions.length === 0) return;
-    const candidates = sessions.filter(
-      (session) =>
-        (session.runtime_status === 'running' || session.runtime_status === 'stopping') &&
-        !streamIdsRef.current.has(session.id),
-    );
-    if (candidates.length === 0) return;
+    if (messages.length === 0) return;
+    const status = currentSessionId ? (streamStateBySession[currentSessionId]?.status ?? 'idle') : 'idle';
+    if (status !== 'idle') return;
+    const groups = buildVariantGroups(messages);
+    const nextMap = new Map(lastVariantTailRef.current);
+    const updates: Record<string, number> = {};
 
-    let cancelled = false;
-    const recoverActiveStreamIds = async () => {
-      await Promise.all(
-        candidates.map(async (session) => {
-          try {
-            const data = await chatAPI.getSessionStreams(workspaceId, projectId, session.id);
-            if (cancelled) return;
-            const active = data.items.find((item) => item.status === 'running' || item.status === 'stopping');
-            if (active) {
-              streamIdsRef.current.set(session.id, active.stream_id);
-            }
-          } catch {
-            // Keep UI resilient when runtime state is stale.
-          }
-        }),
-      );
-    };
+    for (const [groupId, group] of groups.groups.entries()) {
+      if (group.items.length === 0) continue;
+      const last = group.items[group.items.length - 1];
+      const lastId = last.id;
+      const prevId = lastVariantTailRef.current.get(groupId);
+      nextMap.set(groupId, lastId);
 
-    void recoverActiveStreamIds();
-    return () => {
-      cancelled = true;
-    };
-  }, [chatAPI, projectId, sessions, workspaceId]);
+      const shouldAuto =
+        pendingAutoGroupRef.current === groupId ||
+        !manualVariantGroupsRef.current.has(groupId);
 
-  const stopStreamingSession = async (
-    sessionId: string,
-    reason: 'user' | 'replace' = 'user',
-  ): Promise<boolean> => {
-    const streamId = streamIdsRef.current.get(sessionId);
-    const controller = streamControllersRef.current.get(sessionId);
-    if (!streamId && !controller) {
-      try {
-        await chatAPI.stopSessionStream(workspaceId, projectId, sessionId);
-      } catch {
-        const message =
-          reason === 'replace'
-            ? t('stream_stop_required_before_replace_failed')
-            : t('stream_stop_failed_retry');
-        toast.error(message);
-        return false;
-      }
-      setSessionStreamState(sessionId, {
-        status: reason === 'user' ? 'stopped' : 'idle',
-        assistant: null,
-      });
-      return true;
-    }
-
-    if (streamId) {
-      try {
-        await chatAPI.stopStream(workspaceId, projectId, sessionId, streamId);
-      } catch {
-        const message =
-          reason === 'replace'
-            ? t('stream_stop_required_before_replace_failed')
-            : t('stream_stop_failed_retry');
-        toast.error(message);
-        return false;
+      if (
+        shouldAuto &&
+        (!Object.prototype.hasOwnProperty.call(activeVariantIndexByGroup, groupId) || (prevId && prevId !== lastId))
+      ) {
+        const idx = last.variant_index ?? last.revision_index ?? group.items.length - 1;
+        updates[groupId] = idx;
       }
     }
-    controller?.abort();
-    streamIdsRef.current.delete(sessionId);
-    streamControllersRef.current.delete(sessionId);
-    setSessionStreamState(sessionId, {
-      status: reason === 'user' ? 'stopped' : 'idle',
-      assistant: null,
-    });
-    return true;
-  };
 
-  const stopStreaming = () => {
-    if (!currentSessionId) return;
-    void stopStreamingSession(currentSessionId, 'user');
-  };
-
-  useEffect(() => {
-    const streamControllers = streamControllersRef.current;
-    const streamIds = streamIdsRef.current;
-    const cleanupTimers = streamCleanupTimersRef.current;
-    return () => {
-      for (const controller of streamControllers.values()) {
-        controller.abort();
-      }
-      for (const timer of cleanupTimers.values()) {
-        window.clearTimeout(timer);
-      }
-      streamControllers.clear();
-      streamIds.clear();
-      cleanupTimers.clear();
-    };
-  }, []);
-
-  const runStream = async (args: {
-    sessionId: string;
-    model: string;
-    endpointId: string;
-    input?: { role: 'user'; content: string; attachments?: string[] };
-    fromMessageId?: string;
-    branchLeafMessageId?: string;
-    mode?: 'append' | 'replace';
-    displayMessageId?: string | null;
-  }) => {
-    const previousStopped = await stopStreamingSession(args.sessionId, 'replace');
-    if (!previousStopped) {
-      return;
+    if (Object.keys(updates).length > 0) {
+      setActiveVariantIndexByGroup((prev) => ({ ...prev, ...updates }));
     }
-
-    const controller = new AbortController();
-    streamControllersRef.current.set(args.sessionId, controller);
-
-    const mode = args.mode ?? (args.fromMessageId ? 'replace' : 'append');
-    const now = Date.now();
-    setSessionStreamState(args.sessionId, {
-      status: 'connecting',
-      assistant: {
-        messageId: args.displayMessageId ?? null,
-        content: '',
-        mode,
-        startedAt: now,
-        lastTokenAt: now,
-      },
-    });
-
-    const throttler = createThrottle<string>(40, (next) => {
-      setSessionStreamState(args.sessionId, (prev) => ({
-        status: prev.status === 'idle' ? 'streaming' : prev.status,
-        assistant: prev.assistant
-          ? { ...prev.assistant, content: next, lastTokenAt: Date.now() }
-          : {
-              messageId: null,
-              content: next,
-              mode,
-              startedAt: Date.now(),
-              lastTokenAt: Date.now(),
-            },
-      }));
-    });
-
-    const setAssistantMessageId = (messageId: string) => {
-      setSessionStreamState(args.sessionId, (prev) => ({
-        status: prev.status === 'idle' ? 'streaming' : prev.status,
-        assistant: prev.assistant
-          ? { ...prev.assistant, messageId }
-          : {
-              messageId,
-              content: '',
-              mode,
-              startedAt: Date.now(),
-              lastTokenAt: Date.now(),
-            },
-      }));
-    };
-
-    const streamStillActive = () =>
-      streamControllersRef.current.get(args.sessionId) === controller;
-
-    try {
-      const res = await postChatStream({
-        token,
-        workspaceId,
-        projectId,
-        sessionId: args.sessionId,
-        body: {
-          model: args.model,
-          endpoint_id: args.endpointId,
-          branch_leaf_message_id: args.branchLeafMessageId,
-          from_message_id: args.fromMessageId,
-          input: args.input,
-        },
-        signal: controller.signal,
-      });
-      const streamIdFromHeader = res.headers.get('x-chat-stream-id');
-      if (streamIdFromHeader) {
-        streamIdsRef.current.set(args.sessionId, streamIdFromHeader);
-      }
-      setSessionStreamState(args.sessionId, (prev) => ({
-        ...prev,
-        status: 'streaming',
-      }));
-      let content = '';
-      let liveMessageId: string | null = mode === 'replace' ? args.fromMessageId ?? null : null;
-
-      for await (const ev of streamSseJson(res, controller.signal)) {
-        if (controller.signal.aborted || !streamStillActive()) break;
-        if (ev.event === 'meta') {
-          const data = (typeof ev.data === 'object' && ev.data !== null
-            ? (ev.data as Record<string, unknown>)
-            : null);
-          const metaStreamId = data && typeof data.stream_id === 'string'
-            ? data.stream_id
-            : null;
-          if (metaStreamId) {
-            streamIdsRef.current.set(args.sessionId, metaStreamId);
-          }
-          const metaMessageId = data && typeof data.assistant_message_id === 'string'
-            ? data.assistant_message_id
-            : null;
-          if (metaMessageId) {
-            liveMessageId = metaMessageId;
-            if (mode === 'replace') {
-              const parentId = data && typeof data.parent_message_id === 'string'
-                ? data.parent_message_id
-                : null;
-              const variantGroupId = data && typeof data.variant_group_id === 'string'
-                ? data.variant_group_id
-                : undefined;
-              const variantIndex = data && typeof data.variant_index === 'number'
-                ? data.variant_index
-                : undefined;
-              if (variantGroupId && typeof variantIndex === 'number') {
-                setActiveVariantIndexByGroup((prev) => ({ ...prev, [variantGroupId]: variantIndex }));
-              }
-              upsertStreamAssistantToCache(args.sessionId, {
-                id: metaMessageId,
-                session_id: args.sessionId,
-                role: 'assistant',
-                content: '',
-                created_at: new Date().toISOString(),
-                finish_reason: null,
-                parent_id: parentId,
-                variant_group_id: variantGroupId,
-                variant_index: variantIndex,
-              });
-            }
-            setAssistantMessageId(metaMessageId);
-          }
-        } else if (ev.event === 'delta') {
-          const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
-          const delta = data && typeof data.delta === 'string' ? data.delta : null;
-          if (delta) {
-            content += delta;
-            throttler.push(content);
-            if (mode === 'replace' && liveMessageId) {
-              patchStreamAssistantInCache(args.sessionId, liveMessageId, {
-                content,
-                finish_reason: null,
-              });
-            }
-          }
-        } else if (ev.event === 'error') {
-          const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
-          const message = data && typeof data.message === 'string' ? data.message : t('stream_error');
-          throw new Error(message);
-        } else if (ev.event === 'done') {
-          break;
-        }
-      }
-
-      throttler.flush();
-      if (streamStillActive()) {
-        setSessionStreamState(args.sessionId, { status: 'idle', assistant: null });
-      }
-
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-    } catch (e: unknown) {
-      if (controller.signal.aborted) {
-        if (streamStillActive()) {
-          setSessionStreamState(args.sessionId, { status: 'stopped', assistant: null });
-        }
-        queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
-        queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-        return;
-      }
-      setSessionStreamState(args.sessionId, { status: 'error', assistant: null });
-      toast.error(e instanceof Error ? e.message : t('streaming_failed'));
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-    } finally {
-      if (streamControllersRef.current.get(args.sessionId) === controller) {
-        streamControllersRef.current.delete(args.sessionId);
-      }
-      streamIdsRef.current.delete(args.sessionId);
-    }
-  };
+    if (pendingAutoGroupRef.current) pendingAutoGroupRef.current = null;
+    lastVariantTailRef.current = nextMap;
+  }, [messages, activeVariantIndexByGroup, currentSessionId, streamStateBySession]);
 
   const handleSend = async () => {
     if (!canUseChat) return;

@@ -24,6 +24,7 @@ import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/t
 import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
 import { postChatStream, streamSseJson } from '@/lib/chat/stream';
 import { createThrottle } from '@/lib/chat/throttle';
+import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
 import {
   mapRuntimeStatusToStreamStatus,
   type SessionStreamState,
@@ -308,32 +309,10 @@ export default function ChatPage({ params }: ChatPageProps) {
   });
 
   const upsertStreamAssistantToCache = (sessionId: string, message: ChatMessage) => {
-    queryClient.setQueryData(
+    upsertChatMessageInCache(
+      queryClient,
       ['chat', 'messages', workspaceId, projectId, sessionId],
-      (
-        prev:
-          | {
-              items: ChatMessage[];
-              total: number;
-              page: number;
-              page_size: number;
-              has_more: boolean;
-            }
-          | undefined,
-      ) => {
-        if (!prev) return prev;
-        const index = prev.items.findIndex((item) => item.id === message.id);
-        if (index >= 0) {
-          const nextItems = [...prev.items];
-          nextItems[index] = { ...nextItems[index], ...message };
-          return { ...prev, items: nextItems };
-        }
-        return {
-          ...prev,
-          items: [...prev.items, message],
-          total: prev.total + 1,
-        };
-      },
+      message,
     );
   };
 
@@ -342,29 +321,11 @@ export default function ChatPage({ params }: ChatPageProps) {
     messageId: string,
     patch: Partial<Pick<ChatMessage, 'content' | 'finish_reason' | 'tokens'>>,
   ) => {
-    queryClient.setQueryData(
+    patchChatMessageInCache(
+      queryClient,
       ['chat', 'messages', workspaceId, projectId, sessionId],
-      (
-        prev:
-          | {
-              items: ChatMessage[];
-              total: number;
-              page: number;
-              page_size: number;
-              has_more: boolean;
-            }
-          | undefined,
-      ) => {
-        if (!prev) return prev;
-        const index = prev.items.findIndex((item) => item.id === messageId);
-        if (index < 0) return prev;
-        const nextItems = [...prev.items];
-        nextItems[index] = {
-          ...nextItems[index],
-          ...patch,
-        };
-        return { ...prev, items: nextItems };
-      },
+      messageId,
+      patch,
     );
   };
 

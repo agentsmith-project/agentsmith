@@ -130,7 +130,13 @@ function loadOpenAICompatiblePayloadForE2E() {
   const customPath = process.env.INTEGRATION_OPENAI_CONFIG_PATH;
   const filePath = customPath
     ? path.resolve(customPath)
-    : path.resolve(process.cwd(), 'infra/integration/e2e-openai-compatible.json');
+    : path.resolve(process.cwd(), 'secrets/e2e-openai-compatible.json');
+  if (!fs.existsSync(filePath)) {
+    throw new Error(
+      `Missing OpenAI config file: ${filePath}. ` +
+      'Create it or set INTEGRATION_OPENAI_CONFIG_PATH.',
+    );
+  }
   const raw = fs.readFileSync(filePath, 'utf8');
   return JSON.parse(raw) as {
     reranker?: {

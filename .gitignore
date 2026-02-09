@@ -46,3 +46,7 @@ storybook-static
 .worktrees/
 e2e/__screenshots__/
 test-results
+
+# Local secrets (for manual integration/e2e only)
+secrets/*
+!secrets/.gitkeep

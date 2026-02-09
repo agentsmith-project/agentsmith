@@ -128,7 +128,8 @@ docker compose -f infra/integration/docker-compose.yml down -v
 - Keycloak: `http://localhost:18080` (admin `admin` / `admin`, realm `mbos`, client `mbos-frontend`)
 - integration user: `integration-user` / `integration-user-123`
 - dev admin user: `dev-admin` / `dev-admin-123`
-- real completion e2e payload file: `infra/integration/e2e-openai-compatible.json`
+- real completion e2e payload file: `secrets/e2e-openai-compatible.json`
+  - if missing, create it with your completion provider config and `api_key`
 
 ## Run API with Postgres
 

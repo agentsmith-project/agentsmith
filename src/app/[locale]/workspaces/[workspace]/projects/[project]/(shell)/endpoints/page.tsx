@@ -10,8 +10,9 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
-import { Server, Plus, Trash2, Globe, Pencil, Power, PowerOff } from 'lucide-react';
+import { Server, Plus, Trash2, Globe, Pencil, Power, PowerOff, Upload, Download } from 'lucide-react';
 import { getApiClient, EndpointAPI } from '@/lib/api';
+import { APIError } from '@/lib/api/errors';
 import type { Endpoint } from '@/lib/api/types';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -25,6 +26,7 @@ import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { toast } from '@/components/ui/toast';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -205,6 +207,10 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [endpointToDelete, setEndpointToDelete] = useState<Endpoint | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importPayloadText, setImportPayloadText] = useState(
+    '{\n  "completion": {\n    "model": "deepseek-chat",\n    "source_model": "deepseek-chat",\n    "api_base": "https://api.deepseek.com",\n    "api_key": "YOUR_API_KEY"\n  }\n}',
+  );
   const canProjectEndpointRead = useHasPermission('project:endpoint:use');
   const canProjectEndpointUpdate = useHasPermission('project:endpoint:manage');
   const canProjectEndpointCreate = useHasPermission('project:endpoint:manage');
@@ -247,6 +253,41 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     },
   });
 
+  const importOpenAICompatibleMutation = useMutation({
+    mutationFn: (payload: {
+      reranker?: {
+        model: string;
+        source_model?: string;
+        api_base: string;
+        api_key: string;
+        mode?: 'openai';
+      };
+      embedding?: {
+        model: string;
+        source_model?: string;
+        api_base: string;
+        api_key: string;
+        mode?: 'openai';
+      };
+      completion?: {
+        model: string;
+        source_model?: string;
+        api_base: string;
+        api_key: string;
+        mode?: 'openai';
+      };
+    }) => endpointAPI.importOpenAICompatible(workspaceId, projectId, payload),
+    onSuccess: () => {
+      invalidateEndpoints();
+      toast.success(t('import_success'));
+      setImportDialogOpen(false);
+    },
+    onError: (error) => {
+      const message = error instanceof APIError ? error.message : t('import_failed');
+      toast.error(message);
+    },
+  });
+
   const invalidateEndpoints = () => {
     queryClient.invalidateQueries({ queryKey: ['endpoints', workspaceId, projectId] });
   };
@@ -264,6 +305,96 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
     }
     setDeleteConfirmOpen(false);
     setEndpointToDelete(null);
+  };
+
+  const handleExport = async () => {
+    const exportPayload = {
+      exported_at: new Date().toISOString(),
+      workspace_id: workspaceId,
+      project_id: projectId,
+      endpoints: endpoints.map((endpoint) => ({
+        name: endpoint.name,
+        description: endpoint.description,
+        model: endpoint.openai_model,
+        source_model: endpoint.source_model,
+        type: endpoint.type,
+        api_base: endpoint.base_url,
+        status: endpoint.status,
+        credential_ref: endpoint.credential_ref,
+        limits: endpoint.limits,
+      })),
+      openai_compatible_template: {
+        reranker: {
+          model: '',
+          source_model: '',
+          api_base: '',
+          api_key: '',
+          mode: 'openai',
+        },
+        embedding: {
+          model: '',
+          source_model: '',
+          api_base: '',
+          api_key: '',
+          mode: 'openai',
+        },
+        completion: {
+          model: '',
+          source_model: '',
+          api_base: '',
+          api_key: '',
+          mode: 'openai',
+        },
+      },
+    };
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const fileName = `endpoints-${workspaceId}-${projectId}.json`;
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    toast.success(t('export_success'));
+  };
+
+  const handleImport = () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(importPayloadText);
+    } catch {
+      toast.error(t('import_invalid_json'));
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object') {
+      toast.error(t('import_invalid_json'));
+      return;
+    }
+    importOpenAICompatibleMutation.mutate(parsed as {
+      reranker?: {
+        model: string;
+        source_model?: string;
+        api_base: string;
+        api_key: string;
+        mode?: 'openai';
+      };
+      embedding?: {
+        model: string;
+        source_model?: string;
+        api_base: string;
+        api_key: string;
+        mode?: 'openai';
+      };
+      completion?: {
+        model: string;
+        source_model?: string;
+        api_base: string;
+        api_key: string;
+        mode?: 'openai';
+      };
+    });
   };
 
   const endpointColumns = createEndpointColumns(
@@ -322,6 +453,24 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
         header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
         toolbar={(
           <PageToolbar>
+            <Button
+              onClick={() => setImportDialogOpen(true)}
+              disabled={!canManageEndpoints}
+              data-testid="endpoints__import-btn"
+              variant="outline"
+            >
+              <Upload className="w-4 h-4" />
+              {t('import')}
+            </Button>
+            <Button
+              onClick={handleExport}
+              disabled={!canReadEndpoints || endpoints.length === 0}
+              data-testid="endpoints__export-btn"
+              variant="outline"
+            >
+              <Download className="w-4 h-4" />
+              {t('export')}
+            </Button>
             <Button
               onClick={() => setCreateDialogOpen(true)}
               disabled={!canManageEndpoints}
@@ -392,6 +541,37 @@ export default function EndpointsPage({ params }: EndpointsPageProps) {
                 className="bg-error text-white hover:bg-error/90"
               >
                 {t('delete_confirm_action')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+          <AlertDialogContent className="max-w-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('import_dialog_title')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('import_dialog_description')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <textarea
+              value={importPayloadText}
+              onChange={(e) => setImportPayloadText(e.target.value)}
+              rows={16}
+              className="w-full rounded-sm border border-subtle bg-surface-high px-3 py-2 text-sm font-mono text-primary"
+              data-testid="endpoints__import-textarea"
+            />
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('import_cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleImport();
+                }}
+                disabled={importOpenAICompatibleMutation.isPending}
+                data-testid="endpoints__import-confirm"
+              >
+                {t('import_confirm')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

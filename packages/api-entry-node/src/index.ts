@@ -1147,17 +1147,33 @@ function sseWrite(res: http.ServerResponse, event: string, data: unknown): void 
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-function splitTextForStreaming(text: string, chunkSize = 24): string[] {
-  if (!text) return [];
-  const chunks: string[] = [];
-  for (let i = 0; i < text.length; i += chunkSize) {
-    chunks.push(text.slice(i, i + chunkSize));
+function parseOpenAIStreamChunk(chunk: string): Array<{ delta: string; done: boolean }> {
+  const events: Array<{ delta: string; done: boolean }> = [];
+  const blocks = chunk.split('\n\n').map((item) => item.trim()).filter(Boolean);
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice('data:'.length).trim();
+      if (data === '[DONE]') {
+        events.push({ delta: '', done: true });
+        continue;
+      }
+      try {
+        const payload = JSON.parse(data) as {
+          choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
+        };
+        const delta = payload.choices?.[0]?.delta?.content;
+        if (typeof delta === 'string' && delta.length > 0) {
+          events.push({ delta, done: false });
+        }
+      } catch {
+        // ignore invalid upstream chunks
+      }
+    }
   }
-  return chunks;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return events;
 }
 
 function safeAssistantContent(payload: unknown): string {
@@ -2379,12 +2395,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         },
         body: JSON.stringify({
           model: raw.model ?? endpoint.source_model ?? endpoint.openai_model,
-          stream: false,
+          stream: true,
           messages: messages.map((item) => ({ role: item.role, content: item.content })),
         }),
       });
-      const completionPayload = await upstreamRes.json().catch(() => ({}));
       if (!upstreamRes.ok) {
+        const completionPayload = await upstreamRes.json().catch(() => ({}));
         json(res, upstreamRes.status, completionPayload);
         return;
       }
@@ -2395,7 +2411,68 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         parentForAssistant,
         fromMessage,
       );
-      const assistantText = safeAssistantContent(completionPayload);
+      const streamMessageId = `stream_msg_${Date.now()}`;
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      if (typeof res.flushHeaders === 'function') {
+        res.flushHeaders();
+      }
+      sseWrite(res, 'meta', {
+        stream_id: `stream_${Date.now()}`,
+        session_id: route.sessionId,
+        model: endpoint.openai_model,
+        endpoint_id: endpoint.id,
+      });
+
+      let assistantText = '';
+      const contentType = upstreamRes.headers.get('content-type') ?? '';
+      if (contentType.includes('text/event-stream') && upstreamRes.body) {
+        const reader = upstreamRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let done = false;
+        while (!done) {
+          const result = await reader.read();
+          done = result.done;
+          buffer += decoder.decode(result.value ?? new Uint8Array(), { stream: !done });
+          const sepIndex = buffer.lastIndexOf('\n\n');
+          if (sepIndex < 0) continue;
+          const consumable = buffer.slice(0, sepIndex);
+          buffer = buffer.slice(sepIndex + 2);
+          const chunks = parseOpenAIStreamChunk(consumable);
+          for (const chunk of chunks) {
+            if (chunk.done) continue;
+            assistantText += chunk.delta;
+            sseWrite(res, 'delta', {
+              message_id: streamMessageId,
+              delta: chunk.delta,
+            });
+          }
+        }
+        if (buffer.trim().length > 0) {
+          const chunks = parseOpenAIStreamChunk(buffer);
+          for (const chunk of chunks) {
+            if (chunk.done) continue;
+            assistantText += chunk.delta;
+            sseWrite(res, 'delta', {
+              message_id: streamMessageId,
+              delta: chunk.delta,
+            });
+          }
+        }
+      } else {
+        const completionPayload = await upstreamRes.json().catch(() => ({}));
+        assistantText = safeAssistantContent(completionPayload);
+        if (assistantText.length > 0) {
+          sseWrite(res, 'delta', {
+            message_id: streamMessageId,
+            delta: assistantText,
+          });
+        }
+      }
+
       const created = await deps.chatResourceService.createMessage({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -2407,24 +2484,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         variantIndex: variantMeta.variantIndex,
       });
 
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      sseWrite(res, 'meta', {
-        stream_id: `stream_${Date.now()}`,
-        session_id: route.sessionId,
-        model: endpoint.openai_model,
-        endpoint_id: endpoint.id,
-      });
-      for (const delta of splitTextForStreaming(assistantText)) {
-        sseWrite(res, 'delta', {
-          message_id: created.id,
-          delta,
-        });
-        // Simulate token-like delivery for visible streaming UX.
-        await sleep(14);
-      }
       sseWrite(res, 'done', {
         message_id: created.id,
         finish_reason: 'stop',

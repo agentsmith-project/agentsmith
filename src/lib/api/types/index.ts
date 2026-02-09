@@ -188,6 +188,7 @@ export interface Endpoint {
   name: string;
   description?: string;
   openai_model: string; // Unique within project
+  source_model?: string;
   type: 'openai' | 'anthropic' | 'custom';
   base_url: string;
   status: 'active' | 'disabled';

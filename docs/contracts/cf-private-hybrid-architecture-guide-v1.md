@@ -309,7 +309,7 @@ packages/
 
 2. P1（扩展到生产级私有化能力）
 - 目标：提升可靠性、可扩展性和运维可观测性。
-- 依赖：Postgres + Redis + MongoDB + Queue + MinIO。
+- 依赖：Postgres(+pgvector) + Redis + MongoDB + Queue + MinIO。
 - 增强：Outbox、DLQ、回放工具、任务并发治理、复杂查询与聚合能力。
 - 要求：不修改 domain/application 语义，仅替换和扩展 adapter。
 
@@ -449,11 +449,50 @@ packages/
 - `POST /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs`
 - `GET /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}`
 - `POST /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel`
+- 迁移兼容期可保留旧接口 `/sources/{sourceId}/ai-ready/*`，但新功能必须优先对接 library-scoped jobs。
+- 当前实现基线：`document_ingest` 在 Node 入口以进程内 worker 执行，状态至少覆盖 `queued/running/succeeded/failed/cancelled`。
 
 4. 字段约束
 - `source_library_id`, `object_prefix`, `doc_namespace`, `vector_namespace` 为跨端必备字段。
 - 任务字段：`job_status`, `retry_count`, `error_code`, `error_message`, `idempotency_key`。
 - 错误语义统一 `401/403/422/5xx`，并保持稳定业务错误码。
+
+### 10.2 OpenAI 兼容端点代理（可用性优先）
+
+为尽快打通“可用”链路，后端提供项目级 endpoint 资源和 OpenAI 兼容转发：
+
+1. 资源管理
+- `GET/POST /workspaces/{ws}/projects/{project}/credentials`
+- `POST /workspaces/{ws}/projects/{project}/credentials/{credentialId}/rotate`
+- `DELETE /workspaces/{ws}/projects/{project}/credentials/{credentialId}`
+- `GET/POST /workspaces/{ws}/projects/{project}/endpoints`
+- `GET/PUT/DELETE /workspaces/{ws}/projects/{project}/endpoints/{endpointId}`
+
+2. 批量导入（OpenAI-compatible 配置）
+- `POST /workspaces/{ws}/projects/{project}/endpoints/import-openai-compatible`
+- 支持一次导入 `reranker/embedding/completion` 三类端点定义。
+
+3. OpenAI 兼容代理
+- `POST /workspaces/{ws}/projects/{project}/endpoints/{endpointId}/proxy/{openai_path}`
+- 例如：`proxy/chat/completions`、`proxy/embeddings`
+- 代理层按 endpoint 绑定的 credential 注入 `Authorization: Bearer <api_key>`，并支持 `source_model` 覆盖 `model`。
+
+4. Chat 运行时最小链路（已落地）
+- `GET/POST /workspaces/{ws}/projects/{project}/chat/sessions`
+- `GET/PATCH/DELETE /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}`
+- `GET/POST /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages`
+- `PATCH /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages/{messageId}`
+- `POST /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages/stream`
+- `GET/POST/DELETE /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/attachments/*`
+- `messages/stream` 必须:
+  - 读取 session 绑定 endpoint/credential
+  - 转发到 OpenAI-compatible `/chat/completions`
+  - 返回 SSE 事件 (`meta`, `delta`, `done`)
+  - 将 assistant 回复落库，支持前端断线后重载历史
+  - 支持分支对话语义：
+    - 用户编辑产生新 revision（不覆盖原 message）
+    - assistant 重生成产生 variant（同 parent，不同 variant_index）
+    - 携带 `branch_leaf_message_id` + 相同 input 时不得重复创建 user message
 
 ---
 

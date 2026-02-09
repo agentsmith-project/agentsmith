@@ -65,6 +65,7 @@ import {
 import { matchChatRoute, type ChatRoute } from './chat-route-match.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import { handleChatStreamRoute } from './chat-stream-handler.js';
+import { handleEndpointRoute } from './endpoint-route-handler.js';
 
 interface AuthenticatedUser {
   id: string;
@@ -1909,190 +1910,18 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    if (route.kind === 'credentials' && method === 'GET') {
-      const items = await deps.endpointResourceService.listCredentials(
-        route.workspaceId,
-        route.projectId,
-      );
-      json(res, 200, { items });
-      return;
-    }
-
-    if (route.kind === 'credentials' && method === 'POST') {
-      const raw = (await readBody(req)) as { name?: string; type?: string; value?: string };
-      if (!raw.name?.trim() || !raw.value?.trim()) {
-        json(res, 422, { code: 'VALIDATION_ERROR', message: 'credential_name_and_value_required' });
-        return;
-      }
-      const created = await deps.endpointResourceService.createCredential(
-        route.workspaceId,
-        route.projectId,
-        {
-          name: raw.name,
-          value: raw.value,
-          type: 'api_key',
-        },
-      );
-      json(res, 201, created);
-      return;
-    }
-
-    if (route.kind === 'credentialRotate' && method === 'POST') {
-      const raw = (await readBody(req)) as { value?: string };
-      if (!raw.value?.trim()) {
-        json(res, 422, { code: 'VALIDATION_ERROR', message: 'credential_value_required' });
-        return;
-      }
-      const updated = await deps.endpointResourceService.rotateCredential(
-        route.workspaceId,
-        route.projectId,
-        route.credentialId,
-        raw.value,
-      );
-      if (!updated) {
-        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
-        return;
-      }
-      json(res, 200, updated);
-      return;
-    }
-
-    if (route.kind === 'credentialItem' && method === 'DELETE') {
-      const deleted = await deps.endpointResourceService.deleteCredential(
-        route.workspaceId,
-        route.projectId,
-        route.credentialId,
-      );
-      if (!deleted) {
-        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
-        return;
-      }
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
-
-    if (route.kind === 'endpoints' && method === 'GET') {
-      const items = await deps.endpointResourceService.listEndpoints(
-        route.workspaceId,
-        route.projectId,
-      );
-      json(res, 200, { items });
-      return;
-    }
-
-    if (route.kind === 'endpoints' && method === 'POST') {
-      const raw = (await readBody(req)) as Partial<EndpointRecord>;
-      if (!raw.name?.trim() || !raw.openai_model?.trim() || !raw.base_url?.trim()) {
-        json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_required_fields_missing' });
-        return;
-      }
-      try {
-        const created = await deps.endpointResourceService.createEndpoint(
-          route.workspaceId,
-          route.projectId,
-          raw,
-        );
-        json(res, 201, created);
-      } catch (error) {
-        if (error instanceof Error && error.message === 'endpoint_model_conflict') {
-          json(res, 409, { code: 'ENDPOINT_MODEL_CONFLICT', message: 'endpoint_model_conflict' });
-          return;
-        }
-        throw error;
-      }
-      return;
-    }
-
-    if (route.kind === 'endpointItem' && method === 'GET') {
-      const endpoint = await deps.endpointResourceService.getEndpoint(
-        route.workspaceId,
-        route.projectId,
-        route.endpointId,
-      );
-      if (!endpoint) {
-        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
-        return;
-      }
-      json(res, 200, endpoint);
-      return;
-    }
-
-    if (route.kind === 'endpointItem' && method === 'PUT') {
-      const raw = (await readBody(req)) as Partial<EndpointRecord>;
-      const updated = await deps.endpointResourceService.updateEndpoint(
-        route.workspaceId,
-        route.projectId,
-        route.endpointId,
-        raw,
-      );
-      if (!updated) {
-        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
-        return;
-      }
-      json(res, 200, updated);
-      return;
-    }
-
-    if (route.kind === 'endpointItem' && method === 'DELETE') {
-      const deleted = await deps.endpointResourceService.deleteEndpoint(
-        route.workspaceId,
-        route.projectId,
-        route.endpointId,
-      );
-      if (!deleted) {
-        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
-        return;
-      }
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
-
-    if (route.kind === 'endpointImportOpenAICompatible' && method === 'POST') {
-      const raw = (await readBody(req)) as EndpointImportPayload;
-      const imported = await deps.endpointResourceService.importOpenAICompatible(
-        route.workspaceId,
-        route.projectId,
-        raw,
-      );
-      json(res, 201, imported);
-      return;
-    }
-
-    if (route.kind === 'endpointProxy' && method === 'POST') {
-      const endpoint = await deps.endpointResourceService.getEndpoint(
-        route.workspaceId,
-        route.projectId,
-        route.endpointId,
-      );
-      if (!endpoint) {
-        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
-        return;
-      }
-      if (endpoint.status !== 'active') {
-        json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_disabled' });
-        return;
-      }
-      if (!endpoint.credential_ref) {
-        json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_credential_missing' });
-        return;
-      }
-      const apiKey = await deps.endpointResourceService.getCredentialSecret(
-        route.workspaceId,
-        route.projectId,
-        endpoint.credential_ref,
-      );
-      if (!apiKey) {
-        json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_credential_not_found' });
-        return;
-      }
-      await proxyJsonRequest(req, res, {
-        upstreamUrl: buildUpstreamUrl(endpoint.base_url, route.proxyPath),
-        apiKey,
-        sourceModel: endpoint.source_model ?? endpoint.openai_model,
-        timeoutSeconds: endpoint.limits?.timeout_seconds,
-      });
+    const handledEndpointRoute = await handleEndpointRoute({
+      route,
+      method,
+      req,
+      res,
+      deps,
+      json,
+      readBody,
+      buildUpstreamUrl,
+      proxyJsonRequest,
+    });
+    if (handledEndpointRoute) {
       return;
     }
 

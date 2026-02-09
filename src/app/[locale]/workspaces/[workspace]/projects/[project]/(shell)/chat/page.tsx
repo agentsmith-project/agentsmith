@@ -32,6 +32,7 @@ import { useChatComposerActions } from '@/lib/chat/use-chat-composer-actions';
 import { buildChatViewModel } from '@/lib/chat/chat-view-model';
 import { useChatMessageActions } from '@/lib/chat/use-chat-message-actions';
 import { useChatThreadActions } from '@/lib/chat/use-chat-thread-actions';
+import { useChatDeleteDialog } from '@/lib/chat/use-chat-delete-dialog';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -77,8 +78,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [composerBySession, setComposerBySession] = useState<Record<string, string>>({});
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [deleteThreadDialogOpen, setDeleteThreadDialogOpen] = useState(false);
-  const [threadToDelete, setThreadToDelete] = useState<{ id: string; title?: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -237,6 +236,17 @@ export default function ChatPage({ params }: ChatPageProps) {
   });
 
   const {
+    deleteThreadDialogOpen,
+    setDeleteThreadDialogOpen,
+    threadToDelete,
+    setThreadToDelete,
+    handleConfirmDeleteThread,
+  } = useChatDeleteDialog({
+    deleteSession: (sessionId) => deleteSessionMutation.mutate(sessionId),
+    stopStreamingSession,
+  });
+
+  const {
     onSelectThread: handleSelectThread,
     onCreateThread: handleCreateThread,
     onRenameThread: handleRenameThread,
@@ -298,16 +308,6 @@ export default function ChatPage({ params }: ChatPageProps) {
     if (!canUseChat || !currentSessionId) return;
     retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
   }, [canUseChat, currentSessionId, retryAttachmentMutation]);
-
-  const handleConfirmDeleteThread = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    if (!threadToDelete) return;
-    const stopped = await stopStreamingSession(threadToDelete.id, 'replace');
-    if (!stopped) return;
-    deleteSessionMutation.mutate(threadToDelete.id);
-    setDeleteThreadDialogOpen(false);
-    setThreadToDelete(null);
-  }, [deleteSessionMutation, stopStreamingSession, threadToDelete]);
 
   if (!resolvedParams) {
     return (

@@ -47,6 +47,10 @@ Current chat integration verification scope:
   - attach a file in chat composer
   - send message and verify request includes non-empty `attachments` ids
   - verify upstream reply is returned normally
+- Upstream throttling visibility:
+  - upstream returns `429` with explicit `error_code/message`
+  - verify chat enters error state and shows the upstream message
+  - switch endpoint to healthy upstream and recover in same thread
 
 Current AIReady API status:
 

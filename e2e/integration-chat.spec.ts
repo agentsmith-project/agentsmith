@@ -19,12 +19,19 @@ async function startOpenAICompatibleUpstreamWith(args: {
   delayMs?: number;
   statusCode?: number;
   errorMessage?: string;
+  errorCode?: string;
 }): Promise<{
   server: Server;
   baseUrl: string;
   getRequestCount: () => number;
 }> {
-  const { replyText, delayMs = 0, statusCode = 200, errorMessage = 'upstream_error' } = args;
+  const {
+    replyText,
+    delayMs = 0,
+    statusCode = 200,
+    errorMessage = 'upstream_error',
+    errorCode = 'UPSTREAM_ERROR',
+  } = args;
   let requestCount = 0;
   const server = http.createServer((req, res) => {
     void (async () => {
@@ -49,7 +56,8 @@ async function startOpenAICompatibleUpstreamWith(args: {
         res.setHeader('content-type', 'application/json');
         res.end(
           JSON.stringify({
-            error: { message: errorMessage },
+            error_code: errorCode,
+            message: errorMessage,
           }),
         );
         return;
@@ -161,6 +169,15 @@ async function sendExpectStreamError(
   await expect(sendBtn).toBeEnabled({ timeout: 15_000 });
   await sendBtn.click();
   await expect(page.getByTestId('chat__stream-status')).toHaveText('Error', { timeout: 60_000 });
+}
+
+async function sendExpectStreamErrorMessage(
+  page: import('@playwright/test').Page,
+  text: string,
+  expectedMessage: string,
+) {
+  await sendExpectStreamError(page, text);
+  await expect(page.getByText(expectedMessage).first()).toBeVisible({ timeout: 30_000 });
 }
 
 async function sendAndStopDuringGeneration(
@@ -859,6 +876,78 @@ test.describe('integration chat flow', () => {
       expect(upstream.getRequestCount()).toBeGreaterThanOrEqual(1);
     } finally {
       await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+    }
+  });
+
+  test('chat surfaces upstream 429 message and can recover', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const throttledUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'never-used',
+      statusCode: 429,
+      errorCode: 'UPSTREAM_RATE_LIMIT',
+      errorMessage: 'upstream rate limited for integration test',
+    });
+    const healthyUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'Recovered after 429',
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      const suffix = Date.now();
+      const credentialName = `Integration Credential ${suffix}`;
+
+      await createCredential(page, locale, projectId, {
+        credentialName,
+        credentialValue: 'integration-secret-key',
+      });
+      const healthyEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Healthy ${suffix}`,
+        endpointModel: 'integration-chat-model-healthy',
+        upstreamBaseUrl: healthyUpstream.baseUrl,
+        credentialName,
+      });
+      const throttledEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Throttled ${suffix}`,
+        endpointModel: 'integration-chat-model-throttled',
+        upstreamBaseUrl: throttledUpstream.baseUrl,
+        credentialName,
+      });
+
+      const threadId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Warmup on healthy endpoint',
+        null,
+        'Recovered after 429',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, throttledEndpointId);
+      await sendExpectStreamErrorMessage(
+        page,
+        'This request should hit 429',
+        'upstream rate limited for integration test',
+      );
+      expect(throttledUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, healthyEndpointId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Recover after throttling',
+        threadId,
+        'Recovered after 429',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(2);
+    } finally {
+      await new Promise<void>((resolve) => throttledUpstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
     }
   });
 

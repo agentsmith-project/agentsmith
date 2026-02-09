@@ -30,6 +30,7 @@ import {
 } from '@/lib/chat/stream-state';
 import { useChatStreaming } from '@/lib/chat/use-chat-streaming';
 import { useChatMutations } from '@/lib/chat/use-chat-mutations';
+import { useChatVariants } from '@/lib/chat/use-chat-variants';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -75,14 +76,8 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [composerBySession, setComposerBySession] = useState<Record<string, string>>({});
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [activeVariantIndexByGroup, setActiveVariantIndexByGroup] = useState<Record<string, number>>({});
-  const lastVariantTailRef = useRef<Map<string, string>>(new Map());
-  const manualVariantGroupsRef = useRef<Set<string>>(new Set());
-  const pendingAutoGroupRef = useRef<string | null>(null);
-  const [suppressAutoScroll, setSuppressAutoScroll] = useState(false);
   const [deleteThreadDialogOpen, setDeleteThreadDialogOpen] = useState(false);
   const [threadToDelete, setThreadToDelete] = useState<{ id: string; title?: string } | null>(null);
-  const suppressTimerRef = useRef<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -135,25 +130,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   });
 
   const messages = useMemo(() => messagesData?.items ?? [], [messagesData?.items]);
-
-  const visibleLeafId = useMemo(() => {
-    if (messages.length === 0) return null;
-    const groups = buildVariantGroups(messages);
-    const { chain } = buildVisibleChain(messages, groups, activeVariantIndexByGroup);
-    const last = chain[chain.length - 1];
-    return last?.id ?? null;
-  }, [messages, activeVariantIndexByGroup]);
-
-  useEffect(() => {
-    manualVariantGroupsRef.current.clear();
-    pendingAutoGroupRef.current = null;
-    lastVariantTailRef.current = new Map();
-    setSuppressAutoScroll(false);
-    if (suppressTimerRef.current) {
-      window.clearTimeout(suppressTimerRef.current);
-      suppressTimerRef.current = null;
-    }
-  }, [currentSessionId]);
 
   const { data: attachmentsData } = useQuery({
     queryKey: chatAttachmentsKey(workspaceId, projectId, currentSessionId ?? ''),
@@ -235,49 +211,29 @@ export default function ChatPage({ params }: ChatPageProps) {
       stopRequiredBeforeReplaceFailed: t('stream_stop_required_before_replace_failed'),
       stopFailedRetry: t('stream_stop_failed_retry'),
     },
-    onReplaceStreamMeta: ({ variantGroupId, variantIndex }) => {
-      if (variantGroupId && typeof variantIndex === 'number') {
-        setActiveVariantIndexByGroup((prev) => ({ ...prev, [variantGroupId]: variantIndex }));
-      }
-    },
     upsertStreamAssistantToCache,
     patchStreamAssistantInCache,
   });
 
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const status = currentSessionId ? (streamStateBySession[currentSessionId]?.status ?? 'idle') : 'idle';
-    if (status !== 'idle') return;
+  const {
+    activeVariantIndexByGroup,
+    suppressAutoScroll,
+    onManualSelectVariant,
+    markPendingAutoGroup,
+    applyVariantFromMeta,
+  } = useChatVariants({
+    messages,
+    currentSessionId,
+    streamStateBySession,
+  });
+
+  const visibleLeafId = useMemo(() => {
+    if (messages.length === 0) return null;
     const groups = buildVariantGroups(messages);
-    const nextMap = new Map(lastVariantTailRef.current);
-    const updates: Record<string, number> = {};
-
-    for (const [groupId, group] of groups.groups.entries()) {
-      if (group.items.length === 0) continue;
-      const last = group.items[group.items.length - 1];
-      const lastId = last.id;
-      const prevId = lastVariantTailRef.current.get(groupId);
-      nextMap.set(groupId, lastId);
-
-      const shouldAuto =
-        pendingAutoGroupRef.current === groupId ||
-        !manualVariantGroupsRef.current.has(groupId);
-
-      if (
-        shouldAuto &&
-        (!Object.prototype.hasOwnProperty.call(activeVariantIndexByGroup, groupId) || (prevId && prevId !== lastId))
-      ) {
-        const idx = last.variant_index ?? last.revision_index ?? group.items.length - 1;
-        updates[groupId] = idx;
-      }
-    }
-
-    if (Object.keys(updates).length > 0) {
-      setActiveVariantIndexByGroup((prev) => ({ ...prev, ...updates }));
-    }
-    if (pendingAutoGroupRef.current) pendingAutoGroupRef.current = null;
-    lastVariantTailRef.current = nextMap;
-  }, [messages, activeVariantIndexByGroup, currentSessionId, streamStateBySession]);
+    const { chain } = buildVisibleChain(messages, groups, activeVariantIndexByGroup);
+    const last = chain[chain.length - 1];
+    return last?.id ?? null;
+  }, [messages, activeVariantIndexByGroup]);
 
   const handleSend = async () => {
     if (!canUseChat) return;
@@ -474,11 +430,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                   activeVariantIndexByGroup={activeVariantIndexByGroup}
                   editingMessageId={editingMessageId}
                   onSelectVariant={(groupId, nextIndex) => {
-                    manualVariantGroupsRef.current.add(groupId);
-                    setSuppressAutoScroll(true);
-                    if (suppressTimerRef.current) window.clearTimeout(suppressTimerRef.current);
-                    suppressTimerRef.current = window.setTimeout(() => setSuppressAutoScroll(false), 1500);
-                    setActiveVariantIndexByGroup((prev) => ({ ...prev, [groupId]: nextIndex }));
+                    onManualSelectVariant(groupId, nextIndex);
                   }}
                   onEdit={(m) => {
                     if (disabled) return;
@@ -497,14 +449,9 @@ export default function ChatPage({ params }: ChatPageProps) {
                     });
                     upsertStreamAssistantToCache(currentSessionId, edited);
                     if (edited.logical_id && typeof edited.revision_index === 'number') {
-                      const logicalId = edited.logical_id;
-                      const revisionIndex = edited.revision_index;
-                      setActiveVariantIndexByGroup((prev) => ({
-                        ...prev,
-                        [logicalId]: revisionIndex,
-                      }));
+                      applyVariantFromMeta(edited.logical_id, edited.revision_index);
                     }
-                    pendingAutoGroupRef.current = edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null);
+                    markPendingAutoGroup(edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null));
                     setEditingMessageId(null);
                     if (activeSession?.model && activeSession?.endpoint_id) {
                       const groups = buildVariantGroups(messages);
@@ -531,7 +478,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                     if (!activeSession || !currentSessionId) return;
                     if (messages.length) {
                       const groups = buildVariantGroups(messages);
-                      pendingAutoGroupRef.current = getGroupIdForMessageId(groups, m.id);
+                      markPendingAutoGroup(getGroupIdForMessageId(groups, m.id));
                     }
                     await runStream({
                       sessionId: currentSessionId,

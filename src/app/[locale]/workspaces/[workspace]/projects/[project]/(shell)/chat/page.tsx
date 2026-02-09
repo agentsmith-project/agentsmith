@@ -12,7 +12,7 @@
 
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -20,10 +20,10 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
-import type { Attachment, ChatMessage, Endpoint } from '@/lib/api/types';
+import type { ChatMessage, Endpoint } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
-import { chatAttachmentsKey, chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
+import { chatMessagesKey } from '@/lib/chat/query-keys';
 import {
   mapRuntimeStatusToStreamStatus,
   type SessionStreamStatus,
@@ -31,6 +31,7 @@ import {
 import { useChatStreaming } from '@/lib/chat/use-chat-streaming';
 import { useChatMutations } from '@/lib/chat/use-chat-mutations';
 import { useChatVariants } from '@/lib/chat/use-chat-variants';
+import { useChatData } from '@/lib/chat/use-chat-data';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -96,13 +97,21 @@ export default function ChatPage({ params }: ChatPageProps) {
   const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
   const endpointAPI = useMemo(() => new EndpointAPI(apiClient), [apiClient]);
 
-  const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
-    queryKey: chatSessionsKey(workspaceId, projectId),
-    queryFn: () => chatAPI.getSessions(workspaceId, projectId, { page: 1, page_size: 1000 }),
-    enabled: !!workspaceId && !!projectId && canReadThreads,
+  const {
+    sessions,
+    sessionsLoading,
+    endpoints,
+    messages,
+    messagesLoading,
+    attachments,
+  } = useChatData({
+    chatAPI,
+    endpointAPI,
+    workspaceId,
+    projectId,
+    currentSessionId,
+    canReadThreads,
   });
-
-  const sessions = useMemo(() => sessionsData?.items ?? [], [sessionsData]);
 
   useEffect(() => {
     if (!currentSessionId && sessions.length > 0) {
@@ -111,41 +120,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   }, [currentSessionId, sessions]);
 
   const activeSession = sessions.find((s) => s.id === currentSessionId) ?? null;
-
-  const { data: endpointsData } = useQuery({
-    queryKey: ['endpoints', workspaceId, projectId],
-    queryFn: () => endpointAPI.list(workspaceId, projectId, { page: 1, page_size: 500 }),
-    enabled: !!workspaceId && !!projectId && canReadThreads,
-  });
-
-  const endpoints = endpointsData?.items ?? [];
-
-  const { data: messagesData, isLoading: messagesLoading } = useQuery({
-    queryKey: chatMessagesKey(workspaceId, projectId, currentSessionId ?? ''),
-    queryFn: () => {
-      if (!currentSessionId) return { items: [], total: 0, page: 1, page_size: 500, has_more: false };
-      return chatAPI.getMessages(workspaceId, projectId, currentSessionId, { page: 1, page_size: 500 });
-    },
-    enabled: !!currentSessionId && !!workspaceId && !!projectId && canReadThreads,
-  });
-
-  const messages = useMemo(() => messagesData?.items ?? [], [messagesData?.items]);
-
-  const { data: attachmentsData } = useQuery({
-    queryKey: chatAttachmentsKey(workspaceId, projectId, currentSessionId ?? ''),
-    queryFn: () => {
-      if (!currentSessionId) return { items: [], total: 0 };
-      return chatAPI.getAttachments(workspaceId, projectId, currentSessionId);
-    },
-    enabled: !!currentSessionId && !!workspaceId && !!projectId && canReadThreads,
-    refetchInterval: (query) => {
-      const data = query.state.data as { items: Attachment[]; total: number } | undefined;
-      const items = data?.items ?? [];
-      return items.some((a) => a.upload_status === 'uploading' || a.upload_status === 'processing') ? 2000 : false;
-    },
-  });
-
-  const attachments = attachmentsData?.items ?? [];
 
   const {
     createSessionMutation,

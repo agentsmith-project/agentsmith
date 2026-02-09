@@ -20,7 +20,7 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
-import type { ChatMessage, Endpoint } from '@/lib/api/types';
+import type { ChatMessage } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
 import { chatMessagesKey } from '@/lib/chat/query-keys';
@@ -31,6 +31,7 @@ import { useChatData } from '@/lib/chat/use-chat-data';
 import { useChatComposerActions } from '@/lib/chat/use-chat-composer-actions';
 import { buildChatViewModel } from '@/lib/chat/chat-view-model';
 import { useChatMessageActions } from '@/lib/chat/use-chat-message-actions';
+import { useChatThreadActions } from '@/lib/chat/use-chat-thread-actions';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -235,50 +236,27 @@ export default function ChatPage({ params }: ChatPageProps) {
     fileInputRef,
   });
 
-  const handleSelectThread = useCallback((id: string) => {
-    setCurrentSessionId(id);
-    setEditingMessageId(null);
-  }, []);
-
-  const handleCreateThread = useCallback(() => {
-    if (!canUseChat) return;
-    createSessionMutation.mutate();
-  }, [canUseChat, createSessionMutation]);
-
-  const handleRenameThread = useCallback((sessionId: string, title: string) => {
-    if (!canManageChatSessions) return;
-    updateSessionMutation.mutate({ sessionId, data: { title } });
-  }, [canManageChatSessions, updateSessionMutation]);
-
-  const handleToggleThreadStar = useCallback((sessionId: string, next: boolean) => {
-    if (!canManageChatSessions) return;
-    updateSessionMutation.mutate({ sessionId, data: { starred: next } });
-  }, [canManageChatSessions, updateSessionMutation]);
-
-  const handleToggleThreadPin = useCallback((sessionId: string, next: boolean) => {
-    if (!canManageChatSessions) return;
-    updateSessionMutation.mutate({ sessionId, data: { pinned: next } });
-  }, [canManageChatSessions, updateSessionMutation]);
-
-  const handleDeleteThreadRequest = useCallback((sessionId: string) => {
-    if (!canManageChatSessions) return;
-    const thread = sessions.find((session) => session.id === sessionId) || null;
-    setThreadToDelete({ id: sessionId, title: thread?.title });
-    setDeleteThreadDialogOpen(true);
-  }, [canManageChatSessions, sessions]);
-
-  const handleRenameActiveSession = useCallback((title: string) => {
-    if (!canManageChatSessions || !activeSession) return;
-    updateSessionMutation.mutate({ sessionId: activeSession.id, data: { title } });
-  }, [activeSession, canManageChatSessions, updateSessionMutation]);
-
-  const handleSelectActiveEndpoint = useCallback((endpoint: Endpoint) => {
-    if (!canManageChatSessions || !activeSession) return;
-    updateSessionMutation.mutate({
-      sessionId: activeSession.id,
-      data: { endpoint_id: endpoint.id, model: endpoint.openai_model },
-    });
-  }, [activeSession, canManageChatSessions, updateSessionMutation]);
+  const {
+    onSelectThread: handleSelectThread,
+    onCreateThread: handleCreateThread,
+    onRenameThread: handleRenameThread,
+    onToggleThreadStar: handleToggleThreadStar,
+    onToggleThreadPin: handleToggleThreadPin,
+    onDeleteThreadRequest: handleDeleteThreadRequest,
+    onRenameActiveSession: handleRenameActiveSession,
+    onSelectActiveEndpoint: handleSelectActiveEndpoint,
+  } = useChatThreadActions({
+    canUseChat,
+    canManageChatSessions,
+    sessions,
+    activeSession,
+    createSession: () => createSessionMutation.mutate(),
+    updateSession: (input) => updateSessionMutation.mutate(input),
+    setCurrentSessionId,
+    setEditingMessageId,
+    setThreadToDelete,
+    setDeleteThreadDialogOpen,
+  });
 
   const handleSelectVariant = useCallback((groupId: string, nextIndex: number) => {
     onManualSelectVariant(groupId, nextIndex);

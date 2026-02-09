@@ -285,6 +285,26 @@ async function selectEndpointInChat(
   expect(json?.endpoint_id).toBe(endpointId);
 }
 
+async function createNewThreadInChat(
+  page: import('@playwright/test').Page,
+  locale: string,
+  projectId: string,
+): Promise<string> {
+  await page.getByRole('link', { name: /chat|对话/i }).first().click();
+  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+    timeout: 30_000,
+  });
+  const items = page.getByTestId('chat__thread-item');
+  const beforeCount = await items.count();
+  await page.getByTestId('chat__new-thread-btn').click();
+  await expect(items).toHaveCount(beforeCount + 1, { timeout: 30_000 });
+  const newThread = items.first();
+  const threadId = await newThread.getAttribute('data-thread-id');
+  expect(threadId).toBeTruthy();
+  await newThread.locator('div[role="button"]').first().click();
+  return threadId!;
+}
+
 async function openChatAndSend(
   page: import('@playwright/test').Page,
   locale: string,
@@ -580,6 +600,86 @@ test.describe('integration chat flow', () => {
     } finally {
       await new Promise<void>((resolve) => slowUpstream.server.close(() => resolve()));
       await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
+    }
+  });
+
+  test('chat threads keep endpoint isolation when switching between sessions', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const upstreamA = await startOpenAICompatibleUpstreamWith({ replyText: 'Thread A reply' });
+    const upstreamB = await startOpenAICompatibleUpstreamWith({ replyText: 'Thread B reply' });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      const suffix = Date.now();
+      const credentialName = `Integration Credential ${suffix}`;
+
+      await createCredential(page, locale, projectId, {
+        credentialName,
+        credentialValue: 'integration-secret-key',
+      });
+      await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint A ${suffix}`,
+        endpointModel: 'integration-chat-model-a',
+        upstreamBaseUrl: upstreamA.baseUrl,
+        credentialName,
+      });
+      const endpointBId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint B ${suffix}`,
+        endpointModel: 'integration-chat-model-b',
+        upstreamBaseUrl: upstreamB.baseUrl,
+        credentialName,
+      });
+
+      const threadAId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Thread A message 1',
+        null,
+        'Thread A reply',
+      );
+      expect(upstreamA.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      const threadBId = await createNewThreadInChat(page, locale, projectId);
+      await selectEndpointInChat(page, endpointBId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Thread B message 1',
+        threadBId,
+        'Thread B reply',
+      );
+      expect(upstreamB.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      const beforeA2 = upstreamA.getRequestCount();
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Thread A message 2',
+        threadAId,
+        'Thread A reply',
+      );
+      expect(upstreamA.getRequestCount()).toBeGreaterThanOrEqual(beforeA2 + 1);
+
+      const beforeB2 = upstreamB.getRequestCount();
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Thread B message 2',
+        threadBId,
+        'Thread B reply',
+      );
+      expect(upstreamB.getRequestCount()).toBeGreaterThanOrEqual(beforeB2 + 1);
+    } finally {
+      await new Promise<void>((resolve) => upstreamA.server.close(() => resolve()));
+      await new Promise<void>((resolve) => upstreamB.server.close(() => resolve()));
     }
   });
 

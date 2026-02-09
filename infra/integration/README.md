@@ -35,6 +35,10 @@ Current chat integration verification scope:
   - route one turn to a delayed upstream
   - click `Stop` during generation
   - switch to healthy endpoint and continue in same thread
+- Session isolation:
+  - create multiple chat threads in one project
+  - bind different endpoints per thread
+  - switch between threads and verify each turn routes to its thread-bound endpoint
 
 Current AIReady API status:
 

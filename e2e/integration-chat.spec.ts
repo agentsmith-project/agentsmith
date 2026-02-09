@@ -255,7 +255,9 @@ async function selectEndpointInChat(
   );
   await page.getByTestId('chat__model-trigger').click();
   await page.getByTestId(`chat__model-item--${endpointId}`).click();
-  await updateSessionResponse;
+  const updateRes = await updateSessionResponse;
+  const json = (await updateRes.json().catch(() => null)) as { endpoint_id?: string } | null;
+  expect(json?.endpoint_id).toBe(endpointId);
 }
 
 async function openChatAndSend(

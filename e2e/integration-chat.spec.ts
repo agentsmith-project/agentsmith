@@ -951,4 +951,148 @@ test.describe('integration chat flow', () => {
     }
   });
 
+  test('chat surfaces upstream 401 message and can recover', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const unauthorizedUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'never-used',
+      statusCode: 401,
+      errorCode: 'UPSTREAM_UNAUTHORIZED',
+      errorMessage: 'upstream unauthorized for integration test',
+    });
+    const healthyUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'Recovered after 401',
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      const suffix = Date.now();
+      const credentialName = `Integration Credential ${suffix}`;
+
+      await createCredential(page, locale, projectId, {
+        credentialName,
+        credentialValue: 'integration-secret-key',
+      });
+      const healthyEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Healthy ${suffix}`,
+        endpointModel: 'integration-chat-model-healthy',
+        upstreamBaseUrl: healthyUpstream.baseUrl,
+        credentialName,
+      });
+      const unauthorizedEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Unauthorized ${suffix}`,
+        endpointModel: 'integration-chat-model-unauthorized',
+        upstreamBaseUrl: unauthorizedUpstream.baseUrl,
+        credentialName,
+      });
+
+      const threadId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Warmup on healthy endpoint',
+        null,
+        'Recovered after 401',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, unauthorizedEndpointId);
+      await sendExpectStreamErrorMessage(
+        page,
+        'This request should hit 401',
+        'upstream unauthorized for integration test',
+      );
+      expect(unauthorizedUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, healthyEndpointId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Recover after unauthorized',
+        threadId,
+        'Recovered after 401',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(2);
+    } finally {
+      await new Promise<void>((resolve) => unauthorizedUpstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
+    }
+  });
+
+  test('chat surfaces upstream 403 message and can recover', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const forbiddenUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'never-used',
+      statusCode: 403,
+      errorCode: 'UPSTREAM_FORBIDDEN',
+      errorMessage: 'upstream forbidden for integration test',
+    });
+    const healthyUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'Recovered after 403',
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      const suffix = Date.now();
+      const credentialName = `Integration Credential ${suffix}`;
+
+      await createCredential(page, locale, projectId, {
+        credentialName,
+        credentialValue: 'integration-secret-key',
+      });
+      const healthyEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Healthy ${suffix}`,
+        endpointModel: 'integration-chat-model-healthy',
+        upstreamBaseUrl: healthyUpstream.baseUrl,
+        credentialName,
+      });
+      const forbiddenEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: `Integration Endpoint Forbidden ${suffix}`,
+        endpointModel: 'integration-chat-model-forbidden',
+        upstreamBaseUrl: forbiddenUpstream.baseUrl,
+        credentialName,
+      });
+
+      const threadId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Warmup on healthy endpoint',
+        null,
+        'Recovered after 403',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, forbiddenEndpointId);
+      await sendExpectStreamErrorMessage(
+        page,
+        'This request should hit 403',
+        'upstream forbidden for integration test',
+      );
+      expect(forbiddenUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, healthyEndpointId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Recover after forbidden',
+        threadId,
+        'Recovered after 403',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(2);
+    } finally {
+      await new Promise<void>((resolve) => forbiddenUpstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
+    }
+  });
+
 });

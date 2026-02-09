@@ -51,6 +51,10 @@ Current chat integration verification scope:
   - upstream returns `429` with explicit `error_code/message`
   - verify chat enters error state and shows the upstream message
   - switch endpoint to healthy upstream and recover in same thread
+- Upstream authz/authn visibility:
+  - upstream returns `401` / `403` with explicit `error_code/message`
+  - verify chat enters error state and shows exact upstream message
+  - switch endpoint to healthy upstream and recover in same thread
 
 Current AIReady API status:
 

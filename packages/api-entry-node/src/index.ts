@@ -4,53 +4,9 @@ import {
   ErrorResponseSchema,
 } from '@mbos/contracts';
 import {
-  CancelAIReadyJobUseCase,
-  BatchCancelSourceAIReadyUseCase,
-  BatchStartSourceAIReadyUseCase,
-  CancelSourceAIReadyUseCase,
-  CreateAIReadyJobUseCase,
-  CreateSourceLibraryUseCase,
-  CreateProjectUseCase,
-  CreateSourceUseCase,
-  DeleteSourceLibraryUseCase,
-  DeleteSourceUseCase,
-  DeleteProjectUseCase,
-  DownloadSourceUseCase,
-  GetSourceUseCase,
-  GetAIReadyJobUseCase,
-  GetSourcesQuotaUseCase,
-  GetProjectUseCase,
-  ListProjectsUseCase,
-  ListSourceLibrariesUseCase,
-  ListSourcesUseCase,
-  RunQueuedAIReadyJobUseCase,
-  RetrySourceAIReadyUseCase,
-  StartSourceAIReadyUseCase,
-  UpdateSourceLibraryUseCase,
-  UpdateProjectUseCase,
   drainJobQueue,
 } from '@mbos/application';
-import {
-  DeterministicEmbeddingProvider,
-  FixedCharTextChunker,
-  InMemoryJobQueue,
-  InMemoryCache,
-  InMemoryJsonDocStore,
-  InMemoryObjectStore,
-  JsonDocAIReadyJobRepo,
-  JsonDocSourceRepo,
-  JsonDocSourceLibraryRepo,
-  MinioObjectStore,
-  MongoJsonDocStore,
-  NoopVectorStore,
-  PgVectorStore,
-  RedisCache,
-  createProjectRepoFactoryResult,
-  type ProjectRepoFactoryResult,
-  SimpleIdGenerator,
-  SystemClock,
-  Utf8DocumentParser,
-} from '@mbos/adapters-private';
+import type { ProjectRepoFactoryResult } from '@mbos/adapters-private';
 import {
   ACTIVE_CHAT_STREAMS,
 } from './chat-stream-runtime.js';
@@ -60,8 +16,6 @@ import { handleEndpointRoute } from './endpoint-route-handler.js';
 import { verifyBearerToken } from './auth.js';
 import { handleProjectSourceRoute } from './project-source-route-handler.js';
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
-import { EndpointResourceService } from './endpoint-resource-service.js';
-import { ChatResourceService } from './chat-resource-service.js';
 import { matchProjectsRoute } from './projects-route-match.js';
 import {
   OWNER_WORKSPACE_PERMISSIONS,
@@ -69,97 +23,13 @@ import {
   resolveProjectPermissions,
 } from './workspace-permissions.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import {
+  createDefaultNodeApiDeps,
+  createNodeApiDepsFromEnv,
+} from './node-api-deps-factory.js';
 
 export type { NodeApiDeps } from './node-api-deps.js';
-
-export function createDefaultNodeApiDeps(): NodeApiDeps {
-  const projectRepo = createProjectRepoFactoryResult({}).projectRepo;
-  const cache = new InMemoryCache();
-  const clock = new SystemClock();
-  const docStore = new InMemoryJsonDocStore();
-  const chatResourceService = new ChatResourceService(docStore);
-  const sourceRepo = new JsonDocSourceRepo(docStore);
-  const sourceLibraryRepo = new JsonDocSourceLibraryRepo(docStore);
-  const aiReadyJobRepo = new JsonDocAIReadyJobRepo(docStore);
-  const aiReadyJobQueue = new InMemoryJobQueue();
-  const objectStore = new InMemoryObjectStore();
-  const endpointResourceService = new EndpointResourceService(docStore);
-  const sourceBucket = 'mbos-dev';
-  const vectorStore = new NoopVectorStore();
-  const parser = new Utf8DocumentParser();
-  const chunker = new FixedCharTextChunker();
-  const embeddings = new DeterministicEmbeddingProvider();
-  const startSourceAIReadyUseCase = new StartSourceAIReadyUseCase(sourceRepo, clock, cache);
-  const cancelSourceAIReadyUseCase = new CancelSourceAIReadyUseCase(sourceRepo, clock, cache);
-  const runQueuedAIReadyJobUseCase = new RunQueuedAIReadyJobUseCase(
-    sourceRepo,
-    sourceLibraryRepo,
-    aiReadyJobRepo,
-    objectStore,
-    parser,
-    chunker,
-    embeddings,
-    vectorStore,
-    clock,
-    cache,
-    sourceBucket,
-  );
-
-  return {
-    cache,
-    chatResourceService,
-    endpointResourceService,
-    sourceBucket,
-    aiReadyJobQueue,
-    createAIReadyJobUseCase: new CreateAIReadyJobUseCase(
-      sourceRepo,
-      sourceLibraryRepo,
-      aiReadyJobRepo,
-      aiReadyJobQueue,
-      clock,
-      cache,
-    ),
-    createSourceLibraryUseCase: new CreateSourceLibraryUseCase(
-      sourceLibraryRepo,
-      new SimpleIdGenerator(),
-      new SystemClock(),
-      cache,
-    ),
-    createProjectUseCase: new CreateProjectUseCase(projectRepo, new SimpleIdGenerator(), new SystemClock()),
-    createSourceUseCase: new CreateSourceUseCase(
-      sourceRepo,
-      objectStore,
-      new SimpleIdGenerator(),
-      new SystemClock(),
-      cache,
-      sourceBucket,
-    ),
-    deleteSourceLibraryUseCase: new DeleteSourceLibraryUseCase(sourceLibraryRepo, cache),
-    deleteSourceUseCase: new DeleteSourceUseCase(sourceRepo, objectStore, cache, sourceBucket),
-    downloadSourceUseCase: new DownloadSourceUseCase(sourceRepo, objectStore, sourceBucket),
-    deleteProjectUseCase: new DeleteProjectUseCase(projectRepo),
-    getSourceUseCase: new GetSourceUseCase(sourceRepo),
-    getAIReadyJobUseCase: new GetAIReadyJobUseCase(aiReadyJobRepo, cache),
-    getSourcesQuotaUseCase: new GetSourcesQuotaUseCase(sourceRepo),
-    startSourceAIReadyUseCase,
-    cancelSourceAIReadyUseCase,
-    retrySourceAIReadyUseCase: new RetrySourceAIReadyUseCase(startSourceAIReadyUseCase),
-    batchStartSourceAIReadyUseCase: new BatchStartSourceAIReadyUseCase(startSourceAIReadyUseCase),
-    batchCancelSourceAIReadyUseCase: new BatchCancelSourceAIReadyUseCase(cancelSourceAIReadyUseCase),
-    getProjectUseCase: new GetProjectUseCase(projectRepo),
-    listProjectsUseCase: new ListProjectsUseCase(projectRepo),
-    listSourceLibrariesUseCase: new ListSourceLibrariesUseCase(sourceLibraryRepo, cache),
-    listSourcesUseCase: new ListSourcesUseCase(sourceRepo, cache),
-    updateSourceLibraryUseCase: new UpdateSourceLibraryUseCase(
-      sourceLibraryRepo,
-      new SystemClock(),
-      cache,
-    ),
-    updateProjectUseCase: new UpdateProjectUseCase(projectRepo, new SystemClock()),
-    cancelAIReadyJobUseCase: new CancelAIReadyJobUseCase(aiReadyJobRepo, clock, cache),
-    runQueuedAIReadyJobUseCase,
-  };
-}
+export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
 
 function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
   const cleanBase = baseUrl.replace(/\/+$/, '');
@@ -339,127 +209,10 @@ function startFromCli(): void {
     throw new Error('invalid_port');
   }
 
-  const factory = createProjectRepoFactoryResult({
-    databaseUrl: process.env.DATABASE_URL,
-  });
-  const cache = process.env.REDIS_URL
-    ? new RedisCache({ url: process.env.REDIS_URL })
-    : new InMemoryCache();
-  const clock = new SystemClock();
-  const docStore = process.env.MONGO_URL
-    ? new MongoJsonDocStore({
-      url: process.env.MONGO_URL,
-      dbName: process.env.MONGO_DB_NAME ?? 'mbos',
-    })
-    : new InMemoryJsonDocStore();
-  const chatResourceService = new ChatResourceService(docStore);
-  const objectStore = process.env.MINIO_ENDPOINT
-    ? new MinioObjectStore({
-      endPoint: process.env.MINIO_ENDPOINT,
-      port: Number(process.env.MINIO_PORT ?? '19000'),
-      useSSL: (process.env.MINIO_USE_SSL ?? 'false') === 'true',
-      accessKey: process.env.MINIO_ACCESS_KEY ?? 'mbos',
-      secretKey: process.env.MINIO_SECRET_KEY ?? 'mbos_dev_password',
-    })
-    : new InMemoryObjectStore();
-  const sourceRepo = new JsonDocSourceRepo(docStore);
-  const sourceLibraryRepo = new JsonDocSourceLibraryRepo(docStore);
-  const aiReadyJobRepo = new JsonDocAIReadyJobRepo(docStore);
-  const aiReadyJobQueue = new InMemoryJobQueue();
-  const endpointResourceService = new EndpointResourceService(docStore);
-  const sourceBucket = process.env.MINIO_BUCKET ?? 'mbos-dev';
-  const parser = new Utf8DocumentParser();
-  const chunker = new FixedCharTextChunker({
-    chunkSize: Number(process.env.AIREADY_CHUNK_SIZE ?? '1000'),
-    overlap: Number(process.env.AIREADY_CHUNK_OVERLAP ?? '100'),
-  });
-  const embeddings = new DeterministicEmbeddingProvider(
-    Number(process.env.AIREADY_EMBEDDING_DIMENSIONS ?? '1536'),
-  );
-  const vectorStore = process.env.DATABASE_URL
-    ? new PgVectorStore({
-      databaseUrl: process.env.DATABASE_URL,
-      embeddingDimensions: embeddings.dimensions(),
-    })
-    : new NoopVectorStore();
-  if (vectorStore instanceof PgVectorStore) {
-    void vectorStore.ensureSchema().catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : 'unknown_error';
-      process.stderr.write(`[api-entry-node] pgvector schema init failed: ${message}\n`);
-    });
-  }
-  const startSourceAIReadyUseCase = new StartSourceAIReadyUseCase(sourceRepo, clock, cache);
-  const cancelSourceAIReadyUseCase = new CancelSourceAIReadyUseCase(sourceRepo, clock, cache);
-  const runQueuedAIReadyJobUseCase = new RunQueuedAIReadyJobUseCase(
-    sourceRepo,
-    sourceLibraryRepo,
-    aiReadyJobRepo,
-    objectStore,
-    parser,
-    chunker,
-    embeddings,
-    vectorStore,
-    clock,
-    cache,
-    sourceBucket,
-  );
-  const deps: NodeApiDeps = {
-    cache,
-    chatResourceService,
-    endpointResourceService,
-    sourceBucket,
-    aiReadyJobQueue,
-    createAIReadyJobUseCase: new CreateAIReadyJobUseCase(
-      sourceRepo,
-      sourceLibraryRepo,
-      aiReadyJobRepo,
-      aiReadyJobQueue,
-      clock,
-      cache,
-    ),
-    createSourceLibraryUseCase: new CreateSourceLibraryUseCase(
-      sourceLibraryRepo,
-      new SimpleIdGenerator(),
-      new SystemClock(),
-      cache,
-    ),
-    createProjectUseCase: new CreateProjectUseCase(factory.projectRepo, new SimpleIdGenerator(), new SystemClock()),
-    createSourceUseCase: new CreateSourceUseCase(
-      sourceRepo,
-      objectStore,
-      new SimpleIdGenerator(),
-      new SystemClock(),
-      cache,
-      sourceBucket,
-    ),
-    deleteSourceLibraryUseCase: new DeleteSourceLibraryUseCase(sourceLibraryRepo, cache),
-    deleteSourceUseCase: new DeleteSourceUseCase(sourceRepo, objectStore, cache, sourceBucket),
-    downloadSourceUseCase: new DownloadSourceUseCase(sourceRepo, objectStore, sourceBucket),
-    deleteProjectUseCase: new DeleteProjectUseCase(factory.projectRepo),
-    getSourceUseCase: new GetSourceUseCase(sourceRepo),
-    getAIReadyJobUseCase: new GetAIReadyJobUseCase(aiReadyJobRepo, cache),
-    getSourcesQuotaUseCase: new GetSourcesQuotaUseCase(sourceRepo),
-    startSourceAIReadyUseCase,
-    cancelSourceAIReadyUseCase,
-    retrySourceAIReadyUseCase: new RetrySourceAIReadyUseCase(startSourceAIReadyUseCase),
-    batchStartSourceAIReadyUseCase: new BatchStartSourceAIReadyUseCase(startSourceAIReadyUseCase),
-    batchCancelSourceAIReadyUseCase: new BatchCancelSourceAIReadyUseCase(cancelSourceAIReadyUseCase),
-    getProjectUseCase: new GetProjectUseCase(factory.projectRepo),
-    listProjectsUseCase: new ListProjectsUseCase(factory.projectRepo),
-    listSourceLibrariesUseCase: new ListSourceLibrariesUseCase(sourceLibraryRepo, cache),
-    listSourcesUseCase: new ListSourcesUseCase(sourceRepo, cache),
-    updateSourceLibraryUseCase: new UpdateSourceLibraryUseCase(
-      sourceLibraryRepo,
-      new SystemClock(),
-      cache,
-    ),
-    updateProjectUseCase: new UpdateProjectUseCase(factory.projectRepo, new SystemClock()),
-    cancelAIReadyJobUseCase: new CancelAIReadyJobUseCase(aiReadyJobRepo, clock, cache),
-    runQueuedAIReadyJobUseCase,
-  };
-  createNodeApiServer(port, deps, factory);
+  const { deps, lifecycle, repoMode } = createNodeApiDepsFromEnv(process.env);
+  createNodeApiServer(port, deps, lifecycle);
   // Keep log compact and machine-readable for local integration.
-  process.stdout.write(`[api-entry-node] listening on ${port} (repo=${process.env.DATABASE_URL ? 'postgres' : 'memory'})\n`);
+  process.stdout.write(`[api-entry-node] listening on ${port} (repo=${repoMode})\n`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

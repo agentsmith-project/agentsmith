@@ -1,5 +1,5 @@
 import type http from 'node:http';
-import type { NodeApiDeps } from './index.js';
+import type { NodeApiDeps } from './node-api-deps.js';
 
 interface AnyRoute {
   kind: string;

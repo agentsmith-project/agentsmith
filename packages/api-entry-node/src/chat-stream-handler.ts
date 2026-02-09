@@ -1,6 +1,6 @@
 import type http from 'node:http';
 import type { ChatRoute } from './chat-route-match.js';
-import type { NodeApiDeps } from './index.js';
+import type { NodeApiDeps } from './node-api-deps.js';
 import {
   ACTIVE_CHAT_STREAMS,
   STREAM_REGISTRY_FINAL_TTL_SECONDS,

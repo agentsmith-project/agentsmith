@@ -51,7 +51,6 @@ import {
   SystemClock,
   Utf8DocumentParser,
 } from '@mbos/adapters-private';
-import type { CachePort } from '@mbos/ports';
 import {
   ACTIVE_CHAT_STREAMS,
 } from './chat-stream-runtime.js';
@@ -69,38 +68,9 @@ import {
   buildWorkspaceRecords,
   resolveProjectPermissions,
 } from './workspace-permissions.js';
+import type { NodeApiDeps } from './node-api-deps.js';
 
-export interface NodeApiDeps {
-  cache: CachePort;
-  chatResourceService: ChatResourceService;
-  endpointResourceService: EndpointResourceService;
-  sourceBucket: string;
-  aiReadyJobQueue: InMemoryJobQueue;
-  createAIReadyJobUseCase: CreateAIReadyJobUseCase;
-  createSourceLibraryUseCase: CreateSourceLibraryUseCase;
-  createProjectUseCase: CreateProjectUseCase;
-  createSourceUseCase: CreateSourceUseCase;
-  deleteSourceLibraryUseCase: DeleteSourceLibraryUseCase;
-  deleteSourceUseCase: DeleteSourceUseCase;
-  downloadSourceUseCase: DownloadSourceUseCase;
-  getSourceUseCase: GetSourceUseCase;
-  getAIReadyJobUseCase: GetAIReadyJobUseCase;
-  getSourcesQuotaUseCase: GetSourcesQuotaUseCase;
-  startSourceAIReadyUseCase: StartSourceAIReadyUseCase;
-  cancelSourceAIReadyUseCase: CancelSourceAIReadyUseCase;
-  retrySourceAIReadyUseCase: RetrySourceAIReadyUseCase;
-  batchStartSourceAIReadyUseCase: BatchStartSourceAIReadyUseCase;
-  batchCancelSourceAIReadyUseCase: BatchCancelSourceAIReadyUseCase;
-  deleteProjectUseCase: DeleteProjectUseCase;
-  getProjectUseCase: GetProjectUseCase;
-  listProjectsUseCase: ListProjectsUseCase;
-  listSourceLibrariesUseCase: ListSourceLibrariesUseCase;
-  listSourcesUseCase: ListSourcesUseCase;
-  updateSourceLibraryUseCase: UpdateSourceLibraryUseCase;
-  updateProjectUseCase: UpdateProjectUseCase;
-  cancelAIReadyJobUseCase: CancelAIReadyJobUseCase;
-  runQueuedAIReadyJobUseCase: RunQueuedAIReadyJobUseCase;
-}
+export type { NodeApiDeps } from './node-api-deps.js';
 
 export function createDefaultNodeApiDeps(): NodeApiDeps {
   const projectRepo = createProjectRepoFactoryResult({}).projectRepo;

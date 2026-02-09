@@ -9,7 +9,7 @@ import {
 } from '@mbos/contracts';
 import { drainJobQueue } from '@mbos/application';
 import type { AuthenticatedUser } from './auth.js';
-import type { NodeApiDeps } from './index.js';
+import type { NodeApiDeps } from './node-api-deps.js';
 
 interface WorkspaceRecordLike {
   id: string;

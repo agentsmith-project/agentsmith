@@ -70,6 +70,12 @@ import {
   writeStreamRegistry,
 } from './chat-stream-runtime.js';
 import { matchChatRoute, type ChatRoute } from './chat-route-match.js';
+import {
+  parseOpenAIStreamChunk,
+  safeAssistantContent,
+  safeAssistantFinishReason,
+  safeAssistantUsageTokens,
+} from './chat-openai-payload.js';
 
 interface AuthenticatedUser {
   id: string;
@@ -1214,77 +1220,6 @@ async function proxyJsonRequest(
 function sseWrite(res: http.ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
-}
-
-function parseOpenAIStreamChunk(
-  chunk: string,
-): Array<{ delta: string; done: boolean; finishReason?: string | null; usageTokens?: number }> {
-  const events: Array<{ delta: string; done: boolean; finishReason?: string | null; usageTokens?: number }> = [];
-  const blocks = chunk.split('\n\n').map((item) => item.trim()).filter(Boolean);
-  for (const block of blocks) {
-    const lines = block.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice('data:'.length).trim();
-      if (data === '[DONE]') {
-        events.push({ delta: '', done: true, finishReason: null });
-        continue;
-      }
-      try {
-        const payload = JSON.parse(data) as {
-          usage?: { total_tokens?: unknown };
-          choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
-        };
-        const usageTokensRaw = payload.usage?.total_tokens;
-        const usageTokens = typeof usageTokensRaw === 'number' && Number.isFinite(usageTokensRaw)
-          ? usageTokensRaw
-          : undefined;
-        const delta = payload.choices?.[0]?.delta?.content;
-        const finishReasonRaw = payload.choices?.[0]?.finish_reason;
-        const finishReason = typeof finishReasonRaw === 'string' ? finishReasonRaw : null;
-        if (typeof delta === 'string' && delta.length > 0) {
-          events.push({ delta, done: false, finishReason: null, usageTokens });
-        }
-        if (finishReason) {
-          events.push({ delta: '', done: true, finishReason, usageTokens });
-        } else if (usageTokens !== undefined) {
-          events.push({ delta: '', done: false, finishReason: null, usageTokens });
-        }
-      } catch {
-        // ignore invalid upstream chunks
-      }
-    }
-  }
-  return events;
-}
-
-function safeAssistantContent(payload: unknown): string {
-  if (!payload || typeof payload !== 'object') {
-    return '';
-  }
-  const choices = (payload as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
-  const first = choices?.[0];
-  const content = first?.message?.content;
-  return typeof content === 'string' ? content : '';
-}
-
-function safeAssistantFinishReason(payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
-  const choices = (payload as { choices?: Array<{ finish_reason?: unknown }> }).choices;
-  const finishReason = choices?.[0]?.finish_reason;
-  return typeof finishReason === 'string' ? finishReason : null;
-}
-
-function safeAssistantUsageTokens(payload: unknown): number | undefined {
-  if (!payload || typeof payload !== 'object') {
-    return undefined;
-  }
-  const usage = (payload as { usage?: { total_tokens?: unknown } }).usage;
-  const totalTokens = usage?.total_tokens;
-  return typeof totalTokens === 'number' && Number.isFinite(totalTokens) ? totalTokens : undefined;
 }
 
 function parsePagination(

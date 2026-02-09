@@ -59,6 +59,16 @@ import {
   Utf8DocumentParser,
 } from '@mbos/adapters-private';
 import type { CachePort, JsonDocStorePort } from '@mbos/ports';
+import {
+  ACTIVE_CHAT_STREAMS,
+  STREAM_REGISTRY_FINAL_TTL_SECONDS,
+  STREAM_REGISTRY_TTL_SECONDS,
+  readSessionStreamState,
+  readStreamRegistry,
+  stopActiveSessionStreams,
+  writeSessionStreamState,
+  writeStreamRegistry,
+} from './chat-stream-runtime.js';
 
 interface AuthenticatedUser {
   id: string;
@@ -184,106 +194,6 @@ interface ChatMessageRecord {
   variant_group_id?: string;
   variant_index?: number;
   is_stale?: boolean;
-}
-
-interface ActiveChatStreamRecord {
-  workspaceId: string;
-  projectId: string;
-  sessionId: string;
-  abortController: AbortController;
-  startedAt: string;
-  status: 'running' | 'stopping' | 'finished';
-}
-
-const ACTIVE_CHAT_STREAMS = new Map<string, ActiveChatStreamRecord>();
-
-interface ChatStreamRegistryRecord {
-  streamId: string;
-  workspaceId: string;
-  projectId: string;
-  sessionId: string;
-  status: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
-  updatedAt: string;
-}
-
-const STREAM_REGISTRY_TTL_SECONDS = 30 * 60;
-const STREAM_REGISTRY_FINAL_TTL_SECONDS = 5 * 60;
-
-function streamRegistryKey(streamId: string): string {
-  return `chat:stream:${streamId}`;
-}
-
-function sessionStreamStateKey(
-  workspaceId: string,
-  projectId: string,
-  sessionId: string,
-): string {
-  return `chat:session-stream:${workspaceId}:${projectId}:${sessionId}`;
-}
-
-type SessionStreamRuntimeStatus = 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
-
-async function readSessionStreamState(
-  cache: CachePort,
-  workspaceId: string,
-  projectId: string,
-  sessionId: string,
-): Promise<SessionStreamRuntimeStatus | null> {
-  const raw = await cache.get(sessionStreamStateKey(workspaceId, projectId, sessionId));
-  if (
-    raw === 'running' ||
-    raw === 'stopping' ||
-    raw === 'completed' ||
-    raw === 'stopped' ||
-    raw === 'failed'
-  ) {
-    return raw;
-  }
-  return null;
-}
-
-async function writeSessionStreamState(
-  cache: CachePort,
-  workspaceId: string,
-  projectId: string,
-  sessionId: string,
-  status: SessionStreamRuntimeStatus,
-  ttlSeconds: number,
-): Promise<void> {
-  await cache.set(sessionStreamStateKey(workspaceId, projectId, sessionId), status, ttlSeconds);
-}
-
-async function stopActiveSessionStreams(
-  cache: CachePort,
-  workspaceId: string,
-  projectId: string,
-  sessionId: string,
-): Promise<number> {
-  let stopped = 0;
-  for (const [streamId, stream] of ACTIVE_CHAT_STREAMS.entries()) {
-    if (stream.workspaceId !== workspaceId || stream.projectId !== projectId || stream.sessionId !== sessionId) {
-      continue;
-    }
-    stopped += 1;
-    stream.status = 'stopping';
-    stream.abortController.abort();
-    await writeStreamRegistry(
-      cache,
-      {
-        streamId,
-        workspaceId,
-        projectId,
-        sessionId,
-        status: 'stopping',
-        updatedAt: new Date().toISOString(),
-      },
-      STREAM_REGISTRY_TTL_SECONDS,
-    );
-  }
-  if (stopped > 0) {
-    await writeSessionStreamState(cache, workspaceId, projectId, sessionId, 'stopping', STREAM_REGISTRY_TTL_SECONDS);
-  }
-  return stopped;
 }
 
 interface ChatAttachmentRecord {
@@ -1389,31 +1299,6 @@ function parsePagination(
   const pageSize = Math.min(defaults.maxPageSize, pageSizeCandidate);
   const offset = (page - 1) * pageSize;
   return { page, pageSize, offset };
-}
-
-async function readStreamRegistry(
-  cache: CachePort,
-  streamId: string,
-): Promise<ChatStreamRegistryRecord | null> {
-  const raw = await cache.get(streamRegistryKey(streamId));
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as ChatStreamRegistryRecord;
-    if (parsed && parsed.streamId === streamId) {
-      return parsed;
-    }
-  } catch {
-    // ignore invalid cached payloads
-  }
-  return null;
-}
-
-async function writeStreamRegistry(
-  cache: CachePort,
-  record: ChatStreamRegistryRecord,
-  ttlSeconds: number,
-): Promise<void> {
-  await cache.set(streamRegistryKey(record.streamId), JSON.stringify(record), ttlSeconds);
 }
 
 type ProjectsRoute =

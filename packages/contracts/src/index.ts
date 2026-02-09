@@ -84,6 +84,9 @@ export const SourceLibrarySchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   visibility: z.literal('shared'),
+  object_prefix: z.string().min(1).optional(),
+  doc_namespace: z.string().min(1).optional(),
+  vector_namespace: z.string().min(1).optional(),
   created_by_user_id: z.string().min(1),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
@@ -108,6 +111,38 @@ export const UpdateSourceLibraryRequestSchema = z
     message: 'at_least_one_field_required',
   });
 
+export const AIReadyJobTypeSchema = z.enum(['document_ingest']);
+export const AIReadyJobStatusSchema = z.enum([
+  'queued',
+  'running',
+  'retrying',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'dead_lettered',
+]);
+
+export const AIReadyJobSchema = z.object({
+  id: z.string().min(1),
+  workspace_id: z.string().min(1),
+  project_id: z.string().min(1),
+  library_id: z.string().min(1),
+  type: AIReadyJobTypeSchema,
+  status: AIReadyJobStatusSchema,
+  source_ids: z.array(z.string().min(1)),
+  idempotency_key: z.string().min(1),
+  retry_count: z.number().int().nonnegative(),
+  error_code: z.string().optional(),
+  error_message: z.string().optional(),
+  created_by_user_id: z.string().min(1),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
+export const CreateAIReadyJobRequestSchema = z.object({
+  source_ids: z.array(z.string().min(1)).min(1),
+});
+
 export type ProjectDTO = z.infer<typeof ProjectSchema>;
 export type CreateProjectRequest = z.infer<typeof CreateProjectRequestSchema>;
 export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequestSchema>;
@@ -120,3 +155,5 @@ export type SourceLibraryDTO = z.infer<typeof SourceLibrarySchema>;
 export type ListSourceLibrariesResponse = z.infer<typeof ListSourceLibrariesResponseSchema>;
 export type CreateSourceLibraryRequest = z.infer<typeof CreateSourceLibraryRequestSchema>;
 export type UpdateSourceLibraryRequest = z.infer<typeof UpdateSourceLibraryRequestSchema>;
+export type AIReadyJobDTO = z.infer<typeof AIReadyJobSchema>;
+export type CreateAIReadyJobRequest = z.infer<typeof CreateAIReadyJobRequestSchema>;

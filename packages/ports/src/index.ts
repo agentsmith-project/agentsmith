@@ -1,4 +1,4 @@
-import type { ProjectDTO, SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
+import type { AIReadyJobDTO, ProjectDTO, SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
 
 export interface ProjectRepoPort {
   listByWorkspace(workspaceId: string): Promise<ProjectDTO[]>;
@@ -43,6 +43,96 @@ export interface ObjectStorePort {
   presignedGetObject(bucket: string, key: string, expirySeconds?: number): Promise<string>;
   getObject(bucket: string, key: string): Promise<Uint8Array>;
   deleteObject(bucket: string, key: string): Promise<void>;
+}
+
+export interface VectorChunkUpsert {
+  chunkId: string;
+  sourceId: string;
+  content: string;
+  embedding: number[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface VectorSearchResult {
+  chunkId: string;
+  sourceId: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+  score: number;
+}
+
+export interface VectorSearchQuery {
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  queryEmbedding: number[];
+  topK: number;
+  minScore?: number;
+}
+
+export interface VectorStorePort {
+  upsertChunks(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    chunks: VectorChunkUpsert[],
+  ): Promise<void>;
+  deleteBySource(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    sourceId: string,
+  ): Promise<void>;
+  search(query: VectorSearchQuery): Promise<VectorSearchResult[]>;
+  countByLibrary(workspaceId: string, projectId: string, libraryId: string): Promise<number>;
+}
+
+export interface JobQueueItem {
+  jobId: string;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  type: 'document_ingest';
+}
+
+export interface JobQueuePort {
+  enqueue(item: JobQueueItem): Promise<void>;
+  dequeue(): Promise<JobQueueItem | null>;
+}
+
+export interface AIReadyJobRepoPort {
+  save(job: AIReadyJobDTO): Promise<void>;
+  getById(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    jobId: string,
+  ): Promise<AIReadyJobDTO | null>;
+  update(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    jobId: string,
+    patch: Partial<AIReadyJobDTO>,
+  ): Promise<AIReadyJobDTO | null>;
+}
+
+export interface DocumentParserPort {
+  parse(body: Uint8Array, contentType: string): Promise<string>;
+}
+
+export interface TextChunk {
+  content: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TextChunkerPort {
+  chunk(text: string): TextChunk[];
+}
+
+export interface EmbeddingProviderPort {
+  dimensions(): number;
+  embed(texts: string[]): Promise<number[][]>;
 }
 
 export interface SourceRepoPort {

@@ -24,6 +24,11 @@ import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/t
 import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
 import { postChatStream, streamSseJson } from '@/lib/chat/stream';
 import { createThrottle } from '@/lib/chat/throttle';
+import {
+  mapRuntimeStatusToStreamStatus,
+  type SessionStreamState,
+  type SessionStreamStatus,
+} from '@/lib/chat/stream-state';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -51,30 +56,6 @@ import {
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
-}
-
-type SessionStreamStatus = 'idle' | 'connecting' | 'streaming' | 'stopped' | 'error';
-
-interface SessionStreamingAssistant {
-  messageId?: string | null;
-  content: string;
-  mode: 'append' | 'replace';
-  startedAt: number;
-  lastTokenAt: number;
-}
-
-interface SessionStreamState {
-  status: SessionStreamStatus;
-  assistant: SessionStreamingAssistant | null;
-}
-
-function mapRuntimeStatusToStreamStatus(
-  runtimeStatus: ChatSession['runtime_status'] | undefined,
-): SessionStreamStatus {
-  if (runtimeStatus === 'running' || runtimeStatus === 'stopping') return 'streaming';
-  if (runtimeStatus === 'failed') return 'error';
-  if (runtimeStatus === 'stopped') return 'stopped';
-  return 'idle';
 }
 
 export default function ChatPage({ params }: ChatPageProps) {

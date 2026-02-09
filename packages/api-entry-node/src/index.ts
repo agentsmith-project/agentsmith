@@ -2,13 +2,7 @@ import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
-  CreateAIReadyJobRequestSchema,
-  CreateSourceLibraryRequestSchema,
-  CreateProjectRequestSchema,
-  CreateSourceRequestSchema,
   ErrorResponseSchema,
-  UpdateSourceLibraryRequestSchema,
-  UpdateProjectRequestSchema,
 } from '@mbos/contracts';
 import {
   CancelAIReadyJobUseCase,
@@ -67,24 +61,13 @@ import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import { handleChatStreamRoute } from './chat-stream-handler.js';
 import { handleEndpointRoute } from './endpoint-route-handler.js';
 import { verifyBearerToken } from './auth.js';
+import { handleProjectSourceRoute } from './project-source-route-handler.js';
 
 interface WorkspaceRecord {
   id: string;
   name: string;
   created_at: string;
   updated_at: string;
-}
-
-interface WorkspaceMemberRecord {
-  id: string;
-  user_id: string;
-  name: string;
-  email: string;
-  role: 'owner' | 'admin' | 'developer' | 'user';
-  governance_group?: 'wheel' | 'user';
-  permissions: string[];
-  status: 'active' | 'removed';
-  joined_at: string;
 }
 
 interface CredentialRecord {
@@ -1476,322 +1459,22 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const workspaces = buildWorkspaceRecords();
     const defaultWorkspace = workspaces[0];
 
-    if (route.kind === 'workspacesCollection' && method === 'GET') {
-      json(res, 200, { items: workspaces, total: workspaces.length });
-      return;
-    }
-
-    if (route.kind === 'workspaceItem' && method === 'GET') {
-      const found = workspaces.find((item) => item.id === route.workspaceId);
-      if (!found) {
-        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
-        return;
-      }
-      json(res, 200, found);
-      return;
-    }
-
-    if (route.kind === 'workspaceMembers' && method === 'GET') {
-      if (!defaultWorkspace || route.workspaceId !== defaultWorkspace.id) {
-        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
-        return;
-      }
-      const member: WorkspaceMemberRecord = {
-        id: `wm_${user.id}`,
-        user_id: user.id,
-        name: user.name,
-        email: user.email,
-        role: 'owner',
-        governance_group: 'wheel',
-        permissions: [...OWNER_WORKSPACE_PERMISSIONS],
-        status: 'active',
-        joined_at: defaultWorkspace.created_at,
-      };
-      json(res, 200, { items: [member], total: 1 });
-      return;
-    }
-
-    const workspaceIdInRoute = 'workspaceId' in route ? route.workspaceId : null;
-    if (workspaceIdInRoute && !workspaces.some((item) => item.id === workspaceIdInRoute)) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
-      return;
-    }
-
-    if (route.kind === 'collection' && method === 'GET') {
-      const listed = await deps.listProjectsUseCase.execute(route.workspaceId);
-        json(res, 200, {
-          items: listed.items.map((item) => ({
-            ...item,
-            role: item.owner_id === user.id ? 'owner' : 'developer',
-            permissions: [...resolveProjectPermissions(item.owner_id, user.id)],
-          })),
-        });
-        return;
-      }
-
-    if (route.kind === 'collection' && method === 'POST') {
-      const raw = await readBody(req);
-      const input = CreateProjectRequestSchema.parse(raw);
-      const actorId = user.id;
-
-      const created = await deps.createProjectUseCase.execute({
-        workspaceId: route.workspaceId,
-        actorId,
-        input,
-      });
-
-      json(res, 201, created);
-      return;
-    }
-
-    if (route.kind === 'item' && method === 'GET') {
-      const found = await deps.getProjectUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-      });
-      json(res, 200, {
-        ...found,
-        role: found.owner_id === user.id ? 'owner' : 'developer',
-        permissions: [...resolveProjectPermissions(found.owner_id, user.id)],
-      });
-      return;
-    }
-
-    if (route.kind === 'item' && method === 'PATCH') {
-      const raw = await readBody(req);
-      const input = UpdateProjectRequestSchema.parse(raw);
-      const updated = await deps.updateProjectUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        input,
-      });
-      json(res, 200, updated);
-      return;
-    }
-
-    if (route.kind === 'item' && method === 'DELETE') {
-      await deps.deleteProjectUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-      });
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
-
-    if (route.kind === 'sources' && method === 'GET') {
-      const libraryId = requestUrl.searchParams.get('library_id') ?? undefined;
-      const listed = await deps.listSourcesUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        libraryId,
-      });
-      json(res, 200, listed);
-      return;
-    }
-
-    if (route.kind === 'sources' && method === 'POST') {
-      const raw = await readBody(req);
-      const input = CreateSourceRequestSchema.parse(raw);
-      const created = await deps.createSourceUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        input,
-      });
-      json(res, 201, created);
-      return;
-    }
-
-    if (route.kind === 'sourceLibraries' && method === 'GET') {
-      const listed = await deps.listSourceLibrariesUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-      });
-      json(res, 200, listed);
-      return;
-    }
-
-    if (route.kind === 'sourceLibraries' && method === 'POST') {
-      const raw = await readBody(req);
-      const input = CreateSourceLibraryRequestSchema.parse(raw);
-      const created = await deps.createSourceLibraryUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        actorId: user.id,
-        input,
-      });
-      json(res, 201, created);
-      return;
-    }
-
-    if (route.kind === 'sourceLibraryItem' && method === 'PATCH') {
-      const raw = await readBody(req);
-      const input = UpdateSourceLibraryRequestSchema.parse(raw);
-      const updated = await deps.updateSourceLibraryUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        libraryId: route.libraryId,
-        input,
-      });
-      json(res, 200, updated);
-      return;
-    }
-
-    if (route.kind === 'sourceLibraryItem' && method === 'DELETE') {
-      await deps.deleteSourceLibraryUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        libraryId: route.libraryId,
-      });
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
-
-    if (route.kind === 'sourceLibraryAIReadyJobs' && method === 'POST') {
-      const raw = await readBody(req);
-      const input = CreateAIReadyJobRequestSchema.parse(raw);
-      const created = await deps.createAIReadyJobUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        libraryId: route.libraryId,
-        actorId: user.id,
-        idempotencyKey: req.headers['idempotency-key']?.toString(),
-        input,
-      });
-      json(res, 201, created);
-      return;
-    }
-
-    if (route.kind === 'sourceLibraryAIReadyJobItem' && method === 'GET') {
-      await drainJobQueue(deps.aiReadyJobQueue, async (item) => {
-        await deps.runQueuedAIReadyJobUseCase.execute({
-          workspaceId: item.workspaceId,
-          projectId: item.projectId,
-          libraryId: item.libraryId,
-          jobId: item.jobId,
-        });
-      });
-      const found = await deps.getAIReadyJobUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        libraryId: route.libraryId,
-        jobId: route.jobId,
-      });
-      json(res, 200, found);
-      return;
-    }
-
-    if (route.kind === 'sourceLibraryAIReadyJobCancel' && method === 'POST') {
-      const updated = await deps.cancelAIReadyJobUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        libraryId: route.libraryId,
-        jobId: route.jobId,
-      });
-      json(res, 200, updated);
-      return;
-    }
-
-    if (route.kind === 'sourcesQuota' && method === 'GET') {
-      const libraryId = requestUrl.searchParams.get('library_id') ?? undefined;
-      const quota = await deps.getSourcesQuotaUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        libraryId,
-      });
-      json(res, 200, quota);
-      return;
-    }
-
-    if (route.kind === 'sourceAIReadyStart' && method === 'POST') {
-      const job = await deps.startSourceAIReadyUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sourceId: route.sourceId,
-      });
-      json(res, 200, job);
-      return;
-    }
-
-    if (route.kind === 'sourceAIReadyCancel' && method === 'POST') {
-      const job = await deps.cancelSourceAIReadyUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sourceId: route.sourceId,
-      });
-      json(res, 200, job);
-      return;
-    }
-
-    if (route.kind === 'sourceAIReadyRetry' && method === 'POST') {
-      const job = await deps.retrySourceAIReadyUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sourceId: route.sourceId,
-      });
-      json(res, 200, job);
-      return;
-    }
-
-    if (route.kind === 'sourceBatchAIReadyStart' && method === 'POST') {
-      const raw = (await readBody(req)) as { file_ids?: string[] };
-      const sourceIds = Array.isArray(raw.file_ids) ? raw.file_ids : [];
-      const jobs = await deps.batchStartSourceAIReadyUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sourceIds,
-      });
-      json(res, 200, jobs);
-      return;
-    }
-
-    if (route.kind === 'sourceBatchAIReadyCancel' && method === 'POST') {
-      const raw = (await readBody(req)) as { file_ids?: string[] };
-      const sourceIds = Array.isArray(raw.file_ids) ? raw.file_ids : [];
-      const jobs = await deps.batchCancelSourceAIReadyUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sourceIds,
-      });
-      json(res, 200, jobs);
-      return;
-    }
-
-    if (route.kind === 'sourceItem' && method === 'DELETE') {
-      await deps.deleteSourceUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sourceId: route.sourceId,
-      });
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
-
-    if (route.kind === 'sourceItem' && method === 'GET') {
-      const source = await deps.getSourceUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sourceId: route.sourceId,
-      });
-      json(res, 200, source);
-      return;
-    }
-
-    if (route.kind === 'sourceDownload' && method === 'GET') {
-      const source = await deps.downloadSourceUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sourceId: route.sourceId,
-      });
-      res.statusCode = 200;
-      res.setHeader('content-type', source.source.content_type);
-      res.setHeader(
-        'content-disposition',
-        `attachment; filename=\"${encodeURIComponent(source.source.name)}\"`,
-      );
-      res.end(Buffer.from(source.body));
+    const handledProjectSourceRoute = await handleProjectSourceRoute({
+      route,
+      method,
+      req,
+      res,
+      deps,
+      user,
+      workspaces,
+      defaultWorkspace,
+      requestUrl,
+      json,
+      readBody,
+      ownerWorkspacePermissions: OWNER_WORKSPACE_PERMISSIONS,
+      resolveProjectPermissions,
+    });
+    if (handledProjectSourceRoute) {
       return;
     }
 

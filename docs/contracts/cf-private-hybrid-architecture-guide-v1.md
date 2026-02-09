@@ -524,6 +524,11 @@ packages/
   - Stream 生命周期日志字段（统一 JSON）：
     - `workspace_id`, `project_id`, `session_id`, `stream_id`, `endpoint_id`, `status`, `duration_ms`
     - `stop_reason` 取值：`user_stop|session_stop|upstream_error|timeout|session_stream_conflict`
+  - 浏览器级集成验证基线（Playwright `e2e/integration-chat.spec.ts`）：
+    - 刷新后可通过 `GET .../sessions/{sessionId}/streams` 恢复活跃 `stream_id`
+    - 恢复成功时，前端 Stop 走细粒度 `POST .../messages/streams/{streamId}/stop`
+    - 恢复失败或缺失 `stream_id` 时，前端 Stop 自动回退到 `POST .../sessions/{sessionId}/stop`
+    - 会话切换期间，流式输出不得泄漏到非源 thread
 
 5. 认证策略（当前约束）
 - API 必须依赖 Keycloak `userinfo` 校验 Bearer Token。

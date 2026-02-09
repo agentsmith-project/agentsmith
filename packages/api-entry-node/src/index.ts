@@ -689,6 +689,34 @@ class ChatResourceService {
     return revised;
   }
 
+  async updateAssistantMessage(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    messageId: string,
+    patch: {
+      content?: string;
+      finishReason?: string | null;
+      tokens?: number;
+    },
+  ): Promise<ChatMessageRecord | null> {
+    const existing = await this.getMessage(workspaceId, projectId, sessionId, messageId);
+    if (!existing) {
+      return null;
+    }
+    if (existing.role !== 'assistant') {
+      return null;
+    }
+    const next: ChatMessageRecord = {
+      ...existing,
+      content: patch.content ?? existing.content,
+      finish_reason: patch.finishReason === undefined ? existing.finish_reason : patch.finishReason,
+      tokens: patch.tokens ?? existing.tokens,
+    };
+    await this.docStore.upsert(ChatResourceService.messagesCollection, messageId, next);
+    return next;
+  }
+
   async buildNextAssistantVariant(
     workspaceId: string,
     projectId: string,
@@ -2403,24 +2431,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         route.sessionId,
       );
 
-      const upstreamUrl = buildUpstreamUrl(endpoint.base_url, 'chat/completions');
-      const upstreamRes = await fetch(upstreamUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: raw.model ?? endpoint.source_model ?? endpoint.openai_model,
-          stream: true,
-          messages: messages.map((item) => ({ role: item.role, content: item.content })),
-        }),
-      });
-      if (!upstreamRes.ok) {
-        const completionPayload = await upstreamRes.json().catch(() => ({}));
-        json(res, upstreamRes.status, completionPayload);
-        return;
-      }
       const variantMeta = await deps.chatResourceService.buildNextAssistantVariant(
         route.workspaceId,
         route.projectId,
@@ -2428,7 +2438,63 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         parentForAssistant,
         fromMessage,
       );
-      const streamMessageId = `stream_msg_${Date.now()}`;
+      const createdAssistant = await deps.chatResourceService.createMessage({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        role: 'assistant',
+        content: '',
+        parentId: parentForAssistant,
+        variantGroupId: variantMeta.variantGroupId,
+        variantIndex: variantMeta.variantIndex,
+      });
+
+      const streamAbortController = new AbortController();
+      let clientDisconnected = false;
+      const onResClose = () => {
+        clientDisconnected = true;
+        streamAbortController.abort();
+      };
+      res.once('close', onResClose);
+
+      const upstreamUrl = buildUpstreamUrl(endpoint.base_url, 'chat/completions');
+      let upstreamRes: Response;
+      try {
+        upstreamRes = await fetch(upstreamUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: raw.model ?? endpoint.source_model ?? endpoint.openai_model,
+            stream: true,
+            messages: messages.map((item) => ({ role: item.role, content: item.content })),
+          }),
+          signal: streamAbortController.signal,
+        });
+      } catch (error) {
+        res.off('close', onResClose);
+        if (streamAbortController.signal.aborted) {
+          await deps.chatResourceService.updateAssistantMessage(
+            route.workspaceId,
+            route.projectId,
+            route.sessionId,
+            createdAssistant.id,
+            { finishReason: 'stopped', tokens: 0 },
+          );
+          return;
+        }
+        throw error;
+      }
+
+      if (!upstreamRes.ok) {
+        res.off('close', onResClose);
+        const completionPayload = await upstreamRes.json().catch(() => ({}));
+        json(res, upstreamRes.status, completionPayload);
+        return;
+      }
+
       res.statusCode = 200;
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
       res.setHeader('Cache-Control', 'no-cache');
@@ -2441,72 +2507,117 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         session_id: route.sessionId,
         model: endpoint.openai_model,
         endpoint_id: endpoint.id,
+        assistant_message_id: createdAssistant.id,
+        parent_message_id: parentForAssistant,
+        variant_group_id: variantMeta.variantGroupId,
+        variant_index: variantMeta.variantIndex,
       });
 
       let assistantText = '';
+      let persistedLength = 0;
+      let finishReason: string | null = 'stop';
+      const persistAssistantProgress = async (force: boolean) => {
+        if (!force && assistantText.length - persistedLength < 32) {
+          return;
+        }
+        await deps.chatResourceService.updateAssistantMessage(
+          route.workspaceId,
+          route.projectId,
+          route.sessionId,
+          createdAssistant.id,
+          {
+            content: assistantText,
+            tokens: assistantText.length,
+          },
+        );
+        persistedLength = assistantText.length;
+      };
       const contentType = upstreamRes.headers.get('content-type') ?? '';
-      if (contentType.includes('text/event-stream') && upstreamRes.body) {
-        const reader = upstreamRes.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let done = false;
-        while (!done) {
-          const result = await reader.read();
-          done = result.done;
-          buffer += decoder.decode(result.value ?? new Uint8Array(), { stream: !done });
-          const sepIndex = buffer.lastIndexOf('\n\n');
-          if (sepIndex < 0) continue;
-          const consumable = buffer.slice(0, sepIndex);
-          buffer = buffer.slice(sepIndex + 2);
-          const chunks = parseOpenAIStreamChunk(consumable);
-          for (const chunk of chunks) {
-            if (chunk.done) continue;
-            assistantText += chunk.delta;
+      try {
+        if (contentType.includes('text/event-stream') && upstreamRes.body) {
+          const reader = upstreamRes.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let done = false;
+          while (!done) {
+            const result = await reader.read();
+            done = result.done;
+            buffer += decoder.decode(result.value ?? new Uint8Array(), { stream: !done });
+            const sepIndex = buffer.lastIndexOf('\n\n');
+            if (sepIndex < 0) continue;
+            const consumable = buffer.slice(0, sepIndex);
+            buffer = buffer.slice(sepIndex + 2);
+            const chunks = parseOpenAIStreamChunk(consumable);
+            for (const chunk of chunks) {
+              if (chunk.done) continue;
+              assistantText += chunk.delta;
+              if (!clientDisconnected) {
+                sseWrite(res, 'delta', {
+                  message_id: createdAssistant.id,
+                  delta: chunk.delta,
+                });
+              }
+            }
+            await persistAssistantProgress(false);
+          }
+          if (buffer.trim().length > 0) {
+            const chunks = parseOpenAIStreamChunk(buffer);
+            for (const chunk of chunks) {
+              if (chunk.done) continue;
+              assistantText += chunk.delta;
+              if (!clientDisconnected) {
+                sseWrite(res, 'delta', {
+                  message_id: createdAssistant.id,
+                  delta: chunk.delta,
+                });
+              }
+            }
+          }
+        } else {
+          const completionPayload = await upstreamRes.json().catch(() => ({}));
+          assistantText = safeAssistantContent(completionPayload);
+          if (assistantText.length > 0 && !clientDisconnected) {
             sseWrite(res, 'delta', {
-              message_id: streamMessageId,
-              delta: chunk.delta,
+              message_id: createdAssistant.id,
+              delta: assistantText,
             });
           }
         }
-        if (buffer.trim().length > 0) {
-          const chunks = parseOpenAIStreamChunk(buffer);
-          for (const chunk of chunks) {
-            if (chunk.done) continue;
-            assistantText += chunk.delta;
-            sseWrite(res, 'delta', {
-              message_id: streamMessageId,
-              delta: chunk.delta,
-            });
-          }
-        }
-      } else {
-        const completionPayload = await upstreamRes.json().catch(() => ({}));
-        assistantText = safeAssistantContent(completionPayload);
-        if (assistantText.length > 0) {
-          sseWrite(res, 'delta', {
-            message_id: streamMessageId,
-            delta: assistantText,
-          });
+      } catch (error) {
+        if (streamAbortController.signal.aborted) {
+          finishReason = 'stopped';
+        } else {
+          res.off('close', onResClose);
+          throw error;
         }
       }
 
-      const created = await deps.chatResourceService.createMessage({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sessionId: route.sessionId,
-        role: 'assistant',
-        content: assistantText,
-        parentId: parentForAssistant,
-        variantGroupId: variantMeta.variantGroupId,
-        variantIndex: variantMeta.variantIndex,
-      });
+      if (clientDisconnected) {
+        finishReason = 'stopped';
+      }
 
-      sseWrite(res, 'done', {
-        message_id: created.id,
-        finish_reason: 'stop',
-        tokens: assistantText.length,
-      });
-      res.end();
+      await persistAssistantProgress(true);
+      const finalized = await deps.chatResourceService.updateAssistantMessage(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        createdAssistant.id,
+        {
+          content: assistantText,
+          finishReason,
+          tokens: assistantText.length,
+        },
+      );
+      res.off('close', onResClose);
+
+      if (!clientDisconnected) {
+        sseWrite(res, 'done', {
+          message_id: finalized?.id ?? createdAssistant.id,
+          finish_reason: finishReason,
+          tokens: assistantText.length,
+        });
+        res.end();
+      }
       return;
     }
 

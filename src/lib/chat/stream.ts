@@ -1,7 +1,19 @@
 import { API_BASE, ApiError, type ApiResponse } from '@/lib/api/client';
 
 export type ChatStreamEvent =
-  | { event: 'meta'; data: { stream_id: string; session_id: string; model: string; endpoint_id: string } }
+  | {
+      event: 'meta';
+      data: {
+        stream_id: string;
+        session_id: string;
+        model: string;
+        endpoint_id: string;
+        assistant_message_id?: string;
+        parent_message_id?: string | null;
+        variant_group_id?: string;
+        variant_index?: number;
+      };
+    }
   | { event: 'delta'; data: { message_id: string; variant_group_id?: string; variant_index?: number; delta: string } }
   | { event: 'done'; data: { message_id: string; finish_reason?: string | null; tokens?: number } }
   | { event: 'error'; data: { error_code: string; message: string; request_id?: string } };

@@ -20,8 +20,7 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
-import type { Attachment, ChatSession, Endpoint } from '@/lib/api/types';
-import { makeClientId } from '@/lib/chat/ids';
+import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
 import { postChatStream, streamSseJson } from '@/lib/chat/stream';
 import { createThrottle } from '@/lib/chat/throttle';
@@ -83,6 +82,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const abortRef = useRef<AbortController | null>(null);
   const [streamStatus, setStreamStatus] = useState<'idle' | 'connecting' | 'streaming' | 'stopped' | 'error'>('idle');
   const [streamingAssistant, setStreamingAssistant] = useState<{
+    sessionId: string;
     messageId?: string | null;
     content: string;
     mode: 'append' | 'replace';
@@ -307,11 +307,80 @@ export default function ChatPage({ params }: ChatPageProps) {
       queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, vars.sessionId] }),
   });
 
+  const upsertStreamAssistantToCache = (sessionId: string, message: ChatMessage) => {
+    queryClient.setQueryData(
+      ['chat', 'messages', workspaceId, projectId, sessionId],
+      (
+        prev:
+          | {
+              items: ChatMessage[];
+              total: number;
+              page: number;
+              page_size: number;
+              has_more: boolean;
+            }
+          | undefined,
+      ) => {
+        if (!prev) return prev;
+        const index = prev.items.findIndex((item) => item.id === message.id);
+        if (index >= 0) {
+          const nextItems = [...prev.items];
+          nextItems[index] = { ...nextItems[index], ...message };
+          return { ...prev, items: nextItems };
+        }
+        return {
+          ...prev,
+          items: [...prev.items, message],
+          total: prev.total + 1,
+        };
+      },
+    );
+  };
+
+  const patchStreamAssistantInCache = (
+    sessionId: string,
+    messageId: string,
+    patch: Partial<Pick<ChatMessage, 'content' | 'finish_reason' | 'tokens'>>,
+  ) => {
+    queryClient.setQueryData(
+      ['chat', 'messages', workspaceId, projectId, sessionId],
+      (
+        prev:
+          | {
+              items: ChatMessage[];
+              total: number;
+              page: number;
+              page_size: number;
+              has_more: boolean;
+            }
+          | undefined,
+      ) => {
+        if (!prev) return prev;
+        const index = prev.items.findIndex((item) => item.id === messageId);
+        if (index < 0) return prev;
+        const nextItems = [...prev.items];
+        nextItems[index] = {
+          ...nextItems[index],
+          ...patch,
+        };
+        return { ...prev, items: nextItems };
+      },
+    );
+  };
+
   const stopStreaming = () => {
     abortRef.current?.abort();
     abortRef.current = null;
     setStreamStatus('stopped');
+    setStreamingAssistant(null);
   };
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
 
   const runStream = async (args: {
     sessionId: string;
@@ -321,6 +390,7 @@ export default function ChatPage({ params }: ChatPageProps) {
     fromMessageId?: string;
     branchLeafMessageId?: string;
     mode?: 'append' | 'replace';
+    displayMessageId?: string | null;
   }) => {
     stopStreaming();
     setStreamStatus('connecting');
@@ -328,14 +398,29 @@ export default function ChatPage({ params }: ChatPageProps) {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const assistantMessageId = makeClientId('msg_asst');
     const mode = args.mode ?? (args.fromMessageId ? 'replace' : 'append');
     const now = Date.now();
-    setStreamingAssistant({ messageId: args.fromMessageId ?? null, content: '', mode, startedAt: now, lastTokenAt: now });
+    setStreamingAssistant({
+      sessionId: args.sessionId,
+      messageId: args.displayMessageId ?? null,
+      content: '',
+      mode,
+      startedAt: now,
+      lastTokenAt: now,
+    });
 
     const throttler = createThrottle<string>(40, (next) => {
       setStreamingAssistant((prev) =>
-        prev ? { ...prev, content: next, lastTokenAt: Date.now() } : { messageId: assistantMessageId, content: next, mode, startedAt: Date.now(), lastTokenAt: Date.now() }
+        prev
+          ? { ...prev, content: next, lastTokenAt: Date.now() }
+          : {
+              sessionId: args.sessionId,
+              messageId: null,
+              content: next,
+              mode,
+              startedAt: Date.now(),
+              lastTokenAt: Date.now(),
+            },
       );
     });
 
@@ -357,15 +442,70 @@ export default function ChatPage({ params }: ChatPageProps) {
 
       setStreamStatus('streaming');
       let content = '';
+      let liveMessageId: string | null = mode === 'replace' ? args.fromMessageId ?? null : null;
 
       for await (const ev of streamSseJson(res, controller.signal)) {
         if (controller.signal.aborted) break;
-        if (ev.event === 'delta') {
+        if (ev.event === 'meta') {
+          const data = (typeof ev.data === 'object' && ev.data !== null
+            ? (ev.data as Record<string, unknown>)
+            : null);
+          const metaMessageId = data && typeof data.assistant_message_id === 'string'
+            ? data.assistant_message_id
+            : null;
+          if (metaMessageId) {
+            liveMessageId = metaMessageId;
+            if (mode === 'replace') {
+              const parentId = data && typeof data.parent_message_id === 'string'
+                ? data.parent_message_id
+                : null;
+              const variantGroupId = data && typeof data.variant_group_id === 'string'
+                ? data.variant_group_id
+                : undefined;
+              const variantIndex = data && typeof data.variant_index === 'number'
+                ? data.variant_index
+                : undefined;
+              if (variantGroupId && typeof variantIndex === 'number') {
+                setActiveVariantIndexByGroup((prev) => ({ ...prev, [variantGroupId]: variantIndex }));
+              }
+              upsertStreamAssistantToCache(args.sessionId, {
+                id: metaMessageId,
+                session_id: args.sessionId,
+                role: 'assistant',
+                content: '',
+                created_at: new Date().toISOString(),
+                finish_reason: null,
+                parent_id: parentId,
+                variant_group_id: variantGroupId,
+                variant_index: variantIndex,
+              });
+            }
+            setStreamingAssistant((prev) =>
+              prev
+                ? { ...prev, messageId: metaMessageId }
+                : {
+                    sessionId: args.sessionId,
+                    messageId: metaMessageId,
+                    content: '',
+                    mode,
+                    startedAt: Date.now(),
+                    lastTokenAt: Date.now(),
+                  },
+            );
+          }
+        } else if (ev.event === 'delta') {
           const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
           const delta = data && typeof data.delta === 'string' ? data.delta : null;
           if (delta) {
             content += delta;
             throttler.push(content);
+            if (mode === 'replace' && liveMessageId) {
+              patchStreamAssistantInCache(args.sessionId, liveMessageId, {
+                content,
+                tokens: content.length,
+                finish_reason: null,
+              });
+            }
           }
         } else if (ev.event === 'error') {
           const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
@@ -385,9 +525,13 @@ export default function ChatPage({ params }: ChatPageProps) {
     } catch (e: unknown) {
       if (controller.signal.aborted) {
         setStreamStatus('stopped');
+        setStreamingAssistant(null);
+        queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
+        queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
         return;
       }
       setStreamStatus('error');
+      setStreamingAssistant(null);
       toast.error(e instanceof Error ? e.message : 'Streaming failed');
     } finally {
       abortRef.current = null;
@@ -474,7 +618,13 @@ export default function ChatPage({ params }: ChatPageProps) {
   }
 
   const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
-  const disabled = streamStatus === 'connecting' || streamStatus === 'streaming';
+  const activeStreamingAssistant =
+    streamingAssistant && currentSessionId && streamingAssistant.sessionId === currentSessionId
+      ? streamingAssistant
+      : null;
+  const disabled =
+    (streamStatus === 'connecting' || streamStatus === 'streaming') &&
+    !!activeStreamingAssistant;
 
   return (
     <PageState state="success">
@@ -490,6 +640,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             onSelect={(id) => {
+              stopStreaming();
               setCurrentSessionId(id);
               setEditingMessageId(null);
             }}
@@ -590,15 +741,32 @@ export default function ChatPage({ params }: ChatPageProps) {
                       messageId: m.id,
                       content: nextContent,
                     });
+                    upsertStreamAssistantToCache(currentSessionId, edited);
+                    if (edited.logical_id && typeof edited.revision_index === 'number') {
+                      const logicalId = edited.logical_id;
+                      const revisionIndex = edited.revision_index;
+                      setActiveVariantIndexByGroup((prev) => ({
+                        ...prev,
+                        [logicalId]: revisionIndex,
+                      }));
+                    }
                     pendingAutoGroupRef.current = edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null);
                     setEditingMessageId(null);
                     if (activeSession?.model && activeSession?.endpoint_id) {
+                      const groups = buildVariantGroups(messages);
+                      const { chain } = buildVisibleChain(messages, groups, activeVariantIndexByGroup);
+                      const editedIndex = chain.findIndex((item) => item.id === m.id);
+                      const previewAssistant =
+                        editedIndex >= 0
+                          ? chain.slice(editedIndex + 1).find((item) => item.role === 'assistant')
+                          : undefined;
                       await runStream({
                         sessionId: currentSessionId,
                         model: activeSession.model,
                         endpointId: activeSession.endpoint_id,
                         fromMessageId: edited.id,
-                        mode: 'append',
+                        displayMessageId: previewAssistant?.id ?? null,
+                        mode: 'replace',
                       });
                     }
                   }}
@@ -621,21 +789,21 @@ export default function ChatPage({ params }: ChatPageProps) {
                   }}
                   disabled={disabled}
                   footer={
-                    streamingAssistant && streamingAssistant.mode === 'append' ? (
+                    activeStreamingAssistant && activeStreamingAssistant.mode === 'append' ? (
                       <div className="px-4 py-2">
                         <div className="flex justify-start">
                           <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
                             <div className="text-xs text-tertiary mb-1">Assistant</div>
                             <div className="space-y-2">
-                              <Markdown content={streamingAssistant.content || '…'} />
+                              <Markdown content={activeStreamingAssistant.content || '…'} />
                             </div>
                           </div>
                         </div>
                       </div>
                     ) : null
                   }
-                  streamingAssistant={streamingAssistant}
-                  followOutput={streamingAssistant?.mode !== 'replace'}
+                  streamingAssistant={activeStreamingAssistant}
+                  followOutput={activeStreamingAssistant?.mode !== 'replace'}
                   suppressAutoScroll={suppressAutoScroll}
                 />
               )}

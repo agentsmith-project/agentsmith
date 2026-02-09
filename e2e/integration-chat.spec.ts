@@ -104,6 +104,62 @@ async function startOpenAICompatibleUpstreamWith(args: {
   };
 }
 
+async function startOpenAIStreamingUpstreamWith(args: {
+  chunks: string[];
+  chunkDelayMs?: number;
+}): Promise<{
+  server: Server;
+  baseUrl: string;
+  getRequestCount: () => number;
+}> {
+  const { chunks, chunkDelayMs = 500 } = args;
+  let requestCount = 0;
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      const bodyChunks: Buffer[] = [];
+      for await (const chunk of req) {
+        bodyChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      requestCount += 1;
+
+      if (req.method !== 'POST' || !req.url?.includes('/chat/completions')) {
+        res.statusCode = 404;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: 'not_found' }));
+        return;
+      }
+
+      res.statusCode = 200;
+      res.setHeader('content-type', 'text/event-stream');
+      res.setHeader('cache-control', 'no-cache');
+      res.setHeader('connection', 'keep-alive');
+
+      for (const chunk of chunks) {
+        const payload = JSON.stringify({
+          id: 'chatcmpl_stream_integration',
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: 'integration-chat-model',
+          choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }],
+        });
+        res.write(`data: ${payload}\n\n`);
+        await new Promise((resolve) => setTimeout(resolve, chunkDelayMs));
+      }
+
+      res.write('data: [DONE]\n\n');
+      res.end();
+    })();
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const address = server.address() as AddressInfo;
+  return {
+    server,
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    getRequestCount: () => requestCount,
+  };
+}
+
 async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
   await page.goto(`/${locale}/login`);
   await page.getByTestId('login__keycloak-btn').click();
@@ -889,6 +945,144 @@ test.describe('integration chat flow', () => {
     } finally {
       await new Promise<void>((resolve) => slowUpstream.server.close(() => resolve()));
       await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
+    }
+  });
+
+  test('stop streaming preserves partial assistant output after refresh', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const streamingUpstream = await startOpenAIStreamingUpstreamWith({
+      chunks: ['persist-part-1 ', 'persist-part-2 ', 'persist-part-3'],
+      chunkDelayMs: 1_500,
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await provisionCredentialAndEndpoint(page, locale, projectId, streamingUpstream.baseUrl);
+
+      await page.getByRole('link', { name: /chat|对话/i }).first().click();
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+        timeout: 30_000,
+      });
+      if (await page.getByTestId('chat__thread-item').count() === 0) {
+        await page.getByTestId('chat__new-thread-btn').click();
+      }
+      const thread = page.getByTestId('chat__thread-item').first();
+      await thread.locator('div[role="button"]').first().click();
+
+      const textarea = page.getByTestId('chat__composer').locator('textarea');
+      await textarea.fill('stream and stop, then refresh');
+      await page.getByTestId('chat__send-btn').click();
+
+      await expect(page.getByText('persist-part-1').first()).toBeVisible({ timeout: 30_000 });
+      const stopBtn = page.getByTestId('chat__composer').getByRole('button', { name: /^Stop$/i });
+      await expect(stopBtn).toBeVisible({ timeout: 10_000 });
+      await stopBtn.click();
+      await expect(page.getByTestId('chat__stream-status')).toHaveText('Stopped', { timeout: 30_000 });
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+        timeout: 30_000,
+      });
+      await expect(page.getByTestId('chat__main-pane')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('chat__thread-item').filter({ hasText: 'stream and stop, then refresh' }).first().locator('div[role="button"]').first().click();
+      await expect(page.getByText('persist-part-1').first()).toBeVisible({ timeout: 30_000 });
+    } finally {
+      await new Promise<void>((resolve) => streamingUpstream.server.close(() => resolve()));
+    }
+  });
+
+  test('editing historical user input starts regenerate in-branch instead of footer append', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const upstream = await startOpenAIStreamingUpstreamWith({
+      chunks: ['branch-regen-1 ', 'branch-regen-2'],
+      chunkDelayMs: 2_500,
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
+
+      const threadId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'initial message for edit-regenerate',
+        null,
+        'branch-regen-1 branch-regen-2',
+      );
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'second message to keep chain stable',
+        threadId,
+        'branch-regen-1 branch-regen-2',
+      );
+
+      await page.getByRole('button', { name: 'Edit message' }).first().click();
+      const inlineEditTextarea = page.locator('[data-testid="chat__message"] textarea').first();
+      await expect(inlineEditTextarea).toBeVisible({ timeout: 10_000 });
+      await inlineEditTextarea.fill('edited historical input');
+      await page.getByRole('button', { name: 'Save' }).first().click();
+
+      await expect(page.getByTestId('chat__stream-status')).toHaveText(/Generating|Streaming/i, { timeout: 15_000 });
+      await expect(
+        page.locator('section[data-testid="chat__main-pane"]').getByText(/^Assistant$/),
+      ).toHaveCount(0);
+      await expect(page.getByText('branch-regen-1').first()).toBeVisible({ timeout: 60_000 });
+    } finally {
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+    }
+  });
+
+  test('switching threads while streaming does not leak assistant output into target thread', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const upstream = await startOpenAIStreamingUpstreamWith({
+      chunks: ['thread-leak-check-1 ', 'thread-leak-check-2 ', 'thread-leak-check-3'],
+      chunkDelayMs: 1_200,
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
+
+      await page.getByRole('link', { name: /chat|对话/i }).first().click();
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
+        timeout: 30_000,
+      });
+      if (await page.getByTestId('chat__thread-item').count() === 0) {
+        await page.getByTestId('chat__new-thread-btn').click();
+      }
+      await page.getByTestId('chat__new-thread-btn').click();
+
+      const threads = page.getByTestId('chat__thread-item');
+      await expect(threads).toHaveCount(2, { timeout: 30_000 });
+      const sourceThread = threads.nth(1);
+      const targetThread = threads.nth(0);
+
+      await sourceThread.locator('div[role="button"]').first().click();
+      const textarea = page.getByTestId('chat__composer').locator('textarea');
+      await textarea.fill('start long streaming response');
+      await page.getByTestId('chat__send-btn').click();
+      await expect(page.getByText('thread-leak-check-1').first()).toBeVisible({ timeout: 30_000 });
+
+      await targetThread.locator('div[role="button"]').first().click();
+      await expect(page.getByTestId('chat__stream-status')).not.toHaveText('Streaming', { timeout: 15_000 });
+      await expect(page.getByText('thread-leak-check-1')).toHaveCount(0);
+    } finally {
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
     }
   });
 

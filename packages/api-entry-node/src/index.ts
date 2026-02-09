@@ -62,6 +62,7 @@ import { handleChatStreamRoute } from './chat-stream-handler.js';
 import { handleEndpointRoute } from './endpoint-route-handler.js';
 import { verifyBearerToken } from './auth.js';
 import { handleProjectSourceRoute } from './project-source-route-handler.js';
+import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
 
 interface WorkspaceRecord {
   id: string;
@@ -1019,89 +1020,10 @@ function buildWorkspaceRecords(): WorkspaceRecord[] {
   }];
 }
 
-function unauthorized(res: http.ServerResponse): void {
-  json(res, 401, { code: 'UNAUTHORIZED', message: 'Missing or invalid bearer token' });
-}
-
-function json(res: http.ServerResponse, status: number, data: unknown): void {
-  res.statusCode = status;
-  res.setHeader('content-type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(data));
-}
-
-function applyCors(res: http.ServerResponse): void {
-  const allowOrigin = process.env.CORS_ALLOW_ORIGIN ?? '*';
-  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, Idempotency-Key',
-  );
-}
-
-async function readBody(req: http.IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-
-  const text = Buffer.concat(chunks).toString('utf-8').trim();
-  if (!text) {
-    return {};
-  }
-
-  return JSON.parse(text) as unknown;
-}
-
 function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
   const cleanBase = baseUrl.replace(/\/+$/, '');
   const cleanPath = proxyPath.replace(/^\/+/, '');
   return `${cleanBase}/${cleanPath}`;
-}
-
-async function proxyJsonRequest(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  options: {
-    upstreamUrl: string;
-    apiKey: string;
-    sourceModel?: string;
-    timeoutSeconds?: number;
-  },
-): Promise<void> {
-  const method = req.method ?? 'POST';
-  const rawBody = await readBody(req);
-  const body =
-    rawBody && typeof rawBody === 'object'
-      ? ({ ...(rawBody as Record<string, unknown>) } as Record<string, unknown>)
-      : {};
-
-  if (options.sourceModel) {
-    body.model = options.sourceModel;
-  }
-
-  const abortController = new AbortController();
-  const timeoutMs = Math.max(1, options.timeoutSeconds ?? 120) * 1000;
-  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
-
-  try {
-    const upstreamRes = await fetch(options.upstreamUrl, {
-      method,
-      headers: {
-        Authorization: `Bearer ${options.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: abortController.signal,
-    });
-    const payload = Buffer.from(await upstreamRes.arrayBuffer());
-    const contentType = upstreamRes.headers.get('content-type') ?? 'application/json';
-    res.statusCode = upstreamRes.status;
-    res.setHeader('content-type', contentType);
-    res.end(payload);
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 function sseWrite(res: http.ServerResponse, event: string, data: unknown): void {

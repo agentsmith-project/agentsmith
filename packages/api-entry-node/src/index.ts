@@ -191,6 +191,7 @@ interface ActiveChatStreamRecord {
   projectId: string;
   sessionId: string;
   abortController: AbortController;
+  startedAt: string;
   status: 'running' | 'stopping' | 'finished';
 }
 
@@ -1438,6 +1439,7 @@ type ProjectsRoute =
   | { kind: 'chatSessions'; workspaceId: string; projectId: string }
   | { kind: 'chatSessionItem'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatSessionStop'; workspaceId: string; projectId: string; sessionId: string }
+  | { kind: 'chatSessionStreams'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatMessages'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatMessageItem'; workspaceId: string; projectId: string; sessionId: string; messageId: string }
   | { kind: 'chatMessagesStream'; workspaceId: string; projectId: string; sessionId: string }
@@ -1701,6 +1703,18 @@ function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(chatSessionStopMatched[1]),
       projectId: decodeURIComponent(chatSessionStopMatched[2]),
       sessionId: decodeURIComponent(chatSessionStopMatched[3]),
+    };
+  }
+
+  const chatSessionStreamsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/streams\/?$/,
+  );
+  if (chatSessionStreamsMatched) {
+    return {
+      kind: 'chatSessionStreams',
+      workspaceId: decodeURIComponent(chatSessionStreamsMatched[1]),
+      projectId: decodeURIComponent(chatSessionStreamsMatched[2]),
+      sessionId: decodeURIComponent(chatSessionStreamsMatched[3]),
     };
   }
 
@@ -2395,6 +2409,31 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    if (route.kind === 'chatSessionStreams' && method === 'GET') {
+      const session = await deps.chatResourceService.getSession(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      if (!session) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+        return;
+      }
+      const items = Array.from(ACTIVE_CHAT_STREAMS.entries())
+        .filter(([, stream]) =>
+          stream.workspaceId === route.workspaceId &&
+          stream.projectId === route.projectId &&
+          stream.sessionId === route.sessionId &&
+          (stream.status === 'running' || stream.status === 'stopping'))
+        .map(([streamId, stream]) => ({
+          stream_id: streamId,
+          status: stream.status,
+          started_at: stream.startedAt,
+        }));
+      json(res, 200, { items, total: items.length });
+      return;
+    }
+
     if (route.kind === 'chatMessages' && method === 'GET') {
       const { page, pageSize, offset } = parsePagination(requestUrl.searchParams, {
         page: 1,
@@ -2781,6 +2820,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         projectId: route.projectId,
         sessionId: route.sessionId,
         abortController: streamAbortController,
+        startedAt: new Date().toISOString(),
         status: 'running',
       });
       await writeStreamRegistry(

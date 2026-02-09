@@ -898,6 +898,119 @@ describe('api-entry-node projects routes', () => {
     expect(done?.message_status).toBe('stopped');
   });
 
+  it('lists active stream ids by session for refresh recovery', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startSlowOpenAICompatibleUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-key',
+          type: 'api_key',
+          value: 'sk-chat',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-endpoint',
+          openai_model: 'deepseek-chat',
+          source_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+        }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    const createUser = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'hello from user',
+        }),
+      },
+    );
+    expect(createUser.status).toBe(201);
+    const userMessage = (await createUser.json()) as { id: string };
+
+    const stream = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'deepseek-chat',
+          branch_leaf_message_id: userMessage.id,
+          input: { role: 'user', content: 'hello from user' },
+        }),
+      },
+    );
+    expect(stream.status).toBe(200);
+
+    const activeStreams = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/streams`,
+    );
+    expect(activeStreams.status).toBe(200);
+    const activeBody = (await activeStreams.json()) as {
+      items: Array<{ stream_id: string; status: string; started_at: string }>;
+      total: number;
+    };
+    expect(activeBody.total).toBe(1);
+    expect(activeBody.items[0]?.stream_id).toContain('stream_');
+    expect(activeBody.items[0]?.status).toBe('running');
+    expect(typeof activeBody.items[0]?.started_at).toBe('string');
+
+    const stopBySession = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/stop`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(stopBySession.status).toBe(202);
+    await stream.text();
+  });
+
   it('supports user revision and assistant variants for chat branching', async () => {
     const { baseUrl } = startServer();
     const upstream = startOpenAICompatibleUpstreamServer();

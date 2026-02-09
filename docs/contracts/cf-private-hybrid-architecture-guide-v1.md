@@ -481,6 +481,7 @@ packages/
 - `GET/POST /workspaces/{ws}/projects/{project}/chat/sessions`
 - `GET/PATCH/DELETE /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}`
 - `POST /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/stop`
+- `GET /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/streams`
 - `GET/POST /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages`
 - `PATCH /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages/{messageId}`
 - `POST /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages/stream`
@@ -501,6 +502,10 @@ packages/
     - 携带 `branch_leaf_message_id` + 相同 input 时不得重复创建 user message
   - `messages/streams/{streamId}/stop` 需幂等（重复调用返回 202）
   - `sessions/{sessionId}/stop` 需支持无 `stream_id` 停止（用于页面刷新后仅有 `runtime_status` 的场景）
+  - `sessions/{sessionId}/streams` 返回当前活跃流列表（`stream_id/status/started_at`），用于浏览器刷新或切线程后的 stream 恢复
+  - 控制语义采用双层：
+    - `sessions/{sessionId}/stop` = 粗粒度，停止该 session 全部活跃流
+    - `messages/streams/{streamId}/stop` = 细粒度，仅停止指定 stream
   - `chat/sessions` 响应可携带 `runtime_status`（`running|stopping|completed|stopped|failed`）用于前端刷新后的运行态展示
   - `chat/sessions` 与 `chat/sessions/{sessionId}/messages` 必须支持 `page`/`page_size` 分页参数，并返回准确 `total/page/page_size/has_more`
   - `done.tokens` 与落库 `tokens` 应优先使用上游 `usage.total_tokens`；无 usage 时可为空，不得使用字符长度估算 token

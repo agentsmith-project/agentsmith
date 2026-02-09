@@ -286,4 +286,14 @@ export class ChatAPI {
       {},
     );
   }
+
+  async getSessionStreams(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+  ): Promise<{ items: Array<{ stream_id: string; status: 'running' | 'stopping'; started_at: string }>; total: number }> {
+    return this.client.get<{ items: Array<{ stream_id: string; status: 'running' | 'stopping'; started_at: string }>; total: number }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/streams`,
+    );
+  }
 }

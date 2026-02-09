@@ -424,6 +424,39 @@ export default function ChatPage({ params }: ChatPageProps) {
     });
   };
 
+  useEffect(() => {
+    if (!workspaceId || !projectId || sessions.length === 0) return;
+    const candidates = sessions.filter(
+      (session) =>
+        (session.runtime_status === 'running' || session.runtime_status === 'stopping') &&
+        !streamIdsRef.current.has(session.id),
+    );
+    if (candidates.length === 0) return;
+
+    let cancelled = false;
+    const recoverActiveStreamIds = async () => {
+      await Promise.all(
+        candidates.map(async (session) => {
+          try {
+            const data = await chatAPI.getSessionStreams(workspaceId, projectId, session.id);
+            if (cancelled) return;
+            const active = data.items.find((item) => item.status === 'running' || item.status === 'stopping');
+            if (active) {
+              streamIdsRef.current.set(session.id, active.stream_id);
+            }
+          } catch {
+            // Keep UI resilient when runtime state is stale.
+          }
+        }),
+      );
+    };
+
+    void recoverActiveStreamIds();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatAPI, projectId, sessions, workspaceId]);
+
   const stopStreamingSession = async (
     sessionId: string,
     reason: 'user' | 'replace' = 'user',

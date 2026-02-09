@@ -39,6 +39,10 @@ Current chat integration verification scope:
   - create multiple chat threads in one project
   - bind different endpoints per thread
   - switch between threads and verify each turn routes to its thread-bound endpoint
+- Thread lifecycle consistency:
+  - rename thread and verify name persists after route switch
+  - delete another thread and verify it is removed
+  - continue chatting on the remaining thread successfully
 
 Current AIReady API status:
 

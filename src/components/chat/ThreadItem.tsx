@@ -124,6 +124,7 @@ export function ThreadItem({
                   type="button"
                   variant="ghost"
                   size="icon"
+                  data-testid="chat__thread-actions-btn"
                   className={cn(
                     'h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity',
                     'text-icon-default hover:text-foreground',
@@ -136,6 +137,7 @@ export function ThreadItem({
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="start">
                 <DropdownMenuItem
+                  data-testid="chat__thread-rename-action"
                   onSelect={(e) => {
                     e.preventDefault();
                     setEditing(true);
@@ -163,6 +165,7 @@ export function ThreadItem({
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
+                  data-testid="chat__thread-delete-action"
                   className="text-error"
                   onSelect={(e) => {
                     e.preventDefault();

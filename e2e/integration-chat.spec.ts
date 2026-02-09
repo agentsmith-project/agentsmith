@@ -305,6 +305,37 @@ async function createNewThreadInChat(
   return threadId!;
 }
 
+async function renameThreadInChat(
+  page: import('@playwright/test').Page,
+  threadId: string,
+  nextTitle: string,
+) {
+  const thread = page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadId}"]`).first();
+  await expect(thread).toBeVisible({ timeout: 30_000 });
+  await thread.getByTestId('chat__thread-actions-btn').click();
+  await page.getByTestId('chat__thread-rename-action').click();
+  const titleInput = thread.locator('input').first();
+  await expect(titleInput).toBeVisible({ timeout: 10_000 });
+  await titleInput.fill(nextTitle);
+  await titleInput.press('Enter');
+  await expect(thread.getByText(nextTitle)).toBeVisible({ timeout: 30_000 });
+}
+
+async function deleteThreadInChat(
+  page: import('@playwright/test').Page,
+  threadId: string,
+) {
+  const thread = page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadId}"]`).first();
+  await expect(thread).toBeVisible({ timeout: 30_000 });
+  await thread.getByTestId('chat__thread-actions-btn').click();
+  await page.getByTestId('chat__thread-delete-action').click();
+  await expect(page.getByTestId('chat__delete-thread-confirm')).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId('chat__delete-thread-confirm').click();
+  await expect(page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadId}"]`)).toHaveCount(0, {
+    timeout: 30_000,
+  });
+}
+
 async function openChatAndSend(
   page: import('@playwright/test').Page,
   locale: string,
@@ -680,6 +711,63 @@ test.describe('integration chat flow', () => {
     } finally {
       await new Promise<void>((resolve) => upstreamA.server.close(() => resolve()));
       await new Promise<void>((resolve) => upstreamB.server.close(() => resolve()));
+    }
+  });
+
+  test('thread rename persists and deleted thread is removed cleanly', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const upstream = await startOpenAICompatibleUpstreamWith({ replyText: 'Thread lifecycle reply' });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
+
+      const threadAId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Thread A initial message',
+        null,
+        'Thread lifecycle reply',
+      );
+      const threadBId = await createNewThreadInChat(page, locale, projectId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Thread B initial message',
+        threadBId,
+        'Thread lifecycle reply',
+      );
+
+      const renamedTitle = `Renamed Thread ${Date.now()}`;
+      await renameThreadInChat(page, threadAId, renamedTitle);
+      await deleteThreadInChat(page, threadBId);
+
+      await page.getByRole('link', { name: /overview|概览/i }).first().click();
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`), {
+        timeout: 30_000,
+      });
+
+      const beforeResume = upstream.getRequestCount();
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Thread A after lifecycle operations',
+        threadAId,
+        'Thread lifecycle reply',
+      );
+      const threadA = page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadAId}"]`).first();
+      await expect(threadA.getByText(renamedTitle)).toBeVisible({ timeout: 30_000 });
+      await expect(page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadBId}"]`)).toHaveCount(0);
+      expect(upstream.getRequestCount()).toBeGreaterThanOrEqual(beforeResume + 1);
+    } finally {
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
     }
   });
 

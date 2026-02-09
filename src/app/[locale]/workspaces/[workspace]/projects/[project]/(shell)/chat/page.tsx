@@ -694,6 +694,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             <AlertDialogFooter>
               <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
               <AlertDialogAction
+                data-testid="chat__delete-thread-confirm"
                 onClick={(e) => {
                   e.preventDefault();
                   if (!threadToDelete) return;

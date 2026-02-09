@@ -898,4 +898,106 @@ describe('api-entry-node projects routes', () => {
     expect(assistantVariants[0].variant_index).toBe(0);
     expect(assistantVariants[1].variant_index).toBe(1);
   });
+
+  it('supports paginated chat messages list', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startOpenAICompatibleUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-key',
+          type: 'api_key',
+          value: 'sk-chat',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-endpoint',
+          openai_model: 'deepseek-chat',
+          source_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint_id: endpoint.id, model: 'deepseek-chat' }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    for (const content of ['m1', 'm2', 'm3']) {
+      const created = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ role: 'user', content }),
+        },
+      );
+      expect(created.status).toBe(201);
+    }
+
+    const page1 = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages?page=1&page_size=2`,
+    );
+    expect(page1.status).toBe(200);
+    const page1Body = (await page1.json()) as {
+      items: Array<{ content: string }>;
+      total: number;
+      page: number;
+      page_size: number;
+      has_more: boolean;
+    };
+    expect(page1Body.total).toBe(3);
+    expect(page1Body.page).toBe(1);
+    expect(page1Body.page_size).toBe(2);
+    expect(page1Body.has_more).toBe(true);
+    expect(page1Body.items.map((item) => item.content)).toEqual(['m1', 'm2']);
+
+    const page2 = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages?page=2&page_size=2`,
+    );
+    expect(page2.status).toBe(200);
+    const page2Body = (await page2.json()) as {
+      items: Array<{ content: string }>;
+      total: number;
+      page: number;
+      page_size: number;
+      has_more: boolean;
+    };
+    expect(page2Body.total).toBe(3);
+    expect(page2Body.page).toBe(2);
+    expect(page2Body.page_size).toBe(2);
+    expect(page2Body.has_more).toBe(false);
+    expect(page2Body.items.map((item) => item.content)).toEqual(['m3']);
+  });
 });

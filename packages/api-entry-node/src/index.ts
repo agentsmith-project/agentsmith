@@ -1301,8 +1301,8 @@ function sseWrite(res: http.ServerResponse, event: string, data: unknown): void 
 
 function parseOpenAIStreamChunk(
   chunk: string,
-): Array<{ delta: string; done: boolean; finishReason?: string | null }> {
-  const events: Array<{ delta: string; done: boolean; finishReason?: string | null }> = [];
+): Array<{ delta: string; done: boolean; finishReason?: string | null; usageTokens?: number }> {
+  const events: Array<{ delta: string; done: boolean; finishReason?: string | null; usageTokens?: number }> = [];
   const blocks = chunk.split('\n\n').map((item) => item.trim()).filter(Boolean);
   for (const block of blocks) {
     const lines = block.split('\n');
@@ -1316,16 +1316,23 @@ function parseOpenAIStreamChunk(
       }
       try {
         const payload = JSON.parse(data) as {
+          usage?: { total_tokens?: unknown };
           choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
         };
+        const usageTokensRaw = payload.usage?.total_tokens;
+        const usageTokens = typeof usageTokensRaw === 'number' && Number.isFinite(usageTokensRaw)
+          ? usageTokensRaw
+          : undefined;
         const delta = payload.choices?.[0]?.delta?.content;
         const finishReasonRaw = payload.choices?.[0]?.finish_reason;
         const finishReason = typeof finishReasonRaw === 'string' ? finishReasonRaw : null;
         if (typeof delta === 'string' && delta.length > 0) {
-          events.push({ delta, done: false, finishReason: null });
+          events.push({ delta, done: false, finishReason: null, usageTokens });
         }
         if (finishReason) {
-          events.push({ delta: '', done: true, finishReason });
+          events.push({ delta: '', done: true, finishReason, usageTokens });
+        } else if (usageTokens !== undefined) {
+          events.push({ delta: '', done: false, finishReason: null, usageTokens });
         }
       } catch {
         // ignore invalid upstream chunks
@@ -1352,6 +1359,30 @@ function safeAssistantFinishReason(payload: unknown): string | null {
   const choices = (payload as { choices?: Array<{ finish_reason?: unknown }> }).choices;
   const finishReason = choices?.[0]?.finish_reason;
   return typeof finishReason === 'string' ? finishReason : null;
+}
+
+function safeAssistantUsageTokens(payload: unknown): number | undefined {
+  if (!payload || typeof payload !== 'object') {
+    return undefined;
+  }
+  const usage = (payload as { usage?: { total_tokens?: unknown } }).usage;
+  const totalTokens = usage?.total_tokens;
+  return typeof totalTokens === 'number' && Number.isFinite(totalTokens) ? totalTokens : undefined;
+}
+
+function parsePagination(
+  searchParams: URLSearchParams,
+  defaults: { page: number; pageSize: number; maxPageSize: number },
+): { page: number; pageSize: number; offset: number } {
+  const pageRaw = Number(searchParams.get('page') ?? defaults.page);
+  const pageSizeRaw = Number(searchParams.get('page_size') ?? defaults.pageSize);
+  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : defaults.page;
+  const pageSizeCandidate = Number.isFinite(pageSizeRaw) && pageSizeRaw > 0
+    ? Math.floor(pageSizeRaw)
+    : defaults.pageSize;
+  const pageSize = Math.min(defaults.maxPageSize, pageSizeCandidate);
+  const offset = (page - 1) * pageSize;
+  return { page, pageSize, offset };
 }
 
 async function readStreamRegistry(
@@ -2209,9 +2240,15 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     if (route.kind === 'chatSessions' && method === 'GET') {
+      const { page, pageSize, offset } = parsePagination(requestUrl.searchParams, {
+        page: 1,
+        pageSize: 100,
+        maxPageSize: 500,
+      });
       const items = await deps.chatResourceService.listSessions(route.workspaceId, route.projectId);
+      const pageItems = items.slice(offset, offset + pageSize);
       const itemsWithRuntime = await Promise.all(
-        items.map(async (item) => ({
+        pageItems.map(async (item) => ({
           ...item,
           runtime_status: await readSessionStreamState(
             deps.cache,
@@ -2223,10 +2260,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       );
       json(res, 200, {
         items: itemsWithRuntime,
-        total: itemsWithRuntime.length,
-        page: 1,
-        page_size: itemsWithRuntime.length || 1000,
-        has_more: false,
+        total: items.length,
+        page,
+        page_size: pageSize,
+        has_more: offset + itemsWithRuntime.length < items.length,
       });
       return;
     }
@@ -2317,6 +2354,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     if (route.kind === 'chatMessages' && method === 'GET') {
+      const { page, pageSize, offset } = parsePagination(requestUrl.searchParams, {
+        page: 1,
+        pageSize: 200,
+        maxPageSize: 500,
+      });
       const session = await deps.chatResourceService.getSession(
         route.workspaceId,
         route.projectId,
@@ -2331,12 +2373,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         route.projectId,
         route.sessionId,
       );
+      const pageItems = items.slice(offset, offset + pageSize);
       json(res, 200, {
-        items,
+        items: pageItems,
         total: items.length,
-        page: 1,
-        page_size: items.length || 500,
-        has_more: false,
+        page,
+        page_size: pageSize,
+        has_more: offset + pageItems.length < items.length,
       });
       return;
     }
@@ -2761,7 +2804,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             route.projectId,
             route.sessionId,
             createdAssistant.id,
-            { messageStatus: 'stopped', tokens: 0 },
+            { messageStatus: 'stopped' },
           );
           await writeSessionStreamState(
             deps.cache,
@@ -2801,7 +2844,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           {
             content: '',
             finishReason: null,
-            tokens: 0,
             messageStatus: 'failed',
             errorCode: 'STREAM_UPSTREAM_CONNECT_ERROR',
             errorMessage: error instanceof Error ? error.message : 'stream_upstream_connect_error',
@@ -2842,7 +2884,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           {
             content: '',
             finishReason: null,
-            tokens: 0,
             messageStatus: 'failed',
             errorCode: `STREAM_UPSTREAM_${upstreamRes.status}`,
             errorMessage: `chat_upstream_status_${upstreamRes.status}`,
@@ -2880,6 +2921,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       let assistantText = '';
       let persistedLength = 0;
       let finishReason: string | null = null;
+      let usageTokens: number | undefined;
       let messageStatus: ChatMessageRecord['message_status'] = 'completed';
       const inactivityTimeoutMs = Math.max(
         5_000,
@@ -2896,7 +2938,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           createdAssistant.id,
           {
             content: assistantText,
-            tokens: assistantText.length,
             messageStatus: 'streaming',
           },
         );
@@ -2940,7 +2981,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
                 if (chunk.finishReason) {
                   finishReason = chunk.finishReason;
                 }
+                if (chunk.usageTokens !== undefined) {
+                  usageTokens = chunk.usageTokens;
+                }
                 continue;
+              }
+              if (chunk.usageTokens !== undefined) {
+                usageTokens = chunk.usageTokens;
               }
               assistantText += chunk.delta;
               if (!clientDisconnected) {
@@ -2959,7 +3006,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
                 if (chunk.finishReason) {
                   finishReason = chunk.finishReason;
                 }
+                if (chunk.usageTokens !== undefined) {
+                  usageTokens = chunk.usageTokens;
+                }
                 continue;
+              }
+              if (chunk.usageTokens !== undefined) {
+                usageTokens = chunk.usageTokens;
               }
               assistantText += chunk.delta;
               if (!clientDisconnected) {
@@ -2974,6 +3027,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           const completionPayload = await upstreamRes.json().catch(() => ({}));
           assistantText = safeAssistantContent(completionPayload);
           finishReason = safeAssistantFinishReason(completionPayload);
+          usageTokens = safeAssistantUsageTokens(completionPayload);
           if (assistantText.length > 0 && !clientDisconnected) {
             sseWrite(res, 'delta', {
               message_id: createdAssistant.id,
@@ -2999,7 +3053,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             {
               content: assistantText,
               finishReason: finishReason ?? null,
-              tokens: assistantText.length,
+              tokens: usageTokens,
               messageStatus: 'failed',
               errorCode,
               errorMessage: error instanceof Error ? error.message : 'stream_upstream_error',
@@ -3040,7 +3094,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         {
           content: assistantText,
           finishReason,
-          tokens: assistantText.length,
+          tokens: usageTokens,
           messageStatus,
         },
       );
@@ -3076,7 +3130,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         sseWrite(res, 'done', {
           message_id: finalized?.id ?? createdAssistant.id,
           finish_reason: finishReason,
-          tokens: assistantText.length,
+          tokens: usageTokens,
           message_status: messageStatus,
         });
         res.end();

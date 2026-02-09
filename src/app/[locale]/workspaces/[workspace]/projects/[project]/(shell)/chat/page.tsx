@@ -619,7 +619,6 @@ export default function ChatPage({ params }: ChatPageProps) {
             if (mode === 'replace' && liveMessageId) {
               patchStreamAssistantInCache(args.sessionId, liveMessageId, {
                 content,
-                tokens: content.length,
                 finish_reason: null,
               });
             }

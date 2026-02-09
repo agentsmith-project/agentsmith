@@ -318,6 +318,7 @@
     "threads_today": "Today",
     "threads_yesterday": "Yesterday",
     "threads_days_ago": "{days} days ago",
+    "thread_generating": "Generating",
     "attachments": {
       "disabled_while_editing": "Attachments are disabled while editing."
     },

@@ -45,11 +45,13 @@ export async function* streamSseJson(
     } catch {
       // ignore
     }
+    const bodyRecord = body as Record<string, unknown> | null;
+    const fallbackCode = bodyRecord && typeof bodyRecord.code === 'string'
+      ? bodyRecord.code
+      : null;
     const errorCode = typeof body?.error_code === 'string'
       ? body.error_code
-      : (body && typeof (body as { code?: unknown }).code === 'string'
-          ? (body as { code: string }).code
-          : null);
+      : fallbackCode;
     if (errorCode) {
       throw new ApiError(errorCode, body?.message || 'Request failed', body?.request_id);
     }

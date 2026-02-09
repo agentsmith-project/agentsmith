@@ -19,6 +19,7 @@ describe('ThreadItem', () => {
   const defaultProps = {
     session: mockSession,
     isActive: false,
+    isStreaming: false,
     onSelect: vi.fn(),
     onRename: vi.fn(),
     onToggleStar: vi.fn(),

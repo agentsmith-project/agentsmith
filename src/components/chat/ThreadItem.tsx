@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { MoreHorizontal, Pin, Star, Trash2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import type { ChatSession } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,7 @@ function formatRelative(ts?: string) {
 export function ThreadItem({
   session,
   isActive,
+  isStreaming,
   onSelect,
   onRename,
   onToggleStar,
@@ -33,12 +35,14 @@ export function ThreadItem({
 }: {
   session: ChatSession;
   isActive: boolean;
+  isStreaming: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
   onToggleStar: (next: boolean) => void;
   onTogglePin: (next: boolean) => void;
   onDelete: () => void;
 }) {
+  const t = useTranslations('chat');
   const [editing, setEditing] = React.useState(false);
   const [draftTitle, setDraftTitle] = React.useState(session.title || '');
 
@@ -111,6 +115,15 @@ export function ThreadItem({
               </div>
             )}
             <div className="flex items-center gap-2 text-xs text-tertiary mt-0.5">
+              {isStreaming ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent"
+                  data-testid="chat__thread-streaming-indicator"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                  {t('thread_generating')}
+                </span>
+              ) : null}
               <span className="truncate">{formatRelative(session.updated_at)}</span>
               <span className="text-tertiary/70">·</span>
               <span>{session.message_count ?? 0}</span>

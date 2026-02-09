@@ -1069,8 +1069,16 @@ test.describe('integration chat flow', () => {
 
       const threads = page.getByTestId('chat__thread-item');
       await expect(threads).toHaveCount(2, { timeout: 30_000 });
-      const sourceThread = threads.nth(1);
-      const targetThread = threads.nth(0);
+      const sourceThreadId = await threads.nth(1).getAttribute('data-thread-id');
+      const targetThreadId = await threads.nth(0).getAttribute('data-thread-id');
+      expect(sourceThreadId).toBeTruthy();
+      expect(targetThreadId).toBeTruthy();
+      const sourceThread = page.locator(
+        `[data-testid="chat__thread-item"][data-thread-id="${sourceThreadId}"]`,
+      ).first();
+      const targetThread = page.locator(
+        `[data-testid="chat__thread-item"][data-thread-id="${targetThreadId}"]`,
+      ).first();
 
       await sourceThread.locator('div[role="button"]').first().click();
       const textarea = page.getByTestId('chat__composer').locator('textarea');
@@ -1079,7 +1087,7 @@ test.describe('integration chat flow', () => {
       await expect(page.getByText('thread-leak-check-1').first()).toBeVisible({ timeout: 30_000 });
 
       await targetThread.locator('div[role="button"]').first().click();
-      await expect(page.getByTestId('chat__stream-status')).not.toHaveText('Streaming', { timeout: 15_000 });
+      await expect(sourceThread.getByTestId('chat__thread-streaming-indicator')).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText('thread-leak-check-1')).toHaveCount(0);
     } finally {
       await new Promise<void>((resolve) => upstream.server.close(() => resolve()));

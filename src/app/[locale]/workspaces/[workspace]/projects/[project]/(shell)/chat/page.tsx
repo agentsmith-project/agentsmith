@@ -53,6 +53,28 @@ interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
 
+type SessionStreamStatus = 'idle' | 'connecting' | 'streaming' | 'stopped' | 'error';
+
+interface SessionStreamingAssistant {
+  messageId?: string | null;
+  content: string;
+  mode: 'append' | 'replace';
+  startedAt: number;
+  lastTokenAt: number;
+}
+
+interface SessionStreamState {
+  status: SessionStreamStatus;
+  assistant: SessionStreamingAssistant | null;
+}
+
+function createClientStreamId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `stream_${crypto.randomUUID()}`;
+  }
+  return `stream_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
 export default function ChatPage({ params }: ChatPageProps) {
   const queryClient = useQueryClient();
   const t = useTranslations('chat');
@@ -79,16 +101,9 @@ export default function ChatPage({ params }: ChatPageProps) {
   const suppressTimerRef = useRef<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const [streamStatus, setStreamStatus] = useState<'idle' | 'connecting' | 'streaming' | 'stopped' | 'error'>('idle');
-  const [streamingAssistant, setStreamingAssistant] = useState<{
-    sessionId: string;
-    messageId?: string | null;
-    content: string;
-    mode: 'append' | 'replace';
-    startedAt: number;
-    lastTokenAt: number;
-  } | null>(null);
+  const streamControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const streamIdsRef = useRef<Map<string, string>>(new Map());
+  const [streamStateBySession, setStreamStateBySession] = useState<Record<string, SessionStreamState>>({});
 
   useEffect(() => {
     params.then((p) => {
@@ -161,7 +176,8 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   useEffect(() => {
     if (messages.length === 0) return;
-    if (streamStatus !== 'idle') return;
+    const status = currentSessionId ? (streamStateBySession[currentSessionId]?.status ?? 'idle') : 'idle';
+    if (status !== 'idle') return;
     const groups = buildVariantGroups(messages);
     const nextMap = new Map(lastVariantTailRef.current);
     const updates: Record<string, number> = {};
@@ -191,7 +207,7 @@ export default function ChatPage({ params }: ChatPageProps) {
     }
     if (pendingAutoGroupRef.current) pendingAutoGroupRef.current = null;
     lastVariantTailRef.current = nextMap;
-  }, [messages, activeVariantIndexByGroup, streamStatus]);
+  }, [messages, activeVariantIndexByGroup, currentSessionId, streamStateBySession]);
 
   const { data: attachmentsData } = useQuery({
     queryKey: ['chat', 'attachments', workspaceId, projectId, currentSessionId],
@@ -368,17 +384,57 @@ export default function ChatPage({ params }: ChatPageProps) {
     );
   };
 
+  const setSessionStreamState = (
+    sessionId: string,
+    updater: SessionStreamState | ((prev: SessionStreamState) => SessionStreamState),
+  ) => {
+    setStreamStateBySession((prev) => {
+      const current = prev[sessionId] ?? { status: 'idle' as SessionStreamStatus, assistant: null };
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      if (next.status === 'idle' && !next.assistant) {
+        if (!prev[sessionId]) return prev;
+        const { [sessionId]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [sessionId]: next };
+    });
+  };
+
+  const stopStreamingSession = async (sessionId: string, reason: 'user' | 'replace' = 'user') => {
+    const streamId = streamIdsRef.current.get(sessionId);
+    const controller = streamControllersRef.current.get(sessionId);
+    if (!streamId && !controller) return;
+
+    if (streamId) {
+      try {
+        await chatAPI.stopStream(workspaceId, projectId, sessionId, streamId);
+      } catch {
+        // Keep local abort as authoritative UX action.
+      }
+    }
+    controller?.abort();
+    streamIdsRef.current.delete(sessionId);
+    streamControllersRef.current.delete(sessionId);
+    setSessionStreamState(sessionId, {
+      status: reason === 'user' ? 'stopped' : 'idle',
+      assistant: null,
+    });
+  };
+
   const stopStreaming = () => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setStreamStatus('stopped');
-    setStreamingAssistant(null);
+    if (!currentSessionId) return;
+    void stopStreamingSession(currentSessionId, 'user');
   };
 
   useEffect(() => {
+    const streamControllers = streamControllersRef.current;
+    const streamIds = streamIdsRef.current;
     return () => {
-      abortRef.current?.abort();
-      abortRef.current = null;
+      for (const controller of streamControllers.values()) {
+        controller.abort();
+      }
+      streamControllers.clear();
+      streamIds.clear();
     };
   }, []);
 
@@ -392,37 +448,58 @@ export default function ChatPage({ params }: ChatPageProps) {
     mode?: 'append' | 'replace';
     displayMessageId?: string | null;
   }) => {
-    stopStreaming();
-    setStreamStatus('connecting');
+    await stopStreamingSession(args.sessionId, 'replace');
 
     const controller = new AbortController();
-    abortRef.current = controller;
+    const clientStreamId = createClientStreamId();
+    streamControllersRef.current.set(args.sessionId, controller);
+    streamIdsRef.current.set(args.sessionId, clientStreamId);
 
     const mode = args.mode ?? (args.fromMessageId ? 'replace' : 'append');
     const now = Date.now();
-    setStreamingAssistant({
-      sessionId: args.sessionId,
-      messageId: args.displayMessageId ?? null,
-      content: '',
-      mode,
-      startedAt: now,
-      lastTokenAt: now,
+    setSessionStreamState(args.sessionId, {
+      status: 'connecting',
+      assistant: {
+        messageId: args.displayMessageId ?? null,
+        content: '',
+        mode,
+        startedAt: now,
+        lastTokenAt: now,
+      },
     });
 
     const throttler = createThrottle<string>(40, (next) => {
-      setStreamingAssistant((prev) =>
-        prev
-          ? { ...prev, content: next, lastTokenAt: Date.now() }
+      setSessionStreamState(args.sessionId, (prev) => ({
+        status: prev.status === 'idle' ? 'streaming' : prev.status,
+        assistant: prev.assistant
+          ? { ...prev.assistant, content: next, lastTokenAt: Date.now() }
           : {
-              sessionId: args.sessionId,
               messageId: null,
               content: next,
               mode,
               startedAt: Date.now(),
               lastTokenAt: Date.now(),
             },
-      );
+      }));
     });
+
+    const setAssistantMessageId = (messageId: string) => {
+      setSessionStreamState(args.sessionId, (prev) => ({
+        status: prev.status === 'idle' ? 'streaming' : prev.status,
+        assistant: prev.assistant
+          ? { ...prev.assistant, messageId }
+          : {
+              messageId,
+              content: '',
+              mode,
+              startedAt: Date.now(),
+              lastTokenAt: Date.now(),
+            },
+      }));
+    };
+
+    const streamStillActive = () =>
+      streamControllersRef.current.get(args.sessionId) === controller;
 
     try {
       const res = await postChatStream({
@@ -436,20 +513,29 @@ export default function ChatPage({ params }: ChatPageProps) {
           branch_leaf_message_id: args.branchLeafMessageId,
           from_message_id: args.fromMessageId,
           input: args.input,
+          client_stream_id: clientStreamId,
         },
         signal: controller.signal,
       });
-
-      setStreamStatus('streaming');
+      setSessionStreamState(args.sessionId, (prev) => ({
+        ...prev,
+        status: 'streaming',
+      }));
       let content = '';
       let liveMessageId: string | null = mode === 'replace' ? args.fromMessageId ?? null : null;
 
       for await (const ev of streamSseJson(res, controller.signal)) {
-        if (controller.signal.aborted) break;
+        if (controller.signal.aborted || !streamStillActive()) break;
         if (ev.event === 'meta') {
           const data = (typeof ev.data === 'object' && ev.data !== null
             ? (ev.data as Record<string, unknown>)
             : null);
+          const metaStreamId = data && typeof data.stream_id === 'string'
+            ? data.stream_id
+            : null;
+          if (metaStreamId) {
+            streamIdsRef.current.set(args.sessionId, metaStreamId);
+          }
           const metaMessageId = data && typeof data.assistant_message_id === 'string'
             ? data.assistant_message_id
             : null;
@@ -480,18 +566,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                 variant_index: variantIndex,
               });
             }
-            setStreamingAssistant((prev) =>
-              prev
-                ? { ...prev, messageId: metaMessageId }
-                : {
-                    sessionId: args.sessionId,
-                    messageId: metaMessageId,
-                    content: '',
-                    mode,
-                    startedAt: Date.now(),
-                    lastTokenAt: Date.now(),
-                  },
-            );
+            setAssistantMessageId(metaMessageId);
           }
         } else if (ev.event === 'delta') {
           const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
@@ -517,24 +592,31 @@ export default function ChatPage({ params }: ChatPageProps) {
       }
 
       throttler.flush();
-      setStreamStatus('idle');
-      setStreamingAssistant(null);
+      if (streamStillActive()) {
+        setSessionStreamState(args.sessionId, { status: 'idle', assistant: null });
+      }
 
       queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
       queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
     } catch (e: unknown) {
       if (controller.signal.aborted) {
-        setStreamStatus('stopped');
-        setStreamingAssistant(null);
+        if (streamStillActive()) {
+          setSessionStreamState(args.sessionId, { status: 'stopped', assistant: null });
+        }
         queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
         queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
         return;
       }
-      setStreamStatus('error');
-      setStreamingAssistant(null);
+      setSessionStreamState(args.sessionId, { status: 'error', assistant: null });
       toast.error(e instanceof Error ? e.message : 'Streaming failed');
     } finally {
-      abortRef.current = null;
+      if (streamControllersRef.current.get(args.sessionId) === controller) {
+        streamControllersRef.current.delete(args.sessionId);
+      }
+      const currentStreamId = streamIdsRef.current.get(args.sessionId);
+      if (!currentStreamId || currentStreamId === clientStreamId) {
+        streamIdsRef.current.delete(args.sessionId);
+      }
     }
   };
 
@@ -618,12 +700,17 @@ export default function ChatPage({ params }: ChatPageProps) {
   }
 
   const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
-  const activeStreamingAssistant =
-    streamingAssistant && currentSessionId && streamingAssistant.sessionId === currentSessionId
-      ? streamingAssistant
-      : null;
+  const activeStreamStatus: SessionStreamStatus = currentSessionId
+    ? (streamStateBySession[currentSessionId]?.status ?? 'idle')
+    : 'idle';
+  const activeStreamingAssistant = currentSessionId
+    ? (streamStateBySession[currentSessionId]?.assistant ?? null)
+    : null;
+  const streamingSessionIds = Object.entries(streamStateBySession)
+    .filter(([, state]) => state.status === 'connecting' || state.status === 'streaming')
+    .map(([sessionId]) => sessionId);
   const disabled =
-    (streamStatus === 'connecting' || streamStatus === 'streaming') &&
+    (activeStreamStatus === 'connecting' || activeStreamStatus === 'streaming') &&
     !!activeStreamingAssistant;
 
   return (
@@ -640,10 +727,10 @@ export default function ChatPage({ params }: ChatPageProps) {
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             onSelect={(id) => {
-              stopStreaming();
               setCurrentSessionId(id);
               setEditingMessageId(null);
             }}
+            streamingSessionIds={streamingSessionIds}
               onRename={(id, title) => {
               if (!canManageChatSessions) return;
               updateSessionMutation.mutate({ sessionId: id, data: { title } });
@@ -675,7 +762,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             <ChatHeader
               session={activeSession}
               endpoints={endpoints}
-              streamStatus={streamStatus}
+              streamStatus={activeStreamStatus}
               onRename={(title) => {
                 if (!canManageChatSessions) return;
                 if (!activeSession) return;
@@ -821,7 +908,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                 onSend={handleSend}
                 onStop={stopStreaming}
                 mode="compose"
-                autoFocus={!editingMessageId && streamStatus === 'idle'}
+                autoFocus={!editingMessageId && activeStreamStatus === 'idle'}
                 onPickFiles={() => {
                   if (editingMessageId) {
                     toast.info(t('attachments.disabled_while_editing'));

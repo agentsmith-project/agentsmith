@@ -22,6 +22,7 @@ export function ThreadsPane({
   onTogglePin,
   onDelete,
   onCreate,
+  streamingSessionIds,
   canCreate,
   createPending,
   isLoading,
@@ -36,6 +37,7 @@ export function ThreadsPane({
   onTogglePin: (sessionId: string, next: boolean) => void;
   onDelete: (sessionId: string) => void;
   onCreate: () => void;
+  streamingSessionIds: string[];
   canCreate: boolean;
   createPending: boolean;
   isLoading: boolean;
@@ -95,6 +97,7 @@ export function ThreadsPane({
                 <ThreadItem
                   session={s}
                   isActive={s.id === activeSessionId}
+                  isStreaming={streamingSessionIds.includes(s.id)}
                   onSelect={() => onSelect(s.id)}
                   onRename={(title) => onRename(s.id, title)}
                   onToggleStar={(next) => onToggleStar(s.id, next)}

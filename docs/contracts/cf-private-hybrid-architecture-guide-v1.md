@@ -483,11 +483,14 @@ packages/
 - `GET/POST /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages`
 - `PATCH /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages/{messageId}`
 - `POST /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages/stream`
+- `POST /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/messages/streams/{streamId}/stop`
 - `GET/POST/DELETE /workspaces/{ws}/projects/{project}/chat/sessions/{sessionId}/attachments/*`
 - `messages/stream` 必须:
   - 读取 session 绑定 endpoint/credential
   - 转发到 OpenAI-compatible `/chat/completions`
   - 返回 SSE 事件 (`meta`, `delta`, `done`)
+  - `meta.stream_id` 可用于显式 stop（用户点击停止）
+  - 客户端断开（刷新/离开）时不得中断上游推理，后台继续并落库
   - 将 assistant 回复落库，支持前端断线后重载历史
   - 支持分支对话语义：
     - 用户编辑产生新 revision（不覆盖原 message）

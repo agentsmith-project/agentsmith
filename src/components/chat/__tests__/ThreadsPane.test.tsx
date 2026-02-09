@@ -67,6 +67,10 @@ const defaultProps = {
   onToggleStar: vi.fn(),
   onTogglePin: vi.fn(),
   onDelete: vi.fn(),
+  onCreate: vi.fn(),
+  streamingSessionIds: [],
+  canCreate: true,
+  createPending: false,
   isLoading: false,
 };
 
@@ -87,7 +91,7 @@ describe('ThreadsPane', () => {
     it('should render search input', () => {
       render(<ThreadsPane {...defaultProps} />);
 
-      const searchInput = screen.getByPlaceholderText('Search threads...');
+      const searchInput = screen.getByPlaceholderText('search_threads_placeholder');
       expect(searchInput).toBeInTheDocument();
     });
 
@@ -112,7 +116,7 @@ describe('ThreadsPane', () => {
     it('should show loading message when isLoading is true', () => {
       render(<ThreadsPane {...defaultProps} isLoading={true} />);
 
-      expect(screen.getByText('Loading...')).toBeInTheDocument();
+      expect(screen.getByText('loading')).toBeInTheDocument();
     });
 
     it('should not show sessions when loading', () => {
@@ -126,13 +130,13 @@ describe('ThreadsPane', () => {
     it('should show "No threads" when sessions array is empty', () => {
       render(<ThreadsPane {...defaultProps} sessions={[]} />);
 
-      expect(screen.getByText('No threads')).toBeInTheDocument();
+      expect(screen.getByText('no_threads')).toBeInTheDocument();
     });
 
     it('should show "No threads" when search returns no results', () => {
       render(<ThreadsPane {...defaultProps} searchQuery="nonexistent" />);
 
-      expect(screen.getByText('No threads')).toBeInTheDocument();
+      expect(screen.getByText('no_threads')).toBeInTheDocument();
     });
   });
 
@@ -156,7 +160,7 @@ describe('ThreadsPane', () => {
       const user = userEvent.setup();
       render(<ThreadsPane {...defaultProps} />);
 
-      const searchInput = screen.getByPlaceholderText('Search threads...');
+      const searchInput = screen.getByPlaceholderText('search_threads_placeholder');
       await user.type(searchInput, 'search');
 
       // Should be called for each character typed
@@ -221,6 +225,11 @@ describe('ThreadsPane', () => {
 
       // Check that Thread 2 is rendered (it should be marked as active via styling)
       expect(screen.getByText('Thread 2')).toBeInTheDocument();
+    });
+
+    it('should render streaming indicator for active streaming sessions', () => {
+      render(<ThreadsPane {...defaultProps} streamingSessionIds={['session-2']} />);
+      expect(screen.getByTestId('chat__thread-streaming-indicator')).toBeInTheDocument();
     });
   });
 
@@ -368,7 +377,7 @@ describe('ThreadsPane', () => {
     it('should have proper input labeling', () => {
       render(<ThreadsPane {...defaultProps} />);
 
-      const searchInput = screen.getByPlaceholderText('Search threads...');
+      const searchInput = screen.getByPlaceholderText('search_threads_placeholder');
       expect(searchInput).toBeInTheDocument();
     });
 

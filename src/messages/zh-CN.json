@@ -320,6 +320,7 @@
     "threads_today": "今天",
     "threads_yesterday": "昨天",
     "threads_days_ago": "{days} 天前",
+    "thread_generating": "推理中",
     "attachments": {
       "disabled_while_editing": "编辑时禁用附件。"
     },

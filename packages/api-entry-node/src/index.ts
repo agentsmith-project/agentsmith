@@ -182,6 +182,15 @@ interface ChatMessageRecord {
   is_stale?: boolean;
 }
 
+interface ActiveChatStreamRecord {
+  workspaceId: string;
+  projectId: string;
+  sessionId: string;
+  abortController: AbortController;
+}
+
+const ACTIVE_CHAT_STREAMS = new Map<string, ActiveChatStreamRecord>();
+
 interface ChatAttachmentRecord {
   id: string;
   workspace_id: string;
@@ -1256,6 +1265,13 @@ type ProjectsRoute =
   | { kind: 'chatMessages'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatMessageItem'; workspaceId: string; projectId: string; sessionId: string; messageId: string }
   | { kind: 'chatMessagesStream'; workspaceId: string; projectId: string; sessionId: string }
+  | {
+    kind: 'chatMessagesStreamStop';
+    workspaceId: string;
+    projectId: string;
+    sessionId: string;
+    streamId: string;
+  }
   | { kind: 'chatRegenerate'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatAttachments'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatAttachmentInit'; workspaceId: string; projectId: string; sessionId: string }
@@ -1484,6 +1500,19 @@ function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(chatMessagesStreamMatched[1]),
       projectId: decodeURIComponent(chatMessagesStreamMatched[2]),
       sessionId: decodeURIComponent(chatMessagesStreamMatched[3]),
+    };
+  }
+
+  const chatMessagesStreamStopMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/messages\/streams\/([^/]+)\/stop\/?$/,
+  );
+  if (chatMessagesStreamStopMatched) {
+    return {
+      kind: 'chatMessagesStreamStop',
+      workspaceId: decodeURIComponent(chatMessagesStreamStopMatched[1]),
+      projectId: decodeURIComponent(chatMessagesStreamStopMatched[2]),
+      sessionId: decodeURIComponent(chatMessagesStreamStopMatched[3]),
+      streamId: decodeURIComponent(chatMessagesStreamStopMatched[4]),
     };
   }
 
@@ -2317,6 +2346,22 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    if (route.kind === 'chatMessagesStreamStop' && method === 'POST') {
+      const running = ACTIVE_CHAT_STREAMS.get(route.streamId);
+      if (
+        !running ||
+        running.workspaceId !== route.workspaceId ||
+        running.projectId !== route.projectId ||
+        running.sessionId !== route.sessionId
+      ) {
+        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_stream_not_found' });
+        return;
+      }
+      running.abortController.abort();
+      json(res, 202, { success: true, stream_id: route.streamId });
+      return;
+    }
+
     if (route.kind === 'chatMessagesStream' && method === 'POST') {
       const session = await deps.chatResourceService.getSession(
         route.workspaceId,
@@ -2333,6 +2378,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         endpoint_id?: string;
         from_message_id?: string;
         branch_leaf_message_id?: string;
+        client_stream_id?: string;
         input?: { role?: 'user'; content?: string; attachments?: string[] };
       };
       const endpointId = raw.endpoint_id ?? session.endpoint_id;
@@ -2450,10 +2496,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       });
 
       const streamAbortController = new AbortController();
+      const streamId = raw.client_stream_id?.trim() || `stream_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      ACTIVE_CHAT_STREAMS.set(streamId, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        abortController: streamAbortController,
+      });
       let clientDisconnected = false;
       const onResClose = () => {
         clientDisconnected = true;
-        streamAbortController.abort();
       };
       res.once('close', onResClose);
 
@@ -2475,6 +2527,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         });
       } catch (error) {
         res.off('close', onResClose);
+        ACTIVE_CHAT_STREAMS.delete(streamId);
         if (streamAbortController.signal.aborted) {
           await deps.chatResourceService.updateAssistantMessage(
             route.workspaceId,
@@ -2490,6 +2543,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
       if (!upstreamRes.ok) {
         res.off('close', onResClose);
+        ACTIVE_CHAT_STREAMS.delete(streamId);
         const completionPayload = await upstreamRes.json().catch(() => ({}));
         json(res, upstreamRes.status, completionPayload);
         return;
@@ -2503,7 +2557,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         res.flushHeaders();
       }
       sseWrite(res, 'meta', {
-        stream_id: `stream_${Date.now()}`,
+        stream_id: streamId,
         session_id: route.sessionId,
         model: endpoint.openai_model,
         endpoint_id: endpoint.id,
@@ -2588,6 +2642,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           finishReason = 'stopped';
         } else {
           res.off('close', onResClose);
+          ACTIVE_CHAT_STREAMS.delete(streamId);
           throw error;
         }
       }
@@ -2609,6 +2664,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         },
       );
       res.off('close', onResClose);
+      ACTIVE_CHAT_STREAMS.delete(streamId);
 
       if (!clientDisconnected) {
         sseWrite(res, 'done', {
@@ -2863,11 +2919,13 @@ export function createNodeApiServer(
   if (lifecycle) {
     server.on('close', () => {
       clearInterval(jobWorkerInterval);
+      ACTIVE_CHAT_STREAMS.clear();
       void lifecycle.shutdown();
     });
   } else {
     server.on('close', () => {
       clearInterval(jobWorkerInterval);
+      ACTIVE_CHAT_STREAMS.clear();
     });
   }
 

@@ -328,7 +328,9 @@
     "delete_confirm_action": "Delete",
     "loading": "Loading...",
     "no_active_thread_title": "No active thread",
-    "no_active_thread_description": "Create a new chat to start."
+    "no_active_thread_description": "Create a new chat to start.",
+    "stream_stop_failed_retry": "Failed to stop generation. Please try stopping again.",
+    "stream_stop_required_before_replace_failed": "Failed to stop previous generation, regenerate is canceled."
   },
   "studio": {
     "title": "AI Studio",

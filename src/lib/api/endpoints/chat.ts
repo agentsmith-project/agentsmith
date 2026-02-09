@@ -269,8 +269,8 @@ export class ChatAPI {
     projectId: string,
     sessionId: string,
     streamId: string,
-  ): Promise<{ success: true; stream_id: string }> {
-    return this.client.post<{ success: true; stream_id: string }>(
+  ): Promise<{ success: true; stream_id: string; state: 'stopping' | 'not_found_or_finished' }> {
+    return this.client.post<{ success: true; stream_id: string; state: 'stopping' | 'not_found_or_finished' }>(
       `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages/streams/${streamId}/stop`,
       {},
     );

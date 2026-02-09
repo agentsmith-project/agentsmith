@@ -15,7 +15,15 @@ export type ChatStreamEvent =
       };
     }
   | { event: 'delta'; data: { message_id: string; variant_group_id?: string; variant_index?: number; delta: string } }
-  | { event: 'done'; data: { message_id: string; finish_reason?: string | null; tokens?: number } }
+  | {
+      event: 'done';
+      data: {
+        message_id: string;
+        finish_reason?: string | null;
+        tokens?: number;
+        message_status?: 'completed' | 'stopped' | 'failed';
+      };
+    }
   | { event: 'error'; data: { error_code: string; message: string; request_id?: string } };
 
 function parseSseChunk(buffer: string) {

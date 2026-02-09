@@ -58,7 +58,7 @@ import {
   SystemClock,
   Utf8DocumentParser,
 } from '@mbos/adapters-private';
-import type { JsonDocStorePort } from '@mbos/ports';
+import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 
 interface AuthenticatedUser {
   id: string;
@@ -173,6 +173,9 @@ interface ChatMessageRecord {
   created_at: string;
   tokens?: number;
   finish_reason?: string | null;
+  message_status?: 'streaming' | 'completed' | 'stopped' | 'failed';
+  error_code?: string | null;
+  error_message?: string | null;
   parent_id?: string | null;
   logical_id?: string;
   revision_of?: string | null;
@@ -187,9 +190,26 @@ interface ActiveChatStreamRecord {
   projectId: string;
   sessionId: string;
   abortController: AbortController;
+  status: 'running' | 'stopping' | 'finished';
 }
 
 const ACTIVE_CHAT_STREAMS = new Map<string, ActiveChatStreamRecord>();
+
+interface ChatStreamRegistryRecord {
+  streamId: string;
+  workspaceId: string;
+  projectId: string;
+  sessionId: string;
+  status: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
+  updatedAt: string;
+}
+
+const STREAM_REGISTRY_TTL_SECONDS = 30 * 60;
+const STREAM_REGISTRY_FINAL_TTL_SECONDS = 5 * 60;
+
+function streamRegistryKey(streamId: string): string {
+  return `chat:stream:${streamId}`;
+}
 
 interface ChatAttachmentRecord {
   id: string;
@@ -583,6 +603,9 @@ class ChatResourceService {
     content: string;
     tokens?: number;
     finishReason?: string | null;
+    messageStatus?: ChatMessageRecord['message_status'];
+    errorCode?: string | null;
+    errorMessage?: string | null;
     parentId?: string | null;
     logicalId?: string;
     revisionOf?: string | null;
@@ -609,6 +632,9 @@ class ChatResourceService {
       created_at: now,
       tokens: input.tokens,
       finish_reason: input.finishReason ?? null,
+      message_status: input.messageStatus,
+      error_code: input.errorCode ?? null,
+      error_message: input.errorMessage ?? null,
       parent_id: input.parentId ?? null,
       logical_id: resolvedLogicalId,
       revision_of: input.revisionOf ?? null,
@@ -707,6 +733,9 @@ class ChatResourceService {
       content?: string;
       finishReason?: string | null;
       tokens?: number;
+      messageStatus?: ChatMessageRecord['message_status'];
+      errorCode?: string | null;
+      errorMessage?: string | null;
     },
   ): Promise<ChatMessageRecord | null> {
     const existing = await this.getMessage(workspaceId, projectId, sessionId, messageId);
@@ -721,6 +750,9 @@ class ChatResourceService {
       content: patch.content ?? existing.content,
       finish_reason: patch.finishReason === undefined ? existing.finish_reason : patch.finishReason,
       tokens: patch.tokens ?? existing.tokens,
+      message_status: patch.messageStatus === undefined ? existing.message_status : patch.messageStatus,
+      error_code: patch.errorCode === undefined ? existing.error_code : patch.errorCode,
+      error_message: patch.errorMessage === undefined ? existing.error_message : patch.errorMessage,
     };
     await this.docStore.upsert(ChatResourceService.messagesCollection, messageId, next);
     return next;
@@ -860,6 +892,7 @@ class ChatResourceService {
 }
 
 export interface NodeApiDeps {
+  cache: CachePort;
   chatResourceService: ChatResourceService;
   endpointResourceService: EndpointResourceService;
   sourceBucket: string;
@@ -924,6 +957,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   );
 
   return {
+    cache,
     chatResourceService,
     endpointResourceService,
     sourceBucket,
@@ -1201,8 +1235,10 @@ function sseWrite(res: http.ServerResponse, event: string, data: unknown): void 
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-function parseOpenAIStreamChunk(chunk: string): Array<{ delta: string; done: boolean }> {
-  const events: Array<{ delta: string; done: boolean }> = [];
+function parseOpenAIStreamChunk(
+  chunk: string,
+): Array<{ delta: string; done: boolean; finishReason?: string | null }> {
+  const events: Array<{ delta: string; done: boolean; finishReason?: string | null }> = [];
   const blocks = chunk.split('\n\n').map((item) => item.trim()).filter(Boolean);
   for (const block of blocks) {
     const lines = block.split('\n');
@@ -1211,7 +1247,7 @@ function parseOpenAIStreamChunk(chunk: string): Array<{ delta: string; done: boo
       if (!trimmed.startsWith('data:')) continue;
       const data = trimmed.slice('data:'.length).trim();
       if (data === '[DONE]') {
-        events.push({ delta: '', done: true });
+        events.push({ delta: '', done: true, finishReason: null });
         continue;
       }
       try {
@@ -1219,8 +1255,13 @@ function parseOpenAIStreamChunk(chunk: string): Array<{ delta: string; done: boo
           choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
         };
         const delta = payload.choices?.[0]?.delta?.content;
+        const finishReasonRaw = payload.choices?.[0]?.finish_reason;
+        const finishReason = typeof finishReasonRaw === 'string' ? finishReasonRaw : null;
         if (typeof delta === 'string' && delta.length > 0) {
-          events.push({ delta, done: false });
+          events.push({ delta, done: false, finishReason: null });
+        }
+        if (finishReason) {
+          events.push({ delta: '', done: true, finishReason });
         }
       } catch {
         // ignore invalid upstream chunks
@@ -1238,6 +1279,40 @@ function safeAssistantContent(payload: unknown): string {
   const first = choices?.[0];
   const content = first?.message?.content;
   return typeof content === 'string' ? content : '';
+}
+
+function safeAssistantFinishReason(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  const choices = (payload as { choices?: Array<{ finish_reason?: unknown }> }).choices;
+  const finishReason = choices?.[0]?.finish_reason;
+  return typeof finishReason === 'string' ? finishReason : null;
+}
+
+async function readStreamRegistry(
+  cache: CachePort,
+  streamId: string,
+): Promise<ChatStreamRegistryRecord | null> {
+  const raw = await cache.get(streamRegistryKey(streamId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as ChatStreamRegistryRecord;
+    if (parsed && parsed.streamId === streamId) {
+      return parsed;
+    }
+  } catch {
+    // ignore invalid cached payloads
+  }
+  return null;
+}
+
+async function writeStreamRegistry(
+  cache: CachePort,
+  record: ChatStreamRegistryRecord,
+  ttlSeconds: number,
+): Promise<void> {
+  await cache.set(streamRegistryKey(record.streamId), JSON.stringify(record), ttlSeconds);
 }
 
 type ProjectsRoute =
@@ -2348,17 +2423,38 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     if (route.kind === 'chatMessagesStreamStop' && method === 'POST') {
       const running = ACTIVE_CHAT_STREAMS.get(route.streamId);
-      if (
-        !running ||
-        running.workspaceId !== route.workspaceId ||
-        running.projectId !== route.projectId ||
-        running.sessionId !== route.sessionId
-      ) {
-        json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_stream_not_found' });
+      const registry = await readStreamRegistry(deps.cache, route.streamId);
+      const canStop =
+        running
+          ? running.workspaceId === route.workspaceId &&
+            running.projectId === route.projectId &&
+            running.sessionId === route.sessionId
+          : registry
+            ? registry.workspaceId === route.workspaceId &&
+              registry.projectId === route.projectId &&
+              registry.sessionId === route.sessionId
+            : false;
+      if (!canStop) {
+        json(res, 202, { success: true, stream_id: route.streamId, state: 'not_found_or_finished' });
         return;
       }
-      running.abortController.abort();
-      json(res, 202, { success: true, stream_id: route.streamId });
+      await writeStreamRegistry(
+        deps.cache,
+        {
+          streamId: route.streamId,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          sessionId: route.sessionId,
+          status: 'stopping',
+          updatedAt: new Date().toISOString(),
+        },
+        STREAM_REGISTRY_TTL_SECONDS,
+      );
+      if (running) {
+        running.status = 'stopping';
+        running.abortController.abort();
+      }
+      json(res, 202, { success: true, stream_id: route.streamId, state: 'stopping' });
       return;
     }
 
@@ -2378,7 +2474,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         endpoint_id?: string;
         from_message_id?: string;
         branch_leaf_message_id?: string;
-        client_stream_id?: string;
         input?: { role?: 'user'; content?: string; attachments?: string[] };
       };
       const endpointId = raw.endpoint_id ?? session.endpoint_id;
@@ -2490,19 +2585,33 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         sessionId: route.sessionId,
         role: 'assistant',
         content: '',
+        messageStatus: 'streaming',
         parentId: parentForAssistant,
         variantGroupId: variantMeta.variantGroupId,
         variantIndex: variantMeta.variantIndex,
       });
 
       const streamAbortController = new AbortController();
-      const streamId = raw.client_stream_id?.trim() || `stream_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      const streamId = `stream_${Date.now()}_${Math.random().toString(16).slice(2)}`;
       ACTIVE_CHAT_STREAMS.set(streamId, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         sessionId: route.sessionId,
         abortController: streamAbortController,
+        status: 'running',
       });
+      await writeStreamRegistry(
+        deps.cache,
+        {
+          streamId,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          sessionId: route.sessionId,
+          status: 'running',
+          updatedAt: new Date().toISOString(),
+        },
+        STREAM_REGISTRY_TTL_SECONDS,
+      );
       let clientDisconnected = false;
       const onResClose = () => {
         clientDisconnected = true;
@@ -2529,12 +2638,24 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         res.off('close', onResClose);
         ACTIVE_CHAT_STREAMS.delete(streamId);
         if (streamAbortController.signal.aborted) {
+          await writeStreamRegistry(
+            deps.cache,
+            {
+              streamId,
+              workspaceId: route.workspaceId,
+              projectId: route.projectId,
+              sessionId: route.sessionId,
+              status: 'stopped',
+              updatedAt: new Date().toISOString(),
+            },
+            STREAM_REGISTRY_FINAL_TTL_SECONDS,
+          );
           await deps.chatResourceService.updateAssistantMessage(
             route.workspaceId,
             route.projectId,
             route.sessionId,
             createdAssistant.id,
-            { finishReason: 'stopped', tokens: 0 },
+            { messageStatus: 'stopped', tokens: 0 },
           );
           return;
         }
@@ -2544,6 +2665,18 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       if (!upstreamRes.ok) {
         res.off('close', onResClose);
         ACTIVE_CHAT_STREAMS.delete(streamId);
+        await writeStreamRegistry(
+          deps.cache,
+          {
+            streamId,
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            sessionId: route.sessionId,
+            status: 'failed',
+            updatedAt: new Date().toISOString(),
+          },
+          STREAM_REGISTRY_FINAL_TTL_SECONDS,
+        );
         const completionPayload = await upstreamRes.json().catch(() => ({}));
         json(res, upstreamRes.status, completionPayload);
         return;
@@ -2553,6 +2686,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
+      res.setHeader('x-chat-stream-id', streamId);
       if (typeof res.flushHeaders === 'function') {
         res.flushHeaders();
       }
@@ -2566,10 +2700,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         variant_group_id: variantMeta.variantGroupId,
         variant_index: variantMeta.variantIndex,
       });
+      const pingTimer = setInterval(() => {
+        if (!clientDisconnected) {
+          sseWrite(res, 'ping', { ts: Date.now() });
+        }
+      }, 15_000);
 
       let assistantText = '';
       let persistedLength = 0;
-      let finishReason: string | null = 'stop';
+      let finishReason: string | null = null;
+      let messageStatus: ChatMessageRecord['message_status'] = 'completed';
+      const inactivityTimeoutMs = Math.max(
+        5_000,
+        Number(process.env.CHAT_STREAM_INACTIVITY_TIMEOUT_MS ?? '120000'),
+      );
       const persistAssistantProgress = async (force: boolean) => {
         if (!force && assistantText.length - persistedLength < 32) {
           return;
@@ -2582,6 +2726,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           {
             content: assistantText,
             tokens: assistantText.length,
+            messageStatus: 'streaming',
           },
         );
         persistedLength = assistantText.length;
@@ -2594,7 +2739,24 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           let buffer = '';
           let done = false;
           while (!done) {
-            const result = await reader.read();
+            const registry = await readStreamRegistry(deps.cache, streamId);
+            if (registry?.status === 'stopping') {
+              streamAbortController.abort();
+              break;
+            }
+            const result = await new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+              const timer = setTimeout(() => reject(new Error('stream_inactivity_timeout')), inactivityTimeoutMs);
+              reader.read().then(
+                (value) => {
+                  clearTimeout(timer);
+                  resolve(value);
+                },
+                (error: unknown) => {
+                  clearTimeout(timer);
+                  reject(error);
+                },
+              );
+            });
             done = result.done;
             buffer += decoder.decode(result.value ?? new Uint8Array(), { stream: !done });
             const sepIndex = buffer.lastIndexOf('\n\n');
@@ -2603,7 +2765,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             buffer = buffer.slice(sepIndex + 2);
             const chunks = parseOpenAIStreamChunk(consumable);
             for (const chunk of chunks) {
-              if (chunk.done) continue;
+              if (chunk.done) {
+                if (chunk.finishReason) {
+                  finishReason = chunk.finishReason;
+                }
+                continue;
+              }
               assistantText += chunk.delta;
               if (!clientDisconnected) {
                 sseWrite(res, 'delta', {
@@ -2617,7 +2784,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           if (buffer.trim().length > 0) {
             const chunks = parseOpenAIStreamChunk(buffer);
             for (const chunk of chunks) {
-              if (chunk.done) continue;
+              if (chunk.done) {
+                if (chunk.finishReason) {
+                  finishReason = chunk.finishReason;
+                }
+                continue;
+              }
               assistantText += chunk.delta;
               if (!clientDisconnected) {
                 sseWrite(res, 'delta', {
@@ -2630,6 +2802,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         } else {
           const completionPayload = await upstreamRes.json().catch(() => ({}));
           assistantText = safeAssistantContent(completionPayload);
+          finishReason = safeAssistantFinishReason(completionPayload);
           if (assistantText.length > 0 && !clientDisconnected) {
             sseWrite(res, 'delta', {
               message_id: createdAssistant.id,
@@ -2639,16 +2812,44 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         }
       } catch (error) {
         if (streamAbortController.signal.aborted) {
-          finishReason = 'stopped';
+          messageStatus = 'stopped';
         } else {
           res.off('close', onResClose);
+          messageStatus = 'failed';
+          const errorCode =
+            error instanceof Error && error.message === 'stream_inactivity_timeout'
+              ? 'STREAM_INACTIVITY_TIMEOUT'
+              : 'STREAM_UPSTREAM_ERROR';
+          await deps.chatResourceService.updateAssistantMessage(
+            route.workspaceId,
+            route.projectId,
+            route.sessionId,
+            createdAssistant.id,
+            {
+              content: assistantText,
+              finishReason: finishReason ?? null,
+              tokens: assistantText.length,
+              messageStatus: 'failed',
+              errorCode,
+              errorMessage: error instanceof Error ? error.message : 'stream_upstream_error',
+            },
+          );
+          clearInterval(pingTimer);
+          await writeStreamRegistry(
+            deps.cache,
+            {
+              streamId,
+              workspaceId: route.workspaceId,
+              projectId: route.projectId,
+              sessionId: route.sessionId,
+              status: 'failed',
+              updatedAt: new Date().toISOString(),
+            },
+            STREAM_REGISTRY_FINAL_TTL_SECONDS,
+          );
           ACTIVE_CHAT_STREAMS.delete(streamId);
           throw error;
         }
-      }
-
-      if (clientDisconnected) {
-        finishReason = 'stopped';
       }
 
       await persistAssistantProgress(true);
@@ -2661,16 +2862,35 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           content: assistantText,
           finishReason,
           tokens: assistantText.length,
+          messageStatus,
         },
       );
       res.off('close', onResClose);
+      clearInterval(pingTimer);
+      const active = ACTIVE_CHAT_STREAMS.get(streamId);
+      if (active) {
+        active.status = 'finished';
+      }
       ACTIVE_CHAT_STREAMS.delete(streamId);
+      await writeStreamRegistry(
+        deps.cache,
+        {
+          streamId,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          sessionId: route.sessionId,
+          status: messageStatus === 'stopped' ? 'stopped' : 'completed',
+          updatedAt: new Date().toISOString(),
+        },
+        STREAM_REGISTRY_FINAL_TTL_SECONDS,
+      );
 
       if (!clientDisconnected) {
         sseWrite(res, 'done', {
           message_id: finalized?.id ?? createdAssistant.id,
           finish_reason: finishReason,
           tokens: assistantText.length,
+          message_status: messageStatus,
         });
         res.end();
       }
@@ -3006,6 +3226,7 @@ function startFromCli(): void {
     sourceBucket,
   );
   const deps: NodeApiDeps = {
+    cache,
     chatResourceService,
     endpointResourceService,
     sourceBucket,

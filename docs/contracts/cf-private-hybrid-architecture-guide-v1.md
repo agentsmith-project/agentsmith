@@ -489,13 +489,16 @@ packages/
   - 读取 session 绑定 endpoint/credential
   - 转发到 OpenAI-compatible `/chat/completions`
   - 返回 SSE 事件 (`meta`, `delta`, `done`)
-  - `meta.stream_id` 可用于显式 stop（用户点击停止）
+  - HTTP Header `x-chat-stream-id` 与 `meta.stream_id` 一致，可用于显式 stop
   - 客户端断开（刷新/离开）时不得中断上游推理，后台继续并落库
+  - `finish_reason` 仅表示模型完成原因，不得复用为系统状态
+  - 系统状态通过 `message_status` 表达（`streaming|completed|stopped|failed`）
   - 将 assistant 回复落库，支持前端断线后重载历史
   - 支持分支对话语义：
     - 用户编辑产生新 revision（不覆盖原 message）
     - assistant 重生成产生 variant（同 parent，不同 variant_index）
     - 携带 `branch_leaf_message_id` + 相同 input 时不得重复创建 user message
+  - `messages/streams/{streamId}/stop` 需幂等（重复调用返回 202）
 
 ---
 

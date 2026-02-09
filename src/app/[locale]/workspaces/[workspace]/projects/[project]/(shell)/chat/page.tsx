@@ -68,13 +68,6 @@ interface SessionStreamState {
   assistant: SessionStreamingAssistant | null;
 }
 
-function createClientStreamId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `stream_${crypto.randomUUID()}`;
-  }
-  return `stream_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
 export default function ChatPage({ params }: ChatPageProps) {
   const queryClient = useQueryClient();
   const t = useTranslations('chat');
@@ -103,6 +96,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const streamControllersRef = useRef<Map<string, AbortController>>(new Map());
   const streamIdsRef = useRef<Map<string, string>>(new Map());
+  const streamCleanupTimersRef = useRef<Map<string, number>>(new Map());
   const [streamStateBySession, setStreamStateBySession] = useState<Record<string, SessionStreamState>>({});
 
   useEffect(() => {
@@ -391,6 +385,27 @@ export default function ChatPage({ params }: ChatPageProps) {
     setStreamStateBySession((prev) => {
       const current = prev[sessionId] ?? { status: 'idle' as SessionStreamStatus, assistant: null };
       const next = typeof updater === 'function' ? updater(current) : updater;
+      const cleanupTimers = streamCleanupTimersRef.current;
+      const existingTimer = cleanupTimers.get(sessionId);
+      if (existingTimer) {
+        window.clearTimeout(existingTimer);
+        cleanupTimers.delete(sessionId);
+      }
+      if ((next.status === 'stopped' || next.status === 'error') && !next.assistant) {
+        const timer = window.setTimeout(() => {
+          setStreamStateBySession((statePrev) => {
+            const currentState = statePrev[sessionId];
+            if (!currentState) return statePrev;
+            if (currentState.status === 'connecting' || currentState.status === 'streaming') {
+              return statePrev;
+            }
+            const { [sessionId]: _removed, ...rest } = statePrev;
+            return rest;
+          });
+          cleanupTimers.delete(sessionId);
+        }, 60_000);
+        cleanupTimers.set(sessionId, timer);
+      }
       if (next.status === 'idle' && !next.assistant) {
         if (!prev[sessionId]) return prev;
         const { [sessionId]: _removed, ...rest } = prev;
@@ -400,16 +415,24 @@ export default function ChatPage({ params }: ChatPageProps) {
     });
   };
 
-  const stopStreamingSession = async (sessionId: string, reason: 'user' | 'replace' = 'user') => {
+  const stopStreamingSession = async (
+    sessionId: string,
+    reason: 'user' | 'replace' = 'user',
+  ): Promise<boolean> => {
     const streamId = streamIdsRef.current.get(sessionId);
     const controller = streamControllersRef.current.get(sessionId);
-    if (!streamId && !controller) return;
+    if (!streamId && !controller) return true;
 
     if (streamId) {
       try {
         await chatAPI.stopStream(workspaceId, projectId, sessionId, streamId);
       } catch {
-        // Keep local abort as authoritative UX action.
+        const message =
+          reason === 'replace'
+            ? t('stream_stop_required_before_replace_failed')
+            : t('stream_stop_failed_retry');
+        toast.error(message);
+        return false;
       }
     }
     controller?.abort();
@@ -419,6 +442,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       status: reason === 'user' ? 'stopped' : 'idle',
       assistant: null,
     });
+    return true;
   };
 
   const stopStreaming = () => {
@@ -429,12 +453,17 @@ export default function ChatPage({ params }: ChatPageProps) {
   useEffect(() => {
     const streamControllers = streamControllersRef.current;
     const streamIds = streamIdsRef.current;
+    const cleanupTimers = streamCleanupTimersRef.current;
     return () => {
       for (const controller of streamControllers.values()) {
         controller.abort();
       }
+      for (const timer of cleanupTimers.values()) {
+        window.clearTimeout(timer);
+      }
       streamControllers.clear();
       streamIds.clear();
+      cleanupTimers.clear();
     };
   }, []);
 
@@ -448,12 +477,13 @@ export default function ChatPage({ params }: ChatPageProps) {
     mode?: 'append' | 'replace';
     displayMessageId?: string | null;
   }) => {
-    await stopStreamingSession(args.sessionId, 'replace');
+    const previousStopped = await stopStreamingSession(args.sessionId, 'replace');
+    if (!previousStopped) {
+      return;
+    }
 
     const controller = new AbortController();
-    const clientStreamId = createClientStreamId();
     streamControllersRef.current.set(args.sessionId, controller);
-    streamIdsRef.current.set(args.sessionId, clientStreamId);
 
     const mode = args.mode ?? (args.fromMessageId ? 'replace' : 'append');
     const now = Date.now();
@@ -513,10 +543,13 @@ export default function ChatPage({ params }: ChatPageProps) {
           branch_leaf_message_id: args.branchLeafMessageId,
           from_message_id: args.fromMessageId,
           input: args.input,
-          client_stream_id: clientStreamId,
         },
         signal: controller.signal,
       });
+      const streamIdFromHeader = res.headers.get('x-chat-stream-id');
+      if (streamIdFromHeader) {
+        streamIdsRef.current.set(args.sessionId, streamIdFromHeader);
+      }
       setSessionStreamState(args.sessionId, (prev) => ({
         ...prev,
         status: 'streaming',
@@ -613,10 +646,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       if (streamControllersRef.current.get(args.sessionId) === controller) {
         streamControllersRef.current.delete(args.sessionId);
       }
-      const currentStreamId = streamIdsRef.current.get(args.sessionId);
-      if (!currentStreamId || currentStreamId === clientStreamId) {
-        streamIdsRef.current.delete(args.sessionId);
-      }
+      streamIdsRef.current.delete(args.sessionId);
     }
   };
 

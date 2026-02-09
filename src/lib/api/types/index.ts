@@ -231,6 +231,9 @@ export interface ChatMessage {
   created_at: string;
   tokens?: number;
   finish_reason?: string | null;
+  message_status?: 'streaming' | 'completed' | 'stopped' | 'failed';
+  error_code?: string | null;
+  error_message?: string | null;
 
   // ===== Branch model (v1) =====
   parent_id?: string | null;

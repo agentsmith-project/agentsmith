@@ -21,7 +21,7 @@ import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
 import type { ChatMessage, Endpoint } from '@/lib/api/types';
-import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
+import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
 import { chatMessagesKey } from '@/lib/chat/query-keys';
 import { useChatStreaming } from '@/lib/chat/use-chat-streaming';
@@ -30,6 +30,7 @@ import { useChatVariants } from '@/lib/chat/use-chat-variants';
 import { useChatData } from '@/lib/chat/use-chat-data';
 import { useChatComposerActions } from '@/lib/chat/use-chat-composer-actions';
 import { buildChatViewModel } from '@/lib/chat/chat-view-model';
+import { useChatMessageActions } from '@/lib/chat/use-chat-message-actions';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -283,69 +284,24 @@ export default function ChatPage({ params }: ChatPageProps) {
     onManualSelectVariant(groupId, nextIndex);
   }, [onManualSelectVariant]);
 
-  const handleEditMessage = useCallback((message: ChatMessage) => {
-    if (disabled || !canUseChat || message.role !== 'user') return;
-    setEditingMessageId(message.id);
-  }, [canUseChat, disabled]);
-
-  const handleEditCommit = useCallback(async (message: ChatMessage, nextContent: string) => {
-    if (disabled || !canUseChat || !currentSessionId) return;
-    const edited = await editMessageMutation.mutateAsync({
-      sessionId: currentSessionId,
-      messageId: message.id,
-      content: nextContent,
-    });
-    upsertStreamAssistantToCache(currentSessionId, edited);
-    if (edited.logical_id && typeof edited.revision_index === 'number') {
-      applyVariantFromMeta(edited.logical_id, edited.revision_index);
-    }
-    markPendingAutoGroup(edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null));
-    setEditingMessageId(null);
-    if (activeSession?.model && activeSession?.endpoint_id) {
-      const groups = buildVariantGroups(messages);
-      const { chain } = buildVisibleChain(messages, groups, activeVariantIndexByGroup);
-      const editedIndex = chain.findIndex((item) => item.id === message.id);
-      const previewAssistant =
-        editedIndex >= 0
-          ? chain.slice(editedIndex + 1).find((item) => item.role === 'assistant')
-          : undefined;
-      await runStream({
-        sessionId: currentSessionId,
-        model: activeSession.model,
-        endpointId: activeSession.endpoint_id,
-        fromMessageId: edited.id,
-        displayMessageId: previewAssistant?.id ?? null,
-        mode: 'replace',
-      });
-    }
-  }, [
-    activeSession,
-    activeVariantIndexByGroup,
-    applyVariantFromMeta,
+  const {
+    onEdit: handleEditMessage,
+    onEditCommit: handleEditCommit,
+    onRegenerate: handleRegenerate,
+  } = useChatMessageActions({
     canUseChat,
-    currentSessionId,
     disabled,
-    editMessageMutation,
-    markPendingAutoGroup,
+    currentSessionId,
+    activeSession,
     messages,
-    runStream,
+    activeVariantIndexByGroup,
+    setEditingMessageId,
+    editMessage: (input) => editMessageMutation.mutateAsync(input),
     upsertStreamAssistantToCache,
-  ]);
-
-  const handleRegenerate = useCallback(async (message: ChatMessage) => {
-    if (disabled || !canUseChat || !activeSession || !currentSessionId) return;
-    if (messages.length) {
-      const groups = buildVariantGroups(messages);
-      markPendingAutoGroup(getGroupIdForMessageId(groups, message.id));
-    }
-    await runStream({
-      sessionId: currentSessionId,
-      model: activeSession.model,
-      endpointId: activeSession.endpoint_id,
-      fromMessageId: message.id,
-      mode: 'replace',
-    });
-  }, [activeSession, canUseChat, currentSessionId, disabled, markPendingAutoGroup, messages, runStream]);
+    applyVariantFromMeta,
+    markPendingAutoGroup,
+    runStream,
+  });
 
   const handlePickFiles = useCallback(() => {
     if (editingMessageId) {

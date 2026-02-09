@@ -105,7 +105,7 @@ export function ChatHeader({
             )}
 
             {statusText && (
-              <span className="text-xs text-tertiary">{statusText}</span>
+              <span className="text-xs text-tertiary" data-testid="chat__stream-status">{statusText}</span>
             )}
           </div>
           {session && (

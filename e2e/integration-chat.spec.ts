@@ -17,12 +17,14 @@ async function startOpenAICompatibleUpstream(): Promise<{
 async function startOpenAICompatibleUpstreamWith(args: {
   replyText: string;
   delayMs?: number;
+  statusCode?: number;
+  errorMessage?: string;
 }): Promise<{
   server: Server;
   baseUrl: string;
   getRequestCount: () => number;
 }> {
-  const { replyText, delayMs = 0 } = args;
+  const { replyText, delayMs = 0, statusCode = 200, errorMessage = 'upstream_error' } = args;
   let requestCount = 0;
   const server = http.createServer((req, res) => {
     void (async () => {
@@ -40,6 +42,17 @@ async function startOpenAICompatibleUpstreamWith(args: {
       }
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      if (statusCode >= 400) {
+        res.statusCode = statusCode;
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            error: { message: errorMessage },
+          }),
+        );
+        return;
       }
 
       res.statusCode = 200;
@@ -130,6 +143,21 @@ async function provisionCredentialAndEndpoint(
     upstreamBaseUrl,
     credentialName: 'Integration Credential',
   });
+}
+
+async function sendExpectStreamError(
+  page: import('@playwright/test').Page,
+  text: string,
+) {
+  const composer = page.getByTestId('chat__composer');
+  const textarea = composer.locator('textarea');
+  await expect(textarea).toBeVisible();
+  await expect(textarea).toBeEditable();
+  await textarea.fill(text);
+  const sendBtn = page.getByTestId('chat__send-btn');
+  await expect(sendBtn).toBeEnabled({ timeout: 15_000 });
+  await sendBtn.click();
+  await expect(page.getByTestId('chat__stream-status')).toHaveText('Error', { timeout: 60_000 });
 }
 
 async function createCredential(
@@ -390,6 +418,71 @@ test.describe('integration chat flow', () => {
     } finally {
       await new Promise<void>((resolve) => upstreamA.server.close(() => resolve()));
       await new Promise<void>((resolve) => upstreamB.server.close(() => resolve()));
+    }
+  });
+
+  test('chat can recover by switching endpoint after upstream failure', async ({ page }) => {
+    test.setTimeout(300_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const failingUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'never-used',
+      statusCode: 500,
+      errorMessage: 'integration forced upstream failure',
+    });
+    const healthyUpstream = await startOpenAICompatibleUpstreamWith({
+      replyText: 'Recovered from healthy endpoint',
+    });
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+
+      await createCredential(page, locale, projectId, {
+        credentialName: 'Integration Credential',
+        credentialValue: 'integration-secret-key',
+      });
+      const healthyEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: 'Integration Endpoint Healthy',
+        endpointModel: 'integration-chat-model-healthy',
+        upstreamBaseUrl: healthyUpstream.baseUrl,
+        credentialName: 'Integration Credential',
+      });
+      const failingEndpointId = await createEndpoint(page, locale, projectId, {
+        endpointName: 'Integration Endpoint Failing',
+        endpointModel: 'integration-chat-model-fail',
+        upstreamBaseUrl: failingUpstream.baseUrl,
+        credentialName: 'Integration Credential',
+      });
+
+      const threadId = await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Warmup with failing endpoint selection',
+        null,
+        'Recovered from healthy endpoint',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, failingEndpointId);
+      await sendExpectStreamError(page, 'This should fail via failing endpoint');
+      expect(failingUpstream.getRequestCount()).toBeGreaterThanOrEqual(1);
+
+      await selectEndpointInChat(page, healthyEndpointId);
+      await openChatAndSend(
+        page,
+        locale,
+        projectId,
+        'Recover with healthy endpoint',
+        threadId,
+        'Recovered from healthy endpoint',
+      );
+      expect(healthyUpstream.getRequestCount()).toBeGreaterThanOrEqual(2);
+    } finally {
+      await new Promise<void>((resolve) => failingUpstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => healthyUpstream.server.close(() => resolve()));
     }
   });
 });

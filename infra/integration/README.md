@@ -27,6 +27,10 @@ Current chat integration verification scope:
   - two custom endpoints with different upstream base URLs
   - switch endpoint from chat header model selector
   - verify next chat turn is routed to the selected endpoint upstream
+- Failure and recovery:
+  - route one turn to a failing upstream (HTTP 5xx)
+  - verify chat stream enters error state
+  - switch to healthy endpoint and continue in same thread
 
 Current AIReady API status:
 

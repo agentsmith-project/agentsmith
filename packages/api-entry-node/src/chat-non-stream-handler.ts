@@ -429,6 +429,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     );
     if (running) {
       running.status = 'stopping';
+      running.stopReason = 'user_stop';
       running.abortController.abort();
     }
     json(res, 202, { success: true, stream_id: route.streamId, state: 'stopping' });

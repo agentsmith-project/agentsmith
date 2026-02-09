@@ -521,6 +521,9 @@ packages/
     - session 不存在返回 `404 chat_session_not_found`
     - active stream 运行中返回 `total>0`
     - stream 完成/停止后返回空列表 `total=0`
+  - Stream 生命周期日志字段（统一 JSON）：
+    - `workspace_id`, `project_id`, `session_id`, `stream_id`, `endpoint_id`, `status`, `duration_ms`
+    - `stop_reason` 取值：`user_stop|session_stop|upstream_error|timeout|session_stream_conflict`
 
 5. 认证策略（当前约束）
 - API 必须依赖 Keycloak `userinfo` 校验 Bearer Token。

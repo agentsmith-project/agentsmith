@@ -52,6 +52,7 @@
 - Keep page component focused on wiring + layout.
 
 3. Add observability fields for stream lifecycle
+- Status: done
 - Standardize logging fields:
   - `workspace_id`, `project_id`, `session_id`, `stream_id`, `endpoint_id`, `status`, `duration_ms`.
 - Ensure stop reason is explicit (`user_stop`, `session_stop`, `upstream_error`, `timeout`).

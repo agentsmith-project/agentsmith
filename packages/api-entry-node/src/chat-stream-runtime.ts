@@ -7,6 +7,7 @@ export interface ActiveChatStreamRecord {
   abortController: AbortController;
   startedAt: string;
   status: 'running' | 'stopping' | 'finished';
+  stopReason?: 'user_stop' | 'session_stop';
 }
 
 export interface ChatStreamRegistryRecord {
@@ -104,6 +105,7 @@ export async function stopActiveSessionStreams(
     }
     stopped += 1;
     stream.status = 'stopping';
+    stream.stopReason = 'session_stop';
     stream.abortController.abort();
     await writeStreamRegistry(
       cache,

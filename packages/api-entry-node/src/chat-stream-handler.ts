@@ -16,6 +16,7 @@ import {
   safeAssistantFinishReason,
   safeAssistantUsageTokens,
 } from './chat-openai-payload.js';
+import { logChatStreamEvent } from './chat-observability.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -46,6 +47,14 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   }
   const runningStreams = listActiveSessionStreams(route.workspaceId, route.projectId, route.sessionId);
   if (runningStreams.length > 0) {
+    logChatStreamEvent({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sessionId: route.sessionId,
+      endpointId: session.endpoint_id,
+      status: 'rejected',
+      stopReason: 'session_stream_conflict',
+    });
     json(res, 409, {
       code: 'CHAT_SESSION_STREAM_CONFLICT',
       message: 'chat_session_stream_conflict',
@@ -177,12 +186,22 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
 
   const streamAbortController = new AbortController();
   const streamId = `stream_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const streamStartedAt = new Date().toISOString();
+  const streamStartedAtMs = Date.now();
   ACTIVE_CHAT_STREAMS.set(streamId, {
     workspaceId: route.workspaceId,
     projectId: route.projectId,
     sessionId: route.sessionId,
     abortController: streamAbortController,
-    startedAt: new Date().toISOString(),
+    startedAt: streamStartedAt,
+    status: 'running',
+  });
+  logChatStreamEvent({
+    workspaceId: route.workspaceId,
+    projectId: route.projectId,
+    sessionId: route.sessionId,
+    streamId,
+    endpointId: endpoint.id,
     status: 'running',
   });
   await writeStreamRegistry(
@@ -231,6 +250,16 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     res.off('close', onResClose);
     ACTIVE_CHAT_STREAMS.delete(streamId);
     if (streamAbortController.signal.aborted) {
+      logChatStreamEvent({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        streamId,
+        endpointId: endpoint.id,
+        status: 'stopped',
+        durationMs: Date.now() - streamStartedAtMs,
+        stopReason: ACTIVE_CHAT_STREAMS.get(streamId)?.stopReason ?? 'session_stop',
+      });
       await writeStreamRegistry(
         deps.cache,
         {
@@ -294,6 +323,16 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       },
     );
     json(res, 502, { error_code: 'STREAM_UPSTREAM_CONNECT_ERROR', message: 'chat_upstream_unreachable' });
+    logChatStreamEvent({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sessionId: route.sessionId,
+      streamId,
+      endpointId: endpoint.id,
+      status: 'failed',
+      durationMs: Date.now() - streamStartedAtMs,
+      stopReason: 'upstream_error',
+    });
     return true;
   }
 
@@ -335,6 +374,16 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     );
     const completionPayload = await upstreamRes.json().catch(() => ({}));
     json(res, upstreamRes.status, completionPayload);
+    logChatStreamEvent({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sessionId: route.sessionId,
+      streamId,
+      endpointId: endpoint.id,
+      status: 'failed',
+      durationMs: Date.now() - streamStartedAtMs,
+      stopReason: 'upstream_error',
+    });
     return true;
   }
 
@@ -525,6 +574,16 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         STREAM_REGISTRY_FINAL_TTL_SECONDS,
       );
       ACTIVE_CHAT_STREAMS.delete(streamId);
+      logChatStreamEvent({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        streamId,
+        endpointId: endpoint.id,
+        status: 'failed',
+        durationMs: Date.now() - streamStartedAtMs,
+        stopReason: errorCode === 'STREAM_INACTIVITY_TIMEOUT' ? 'timeout' : 'upstream_error',
+      });
       throw error;
     }
   }
@@ -545,6 +604,11 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   res.off('close', onResClose);
   clearInterval(pingTimer);
   const active = ACTIVE_CHAT_STREAMS.get(streamId);
+  const durationMs = Date.now() - streamStartedAtMs;
+  const stopReason =
+    messageStatus === 'stopped'
+      ? active?.stopReason ?? 'session_stop'
+      : undefined;
   if (active) {
     active.status = 'finished';
   }
@@ -569,6 +633,16 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     messageStatus === 'stopped' ? 'stopped' : 'completed',
     STREAM_REGISTRY_FINAL_TTL_SECONDS,
   );
+  logChatStreamEvent({
+    workspaceId: route.workspaceId,
+    projectId: route.projectId,
+    sessionId: route.sessionId,
+    streamId,
+    endpointId: endpoint.id,
+    status: messageStatus === 'stopped' ? 'stopped' : 'completed',
+    durationMs,
+    stopReason,
+  });
 
   if (!clientDisconnected) {
     sseWrite(res, 'done', {

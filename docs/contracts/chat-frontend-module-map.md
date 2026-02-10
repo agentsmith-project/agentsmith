@@ -59,3 +59,20 @@ This document defines responsibility boundaries for the chat page implementation
 - Hook/view-model unit tests in `src/lib/chat/__tests__`.
 - Component tests in `src/components/chat/__tests__`.
 - Integration behavior in `e2e/integration-chat.spec.ts` when runtime behavior changes.
+
+## 5. Closeout Status
+
+- Status: `completed` (Phase: chat structure split + stream recoverability baseline)
+- Baseline commits include:
+  - `6eb388f` (`ChatMainPane` + `ChatDeleteDialog` extraction)
+  - `f4e5a62` (refresh recovery + dual stop-path integration coverage)
+  - `655797d` (temporary backlog merged into canonical contracts)
+- Verified baseline:
+  - `npm test -- chat`
+  - `npx tsc --noEmit`
+  - `npm run lint`
+
+## 6. Next-Phase Boundary
+
+- Chat refactor is considered stable at current module boundaries.
+- Next work should focus on new capability delivery (not page-size driven split), and any new behavior must follow this map.

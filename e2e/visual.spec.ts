@@ -85,9 +85,16 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('overview.png', { fullPage: true });
   });
 
-  test('chat', async ({ authedPage }) => {
+  test('chat - standard', async ({ authedPage }) => {
+    await authedPage.setViewportSize({ width: 1440, height: 900 });
     await stableNavigate(authedPage, projectPath('chat'));
-    await expect(authedPage).toHaveScreenshot('chat.png', { fullPage: true });
+    await expect(authedPage).toHaveScreenshot('chat-standard.png', { fullPage: true });
+  });
+
+  test('chat - ultrawide', async ({ authedPage }) => {
+    await authedPage.setViewportSize({ width: 2200, height: 1200 });
+    await stableNavigate(authedPage, projectPath('chat'));
+    await expect(authedPage).toHaveScreenshot('chat-ultrawide.png', { fullPage: true });
   });
 
   test('studio', async ({ authedPage }) => {

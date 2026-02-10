@@ -31,6 +31,8 @@ This directory is the single source of truth for frontend permission and governa
   - Chat page module boundaries and growth guardrails.
 - `chat-manual-acceptance-checklist.md`
   - Manual release gate checklist for chat UX/runtime changes.
+- `endpoints-frontend-module-map.md`
+  - Endpoints page closeout baseline and target decomposition map.
 - `resource-policy-frontend-module-map.md`
   - Resource Policy page module boundaries and helper ownership.
 - `projects-frontend-module-map.md`

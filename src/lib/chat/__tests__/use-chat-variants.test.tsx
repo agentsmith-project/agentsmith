@@ -13,11 +13,11 @@ describe('useChatVariants', () => {
         content: 'hi',
         created_at: new Date().toISOString(),
         finish_reason: 'stop',
-        parent_id: null,
-        tokens: null,
-        variant_group_id: null,
-        variant_index: null,
-        revision_index: null,
+        parent_id: undefined,
+        tokens: undefined,
+        variant_group_id: undefined,
+        variant_index: undefined,
+        revision_index: undefined,
         logical_id: 'm1',
       },
     ];
@@ -49,4 +49,3 @@ describe('useChatVariants', () => {
     });
   });
 });
-

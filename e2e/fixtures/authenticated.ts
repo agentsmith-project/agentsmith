@@ -1,33 +1,25 @@
 import { Page } from '@playwright/test';
 
 export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'test@example.com') {
-  await page.addInitScript(({ wsId, userEmail }) => {
-    (window as any).__MBOS_AUTH_SETUP__ = true;
-    const user = {
-      id: 'user_001',
-      email: userEmail,
-      name: userEmail.split('@')[0],
-      locale: 'en-US',
-    };
-    const checkAuth = () => {
-      const store = (window as any).__MBOS_AUTH_STORE__;
-      if (store && store.getState) {
-        const state = store.getState();
-        if (!state.isAuthenticated && typeof state.setAuth === 'function') {
-          state.setAuth(user, `mock_token_${Date.now()}`);
-        }
-        return true;
-      }
-      return false;
-    };
-    if (!checkAuth()) {
-      let attempts = 0;
-      const interval = setInterval(() => {
-        attempts++;
-        if (checkAuth() || attempts > 100) {
-          clearInterval(interval);
-        }
-      }, 50);
-    }
-  }, { wsId, userEmail });
+  // Use the app's supported "MSW quick login" path so E2E doesn't depend on auth-store internals.
+  await page.goto('/en-US/login', { waitUntil: 'domcontentloaded' });
+
+  const quickLoginEmail = page.getByTestId('login__email-input');
+  const quickLoginSubmit = page.getByTestId('login__submit');
+
+  // In case MSW is disabled, these won't exist and tests should fail loudly.
+  await quickLoginEmail.fill(userEmail);
+  await quickLoginSubmit.click();
+
+  // Workspace selection is the expected post-login step.
+  await page.getByTestId('workspace-select__heading').waitFor({ timeout: 10_000 });
+
+  // Pick default workspace so subsequent project routes are valid.
+  await page.getByTestId(`workspace-select__card--${wsId}`).click();
+
+  // Ensure login persisted state exists, otherwise protected-route reloads will keep bouncing to login.
+  const persisted = await page.evaluate(() => localStorage.getItem('mbos-auth'));
+  if (!persisted) {
+    throw new Error('E2E auth failed: expected localStorage key "mbos-auth" to exist after quick login');
+  }
 }

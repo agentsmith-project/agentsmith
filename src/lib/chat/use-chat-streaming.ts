@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { ChatMessage, ChatSession } from '@/lib/api/types';
@@ -7,6 +7,7 @@ import { getChatStreamAttach, postChatStream, streamSseJson } from '@/lib/chat/s
 import { createThrottle } from '@/lib/chat/throttle';
 import { chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
 import type { SessionStreamState } from '@/lib/chat/stream-state';
+import { useChatRuntimeStore } from '@/lib/chat/runtime-store';
 import { toast } from '@/components/ui/toast';
 
 export interface RunChatStreamArgs {
@@ -34,10 +35,6 @@ export interface UseChatStreamingArgs {
     stopRequiredBeforeReplaceFailed: string;
     stopFailedRetry: string;
   };
-  onReplaceStreamMeta?: (data: {
-    variantGroupId?: string;
-    variantIndex?: number;
-  }) => void;
   upsertStreamAssistantToCache: (sessionId: string, message: ChatMessage) => void;
   patchStreamAssistantInCache: (
     sessionId: string,
@@ -63,67 +60,69 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     chatAPI,
     queryClient,
     messages,
-    onReplaceStreamMeta,
     upsertStreamAssistantToCache,
     patchStreamAssistantInCache,
   } = args;
 
   const streamControllersRef = useRef<Map<string, AbortController>>(new Map());
   const streamIdsRef = useRef<Map<string, string>>(new Map());
-  const [streamIdBySession, setStreamIdBySession] = useState<Record<string, string>>({});
   const streamCleanupTimersRef = useRef<Map<string, number>>(new Map());
-  const [streamStateBySession, setStreamStateBySession] = useState<Record<string, SessionStreamState>>({});
+  const streamStateBySession = useChatRuntimeStore((s) => s.streamStateBySession);
+  const streamIdBySession = useChatRuntimeStore((s) => s.streamIdBySession);
+  const setStreamState = useChatRuntimeStore((s) => s.setStreamState);
+  const clearStreamState = useChatRuntimeStore((s) => s.clearStreamState);
+  const setStreamId = useChatRuntimeStore((s) => s.setStreamId);
 
-  const setStreamIdForSession = (sessionId: string, streamId: string | null) => {
-    if (streamId) {
-      streamIdsRef.current.set(sessionId, streamId);
-      setStreamIdBySession((prev) => (prev[sessionId] === streamId ? prev : { ...prev, [sessionId]: streamId }));
+  const setStreamIdForSession = useCallback((sessionId: string, streamIdValue: string | null) => {
+    if (streamIdValue) {
+      streamIdsRef.current.set(sessionId, streamIdValue);
+      setStreamId(sessionId, streamIdValue);
       return;
     }
     streamIdsRef.current.delete(sessionId);
-    setStreamIdBySession((prev) => {
-      if (!(sessionId in prev)) return prev;
-      const { [sessionId]: _removed, ...rest } = prev;
-      return rest;
-    });
-  };
+    setStreamId(sessionId, null);
+  }, [setStreamId]);
 
-  const setSessionStreamState = (
+  const setSessionStreamState = useCallback((
     sessionId: string,
     updater: SessionStreamState | ((prev: SessionStreamState) => SessionStreamState),
   ) => {
-    setStreamStateBySession((prev) => {
-      const current = prev[sessionId] ?? { status: 'idle', assistant: null };
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const cleanupTimers = streamCleanupTimersRef.current;
-      const existingTimer = cleanupTimers.get(sessionId);
-      if (existingTimer) {
-        window.clearTimeout(existingTimer);
-        cleanupTimers.delete(sessionId);
-      }
+    const cleanupTimers = streamCleanupTimersRef.current;
+    const existingTimer = cleanupTimers.get(sessionId);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+      cleanupTimers.delete(sessionId);
+    }
+
+    setStreamState(sessionId, (prev) => {
+      const next = typeof updater === 'function'
+        ? (updater as (p: SessionStreamState) => SessionStreamState)(prev)
+        : updater;
       if ((next.status === 'stopped' || next.status === 'error') && !next.assistant) {
         const timer = window.setTimeout(() => {
-          setStreamStateBySession((statePrev) => {
-            const currentState = statePrev[sessionId];
-            if (!currentState) return statePrev;
-            if (currentState.status === 'connecting' || currentState.status === 'streaming') {
-              return statePrev;
-            }
-            const { [sessionId]: _removed, ...rest } = statePrev;
-            return rest;
-          });
+          const currentState = useChatRuntimeStore.getState().streamStateBySession[sessionId];
+          if (!currentState) return;
+          if (currentState.status === 'connecting' || currentState.status === 'streaming') return;
+          clearStreamState(sessionId);
           cleanupTimers.delete(sessionId);
         }, 60_000);
         cleanupTimers.set(sessionId, timer);
       }
       if (next.status === 'idle' && !next.assistant) {
-        if (!prev[sessionId]) return prev;
-        const { [sessionId]: _removed, ...rest } = prev;
-        return rest;
+        // Keep the runtime store minimal; remove idle empty states.
+        const schedule = typeof queueMicrotask === 'function'
+          ? queueMicrotask
+          : (cb: () => void) => window.setTimeout(cb, 0);
+        schedule(() => {
+          const currentState = useChatRuntimeStore.getState().streamStateBySession[sessionId];
+          if (currentState && currentState.status === 'idle' && !currentState.assistant) {
+            clearStreamState(sessionId);
+          }
+        });
       }
-      return { ...prev, [sessionId]: next };
+      return next;
     });
-  };
+  }, [clearStreamState, setStreamState]);
 
   useEffect(() => {
     if (!workspaceId || !projectId || sessions.length === 0) return;
@@ -156,7 +155,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     return () => {
       cancelled = true;
     };
-  }, [chatAPI, projectId, sessions, workspaceId]);
+  }, [chatAPI, projectId, sessions, setStreamIdForSession, workspaceId]);
 
   useEffect(() => {
     if (!workspaceId || !projectId || sessions.length === 0) return;
@@ -255,6 +254,18 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
                     created_at: new Date().toISOString(),
                     finish_reason: null,
                   });
+                  const variantGroupId = data && typeof data.variant_group_id === 'string'
+                    ? data.variant_group_id
+                    : undefined;
+                  const variantIndex = data && typeof data.variant_index === 'number'
+                    ? data.variant_index
+                    : undefined;
+                  if (variantGroupId && typeof variantIndex === 'number') {
+                    setSessionStreamState(session.id, (prev) => ({
+                      status: prev.status,
+                      assistant: prev.assistant ? { ...prev.assistant, variantGroupId, variantIndex } : prev.assistant,
+                    }));
+                  }
                 }
               } else if (ev.event === 'delta') {
                 const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
@@ -322,11 +333,13 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     projectId,
     queryClient,
     sessions,
-    streamIdBySession,
     token,
     upsertStreamAssistantToCache,
     workspaceId,
     chatAPI,
+    setSessionStreamState,
+    setStreamIdForSession,
+    streamIdBySession,
   ]);
 
   const stopStreamingSession = async (
@@ -490,19 +503,22 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             const parentId = data && typeof data.parent_message_id === 'string'
               ? data.parent_message_id
               : null;
-            const variantGroupId = data && typeof data.variant_group_id === 'string'
-              ? data.variant_group_id
-              : undefined;
-            const variantIndex = data && typeof data.variant_index === 'number'
-              ? data.variant_index
-              : undefined;
-            if (mode === 'replace' && variantGroupId && typeof variantIndex === 'number') {
-              onReplaceStreamMeta?.({ variantGroupId, variantIndex });
-            }
-            // Always render streaming output by updating a single assistant message in the list.
-            // This prevents duplicated "footer bubble" after refresh when the backend has already persisted the message.
-            upsertStreamAssistantToCache(runArgs.sessionId, {
-              id: metaMessageId,
+          const variantGroupId = data && typeof data.variant_group_id === 'string'
+            ? data.variant_group_id
+            : undefined;
+          const variantIndex = data && typeof data.variant_index === 'number'
+            ? data.variant_index
+            : undefined;
+          if (variantGroupId && typeof variantIndex === 'number') {
+            setSessionStreamState(runArgs.sessionId, (prev) => ({
+              status: prev.status,
+              assistant: prev.assistant ? { ...prev.assistant, variantGroupId, variantIndex } : prev.assistant,
+            }));
+          }
+          // Always render streaming output by updating a single assistant message in the list.
+          // This prevents duplicated "footer bubble" after refresh when the backend has already persisted the message.
+          upsertStreamAssistantToCache(runArgs.sessionId, {
+            id: metaMessageId,
               session_id: runArgs.sessionId,
               role: 'assistant',
               content: '',

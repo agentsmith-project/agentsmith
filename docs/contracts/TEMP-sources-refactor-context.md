@@ -73,12 +73,23 @@
 
 ## 5. 下一步待做（sources）
 
-1. 从 `use-sources-list.ts` 继续拆分：
-- `use-sources-upload-actions`
-- `use-sources-batch-actions`
-- `use-sources-library-actions`
-2. 为新拆分 hooks 补单测（保持 fail-fast，不加兼容开关）
-3. 每一步都保持以下 gates 绿灯：
+注意：Sources 模块目标已变更为 “MinIO-like object browser”，AIReady/plugin processing 暂不做。
+契约以 `docs/contracts/sources-object-browser-contract.md` 为准。
+
+1. 先完成契约与 MSW 对齐（避免 UI/Mock 漂移）：
+- 新增对象浏览相关 endpoints 的 MSW handlers
+- 更新 `e2e/sources.spec.ts` 的选择器与行为断言（按新 UX）
+2. 将现有 “文件列表 + AIReady” UI 替换为对象浏览器 UI：
+- libraries 左侧列表/选择
+- prefix breadcrumb + objects table
+- upload / create folder / rename / delete / download
+- details panel（最小版：meta + key + size + last_modified）
+3. 再进行“拆 hook + 补测”收口：
+- `use-source-browser-state`
+- `use-source-objects`
+- `use-source-object-actions`
+- `use-source-libraries`
+4. 每一步都保持以下 gates 绿灯：
 - sources unit tests
 - `e2e/sources.spec.ts`
 - `visual --grep "sources"`

@@ -27,6 +27,23 @@ This document defines the closeout baseline and next decomposition targets for:
 - `src/lib/hooks/use-sources-list.ts`
 - Business orchestration (query params, selection state, upload/delete/batch actions, quota checks).
 
+## 2.1 Scope Update (Effective Immediately)
+
+The Sources module is being reworked to be a MinIO Console-like object browser and file manager:
+
+- **Libraries** remain the primary grouping concept in the UI.
+- Each library maps to a backing object-storage namespace (MinIO/S3 bucket) on the backend.
+- The UI must support folders (prefixes), breadcrumb navigation, upload/download, create folder, rename/move, delete, multi-select, and a details panel.
+
+Out of scope for this phase:
+
+- **AIReady** / indexing / docdb / vectordb processing.
+- Any "plugin processing" logic. That will be introduced later behind a finalized plugin contract.
+
+Contract source of truth for this rewrite:
+
+- `docs/contracts/sources-object-browser-contract.md`
+
 ## 3. Guardrails
 
 - Keep route page thin; do not move business logic back into route.
@@ -51,12 +68,14 @@ This document defines the closeout baseline and next decomposition targets for:
 
 ## 5. Next Closeout Steps
 
-1. Split `use-sources-list.ts` into focused hooks:
-- `use-sources-query-state`
-- `use-sources-upload-actions`
-- `use-sources-batch-actions`
-- `use-sources-library-actions`
-Status: in progress. Extracted `src/lib/hooks/use-sources-query-state.ts`.
-2. Add focused hook tests for each extracted hook.
-3. Keep `SourcesPage.tsx` as composition-only view layer.
-4. Keep `e2e/sources.spec.ts` and visual source page scenario green after each step.
+1. Replace the current “file list + AIReady” UX with an **object browser** UX (MinIO-like).
+2. Update frontend-backend contract per `docs/contracts/sources-object-browser-contract.md` and keep MSW handlers aligned.
+3. Refactor the orchestration hook into focused hooks (names are targets, not hard requirements):
+- `use-source-libraries` (list/create/rename/delete libraries)
+- `use-source-browser-state` (selected library, current prefix, view mode, selection)
+- `use-source-objects` (list objects/prefixes, pagination token)
+- `use-source-object-actions` (upload, create folder, rename/move, delete, download)
+4. Replace/refresh test baselines:
+- Unit tests for each extracted hook and key components.
+- E2E `e2e/sources.spec.ts` updated to the new UX and stable testids.
+- Visual scenario updated (`visual --grep "sources"`).

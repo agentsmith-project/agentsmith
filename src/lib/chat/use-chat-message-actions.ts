@@ -101,6 +101,10 @@ export function useChatMessageActions(args: UseChatMessageActionsArgs): UseChatM
       model: activeSession.model,
       endpointId: activeSession.endpoint_id,
       fromMessageId: message.id,
+      // Show streaming immediately on the message being regenerated.
+      // Once server meta arrives (new assistant message id + variant index),
+      // the visible chain will switch to the new variant bubble.
+      displayMessageId: message.id,
       mode: 'replace',
     });
   }, [activeSession, canUseChat, currentSessionId, disabled, markPendingAutoGroup, messages, runStream]);

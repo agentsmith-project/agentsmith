@@ -400,7 +400,6 @@
       "show_diff": "Show diff",
       "original": "Original",
       "edited": "Edited",
-      "branch": "Branch {current}/{total}",
       "edit": "Edit",
       "save": "Save",
       "cancel": "Cancel",

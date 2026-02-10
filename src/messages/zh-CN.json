@@ -402,7 +402,6 @@
       "show_diff": "显示对比",
       "original": "原始内容",
       "edited": "编辑后",
-      "branch": "分支 {current}/{total}",
       "edit": "编辑",
       "save": "保存",
       "cancel": "取消",

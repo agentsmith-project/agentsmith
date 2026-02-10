@@ -93,7 +93,6 @@ const TEST_TRANSLATIONS: Record<string, string> = {
   'message_item.show_diff': 'Show diff',
   'message_item.original': 'Original',
   'message_item.edited': 'Edited',
-  'message_item.branch': 'Branch {current}/{total}',
   'message_item.edit': 'Edit',
   'message_item.save': 'Save',
   'message_item.cancel': 'Cancel',

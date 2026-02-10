@@ -173,10 +173,6 @@ export default function ChatPage({ params }: ChatPageProps) {
       stopRequiredBeforeReplaceFailed: t('stream_stop_required_before_replace_failed'),
       stopFailedRetry: t('stream_stop_failed_retry'),
     },
-    onReplaceStreamMeta: ({ variantGroupId, variantIndex }) => {
-      applyVariantFromMeta(variantGroupId, variantIndex);
-      markPendingAutoGroup(variantGroupId ?? null);
-    },
     upsertStreamAssistantToCache,
     patchStreamAssistantInCache,
   });

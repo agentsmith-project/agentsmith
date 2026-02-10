@@ -35,10 +35,6 @@ export interface UseChatStreamingArgs {
     stopRequiredBeforeReplaceFailed: string;
     stopFailedRetry: string;
   };
-  onReplaceStreamMeta?: (data: {
-    variantGroupId?: string;
-    variantIndex?: number;
-  }) => void;
   upsertStreamAssistantToCache: (sessionId: string, message: ChatMessage) => void;
   patchStreamAssistantInCache: (
     sessionId: string,
@@ -64,7 +60,6 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     chatAPI,
     queryClient,
     messages,
-    onReplaceStreamMeta,
     upsertStreamAssistantToCache,
     patchStreamAssistantInCache,
   } = args;
@@ -508,19 +503,22 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             const parentId = data && typeof data.parent_message_id === 'string'
               ? data.parent_message_id
               : null;
-            const variantGroupId = data && typeof data.variant_group_id === 'string'
-              ? data.variant_group_id
-              : undefined;
-            const variantIndex = data && typeof data.variant_index === 'number'
-              ? data.variant_index
-              : undefined;
-            if (mode === 'replace' && variantGroupId && typeof variantIndex === 'number') {
-              onReplaceStreamMeta?.({ variantGroupId, variantIndex });
-            }
-            // Always render streaming output by updating a single assistant message in the list.
-            // This prevents duplicated "footer bubble" after refresh when the backend has already persisted the message.
-            upsertStreamAssistantToCache(runArgs.sessionId, {
-              id: metaMessageId,
+          const variantGroupId = data && typeof data.variant_group_id === 'string'
+            ? data.variant_group_id
+            : undefined;
+          const variantIndex = data && typeof data.variant_index === 'number'
+            ? data.variant_index
+            : undefined;
+          if (variantGroupId && typeof variantIndex === 'number') {
+            setSessionStreamState(runArgs.sessionId, (prev) => ({
+              status: prev.status,
+              assistant: prev.assistant ? { ...prev.assistant, variantGroupId, variantIndex } : prev.assistant,
+            }));
+          }
+          // Always render streaming output by updating a single assistant message in the list.
+          // This prevents duplicated "footer bubble" after refresh when the backend has already persisted the message.
+          upsertStreamAssistantToCache(runArgs.sessionId, {
+            id: metaMessageId,
               session_id: runArgs.sessionId,
               role: 'assistant',
               content: '',

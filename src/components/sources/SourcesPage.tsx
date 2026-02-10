@@ -41,10 +41,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/toast';
+import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 
 import { getApiClient, SourcesAPI } from '@/lib/api';
 import type { SourceLibrary, SourceObjectsListItem } from '@/lib/api/types';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { APIError } from '@/lib/api/errors';
 import {
   useCreateSourceLibrary,
   useDeleteSourceLibrary,
@@ -206,12 +208,27 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const [moveName, setMoveName] = React.useState('');
   const [moveDestPrefix, setMoveDestPrefix] = React.useState('');
   const [moveOverwrite, setMoveOverwrite] = React.useState(false);
+  const [moveConflictOpen, setMoveConflictOpen] = React.useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
 
   const selectedForMove = selected.length === 1 ? selected[0] : null;
   const moveNamePlaceholder = selectedForMove
     ? (selectedForMove.kind === 'object' ? basename(selectedForMove.key) : basename(selectedForMove.prefix))
     : '';
+
+  // Destination folder picker (browse prefixes)
+  const [destPickerOpen, setDestPickerOpen] = React.useState(false);
+  const [destPickerPrefix, setDestPickerPrefix] = React.useState('');
+  const destPickerParams = React.useMemo(
+    () => ({ prefix: destPickerPrefix, delimiter: '/' as const, page_size: 200 }),
+    [destPickerPrefix],
+  );
+  const destPickerQuery = useSourceObjects(workspaceId, projectId, selectedLibraryId, destPickerParams);
+  const destPickerItems = React.useMemo(
+    () => (destPickerQuery.data?.items ?? []).filter((it) => it.kind === 'prefix'),
+    [destPickerQuery.data?.items],
+  );
+  const destPickerCrumbs = React.useMemo(() => buildCrumbs(destPickerPrefix), [destPickerPrefix]);
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
@@ -295,6 +312,11 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       clearSelection();
       toast.success(t('file_manager.renamed'));
     } catch (err) {
+      const apiErr = err instanceof APIError ? err : null;
+      if (!moveOverwrite && apiErr?.statusCode === 409 && apiErr.errorCode === 'destination_exists') {
+        setMoveConflictOpen(true);
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`${t('file_manager.rename_failed')}: ${msg}`);
     }
@@ -941,7 +963,22 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="sources-move-dest">{t('file_manager.dest_prefix')}</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="sources-move-dest">{t('file_manager.dest_prefix')}</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => {
+                      setDestPickerPrefix(moveDestPrefix);
+                      setDestPickerOpen(true);
+                    }}
+                    data-testid="sources__move__browse"
+                  >
+                    {t('file_manager.browse')}
+                  </Button>
+                </div>
                 <Input
                   id="sources-move-dest"
                   value={moveDestPrefix}
@@ -1013,6 +1050,101 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={destPickerOpen} onOpenChange={setDestPickerOpen}>
+        <DialogContent className="sm:max-w-[720px]" data-testid="sources__dialog__dest-picker">
+          <DialogHeader>
+            <DialogTitle>{t('file_manager.choose_destination')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-1 min-w-0">
+              {destPickerCrumbs.map((c, idx) => (
+                <React.Fragment key={c.prefix || 'root'}>
+                  {idx > 0 && <span className="text-tertiary text-sm">/</span>}
+                  <button
+                    type="button"
+                    className="text-sm text-primary hover:underline truncate max-w-[200px]"
+                    onClick={() => setDestPickerPrefix(c.prefix)}
+                    data-testid={idx === 0 ? 'sources__dest-picker__breadcrumb-root' : `sources__dest-picker__breadcrumb--${idx}`}
+                  >
+                    {idx === 0 ? t('file_manager.root') : c.label}
+                  </button>
+                </React.Fragment>
+              ))}
+              <div className="ml-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setDestPickerPrefix('')}
+                >
+                  {t('file_manager.go_root')}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-subtle overflow-hidden">
+              <div className="max-h-[360px] overflow-auto">
+                {destPickerQuery.isLoading ? (
+                  <div className="p-4 text-sm text-tertiary">{t('file_manager.loading')}</div>
+                ) : destPickerItems.length === 0 ? (
+                  <div className="p-4 text-sm text-tertiary">{t('file_manager.no_folders')}</div>
+                ) : (
+                  <div className="divide-y divide-border-subtle">
+                    {destPickerItems.map((it) => (
+                      <button
+                        key={it.prefix}
+                        type="button"
+                        className="w-full flex items-center justify-between px-4 py-2 hover:bg-hover/60 text-left"
+                        onClick={() => setDestPickerPrefix(it.prefix)}
+                        data-testid="sources__dest-picker__row"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Folder className="h-4 w-4 text-tertiary shrink-0" />
+                          <div className="truncate text-sm text-primary">{it.name}</div>
+                        </div>
+                        <div className="text-[11px] text-tertiary font-mono truncate max-w-[360px]">{it.prefix}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDestPickerOpen(false)}>
+              {t('file_manager.cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setMoveDestPrefix(destPickerPrefix);
+                setDestPickerOpen(false);
+              }}
+              data-testid="sources__dest-picker__select"
+            >
+              {t('file_manager.select')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmationDialog
+        open={moveConflictOpen}
+        onOpenChange={setMoveConflictOpen}
+        title={t('file_manager.conflict_title')}
+        description={t('file_manager.conflict_description')}
+        confirmText={t('file_manager.overwrite_action')}
+        cancelText={t('file_manager.cancel')}
+        variant="destructive"
+        onConfirm={async () => {
+          setMoveOverwrite(true);
+          setMoveConflictOpen(false);
+          await handleMove();
+        }}
+        testId="sources__dialog__move-conflict"
+      />
 
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent className="sm:max-w-[480px]" data-testid="sources__dialog__delete">

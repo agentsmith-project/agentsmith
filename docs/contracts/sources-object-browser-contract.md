@@ -220,6 +220,12 @@ Rules:
 - Moving a prefix performs a recursive move.
 - If `overwrite=false` and destination exists, return `409 destination_exists`.
 
+Client behavior guidance:
+
+- On `409 destination_exists`, the UI should prompt the user to either:
+  - cancel, or
+  - retry with `overwrite=true`.
+
 ### 2.8 Object Details
 
 `GET /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/objects/meta?key=...`
@@ -263,4 +269,3 @@ Playwright (`e2e/sources.spec.ts`) must cover:
 - Rename/move file.
 - Delete file (and folder prefix).
 - Download file (assert response headers and file bytes are non-empty).
-

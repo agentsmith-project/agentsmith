@@ -27,6 +27,7 @@ export function Composer({
   disabled,
   streaming,
   autoFocus,
+  layoutMode = 'standard',
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -41,6 +42,7 @@ export function Composer({
   disabled: boolean;
   streaming: boolean;
   autoFocus?: boolean;
+  layoutMode?: 'standard' | 'ultrawide';
 }) {
   const t = useTranslations('chat');
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -54,6 +56,7 @@ export function Composer({
 
   const canSend = !disabled && !streaming && !blocked && value.trim().length > 0;
   const canStop = streaming;
+  const contentWidthClass = layoutMode === 'ultrawide' ? 'max-w-[1560px]' : 'max-w-[980px]';
 
   const helperText = React.useMemo(() => {
     if (attachments.some((a) => a.upload_status === 'failed')) return t('composer.helper_failed_attachments');
@@ -79,7 +82,7 @@ export function Composer({
       data-testid="chat__composer"
     >
       {mode === 'edit' && (
-        <div className="mx-auto w-full max-w-[980px] px-4 pt-3 flex items-center justify-between">
+        <div className={cn('mx-auto w-full px-4 pt-3 flex items-center justify-between', contentWidthClass)}>
           <div className="text-xs text-tertiary">{t('composer.editing_message')}</div>
           <Button type="button" variant="ghost" size="sm" onClick={onCancelEdit} disabled={disabled || streaming}>
             {t('composer.cancel')}
@@ -87,7 +90,7 @@ export function Composer({
         </div>
       )}
       {attachments.length > 0 && (
-        <div className="mx-auto w-full max-w-[980px] px-4 pt-3 flex flex-wrap gap-2">
+        <div className={cn('mx-auto w-full px-4 pt-3 flex flex-wrap gap-2', contentWidthClass)}>
           {attachments.map((a) => {
             const status = a.upload_status;
             return (
@@ -123,7 +126,7 @@ export function Composer({
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[980px] px-4 py-4">
+      <div className={cn('mx-auto w-full px-4 py-4', contentWidthClass)}>
         <div className="flex items-end gap-2">
           <Button
             type="button"

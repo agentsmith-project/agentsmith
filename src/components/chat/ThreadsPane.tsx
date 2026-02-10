@@ -6,6 +6,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { Plus, Search } from 'lucide-react';
 
 import type { ChatSession } from '@/lib/api/types';
+import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,7 @@ export function ThreadsPane({
   canCreate,
   createPending,
   isLoading,
+  layoutMode = 'standard',
 }: {
   sessions: ChatSession[];
   activeSessionId: string | null;
@@ -41,6 +43,7 @@ export function ThreadsPane({
   canCreate: boolean;
   createPending: boolean;
   isLoading: boolean;
+  layoutMode?: 'standard' | 'ultrawide';
 }) {
   const t = useTranslations('chat');
 
@@ -58,7 +61,10 @@ export function ThreadsPane({
 
   return (
     <aside
-      className="w-[216px] xl:w-[228px] 2xl:w-[240px] border-r border-subtle bg-panel/70 backdrop-blur-sm flex flex-col overflow-hidden"
+      className={cn(
+        'border-r border-subtle bg-panel/70 backdrop-blur-sm flex flex-col overflow-hidden',
+        layoutMode === 'ultrawide' ? 'w-[256px] xl:w-[276px] 2xl:w-[296px]' : 'w-[216px] xl:w-[228px] 2xl:w-[240px]',
+      )}
       data-testid="chat__threads-pane"
     >
       <div className="p-3 border-b border-subtle">

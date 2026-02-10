@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 
 import type { ChatMessage } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain, buildBranchBadgesForChain } from '@/lib/chat/branch';
+import { cn } from '@/lib/utils';
 
 import { MessageItem } from './MessageItem';
 
@@ -23,6 +24,7 @@ export function MessageList({
   followOutput = true,
   suppressAutoScroll = false,
   disabled,
+  layoutMode = 'standard',
 }: {
   messages: ChatMessage[];
   activeVariantIndexByGroup: Record<string, number>;
@@ -43,6 +45,7 @@ export function MessageList({
   followOutput?: boolean;
   suppressAutoScroll?: boolean;
   disabled: boolean;
+  layoutMode?: 'standard' | 'ultrawide';
 }) {
   const t = useTranslations('chat');
   const groups = React.useMemo(() => buildVariantGroups(messages), [messages]);
@@ -68,6 +71,7 @@ export function MessageList({
   }
 
   const shouldFollow = followOutput && isAtBottom && !suppressAutoScroll;
+  const contentWidthClass = layoutMode === 'ultrawide' ? 'max-w-[1560px]' : 'max-w-[980px]';
 
   return (
     <div className="h-full relative">
@@ -80,7 +84,7 @@ export function MessageList({
         atBottomStateChange={setIsAtBottom}
         itemContent={(_idx, m) => (
           <div className="px-3 py-2 sm:px-4">
-            <div className="mx-auto w-full max-w-[980px]">
+            <div className={cn('mx-auto w-full', contentWidthClass)}>
               <MessageItem
                 message={m}
                 variantGroups={groups}
@@ -110,7 +114,7 @@ export function MessageList({
         components={{
           Footer: () => (
             <div className="px-3 pb-4 sm:px-4">
-              <div className="mx-auto w-full max-w-[980px]">{footer}</div>
+              <div className={cn('mx-auto w-full', contentWidthClass)}>{footer}</div>
             </div>
           ),
         }}

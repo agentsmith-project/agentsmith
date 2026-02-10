@@ -491,4 +491,38 @@ describe('ChatHeader', () => {
       expect(header).toBeInTheDocument();
     });
   });
+
+  describe('Layout Toggle', () => {
+    it('should render layout toggle when enabled', () => {
+      render(
+        <ChatHeader
+          {...defaultProps}
+          showLayoutToggle={true}
+          layoutMode="standard"
+          onToggleLayoutMode={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByTestId('chat__layout-toggle')).toBeInTheDocument();
+      expect(screen.getByText('Standard')).toBeInTheDocument();
+    });
+
+    it('should call onToggleLayoutMode when clicked', async () => {
+      const user = userEvent.setup();
+      const onToggleLayoutMode = vi.fn();
+      render(
+        <ChatHeader
+          {...defaultProps}
+          showLayoutToggle={true}
+          layoutMode="ultrawide"
+          onToggleLayoutMode={onToggleLayoutMode}
+        />,
+      );
+
+      await user.click(screen.getByTestId('chat__layout-toggle'));
+
+      expect(onToggleLayoutMode).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Ultrawide')).toBeInTheDocument();
+    });
+  });
 });

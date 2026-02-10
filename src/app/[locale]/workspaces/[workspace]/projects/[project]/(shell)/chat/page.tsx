@@ -41,10 +41,14 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { cn } from '@/lib/utils';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
+
+const CHAT_LAYOUT_MODE_STORAGE_KEY = 'mbos.chat.layout.mode';
+const ULTRAWIDE_MIN_WIDTH = 1920;
 
 export default function ChatPage({ params }: ChatPageProps) {
   const queryClient = useQueryClient();
@@ -62,6 +66,8 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [composerBySession, setComposerBySession] = useState<Record<string, string>>({});
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [preferredLayoutMode, setPreferredLayoutMode] = useState<'standard' | 'ultrawide'>('standard');
+  const [isUltrawideViewport, setIsUltrawideViewport] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -73,8 +79,28 @@ export default function ChatPage({ params }: ChatPageProps) {
     });
   }, [params]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (typeof window.localStorage?.getItem !== 'function') return;
+    const saved = window.localStorage.getItem(CHAT_LAYOUT_MODE_STORAGE_KEY);
+    if (saved === 'standard' || saved === 'ultrawide') {
+      setPreferredLayoutMode(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia(`(min-width: ${ULTRAWIDE_MIN_WIDTH}px)`);
+    const sync = () => setIsUltrawideViewport(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
+  const showLayoutToggle = isUltrawideViewport;
+  const layoutMode = showLayoutToggle ? preferredLayoutMode : 'standard';
 
   const apiClient = useMemo(() => getApiClient(), []);
   const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
@@ -293,6 +319,16 @@ export default function ChatPage({ params }: ChatPageProps) {
     retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
   }, [canUseChat, currentSessionId, retryAttachmentMutation]);
 
+  const handleToggleLayoutMode = useCallback(() => {
+    setPreferredLayoutMode((prev) => {
+      const next = prev === 'standard' ? 'ultrawide' : 'standard';
+      if (typeof window !== 'undefined' && typeof window.localStorage?.setItem === 'function') {
+        window.localStorage.setItem(CHAT_LAYOUT_MODE_STORAGE_KEY, next);
+      }
+      return next;
+    });
+  }, []);
+
   if (!resolvedParams) {
     return (
           <PageState state="loading">
@@ -334,7 +370,12 @@ export default function ChatPage({ params }: ChatPageProps) {
         contentWidth="full"
         header={<PageHeader title={t('title')} />}
       >
-        <div className="h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40">
+        <div
+          className={cn(
+            'h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40',
+            layoutMode === 'standard' ? 'mx-auto w-full max-w-[1400px]' : 'w-full',
+          )}
+        >
           <ThreadsPane
             sessions={sessions}
             activeSessionId={currentSessionId}
@@ -350,6 +391,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             canCreate={canUseChat}
             createPending={createSessionMutation.isPending}
             isLoading={sessionsLoading}
+            layoutMode={layoutMode}
           />
 
           <ChatMainPane
@@ -372,6 +414,8 @@ export default function ChatPage({ params }: ChatPageProps) {
             canUseChat={canUseChat}
             composerValue={composerValue}
             fileInputRef={fileInputRef}
+            layoutMode={layoutMode}
+            showLayoutToggle={showLayoutToggle}
             labels={{
               loading: t('loading'),
               noActiveThreadTitle: t('no_active_thread_title'),
@@ -380,6 +424,7 @@ export default function ChatPage({ params }: ChatPageProps) {
               assistant: t('assistant'),
             }}
             onCreateThread={handleCreateThread}
+            onToggleLayoutMode={handleToggleLayoutMode}
             onRenameActiveSession={handleRenameActiveSession}
             onSelectActiveEndpoint={handleSelectActiveEndpoint}
             onSelectVariant={handleSelectVariant}

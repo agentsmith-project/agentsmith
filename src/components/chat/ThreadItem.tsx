@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { MoreHorizontal, Pin, Star, Trash2 } from 'lucide-react';
+import { LoaderCircle, MoreHorizontal, Pin, Star, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import type { ChatSession } from '@/lib/api/types';
@@ -15,13 +15,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-
-function formatRelative(ts?: string) {
-  if (!ts) return '';
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString();
-}
 
 export function ThreadItem({
   session,
@@ -77,15 +70,9 @@ export function ThreadItem({
             onSelect();
           }
         }}
-        className={cn(
-          'w-full text-left px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm',
-        )}
+        className="w-full text-left px-2.5 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm"
       >
-        <div className="flex items-start gap-2">
-          <div className="mt-0.5 flex items-center gap-1.5">
-            <Star className={cn('w-4 h-4', session.starred ? 'text-accent' : 'text-icon-default')} />
-            {session.pinned && <Pin className="w-4 h-4 text-icon-default" />}
-          </div>
+        <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
             {editing ? (
               <input
@@ -114,20 +101,19 @@ export function ThreadItem({
                 {session.title || t('thread_item.untitled')}
               </div>
             )}
-            <div className="flex items-center gap-2 text-xs text-tertiary mt-0.5">
-              {isStreaming ? (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent"
-                  data-testid="chat__thread-streaming-indicator"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-                  {t('thread_generating')}
-                </span>
-              ) : null}
-              <span className="truncate">{formatRelative(session.updated_at)}</span>
-              <span className="text-tertiary/70">·</span>
-              <span>{session.message_count ?? 0}</span>
-            </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-icon-default">
+            {isStreaming ? (
+              <span
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-accent"
+                data-testid="chat__thread-streaming-indicator"
+                title={t('thread_generating')}
+              >
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              </span>
+            ) : null}
+            {session.starred ? <Star className="w-3.5 h-3.5 text-accent" /> : null}
+            {session.pinned ? <Pin className="w-3.5 h-3.5" /> : null}
           </div>
 
           <div className="flex-shrink-0">

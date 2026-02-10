@@ -42,16 +42,29 @@ This document defines responsibility boundaries for the chat page implementation
 
 - `ThreadsPane.tsx`
 - Thread list and thread actions UI.
+- Supports `layoutMode` (`standard|ultrawide`) for compact/default and wide-display widths.
 
 - `ChatMainPane.tsx`
 - Main pane composition (`ChatHeader`, `MessageList`, `Composer`) and empty/loading states.
+- Owns layout mode propagation to `ChatHeader` / `MessageList` / `Composer`.
 
 - `ChatDeleteDialog.tsx`
 - Delete confirmation dialog rendering.
 
+- `ChatHeader.tsx`
+- Session title/model control + optional layout-mode toggle (`chat__layout-toggle`) when viewport is ultrawide.
+
+- `MessageList.tsx` / `Composer.tsx`
+- Respect `layoutMode` to cap content width:
+- `standard`: keep dense, module-consistent readable width.
+- `ultrawide`: expand chat content area without remounting shell/sidebar/topbar.
+
 ## 4. Guardrails
 
 - Keep business logic in hooks; keep components primarily presentational.
+- Default layout must remain aligned with other module pages (readability first); ultrawide is opt-in only.
+- No migration toggles or temporary fallback flags for layout behavior.
+- Layout toggle only affects chat content area; must not trigger shell/topbar/sidebar flicker or full-page remount.
 - For new chat behavior:
 1. Update or add a hook in `src/lib/chat`.
 2. Keep `page.tsx` limited to wiring and cross-hook coordination.

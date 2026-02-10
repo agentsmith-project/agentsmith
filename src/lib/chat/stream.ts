@@ -122,3 +122,24 @@ export async function postChatStream(
     signal,
   });
 }
+
+export async function getChatStreamAttach(args: {
+  token?: string | null;
+  workspaceId: string;
+  projectId: string;
+  sessionId: string;
+  streamId: string;
+  signal?: AbortSignal;
+}): Promise<Response> {
+  const { token, workspaceId, projectId, sessionId, streamId, signal } = args;
+  return fetch(
+    `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages/streams/${streamId}`,
+    {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal,
+    },
+  );
+}

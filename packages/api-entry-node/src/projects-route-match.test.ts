@@ -36,6 +36,16 @@ describe('matchProjectsRoute', () => {
     });
 
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/s_1/messages/streams/st_1'),
+    ).toEqual({
+      kind: 'chatMessagesStreamAttach',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 's_1',
+      streamId: 'st_1',
+    });
+
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/s_1/stop'),
     ).toEqual({
       kind: 'chatSessionStop',

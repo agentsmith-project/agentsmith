@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { ChatMessage, ChatSession } from '@/lib/api/types';
-import { postChatStream, streamSseJson } from '@/lib/chat/stream'; 
+import { getChatStreamAttach, postChatStream, streamSseJson } from '@/lib/chat/stream'; 
 import { createThrottle } from '@/lib/chat/throttle';
 import { chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
 import type { SessionStreamState } from '@/lib/chat/stream-state';
@@ -141,6 +141,140 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
       cancelled = true;
     };
   }, [chatAPI, projectId, sessions, workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId || !projectId || sessions.length === 0) return;
+
+    const candidates = sessions.filter((session) => {
+      if (session.runtime_status !== 'running' && session.runtime_status !== 'stopping') return false;
+      if (streamControllersRef.current.has(session.id)) return false;
+      return streamIdsRef.current.has(session.id);
+    });
+    if (candidates.length === 0) return;
+
+    let cancelled = false;
+    const attachAll = async () => {
+      await Promise.all(
+        candidates.map(async (session) => {
+          const streamId = streamIdsRef.current.get(session.id);
+          if (!streamId) return;
+          if (cancelled) return;
+
+          const controller = new AbortController();
+          streamControllersRef.current.set(session.id, controller);
+          const now = Date.now();
+          setSessionStreamState(session.id, {
+            status: 'connecting',
+            assistant: {
+              messageId: null,
+              content: '',
+              mode: 'append',
+              startedAt: now,
+              lastTokenAt: now,
+            },
+          });
+
+          const throttler = createThrottle<string>(40, (next) => {
+            setSessionStreamState(session.id, (prev) => ({
+              status: prev.status === 'idle' ? 'streaming' : prev.status,
+              assistant: prev.assistant
+                ? { ...prev.assistant, content: next, lastTokenAt: Date.now() }
+                : {
+                    messageId: null,
+                    content: next,
+                    mode: 'append',
+                    startedAt: Date.now(),
+                    lastTokenAt: Date.now(),
+                  },
+            }));
+          });
+
+          const streamStillActive = () =>
+            streamControllersRef.current.get(session.id) === controller;
+
+          try {
+            const res = await getChatStreamAttach({
+              token,
+              workspaceId,
+              projectId,
+              sessionId: session.id,
+              streamId,
+              signal: controller.signal,
+            });
+
+            setSessionStreamState(session.id, (prev) => ({
+              ...prev,
+              status: 'streaming',
+            }));
+
+            let content = '';
+            for await (const ev of streamSseJson(res, controller.signal)) {
+              if (controller.signal.aborted || !streamStillActive()) break;
+              if (ev.event === 'meta') {
+                const data = (typeof ev.data === 'object' && ev.data !== null
+                  ? (ev.data as Record<string, unknown>)
+                  : null);
+                const metaStreamId = data && typeof data.stream_id === 'string'
+                  ? data.stream_id
+                  : null;
+                if (metaStreamId) {
+                  streamIdsRef.current.set(session.id, metaStreamId);
+                }
+                const metaMessageId = data && typeof data.assistant_message_id === 'string'
+                  ? data.assistant_message_id
+                  : null;
+                if (metaMessageId) {
+                  setSessionStreamState(session.id, (prev) => ({
+                    status: prev.status === 'idle' ? 'streaming' : prev.status,
+                    assistant: prev.assistant ? { ...prev.assistant, messageId: metaMessageId } : null,
+                  }));
+                }
+              } else if (ev.event === 'delta') {
+                const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
+                const delta = data && typeof data.delta === 'string' ? data.delta : null;
+                if (delta) {
+                  content += delta;
+                  throttler.push(content);
+                }
+              } else if (ev.event === 'error') {
+                const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
+                const message = data && typeof data.message === 'string' ? data.message : messages.streamError;
+                throw new Error(message);
+              } else if (ev.event === 'done') {
+                break;
+              }
+            }
+
+            throttler.flush();
+            if (streamStillActive()) {
+              setSessionStreamState(session.id, { status: 'idle', assistant: null });
+            }
+            queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, session.id) });
+            queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+          } catch (e: unknown) {
+            if (controller.signal.aborted) {
+              // Detaching shouldn't be treated as user stop; let runtime_status drive indicators.
+              if (streamStillActive()) {
+                setSessionStreamState(session.id, { status: 'idle', assistant: null });
+              }
+              return;
+            }
+            setSessionStreamState(session.id, { status: 'error', assistant: null });
+            toast.error(e instanceof Error ? e.message : messages.streamingFailed);
+          } finally {
+            if (streamControllersRef.current.get(session.id) === controller) {
+              streamControllersRef.current.delete(session.id);
+            }
+          }
+        }),
+      );
+    };
+
+    void attachAll();
+    return () => {
+      cancelled = true;
+    };
+  }, [messages.streamError, messages.streamingFailed, projectId, queryClient, sessions, token, workspaceId, chatAPI]);
 
   const stopStreamingSession = async (
     sessionId: string,

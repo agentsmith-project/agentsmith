@@ -13,6 +13,13 @@ export type ChatRoute =
     sessionId: string;
     streamId: string;
   }
+  | {
+    kind: 'chatMessagesStreamAttach';
+    workspaceId: string;
+    projectId: string;
+    sessionId: string;
+    streamId: string;
+  }
   | { kind: 'chatRegenerate'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatAttachments'; workspaceId: string; projectId: string; sessionId: string }
   | { kind: 'chatAttachmentInit'; workspaceId: string; projectId: string; sessionId: string }
@@ -43,6 +50,19 @@ export function matchChatRoute(pathname: string): ChatRoute | null {
       projectId: decodeURIComponent(chatMessagesStreamStopMatched[2]),
       sessionId: decodeURIComponent(chatMessagesStreamStopMatched[3]),
       streamId: decodeURIComponent(chatMessagesStreamStopMatched[4]),
+    };
+  }
+
+  const chatMessagesStreamAttachMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/chat\/sessions\/([^/]+)\/messages\/streams\/([^/]+)\/?$/,
+  );
+  if (chatMessagesStreamAttachMatched) {
+    return {
+      kind: 'chatMessagesStreamAttach',
+      workspaceId: decodeURIComponent(chatMessagesStreamAttachMatched[1]),
+      projectId: decodeURIComponent(chatMessagesStreamAttachMatched[2]),
+      sessionId: decodeURIComponent(chatMessagesStreamAttachMatched[3]),
+      streamId: decodeURIComponent(chatMessagesStreamAttachMatched[4]),
     };
   }
 

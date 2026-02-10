@@ -32,6 +32,74 @@ interface ChatStreamHandlerArgs {
 
 export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, json, readBody, buildUpstreamUrl, sseWrite } = args;
+  const isWritable = (candidate: http.ServerResponse): boolean =>
+    !candidate.writableEnded && !candidate.destroyed;
+
+  const registerClient = (streamId: string, client: http.ServerResponse) => {
+    const record = ACTIVE_CHAT_STREAMS.get(streamId);
+    if (!record) return;
+    record.clients.add(client);
+    client.once('close', () => {
+      record.clients.delete(client);
+    });
+  };
+
+  const broadcast = (streamId: string, event: string, data: unknown) => {
+    const record = ACTIVE_CHAT_STREAMS.get(streamId);
+    if (!record) return;
+    for (const client of record.clients) {
+      if (!isWritable(client)) {
+        record.clients.delete(client);
+        continue;
+      }
+      try {
+        sseWrite(client, event, data);
+      } catch {
+        record.clients.delete(client);
+      }
+    }
+  };
+
+  if (route.kind === 'chatMessagesStreamAttach' && method === 'GET') {
+    const record = ACTIVE_CHAT_STREAMS.get(route.streamId);
+    if (
+      !record ||
+      record.workspaceId !== route.workspaceId ||
+      record.projectId !== route.projectId ||
+      record.sessionId !== route.sessionId
+    ) {
+      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_stream_not_found' });
+      return true;
+    }
+
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    if (typeof res.flushHeaders === 'function') {
+      res.flushHeaders();
+    }
+
+    registerClient(route.streamId, res);
+    sseWrite(res, 'meta', {
+      stream_id: route.streamId,
+      session_id: record.sessionId,
+      model: record.model,
+      endpoint_id: record.endpointId,
+      assistant_message_id: record.assistantMessageId,
+      parent_message_id: record.parentMessageId,
+      variant_group_id: record.variantGroupId,
+      variant_index: record.variantIndex,
+    });
+    if (record.contentSoFar.length > 0) {
+      sseWrite(res, 'delta', {
+        message_id: record.assistantMessageId,
+        delta: record.contentSoFar,
+      });
+    }
+    return true;
+  }
+
   if (route.kind !== 'chatMessagesStream' || method !== 'POST') {
     return false;
   }
@@ -195,7 +263,16 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     abortController: streamAbortController,
     startedAt: streamStartedAt,
     status: 'running',
+    assistantMessageId: createdAssistant.id,
+    parentMessageId: parentForAssistant,
+    variantGroupId: variantMeta.variantGroupId,
+    variantIndex: variantMeta.variantIndex,
+    endpointId: endpoint.id,
+    model: endpoint.openai_model,
+    contentSoFar: '',
+    clients: new Set(),
   });
+  registerClient(streamId, res);
   logChatStreamEvent({
     workspaceId: route.workspaceId,
     projectId: route.projectId,
@@ -224,11 +301,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     'running',
     STREAM_REGISTRY_TTL_SECONDS,
   );
-  let clientDisconnected = false;
-  const onResClose = () => {
-    clientDisconnected = true;
-  };
-  res.once('close', onResClose);
 
   const upstreamUrl = buildUpstreamUrl(endpoint.base_url, 'chat/completions');
   let upstreamRes: Response;
@@ -247,7 +319,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       signal: streamAbortController.signal,
     });
   } catch (error) {
-    res.off('close', onResClose);
     ACTIVE_CHAT_STREAMS.delete(streamId);
     if (streamAbortController.signal.aborted) {
       logChatStreamEvent({
@@ -337,7 +408,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   }
 
   if (!upstreamRes.ok) {
-    res.off('close', onResClose);
     ACTIVE_CHAT_STREAMS.delete(streamId);
     await writeStreamRegistry(
       deps.cache,
@@ -395,7 +465,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   if (typeof res.flushHeaders === 'function') {
     res.flushHeaders();
   }
-  sseWrite(res, 'meta', {
+  broadcast(streamId, 'meta', {
     stream_id: streamId,
     session_id: route.sessionId,
     model: endpoint.openai_model,
@@ -406,9 +476,9 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     variant_index: variantMeta.variantIndex,
   });
   const pingTimer = setInterval(() => {
-    if (!clientDisconnected) {
-      sseWrite(res, 'ping', { ts: Date.now() });
-    }
+    const record = ACTIVE_CHAT_STREAMS.get(streamId);
+    if (!record || record.clients.size === 0) return;
+    broadcast(streamId, 'ping', { ts: Date.now() });
   }, 15_000);
 
   let assistantText = '';
@@ -483,12 +553,9 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
             usageTokens = chunk.usageTokens;
           }
           assistantText += chunk.delta;
-          if (!clientDisconnected) {
-            sseWrite(res, 'delta', {
-              message_id: createdAssistant.id,
-              delta: chunk.delta,
-            });
-          }
+          const record = ACTIVE_CHAT_STREAMS.get(streamId);
+          if (record) record.contentSoFar = assistantText;
+          broadcast(streamId, 'delta', { message_id: createdAssistant.id, delta: chunk.delta });
         }
         await persistAssistantProgress(false);
       }
@@ -508,12 +575,9 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
             usageTokens = chunk.usageTokens;
           }
           assistantText += chunk.delta;
-          if (!clientDisconnected) {
-            sseWrite(res, 'delta', {
-              message_id: createdAssistant.id,
-              delta: chunk.delta,
-            });
-          }
+          const record = ACTIVE_CHAT_STREAMS.get(streamId);
+          if (record) record.contentSoFar = assistantText;
+          broadcast(streamId, 'delta', { message_id: createdAssistant.id, delta: chunk.delta });
         }
       }
     } else {
@@ -521,18 +585,16 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       assistantText = safeAssistantContent(completionPayload);
       finishReason = safeAssistantFinishReason(completionPayload);
       usageTokens = safeAssistantUsageTokens(completionPayload);
-      if (assistantText.length > 0 && !clientDisconnected) {
-        sseWrite(res, 'delta', {
-          message_id: createdAssistant.id,
-          delta: assistantText,
-        });
+      const record = ACTIVE_CHAT_STREAMS.get(streamId);
+      if (record) record.contentSoFar = assistantText;
+      if (assistantText.length > 0) {
+        broadcast(streamId, 'delta', { message_id: createdAssistant.id, delta: assistantText });
       }
     }
   } catch (error) {
     if (streamAbortController.signal.aborted) {
       messageStatus = 'stopped';
     } else {
-      res.off('close', onResClose);
       messageStatus = 'failed';
       const errorCode =
         error instanceof Error && error.message === 'stream_inactivity_timeout'
@@ -601,7 +663,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       messageStatus,
     },
   );
-  res.off('close', onResClose);
   clearInterval(pingTimer);
   const active = ACTIVE_CHAT_STREAMS.get(streamId);
   const durationMs = Date.now() - streamStartedAtMs;
@@ -611,6 +672,19 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       : undefined;
   if (active) {
     active.status = 'finished';
+  }
+  broadcast(streamId, 'done', {
+    message_id: finalized?.id ?? createdAssistant.id,
+    finish_reason: finishReason,
+    tokens: usageTokens,
+    message_status: messageStatus,
+  });
+  if (active) {
+    for (const client of active.clients) {
+      if (isWritable(client)) {
+        client.end();
+      }
+    }
   }
   ACTIVE_CHAT_STREAMS.delete(streamId);
   await writeStreamRegistry(
@@ -643,16 +717,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     durationMs,
     stopReason,
   });
-
-  if (!clientDisconnected) {
-    sseWrite(res, 'done', {
-      message_id: finalized?.id ?? createdAssistant.id,
-      finish_reason: finishReason,
-      tokens: usageTokens,
-      message_status: messageStatus,
-    });
-    res.end();
-  }
 
   return true;
 }

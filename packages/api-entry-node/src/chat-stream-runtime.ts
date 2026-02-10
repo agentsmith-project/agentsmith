@@ -1,3 +1,4 @@
+import type http from 'node:http';
 import type { CachePort } from '@mbos/ports';
 
 export interface ActiveChatStreamRecord {
@@ -8,6 +9,14 @@ export interface ActiveChatStreamRecord {
   startedAt: string;
   status: 'running' | 'stopping' | 'finished';
   stopReason?: 'user_stop' | 'session_stop';
+  assistantMessageId: string;
+  parentMessageId: string | null;
+  variantGroupId?: string;
+  variantIndex?: number;
+  endpointId: string;
+  model: string;
+  contentSoFar: string;
+  clients: Set<http.ServerResponse>;
 }
 
 export interface ChatStreamRegistryRecord {

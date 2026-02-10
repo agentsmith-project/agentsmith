@@ -16,6 +16,25 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+function formatCompactAge(ts?: string) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const deltaMs = Date.now() - d.getTime();
+  const deltaMin = Math.floor(deltaMs / 60000);
+  if (deltaMin < 1) return 'now';
+  if (deltaMin < 60) return `${deltaMin}m`;
+  const deltaHour = Math.floor(deltaMin / 60);
+  if (deltaHour < 24) return `${deltaHour}h`;
+  const deltaDay = Math.floor(deltaHour / 24);
+  if (deltaDay < 7) return `${deltaDay}d`;
+  const deltaWeek = Math.floor(deltaDay / 7);
+  if (deltaWeek < 5) return `${deltaWeek}w`;
+  const deltaMonth = Math.floor(deltaDay / 30);
+  if (deltaMonth < 12) return `${deltaMonth}mo`;
+  return `${Math.floor(deltaDay / 365)}y`;
+}
+
 export function ThreadItem({
   session,
   isActive,
@@ -97,10 +116,18 @@ export function ThreadItem({
                 )}
               />
             ) : (
-              <div className={cn('text-sm truncate', isActive ? 'text-foreground' : 'text-primary')}>
+              <div
+                className={cn('text-sm truncate', isActive ? 'text-foreground' : 'text-primary')}
+                title={session.title || t('thread_item.untitled')}
+              >
                 {session.title || t('thread_item.untitled')}
               </div>
             )}
+          </div>
+          <div className="shrink-0 text-[11px] tabular-nums text-tertiary">
+            <span title={session.updated_at}>{formatCompactAge(session.updated_at)}</span>
+            <span className="mx-1 text-tertiary/60">·</span>
+            <span>{session.message_count ?? 0}</span>
           </div>
           <div className="flex items-center gap-1.5 text-icon-default">
             {isStreaming ? (

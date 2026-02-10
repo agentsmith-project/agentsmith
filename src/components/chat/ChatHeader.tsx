@@ -132,6 +132,7 @@ export function ChatHeader({
               size="sm"
               className="h-8 w-8 px-0"
               data-testid="chat__layout-toggle"
+              data-state={layoutMode}
               onClick={onToggleLayoutMode}
               aria-label={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
               title={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}

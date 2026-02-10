@@ -44,6 +44,12 @@ describe('ThreadItem', () => {
 
       expect(screen.getByText('Untitled')).toBeInTheDocument();
     });
+
+    it('should render compact meta info (age and message count)', () => {
+      render(<ThreadItem {...defaultProps} />);
+
+      expect(screen.getByText('5')).toBeInTheDocument();
+    });
   });
 
   describe('Active State', () => {

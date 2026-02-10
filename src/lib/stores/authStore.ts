@@ -5,6 +5,8 @@
  * Server data (workspaces, projects) handled by React Query.
  */
 
+'use client';
+
 import { useState, useEffect } from 'react';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';

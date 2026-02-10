@@ -56,6 +56,7 @@ This document defines the closeout baseline and decomposition plan for:
 ## 5. Next Closeout Steps
 
 1. Extract `EndpointsPage` presentational component from route page.
+Status: completed (`src/components/endpoints/EndpointsPage.tsx`), route file now thin wrapper.
 2. Move mutation/query orchestration to `src/lib/endpoints/*` hooks.
 3. Extract table columns into dedicated module with typed callbacks.
 4. Add focused hook unit tests for import/update/delete flows.

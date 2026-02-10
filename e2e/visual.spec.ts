@@ -229,6 +229,7 @@ test.describe('Visual - Overlays', () => {
     await expect(row).toBeVisible();
     await row.getByRole('button').click();
     await authedPage.getByTestId('sources__rename').click();
+    await expect(authedPage.getByTestId('sources__dialog__move')).toBeVisible();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('dialog-sources-rename.png');
   });

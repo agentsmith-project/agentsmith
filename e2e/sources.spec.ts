@@ -66,10 +66,10 @@ test.describe('Sources Page (object browser)', () => {
 
     // Rename
     await authedPage.getByTestId('sources__rename').click();
-    const dialog = authedPage.getByTestId('sources__dialog__rename');
+    const dialog = authedPage.getByTestId('sources__dialog__move');
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('textbox').fill('e2e-renamed.txt');
-    await dialog.getByRole('button', { name: /^save$/i }).click();
+    await dialog.getByTestId('sources__move__name').fill('e2e-renamed.txt');
+    await dialog.getByTestId('sources__move__submit').click();
 
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-renamed.txt' }).first()).toBeVisible();
   });
@@ -109,4 +109,3 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-delete.txt' }).first()).toBeHidden();
   });
 });
-

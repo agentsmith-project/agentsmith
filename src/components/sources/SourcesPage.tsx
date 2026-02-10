@@ -29,7 +29,10 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -40,7 +43,7 @@ import {
 import { toast } from '@/components/ui/toast';
 
 import { getApiClient, SourcesAPI } from '@/lib/api';
-import type { SourceObjectsListItem } from '@/lib/api/types';
+import type { SourceLibrary, SourceObjectsListItem } from '@/lib/api/types';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import {
   useCreateSourceLibrary,
@@ -89,6 +92,27 @@ function buildCrumbs(prefix: string) {
     crumbs.push({ label: p, prefix: cur });
   }
   return crumbs;
+}
+
+function normalizeFolderPrefixInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return { ok: true as const, prefix: '' };
+  if (trimmed.startsWith('/')) return { ok: false as const, prefix: '', reason: 'leading_slash' as const };
+  const normalized = trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
+  return { ok: true as const, prefix: normalized };
+}
+
+function parentPrefixForKey(key: string) {
+  const idx = key.lastIndexOf('/');
+  if (idx < 0) return '';
+  return key.slice(0, idx + 1);
+}
+
+function parentPrefixForPrefix(prefix: string) {
+  const normalized = prefix.endsWith('/') ? prefix.slice(0, -1) : prefix;
+  const idx = normalized.lastIndexOf('/');
+  if (idx < 0) return '';
+  return normalized.slice(0, idx + 1);
 }
 
 export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
@@ -164,15 +188,29 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     setSelectedIds((prev) => (prev.length > 0 ? [] : filteredItems.map((it) => rowId(it))));
   };
 
+  // Library dialogs (create/rename/delete)
+  const [libraryCreateOpen, setLibraryCreateOpen] = React.useState(false);
+  const [libraryName, setLibraryName] = React.useState('');
+  const [libraryDescription, setLibraryDescription] = React.useState('');
+  const [libraryRenameOpen, setLibraryRenameOpen] = React.useState(false);
+  const [libraryRenameTarget, setLibraryRenameTarget] = React.useState<SourceLibrary | null>(null);
+  const [libraryRenameName, setLibraryRenameName] = React.useState('');
+  const [libraryRenameDescription, setLibraryRenameDescription] = React.useState('');
+  const [libraryDeleteOpen, setLibraryDeleteOpen] = React.useState(false);
+  const [libraryDeleteTarget, setLibraryDeleteTarget] = React.useState<SourceLibrary | null>(null);
+  const [libraryDeleteConfirm, setLibraryDeleteConfirm] = React.useState('');
+
   const [createFolderOpen, setCreateFolderOpen] = React.useState(false);
   const [folderName, setFolderName] = React.useState('');
-  const [renameOpen, setRenameOpen] = React.useState(false);
-  const [renameValue, setRenameValue] = React.useState('');
+  const [moveOpen, setMoveOpen] = React.useState(false);
+  const [moveName, setMoveName] = React.useState('');
+  const [moveDestPrefix, setMoveDestPrefix] = React.useState('');
+  const [moveOverwrite, setMoveOverwrite] = React.useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
 
-  const selectedForRename = selected.length === 1 ? selected[0] : null;
-  const renamePlaceholder = selectedForRename
-    ? (selectedForRename.kind === 'object' ? basename(selectedForRename.key) : basename(selectedForRename.prefix))
+  const selectedForMove = selected.length === 1 ? selected[0] : null;
+  const moveNamePlaceholder = selectedForMove
+    ? (selectedForMove.kind === 'object' ? basename(selectedForMove.key) : basename(selectedForMove.prefix))
     : '';
 
   const handleUploadClick = () => fileInputRef.current?.click();
@@ -221,20 +259,25 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     }
   };
 
-  const handleRename = async () => {
-    if (!selectedLibraryId || !selectedForRename) return;
-    const nextName = renameValue.trim();
+  const handleMove = async () => {
+    if (!selectedLibraryId || !selectedForMove) return;
+    const nextName = moveName.trim();
     if (!nextName) return;
     if (nextName.includes('/')) {
       toast.error(t('file_manager.rename_invalid'));
       return;
     }
+    const normalizedDest = normalizeFolderPrefixInput(moveDestPrefix);
+    if (!normalizedDest.ok) {
+      toast.error(t('file_manager.dest_prefix_invalid'));
+      return;
+    }
 
-    const fromKeyOrPrefix = selectedForRename.kind === 'object' ? selectedForRename.key : selectedForRename.prefix;
+    const fromKeyOrPrefix = selectedForMove.kind === 'object' ? selectedForMove.key : selectedForMove.prefix;
     const toKeyOrPrefix =
-      selectedForRename.kind === 'object'
-        ? `${prefix}${nextName}`
-        : `${prefix}${nextName}/`;
+      selectedForMove.kind === 'object'
+        ? `${normalizedDest.prefix}${nextName}`
+        : `${normalizedDest.prefix}${nextName}/`;
 
     try {
       await moveObject.mutateAsync({
@@ -243,9 +286,12 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
         libraryId: selectedLibraryId,
         from_key: fromKeyOrPrefix,
         to_key: toKeyOrPrefix,
+        overwrite: moveOverwrite,
       });
-      setRenameOpen(false);
-      setRenameValue('');
+      setMoveOpen(false);
+      setMoveName('');
+      setMoveDestPrefix('');
+      setMoveOverwrite(false);
       clearSelection();
       toast.success(t('file_manager.renamed'));
     } catch (err) {
@@ -284,6 +330,69 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`${t('file_manager.download_failed')}: ${msg}`);
+    }
+  };
+
+  const handleCreateLibrary = async () => {
+    const name = libraryName.trim();
+    if (!name) return;
+    try {
+      const created = await createLibrary.mutateAsync({
+        workspaceId,
+        projectId,
+        name,
+        description: libraryDescription.trim() || undefined,
+      });
+      toast.success(t('file_manager.library_created'));
+      setLibraryCreateOpen(false);
+      setSelectedLibraryId(created.id);
+      navigateToPrefix('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`${t('file_manager.library_create_failed')}: ${msg}`);
+    }
+  };
+
+  const handleRenameLibrary = async () => {
+    if (!libraryRenameTarget) return;
+    const name = libraryRenameName.trim();
+    if (!name) return;
+    try {
+      await updateLibrary.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId: libraryRenameTarget.id,
+        name,
+        description: libraryRenameDescription.trim() || undefined,
+      });
+      toast.success(t('file_manager.library_renamed'));
+      setLibraryRenameOpen(false);
+      setLibraryRenameTarget(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`${t('file_manager.library_rename_failed')}: ${msg}`);
+    }
+  };
+
+  const handleDeleteLibrary = async () => {
+    if (!libraryDeleteTarget) return;
+    try {
+      await deleteLibrary.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId: libraryDeleteTarget.id,
+      });
+      toast.success(t('file_manager.library_deleted'));
+      setLibraryDeleteOpen(false);
+      const deletedId = libraryDeleteTarget.id;
+      setLibraryDeleteTarget(null);
+      if (selectedLibraryId === deletedId) {
+        setSelectedLibraryId(null);
+        navigateToPrefix('');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`${t('file_manager.library_delete_failed')}: ${msg}`);
     }
   };
 
@@ -329,8 +438,15 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 variant="outline"
                 onClick={() => {
                   if (selected.length !== 1) return;
-                  setRenameValue(renamePlaceholder);
-                  setRenameOpen(true);
+                  const target = selectedForMove;
+                  if (!target) return;
+                  const parent = target.kind === 'object'
+                    ? parentPrefixForKey(target.key)
+                    : parentPrefixForPrefix(target.prefix);
+                  setMoveDestPrefix(parent);
+                  setMoveName(moveNamePlaceholder);
+                  setMoveOverwrite(false);
+                  setMoveOpen(true);
                 }}
                 disabled={!selectedLibraryId || selected.length !== 1}
                 data-testid="sources__rename"
@@ -388,11 +504,10 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 type="button"
                 size="icon"
                 variant="ghost"
-                onClick={async () => {
-                  const name = window.prompt(t('file_manager.library_create_prompt'));
-                  if (!name) return;
-                  await createLibrary.mutateAsync({ workspaceId, projectId, name: name.trim() });
-                  toast.success(t('file_manager.library_created'));
+                onClick={() => {
+                  setLibraryName('');
+                  setLibraryDescription('');
+                  setLibraryCreateOpen(true);
                 }}
                 aria-label={t('file_manager.library_create')}
                 data-testid="sources__library-create"
@@ -446,13 +561,13 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                             size="icon"
                             variant="ghost"
                             className="h-7 w-7"
-                            onClick={async (e) => {
+                            onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              const name = window.prompt(t('file_manager.library_rename_prompt'), lib.name);
-                              if (!name) return;
-                              await updateLibrary.mutateAsync({ workspaceId, projectId, libraryId: lib.id, name: name.trim() });
-                              toast.success(t('file_manager.library_renamed'));
+                              setLibraryRenameTarget(lib);
+                              setLibraryRenameName(lib.name);
+                              setLibraryRenameDescription(lib.description ?? '');
+                              setLibraryRenameOpen(true);
                             }}
                             aria-label={t('file_manager.library_rename')}
                           >
@@ -463,14 +578,12 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                             size="icon"
                             variant="ghost"
                             className="h-7 w-7"
-                            onClick={async (e) => {
+                            onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              const confirm = window.prompt(t('file_manager.library_delete_confirm'), lib.name);
-                              if (confirm !== lib.name) return;
-                              await deleteLibrary.mutateAsync({ workspaceId, projectId, libraryId: lib.id });
-                              toast.success(t('file_manager.library_deleted'));
-                              if (selectedLibraryId === lib.id) setSelectedLibraryId(null);
+                              setLibraryDeleteTarget(lib);
+                              setLibraryDeleteConfirm('');
+                              setLibraryDeleteOpen(true);
                             }}
                             aria-label={t('file_manager.library_delete')}
                           >
@@ -643,6 +756,152 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
         </div>
       </div>
 
+      <Dialog open={libraryCreateOpen} onOpenChange={setLibraryCreateOpen}>
+        <DialogContent className="sm:max-w-[560px]" data-testid="sources__dialog__library-create">
+          <DialogHeader>
+            <DialogTitle>{t('file_manager.library_create')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="sources-library-name">{t('file_manager.library_name')}</Label>
+              <Input
+                id="sources-library-name"
+                value={libraryName}
+                onChange={(e) => setLibraryName(e.target.value)}
+                placeholder={t('file_manager.library_name_placeholder')}
+                data-testid="sources__library-create__name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sources-library-desc">{t('file_manager.library_description')}</Label>
+              <Textarea
+                id="sources-library-desc"
+                value={libraryDescription}
+                onChange={(e) => setLibraryDescription(e.target.value)}
+                placeholder={t('file_manager.library_description_placeholder')}
+                className="min-h-[90px]"
+                data-testid="sources__library-create__description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setLibraryCreateOpen(false)}>
+              {t('file_manager.cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateLibrary}
+              disabled={!libraryName.trim() || createLibrary.isPending}
+              data-testid="sources__library-create__submit"
+            >
+              {t('file_manager.create')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={libraryRenameOpen} onOpenChange={setLibraryRenameOpen}>
+        <DialogContent className="sm:max-w-[560px]" data-testid="sources__dialog__library-rename">
+          <DialogHeader>
+            <DialogTitle>{t('file_manager.library_rename')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="sources-library-rename-name">{t('file_manager.library_name')}</Label>
+              <Input
+                id="sources-library-rename-name"
+                value={libraryRenameName}
+                onChange={(e) => setLibraryRenameName(e.target.value)}
+                placeholder={t('file_manager.library_name_placeholder')}
+                data-testid="sources__library-rename__name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sources-library-rename-desc">{t('file_manager.library_description')}</Label>
+              <Textarea
+                id="sources-library-rename-desc"
+                value={libraryRenameDescription}
+                onChange={(e) => setLibraryRenameDescription(e.target.value)}
+                placeholder={t('file_manager.library_description_placeholder')}
+                className="min-h-[90px]"
+                data-testid="sources__library-rename__description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setLibraryRenameOpen(false);
+                setLibraryRenameTarget(null);
+              }}
+            >
+              {t('file_manager.cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleRenameLibrary}
+              disabled={!libraryRenameTarget || !libraryRenameName.trim() || updateLibrary.isPending}
+              data-testid="sources__library-rename__submit"
+            >
+              {t('file_manager.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={libraryDeleteOpen} onOpenChange={setLibraryDeleteOpen}>
+        <DialogContent className="sm:max-w-[560px]" data-testid="sources__dialog__library-delete">
+          <DialogHeader>
+            <DialogTitle>{t('file_manager.library_delete')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-sm text-tertiary">
+              {libraryDeleteTarget
+                ? t('file_manager.library_delete_confirm', { name: libraryDeleteTarget.name })
+                : t('file_manager.library_delete_confirm_empty')}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sources-library-delete-confirm">{t('file_manager.confirm_name')}</Label>
+              <Input
+                id="sources-library-delete-confirm"
+                value={libraryDeleteConfirm}
+                onChange={(e) => setLibraryDeleteConfirm(e.target.value)}
+                placeholder={libraryDeleteTarget?.name ?? ''}
+                data-testid="sources__library-delete__confirm"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setLibraryDeleteOpen(false);
+                setLibraryDeleteTarget(null);
+                setLibraryDeleteConfirm('');
+              }}
+            >
+              {t('file_manager.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteLibrary}
+              disabled={
+                !libraryDeleteTarget ||
+                libraryDeleteConfirm !== libraryDeleteTarget.name ||
+                deleteLibrary.isPending
+              }
+              data-testid="sources__library-delete__submit"
+            >
+              {t('file_manager.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
         <DialogContent className="sm:max-w-[480px]" data-testid="sources__dialog__new-folder">
           <DialogHeader>
@@ -667,24 +926,88 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-[480px]" data-testid="sources__dialog__rename">
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent className="sm:max-w-[560px]" data-testid="sources__dialog__move">
           <DialogHeader>
             <DialogTitle>{t('file_manager.rename')}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2">
-            <div className="text-xs text-tertiary">{t('file_manager.rename_hint')}</div>
-            <Input
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              placeholder={renamePlaceholder}
-            />
+          <div className="space-y-4">
+            <div className="rounded-sm border border-subtle bg-surface-high/40 px-3 py-2">
+              <div className="text-[11px] text-tertiary">{t('file_manager.from')}</div>
+              <div className="font-mono text-xs break-all text-primary" data-testid="sources__move__from">
+                {selectedForMove ? (selectedForMove.kind === 'object' ? selectedForMove.key : selectedForMove.prefix) : '-'}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="sources-move-dest">{t('file_manager.dest_prefix')}</Label>
+                <Input
+                  id="sources-move-dest"
+                  value={moveDestPrefix}
+                  onChange={(e) => setMoveDestPrefix(e.target.value)}
+                  placeholder={t('file_manager.dest_prefix_placeholder')}
+                  data-testid="sources__move__dest-prefix"
+                />
+                <div className="text-[11px] text-tertiary">{t('file_manager.dest_prefix_hint')}</div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="sources-move-name">{t('file_manager.new_name')}</Label>
+                <Input
+                  id="sources-move-name"
+                  value={moveName}
+                  onChange={(e) => setMoveName(e.target.value)}
+                  placeholder={moveNamePlaceholder}
+                  data-testid="sources__move__name"
+                />
+                <div className="text-[11px] text-tertiary">{t('file_manager.rename_hint')}</div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="sources-move-overwrite"
+                checked={moveOverwrite}
+                onCheckedChange={(v) => setMoveOverwrite(v === true)}
+                data-testid="sources__move__overwrite"
+              />
+              <Label htmlFor="sources-move-overwrite" className="text-sm">
+                {t('file_manager.overwrite')}
+              </Label>
+            </div>
+
+            <div className="rounded-sm border border-subtle bg-surface-high/40 px-3 py-2">
+              <div className="text-[11px] text-tertiary">{t('file_manager.to')}</div>
+              <div className="font-mono text-xs break-all text-primary" data-testid="sources__move__to">
+                {(() => {
+                  if (!selectedForMove) return '-';
+                  const normalized = normalizeFolderPrefixInput(moveDestPrefix);
+                  if (!normalized.ok) return t('file_manager.dest_prefix_invalid');
+                  const name = moveName.trim() || moveNamePlaceholder || '-';
+                  return selectedForMove.kind === 'object'
+                    ? `${normalized.prefix}${name}`
+                    : `${normalized.prefix}${name}/`;
+                })()}
+              </div>
+            </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setMoveOpen(false);
+                setMoveOverwrite(false);
+              }}
+            >
               {t('file_manager.cancel')}
             </Button>
-            <Button type="button" onClick={handleRename} disabled={!renameValue.trim()}>
+            <Button
+              type="button"
+              onClick={handleMove}
+              disabled={!selectedForMove || !moveName.trim() || !selectedLibraryId}
+              data-testid="sources__move__submit"
+            >
               {t('file_manager.save')}
             </Button>
           </DialogFooter>

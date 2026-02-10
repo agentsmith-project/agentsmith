@@ -325,19 +325,6 @@ describe('MessageItem', () => {
     });
   });
 
-  describe('Branch Badge', () => {
-    it('should display branch badge when provided', () => {
-      render(
-        <MessageItem
-          {...defaultProps}
-          branchBadge={{ groupId: 'group-1', index: 1, total: 3 }}
-        />,
-      );
-
-      expect(screen.getByText('Branch 2/3')).toBeInTheDocument();
-    });
-  });
-
   describe('Copy Functionality', () => {
     it('should copy message content to clipboard', async () => {
       const user = userEvent.setup();

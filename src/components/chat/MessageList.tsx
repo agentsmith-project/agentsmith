@@ -5,7 +5,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { useTranslations } from 'next-intl';
 
 import type { ChatMessage } from '@/lib/api/types';
-import { buildVariantGroups, buildVisibleChain, buildBranchBadgesForChain } from '@/lib/chat/branch';
+import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
 import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
 import { cn } from '@/lib/utils';
 
@@ -53,10 +53,6 @@ export function MessageList({
   const { chain } = React.useMemo(
     () => buildVisibleChain(messages, groups, activeVariantIndexByGroup),
     [messages, groups, activeVariantIndexByGroup],
-  );
-  const branchBadges = React.useMemo(
-    () => buildBranchBadgesForChain(chain, groups, activeVariantIndexByGroup),
-    [chain, groups, activeVariantIndexByGroup],
   );
 
   const virtuosoRef = React.useRef<import('react-virtuoso').VirtuosoHandle>(null);
@@ -106,7 +102,6 @@ export function MessageList({
                     ? { startedAt: streamingAssistant.startedAt, lastTokenAt: streamingAssistant.lastTokenAt }
                     : null
                 }
-                branchBadge={branchBadges.get(m.id) || null}
                 disabled={disabled}
                 layoutMode={layoutMode}
               />

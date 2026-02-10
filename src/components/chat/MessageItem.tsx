@@ -24,7 +24,6 @@ export const MessageItem = React.memo(function MessageItem({
   onRegenerate,
   streamingOverride,
   streamingMeta,
-  branchBadge,
   disabled,
   layoutMode = 'standard',
 }: {
@@ -39,7 +38,6 @@ export const MessageItem = React.memo(function MessageItem({
   onRegenerate: (message: ChatMessage) => void;
   streamingOverride?: string | null;
   streamingMeta?: { startedAt: number; lastTokenAt: number } | null;
-  branchBadge?: { groupId: string; index: number; total: number } | null;
   disabled: boolean;
   layoutMode?: ChatLayoutMode;
 }) {
@@ -160,11 +158,6 @@ export const MessageItem = React.memo(function MessageItem({
         </div>
 
         <div className={cn('mt-2 flex items-center gap-1 justify-end')}>
-          {branchBadge && (
-            <div className="mr-auto text-[11px] text-tertiary">
-              {tChat('message_item.branch', { current: branchBadge.index + 1, total: branchBadge.total })}
-            </div>
-          )}
           {isUser && !isEditing && (
             <Button
               type="button"

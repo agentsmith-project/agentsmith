@@ -89,51 +89,6 @@ export function getGroupIdForMessageId(
   return groups.messageToGroupId.get(messageId) ?? null;
 }
 
-export function buildBranchBadgesForChain(
-  chain: ChatMessage[],
-  groups: VariantGroups,
-  activeVariantIndexByGroup: Record<string, number>,
-) {
-  const byId = new Map(chain.map((m) => [m.id, m]));
-  const badges = new Map<string, { groupId: string; index: number; total: number }>();
-
-  for (const msg of chain) {
-    const preferUserBranch = msg.role === 'assistant';
-    let cursor: ChatMessage | undefined = msg;
-    let badge: { groupId: string; index: number; total: number } | null = null;
-    while (cursor) {
-      const gid = groups.messageToGroupId.get(cursor.id);
-      if (gid) {
-        const group = groups.groups.get(gid);
-        if (group && group.items.length > 1) {
-          // UX rule:
-          // - For assistant messages, the left "Branch x/y" badge should refer to the *parent user branch*
-          //   (user edits / upstream branch selection), not assistant retries.
-          // - Assistant retries are already represented by the variant navigator on the bubble.
-          if (preferUserBranch && group.kind !== 'user') {
-            cursor = cursor.parent_id ? byId.get(cursor.parent_id) : undefined;
-            continue;
-          }
-          const selected = selectVariantMessage(gid, groups, activeVariantIndexByGroup);
-          const selectedIndex = selected
-            ? group.items.findIndex((m) => m.id === selected.id)
-            : 0;
-          badge = {
-            groupId: gid,
-            index: Math.max(0, selectedIndex),
-            total: group.items.length,
-          };
-          break;
-        }
-      }
-      cursor = cursor.parent_id ? byId.get(cursor.parent_id) : undefined;
-    }
-    if (badge) badges.set(msg.id, badge);
-  }
-
-  return badges;
-}
-
 export function buildVisibleChain(
   messages: ChatMessage[],
   groups: VariantGroups,

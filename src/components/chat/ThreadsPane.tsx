@@ -6,6 +6,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { Plus, Search } from 'lucide-react';
 
 import type { ChatSession } from '@/lib/api/types';
+import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,7 @@ export function ThreadsPane({
   canCreate,
   createPending,
   isLoading,
+  layoutMode = 'standard',
 }: {
   sessions: ChatSession[];
   activeSessionId: string | null;
@@ -41,6 +43,7 @@ export function ThreadsPane({
   canCreate: boolean;
   createPending: boolean;
   isLoading: boolean;
+  layoutMode?: 'standard' | 'ultrawide';
 }) {
   const t = useTranslations('chat');
 
@@ -58,27 +61,34 @@ export function ThreadsPane({
 
   return (
     <aside
-      className="w-[216px] xl:w-[228px] 2xl:w-[240px] border-r border-subtle bg-panel/70 backdrop-blur-sm flex flex-col overflow-hidden"
+      className={cn(
+        'border-r border-subtle bg-panel/70 backdrop-blur-sm flex flex-col overflow-hidden',
+        layoutMode === 'ultrawide' ? 'w-[256px] xl:w-[276px] 2xl:w-[296px]' : 'w-[216px] xl:w-[228px] 2xl:w-[240px]',
+      )}
       data-testid="chat__threads-pane"
     >
-      <div className="p-3 border-b border-subtle">
-        <Button
-          variant="outline"
-          className="w-full mb-3 justify-center"
-          onClick={onCreate}
-          disabled={!canCreate || createPending}
-          data-testid="chat__new-thread-btn"
-        >
-          <Plus className="w-4 h-4" />
-          {t('new_thread')}
-        </Button>
+      <div className="p-2.5 border-b border-subtle space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-medium uppercase tracking-wide text-tertiary">{t('threads_title')}</div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-2.5"
+            onClick={onCreate}
+            disabled={!canCreate || createPending}
+            data-testid="chat__new-thread-btn"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {t('new_thread')}
+          </Button>
+        </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-icon-default" />
           <Input
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
             placeholder={t('search_threads_placeholder')}
-            className="pl-9"
+            className="h-8 pl-9"
           />
         </div>
       </div>

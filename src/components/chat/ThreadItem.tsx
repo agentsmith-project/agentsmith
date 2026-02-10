@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { MoreHorizontal, Pin, Star, Trash2 } from 'lucide-react';
+import { LoaderCircle, MoreHorizontal, Pin, Star, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import type { ChatSession } from '@/lib/api/types';
@@ -16,11 +16,23 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-function formatRelative(ts?: string) {
+function formatCompactAge(ts?: string) {
   if (!ts) return '';
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString();
+  const deltaMs = Date.now() - d.getTime();
+  const deltaMin = Math.floor(deltaMs / 60000);
+  if (deltaMin < 1) return 'now';
+  if (deltaMin < 60) return `${deltaMin}m`;
+  const deltaHour = Math.floor(deltaMin / 60);
+  if (deltaHour < 24) return `${deltaHour}h`;
+  const deltaDay = Math.floor(deltaHour / 24);
+  if (deltaDay < 7) return `${deltaDay}d`;
+  const deltaWeek = Math.floor(deltaDay / 7);
+  if (deltaWeek < 5) return `${deltaWeek}w`;
+  const deltaMonth = Math.floor(deltaDay / 30);
+  if (deltaMonth < 12) return `${deltaMonth}mo`;
+  return `${Math.floor(deltaDay / 365)}y`;
 }
 
 export function ThreadItem({
@@ -77,15 +89,9 @@ export function ThreadItem({
             onSelect();
           }
         }}
-        className={cn(
-          'w-full text-left px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm',
-        )}
+        className="w-full text-left min-h-9 px-2.5 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm"
       >
-        <div className="flex items-start gap-2">
-          <div className="mt-0.5 flex items-center gap-1.5">
-            <Star className={cn('w-4 h-4', session.starred ? 'text-accent' : 'text-icon-default')} />
-            {session.pinned && <Pin className="w-4 h-4 text-icon-default" />}
-          </div>
+        <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
             {editing ? (
               <input
@@ -110,24 +116,31 @@ export function ThreadItem({
                 )}
               />
             ) : (
-              <div className={cn('text-sm truncate', isActive ? 'text-foreground' : 'text-primary')}>
+              <div
+                className={cn('text-sm truncate', isActive ? 'text-foreground' : 'text-primary')}
+                title={session.title || t('thread_item.untitled')}
+              >
                 {session.title || t('thread_item.untitled')}
               </div>
             )}
-            <div className="flex items-center gap-2 text-xs text-tertiary mt-0.5">
-              {isStreaming ? (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent"
-                  data-testid="chat__thread-streaming-indicator"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-                  {t('thread_generating')}
-                </span>
-              ) : null}
-              <span className="truncate">{formatRelative(session.updated_at)}</span>
-              <span className="text-tertiary/70">·</span>
-              <span>{session.message_count ?? 0}</span>
-            </div>
+          </div>
+          <div className="shrink-0 text-[11px] tabular-nums text-tertiary">
+            <span title={session.updated_at}>{formatCompactAge(session.updated_at)}</span>
+            <span className="mx-1 text-tertiary/60">·</span>
+            <span>{session.message_count ?? 0}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-icon-default">
+            {isStreaming ? (
+              <span
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-accent"
+                data-testid="chat__thread-streaming-indicator"
+                title={t('thread_generating')}
+              >
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              </span>
+            ) : null}
+            {session.starred ? <Star className="w-3.5 h-3.5 text-accent" /> : null}
+            {session.pinned ? <Pin className="w-3.5 h-3.5" /> : null}
           </div>
 
           <div className="flex-shrink-0">
@@ -139,7 +152,8 @@ export function ThreadItem({
                   size="icon"
                   data-testid="chat__thread-actions-btn"
                   className={cn(
-                    'h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity',
+                    'h-8 w-8 transition-opacity',
+                    isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
                     'text-icon-default hover:text-foreground',
                   )}
                   onClick={(e) => e.stopPropagation()}

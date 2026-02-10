@@ -31,6 +31,7 @@ import { buildChatViewModel } from '@/lib/chat/chat-view-model';
 import { useChatMessageActions } from '@/lib/chat/use-chat-message-actions';
 import { useChatThreadActions } from '@/lib/chat/use-chat-thread-actions';
 import { useChatDeleteDialog } from '@/lib/chat/use-chat-delete-dialog';
+import { useChatLayoutMode } from '@/lib/chat/use-chat-layout-mode';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -41,6 +42,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { cn } from '@/lib/utils';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -75,6 +77,7 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
+  const { layoutMode, showLayoutToggle, onToggleLayoutMode } = useChatLayoutMode();
 
   const apiClient = useMemo(() => getApiClient(), []);
   const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
@@ -334,7 +337,12 @@ export default function ChatPage({ params }: ChatPageProps) {
         contentWidth="full"
         header={<PageHeader title={t('title')} />}
       >
-        <div className="h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40">
+        <div
+          className={cn(
+            'h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40',
+            layoutMode === 'standard' ? 'mx-auto w-full max-w-[1400px]' : 'w-full',
+          )}
+        >
           <ThreadsPane
             sessions={sessions}
             activeSessionId={currentSessionId}
@@ -350,6 +358,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             canCreate={canUseChat}
             createPending={createSessionMutation.isPending}
             isLoading={sessionsLoading}
+            layoutMode={layoutMode}
           />
 
           <ChatMainPane
@@ -372,6 +381,8 @@ export default function ChatPage({ params }: ChatPageProps) {
             canUseChat={canUseChat}
             composerValue={composerValue}
             fileInputRef={fileInputRef}
+            layoutMode={layoutMode}
+            showLayoutToggle={showLayoutToggle}
             labels={{
               loading: t('loading'),
               noActiveThreadTitle: t('no_active_thread_title'),
@@ -380,6 +391,7 @@ export default function ChatPage({ params }: ChatPageProps) {
               assistant: t('assistant'),
             }}
             onCreateThread={handleCreateThread}
+            onToggleLayoutMode={onToggleLayoutMode}
             onRenameActiveSession={handleRenameActiveSession}
             onSelectActiveEndpoint={handleSelectActiveEndpoint}
             onSelectVariant={handleSelectVariant}

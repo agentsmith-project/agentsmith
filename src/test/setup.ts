@@ -7,6 +7,22 @@ afterEach(() => {
   cleanup();
 });
 
+if (typeof window !== 'undefined' && !window.matchMedia) {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
 // Mock next/navigation
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -49,6 +65,10 @@ const TEST_TRANSLATIONS: Record<string, string> = {
   'header.status_generating': 'Generating…',
   'header.status_stopped': 'Stopped',
   'header.status_error': 'Error',
+  'header.layout_standard': 'Standard',
+  'header.layout_ultrawide': 'Ultrawide',
+  'header.switch_to_standard': 'Switch to standard layout',
+  'header.switch_to_ultrawide': 'Switch to ultrawide layout',
   'header.rename_thread': 'Rename thread',
   'header.default_title': 'Chat',
   'header.select_model': 'Select model',
@@ -63,6 +83,7 @@ const TEST_TRANSLATIONS: Record<string, string> = {
   'thread_item.pin': 'Pin',
   'thread_item.unpin': 'Unpin',
   'thread_item.delete': 'Delete',
+  thread_generating: 'Generating',
   'message_list.empty': 'Start a conversation...',
   'message_list.jump_to_latest': 'Jump to latest',
   'message_item.older_branch': 'Older branch',

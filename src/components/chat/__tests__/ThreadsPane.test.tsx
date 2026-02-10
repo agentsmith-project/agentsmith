@@ -110,6 +110,15 @@ describe('ThreadsPane', () => {
       expect(pane.className).toContain('xl:w-[228px]');
       expect(pane.className).toContain('2xl:w-[240px]');
     });
+
+    it('should use wider pane width in ultrawide mode', () => {
+      render(<ThreadsPane {...defaultProps} layoutMode="ultrawide" />);
+
+      const pane = screen.getByTestId('chat__threads-pane');
+      expect(pane.className).toContain('w-[256px]');
+      expect(pane.className).toContain('xl:w-[276px]');
+      expect(pane.className).toContain('2xl:w-[296px]');
+    });
   });
 
   describe('Loading State', () => {

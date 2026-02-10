@@ -38,20 +38,36 @@ This document defines responsibility boundaries for the chat page implementation
 - `chat-view-model.ts`
 - Derived UI state (`activeStreamStatus`, `mergedStreamingSessionIds`, `disabled`) from runtime + local state.
 
+- `use-chat-layout-mode.ts`
+- Viewport-aware layout mode orchestration (`standard|ultrawide`) with localStorage preference persistence.
+
 ## 3. UI Components (`src/components/chat`)
 
 - `ThreadsPane.tsx`
 - Thread list and thread actions UI.
+- Supports `layoutMode` (`standard|ultrawide`) for compact/default and wide-display widths.
 
 - `ChatMainPane.tsx`
 - Main pane composition (`ChatHeader`, `MessageList`, `Composer`) and empty/loading states.
+- Owns layout mode propagation to `ChatHeader` / `MessageList` / `Composer`.
 
 - `ChatDeleteDialog.tsx`
 - Delete confirmation dialog rendering.
 
+- `ChatHeader.tsx`
+- Session title/model control + optional layout-mode toggle (`chat__layout-toggle`) when viewport is ultrawide.
+
+- `MessageList.tsx` / `Composer.tsx`
+- Respect `layoutMode` to cap content width:
+- `standard`: keep dense, module-consistent readable width.
+- `ultrawide`: expand chat content area without remounting shell/sidebar/topbar.
+
 ## 4. Guardrails
 
 - Keep business logic in hooks; keep components primarily presentational.
+- Default layout must remain aligned with other module pages (readability first); ultrawide is opt-in only.
+- No migration toggles or temporary fallback flags for layout behavior.
+- Layout toggle only affects chat content area; must not trigger shell/topbar/sidebar flicker or full-page remount.
 - For new chat behavior:
 1. Update or add a hook in `src/lib/chat`.
 2. Keep `page.tsx` limited to wiring and cross-hook coordination.
@@ -69,6 +85,8 @@ This document defines responsibility boundaries for the chat page implementation
   - `655797d` (temporary backlog merged into canonical contracts)
 - Verified baseline:
   - `npm test -- chat`
+  - `npm run test:e2e -- e2e/chat.spec.ts --project=chromium --workers=1`
+  - `npm run test:e2e -- --project=visual e2e/visual.spec.ts --grep "chat"`
   - `npx tsc --noEmit`
   - `npm run lint`
 

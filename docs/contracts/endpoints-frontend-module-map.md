@@ -58,6 +58,8 @@ This document defines the closeout baseline and decomposition plan for:
 1. Extract `EndpointsPage` presentational component from route page.
 Status: completed (`src/components/endpoints/EndpointsPage.tsx`), route file now thin wrapper.
 2. Move mutation/query orchestration to `src/lib/endpoints/*` hooks.
+Status: completed (`src/lib/endpoints/use-endpoints-data.ts`, `src/lib/endpoints/use-endpoints-mutations.ts`).
 3. Extract table columns into dedicated module with typed callbacks.
 4. Add focused hook unit tests for import/update/delete flows.
+Status: in progress. Added `src/lib/endpoints/__tests__/use-endpoints-mutations.test.tsx` for delete/import mutation coverage.
 5. Keep `e2e/endpoints.spec.ts` green and add one visual snapshot test for endpoints page.

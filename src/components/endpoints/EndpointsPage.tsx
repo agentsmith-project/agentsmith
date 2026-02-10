@@ -7,11 +7,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { Server, Plus, Trash2, Globe, Pencil, Power, PowerOff, Upload, Download } from 'lucide-react';
-import { getApiClient, EndpointAPI } from '@/lib/api';
 import { APIError } from '@/lib/api/errors';
 import type { Endpoint } from '@/lib/api/types';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
@@ -27,6 +25,9 @@ import { PageToolbar } from '@/components/layout/PageToolbar';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { toast } from '@/components/ui/toast';
+import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
+import { useEndpointsMutations } from '@/lib/endpoints/use-endpoints-mutations';
+import type { ImportOpenAICompatiblePayload } from '@/lib/endpoints/types';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,13 +45,20 @@ export interface EndpointsPageProps {
 
 const columnHelper = createColumnHelper<Endpoint>();
 
-type DeleteEndpointMutation = UseMutationResult<void, Error, string>;
-type UpdateEndpointMutation = UseMutationResult<Endpoint, Error, { endpointId: string; data: { status?: 'active' | 'disabled' } }>;
+interface DeleteEndpointMutationState {
+  mutate: (endpointId: string) => void;
+  isPending: boolean;
+}
+
+interface UpdateEndpointMutationState {
+  mutate: (args: { endpointId: string; data: { status?: 'active' | 'disabled' } }) => void;
+  isPending: boolean;
+}
 
 function createEndpointColumns(
   t: (key: string) => string,
-  deleteEndpointMutation: DeleteEndpointMutation,
-  updateEndpointMutation: UpdateEndpointMutation,
+  deleteEndpointMutation: DeleteEndpointMutationState,
+  updateEndpointMutation: UpdateEndpointMutationState,
   canManageEndpoints: boolean,
   onEdit: (endpoint: Endpoint) => void,
   onDeleteRequest: (endpoint: Endpoint) => void,
@@ -200,7 +208,6 @@ function createEndpointColumns(
 export function EndpointsPageView({ params }: EndpointsPageProps) {
   const t = useTranslations('endpoints');
   const tErrors = useTranslations('errors');
-  const queryClient = useQueryClient();
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -230,69 +237,24 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
 
-  const endpointAPI = new EndpointAPI(getApiClient());
-
-  const { data: endpointsData, isLoading: endpointsLoading } = useQuery({
-    queryKey: ['endpoints', workspaceId, projectId],
-    queryFn: () => endpointAPI.list(workspaceId, projectId),
-    enabled: !!workspaceId && !!projectId && canReadEndpoints,
+  const { endpoints, endpointsLoading } = useEndpointsData({
+    workspaceId,
+    projectId,
+    canReadEndpoints,
   });
 
-  const deleteEndpointMutation = useMutation({
-    mutationFn: (endpointId: string) => endpointAPI.delete(workspaceId, projectId, endpointId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['endpoints', workspaceId, projectId] });
-    },
-  });
-
-  const updateEndpointMutation = useMutation({
-    mutationFn: (args: { endpointId: string; data: { status?: 'active' | 'disabled' } }) =>
-      endpointAPI.update(workspaceId, projectId, args.endpointId, args.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['endpoints', workspaceId, projectId] });
-    },
-  });
-
-  const importOpenAICompatibleMutation = useMutation({
-    mutationFn: (payload: {
-      reranker?: {
-        model: string;
-        source_model?: string;
-        api_base: string;
-        api_key: string;
-        mode?: 'openai';
-      };
-      embedding?: {
-        model: string;
-        source_model?: string;
-        api_base: string;
-        api_key: string;
-        mode?: 'openai';
-      };
-      completion?: {
-        model: string;
-        source_model?: string;
-        api_base: string;
-        api_key: string;
-        mode?: 'openai';
-      };
-    }) => endpointAPI.importOpenAICompatible(workspaceId, projectId, payload),
-    onSuccess: () => {
-      invalidateEndpoints();
+  const { invalidateEndpoints, deleteEndpointMutation, updateEndpointMutation, importOpenAICompatibleMutation } = useEndpointsMutations({
+    workspaceId,
+    projectId,
+    onImportSuccess: () => {
       toast.success(t('import_success'));
       setImportDialogOpen(false);
     },
-    onError: (error) => {
+    onImportError: (error) => {
       const message = error instanceof APIError ? error.message : t('import_failed');
       toast.error(message);
     },
   });
-
-  const invalidateEndpoints = () => {
-    queryClient.invalidateQueries({ queryKey: ['endpoints', workspaceId, projectId] });
-  };
-
-  const endpoints = endpointsData?.items || [];
 
   const handleDeleteRequest = (endpoint: Endpoint) => {
     setEndpointToDelete(endpoint);
@@ -372,29 +334,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
       toast.error(t('import_invalid_json'));
       return;
     }
-    importOpenAICompatibleMutation.mutate(parsed as {
-      reranker?: {
-        model: string;
-        source_model?: string;
-        api_base: string;
-        api_key: string;
-        mode?: 'openai';
-      };
-      embedding?: {
-        model: string;
-        source_model?: string;
-        api_base: string;
-        api_key: string;
-        mode?: 'openai';
-      };
-      completion?: {
-        model: string;
-        source_model?: string;
-        api_base: string;
-        api_key: string;
-        mode?: 'openai';
-      };
-    });
+    importOpenAICompatibleMutation.mutate(parsed as ImportOpenAICompatiblePayload);
   };
 
   const endpointColumns = createEndpointColumns(

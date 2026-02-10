@@ -1,22 +1,40 @@
 'use client';
 
+import { useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Building2, FolderKanban } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
+import { useAuthStore } from '@/lib/stores/authStore';
+import { APIError } from '@/lib/api/errors';
+import { Button } from '@/components/ui/button';
 
 export default function WorkspaceSelectPage() {
   const router = useRouter();
   const params = useParams();
   const t = useTranslations('auth');
   const locale = (params?.locale as string) || 'en-US';
-  const { data: workspaces } = useWorkspaces();
+  const { clearAuth } = useAuthStore();
+  const {
+    data: workspaces,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useWorkspaces();
+
+  const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
 
   const handleWorkspaceSelect = (workspaceId: string) => {
     router.push(`/${locale}/workspaces/${workspaceId}/projects`);
   };
+
+  const handleReLogin = useCallback(() => {
+    clearAuth();
+    router.replace(`/${locale}/login`);
+  }, [clearAuth, locale, router]);
 
   return (
     <PageState state="success">
@@ -30,15 +48,51 @@ export default function WorkspaceSelectPage() {
               {t('choose_workspace')}
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {workspaces?.map(workspace => (
-                <WorkspaceCard
-                  key={workspace.id}
-                  workspace={workspace}
-                  onSelect={() => handleWorkspaceSelect(workspace.id)}
-                />
-              ))}
-            </div>
+            {isLoading ? (
+              <p className="text-sm text-tertiary" data-testid="workspace-select__loading">{t('loading_workspaces')}</p>
+            ) : isUnauthorized ? (
+              <div
+                className="max-w-xl rounded-md border border-error/40 bg-surface p-4 space-y-3"
+                data-testid="workspace-select__session-expired"
+              >
+                <p className="text-sm font-medium text-foreground">{t('workspace_session_expired_title')}</p>
+                <p className="text-sm text-tertiary">{t('workspace_session_expired_description')}</p>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="action" onClick={handleReLogin} data-testid="workspace-select__relogin-btn">
+                    {t('workspace_session_expired_relogin')}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => refetch()} data-testid="workspace-select__retry-btn">
+                    {t('workspace_retry')}
+                  </Button>
+                </div>
+              </div>
+            ) : isError ? (
+              <div className="max-w-xl rounded-md border border-subtle bg-surface p-4 space-y-3" data-testid="workspace-select__error">
+                <p className="text-sm font-medium text-foreground">{t('workspace_load_failed_title')}</p>
+                <p className="text-sm text-tertiary">{t('workspace_load_failed_description')}</p>
+                <Button type="button" variant="outline" onClick={() => refetch()} data-testid="workspace-select__retry-btn">
+                  {t('workspace_retry')}
+                </Button>
+              </div>
+            ) : (workspaces ?? []).length === 0 ? (
+              <div className="max-w-xl rounded-md border border-subtle bg-surface p-4 space-y-2" data-testid="workspace-select__empty">
+                <p className="text-sm font-medium text-foreground">{t('workspace_empty_title')}</p>
+                <p className="text-sm text-tertiary">{t('workspace_empty_description')}</p>
+                <Button type="button" variant="outline" onClick={handleReLogin} data-testid="workspace-select__back-login-btn">
+                  {t('keycloak_back_to_login')}
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {workspaces?.map(workspace => (
+                  <WorkspaceCard
+                    key={workspace.id}
+                    workspace={workspace}
+                    onSelect={() => handleWorkspaceSelect(workspace.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </PageLayout>

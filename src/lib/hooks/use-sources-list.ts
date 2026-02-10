@@ -7,7 +7,7 @@
  * - Handle file actions (upload, delete, download, AI ready batch operations)
  */
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useCallback, useMemo, useEffect } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import {
   useSources,
@@ -24,8 +24,8 @@ import { useErrorHandler } from './use-error-handler';
 import { toast } from '@/components/ui/toast';
 import { MemberAPI, SourcesAPI, getApiClient } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
-import type { AIReadyStatus } from '@/lib/api/types';
 import { getResourcePolicyStatus, type ResourcePolicyStatusMeta } from '@/lib/constants/resource-policy';
+import { useSourcesQueryState } from './use-sources-query-state';
 
 export interface UseSourcesListOptions {
   workspaceId: string;
@@ -35,38 +35,37 @@ export interface UseSourcesListOptions {
 export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions) {
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
-
-  // Pagination
-  const [page, setPage] = useState(1);
-  const pageSize = 20;
-
-  // Filters
-  const [search, setSearch] = useState('');
-  const [selectedLibraryId, setSelectedLibraryId] = useState('all');
-  const [status, setStatus] = useState<AIReadyStatus | 'all'>('all');
-  const [aiReadyOnly, setAIReadyOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'updated_at' | 'file_size' | 'status'>('updated_at');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
-  // Selection
-  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
-
-  // Dialogs
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [filesToDelete, setFilesToDelete] = useState<{ ids: string[]; hasAIReady: boolean } | null>(null);
-
-  // Upload state
-  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
-  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
-  const uploadCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Clean up timer on unmount
-  useEffect(() => {
-    return () => {
-      if (uploadCloseTimerRef.current) clearTimeout(uploadCloseTimerRef.current);
-    };
-  }, []);
+  const {
+    page,
+    setPage,
+    pageSize,
+    search,
+    setSearch,
+    selectedLibraryId,
+    setSelectedLibraryId,
+    status,
+    setStatus,
+    aiReadyOnly,
+    setAIReadyOnly,
+    sortBy,
+    setSortBy,
+    sortOrder,
+    setSortOrder,
+    selectedFileIds,
+    setSelectedFileIds,
+    uploadDialogOpen,
+    setUploadDialogOpen,
+    deleteDialogOpen,
+    setDeleteDialogOpen,
+    filesToDelete,
+    setFilesToDelete,
+    uploadProgress,
+    setUploadProgress,
+    uploadErrors,
+    setUploadErrors,
+    uploadCloseTimerRef,
+    handlePageChange,
+  } = useSourcesQueryState();
 
   // Data fetching
   const { data: quotaData, isLoading: quotaLoading } = useQuota(
@@ -94,12 +93,6 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
   const createLibraryMutation = useCreateSourceLibrary();
   const updateLibraryMutation = useUpdateSourceLibrary();
   const deleteLibraryMutation = useDeleteSourceLibrary();
-
-  // Clear selection when page changes
-  const handlePageChange = useCallback((newPage: number) => {
-    setPage(newPage);
-    setSelectedFileIds([]);
-  }, []);
 
   // Check if there are any preparing files for polling
   const hasPreparingFiles = useMemo(() => {
@@ -167,7 +160,17 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
         uploadCloseTimerRef.current = null;
       }, 1500);
     }
-  }, [uploadMutation, workspaceId, projectId, selectedLibraryId, handleError]);
+  }, [
+    uploadMutation,
+    workspaceId,
+    projectId,
+    selectedLibraryId,
+    handleError,
+    setUploadDialogOpen,
+    setUploadProgress,
+    setUploadErrors,
+    uploadCloseTimerRef,
+  ]);
 
   // Handle delete (single or batch)
   const handleDeleteClick = useCallback(() => {
@@ -176,7 +179,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
     const hasAIReady = files.some((f) => !!f.ai_ready);
     setFilesToDelete({ ids: selectedFileIds, hasAIReady });
     setDeleteDialogOpen(true);
-  }, [selectedFileIds, sourcesData]);
+  }, [selectedFileIds, sourcesData, setFilesToDelete, setDeleteDialogOpen]);
 
   const handleConfirmDelete = useCallback(async (deleteAIReady: boolean) => {
     if (!filesToDelete) return;
@@ -199,7 +202,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
     if (failed > 0) {
       toast.error(`Failed to delete ${failed} file(s)`);
     }
-  }, [filesToDelete, deleteMutation, workspaceId, projectId]);
+  }, [filesToDelete, deleteMutation, workspaceId, projectId, setDeleteDialogOpen, setFilesToDelete, setSelectedFileIds]);
 
   // Check quota before batch operations
   const quotaStatus = useMemo(() => {
@@ -227,14 +230,14 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
       batchActions.batchStart.mutate({ workspaceId, projectId, fileIds: selectedFileIds });
       setSelectedFileIds([]);
     }
-  }, [selectedFileIds, quotaStatus.canStart, batchActions.batchStart, workspaceId, projectId]);
+  }, [selectedFileIds, quotaStatus.canStart, batchActions.batchStart, workspaceId, projectId, setSelectedFileIds]);
 
   const handleBatchCancelAIReady = useCallback(() => {
     if (selectedFileIds.length > 0) {
       batchActions.batchCancel.mutate({ workspaceId, projectId, fileIds: selectedFileIds });
       setSelectedFileIds([]);
     }
-  }, [selectedFileIds, batchActions.batchCancel, workspaceId, projectId]);
+  }, [selectedFileIds, batchActions.batchCancel, workspaceId, projectId, setSelectedFileIds]);
 
   // Handle download
   const handleDownload = useCallback(async (fileId: string) => {
@@ -266,18 +269,18 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
         ? prev.filter((id) => id !== fileId)
         : [...prev, fileId]
     );
-  }, []);
+  }, [setSelectedFileIds]);
 
   const handleToggleAll = useCallback(() => {
     const items = sourcesData?.items ?? [];
     setSelectedFileIds((prev) =>
       prev.length > 0 ? [] : items.map((f) => f.id)
     );
-  }, [sourcesData]);
+  }, [sourcesData, setSelectedFileIds]);
 
   const clearSelection = useCallback(() => {
     setSelectedFileIds([]);
-  }, []);
+  }, [setSelectedFileIds]);
 
   const handleCreateLibrary = useCallback(async (name: string, description?: string) => {
     const trimmedName = name.trim();
@@ -311,7 +314,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
     if (selectedLibraryId === libraryId) {
       setSelectedLibraryId('all');
     }
-  }, [deleteLibraryMutation, workspaceId, projectId, selectedLibraryId]);
+  }, [deleteLibraryMutation, workspaceId, projectId, selectedLibraryId, setSelectedLibraryId]);
 
   // Computed values
   const items = useMemo(() => sourcesData?.items ?? [], [sourcesData?.items]);

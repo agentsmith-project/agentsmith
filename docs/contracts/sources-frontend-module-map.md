@@ -56,6 +56,7 @@ This document defines the closeout baseline and next decomposition targets for:
 - `use-sources-upload-actions`
 - `use-sources-batch-actions`
 - `use-sources-library-actions`
+Status: in progress. Extracted `src/lib/hooks/use-sources-query-state.ts`.
 2. Add focused hook tests for each extracted hook.
 3. Keep `SourcesPage.tsx` as composition-only view layer.
 4. Keep `e2e/sources.spec.ts` and visual source page scenario green after each step.

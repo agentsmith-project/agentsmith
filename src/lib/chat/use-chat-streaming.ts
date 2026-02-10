@@ -223,6 +223,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             }));
 
             let content = '';
+            let liveMessageId: string | null = null;
             for await (const ev of streamSseJson(res, controller.signal)) {
               if (controller.signal.aborted || !streamStillActive()) break;
               if (ev.event === 'meta') {
@@ -239,10 +240,20 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
                   ? data.assistant_message_id
                   : null;
                 if (metaMessageId) {
+                  liveMessageId = metaMessageId;
                   setSessionStreamState(session.id, (prev) => ({
                     status: prev.status === 'idle' ? 'streaming' : prev.status,
                     assistant: prev.assistant ? { ...prev.assistant, messageId: metaMessageId } : null,
                   }));
+                  // Ensure message bubble exists even if the messages query hasn't refetched yet.
+                  upsertStreamAssistantToCache(session.id, {
+                    id: metaMessageId,
+                    session_id: session.id,
+                    role: 'assistant',
+                    content: '',
+                    created_at: new Date().toISOString(),
+                    finish_reason: null,
+                  });
                 }
               } else if (ev.event === 'delta') {
                 const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
@@ -250,6 +261,9 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
                 if (delta) {
                   content += delta;
                   throttler.push(content);
+                  if (liveMessageId) {
+                    patchStreamAssistantInCache(session.id, liveMessageId, { content, finish_reason: null });
+                  }
                 }
               } else if (ev.event === 'error') {
                 const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
@@ -292,7 +306,19 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     return () => {
       cancelled = true;
     };
-  }, [messages.streamError, messages.streamingFailed, projectId, queryClient, sessions, streamIdBySession, token, workspaceId, chatAPI]);
+  }, [
+    messages.streamError,
+    messages.streamingFailed,
+    patchStreamAssistantInCache,
+    projectId,
+    queryClient,
+    sessions,
+    streamIdBySession,
+    token,
+    upsertStreamAssistantToCache,
+    workspaceId,
+    chatAPI,
+  ]);
 
   const stopStreamingSession = async (
     sessionId: string,
@@ -452,31 +478,31 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             : null;
           if (metaMessageId) {
             liveMessageId = metaMessageId;
-            if (mode === 'replace') {
-              const parentId = data && typeof data.parent_message_id === 'string'
-                ? data.parent_message_id
-                : null;
-              const variantGroupId = data && typeof data.variant_group_id === 'string'
-                ? data.variant_group_id
-                : undefined;
-              const variantIndex = data && typeof data.variant_index === 'number'
-                ? data.variant_index
-                : undefined;
-              if (variantGroupId && typeof variantIndex === 'number') {
-                onReplaceStreamMeta?.({ variantGroupId, variantIndex });
-              }
-              upsertStreamAssistantToCache(runArgs.sessionId, {
-                id: metaMessageId,
-                session_id: runArgs.sessionId,
-                role: 'assistant',
-                content: '',
-                created_at: new Date().toISOString(),
-                finish_reason: null,
-                parent_id: parentId,
-                variant_group_id: variantGroupId,
-                variant_index: variantIndex,
-              });
+            const parentId = data && typeof data.parent_message_id === 'string'
+              ? data.parent_message_id
+              : null;
+            const variantGroupId = data && typeof data.variant_group_id === 'string'
+              ? data.variant_group_id
+              : undefined;
+            const variantIndex = data && typeof data.variant_index === 'number'
+              ? data.variant_index
+              : undefined;
+            if (mode === 'replace' && variantGroupId && typeof variantIndex === 'number') {
+              onReplaceStreamMeta?.({ variantGroupId, variantIndex });
             }
+            // Always render streaming output by updating a single assistant message in the list.
+            // This prevents duplicated "footer bubble" after refresh when the backend has already persisted the message.
+            upsertStreamAssistantToCache(runArgs.sessionId, {
+              id: metaMessageId,
+              session_id: runArgs.sessionId,
+              role: 'assistant',
+              content: '',
+              created_at: new Date().toISOString(),
+              finish_reason: null,
+              parent_id: parentId,
+              variant_group_id: variantGroupId,
+              variant_index: variantIndex,
+            });
             setAssistantMessageId(metaMessageId);
           }
         } else if (ev.event === 'delta') {
@@ -485,7 +511,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
           if (delta) {
             content += delta;
             throttler.push(content);
-            if (mode === 'replace' && liveMessageId) {
+            if (liveMessageId) {
               patchStreamAssistantInCache(runArgs.sessionId, liveMessageId, {
                 content,
                 finish_reason: null,

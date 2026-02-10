@@ -103,6 +103,12 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     onCancelEdit,
   } = props;
 
+  const showAppendFooter = Boolean(
+    activeStreamingAssistant &&
+    activeStreamingAssistant.mode === 'append' &&
+    !activeStreamingAssistant.messageId,
+  );
+
   return (
     <section className="flex-1 flex min-w-0 flex-col bg-background overflow-hidden" data-testid="chat__main-pane">
       <ChatHeader
@@ -151,13 +157,13 @@ export function ChatMainPane(props: ChatMainPaneProps) {
             onRegenerate={onRegenerate}
             disabled={disabled}
             footer={
-              activeStreamingAssistant && activeStreamingAssistant.mode === 'append' ? (
+              showAppendFooter ? (
                 <div className="px-4 py-2">
                   <div className="flex justify-start">
                     <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
                       <div className="text-xs text-tertiary mb-1">{labels.assistant}</div>
                       <div className="space-y-2">
-                        <Markdown content={activeStreamingAssistant.content || '...'} />
+                        <Markdown content={activeStreamingAssistant?.content || '...'} />
                       </div>
                     </div>
                   </div>

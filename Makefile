@@ -1,6 +1,9 @@
 .PHONY: help bootstrap deps-up deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
-	check-api-port api-dev api-dev-min web web-msw e2e e2e-int-minimal e2e-int-chat e2e-int-chat-real \
-	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-chat-real-local-api urls
+	check-api-port api-dev api-dev-min web web-msw \
+	e2e e2e-local \
+	e2e-int-minimal e2e-int-chat e2e-int-chat-real e2e-int-local \
+	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-chat-real-local-api \
+	urls
 
 NPM ?= npm
 
@@ -52,9 +55,11 @@ help:
 	@echo ""
 	@echo "Tests:"
 	@echo "  make e2e           # run mock e2e (MSW)"
+	@echo "  make e2e-local     # run mock e2e against a manually started web server (BASE_URL)"
 	@echo "  make e2e-int-minimal   # run minimal integration e2e (real backend)"
 	@echo "  make e2e-int-chat      # run chat integration e2e (real backend)"
 	@echo "  make e2e-int-chat-real # run real deepseek chat integration e2e (real upstream)"
+	@echo "  make e2e-int-local     # run integration e2e against a manually started web server (BASE_URL)"
 	@echo "  make e2e-int-minimal-local-api  # run minimal integration e2e with current node api"
 	@echo "  make e2e-int-chat-local-api     # run chat integration e2e with current node api"
 	@echo "  make e2e-int-chat-real-local-api # run real deepseek chat e2e with current node api"
@@ -151,20 +156,24 @@ web-msw:
 	$(NPM) run dev:test -- --port $(PORT_WEB)
 
 e2e:
+	$(NPM) run test:e2e -- --project=chromium
+
+e2e-local:
 	BASE_URL=$(BASE_URL) \
 	$(NPM) run test:e2e -- --project=chromium
 
 e2e-int-minimal:
-	BASE_URL=$(BASE_URL) \
 	$(NPM) run test:e2e:integration:minimal
 
 e2e-int-chat:
-	BASE_URL=$(BASE_URL) \
 	$(NPM) run test:e2e:integration:chat
 
 e2e-int-chat-real:
-	BASE_URL=$(BASE_URL) \
 	$(NPM) run test:e2e:integration:chat:real
+
+e2e-int-local:
+	BASE_URL=$(BASE_URL) \
+	$(NPM) run test:e2e:integration:minimal
 
 e2e-int-minimal-local-api:
 	INTEGRATION_API_PORT=$(PORT_API) \

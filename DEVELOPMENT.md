@@ -42,8 +42,9 @@ make help          # 查看所有命令
 make deps-init     # 只执行 postgres schema 初始化（含 pgvector）
 make api-dev-min   # 仅 keycloak + minio 的最小 API 启动
 make web-msw       # 前端 mock 模式
-make e2e-minimal   # 最小集成测试
-make e2e-chat      # chat 集成测试
+make e2e                # mock e2e (MSW)
+make e2e-int-minimal    # 最小集成测试
+make e2e-int-chat       # chat 集成测试
 make deps-down     # 关闭依赖
 make deps-reset    # 关闭并清空依赖数据卷
 ```
@@ -223,10 +224,11 @@ BASE_URL=http://localhost:3001 npm run test:e2e:integration:minimal
 Makefile shortcuts:
 
 ```bash
-make e2e-minimal
-make e2e-chat
-make e2e-minimal-local-api
-make e2e-chat-local-api
+make e2e
+make e2e-int-minimal
+make e2e-int-chat
+make e2e-int-minimal-local-api
+make e2e-int-chat-local-api
 ```
 
 ### 4) Distinguish infra failure from app failure

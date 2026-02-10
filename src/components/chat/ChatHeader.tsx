@@ -1,7 +1,5 @@
-'use client';
-
 import * as React from 'react';
-import { ChevronDown, PanelRight } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import type { ChatSession, Endpoint } from '@/lib/api/types';
@@ -24,8 +22,6 @@ export function ChatHeader({
   onRename,
   onSelectEndpoint,
   layoutMode = 'standard',
-  showLayoutToggle = false,
-  onToggleLayoutMode,
 }: {
   session: ChatSession | null;
   endpoints: Endpoint[];
@@ -33,10 +29,9 @@ export function ChatHeader({
   onRename: (title: string) => void;
   onSelectEndpoint: (endpoint: Endpoint) => void;
   layoutMode?: ChatLayoutMode;
-  showLayoutToggle?: boolean;
-  onToggleLayoutMode?: () => void;
 }) {
   const t = useTranslations('chat');
+  // `layoutMode` is used for content width alignment only.
   const [editing, setEditing] = React.useState(false);
   const [draftTitle, setDraftTitle] = React.useState(session?.title || '');
   const [modelOpen, setModelOpen] = React.useState(false);
@@ -129,20 +124,6 @@ export function ChatHeader({
         </div>
 
         <div className="flex items-center gap-2">
-          {showLayoutToggle ? (
-            <Button
-              variant={layoutMode === 'ultrawide' ? 'primary' : 'outline'}
-              size="sm"
-              className="h-8 w-8 px-0"
-              data-testid="chat__layout-toggle"
-              data-state={layoutMode}
-              onClick={onToggleLayoutMode}
-              aria-label={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
-              title={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
-            >
-              <PanelRight className="w-4 h-4" />
-            </Button>
-          ) : null}
           <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2" data-testid="chat__model-trigger">

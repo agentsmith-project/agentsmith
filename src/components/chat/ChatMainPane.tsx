@@ -42,9 +42,7 @@ export interface ChatMainPaneProps {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   labels: ChatMainPaneLabels;
   layoutMode?: 'standard' | 'ultrawide';
-  showLayoutToggle?: boolean;
   onCreateThread: () => void;
-  onToggleLayoutMode?: () => void;
   onRenameActiveSession: (title: string) => void;
   onSelectActiveEndpoint: (endpoint: Endpoint) => void;
   onSelectVariant: (groupId: string, nextIndex: number) => void;
@@ -84,9 +82,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     fileInputRef,
     labels,
     layoutMode = 'standard',
-    showLayoutToggle = false,
     onCreateThread,
-    onToggleLayoutMode,
     onRenameActiveSession,
     onSelectActiveEndpoint,
     onSelectVariant,
@@ -118,8 +114,6 @@ export function ChatMainPane(props: ChatMainPaneProps) {
         onRename={onRenameActiveSession}
         onSelectEndpoint={onSelectActiveEndpoint}
         layoutMode={layoutMode}
-        showLayoutToggle={showLayoutToggle}
-        onToggleLayoutMode={onToggleLayoutMode}
       />
 
       <div className="flex-1 min-h-0">

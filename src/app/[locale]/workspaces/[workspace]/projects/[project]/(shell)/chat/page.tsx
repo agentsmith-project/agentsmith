@@ -43,6 +43,8 @@ import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { PanelRight } from 'lucide-react';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -335,7 +337,31 @@ export default function ChatPage({ params }: ChatPageProps) {
       <PageLayout
         density="immersive"
         contentWidth="full"
-        header={<PageHeader title={t('title')} />}
+        header={
+          <div className={cn(layoutMode === 'standard' ? 'mx-auto w-full max-w-[1400px]' : 'w-full')}>
+            <PageHeader
+              title={t('title')}
+              actions={
+                showLayoutToggle ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={onToggleLayoutMode}
+                    title={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
+                    aria-label={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
+                    data-testid="chat__layout-toggle"
+                    data-state={layoutMode}
+                  >
+                    <PanelRight className="w-4 h-4" />
+                    {layoutMode === 'ultrawide' ? t('header.layout_ultrawide') : t('header.layout_standard')}
+                  </Button>
+                ) : null
+              }
+            />
+          </div>
+        }
       >
         <div
           className={cn(
@@ -382,7 +408,6 @@ export default function ChatPage({ params }: ChatPageProps) {
             composerValue={composerValue}
             fileInputRef={fileInputRef}
             layoutMode={layoutMode}
-            showLayoutToggle={showLayoutToggle}
             labels={{
               loading: t('loading'),
               noActiveThreadTitle: t('no_active_thread_title'),
@@ -391,7 +416,6 @@ export default function ChatPage({ params }: ChatPageProps) {
               assistant: t('assistant'),
             }}
             onCreateThread={handleCreateThread}
-            onToggleLayoutMode={onToggleLayoutMode}
             onRenameActiveSession={handleRenameActiveSession}
             onSelectActiveEndpoint={handleSelectActiveEndpoint}
             onSelectVariant={handleSelectVariant}

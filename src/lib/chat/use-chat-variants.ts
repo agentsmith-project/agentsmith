@@ -49,10 +49,11 @@ export function useChatVariants(args: UseChatVariantsArgs): UseChatVariantsResul
         assistant.variantGroupId &&
         typeof assistant.variantIndex === 'number'
       ) {
-        setActiveVariantIndexByGroup((prev) => ({
-          ...prev,
-          [assistant.variantGroupId as string]: assistant.variantIndex as number,
-        }));
+        const groupId = assistant.variantGroupId as string;
+        const nextIndex = assistant.variantIndex as number;
+        // Avoid infinite update loops while streaming:
+        // the runtime state can update frequently (tokens), but the variant index usually doesn't.
+        setActiveVariantIndexByGroup((prev) => (prev[groupId] === nextIndex ? prev : { ...prev, [groupId]: nextIndex }));
       }
       return;
     }
@@ -105,7 +106,7 @@ export function useChatVariants(args: UseChatVariantsArgs): UseChatVariantsResul
     if (!groupId || typeof variantIndex !== 'number') {
       return;
     }
-    setActiveVariantIndexByGroup((prev) => ({ ...prev, [groupId]: variantIndex }));
+    setActiveVariantIndexByGroup((prev) => (prev[groupId] === variantIndex ? prev : { ...prev, [groupId]: variantIndex }));
   };
 
   return {

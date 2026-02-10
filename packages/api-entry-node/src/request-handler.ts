@@ -1,5 +1,4 @@
 import type http from 'node:http';
-import { ErrorResponseSchema } from '@mbos/contracts';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { verifyBearerToken } from './auth.js';
 import { handleProjectSourceRoute } from './project-source-route-handler.js';
@@ -13,6 +12,7 @@ import {
   resolveProjectPermissions,
 } from './workspace-permissions.js';
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
+import { mapRequestError } from './error-mapper.js';
 
 function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
   const cleanBase = baseUrl.replace(/\/+$/, '');
@@ -120,32 +120,7 @@ export async function handleRequest(
 
     json(res, 405, { code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
   } catch (error) {
-    if (error instanceof Error && error.message === 'project_not_found') {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'project_not_found' });
-      return;
-    }
-    if (error instanceof Error && error.message === 'source_not_found') {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'source_not_found' });
-      return;
-    }
-    if (error instanceof Error && error.message === 'source_library_not_found') {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'source_library_not_found' });
-      return;
-    }
-    if (error instanceof Error && error.message === 'ai_ready_job_not_found') {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'ai_ready_job_not_found' });
-      return;
-    }
-    if (error instanceof Error && error.message === 'source_library_mismatch') {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'source_library_mismatch' });
-      return;
-    }
-
-    const parsed = ErrorResponseSchema.safeParse({
-      code: 'VALIDATION_ERROR',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-
-    json(res, 400, parsed.success ? parsed.data : { code: 'BAD_REQUEST', message: 'Bad request' });
+    const mapped = mapRequestError(error);
+    json(res, mapped.status, mapped.body);
   }
 }

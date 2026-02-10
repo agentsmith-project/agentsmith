@@ -54,5 +54,5 @@
 ## 3. 后续建议（P1/P2 配套）
 
 - 给 `projects-route-match.ts` 添加路由匹配单元测试，避免正则回归。
-- 为 `chat-resource-service.ts` 增加消息分支/修订语义测试（revision/variant）。
+- 持续扩展 `chat-resource-service.ts` 分支/修订语义测试，覆盖跨 session/project 的边界场景。
 - Chat 会话流控制契约（`sessions/{sessionId}/streams` + 双 stop 路径）统一维护在 `docs/contracts/cf-private-hybrid-architecture-guide-v1.md`。

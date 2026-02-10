@@ -158,6 +158,10 @@ CI runs the same command and fails the pipeline on missing coverage.
 
 Use this runbook when E2E is unstable or intermittently timing out.
 
+Notes:
+- By default, Playwright manages its own `next dev` web server (port `3001`) with MSW enabled.
+- If you set `BASE_URL=...`, Playwright will not start a server. In that mode you must start the dev server yourself.
+
 ### 1) Start dev server in a persistent terminal
 
 ```bash
@@ -170,7 +174,12 @@ npm run dev:test -- --port 3001
 BASE_URL=http://localhost:3001 npm run test:e2e -- --project=smoke
 ```
 
-This bypasses Playwright-managed `webServer` startup ambiguity and is more stable in long sessions.
+This bypasses Playwright-managed `webServer` and is more stable in long sessions.
+Make sure the dev server is started with MSW enabled:
+
+```bash
+NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port 3001
+```
 
 ### 3) Use route-targeted smoke for fast triage
 

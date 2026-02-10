@@ -11,14 +11,17 @@ const runIntegrationE2E = process.env.RUN_INTEGRATION_E2E === 'true';
 const integrationApiBase = process.env.INTEGRATION_API_BASE || 'http://localhost:20000';
 const webServerCommand = runIntegrationE2E
   ? [
-      'NEXT_PUBLIC_USE_MSW=false',
-      `NEXT_PUBLIC_API_BASE=${integrationApiBase}`,
-      'NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms',
-      'NEXT_PUBLIC_KEYCLOAK_REALM=mbos',
-      'NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend',
-      './node_modules/.bin/next dev --port 3001',
+      'bash -lc',
+      JSON.stringify([
+        'NEXT_PUBLIC_USE_MSW=false',
+        `NEXT_PUBLIC_API_BASE=${integrationApiBase}`,
+        'NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms',
+        'NEXT_PUBLIC_KEYCLOAK_REALM=mbos',
+        'NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend',
+        'npm run dev:test -- --port 3001',
+      ].join(' ')),
     ].join(' ')
-  : 'NEXT_PUBLIC_USE_MSW=true ./node_modules/.bin/next dev --port 3001';
+  : ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port 3001')].join(' ');
 
 export default defineConfig({
   testDir: './e2e',
@@ -39,7 +42,7 @@ export default defineConfig({
         // Use local next binary directly to avoid npm/npx config arg injection warnings.
         command: webServerCommand,
         url: 'http://localhost:3001',
-        reuseExistingServer: true,
+        reuseExistingServer: false,
         timeout: 120000,
       }
     : undefined,

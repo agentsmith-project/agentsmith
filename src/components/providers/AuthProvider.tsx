@@ -18,8 +18,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // useEffect only runs on the client, no typeof window check needed
     // The zustand persist middleware with custom storage will handle hydration automatically
 
-    // Expose store globally for testing (development only)
-    if (process.env.NODE_ENV === 'development') {
+    // Expose store globally for E2E/testing and local debugging.
+    // Keep this strictly non-production to avoid leaking app internals.
+    if (process.env.NODE_ENV !== 'production') {
       window.__MBOS_AUTH_STORE__ = useAuthStore;
     }
   }, []);

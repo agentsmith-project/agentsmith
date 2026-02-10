@@ -12,6 +12,10 @@
 - 负责 HTTP 请求编排（鉴权、路由分发、统一错误映射）
 - 串联 `project/source`、`chat`、`endpoint` 三类 handler
 
+- `error-mapper.ts`
+- 统一维护 request 层错误到 HTTP 响应的映射策略
+- 避免在 `request-handler.ts` 堆积 if-chain 分支
+
 - `projects-route-match.ts`
 - 统一维护 API 路由匹配与 `ProjectsRoute` 联合类型
 - 新增路由必须先改这里，再改对应 handler
@@ -50,6 +54,5 @@
 ## 3. 后续建议（P1/P2 配套）
 
 - 给 `projects-route-match.ts` 添加路由匹配单元测试，避免正则回归。
-- 将 `request-handler.ts` 的错误映射提取成 `error-mapper.ts`，减少 if-chain。
 - 为 `chat-resource-service.ts` 增加消息分支/修订语义测试（revision/variant）。
 - Chat 会话流控制契约（`sessions/{sessionId}/streams` + 双 stop 路径）统一维护在 `docs/contracts/cf-private-hybrid-architecture-guide-v1.md`。

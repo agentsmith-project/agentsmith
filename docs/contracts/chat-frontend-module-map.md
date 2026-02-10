@@ -11,6 +11,10 @@ This document defines responsibility boundaries for the chat page implementation
 
 ## 2. State and Runtime Hooks (`src/lib/chat`)
 
+- `runtime-store.ts`
+- Global (non-persistent) runtime store for chat streaming state.
+- Holds per-session `streamId` and streaming assistant state so refresh/resume, branch switching, and stop controls do not depend on component-local memory.
+
 - `use-chat-data.ts`
 - Query orchestration for sessions, messages, attachments, and endpoint options.
 
@@ -19,6 +23,7 @@ This document defines responsibility boundaries for the chat page implementation
 
 - `use-chat-streaming.ts`
 - SSE runtime, stream/session stop control, stream-id recovery after refresh, and stream state machine.
+- Uses `runtime-store.ts` as the single source of truth for per-session runtime state.
 
 - `use-chat-thread-actions.ts`
 - Thread-level actions (select/create/rename/pin/star/delete request, endpoint switch).
@@ -36,7 +41,7 @@ This document defines responsibility boundaries for the chat page implementation
 - Variant selection and auto-variant activation handling.
 
 - `chat-view-model.ts`
-- Derived UI state (`activeStreamStatus`, `mergedStreamingSessionIds`, `disabled`) from runtime + local state.
+- Derived UI state (`activeStreamStatus`, `mergedStreamingSessionIds`, `disabled`) from runtime store + queries + local UI state.
 
 - `use-chat-layout-mode.ts`
 - Viewport-aware layout mode orchestration (`standard|ultrawide`) with localStorage preference persistence.
@@ -55,7 +60,10 @@ This document defines responsibility boundaries for the chat page implementation
 - Delete confirmation dialog rendering.
 
 - `ChatHeader.tsx`
-- Session title/model control + optional layout-mode toggle (`chat__layout-toggle`) when viewport is ultrawide.
+- Session title/model control.
+
+- `page.tsx`
+- Owns the chat page header actions (including ultrawide layout toggle `chat__layout-toggle`).
 
 - `MessageList.tsx` / `Composer.tsx`
 - Respect `layoutMode` to cap content width:

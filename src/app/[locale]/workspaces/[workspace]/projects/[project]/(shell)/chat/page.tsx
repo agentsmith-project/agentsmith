@@ -10,10 +10,8 @@
 
 'use client';
 
-import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { MessageSquare, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { useAuthStore } from '@/lib/stores/authStore';
@@ -36,27 +34,13 @@ import { useChatDeleteDialog } from '@/lib/chat/use-chat-delete-dialog';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
-import { ChatHeader } from '@/components/chat/ChatHeader';
-import { MessageList } from '@/components/chat/MessageList';
-import { Composer } from '@/components/chat/Composer';
-import { Markdown } from '@/components/chat/Markdown';
+import { ChatMainPane } from '@/components/chat/ChatMainPane';
+import { ChatDeleteDialog } from '@/components/chat/ChatDeleteDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
-import { Button } from '@/components/ui/button';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
- 
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -368,121 +352,64 @@ export default function ChatPage({ params }: ChatPageProps) {
             isLoading={sessionsLoading}
           />
 
-          <section className="flex-1 flex min-w-0 flex-col bg-background overflow-hidden" data-testid="chat__main-pane">
-            <ChatHeader
-              session={activeSession}
-              endpoints={endpoints}
-              streamStatus={activeStreamStatus}
-              onRename={handleRenameActiveSession}
-              onSelectEndpoint={handleSelectActiveEndpoint}
-            />
-
-            <div className="flex-1 min-h-0">
-              {!currentSessionId ? (
-                <div className="h-full flex items-center justify-center px-4">
-                  <div className="mx-auto w-full max-w-[560px] text-center px-6">
-                    <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
-                    <div className="text-foreground font-medium mb-1">{t('no_active_thread_title')}</div>
-                    <div className="text-tertiary text-sm">{t('no_active_thread_description')}</div>
-                    <Button
-                      className="mt-4"
-                      variant="outline"
-                      onClick={handleCreateThread}
-                      disabled={!canUseChat || createSessionMutation.isPending}
-                      data-testid="chat__empty-create-btn"
-                    >
-                      <Plus className="w-4 h-4" />
-                      {t('new_thread')}
-                    </Button>
-                  </div>
-                </div>
-              ) : messagesLoading ? (
-                <div className="h-full flex items-center justify-center px-4">
-                  <div className="text-tertiary">{t('loading')}</div>
-                </div>
-              ) : (
-                <MessageList
-                  messages={messages}
-                  activeVariantIndexByGroup={activeVariantIndexByGroup}
-                  editingMessageId={editingMessageId}
-                  onSelectVariant={handleSelectVariant}
-                  onEdit={handleEditMessage}
-                  onEditCommit={handleEditCommit}
-                  onEditCancel={() => setEditingMessageId(null)}
-                  onRegenerate={handleRegenerate}
-                  disabled={disabled}
-                  footer={
-                    activeStreamingAssistant && activeStreamingAssistant.mode === 'append' ? (
-                      <div className="px-4 py-2">
-                        <div className="flex justify-start">
-                          <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
-                            <div className="text-xs text-tertiary mb-1">{t('assistant')}</div>
-                            <div className="space-y-2">
-                              <Markdown content={activeStreamingAssistant.content || '…'} />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null
-                  }
-                  streamingAssistant={activeStreamingAssistant}
-                  followOutput={activeStreamingAssistant?.mode !== 'replace'}
-                  suppressAutoScroll={suppressAutoScroll}
-                />
-              )}
-            </div>
-
-            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePicked} />
-
-            {currentSessionId && (
-              <Composer
-                value={composerValue}
-                onChange={(v) => {
-                  if (!currentSessionId) return;
-                  setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
-                }}
-                onSend={handleSend}
-                onStop={stopStreaming}
-                mode="compose"
-                autoFocus={!editingMessageId && activeStreamStatus === 'idle'}
-                onPickFiles={handlePickFiles}
-                attachments={attachments}
-                onRemoveAttachment={handleRemoveAttachment}
-                onRetryAttachment={handleRetryAttachment}
-                disabled={
-                  !currentSessionId ||
-                  !canUseChat ||
-                  createMessageMutation.isPending ||
-                  editMessageMutation.isPending ||
-                  initAttachmentMutation.isPending ||
-                  disabled ||
-                  !!editingMessageId
-                }
-                streaming={disabled}
-              />
-            )}
-          </section>
+          <ChatMainPane
+            currentSessionId={currentSessionId}
+            activeSession={activeSession}
+            endpoints={endpoints}
+            messages={messages}
+            messagesLoading={messagesLoading}
+            attachments={attachments}
+            activeVariantIndexByGroup={activeVariantIndexByGroup}
+            editingMessageId={editingMessageId}
+            disabled={disabled}
+            activeStreamStatus={activeStreamStatus}
+            activeStreamingAssistant={activeStreamingAssistant}
+            suppressAutoScroll={suppressAutoScroll}
+            createPending={createSessionMutation.isPending}
+            createMessagePending={createMessageMutation.isPending}
+            editMessagePending={editMessageMutation.isPending}
+            initAttachmentPending={initAttachmentMutation.isPending}
+            canUseChat={canUseChat}
+            composerValue={composerValue}
+            fileInputRef={fileInputRef}
+            labels={{
+              loading: t('loading'),
+              noActiveThreadTitle: t('no_active_thread_title'),
+              noActiveThreadDescription: t('no_active_thread_description'),
+              newThread: t('new_thread'),
+              assistant: t('assistant'),
+            }}
+            onCreateThread={handleCreateThread}
+            onRenameActiveSession={handleRenameActiveSession}
+            onSelectActiveEndpoint={handleSelectActiveEndpoint}
+            onSelectVariant={handleSelectVariant}
+            onEditMessage={handleEditMessage}
+            onEditCommit={handleEditCommit}
+            onRegenerate={handleRegenerate}
+            onComposerChange={(v) => {
+              if (!currentSessionId) return;
+              setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
+            }}
+            onSend={handleSend}
+            onStop={stopStreaming}
+            onPickFiles={handlePickFiles}
+            onFilePicked={onFilePicked}
+            onRemoveAttachment={handleRemoveAttachment}
+            onRetryAttachment={handleRetryAttachment}
+            onCancelEdit={() => setEditingMessageId(null)}
+          />
         </div>
-        <AlertDialog open={deleteThreadDialogOpen} onOpenChange={setDeleteThreadDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('delete_confirm_title')}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t('delete_confirm_message', { name: threadToDelete?.title ?? '' })}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
-              <AlertDialogAction
-                data-testid="chat__delete-thread-confirm"
-                onClick={handleConfirmDeleteThread}
-                className="bg-error text-white hover:bg-error/90"
-              >
-                {t('delete_confirm_action')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ChatDeleteDialog
+          open={deleteThreadDialogOpen}
+          onOpenChange={setDeleteThreadDialogOpen}
+          onConfirm={handleConfirmDeleteThread}
+          labels={{
+            title: t('delete_confirm_title'),
+            message: t('delete_confirm_message', { name: threadToDelete?.title ?? '' }),
+            cancel: t('delete_confirm_cancel'),
+            confirm: t('delete_confirm_action'),
+          }}
+        />
       </PageLayout>
     </PageState>
   );

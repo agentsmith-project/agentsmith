@@ -8,6 +8,8 @@ export interface SessionStreamingAssistant {
   mode: 'append' | 'replace';
   startedAt: number;
   lastTokenAt: number;
+  variantGroupId?: string;
+  variantIndex?: number;
 }
 
 export interface SessionStreamState {

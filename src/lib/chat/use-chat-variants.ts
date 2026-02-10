@@ -41,7 +41,21 @@ export function useChatVariants(args: UseChatVariantsArgs): UseChatVariantsResul
   useEffect(() => {
     if (messages.length === 0) return;
     const status = currentSessionId ? (streamStateBySession[currentSessionId]?.status ?? 'idle') : 'idle';
-    if (status !== 'idle') return;
+    if (status !== 'idle') {
+      const assistant = currentSessionId ? streamStateBySession[currentSessionId]?.assistant : null;
+      if (
+        assistant &&
+        assistant.mode === 'replace' &&
+        assistant.variantGroupId &&
+        typeof assistant.variantIndex === 'number'
+      ) {
+        setActiveVariantIndexByGroup((prev) => ({
+          ...prev,
+          [assistant.variantGroupId as string]: assistant.variantIndex as number,
+        }));
+      }
+      return;
+    }
     const groups = buildVariantGroups(messages);
     const nextMap = new Map(lastVariantTailRef.current);
     const updates: Record<string, number> = {};

@@ -5,6 +5,7 @@ import { Paperclip, Send, Square } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import type { Attachment } from '@/lib/api/types';
+import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
@@ -42,7 +43,7 @@ export function Composer({
   disabled: boolean;
   streaming: boolean;
   autoFocus?: boolean;
-  layoutMode?: 'standard' | 'ultrawide';
+  layoutMode?: ChatLayoutMode;
 }) {
   const t = useTranslations('chat');
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -56,7 +57,7 @@ export function Composer({
 
   const canSend = !disabled && !streaming && !blocked && value.trim().length > 0;
   const canStop = streaming;
-  const contentWidthClass = layoutMode === 'ultrawide' ? 'max-w-[1560px]' : 'max-w-[980px]';
+  const contentWidthClass = getChatContentWidthClass(layoutMode);
 
   const helperText = React.useMemo(() => {
     if (attachments.some((a) => a.upload_status === 'failed')) return t('composer.helper_failed_attachments');

@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 
 import type { ChatMessage } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain, buildBranchBadgesForChain } from '@/lib/chat/branch';
+import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
 import { cn } from '@/lib/utils';
 
 import { MessageItem } from './MessageItem';
@@ -45,7 +46,7 @@ export function MessageList({
   followOutput?: boolean;
   suppressAutoScroll?: boolean;
   disabled: boolean;
-  layoutMode?: 'standard' | 'ultrawide';
+  layoutMode?: ChatLayoutMode;
 }) {
   const t = useTranslations('chat');
   const groups = React.useMemo(() => buildVariantGroups(messages), [messages]);
@@ -71,7 +72,7 @@ export function MessageList({
   }
 
   const shouldFollow = followOutput && isAtBottom && !suppressAutoScroll;
-  const contentWidthClass = layoutMode === 'ultrawide' ? 'max-w-[1560px]' : 'max-w-[980px]';
+  const contentWidthClass = getChatContentWidthClass(layoutMode);
 
   return (
     <div className="h-full relative">
@@ -107,6 +108,7 @@ export function MessageList({
                 }
                 branchBadge={branchBadges.get(m.id) || null}
                 disabled={disabled}
+                layoutMode={layoutMode}
               />
             </div>
           </div>

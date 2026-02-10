@@ -10,6 +10,7 @@ import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import { Markdown } from '@/components/chat/Markdown';
 import { type VariantGroups, getVariantMeta } from '@/lib/chat/branch';
+import type { ChatLayoutMode } from '@/lib/chat/layout';
 
 export const MessageItem = React.memo(function MessageItem({
   message,
@@ -25,6 +26,7 @@ export const MessageItem = React.memo(function MessageItem({
   streamingMeta,
   branchBadge,
   disabled,
+  layoutMode = 'standard',
 }: {
   message: ChatMessage;
   variantGroups: VariantGroups;
@@ -39,11 +41,13 @@ export const MessageItem = React.memo(function MessageItem({
   streamingMeta?: { startedAt: number; lastTokenAt: number } | null;
   branchBadge?: { groupId: string; index: number; total: number } | null;
   disabled: boolean;
+  layoutMode?: ChatLayoutMode;
 }) {
   const t = useTranslations('common.toast');
   const tChat = useTranslations('chat');
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
+  const isEditingUser = isUser && isEditing;
 
   const variantMeta = getVariantMeta(message, variantGroups);
   const activeVariantIndex = variantMeta ? (activeVariantIndexByGroup[variantMeta.groupId] ?? variantMeta.index) : null;
@@ -78,7 +82,10 @@ export const MessageItem = React.memo(function MessageItem({
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')} data-testid="chat__message" data-message-id={message.id}>
       <div
         className={cn(
-          'max-w-[80%] rounded-md px-4 py-3 border relative',
+          isEditingUser
+            ? 'w-full max-w-[92%] min-w-[360px]'
+            : (layoutMode === 'ultrawide' ? 'max-w-[86%]' : 'max-w-[80%]'),
+          'rounded-md px-4 py-3 border relative',
           isUser ? 'bg-hover text-foreground border-subtle' : 'bg-surface-high text-primary border-subtle',
           message.is_stale ? 'opacity-60' : 'opacity-100',
         )}

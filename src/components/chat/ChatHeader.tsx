@@ -5,6 +5,7 @@ import { ChevronDown, PanelRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import type { ChatSession, Endpoint } from '@/lib/api/types';
+import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
@@ -31,7 +32,7 @@ export function ChatHeader({
   streamStatus: 'idle' | 'connecting' | 'streaming' | 'stopped' | 'error';
   onRename: (title: string) => void;
   onSelectEndpoint: (endpoint: Endpoint) => void;
-  layoutMode?: 'standard' | 'ultrawide';
+  layoutMode?: ChatLayoutMode;
   showLayoutToggle?: boolean;
   onToggleLayoutMode?: () => void;
 }) {
@@ -39,6 +40,7 @@ export function ChatHeader({
   const [editing, setEditing] = React.useState(false);
   const [draftTitle, setDraftTitle] = React.useState(session?.title || '');
   const [modelOpen, setModelOpen] = React.useState(false);
+  const contentWidthClass = getChatContentWidthClass(layoutMode);
 
   React.useEffect(() => {
     setDraftTitle(session?.title || '');
@@ -72,7 +74,7 @@ export function ChatHeader({
 
   return (
     <div className="h-14 border-b border-subtle bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className="flex h-full w-full items-center justify-between gap-3 px-3 md:px-4">
+      <div className={cn('mx-auto flex h-full w-full items-center justify-between gap-3 px-3 md:px-4', contentWidthClass)}>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
             {editing ? (
@@ -92,7 +94,8 @@ export function ChatHeader({
                 onBlur={commitRename}
                 autoFocus
                 className={cn(
-                  'w-full max-w-[520px] bg-transparent text-sm text-foreground',
+                  'w-full bg-transparent text-sm text-foreground',
+                  layoutMode === 'ultrawide' ? 'max-w-[980px]' : 'max-w-[640px]',
                   'border border-subtle rounded-sm px-2 py-1',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
                 )}

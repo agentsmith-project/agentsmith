@@ -31,6 +31,8 @@ This directory is the single source of truth for frontend permission and governa
   - Chat page module boundaries and growth guardrails.
 - `resource-policy-frontend-module-map.md`
   - Resource Policy page module boundaries and helper ownership.
+- `projects-frontend-module-map.md`
+  - Projects page module boundaries and reusable view ownership.
 
 ## Update Policy
 

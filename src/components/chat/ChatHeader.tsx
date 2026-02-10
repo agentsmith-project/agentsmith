@@ -130,17 +130,13 @@ export function ChatHeader({
             <Button
               variant={layoutMode === 'ultrawide' ? 'primary' : 'outline'}
               size="sm"
-              className="gap-2"
+              className="h-8 w-8 px-0"
               data-testid="chat__layout-toggle"
               onClick={onToggleLayoutMode}
-              title={
-                layoutMode === 'ultrawide'
-                  ? t('header.switch_to_standard')
-                  : t('header.switch_to_ultrawide')
-              }
+              aria-label={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
+              title={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
             >
               <PanelRight className="w-4 h-4" />
-              {layoutMode === 'ultrawide' ? t('header.layout_ultrawide') : t('header.layout_standard')}
             </Button>
           ) : null}
           <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>

@@ -504,7 +504,7 @@ describe('ChatHeader', () => {
       );
 
       expect(screen.getByTestId('chat__layout-toggle')).toBeInTheDocument();
-      expect(screen.getByText('Standard')).toBeInTheDocument();
+      expect(screen.getByLabelText('Switch to ultrawide layout')).toBeInTheDocument();
     });
 
     it('should call onToggleLayoutMode when clicked', async () => {
@@ -522,7 +522,7 @@ describe('ChatHeader', () => {
       await user.click(screen.getByTestId('chat__layout-toggle'));
 
       expect(onToggleLayoutMode).toHaveBeenCalledTimes(1);
-      expect(screen.getByText('Ultrawide')).toBeInTheDocument();
+      expect(screen.getByLabelText('Switch to standard layout')).toBeInTheDocument();
     });
   });
 });

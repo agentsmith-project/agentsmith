@@ -70,7 +70,7 @@ export function ThreadItem({
             onSelect();
           }
         }}
-        className="w-full text-left px-2.5 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm"
+        className="w-full text-left min-h-9 px-2.5 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm"
       >
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
@@ -125,7 +125,8 @@ export function ThreadItem({
                   size="icon"
                   data-testid="chat__thread-actions-btn"
                   className={cn(
-                    'h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity',
+                    'h-8 w-8 transition-opacity',
+                    isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
                     'text-icon-default hover:text-foreground',
                   )}
                   onClick={(e) => e.stopPropagation()}

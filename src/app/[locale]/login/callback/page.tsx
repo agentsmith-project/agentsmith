@@ -7,9 +7,12 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api/client';
+import { getKeycloakClientId, getKeycloakRealmBase } from '@/lib/auth/keycloak';
 
 interface KeycloakTokenResponse {
   access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
 }
 
 interface KeycloakUserInfo {
@@ -26,25 +29,7 @@ interface StoredPkceContext {
   createdAt: number;
 }
 
-const keycloakRealmsBase = process.env.NEXT_PUBLIC_KEYCLOAK_URL?.trim() ?? '';
-const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM?.trim() ?? '';
-const keycloakClientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID?.trim() ?? '';
-
-function keycloakRealmBase(): string | null {
-  if (!keycloakRealmsBase || !keycloakRealm) {
-    return null;
-  }
-
-  if (keycloakRealmsBase.endsWith('/realms')) {
-    return `${keycloakRealmsBase}/${keycloakRealm}`;
-  }
-
-  if (keycloakRealmsBase.includes('/realms/')) {
-    return keycloakRealmsBase.replace(/\/$/, '');
-  }
-
-  return `${keycloakRealmsBase.replace(/\/$/, '')}/realms/${keycloakRealm}`;
-}
+const keycloakClientId = getKeycloakClientId();
 
 function readPkceContext(): StoredPkceContext | null {
   const raw = sessionStorage.getItem('mbos:keycloak:pkce');
@@ -75,7 +60,7 @@ export default function LoginCallbackPage() {
   const code = searchParams.get('code');
   const state = searchParams.get('state');
   const providerError = searchParams.get('error');
-  const realmBase = useMemo(() => keycloakRealmBase(), []);
+  const realmBase = useMemo(() => getKeycloakRealmBase(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,6 +131,10 @@ export default function LoginCallbackPage() {
           locale: locale as 'en-US' | 'zh-CN',
         },
         token.access_token,
+        {
+          refreshToken: token.refresh_token ?? null,
+          expiresIn: token.expires_in,
+        },
       );
       // Ensure authenticated API calls in the immediate next route after callback.
       getApiClient().setToken(token.access_token);

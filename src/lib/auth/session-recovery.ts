@@ -5,8 +5,10 @@ export interface UnauthorizedEvent {
 }
 
 type SessionRecoveryListener = (event: UnauthorizedEvent) => void;
+type SessionRefreshHandler = () => Promise<boolean>;
 
 const listeners = new Set<SessionRecoveryListener>();
+let refreshHandler: SessionRefreshHandler | null = null;
 
 export function addSessionRecoveryListener(listener: SessionRecoveryListener): () => void {
   listeners.add(listener);
@@ -24,4 +26,13 @@ export function notifyUnauthorized(path: string): void {
   for (const listener of listeners) {
     listener(event);
   }
+}
+
+export function setSessionRefreshHandler(handler: SessionRefreshHandler | null): void {
+  refreshHandler = handler;
+}
+
+export async function tryRefreshSession(): Promise<boolean> {
+  if (!refreshHandler) return false;
+  return refreshHandler();
 }

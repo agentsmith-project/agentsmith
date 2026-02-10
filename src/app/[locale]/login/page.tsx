@@ -7,6 +7,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { Logo } from '@/components/app-shell/Logo';
+import { getKeycloakClientId, getKeycloakRealmBase } from '@/lib/auth/keycloak';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,9 +17,7 @@ import {
 import { Globe, ChevronDown } from 'lucide-react';
 
 const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
-const keycloakRealmsBase = process.env.NEXT_PUBLIC_KEYCLOAK_URL?.trim() ?? '';
-const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM?.trim() ?? '';
-const keycloakClientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID?.trim() ?? '';
+const keycloakClientId = getKeycloakClientId();
 
 const mockWorkspaces = [
   { value: 'ws_default', label: 'Default Workspace' },
@@ -43,22 +42,6 @@ function randomBase64Url(bytes = 32): string {
 async function createPkceChallenge(verifier: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
   return encodeBase64Url(new Uint8Array(digest));
-}
-
-function keycloakRealmBase(): string | null {
-  if (!keycloakRealmsBase || !keycloakRealm) {
-    return null;
-  }
-
-  if (keycloakRealmsBase.endsWith('/realms')) {
-    return `${keycloakRealmsBase}/${keycloakRealm}`;
-  }
-
-  if (keycloakRealmsBase.includes('/realms/')) {
-    return keycloakRealmsBase.replace(/\/$/, '');
-  }
-
-  return `${keycloakRealmsBase.replace(/\/$/, '')}/realms/${keycloakRealm}`;
 }
 
 export default function LoginPage() {
@@ -114,7 +97,7 @@ export default function LoginPage() {
       return;
     }
 
-    const realmBase = keycloakRealmBase();
+    const realmBase = getKeycloakRealmBase();
     if (!realmBase) {
       setKeycloakError('Keycloak realm is not configured');
       return;

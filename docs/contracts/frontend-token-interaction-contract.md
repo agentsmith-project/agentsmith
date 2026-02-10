@@ -97,10 +97,11 @@ Related docs:
 
 4. Persisted auth state is stale (token expired/revoked):
 - detect via API `401` during authenticated bootstrap pages (for example workspace selection)
-- frontend runtime must also handle `401` globally (not page-by-page only):
-  - clear auth store
-  - clear query cache
-  - redirect to localized login route
+- frontend runtime must handle `401` globally with refresh-first semantics:
+  - attempt one token refresh with stored refresh token
+  - if refresh succeeds, retry original request exactly once
+  - if refresh fails or refresh token missing, clear auth and redirect to localized login
+- logout path must clear both auth store and query cache before redirect
 - must provide explicit session-expired UI feedback
 - must offer one-step recovery action:
   - clear persisted auth state

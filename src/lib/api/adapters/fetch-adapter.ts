@@ -8,7 +8,7 @@
 import type { ApiClient, ApiRequestOptions } from '../client';
 import { API_BASE, ApiError } from '../client';
 import { createAuthenticatedSSE } from '../sse-client';
-import { notifyUnauthorized } from '@/lib/auth/session-recovery';
+import { notifyUnauthorized, tryRefreshSession } from '@/lib/auth/session-recovery';
 
 export class FetchApiClient implements ApiClient {
   private token: string | null = null;
@@ -28,6 +28,7 @@ export class FetchApiClient implements ApiClient {
   private async request<T>(
     path: string,
     options: RequestInit & { params?: Record<string, string | number> } = {},
+    requestContext: { retryAfterRefresh?: boolean; skipAuthRefresh?: boolean } = {},
   ): Promise<T> {
     const { params, ...fetchOptions } = options;
 
@@ -61,6 +62,20 @@ export class FetchApiClient implements ApiClient {
       });
 
       if (response.status === 401) {
+        if (!requestContext.skipAuthRefresh && !requestContext.retryAfterRefresh) {
+          let refreshed = false;
+          try {
+            refreshed = await tryRefreshSession();
+          } catch {
+            refreshed = false;
+          }
+          if (refreshed) {
+            return this.request<T>(path, options, {
+              retryAfterRefresh: true,
+              skipAuthRefresh: true,
+            });
+          }
+        }
         notifyUnauthorized(path);
       }
 

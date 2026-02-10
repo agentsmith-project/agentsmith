@@ -5,10 +5,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FetchApiClient } from '../adapters/fetch-adapter';
 import { ApiError, API_BASE } from '../client';
-import { notifyUnauthorized } from '@/lib/auth/session-recovery';
+import { notifyUnauthorized, tryRefreshSession } from '@/lib/auth/session-recovery';
 
 vi.mock('@/lib/auth/session-recovery', () => ({
   notifyUnauthorized: vi.fn(),
+  tryRefreshSession: vi.fn(),
 }));
 
 // Mock fetch globally
@@ -22,6 +23,7 @@ describe('FetchApiClient', () => {
   beforeEach(() => {
     client = new FetchApiClient();
     mockFetch.mockClear();
+    vi.mocked(tryRefreshSession).mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -210,7 +212,7 @@ describe('FetchApiClient', () => {
   });
 
   describe('Error Handling', () => {
-    it('should notify global session recovery on 401 responses', async () => {
+    it('should notify global session recovery on 401 responses when refresh fails', async () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 401,
@@ -223,7 +225,34 @@ describe('FetchApiClient', () => {
       });
 
       await expect(client.get('/test')).rejects.toThrow(ApiError);
+      expect(tryRefreshSession).toHaveBeenCalledTimes(1);
       expect(notifyUnauthorized).toHaveBeenCalledWith('/test');
+    });
+
+    it('should retry once after successful session refresh', async () => {
+      vi.mocked(tryRefreshSession).mockResolvedValue(true);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          headers: { get: () => null },
+          json: async () => ({
+            error_code: 'UNAUTHORIZED',
+            message: 'Unauthorized',
+            request_id: 'req-auth-1',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: async () => ({ id: 'ok' }),
+        });
+
+      await expect(client.get('/test')).resolves.toEqual({ id: 'ok' });
+      expect(tryRefreshSession).toHaveBeenCalledTimes(1);
+      expect(notifyUnauthorized).not.toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
     it('should throw ApiError on HTTP error response', async () => {

@@ -26,11 +26,27 @@ export interface User {
 interface AuthData {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
+  tokenExpiresAt: number | null;
   isAuthenticated: boolean;
 }
 
 export interface AuthState extends AuthData {
-  setAuth: (user: User, token: string) => void;
+  setAuth: (
+    user: User,
+    token: string,
+    session?: {
+      refreshToken?: string | null;
+      expiresIn?: number;
+    }
+  ) => void;
+  setToken: (
+    token: string,
+    session?: {
+      refreshToken?: string | null;
+      expiresIn?: number;
+    }
+  ) => void;
   clearAuth: () => void;
 }
 
@@ -62,6 +78,8 @@ type AuthStoreWithPersist = UseBoundStore<StoreApi<AuthState>> & {
 const initialData: AuthData = {
   user: null,
   token: null,
+  refreshToken: null,
+  tokenExpiresAt: null,
   isAuthenticated: false,
 };
 
@@ -74,8 +92,28 @@ const createAuthStore = (): AuthStoreWithPersist => {
     persist(
       (set) => ({
         ...initialData,
-        setAuth: (user: User, token: string) => {
-          set({ user, token, isAuthenticated: true });
+        setAuth: (user: User, token: string, session) => {
+          set({
+            user,
+            token,
+            refreshToken: session?.refreshToken ?? null,
+            tokenExpiresAt: typeof session?.expiresIn === 'number'
+              ? Date.now() + session.expiresIn * 1000
+              : null,
+            isAuthenticated: true,
+          });
+        },
+        setToken: (token: string, session) => {
+          set((state) => ({
+            token,
+            refreshToken: session?.refreshToken === undefined
+              ? state.refreshToken
+              : (session.refreshToken ?? null),
+            tokenExpiresAt: typeof session?.expiresIn === 'number'
+              ? Date.now() + session.expiresIn * 1000
+              : state.tokenExpiresAt,
+            isAuthenticated: Boolean(state.user),
+          }));
         },
         clearAuth: () => {
           set(initialData);
@@ -87,6 +125,8 @@ const createAuthStore = (): AuthStoreWithPersist => {
         partialize: (state) => ({
           user: state.user,
           token: state.token,
+          refreshToken: state.refreshToken,
+          tokenExpiresAt: state.tokenExpiresAt,
           isAuthenticated: state.isAuthenticated,
         }),
       }
@@ -184,3 +224,4 @@ export const useAuthStoreHydration = (): boolean => {
 export const selectCurrentUser = (state: AuthState) => state.user;
 export const selectIsAuthenticated = (state: AuthState) => state.isAuthenticated;
 export const selectToken = (state: AuthState) => state.token;
+export const selectRefreshToken = (state: AuthState) => state.refreshToken;

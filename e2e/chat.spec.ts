@@ -130,4 +130,33 @@ test.describe('Chat Page', () => {
     // Verify the composer is still visible and functional after send
     await expect(composer).toBeVisible();
   });
+
+  test('should show layout toggle on ultrawide viewport and switch state', async ({ authedPage }) => {
+    await authedPage.setViewportSize({ width: 2200, height: 1200 });
+    await authedPage.reload({ waitUntil: 'domcontentloaded' });
+
+    const toggle = authedPage.getByTestId('chat__layout-toggle');
+    await expect(toggle).toBeVisible({ timeout: 10000 });
+    await expect(toggle).toHaveAttribute('data-state', 'standard');
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('data-state', 'ultrawide');
+    await expect(authedPage.getByTestId('chat__threads-pane')).toHaveClass(/w-\[256px\]/);
+  });
+
+  test('should persist ultrawide layout preference after refresh', async ({ authedPage }) => {
+    await authedPage.setViewportSize({ width: 2200, height: 1200 });
+    await authedPage.reload({ waitUntil: 'domcontentloaded' });
+
+    const toggle = authedPage.getByTestId('chat__layout-toggle');
+    await expect(toggle).toBeVisible({ timeout: 10000 });
+
+    if ((await toggle.getAttribute('data-state')) !== 'ultrawide') {
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('data-state', 'ultrawide');
+    }
+
+    await authedPage.reload({ waitUntil: 'domcontentloaded' });
+    await expect(authedPage.getByTestId('chat__layout-toggle')).toHaveAttribute('data-state', 'ultrawide');
+  });
 });

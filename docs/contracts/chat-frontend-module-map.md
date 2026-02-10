@@ -85,6 +85,8 @@ This document defines responsibility boundaries for the chat page implementation
   - `655797d` (temporary backlog merged into canonical contracts)
 - Verified baseline:
   - `npm test -- chat`
+  - `npm run test:e2e -- e2e/chat.spec.ts --project=chromium --workers=1`
+  - `npm run test:e2e -- --project=visual e2e/visual.spec.ts --grep "chat"`
   - `npx tsc --noEmit`
   - `npm run lint`
 

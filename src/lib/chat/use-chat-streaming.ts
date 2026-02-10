@@ -69,8 +69,23 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
 
   const streamControllersRef = useRef<Map<string, AbortController>>(new Map());
   const streamIdsRef = useRef<Map<string, string>>(new Map());
+  const [streamIdBySession, setStreamIdBySession] = useState<Record<string, string>>({});
   const streamCleanupTimersRef = useRef<Map<string, number>>(new Map());
   const [streamStateBySession, setStreamStateBySession] = useState<Record<string, SessionStreamState>>({});
+
+  const setStreamIdForSession = (sessionId: string, streamId: string | null) => {
+    if (streamId) {
+      streamIdsRef.current.set(sessionId, streamId);
+      setStreamIdBySession((prev) => (prev[sessionId] === streamId ? prev : { ...prev, [sessionId]: streamId }));
+      return;
+    }
+    streamIdsRef.current.delete(sessionId);
+    setStreamIdBySession((prev) => {
+      if (!(sessionId in prev)) return prev;
+      const { [sessionId]: _removed, ...rest } = prev;
+      return rest;
+    });
+  };
 
   const setSessionStreamState = (
     sessionId: string,
@@ -127,7 +142,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             if (cancelled) return;
             const active = data.items.find((item) => item.status === 'running' || item.status === 'stopping');
             if (active) {
-              streamIdsRef.current.set(session.id, active.stream_id);
+              setStreamIdForSession(session.id, active.stream_id);
             }
           } catch {
             // Keep UI resilient when runtime state is stale.
@@ -148,7 +163,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     const candidates = sessions.filter((session) => {
       if (session.runtime_status !== 'running' && session.runtime_status !== 'stopping') return false;
       if (streamControllersRef.current.has(session.id)) return false;
-      return streamIdsRef.current.has(session.id);
+      return typeof streamIdBySession[session.id] === 'string';
     });
     if (candidates.length === 0) return;
 
@@ -156,7 +171,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     const attachAll = async () => {
       await Promise.all(
         candidates.map(async (session) => {
-          const streamId = streamIdsRef.current.get(session.id);
+          const streamId = streamIdBySession[session.id] ?? null;
           if (!streamId) return;
           if (cancelled) return;
 
@@ -218,7 +233,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
                   ? data.stream_id
                   : null;
                 if (metaStreamId) {
-                  streamIdsRef.current.set(session.id, metaStreamId);
+                  setStreamIdForSession(session.id, metaStreamId);
                 }
                 const metaMessageId = data && typeof data.assistant_message_id === 'string'
                   ? data.assistant_message_id
@@ -265,6 +280,9 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             if (streamControllersRef.current.get(session.id) === controller) {
               streamControllersRef.current.delete(session.id);
             }
+            // When attach finishes, clear the cached stream id. If the stream is still active,
+            // the sessions poll + recover effect will repopulate it.
+            setStreamIdForSession(session.id, null);
           }
         }),
       );
@@ -274,13 +292,13 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     return () => {
       cancelled = true;
     };
-  }, [messages.streamError, messages.streamingFailed, projectId, queryClient, sessions, token, workspaceId, chatAPI]);
+  }, [messages.streamError, messages.streamingFailed, projectId, queryClient, sessions, streamIdBySession, token, workspaceId, chatAPI]);
 
   const stopStreamingSession = async (
     sessionId: string,
     reason: 'user' | 'replace' = 'user',
   ): Promise<boolean> => {
-    const streamId = streamIdsRef.current.get(sessionId);
+    const streamId = streamIdsRef.current.get(sessionId) ?? streamIdBySession[sessionId] ?? null;
     const controller = streamControllersRef.current.get(sessionId);
     if (!streamId && !controller) {
       try {
@@ -305,7 +323,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
       }
     }
     controller?.abort();
-    streamIdsRef.current.delete(sessionId);
+    setStreamIdForSession(sessionId, null);
     streamControllersRef.current.delete(sessionId);
     setSessionStreamState(sessionId, {
       status: reason === 'user' ? 'stopped' : 'idle',
@@ -408,7 +426,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
       });
       const streamIdFromHeader = res.headers.get('x-chat-stream-id');
       if (streamIdFromHeader) {
-        streamIdsRef.current.set(runArgs.sessionId, streamIdFromHeader);
+        setStreamIdForSession(runArgs.sessionId, streamIdFromHeader);
       }
       setSessionStreamState(runArgs.sessionId, (prev) => ({
         ...prev,
@@ -427,7 +445,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             ? data.stream_id
             : null;
           if (metaStreamId) {
-            streamIdsRef.current.set(runArgs.sessionId, metaStreamId);
+            setStreamIdForSession(runArgs.sessionId, metaStreamId);
           }
           const metaMessageId = data && typeof data.assistant_message_id === 'string'
             ? data.assistant_message_id
@@ -507,7 +525,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
       if (streamControllersRef.current.get(runArgs.sessionId) === controller) {
         streamControllersRef.current.delete(runArgs.sessionId);
       }
-      streamIdsRef.current.delete(runArgs.sessionId);
+      setStreamIdForSession(runArgs.sessionId, null);
     }
   };
 

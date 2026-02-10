@@ -9,7 +9,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { Bot, FolderOpen, Server } from 'lucide-react';
 import { AgentAPI, EndpointAPI, MemberAPI, SourcesAPI, getApiClient } from '@/lib/api';
 import type { Member, ProjectGroup } from '@/lib/api/endpoints/members';
 import type {
@@ -17,7 +16,6 @@ import type {
   Endpoint,
   PolicyRule,
   PolicyRuleKey,
-  PolicyResourceType,
   ResourcePolicy,
   ResourcePolicyUpdateRequest,
   SourceLibrary,
@@ -26,7 +24,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { ResourcePolicyStatusBadge } from '@/components/resource-policy/ResourcePolicyStatusBadge';
+import { ResourcePolicyTable, type ResourceRow } from '@/components/resource-policy/ResourcePolicyTable';
 import { Button } from '@/components/ui/button';
 import {
   useMembers,
@@ -47,17 +45,17 @@ import {
   normalizeSubjectId,
   type EditableSubjectDraft,
 } from '@/lib/utils/resource-policy-subjects';
+import {
+  buildDraftRuleValues,
+  buildRuleSetFromDraft,
+  createSubjectRowId,
+  formatRuleValue,
+  mergeRuleSources,
+} from '@/lib/resource-policy/editor-utils';
 
 interface ResourcePolicyPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
-
-type ResourceRow = {
-  id: string;
-  type: 'endpoint' | 'source_library' | 'agent';
-  name: string;
-  subtitle?: string;
-};
 
 type EditableSubject = EditableSubjectDraft & {
   rowId: string;
@@ -163,6 +161,20 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   }, [policyQueries, rows]);
 
   const isLoading = endpointsLoading || librariesLoading || agentsLoading;
+  const getRowPolicyState = (row: ResourceRow) => {
+    const rowIndex = rows.findIndex((item) => item.id === row.id && item.type === row.type);
+    const rowKey = `${row.type}:${row.id}`;
+    const rowPolicyQuery = policyQueries[rowIndex];
+    const rowPolicy = policyByResourceKey.get(rowKey);
+    const rowStatus = getResourcePolicyStatus(rowPolicy);
+    return {
+      isLoading: !!rowPolicyQuery?.isLoading,
+      status: rowStatus.status,
+      label: rowPolicyQuery?.isLoading ? tResource('resource_status.loading') : tResource(rowStatus.labelKey),
+      title: rowPolicyQuery?.isLoading ? tResource('resource_status_reason.loading') : tResource(rowStatus.reasonKey),
+    };
+  };
+
   const selectedType = selectedResource?.type ?? 'endpoint';
   const selectedId = selectedResource?.id ?? '';
 
@@ -345,72 +357,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
             {tResource('default_model_hint')}
           </p>
           <div className="grid gap-4 lg:grid-cols-[minmax(280px,360px)_1fr]">
-            <div className="space-y-2" data-testid="resource-policy__table">
-              {(['endpoint', 'agent', 'source_library'] as const).map((resourceType) => {
-                const typeRows = groupedRows[resourceType];
-                if (typeRows.length === 0) return null;
-                return (
-                  <section
-                    key={resourceType}
-                    className="rounded-sm border border-subtle bg-surface p-2.5 space-y-2"
-                    data-testid={`resource-policy__group--${resourceType}`}
-                  >
-                    <div className="flex items-center justify-between px-1.5">
-                      <p className="text-[11px] uppercase tracking-wide font-medium text-primary">
-                        {tResource(`resource_type.${resourceType}`)}
-                      </p>
-                      <span className="text-[11px] text-tertiary">{typeRows.length}</span>
-                    </div>
-                    {typeRows.map((row) => {
-                      const isSelected = selectedResource?.id === row.id && selectedResource.type === row.type;
-                      const rowIndex = rows.findIndex((item) => item.id === row.id && item.type === row.type);
-                      const rowKey = `${row.type}:${row.id}`;
-                      const rowPolicyQuery = policyQueries[rowIndex];
-                      const rowPolicy = policyByResourceKey.get(rowKey);
-                      const rowStatus = getResourcePolicyStatus(rowPolicy);
-                      return (
-                        <Button
-                          key={`${row.type}:${row.id}`}
-                          type="button"
-                          onClick={() => setSelectedResource(row)}
-                          variant="secondary"
-                          className={`w-full h-auto justify-between rounded-sm border p-2.5 text-left ${
-                            isSelected
-                              ? 'border-[rgb(var(--accent))] bg-surface-high'
-                              : 'border-subtle bg-surface-high hover:bg-hover'
-                          }`}
-                          data-testid={`resource-policy__row--${row.type}--${row.id}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            {row.type === 'endpoint' && <Server className="h-4 w-4 text-icon-default" />}
-                            {row.type === 'source_library' && <FolderOpen className="h-4 w-4 text-icon-default" />}
-                            {row.type === 'agent' && <Bot className="h-4 w-4 text-icon-default" />}
-                            <div>
-                              <p className="text-sm text-foreground">{row.name}</p>
-                              {row.subtitle ? <p className="text-xs text-tertiary">{row.subtitle}</p> : null}
-                            </div>
-                          </div>
-                          <ResourcePolicyStatusBadge
-                            data-testid={`resource-policy__row-status--${row.type}--${row.id}`}
-                            status={rowPolicyQuery?.isLoading ? 'loading' : rowStatus.status}
-                            label={
-                              rowPolicyQuery?.isLoading
-                                ? tResource('resource_status.loading')
-                                : tResource(rowStatus.labelKey)
-                            }
-                            title={
-                              rowPolicyQuery?.isLoading
-                                ? tResource('resource_status_reason.loading')
-                                : tResource(rowStatus.reasonKey)
-                            }
-                          />
-                        </Button>
-                      );
-                    })}
-                  </section>
-                );
-              })}
-            </div>
+            <ResourcePolicyTable
+              groupedRows={groupedRows}
+              selectedResource={selectedResource}
+              onSelectResource={setSelectedResource}
+              getRowPolicyState={getRowPolicyState}
+            />
 
             <div
               className="rounded-sm border border-subtle bg-surface-high p-4 space-y-4"
@@ -690,67 +642,6 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   );
 }
 
-function parsePositiveNumber(input: string): number | undefined {
-  if (!input) return undefined;
-  const parsed = Number(input);
-  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
-  return Math.floor(parsed);
-}
-
-function upsertRule(
-  rules: PolicyRule[] | undefined,
-  key: PolicyRuleKey,
-  value: number | undefined,
-  window?: 'day' | null
-): PolicyRule[] {
-  const base = [...(rules ?? [])].filter((rule) => rule.key !== key);
-  if (value === undefined) return base;
-  base.push({
-    key,
-    value,
-    ...(window !== undefined ? { window } : {}),
-  });
-  return base;
-}
-
-function createSubjectRowId(): string {
-  return `subject_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-}
-
-function buildDraftRuleValues(
-  resourceType: PolicyResourceType,
-  current: { rateRules?: PolicyRule[]; quotaRules?: PolicyRule[] }
-): Partial<Record<PolicyRuleKey, string>> {
-  const draft: Partial<Record<PolicyRuleKey, string>> = {};
-  for (const definition of getRuleDefinitionsForResource(resourceType)) {
-    const sourceRules = definition.bucket === 'rate' ? current.rateRules : current.quotaRules;
-    const matched = sourceRules?.find((rule) => rule.key === definition.key);
-    if (matched) {
-      draft[definition.key] = String(matched.value);
-    }
-  }
-  return draft;
-}
-
-function buildRuleSetFromDraft(
-  resourceType: PolicyResourceType,
-  currentRateRules: PolicyRule[] | undefined,
-  currentQuotaRules: PolicyRule[] | undefined,
-  draftValues: Partial<Record<PolicyRuleKey, string>>
-): { rateRules: PolicyRule[]; quotaRules: PolicyRule[] } {
-  let rateRules = [...(currentRateRules ?? [])];
-  let quotaRules = [...(currentQuotaRules ?? [])];
-  for (const definition of getRuleDefinitionsForResource(resourceType)) {
-    const value = parsePositiveNumber(draftValues[definition.key] ?? '');
-    if (definition.bucket === 'rate') {
-      rateRules = upsertRule(rateRules, definition.key, value, definition.window);
-    } else {
-      quotaRules = upsertRule(quotaRules, definition.key, value, definition.window);
-    }
-  }
-  return { rateRules, quotaRules };
-}
-
 function renderRuleSummary(
   rateRules: PolicyRule[],
   quotaRules: PolicyRule[],
@@ -772,43 +663,4 @@ function renderRuleSummary(
       ) : null}
     </p>
   ));
-}
-
-function mergeRuleSources(
-  rootRateRules: PolicyRule[],
-  rootQuotaRules: PolicyRule[],
-  subjectRateRules: PolicyRule[],
-  subjectQuotaRules: PolicyRule[],
-): Map<PolicyRuleKey, 'resource' | 'subject'> {
-  const sourceMap = new Map<PolicyRuleKey, 'resource' | 'subject'>();
-  [...rootRateRules, ...rootQuotaRules].forEach((rule) => {
-    sourceMap.set(rule.key, 'resource');
-  });
-  [...subjectRateRules, ...subjectQuotaRules].forEach((rule) => {
-    sourceMap.set(rule.key, 'subject');
-  });
-  return sourceMap;
-}
-
-function formatRuleValue(rule: PolicyRule, tResource: (key: string) => string): string {
-  if (rule.key === 'endpoint.daily_token_limit') {
-    return `${rule.value} ${tResource('units.tokens_per_day')}`;
-  }
-  if (rule.key === 'source_library.max_total_files') {
-    return `${rule.value} ${tResource('units.files')}`;
-  }
-  if (rule.key === 'source_library.max_file_size_bytes') {
-    return formatBytes(rule.value, tResource);
-  }
-  return `${rule.value} ${tResource('units.sessions')}`;
-}
-
-function formatBytes(bytes: number, tResource: (key: string) => string): string {
-  if (bytes < 1024) return `${bytes} ${tResource('units.byte')}`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${Number(kb.toFixed(1))} ${tResource('units.kib')}`;
-  const mb = kb / 1024;
-  if (mb < 1024) return `${Number(mb.toFixed(1))} ${tResource('units.mib')}`;
-  const gb = mb / 1024;
-  return `${Number(gb.toFixed(1))} ${tResource('units.gib')}`;
 }

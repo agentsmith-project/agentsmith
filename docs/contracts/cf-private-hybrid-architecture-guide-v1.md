@@ -503,13 +503,32 @@ packages/
   - `messages/streams/{streamId}/stop` 需幂等（重复调用返回 202）
   - `sessions/{sessionId}/stop` 需支持无 `stream_id` 停止（用于页面刷新后仅有 `runtime_status` 的场景）
   - `sessions/{sessionId}/streams` 返回当前活跃流列表（`stream_id/status/started_at`），用于浏览器刷新或切线程后的 stream 恢复
+  - 同一 `session_id` 在任一时刻只允许一个活跃 stream（`running|stopping`）
+  - 若同 session 已有活跃 stream，`POST .../messages/stream` 必须快速失败并返回 `409 CHAT_SESSION_STREAM_CONFLICT`
   - 控制语义采用双层：
     - `sessions/{sessionId}/stop` = 粗粒度，停止该 session 全部活跃流
     - `messages/streams/{streamId}/stop` = 细粒度，仅停止指定 stream
   - `chat/sessions` 响应可携带 `runtime_status`（`running|stopping|completed|stopped|failed`）用于前端刷新后的运行态展示
   - `chat/sessions` 与 `chat/sessions/{sessionId}/messages` 必须支持 `page`/`page_size` 分页参数，并返回准确 `total/page/page_size/has_more`
+  - 分页参数契约：
+    - `chat/sessions` 默认 `page=1,page_size=100,max_page_size=500`
+    - `chat/sessions/{sessionId}/messages` 默认 `page=1,page_size=200,max_page_size=500`
+    - 非法 `page/page_size`（非数字、<=0）按默认值处理
+    - 过大 `page_size` 按 `max_page_size` 截断
   - `done.tokens` 与落库 `tokens` 应优先使用上游 `usage.total_tokens`；无 usage 时可为空，不得使用字符长度估算 token
   - 删除 session 前必须先中止该 session 的活跃 stream，避免后台悬挂写入
+  - `GET .../sessions/{sessionId}/streams` 行为契约：
+    - session 不存在返回 `404 chat_session_not_found`
+    - active stream 运行中返回 `total>0`
+    - stream 完成/停止后返回空列表 `total=0`
+  - Stream 生命周期日志字段（统一 JSON）：
+    - `workspace_id`, `project_id`, `session_id`, `stream_id`, `endpoint_id`, `status`, `duration_ms`
+    - `stop_reason` 取值：`user_stop|session_stop|upstream_error|timeout|session_stream_conflict`
+  - 浏览器级集成验证基线（Playwright `e2e/integration-chat.spec.ts`）：
+    - 刷新后可通过 `GET .../sessions/{sessionId}/streams` 恢复活跃 `stream_id`
+    - 恢复成功时，前端 Stop 走细粒度 `POST .../messages/streams/{streamId}/stop`
+    - 恢复失败或缺失 `stream_id` 时，前端 Stop 自动回退到 `POST .../sessions/{sessionId}/stop`
+    - 会话切换期间，流式输出不得泄漏到非源 thread
 
 5. 认证策略（当前约束）
 - API 必须依赖 Keycloak `userinfo` 校验 Bearer Token。

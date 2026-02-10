@@ -1,6 +1,6 @@
 # Frontend Token & Interaction Contract (MVP)
 
-Last updated: 2026-02-08
+Last updated: 2026-02-10
 Owner: Frontend
 Audience: Frontend, Backend Auth, QA
 
@@ -94,6 +94,18 @@ Related docs:
 
 3. Invalid route params:
 - render `validation_error` page state
+
+4. Persisted auth state is stale (token expired/revoked):
+- detect via API `401` during authenticated bootstrap pages (for example workspace selection)
+- frontend runtime must also handle `401` globally (not page-by-page only):
+  - clear auth store
+  - clear query cache
+  - redirect to localized login route
+- must provide explicit session-expired UI feedback
+- must offer one-step recovery action:
+  - clear persisted auth state
+  - redirect to localized login route (`/{locale}/login`)
+- must not leave user in silent empty-state with no recovery path
 
 ## Backend Handoff Requirements
 

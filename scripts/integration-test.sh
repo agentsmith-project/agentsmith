@@ -8,7 +8,7 @@ set -e
 BASE_URL="${BASE_URL:-http://localhost:3000}"
 LOCALES=("en-US" "zh-CN")
 WORKSPACE_ID="ws_default"
-PROJECT_ID="proj_001"
+PROJECT_ID="proj_1"
 
 # Color output
 RED='\033[0;31m'
@@ -77,7 +77,7 @@ for locale in "${LOCALES[@]}"; do
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/audit" "Audit Log" 200
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/usage" "Usage Analytics" 200
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/settings" "Settings" 200
-  test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/userdata" "UserData" 200
+  test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/sources" "Sources" 200
 done
 
 # Test 404 handling

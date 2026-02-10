@@ -27,6 +27,12 @@ This directory is the single source of truth for frontend permission and governa
   - Manual UAT flow and freeze-ready criteria.
 - `../../docs/verification-summary.md`
   - Latest automated verification status and business-flow UAT script.
+- `chat-frontend-module-map.md`
+  - Chat page module boundaries and growth guardrails.
+- `resource-policy-frontend-module-map.md`
+  - Resource Policy page module boundaries and helper ownership.
+- `projects-frontend-module-map.md`
+  - Projects page module boundaries and reusable view ownership.
 
 ## Update Policy
 

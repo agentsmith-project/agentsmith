@@ -10,71 +10,40 @@
 
 'use client';
 
-import * as React from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageSquare, Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
-import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
-import { buildVariantGroups, buildVisibleChain, getGroupIdForMessageId } from '@/lib/chat/branch';
-import { postChatStream, streamSseJson } from '@/lib/chat/stream';
-import { createThrottle } from '@/lib/chat/throttle';
+import type { ChatMessage } from '@/lib/api/types';
+import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
+import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
+import { chatMessagesKey } from '@/lib/chat/query-keys';
+import { useChatStreaming } from '@/lib/chat/use-chat-streaming';
+import { useChatMutations } from '@/lib/chat/use-chat-mutations';
+import { useChatVariants } from '@/lib/chat/use-chat-variants';
+import { useChatData } from '@/lib/chat/use-chat-data';
+import { useChatComposerActions } from '@/lib/chat/use-chat-composer-actions';
+import { buildChatViewModel } from '@/lib/chat/chat-view-model';
+import { useChatMessageActions } from '@/lib/chat/use-chat-message-actions';
+import { useChatThreadActions } from '@/lib/chat/use-chat-thread-actions';
+import { useChatDeleteDialog } from '@/lib/chat/use-chat-delete-dialog';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
-import { ChatHeader } from '@/components/chat/ChatHeader';
-import { MessageList } from '@/components/chat/MessageList';
-import { Composer } from '@/components/chat/Composer';
-import { Markdown } from '@/components/chat/Markdown';
+import { ChatMainPane } from '@/components/chat/ChatMainPane';
+import { ChatDeleteDialog } from '@/components/chat/ChatDeleteDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
-import { Button } from '@/components/ui/button';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
- 
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
-}
-
-type SessionStreamStatus = 'idle' | 'connecting' | 'streaming' | 'stopped' | 'error';
-
-interface SessionStreamingAssistant {
-  messageId?: string | null;
-  content: string;
-  mode: 'append' | 'replace';
-  startedAt: number;
-  lastTokenAt: number;
-}
-
-interface SessionStreamState {
-  status: SessionStreamStatus;
-  assistant: SessionStreamingAssistant | null;
-}
-
-function mapRuntimeStatusToStreamStatus(
-  runtimeStatus: ChatSession['runtime_status'] | undefined,
-): SessionStreamStatus {
-  if (runtimeStatus === 'running' || runtimeStatus === 'stopping') return 'streaming';
-  if (runtimeStatus === 'failed') return 'error';
-  if (runtimeStatus === 'stopped') return 'stopped';
-  return 'idle';
 }
 
 export default function ChatPage({ params }: ChatPageProps) {
@@ -93,20 +62,8 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [composerBySession, setComposerBySession] = useState<Record<string, string>>({});
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [activeVariantIndexByGroup, setActiveVariantIndexByGroup] = useState<Record<string, number>>({});
-  const lastVariantTailRef = useRef<Map<string, string>>(new Map());
-  const manualVariantGroupsRef = useRef<Set<string>>(new Set());
-  const pendingAutoGroupRef = useRef<string | null>(null);
-  const [suppressAutoScroll, setSuppressAutoScroll] = useState(false);
-  const [deleteThreadDialogOpen, setDeleteThreadDialogOpen] = useState(false);
-  const [threadToDelete, setThreadToDelete] = useState<{ id: string; title?: string } | null>(null);
-  const suppressTimerRef = useRef<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const streamControllersRef = useRef<Map<string, AbortController>>(new Map());
-  const streamIdsRef = useRef<Map<string, string>>(new Map());
-  const streamCleanupTimersRef = useRef<Map<string, number>>(new Map());
-  const [streamStateBySession, setStreamStateBySession] = useState<Record<string, SessionStreamState>>({});
 
   useEffect(() => {
     params.then((p) => {
@@ -123,13 +80,21 @@ export default function ChatPage({ params }: ChatPageProps) {
   const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
   const endpointAPI = useMemo(() => new EndpointAPI(apiClient), [apiClient]);
 
-  const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
-    queryKey: ['chat', 'sessions', workspaceId, projectId],
-    queryFn: () => chatAPI.getSessions(workspaceId, projectId, { page: 1, page_size: 1000 }),
-    enabled: !!workspaceId && !!projectId && canReadThreads,
+  const {
+    sessions,
+    sessionsLoading,
+    endpoints,
+    messages,
+    messagesLoading,
+    attachments,
+  } = useChatData({
+    chatAPI,
+    endpointAPI,
+    workspaceId,
+    projectId,
+    currentSessionId,
+    canReadThreads,
   });
-
-  const sessions = useMemo(() => sessionsData?.items ?? [], [sessionsData]);
 
   useEffect(() => {
     if (!currentSessionId && sessions.length > 0) {
@@ -139,24 +104,97 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const activeSession = sessions.find((s) => s.id === currentSessionId) ?? null;
 
-  const { data: endpointsData } = useQuery({
-    queryKey: ['endpoints', workspaceId, projectId],
-    queryFn: () => endpointAPI.list(workspaceId, projectId, { page: 1, page_size: 500 }),
-    enabled: !!workspaceId && !!projectId && canReadThreads,
-  });
-
-  const endpoints = endpointsData?.items ?? [];
-
-  const { data: messagesData, isLoading: messagesLoading } = useQuery({
-    queryKey: ['chat', 'messages', workspaceId, projectId, currentSessionId],
-    queryFn: () => {
-      if (!currentSessionId) return { items: [], total: 0, page: 1, page_size: 500, has_more: false };
-      return chatAPI.getMessages(workspaceId, projectId, currentSessionId, { page: 1, page_size: 500 });
+  const {
+    createSessionMutation,
+    updateSessionMutation,
+    deleteSessionMutation,
+    createMessageMutation,
+    editMessageMutation,
+    initAttachmentMutation,
+    deleteAttachmentMutation,
+    retryAttachmentMutation,
+  } = useChatMutations({
+    chatAPI,
+    queryClient,
+    workspaceId,
+    projectId,
+    endpoints,
+    currentSessionId,
+    onSessionCreated: (sessionId) => {
+      setCurrentSessionId(sessionId);
     },
-    enabled: !!currentSessionId && !!workspaceId && !!projectId && canReadThreads,
+    onSessionDeleted: () => {
+      setCurrentSessionId(null);
+    },
+    onResetSessionUi: () => {
+      setSearchQuery('');
+      setEditingMessageId(null);
+    },
+    uploadFailedMessage: t('upload_failed'),
   });
 
-  const messages = useMemo(() => messagesData?.items ?? [], [messagesData?.items]);
+  const upsertStreamAssistantToCache = useCallback((sessionId: string, message: ChatMessage) => {
+    upsertChatMessageInCache(
+      queryClient,
+      chatMessagesKey(workspaceId, projectId, sessionId),
+      message,
+    );
+  }, [projectId, queryClient, workspaceId]);
+
+  const patchStreamAssistantInCache = useCallback((
+    sessionId: string,
+    messageId: string,
+    patch: Partial<Pick<ChatMessage, 'content' | 'finish_reason' | 'tokens'>>,
+  ) => {
+    patchChatMessageInCache(
+      queryClient,
+      chatMessagesKey(workspaceId, projectId, sessionId),
+      messageId,
+      patch,
+    );
+  }, [projectId, queryClient, workspaceId]);
+
+  const { streamStateBySession, stopStreamingSession, stopStreaming, runStream } = useChatStreaming({
+    token,
+    workspaceId,
+    projectId,
+    sessions,
+    currentSessionId,
+    chatAPI,
+    queryClient,
+    messages: {
+      streamError: t('stream_error'),
+      streamingFailed: t('streaming_failed'),
+      stopRequiredBeforeReplaceFailed: t('stream_stop_required_before_replace_failed'),
+      stopFailedRetry: t('stream_stop_failed_retry'),
+    },
+    upsertStreamAssistantToCache,
+    patchStreamAssistantInCache,
+  });
+
+  const {
+    activeVariantIndexByGroup,
+    suppressAutoScroll,
+    onManualSelectVariant,
+    markPendingAutoGroup,
+    applyVariantFromMeta,
+  } = useChatVariants({
+    messages,
+    currentSessionId,
+    streamStateBySession,
+  });
+
+  const {
+    activeStreamStatus,
+    activeStreamingAssistant,
+    mergedStreamingSessionIds,
+    disabled,
+  } = buildChatViewModel({
+    currentSessionId,
+    activeSession,
+    sessions,
+    streamStateBySession,
+  });
 
   const visibleLeafId = useMemo(() => {
     if (messages.length === 0) return null;
@@ -166,595 +204,94 @@ export default function ChatPage({ params }: ChatPageProps) {
     return last?.id ?? null;
   }, [messages, activeVariantIndexByGroup]);
 
-  useEffect(() => {
-    manualVariantGroupsRef.current.clear();
-    pendingAutoGroupRef.current = null;
-    lastVariantTailRef.current = new Map();
-    setSuppressAutoScroll(false);
-    if (suppressTimerRef.current) {
-      window.clearTimeout(suppressTimerRef.current);
-      suppressTimerRef.current = null;
-    }
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const status = currentSessionId ? (streamStateBySession[currentSessionId]?.status ?? 'idle') : 'idle';
-    if (status !== 'idle') return;
-    const groups = buildVariantGroups(messages);
-    const nextMap = new Map(lastVariantTailRef.current);
-    const updates: Record<string, number> = {};
-
-    for (const [groupId, group] of groups.groups.entries()) {
-      if (group.items.length === 0) continue;
-      const last = group.items[group.items.length - 1];
-      const lastId = last.id;
-      const prevId = lastVariantTailRef.current.get(groupId);
-      nextMap.set(groupId, lastId);
-
-      const shouldAuto =
-        pendingAutoGroupRef.current === groupId ||
-        !manualVariantGroupsRef.current.has(groupId);
-
-      if (
-        shouldAuto &&
-        (!Object.prototype.hasOwnProperty.call(activeVariantIndexByGroup, groupId) || (prevId && prevId !== lastId))
-      ) {
-        const idx = last.variant_index ?? last.revision_index ?? group.items.length - 1;
-        updates[groupId] = idx;
-      }
-    }
-
-    if (Object.keys(updates).length > 0) {
-      setActiveVariantIndexByGroup((prev) => ({ ...prev, ...updates }));
-    }
-    if (pendingAutoGroupRef.current) pendingAutoGroupRef.current = null;
-    lastVariantTailRef.current = nextMap;
-  }, [messages, activeVariantIndexByGroup, currentSessionId, streamStateBySession]);
-
-  const { data: attachmentsData } = useQuery({
-    queryKey: ['chat', 'attachments', workspaceId, projectId, currentSessionId],
-    queryFn: () => {
-      if (!currentSessionId) return { items: [], total: 0 };
-      return chatAPI.getAttachments(workspaceId, projectId, currentSessionId);
-    },
-    enabled: !!currentSessionId && !!workspaceId && !!projectId && canReadThreads,
-    refetchInterval: (query) => {
-      const data = query.state.data as { items: Attachment[]; total: number } | undefined;
-      const items = data?.items ?? [];
-      return items.some((a) => a.upload_status === 'uploading' || a.upload_status === 'processing') ? 2000 : false;
-    },
+  const { handleSend, onPickFiles, onFilePicked } = useChatComposerActions({
+    canUseChat,
+    currentSessionId,
+    activeSession,
+    composerBySession,
+    setComposerBySession,
+    attachments,
+    editingMessageId,
+    visibleLeafId,
+    createMessage: (input) => createMessageMutation.mutateAsync(input),
+    runStream,
+    initAttachment: (input) => initAttachmentMutation.mutateAsync(input),
+    fileInputRef,
   });
 
-  const attachments = attachmentsData?.items ?? [];
-
-  const createSessionMutation = useMutation({
-    mutationFn: async () => {
-      const firstActive = endpoints.find((e) => e.status === 'active') || null;
-      return chatAPI.createSession(
-        workspaceId,
-        projectId,
-        firstActive ? { endpoint_id: firstActive.id, model: firstActive.openai_model } : {},
-      );
-    },
-    onSuccess: (data: ChatSession) => {
-      setCurrentSessionId(data.id);
-      setSearchQuery('');
-      setEditingMessageId(null);
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-    },
+  const {
+    deleteThreadDialogOpen,
+    setDeleteThreadDialogOpen,
+    threadToDelete,
+    setThreadToDelete,
+    handleConfirmDeleteThread,
+  } = useChatDeleteDialog({
+    deleteSession: (sessionId) => deleteSessionMutation.mutate(sessionId),
+    stopStreamingSession,
   });
 
-  const updateSessionMutation = useMutation({
-    mutationFn: async (args: {
-      sessionId: string;
-      data: Partial<Pick<ChatSession, 'title' | 'model' | 'endpoint_id' | 'pinned' | 'starred'>>;
-    }) => chatAPI.updateSession(workspaceId, projectId, args.sessionId, args.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] }),
+  const {
+    onSelectThread: handleSelectThread,
+    onCreateThread: handleCreateThread,
+    onRenameThread: handleRenameThread,
+    onToggleThreadStar: handleToggleThreadStar,
+    onToggleThreadPin: handleToggleThreadPin,
+    onDeleteThreadRequest: handleDeleteThreadRequest,
+    onRenameActiveSession: handleRenameActiveSession,
+    onSelectActiveEndpoint: handleSelectActiveEndpoint,
+  } = useChatThreadActions({
+    canUseChat,
+    canManageChatSessions,
+    sessions,
+    activeSession,
+    createSession: () => createSessionMutation.mutate(),
+    updateSession: (input) => updateSessionMutation.mutate(input),
+    setCurrentSessionId,
+    setEditingMessageId,
+    setThreadToDelete,
+    setDeleteThreadDialogOpen,
   });
 
-  const deleteSessionMutation = useMutation({
-    mutationFn: async (sessionId: string) => chatAPI.deleteSession(workspaceId, projectId, sessionId),
-    onSuccess: (_data, sessionId) => {
-      if (currentSessionId === sessionId) setCurrentSessionId(null);
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, sessionId] });
-    },
+  const handleSelectVariant = useCallback((groupId: string, nextIndex: number) => {
+    onManualSelectVariant(groupId, nextIndex);
+  }, [onManualSelectVariant]);
+
+  const {
+    onEdit: handleEditMessage,
+    onEditCommit: handleEditCommit,
+    onRegenerate: handleRegenerate,
+  } = useChatMessageActions({
+    canUseChat,
+    disabled,
+    currentSessionId,
+    activeSession,
+    messages,
+    activeVariantIndexByGroup,
+    setEditingMessageId,
+    editMessage: (input) => editMessageMutation.mutateAsync(input),
+    upsertStreamAssistantToCache,
+    applyVariantFromMeta,
+    markPendingAutoGroup,
+    runStream,
   });
 
-  const createMessageMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; content: string; attachments?: string[]; parent_id?: string | null }) =>
-      chatAPI.createMessage(workspaceId, projectId, args.sessionId, {
-        role: 'user',
-        content: args.content,
-        attachments: args.attachments,
-        parent_id: args.parent_id ?? null,
-      }),
-    onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, vars.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-    },
-  });
-
-  const editMessageMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; messageId: string; content: string }) =>
-      chatAPI.editMessage(workspaceId, projectId, args.sessionId, args.messageId, { content: args.content }),
-    onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, vars.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-    },
-  });
-
-  const initAttachmentMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; file: File }) => {
-      const res = await chatAPI.initAttachment(workspaceId, projectId, args.sessionId, {
-        file_name: args.file.name,
-        file_type: args.file.type || 'application/octet-stream',
-        file_size: args.file.size,
-      });
-      return { ...res, sessionId: args.sessionId, file: args.file };
-    },
-    onSuccess: async ({ attachment, upload_url, sessionId, file }) => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, sessionId] });
-      if (!upload_url) return;
-      try {
-        const put = await fetch(upload_url, {
-          method: 'PUT',
-          body: file,
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        });
-        if (!put.ok) throw new Error(`Upload failed (${put.status})`);
-        await chatAPI.completeAttachment(workspaceId, projectId, sessionId, attachment.id, {});
-        queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, sessionId] });
-      } catch (e: unknown) {
-        toast.error(e instanceof Error ? e.message : t('upload_failed'));
-      }
-    },
-  });
-
-  const deleteAttachmentMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; attachmentId: string }) =>
-      chatAPI.deleteAttachment(workspaceId, projectId, args.sessionId, args.attachmentId),
-    onSuccess: (_data, vars) =>
-      queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, vars.sessionId] }),
-  });
-
-  const retryAttachmentMutation = useMutation({
-    mutationFn: async (args: { sessionId: string; attachmentId: string }) =>
-      chatAPI.retryAttachment(workspaceId, projectId, args.sessionId, args.attachmentId),
-    onSuccess: (_data, vars) =>
-      queryClient.invalidateQueries({ queryKey: ['chat', 'attachments', workspaceId, projectId, vars.sessionId] }),
-  });
-
-  const upsertStreamAssistantToCache = (sessionId: string, message: ChatMessage) => {
-    queryClient.setQueryData(
-      ['chat', 'messages', workspaceId, projectId, sessionId],
-      (
-        prev:
-          | {
-              items: ChatMessage[];
-              total: number;
-              page: number;
-              page_size: number;
-              has_more: boolean;
-            }
-          | undefined,
-      ) => {
-        if (!prev) return prev;
-        const index = prev.items.findIndex((item) => item.id === message.id);
-        if (index >= 0) {
-          const nextItems = [...prev.items];
-          nextItems[index] = { ...nextItems[index], ...message };
-          return { ...prev, items: nextItems };
-        }
-        return {
-          ...prev,
-          items: [...prev.items, message],
-          total: prev.total + 1,
-        };
-      },
-    );
-  };
-
-  const patchStreamAssistantInCache = (
-    sessionId: string,
-    messageId: string,
-    patch: Partial<Pick<ChatMessage, 'content' | 'finish_reason' | 'tokens'>>,
-  ) => {
-    queryClient.setQueryData(
-      ['chat', 'messages', workspaceId, projectId, sessionId],
-      (
-        prev:
-          | {
-              items: ChatMessage[];
-              total: number;
-              page: number;
-              page_size: number;
-              has_more: boolean;
-            }
-          | undefined,
-      ) => {
-        if (!prev) return prev;
-        const index = prev.items.findIndex((item) => item.id === messageId);
-        if (index < 0) return prev;
-        const nextItems = [...prev.items];
-        nextItems[index] = {
-          ...nextItems[index],
-          ...patch,
-        };
-        return { ...prev, items: nextItems };
-      },
-    );
-  };
-
-  const setSessionStreamState = (
-    sessionId: string,
-    updater: SessionStreamState | ((prev: SessionStreamState) => SessionStreamState),
-  ) => {
-    setStreamStateBySession((prev) => {
-      const current = prev[sessionId] ?? { status: 'idle' as SessionStreamStatus, assistant: null };
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const cleanupTimers = streamCleanupTimersRef.current;
-      const existingTimer = cleanupTimers.get(sessionId);
-      if (existingTimer) {
-        window.clearTimeout(existingTimer);
-        cleanupTimers.delete(sessionId);
-      }
-      if ((next.status === 'stopped' || next.status === 'error') && !next.assistant) {
-        const timer = window.setTimeout(() => {
-          setStreamStateBySession((statePrev) => {
-            const currentState = statePrev[sessionId];
-            if (!currentState) return statePrev;
-            if (currentState.status === 'connecting' || currentState.status === 'streaming') {
-              return statePrev;
-            }
-            const { [sessionId]: _removed, ...rest } = statePrev;
-            return rest;
-          });
-          cleanupTimers.delete(sessionId);
-        }, 60_000);
-        cleanupTimers.set(sessionId, timer);
-      }
-      if (next.status === 'idle' && !next.assistant) {
-        if (!prev[sessionId]) return prev;
-        const { [sessionId]: _removed, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [sessionId]: next };
-    });
-  };
-
-  useEffect(() => {
-    if (!workspaceId || !projectId || sessions.length === 0) return;
-    const candidates = sessions.filter(
-      (session) =>
-        (session.runtime_status === 'running' || session.runtime_status === 'stopping') &&
-        !streamIdsRef.current.has(session.id),
-    );
-    if (candidates.length === 0) return;
-
-    let cancelled = false;
-    const recoverActiveStreamIds = async () => {
-      await Promise.all(
-        candidates.map(async (session) => {
-          try {
-            const data = await chatAPI.getSessionStreams(workspaceId, projectId, session.id);
-            if (cancelled) return;
-            const active = data.items.find((item) => item.status === 'running' || item.status === 'stopping');
-            if (active) {
-              streamIdsRef.current.set(session.id, active.stream_id);
-            }
-          } catch {
-            // Keep UI resilient when runtime state is stale.
-          }
-        }),
-      );
-    };
-
-    void recoverActiveStreamIds();
-    return () => {
-      cancelled = true;
-    };
-  }, [chatAPI, projectId, sessions, workspaceId]);
-
-  const stopStreamingSession = async (
-    sessionId: string,
-    reason: 'user' | 'replace' = 'user',
-  ): Promise<boolean> => {
-    const streamId = streamIdsRef.current.get(sessionId);
-    const controller = streamControllersRef.current.get(sessionId);
-    if (!streamId && !controller) {
-      try {
-        await chatAPI.stopSessionStream(workspaceId, projectId, sessionId);
-      } catch {
-        const message =
-          reason === 'replace'
-            ? t('stream_stop_required_before_replace_failed')
-            : t('stream_stop_failed_retry');
-        toast.error(message);
-        return false;
-      }
-      setSessionStreamState(sessionId, {
-        status: reason === 'user' ? 'stopped' : 'idle',
-        assistant: null,
-      });
-      return true;
-    }
-
-    if (streamId) {
-      try {
-        await chatAPI.stopStream(workspaceId, projectId, sessionId, streamId);
-      } catch {
-        const message =
-          reason === 'replace'
-            ? t('stream_stop_required_before_replace_failed')
-            : t('stream_stop_failed_retry');
-        toast.error(message);
-        return false;
-      }
-    }
-    controller?.abort();
-    streamIdsRef.current.delete(sessionId);
-    streamControllersRef.current.delete(sessionId);
-    setSessionStreamState(sessionId, {
-      status: reason === 'user' ? 'stopped' : 'idle',
-      assistant: null,
-    });
-    return true;
-  };
-
-  const stopStreaming = () => {
-    if (!currentSessionId) return;
-    void stopStreamingSession(currentSessionId, 'user');
-  };
-
-  useEffect(() => {
-    const streamControllers = streamControllersRef.current;
-    const streamIds = streamIdsRef.current;
-    const cleanupTimers = streamCleanupTimersRef.current;
-    return () => {
-      for (const controller of streamControllers.values()) {
-        controller.abort();
-      }
-      for (const timer of cleanupTimers.values()) {
-        window.clearTimeout(timer);
-      }
-      streamControllers.clear();
-      streamIds.clear();
-      cleanupTimers.clear();
-    };
-  }, []);
-
-  const runStream = async (args: {
-    sessionId: string;
-    model: string;
-    endpointId: string;
-    input?: { role: 'user'; content: string; attachments?: string[] };
-    fromMessageId?: string;
-    branchLeafMessageId?: string;
-    mode?: 'append' | 'replace';
-    displayMessageId?: string | null;
-  }) => {
-    const previousStopped = await stopStreamingSession(args.sessionId, 'replace');
-    if (!previousStopped) {
+  const handlePickFiles = useCallback(() => {
+    if (editingMessageId) {
+      toast.info(t('attachments.disabled_while_editing'));
       return;
     }
+    onPickFiles();
+  }, [editingMessageId, onPickFiles, t]);
 
-    const controller = new AbortController();
-    streamControllersRef.current.set(args.sessionId, controller);
+  const handleRemoveAttachment = useCallback((attachmentId: string) => {
+    if (!canUseChat || !currentSessionId) return;
+    deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
+  }, [canUseChat, currentSessionId, deleteAttachmentMutation]);
 
-    const mode = args.mode ?? (args.fromMessageId ? 'replace' : 'append');
-    const now = Date.now();
-    setSessionStreamState(args.sessionId, {
-      status: 'connecting',
-      assistant: {
-        messageId: args.displayMessageId ?? null,
-        content: '',
-        mode,
-        startedAt: now,
-        lastTokenAt: now,
-      },
-    });
-
-    const throttler = createThrottle<string>(40, (next) => {
-      setSessionStreamState(args.sessionId, (prev) => ({
-        status: prev.status === 'idle' ? 'streaming' : prev.status,
-        assistant: prev.assistant
-          ? { ...prev.assistant, content: next, lastTokenAt: Date.now() }
-          : {
-              messageId: null,
-              content: next,
-              mode,
-              startedAt: Date.now(),
-              lastTokenAt: Date.now(),
-            },
-      }));
-    });
-
-    const setAssistantMessageId = (messageId: string) => {
-      setSessionStreamState(args.sessionId, (prev) => ({
-        status: prev.status === 'idle' ? 'streaming' : prev.status,
-        assistant: prev.assistant
-          ? { ...prev.assistant, messageId }
-          : {
-              messageId,
-              content: '',
-              mode,
-              startedAt: Date.now(),
-              lastTokenAt: Date.now(),
-            },
-      }));
-    };
-
-    const streamStillActive = () =>
-      streamControllersRef.current.get(args.sessionId) === controller;
-
-    try {
-      const res = await postChatStream({
-        token,
-        workspaceId,
-        projectId,
-        sessionId: args.sessionId,
-        body: {
-          model: args.model,
-          endpoint_id: args.endpointId,
-          branch_leaf_message_id: args.branchLeafMessageId,
-          from_message_id: args.fromMessageId,
-          input: args.input,
-        },
-        signal: controller.signal,
-      });
-      const streamIdFromHeader = res.headers.get('x-chat-stream-id');
-      if (streamIdFromHeader) {
-        streamIdsRef.current.set(args.sessionId, streamIdFromHeader);
-      }
-      setSessionStreamState(args.sessionId, (prev) => ({
-        ...prev,
-        status: 'streaming',
-      }));
-      let content = '';
-      let liveMessageId: string | null = mode === 'replace' ? args.fromMessageId ?? null : null;
-
-      for await (const ev of streamSseJson(res, controller.signal)) {
-        if (controller.signal.aborted || !streamStillActive()) break;
-        if (ev.event === 'meta') {
-          const data = (typeof ev.data === 'object' && ev.data !== null
-            ? (ev.data as Record<string, unknown>)
-            : null);
-          const metaStreamId = data && typeof data.stream_id === 'string'
-            ? data.stream_id
-            : null;
-          if (metaStreamId) {
-            streamIdsRef.current.set(args.sessionId, metaStreamId);
-          }
-          const metaMessageId = data && typeof data.assistant_message_id === 'string'
-            ? data.assistant_message_id
-            : null;
-          if (metaMessageId) {
-            liveMessageId = metaMessageId;
-            if (mode === 'replace') {
-              const parentId = data && typeof data.parent_message_id === 'string'
-                ? data.parent_message_id
-                : null;
-              const variantGroupId = data && typeof data.variant_group_id === 'string'
-                ? data.variant_group_id
-                : undefined;
-              const variantIndex = data && typeof data.variant_index === 'number'
-                ? data.variant_index
-                : undefined;
-              if (variantGroupId && typeof variantIndex === 'number') {
-                setActiveVariantIndexByGroup((prev) => ({ ...prev, [variantGroupId]: variantIndex }));
-              }
-              upsertStreamAssistantToCache(args.sessionId, {
-                id: metaMessageId,
-                session_id: args.sessionId,
-                role: 'assistant',
-                content: '',
-                created_at: new Date().toISOString(),
-                finish_reason: null,
-                parent_id: parentId,
-                variant_group_id: variantGroupId,
-                variant_index: variantIndex,
-              });
-            }
-            setAssistantMessageId(metaMessageId);
-          }
-        } else if (ev.event === 'delta') {
-          const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
-          const delta = data && typeof data.delta === 'string' ? data.delta : null;
-          if (delta) {
-            content += delta;
-            throttler.push(content);
-            if (mode === 'replace' && liveMessageId) {
-              patchStreamAssistantInCache(args.sessionId, liveMessageId, {
-                content,
-                finish_reason: null,
-              });
-            }
-          }
-        } else if (ev.event === 'error') {
-          const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
-          const message = data && typeof data.message === 'string' ? data.message : t('stream_error');
-          throw new Error(message);
-        } else if (ev.event === 'done') {
-          break;
-        }
-      }
-
-      throttler.flush();
-      if (streamStillActive()) {
-        setSessionStreamState(args.sessionId, { status: 'idle', assistant: null });
-      }
-
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-    } catch (e: unknown) {
-      if (controller.signal.aborted) {
-        if (streamStillActive()) {
-          setSessionStreamState(args.sessionId, { status: 'stopped', assistant: null });
-        }
-        queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
-        queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-        return;
-      }
-      setSessionStreamState(args.sessionId, { status: 'error', assistant: null });
-      toast.error(e instanceof Error ? e.message : t('streaming_failed'));
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', workspaceId, projectId, args.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', workspaceId, projectId] });
-    } finally {
-      if (streamControllersRef.current.get(args.sessionId) === controller) {
-        streamControllersRef.current.delete(args.sessionId);
-      }
-      streamIdsRef.current.delete(args.sessionId);
-    }
-  };
-
-  const handleSend = async () => {
-    if (!canUseChat) return;
-    if (!currentSessionId) return;
-    if (!activeSession) return;
-
-    const composerValue = composerBySession[currentSessionId] || '';
-    const content = composerValue.trim();
-    if (!content) return;
-
-    const readyAttachmentIds = attachments.filter((a) => a.upload_status === 'ready').map((a) => a.id);
-    const hasBlocking = attachments.some((a) => a.upload_status !== 'ready');
-    if (hasBlocking) return;
-
-    if (editingMessageId) return;
-
-    const userMsg = await createMessageMutation.mutateAsync({
-      sessionId: currentSessionId,
-      content,
-      attachments: readyAttachmentIds,
-      parent_id: visibleLeafId,
-    });
-    setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
-      await runStream({
-        sessionId: currentSessionId,
-        model: activeSession.model,
-        endpointId: activeSession.endpoint_id,
-        branchLeafMessageId: userMsg.id,
-        input: { role: 'user', content, attachments: readyAttachmentIds },
-        mode: 'append',
-      });
-  };
-
-  const onPickFiles = () => {
-    if (!canUseChat) return;
-    fileInputRef.current?.click();
-  };
-  const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    if (!canUseChat) return;
-    if (!currentSessionId) return;
-    if (files.length === 0) return;
-    for (const f of files) {
-      await initAttachmentMutation.mutateAsync({ sessionId: currentSessionId, file: f });
-    }
-  };
+  const handleRetryAttachment = useCallback((attachmentId: string) => {
+    if (!canUseChat || !currentSessionId) return;
+    retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
+  }, [canUseChat, currentSessionId, retryAttachmentMutation]);
 
   if (!resolvedParams) {
     return (
@@ -789,26 +326,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   }
 
   const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
-  const activeStreamStatus: SessionStreamStatus = currentSessionId
-    ? (() => {
-        const localStatus = streamStateBySession[currentSessionId]?.status ?? 'idle';
-        if (localStatus !== 'idle') return localStatus;
-        return mapRuntimeStatusToStreamStatus(activeSession?.runtime_status);
-      })()
-    : 'idle';
-  const activeStreamingAssistant = currentSessionId
-    ? (streamStateBySession[currentSessionId]?.assistant ?? null)
-    : null;
-  const streamingSessionIds = Object.entries(streamStateBySession)
-    .filter(([, state]) => state.status === 'connecting' || state.status === 'streaming')
-    .map(([sessionId]) => sessionId);
-  const runtimeStreamingSessionIds = sessions
-    .filter((s) => s.runtime_status === 'running' || s.runtime_status === 'stopping')
-    .map((s) => s.id);
-  const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...runtimeStreamingSessionIds]));
-  const disabled =
-    (activeStreamStatus === 'connecting' || activeStreamStatus === 'streaming') &&
-    !!activeStreamingAssistant;
 
   return (
     <PageState state="success">
@@ -823,249 +340,76 @@ export default function ChatPage({ params }: ChatPageProps) {
             activeSessionId={currentSessionId}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
-            onSelect={(id) => {
-              setCurrentSessionId(id);
-              setEditingMessageId(null);
-            }}
+            onSelect={handleSelectThread}
             streamingSessionIds={mergedStreamingSessionIds}
-              onRename={(id, title) => {
-              if (!canManageChatSessions) return;
-              updateSessionMutation.mutate({ sessionId: id, data: { title } });
-            }}
-            onToggleStar={(id, next) => {
-              if (!canManageChatSessions) return;
-              updateSessionMutation.mutate({ sessionId: id, data: { starred: next } });
-            }}
-            onTogglePin={(id, next) => {
-              if (!canManageChatSessions) return;
-              updateSessionMutation.mutate({ sessionId: id, data: { pinned: next } });
-            }}
-            onDelete={(id) => {
-              if (!canManageChatSessions) return;
-              const thread = sessions.find((s) => s.id === id) || null;
-              setThreadToDelete({ id, title: thread?.title });
-              setDeleteThreadDialogOpen(true);
-            }}
-            onCreate={() => {
-              if (!canUseChat) return;
-              createSessionMutation.mutate();
-            }}
+            onRename={handleRenameThread}
+            onToggleStar={handleToggleThreadStar}
+            onTogglePin={handleToggleThreadPin}
+            onDelete={handleDeleteThreadRequest}
+            onCreate={handleCreateThread}
             canCreate={canUseChat}
             createPending={createSessionMutation.isPending}
             isLoading={sessionsLoading}
           />
 
-          <section className="flex-1 flex min-w-0 flex-col bg-background overflow-hidden" data-testid="chat__main-pane">
-            <ChatHeader
-              session={activeSession}
-              endpoints={endpoints}
-              streamStatus={activeStreamStatus}
-              onRename={(title) => {
-                if (!canManageChatSessions) return;
-                if (!activeSession) return;
-                updateSessionMutation.mutate({ sessionId: activeSession.id, data: { title } });
-              }}
-              onSelectEndpoint={(e: Endpoint) => {
-                if (!canManageChatSessions) return;
-                if (!activeSession) return;
-                updateSessionMutation.mutate({ sessionId: activeSession.id, data: { endpoint_id: e.id, model: e.openai_model } });
-              }}
-            />
-
-            <div className="flex-1 min-h-0">
-              {!currentSessionId ? (
-                <div className="h-full flex items-center justify-center px-4">
-                  <div className="mx-auto w-full max-w-[560px] text-center px-6">
-                    <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
-                    <div className="text-foreground font-medium mb-1">{t('no_active_thread_title')}</div>
-                    <div className="text-tertiary text-sm">{t('no_active_thread_description')}</div>
-                    <Button
-                      className="mt-4"
-                      variant="outline"
-                      onClick={() => {
-                        if (!canUseChat) return;
-                        createSessionMutation.mutate();
-                      }}
-                      disabled={!canUseChat || createSessionMutation.isPending}
-                      data-testid="chat__empty-create-btn"
-                    >
-                      <Plus className="w-4 h-4" />
-                      {t('new_thread')}
-                    </Button>
-                  </div>
-                </div>
-              ) : messagesLoading ? (
-                <div className="h-full flex items-center justify-center px-4">
-                  <div className="text-tertiary">{t('loading')}</div>
-                </div>
-              ) : (
-                <MessageList
-                  messages={messages}
-                  activeVariantIndexByGroup={activeVariantIndexByGroup}
-                  editingMessageId={editingMessageId}
-                  onSelectVariant={(groupId, nextIndex) => {
-                    manualVariantGroupsRef.current.add(groupId);
-                    setSuppressAutoScroll(true);
-                    if (suppressTimerRef.current) window.clearTimeout(suppressTimerRef.current);
-                    suppressTimerRef.current = window.setTimeout(() => setSuppressAutoScroll(false), 1500);
-                    setActiveVariantIndexByGroup((prev) => ({ ...prev, [groupId]: nextIndex }));
-                  }}
-                  onEdit={(m) => {
-                    if (disabled) return;
-                    if (!canUseChat) return;
-                    if (m.role !== 'user') return;
-                    setEditingMessageId(m.id);
-                  }}
-                  onEditCommit={async (m, nextContent) => {
-                    if (disabled) return;
-                    if (!canUseChat) return;
-                    if (!currentSessionId) return;
-                    const edited = await editMessageMutation.mutateAsync({
-                      sessionId: currentSessionId,
-                      messageId: m.id,
-                      content: nextContent,
-                    });
-                    upsertStreamAssistantToCache(currentSessionId, edited);
-                    if (edited.logical_id && typeof edited.revision_index === 'number') {
-                      const logicalId = edited.logical_id;
-                      const revisionIndex = edited.revision_index;
-                      setActiveVariantIndexByGroup((prev) => ({
-                        ...prev,
-                        [logicalId]: revisionIndex,
-                      }));
-                    }
-                    pendingAutoGroupRef.current = edited.logical_id || (edited.revision_of ? `log_${edited.revision_of}` : null);
-                    setEditingMessageId(null);
-                    if (activeSession?.model && activeSession?.endpoint_id) {
-                      const groups = buildVariantGroups(messages);
-                      const { chain } = buildVisibleChain(messages, groups, activeVariantIndexByGroup);
-                      const editedIndex = chain.findIndex((item) => item.id === m.id);
-                      const previewAssistant =
-                        editedIndex >= 0
-                          ? chain.slice(editedIndex + 1).find((item) => item.role === 'assistant')
-                          : undefined;
-                      await runStream({
-                        sessionId: currentSessionId,
-                        model: activeSession.model,
-                        endpointId: activeSession.endpoint_id,
-                        fromMessageId: edited.id,
-                        displayMessageId: previewAssistant?.id ?? null,
-                        mode: 'replace',
-                      });
-                    }
-                  }}
-                  onEditCancel={() => setEditingMessageId(null)}
-                  onRegenerate={async (m) => {
-                    if (disabled) return;
-                    if (!canUseChat) return;
-                    if (!activeSession || !currentSessionId) return;
-                    if (messages.length) {
-                      const groups = buildVariantGroups(messages);
-                      pendingAutoGroupRef.current = getGroupIdForMessageId(groups, m.id);
-                    }
-                    await runStream({
-                      sessionId: currentSessionId,
-                      model: activeSession.model,
-                      endpointId: activeSession.endpoint_id,
-                      fromMessageId: m.id,
-                      mode: 'replace',
-                    });
-                  }}
-                  disabled={disabled}
-                  footer={
-                    activeStreamingAssistant && activeStreamingAssistant.mode === 'append' ? (
-                      <div className="px-4 py-2">
-                        <div className="flex justify-start">
-                          <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
-                            <div className="text-xs text-tertiary mb-1">{t('assistant')}</div>
-                            <div className="space-y-2">
-                              <Markdown content={activeStreamingAssistant.content || '…'} />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null
-                  }
-                  streamingAssistant={activeStreamingAssistant}
-                  followOutput={activeStreamingAssistant?.mode !== 'replace'}
-                  suppressAutoScroll={suppressAutoScroll}
-                />
-              )}
-            </div>
-
-            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePicked} />
-
-            {currentSessionId && (
-              <Composer
-                value={composerValue}
-                onChange={(v) => {
-                  if (!currentSessionId) return;
-                  setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
-                }}
-                onSend={handleSend}
-                onStop={stopStreaming}
-                mode="compose"
-                autoFocus={!editingMessageId && activeStreamStatus === 'idle'}
-                onPickFiles={() => {
-                  if (editingMessageId) {
-                    toast.info(t('attachments.disabled_while_editing'));
-                    return;
-                  }
-                  onPickFiles();
-                }}
-                attachments={attachments}
-                onRemoveAttachment={(id) => {
-                  if (!canUseChat) return;
-                  if (!currentSessionId) return;
-                  deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
-                }}
-                onRetryAttachment={(id) => {
-                  if (!canUseChat) return;
-                  if (!currentSessionId) return;
-                  retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId: id });
-                }}
-                disabled={
-                  !currentSessionId ||
-                  !canUseChat ||
-                  createMessageMutation.isPending ||
-                  editMessageMutation.isPending ||
-                  initAttachmentMutation.isPending ||
-                  disabled ||
-                  !!editingMessageId
-                }
-                streaming={disabled}
-              />
-            )}
-          </section>
+          <ChatMainPane
+            currentSessionId={currentSessionId}
+            activeSession={activeSession}
+            endpoints={endpoints}
+            messages={messages}
+            messagesLoading={messagesLoading}
+            attachments={attachments}
+            activeVariantIndexByGroup={activeVariantIndexByGroup}
+            editingMessageId={editingMessageId}
+            disabled={disabled}
+            activeStreamStatus={activeStreamStatus}
+            activeStreamingAssistant={activeStreamingAssistant}
+            suppressAutoScroll={suppressAutoScroll}
+            createPending={createSessionMutation.isPending}
+            createMessagePending={createMessageMutation.isPending}
+            editMessagePending={editMessageMutation.isPending}
+            initAttachmentPending={initAttachmentMutation.isPending}
+            canUseChat={canUseChat}
+            composerValue={composerValue}
+            fileInputRef={fileInputRef}
+            labels={{
+              loading: t('loading'),
+              noActiveThreadTitle: t('no_active_thread_title'),
+              noActiveThreadDescription: t('no_active_thread_description'),
+              newThread: t('new_thread'),
+              assistant: t('assistant'),
+            }}
+            onCreateThread={handleCreateThread}
+            onRenameActiveSession={handleRenameActiveSession}
+            onSelectActiveEndpoint={handleSelectActiveEndpoint}
+            onSelectVariant={handleSelectVariant}
+            onEditMessage={handleEditMessage}
+            onEditCommit={handleEditCommit}
+            onRegenerate={handleRegenerate}
+            onComposerChange={(v) => {
+              if (!currentSessionId) return;
+              setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
+            }}
+            onSend={handleSend}
+            onStop={stopStreaming}
+            onPickFiles={handlePickFiles}
+            onFilePicked={onFilePicked}
+            onRemoveAttachment={handleRemoveAttachment}
+            onRetryAttachment={handleRetryAttachment}
+            onCancelEdit={() => setEditingMessageId(null)}
+          />
         </div>
-        <AlertDialog open={deleteThreadDialogOpen} onOpenChange={setDeleteThreadDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('delete_confirm_title')}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t('delete_confirm_message', { name: threadToDelete?.title ?? '' })}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('delete_confirm_cancel')}</AlertDialogCancel>
-              <AlertDialogAction
-                data-testid="chat__delete-thread-confirm"
-                onClick={async (e) => {
-                  e.preventDefault();
-                  if (!threadToDelete) return;
-                  const stopped = await stopStreamingSession(threadToDelete.id, 'replace');
-                  if (!stopped) return;
-                  deleteSessionMutation.mutate(threadToDelete.id);
-                  setDeleteThreadDialogOpen(false);
-                  setThreadToDelete(null);
-                }}
-                className="bg-error text-white hover:bg-error/90"
-              >
-                {t('delete_confirm_action')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ChatDeleteDialog
+          open={deleteThreadDialogOpen}
+          onOpenChange={setDeleteThreadDialogOpen}
+          onConfirm={handleConfirmDeleteThread}
+          labels={{
+            title: t('delete_confirm_title'),
+            message: t('delete_confirm_message', { name: threadToDelete?.title ?? '' }),
+            cancel: t('delete_confirm_cancel'),
+            confirm: t('delete_confirm_action'),
+          }}
+        />
       </PageLayout>
     </PageState>
   );

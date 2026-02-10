@@ -62,5 +62,7 @@ Status: completed (`src/lib/endpoints/use-endpoints-data.ts`, `src/lib/endpoints
 3. Extract table columns into dedicated module with typed callbacks.
 Status: completed (`src/lib/endpoints/use-endpoints-table-columns.tsx`).
 4. Add focused hook unit tests for import/update/delete flows.
-Status: in progress. Added `src/lib/endpoints/__tests__/use-endpoints-mutations.test.tsx` for delete/import mutation coverage.
+Status: completed. Added:
+- `src/lib/endpoints/__tests__/use-endpoints-mutations.test.tsx` (delete/update/import success+failure).
+- `src/lib/endpoints/__tests__/use-endpoints-data.test.tsx` (query enable gate + data path).
 5. Keep `e2e/endpoints.spec.ts` green and add one visual snapshot test for endpoints page.

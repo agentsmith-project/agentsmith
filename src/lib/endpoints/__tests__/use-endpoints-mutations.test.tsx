@@ -73,4 +73,20 @@ describe('useEndpointsMutations', () => {
       expect(onImportError).toHaveBeenCalled();
     });
   });
+
+  it('calls update endpoint mutation with scoped ids and payload', async () => {
+    const { result } = renderHook(
+      () => useEndpointsMutations({ workspaceId: 'ws_2', projectId: 'prj_2' }),
+      { wrapper: createWrapper() },
+    );
+
+    result.current.updateEndpointMutation.mutate({
+      endpointId: 'ep_9',
+      data: { status: 'disabled' },
+    });
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledWith('ws_2', 'prj_2', 'ep_9', { status: 'disabled' });
+    });
+  });
 });

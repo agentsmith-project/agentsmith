@@ -87,6 +87,12 @@ function listObjects(libraryId: string, prefix: string) {
 
   for (const row of db) {
     if (row.kind !== 'object') continue;
+    // Hide folder markers from file rows; represent them as prefixes.
+    if (row.key.endsWith('/')) {
+      if (normalized && !row.key.startsWith(normalized)) continue;
+      if (row.key !== normalized) prefixes.add(row.key);
+      continue;
+    }
     if (normalized && !row.key.startsWith(normalized)) continue;
     const rest = row.key.slice(normalized.length);
     const slash = rest.indexOf('/');
@@ -273,6 +279,69 @@ export const sourceHandlers = [
       etag: obj.etag,
       last_modified: obj.last_modified,
       user_metadata: {},
+    });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects/upload', async ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const form = await request.formData();
+    const file = form.get('file');
+    const prefix = normalizePrefix((form.get('prefix') as string | null) ?? '');
+
+    if (!(file instanceof File)) {
+      return HttpResponse.json({ error: 'invalid_request', message: 'file is required' }, { status: 400 });
+    }
+
+    const key = `${prefix}${file.name}`;
+    const db = objectDbByLibraryId[libraryId] ?? (objectDbByLibraryId[libraryId] = []);
+    const contentType = file.type || 'application/octet-stream';
+    const content = contentType.startsWith('text/')
+      ? await file.text().catch(() => '')
+      : undefined;
+    const row: Extract<ObjectRow, { kind: 'object' }> = {
+      kind: 'object',
+      key,
+      name: basename(key),
+      size_bytes: file.size,
+      content_type: contentType,
+      etag: `"${Date.now()}"`,
+      last_modified: nowIso(),
+      content,
+    };
+    // Overwrite for MSW simplicity.
+    const existingIndex = db.findIndex((r) => r.kind === 'object' && r.key === key);
+    if (existingIndex >= 0) db.splice(existingIndex, 1);
+    db.push(row);
+
+    return HttpResponse.json(
+      {
+        kind: 'object',
+        key: row.key,
+        name: row.name,
+        size_bytes: row.size_bytes,
+        content_type: row.content_type,
+        etag: row.etag,
+        last_modified: row.last_modified,
+      },
+      { status: 201 },
+    );
+  }),
+
+  http.get('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects/download', ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const url = new URL(request.url);
+    const key = url.searchParams.get('key') ?? '';
+    const db = objectDbByLibraryId[libraryId] ?? [];
+    const obj = db.find((r) => r.kind === 'object' && r.key === key) as Extract<ObjectRow, { kind: 'object' }> | undefined;
+    if (!obj) return HttpResponse.json({ error: 'object_not_found' }, { status: 404 });
+
+    const bytes = obj.content ? new TextEncoder().encode(obj.content) : new Uint8Array([1, 2, 3, 4]);
+    return new HttpResponse(bytes, {
+      status: 200,
+      headers: {
+        'Content-Type': obj.content_type || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename=\"${basename(key) || 'download'}\"`,
+      },
     });
   }),
 ];

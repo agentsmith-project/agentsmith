@@ -11,6 +11,7 @@
 import type { ApiClient, ApiRequestOptions } from '../client';
 import { API_BASE, ApiError } from '../client';
 import { createAuthenticatedSSE } from '../sse-client';
+import { notifyUnauthorized } from '@/lib/auth/session-recovery';
 
 export class MSWApiClient implements ApiClient {
   private token: string | null = null;
@@ -93,6 +94,9 @@ export class MSWApiClient implements ApiClient {
       }
 
       if (!response.ok) {
+        if (response.status === 401) {
+          notifyUnauthorized(path);
+        }
         const err = data as { error_code?: string; error?: string; message?: string; request_id?: string };
         throw new ApiError(
           err?.error_code || (err?.error as string) || 'UNKNOWN_ERROR',

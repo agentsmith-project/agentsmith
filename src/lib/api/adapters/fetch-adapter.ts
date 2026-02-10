@@ -8,6 +8,7 @@
 import type { ApiClient, ApiRequestOptions } from '../client';
 import { API_BASE, ApiError } from '../client';
 import { createAuthenticatedSSE } from '../sse-client';
+import { notifyUnauthorized } from '@/lib/auth/session-recovery';
 
 export class FetchApiClient implements ApiClient {
   private token: string | null = null;
@@ -58,6 +59,10 @@ export class FetchApiClient implements ApiClient {
         ...fetchOptions,
         headers,
       });
+
+      if (response.status === 401) {
+        notifyUnauthorized(path);
+      }
 
       // Handle empty responses (e.g. 204 No Content)
       if (response.status === 204 || response.headers.get('content-length') === '0') {

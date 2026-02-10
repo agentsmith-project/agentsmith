@@ -5,6 +5,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FetchApiClient } from '../adapters/fetch-adapter';
 import { ApiError, API_BASE } from '../client';
+import { notifyUnauthorized } from '@/lib/auth/session-recovery';
+
+vi.mock('@/lib/auth/session-recovery', () => ({
+  notifyUnauthorized: vi.fn(),
+}));
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -205,6 +210,22 @@ describe('FetchApiClient', () => {
   });
 
   describe('Error Handling', () => {
+    it('should notify global session recovery on 401 responses', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 401,
+        headers: { get: () => null },
+        json: async () => ({
+          error_code: 'UNAUTHORIZED',
+          message: 'Unauthorized',
+          request_id: 'req-auth-1',
+        }),
+      });
+
+      await expect(client.get('/test')).rejects.toThrow(ApiError);
+      expect(notifyUnauthorized).toHaveBeenCalledWith('/test');
+    });
+
     it('should throw ApiError on HTTP error response', async () => {
       mockFetch.mockResolvedValue({
         ok: false,

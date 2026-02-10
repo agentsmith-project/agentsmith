@@ -16,6 +16,10 @@ import type {
   QuotaSummary,
   SourcesListParams,
   SourcesListResponse,
+  SourceObjectsListParams,
+  SourceObjectsListResponse,
+  SourceObjectMeta,
+  SourceObjectItem,
 } from '../types';
 import { API_BASE } from '../client';
 import type { ApiClient } from '../client';
@@ -404,6 +408,153 @@ export class SourcesAPI {
   async deleteLibrary(workspaceId: string, projectId: string, libraryId: string): Promise<void> {
     return this.client.delete<void>(
       `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}`,
+    );
+  }
+
+  // ============================================================
+  // Object browser (MinIO-like file manager)
+  // ============================================================
+
+  async listObjects(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    params?: SourceObjectsListParams,
+  ): Promise<SourceObjectsListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.prefix) searchParams.set('prefix', params.prefix);
+    searchParams.set('delimiter', '/');
+    if (params?.page_size) searchParams.set('page_size', String(params.page_size));
+    if (params?.continuation_token) searchParams.set('continuation_token', params.continuation_token);
+    const query = searchParams.toString();
+    return this.client.get<SourceObjectsListResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects${query ? `?${query}` : ''}`,
+    );
+  }
+
+  async createFolder(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    prefix: string,
+  ): Promise<void> {
+    return this.client.post<void>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/folders`,
+      { prefix },
+    );
+  }
+
+  async uploadObject(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    file: File,
+    prefix?: string,
+    onProgress?: (progress: number) => void,
+  ): Promise<SourceObjectItem> {
+    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/upload`;
+    const token = this.client.getToken();
+
+    return new Promise<SourceObjectItem>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file);
+      if (prefix) formData.append('prefix', prefix);
+
+      if (onProgress) {
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const percentComplete = (e.loaded / e.total) * 100;
+            onProgress(Math.min(percentComplete, 99));
+          }
+        });
+      }
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const parsed = JSON.parse(xhr.responseText) as SourceObjectItem;
+            if (onProgress) onProgress(100);
+            resolve(parsed);
+          } catch {
+            reject(new Error('Failed to parse response'));
+          }
+          return;
+        }
+
+        try {
+          const errorData = JSON.parse(xhr.responseText) as { message?: string };
+          reject(new Error(errorData.message || `Upload failed with status ${xhr.status}`));
+        } catch {
+          reject(new Error(`Upload failed with status ${xhr.status}`));
+        }
+      });
+
+      xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload was aborted')));
+
+      xhr.open('POST', url);
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.send(formData);
+    });
+  }
+
+  async downloadObject(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    key: string,
+  ): Promise<Blob> {
+    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/download?key=${encodeURIComponent(key)}`;
+    const token = this.client.getToken();
+
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(url, { method: 'GET', headers });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const message =
+        typeof errorData === 'object' && errorData && 'message' in errorData
+          ? String((errorData as { message?: string }).message)
+          : `Download failed: ${response.statusText}`;
+      throw new Error(message);
+    }
+    return response.blob();
+  }
+
+  async deleteObjects(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    keys: string[],
+  ): Promise<{ results: Array<{ key: string; status: 'deleted' | 'failed' }> }> {
+    return this.client.post<{ results: Array<{ key: string; status: 'deleted' | 'failed' }> }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/delete`,
+      { keys },
+    );
+  }
+
+  async moveObject(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    payload: { from_key: string; to_key: string; overwrite?: boolean },
+  ): Promise<void> {
+    return this.client.post<void>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/move`,
+      payload,
+    );
+  }
+
+  async getObjectMeta(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    key: string,
+  ): Promise<SourceObjectMeta> {
+    return this.client.get<SourceObjectMeta>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/meta?key=${encodeURIComponent(key)}`,
     );
   }
 }

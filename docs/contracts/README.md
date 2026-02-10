@@ -29,6 +29,8 @@ This directory is the single source of truth for frontend permission and governa
   - Latest automated verification status and business-flow UAT script.
 - `chat-frontend-module-map.md`
   - Chat page module boundaries and growth guardrails.
+- `chat-manual-acceptance-checklist.md`
+  - Manual release gate checklist for chat UX/runtime changes.
 - `resource-policy-frontend-module-map.md`
   - Resource Policy page module boundaries and helper ownership.
 - `projects-frontend-module-map.md`

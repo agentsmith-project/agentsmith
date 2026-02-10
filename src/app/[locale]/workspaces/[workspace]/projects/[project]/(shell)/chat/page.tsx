@@ -336,37 +336,35 @@ export default function ChatPage({ params }: ChatPageProps) {
     <PageState state="success">
       <PageLayout
         density="immersive"
-        contentWidth="full"
+        contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
         header={
-          <div className={cn(layoutMode === 'standard' ? 'mx-auto w-full max-w-[1400px]' : 'w-full')}>
-            <PageHeader
-              title={t('title')}
-              actions={
-                showLayoutToggle ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={onToggleLayoutMode}
-                    title={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
-                    aria-label={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
-                    data-testid="chat__layout-toggle"
-                    data-state={layoutMode}
-                  >
-                    <PanelRight className="w-4 h-4" />
-                    {layoutMode === 'ultrawide' ? t('header.layout_ultrawide') : t('header.layout_standard')}
-                  </Button>
-                ) : null
-              }
-            />
-          </div>
+          <PageHeader
+            title={t('title')}
+            actions={
+              showLayoutToggle ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={onToggleLayoutMode}
+                  title={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
+                  aria-label={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
+                  data-testid="chat__layout-toggle"
+                  data-state={layoutMode}
+                >
+                  <PanelRight className="w-4 h-4" />
+                  {layoutMode === 'ultrawide' ? t('header.layout_ultrawide') : t('header.layout_standard')}
+                </Button>
+              ) : null
+            }
+          />
         }
       >
         <div
           className={cn(
             'h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40',
-            layoutMode === 'standard' ? 'mx-auto w-full max-w-[1400px]' : 'w-full',
+            'w-full',
           )}
         >
           <ThreadsPane

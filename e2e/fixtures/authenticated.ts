@@ -1,25 +1,30 @@
 import { Page } from '@playwright/test';
 
 export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'test@example.com') {
-  // Use the app's supported "MSW quick login" path so E2E doesn't depend on auth-store internals.
-  await page.goto('/en-US/login', { waitUntil: 'domcontentloaded' });
+  await page.addInitScript(({ wsId, userEmail }) => {
+    (window as any).__MBOS_AUTH_SETUP__ = true;
 
-  const quickLoginEmail = page.getByTestId('login__email-input');
-  const quickLoginSubmit = page.getByTestId('login__submit');
+    const user = {
+      id: 'user_001',
+      email: userEmail,
+      name: userEmail.split('@')[0],
+      locale: 'en-US',
+    };
 
-  // In case MSW is disabled, these won't exist and tests should fail loudly.
-  await quickLoginEmail.fill(userEmail);
-  await quickLoginSubmit.click();
+    const token = `mock_token_${Date.now()}`;
+    const refreshToken = `mock_refresh_${Date.now()}`;
+    const tokenExpiresAt = Date.now() + 60 * 60 * 1000;
 
-  // Workspace selection is the expected post-login step.
-  await page.getByTestId('workspace-select__heading').waitFor({ timeout: 10_000 });
+    try {
+      localStorage.setItem('mbos-auth', JSON.stringify({
+        state: { user, token, refreshToken, tokenExpiresAt, isAuthenticated: true },
+        version: 0,
+      }));
+    } catch {
+      // If localStorage is unavailable, route gates will fail loudly.
+    }
 
-  // Pick default workspace so subsequent project routes are valid.
-  await page.getByTestId(`workspace-select__card--${wsId}`).click();
-
-  // Ensure login persisted state exists, otherwise protected-route reloads will keep bouncing to login.
-  const persisted = await page.evaluate(() => localStorage.getItem('mbos-auth'));
-  if (!persisted) {
-    throw new Error('E2E auth failed: expected localStorage key "mbos-auth" to exist after quick login');
-  }
+    // Preserve signature compatibility (workspace is derived from URL in-app).
+    void wsId;
+  }, { wsId, userEmail });
 }

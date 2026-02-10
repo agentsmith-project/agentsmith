@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { ChatMessage, ChatSession } from '@/lib/api/types';
+import { ApiError } from '@/lib/api/client';
 import { getChatStreamAttach, postChatStream, streamSseJson } from '@/lib/chat/stream'; 
 import { createThrottle } from '@/lib/chat/throttle';
 import { chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
@@ -286,6 +287,14 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
               if (streamStillActive()) {
                 setSessionStreamState(session.id, { status: 'idle', assistant: null });
               }
+              return;
+            }
+            // Refresh/restore race: the stream may have finished between "list streams" and "attach".
+            // In that case we silently fall back to refetching messages, instead of showing a scary error.
+            if (e instanceof ApiError && e.errorCode === 'RESOURCE_NOT_FOUND') {
+              setSessionStreamState(session.id, { status: 'idle', assistant: null });
+              queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, session.id) });
+              queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
               return;
             }
             setSessionStreamState(session.id, { status: 'error', assistant: null });

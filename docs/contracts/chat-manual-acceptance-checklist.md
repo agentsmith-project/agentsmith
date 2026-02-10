@@ -42,11 +42,23 @@ This checklist is the release gate for chat UX/runtime changes.
 ## 6. Layout Modes
 
 - Standard viewport (<1920): confirm no layout toggle is shown.
-- Ultrawide viewport (>=1920): confirm layout toggle appears in chat header.
+- Ultrawide viewport (>=1920): confirm layout toggle appears in page header actions (top-right).
 - Toggle to ultrawide:
 - Confirm thread pane width expands and message area uses wider max width.
 - Refresh page and confirm layout mode preference persists.
 - Toggle back to standard and confirm widths revert.
+
+## 6.1 Refresh/Resume Streaming (Attach)
+
+- Start streaming in a thread.
+- Refresh the page mid-stream.
+- Confirm:
+- streaming continues without restarting a new assistant bubble.
+- no duplicate assistant bubble appears (message list should update a single assistant message).
+- Stop works after refresh (stream-id or session-stop path).
+- If attach fails because the stream finished during refresh, confirm:
+- no scary error toast is shown.
+- final assistant message is present after messages refetch.
 
 ## 7. Visual Baseline
 

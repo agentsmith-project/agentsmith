@@ -40,6 +40,5 @@ if [[ "${ready}" -ne 1 ]]; then
   exit 1
 fi
 
-RUN_INTEGRATION_E2E=true \
 INTEGRATION_API_BASE="http://localhost:${API_PORT}" \
-npx playwright test "${SPEC_FILE}" --project=chromium --workers=1 "$@"
+npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@"

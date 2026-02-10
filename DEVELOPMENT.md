@@ -181,6 +181,29 @@ Make sure the dev server is started with MSW enabled:
 NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port 3001
 ```
 
+## E2E Modes (Recommended)
+
+We keep two E2E modes with distinct responsibilities:
+
+1) Mock E2E (default)
+
+- Uses MSW fixtures as the source of truth.
+- Runs fast and is used for frontend regression testing.
+
+```bash
+npm run test:e2e -- --project=chromium
+```
+
+2) Integration E2E
+
+- Uses a real backend (Keycloak + API).
+- Only runs `e2e/integration-*.spec.ts`.
+
+```bash
+npm run test:e2e:integration:minimal
+npm run test:e2e:integration:chat
+```
+
 ### 3) Use route-targeted smoke for fast triage
 
 ```bash

@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
 
-const RUN_INTEGRATION = process.env.RUN_INTEGRATION_E2E === 'true';
 const RUN_REAL_COMPLETION = process.env.INTEGRATION_REAL_COMPLETION_E2E === 'true';
 let lastApiAuthContext: { apiBase: string; authHeader: string } | null = null;
 
@@ -712,8 +711,6 @@ function isStreamStopRequestFor(url: string, sessionId: string): boolean {
 }
 
 test.describe('integration chat flow', () => {
-  test.skip(!RUN_INTEGRATION, 'Enable with RUN_INTEGRATION_E2E=true');
-
   test('keycloak login + create endpoint + chat stream through openai-compatible proxy', async ({ page }) => {
     test.setTimeout(240_000);
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';

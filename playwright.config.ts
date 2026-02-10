@@ -1,27 +1,21 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright Configuration for MBOS Frontend E2E Testing
+ * Playwright Configuration (Mock E2E)
+ *
+ * Default E2E mode: MSW enabled, no real backend required.
+ *
+ * To run against a manually started server, set:
+ * - BASE_URL=http://localhost:3001
  */
 const baseURL = process.env.BASE_URL || 'http://localhost:3001';
 const useManagedDevServer = !process.env.BASE_URL;
 const localWorkers = Number(process.env.PW_WORKERS ?? 8);
 const isCI = !!process.env.CI;
-const runIntegrationE2E = process.env.RUN_INTEGRATION_E2E === 'true';
-const integrationApiBase = process.env.INTEGRATION_API_BASE || 'http://localhost:20000';
-const webServerCommand = runIntegrationE2E
-  ? [
-      'bash -lc',
-      JSON.stringify([
-        'NEXT_PUBLIC_USE_MSW=false',
-        `NEXT_PUBLIC_API_BASE=${integrationApiBase}`,
-        'NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms',
-        'NEXT_PUBLIC_KEYCLOAK_REALM=mbos',
-        'NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend',
-        'npm run dev:test -- --port 3001',
-      ].join(' ')),
-    ].join(' ')
-  : ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port 3001')].join(' ');
+
+const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port 3001')].join(
+  ' ',
+);
 
 export default defineConfig({
   testDir: './e2e',
@@ -39,7 +33,6 @@ export default defineConfig({
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
   webServer: useManagedDevServer
     ? {
-        // Use local next binary directly to avoid npm/npx config arg injection warnings.
         command: webServerCommand,
         url: 'http://localhost:3001',
         reuseExistingServer: false,
@@ -54,7 +47,6 @@ export default defineConfig({
     actionTimeout: 10000,
     navigationTimeout: 20000,
   },
-
   projects: [
     {
       name: 'smoke',
@@ -63,7 +55,7 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      testIgnore: [/smoke\.spec\.ts/, /visual\.spec\.ts/],
+      testIgnore: [/smoke\.spec\.ts/, /visual\.spec\.ts/, /integration-.*\.spec\.ts/],
       use: { ...devices['Desktop Chrome'] },
     },
     {
@@ -73,3 +65,4 @@ export default defineConfig({
     },
   ],
 });
+

@@ -1,10 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const RUN_INTEGRATION = process.env.RUN_INTEGRATION_E2E === 'true';
-
 test.describe('minimal integration flow', () => {
-  test.skip(!RUN_INTEGRATION, 'Enable with RUN_INTEGRATION_E2E=true');
-
   test('keycloak login, create project, source library and file CRUD', async ({ page }) => {
     test.setTimeout(180_000);
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';

@@ -31,6 +31,7 @@ import { buildChatViewModel } from '@/lib/chat/chat-view-model';
 import { useChatMessageActions } from '@/lib/chat/use-chat-message-actions';
 import { useChatThreadActions } from '@/lib/chat/use-chat-thread-actions';
 import { useChatDeleteDialog } from '@/lib/chat/use-chat-delete-dialog';
+import { useChatLayoutMode } from '@/lib/chat/use-chat-layout-mode';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
@@ -46,9 +47,6 @@ import { cn } from '@/lib/utils';
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
-
-const CHAT_LAYOUT_MODE_STORAGE_KEY = 'mbos.chat.layout.mode';
-const ULTRAWIDE_MIN_WIDTH = 1920;
 
 export default function ChatPage({ params }: ChatPageProps) {
   const queryClient = useQueryClient();
@@ -66,8 +64,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [composerBySession, setComposerBySession] = useState<Record<string, string>>({});
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [preferredLayoutMode, setPreferredLayoutMode] = useState<'standard' | 'ultrawide'>('standard');
-  const [isUltrawideViewport, setIsUltrawideViewport] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -79,28 +75,9 @@ export default function ChatPage({ params }: ChatPageProps) {
     });
   }, [params]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (typeof window.localStorage?.getItem !== 'function') return;
-    const saved = window.localStorage.getItem(CHAT_LAYOUT_MODE_STORAGE_KEY);
-    if (saved === 'standard' || saved === 'ultrawide') {
-      setPreferredLayoutMode(saved);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const media = window.matchMedia(`(min-width: ${ULTRAWIDE_MIN_WIDTH}px)`);
-    const sync = () => setIsUltrawideViewport(media.matches);
-    sync();
-    media.addEventListener('change', sync);
-    return () => media.removeEventListener('change', sync);
-  }, []);
-
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const showLayoutToggle = isUltrawideViewport;
-  const layoutMode = showLayoutToggle ? preferredLayoutMode : 'standard';
+  const { layoutMode, showLayoutToggle, onToggleLayoutMode } = useChatLayoutMode();
 
   const apiClient = useMemo(() => getApiClient(), []);
   const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
@@ -319,16 +296,6 @@ export default function ChatPage({ params }: ChatPageProps) {
     retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
   }, [canUseChat, currentSessionId, retryAttachmentMutation]);
 
-  const handleToggleLayoutMode = useCallback(() => {
-    setPreferredLayoutMode((prev) => {
-      const next = prev === 'standard' ? 'ultrawide' : 'standard';
-      if (typeof window !== 'undefined' && typeof window.localStorage?.setItem === 'function') {
-        window.localStorage.setItem(CHAT_LAYOUT_MODE_STORAGE_KEY, next);
-      }
-      return next;
-    });
-  }, []);
-
   if (!resolvedParams) {
     return (
           <PageState state="loading">
@@ -424,7 +391,7 @@ export default function ChatPage({ params }: ChatPageProps) {
               assistant: t('assistant'),
             }}
             onCreateThread={handleCreateThread}
-            onToggleLayoutMode={handleToggleLayoutMode}
+            onToggleLayoutMode={onToggleLayoutMode}
             onRenameActiveSession={handleRenameActiveSession}
             onSelectActiveEndpoint={handleSelectActiveEndpoint}
             onSelectVariant={handleSelectVariant}

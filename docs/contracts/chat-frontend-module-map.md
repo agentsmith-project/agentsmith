@@ -38,6 +38,9 @@ This document defines responsibility boundaries for the chat page implementation
 - `chat-view-model.ts`
 - Derived UI state (`activeStreamStatus`, `mergedStreamingSessionIds`, `disabled`) from runtime + local state.
 
+- `use-chat-layout-mode.ts`
+- Viewport-aware layout mode orchestration (`standard|ultrawide`) with localStorage preference persistence.
+
 ## 3. UI Components (`src/components/chat`)
 
 - `ThreadsPane.tsx`

@@ -33,6 +33,10 @@ This directory is the single source of truth for frontend permission and governa
   - Manual release gate checklist for chat UX/runtime changes.
 - `endpoints-frontend-module-map.md`
   - Endpoints page closeout baseline and target decomposition map.
+- `endpoints-closeout-summary.md`
+  - Endpoints module closeout result and verification snapshot.
+- `sources-frontend-module-map.md`
+  - Sources module baseline and next decomposition targets.
 - `resource-policy-frontend-module-map.md`
   - Resource Policy page module boundaries and helper ownership.
 - `projects-frontend-module-map.md`

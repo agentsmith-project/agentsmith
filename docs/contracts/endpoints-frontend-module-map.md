@@ -53,6 +53,10 @@ This document defines the closeout baseline and decomposition plan for:
 - `npm run test:e2e -- e2e/endpoints.spec.ts --project=chromium --workers=1`
 - Result: passed (10/10)
 
+- Visual baseline:
+- `npm run test:e2e -- --project=visual e2e/visual.spec.ts --grep "endpoints"`
+- Result: passed (1/1)
+
 ## 5. Next Closeout Steps
 
 1. Extract `EndpointsPage` presentational component from route page.
@@ -66,3 +70,10 @@ Status: completed. Added:
 - `src/lib/endpoints/__tests__/use-endpoints-mutations.test.tsx` (delete/update/import success+failure).
 - `src/lib/endpoints/__tests__/use-endpoints-data.test.tsx` (query enable gate + data path).
 5. Keep `e2e/endpoints.spec.ts` green and add one visual snapshot test for endpoints page.
+Status: completed.
+
+## 6. Closeout Status
+
+- Module closeout status: `completed`.
+- Route page is thin, orchestration is hook-based, table spec is modularized, and verification gates are green.
+- Remaining enhancement (optional): extract import dialog into dedicated component if payload UX grows further.

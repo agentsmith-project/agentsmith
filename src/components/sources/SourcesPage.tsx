@@ -49,7 +49,6 @@ import { toast } from '@/components/ui/toast';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { SourceObjectDetailsPanel } from '@/components/sources/SourceObjectDetailsPanel';
 
-import { getApiClient, SourcesAPI } from '@/lib/api';
 import type { SourceLibrary, SourceObjectsListItem } from '@/lib/api/types';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { APIError } from '@/lib/api/errors';
@@ -69,6 +68,7 @@ import {
 } from '@/lib/hooks/use-source-objects';
 import { parseSourceSortBy, SourceSortBy, SourceSortOrder, useSourcesUrlState } from '@/lib/hooks/use-sources-url-state';
 import { useSourceUploadManager } from '@/components/sources/hooks/use-source-upload-manager';
+import { useSourceBatchOperations } from '@/components/sources/hooks/use-source-batch-operations';
 
 export interface SourcesPageProps {
   workspaceId: string;
@@ -76,7 +76,6 @@ export interface SourcesPageProps {
 }
 
 type SelectedRowId = `p:${string}` | `o:${string}`;
-type BatchResultType = 'delete' | 'download';
 
 function rowId(item: SourceObjectsListItem): SelectedRowId {
   return item.kind === 'prefix' ? (`p:${item.prefix}` as const) : (`o:${item.key}` as const);
@@ -225,10 +224,6 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const [moveOverwrite, setMoveOverwrite] = React.useState(false);
   const [moveConflictOpen, setMoveConflictOpen] = React.useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
-  const [batchResultOpen, setBatchResultOpen] = React.useState(false);
-  const [batchResultType, setBatchResultType] = React.useState<BatchResultType>('delete');
-  const [batchFailedKeys, setBatchFailedKeys] = React.useState<string[]>([]);
-  const [batchRetryPending, setBatchRetryPending] = React.useState(false);
 
   const selectedForMove = selected.length === 1 ? selected[0] : null;
   const moveNamePlaceholder = selectedForMove
@@ -275,6 +270,40 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     selectedLibraryId,
     prefix,
     uploadObject: uploadObject.mutateAsync,
+    t,
+  });
+
+  const handleDeletePartialFailureSelection = React.useCallback(
+    (failedKeys: string[]) => {
+      const failedSet = new Set(failedKeys);
+      setSelectedIds(
+        selected
+          .filter((item) => failedSet.has(item.kind === 'object' ? item.key : item.prefix))
+          .map((item) => (item.kind === 'object' ? (`o:${item.key}` as const) : (`p:${item.prefix}` as const))),
+      );
+    },
+    [selected],
+  );
+
+  const {
+    batchFailedKeys,
+    batchResultOpen,
+    batchResultType,
+    batchRetryPending,
+    closeBatchResult,
+    handleDelete,
+    handleBatchResultOpenChange,
+    handleDownload,
+    handleRetryBatchFailures,
+  } = useSourceBatchOperations({
+    workspaceId,
+    projectId,
+    selectedLibraryId,
+    selected,
+    selectedObjects,
+    clearSelection,
+    deleteObjects: deleteObjects.mutateAsync,
+    onDeletePartialFailure: handleDeletePartialFailureSelection,
     t,
   });
 
@@ -342,116 +371,6 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       }
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`${t('file_manager.rename_failed')}: ${msg}`);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!selectedLibraryId || selected.length === 0) return;
-    const keys = selected.map((s) => (s.kind === 'object' ? s.key : s.prefix));
-    try {
-      const result = await deleteObjects.mutateAsync({ workspaceId, projectId, libraryId: selectedLibraryId, keys });
-      setDeleteConfirmOpen(false);
-      const failedKeys = result.results
-        .filter((item) => item.status !== 'deleted')
-        .map((item) => item.key);
-      if (failedKeys.length > 0) {
-        const failedSet = new Set(failedKeys);
-        setSelectedIds(
-          selected
-            .filter((item) => failedSet.has(item.kind === 'object' ? item.key : item.prefix))
-            .map((item) => (item.kind === 'object' ? (`o:${item.key}` as const) : (`p:${item.prefix}` as const))),
-        );
-        setBatchResultType('delete');
-        setBatchFailedKeys(failedKeys);
-        setBatchResultOpen(true);
-        toast.error(t('file_manager.delete_partial_failed', { failed: String(failedKeys.length) }));
-        return;
-      }
-      clearSelection();
-      toast.success(t('file_manager.deleted'));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t('file_manager.delete_failed')}: ${msg}`);
-    }
-  };
-
-  const triggerBrowserDownload = (blob: Blob, key: string) => {
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = basename(key) || 'download';
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  };
-
-  const handleDownload = async () => {
-    if (!selectedLibraryId || selectedObjects.length === 0) return;
-    const api = new SourcesAPI(getApiClient());
-    const failedKeys: string[] = [];
-    for (const objectItem of selectedObjects) {
-      try {
-        const blob = await api.downloadObject(workspaceId, projectId, selectedLibraryId, objectItem.key);
-        triggerBrowserDownload(blob, objectItem.key);
-      } catch {
-        failedKeys.push(objectItem.key);
-      }
-    }
-    if (failedKeys.length > 0) {
-      setBatchResultType('download');
-      setBatchFailedKeys(failedKeys);
-      setBatchResultOpen(true);
-      toast.error(t('file_manager.download_partial_failed', { failed: String(failedKeys.length) }));
-      return;
-    }
-    if (selectedObjects.length > 1) {
-      toast.success(t('file_manager.download_started', { count: String(selectedObjects.length) }));
-    }
-  };
-
-  const handleRetryBatchFailures = async () => {
-    if (!selectedLibraryId || batchFailedKeys.length === 0) return;
-    setBatchRetryPending(true);
-    try {
-      if (batchResultType === 'delete') {
-        const result = await deleteObjects.mutateAsync({
-          workspaceId,
-          projectId,
-          libraryId: selectedLibraryId,
-          keys: batchFailedKeys,
-        });
-        const stillFailed = result.results
-          .filter((item) => item.status !== 'deleted')
-          .map((item) => item.key);
-        if (stillFailed.length > 0) {
-          setBatchFailedKeys(stillFailed);
-          toast.error(t('file_manager.retry_partial_failed', { failed: String(stillFailed.length) }));
-          return;
-        }
-        clearSelection();
-      } else {
-        const api = new SourcesAPI(getApiClient());
-        const stillFailed: string[] = [];
-        for (const key of batchFailedKeys) {
-          try {
-            const blob = await api.downloadObject(workspaceId, projectId, selectedLibraryId, key);
-            triggerBrowserDownload(blob, key);
-          } catch {
-            stillFailed.push(key);
-          }
-        }
-        if (stillFailed.length > 0) {
-          setBatchFailedKeys(stillFailed);
-          toast.error(t('file_manager.retry_partial_failed', { failed: String(stillFailed.length) }));
-          return;
-        }
-      }
-      setBatchResultOpen(false);
-      setBatchFailedKeys([]);
-      toast.success(t('file_manager.retry_success'));
-    } finally {
-      setBatchRetryPending(false);
     }
   };
 
@@ -1389,23 +1308,22 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             <Button type="button" variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
               {t('file_manager.cancel')}
             </Button>
-            <Button type="button" variant="destructive" onClick={handleDelete} disabled={selected.length === 0}>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                void handleDelete();
+              }}
+              disabled={selected.length === 0}
+            >
               {t('file_manager.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={batchResultOpen}
-        onOpenChange={(open) => {
-          setBatchResultOpen(open);
-          if (!open) {
-            setBatchFailedKeys([]);
-            setBatchRetryPending(false);
-          }
-        }}
-      >
+      <Dialog open={batchResultOpen} onOpenChange={handleBatchResultOpenChange}>
         <DialogContent className="sm:max-w-[620px]" data-testid="sources__dialog__batch-result">
           <DialogHeader>
             <DialogTitle>
@@ -1429,14 +1347,11 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setBatchResultOpen(false);
-                setBatchFailedKeys([]);
-              }}
-            >
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeBatchResult}
+              >
               {t('file_manager.close')}
             </Button>
             <Button

@@ -10,8 +10,11 @@ This document defines the closeout baseline and next decomposition targets for:
 - applies permission gate (`project:source:use`)
 - delegates to `src/components/sources/SourcesPage.tsx`
 - UI composition is already split into compound components under `src/components/sources/*`.
-- Primary remaining complexity is concentrated in:
-- `src/lib/hooks/use-sources-list.ts` (large orchestration hook, ~400+ LOC).
+- Key state/behavior has been extracted into focused hooks:
+- `src/lib/hooks/use-sources-url-state.ts` (URL-synced library/prefix/search/sort)
+- `src/components/sources/hooks/use-source-upload-manager.ts` (upload queue, drag-drop, conflict flow)
+- `src/components/sources/hooks/use-source-batch-operations.ts` (batch delete/download + retry workflow)
+- Remaining complexity is still concentrated in `src/components/sources/SourcesPage.tsx` (dialog orchestration + render tree).
 
 ## 2. Module Responsibilities
 
@@ -21,11 +24,14 @@ This document defines the closeout baseline and next decomposition targets for:
 - `src/components/sources/SourcesPage.tsx`
 - Compound composition layer (header, toolbar, virtualized object list, dialogs, pagination).
 
-- `src/components/sources/SourcesContext.tsx`
-- Context boundary for page subcomponents.
+- `src/lib/hooks/use-sources-url-state.ts`
+- URL state source of truth (`library_id`, `prefix`, `search`, `sort_by`, `sort_order`).
 
-- `src/lib/hooks/use-sources-list.ts`
-- Business orchestration (query params, selection state, upload/delete/batch actions, quota checks).
+- `src/components/sources/hooks/use-source-upload-manager.ts`
+- Upload queue, progress/cancel, drag-drop target, conflict resolution.
+
+- `src/components/sources/hooks/use-source-batch-operations.ts`
+- Batch delete/download and failed-key retry dialog semantics.
 
 ## 2.1 Scope Update (Effective Immediately)
 

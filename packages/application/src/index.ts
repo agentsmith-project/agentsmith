@@ -707,6 +707,10 @@ export class ListSourceLibraryObjectsUseCase {
     const objectItems = listed.objects
       .map((obj) => {
         const relativeKey = stripObjectPrefix(obj.key, library.object_prefix);
+        // Hide folder marker objects (e.g. "docs/" zero-byte placeholders).
+        if (!relativeKey || relativeKey.endsWith('/')) {
+          return null;
+        }
         return {
           kind: 'object' as const,
           key: relativeKey,
@@ -717,6 +721,7 @@ export class ListSourceLibraryObjectsUseCase {
           last_modified: obj.lastModified,
         };
       })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return ListSourceObjectsResponseSchema.parse({

@@ -814,6 +814,44 @@ describe('Project use cases', () => {
     }
   });
 
+  it('hides folder marker objects from object rows', async () => {
+    const libraryRepo = new FakeSourceLibraryRepo();
+    const objectStore = new FakeObjectStore();
+    const clock = new FixedClock();
+    libraryRepo.items.push({
+      id: 'lib_marker',
+      workspace_id: 'ws_a',
+      project_id: 'proj_1',
+      name: 'Marker',
+      visibility: 'shared',
+      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_marker/',
+      doc_namespace: 'doc_ws_a_proj_1_lib_marker',
+      vector_namespace: 'vec_ws_a_proj_1_lib_marker',
+      created_by_user_id: 'user_1',
+      created_at: clock.nowIso(),
+      updated_at: clock.nowIso(),
+    });
+    await objectStore.putObject('mbos-dev', 'workspaces/ws_a/projects/proj_1/libraries/lib_marker/docs/', new Uint8Array(0));
+    await objectStore.putObject(
+      'mbos-dev',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_marker/docs/readme.txt',
+      new TextEncoder().encode('hello'),
+    );
+
+    const listed = await new ListSourceLibraryObjectsUseCase(libraryRepo, objectStore, 'mbos-dev').execute({
+      workspaceId: 'ws_a',
+      projectId: 'proj_1',
+      libraryId: 'lib_marker',
+      prefix: 'docs/',
+      delimiter: '/',
+      pageSize: 200,
+    });
+    const objectNames = listed.items
+      .filter((item) => item.kind === 'object')
+      .map((item) => (item.kind === 'object' ? item.name : ''));
+    expect(objectNames).toEqual(['readme.txt']);
+  });
+
   it('creates, gets, and cancels library-scoped ai-ready job', async () => {
     const sourceRepo = new FakeSourceRepo();
     const libraryRepo = new FakeSourceLibraryRepo();

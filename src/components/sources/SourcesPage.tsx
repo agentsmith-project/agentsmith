@@ -45,13 +45,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { toast } from '@/components/ui/toast';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { SourceObjectDetailsPanel } from '@/components/sources/SourceObjectDetailsPanel';
 
 import type { SourceObjectsListItem } from '@/lib/api/types';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { APIError } from '@/lib/api/errors';
 import {
   useCreateSourceLibrary,
   useDeleteSourceLibrary,
@@ -62,7 +60,6 @@ import {
   useCreateSourceFolder,
   useDeleteSourceObjects,
   useMoveSourceObject,
-  useSourceObjects,
   useSourceObjectsInfinite,
   useUploadSourceObject,
 } from '@/lib/hooks/use-source-objects';
@@ -70,6 +67,7 @@ import { parseSourceSortBy, SourceSortBy, SourceSortOrder, useSourcesUrlState } 
 import { useSourceUploadManager } from '@/components/sources/hooks/use-source-upload-manager';
 import { useSourceBatchOperations } from '@/components/sources/hooks/use-source-batch-operations';
 import { useSourceLibraryManager } from '@/components/sources/hooks/use-source-library-manager';
+import { useSourceFolderMoveManager } from '@/components/sources/hooks/use-source-folder-move-manager';
 
 export interface SourcesPageProps {
   workspaceId: string;
@@ -103,14 +101,6 @@ function buildCrumbs(prefix: string) {
     crumbs.push({ label: p, prefix: cur });
   }
   return crumbs;
-}
-
-function normalizeFolderPrefixInput(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return { ok: true as const, prefix: '' };
-  if (trimmed.startsWith('/')) return { ok: false as const, prefix: '', reason: 'leading_slash' as const };
-  const normalized = trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
-  return { ok: true as const, prefix: normalized };
 }
 
 function parentPrefixForKey(key: string) {
@@ -205,33 +195,12 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     setSelectedIds((prev) => (prev.length > 0 ? [] : filteredItems.map((it) => rowId(it))));
   };
 
-  const [createFolderOpen, setCreateFolderOpen] = React.useState(false);
-  const [folderName, setFolderName] = React.useState('');
-  const [moveOpen, setMoveOpen] = React.useState(false);
-  const [moveName, setMoveName] = React.useState('');
-  const [moveDestPrefix, setMoveDestPrefix] = React.useState('');
-  const [moveOverwrite, setMoveOverwrite] = React.useState(false);
-  const [moveConflictOpen, setMoveConflictOpen] = React.useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
 
   const selectedForMove = selected.length === 1 ? selected[0] : null;
   const moveNamePlaceholder = selectedForMove
     ? (selectedForMove.kind === 'object' ? basename(selectedForMove.key) : basename(selectedForMove.prefix))
     : '';
-
-  // Destination folder picker (browse prefixes)
-  const [destPickerOpen, setDestPickerOpen] = React.useState(false);
-  const [destPickerPrefix, setDestPickerPrefix] = React.useState('');
-  const destPickerParams = React.useMemo(
-    () => ({ prefix: destPickerPrefix, delimiter: '/' as const, page_size: 200 }),
-    [destPickerPrefix],
-  );
-  const destPickerQuery = useSourceObjects(workspaceId, projectId, selectedLibraryId, destPickerParams);
-  const destPickerItems = React.useMemo(
-    () => (destPickerQuery.data?.items ?? []).filter((it) => it.kind === 'prefix'),
-    [destPickerQuery.data?.items],
-  );
-  const destPickerCrumbs = React.useMemo(() => buildCrumbs(destPickerPrefix), [destPickerPrefix]);
 
   const handleUploadClick = () => fileInputRef.current?.click();
   const {
@@ -335,72 +304,44 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     t,
   });
 
-  const handleCreateFolder = async () => {
-    if (!selectedLibraryId) return;
-    const name = folderName.trim();
-    if (!name) return;
-    if (name.includes('/')) {
-      toast.error(t('file_manager.folder_name_invalid'));
-      return;
-    }
-    const nextPrefix = `${prefix}${name}/`;
-    try {
-      await createFolder.mutateAsync({ workspaceId, projectId, libraryId: selectedLibraryId, prefix: nextPrefix });
-      setCreateFolderOpen(false);
-      setFolderName('');
-      toast.success(t('file_manager.folder_created'));
-      navigateToPrefix(nextPrefix);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t('file_manager.folder_create_failed')}: ${msg}`);
-    }
-  };
-
-  const handleMove = async () => {
-    if (!selectedLibraryId || !selectedForMove) return;
-    const nextName = moveName.trim();
-    if (!nextName) return;
-    if (nextName.includes('/')) {
-      toast.error(t('file_manager.rename_invalid'));
-      return;
-    }
-    const normalizedDest = normalizeFolderPrefixInput(moveDestPrefix);
-    if (!normalizedDest.ok) {
-      toast.error(t('file_manager.dest_prefix_invalid'));
-      return;
-    }
-
-    const fromKeyOrPrefix = selectedForMove.kind === 'object' ? selectedForMove.key : selectedForMove.prefix;
-    const toKeyOrPrefix =
-      selectedForMove.kind === 'object'
-        ? `${normalizedDest.prefix}${nextName}`
-        : `${normalizedDest.prefix}${nextName}/`;
-
-    try {
-      await moveObject.mutateAsync({
-        workspaceId,
-        projectId,
-        libraryId: selectedLibraryId,
-        from_key: fromKeyOrPrefix,
-        to_key: toKeyOrPrefix,
-        overwrite: moveOverwrite,
-      });
-      setMoveOpen(false);
-      setMoveName('');
-      setMoveDestPrefix('');
-      setMoveOverwrite(false);
-      clearSelection();
-      toast.success(t('file_manager.renamed'));
-    } catch (err) {
-      const apiErr = err instanceof APIError ? err : null;
-      if (!moveOverwrite && apiErr?.statusCode === 409 && apiErr.errorCode === 'destination_exists') {
-        setMoveConflictOpen(true);
-        return;
-      }
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t('file_manager.rename_failed')}: ${msg}`);
-    }
-  };
+  const {
+    confirmMoveOverwrite,
+    createFolderOpen,
+    destPickerCrumbs,
+    destPickerItems,
+    destPickerOpen,
+    destPickerPrefix,
+    destPickerQuery,
+    folderName,
+    handleCreateFolder,
+    handleMove,
+    moveConflictOpen,
+    moveDestPrefix,
+    moveName,
+    moveOpen,
+    moveOverwrite,
+    normalizeFolderPrefixInput,
+    setCreateFolderOpen,
+    setDestPickerOpen,
+    setDestPickerPrefix,
+    setFolderName,
+    setMoveConflictOpen,
+    setMoveDestPrefix,
+    setMoveName,
+    setMoveOpen,
+    setMoveOverwrite,
+  } = useSourceFolderMoveManager({
+    workspaceId,
+    projectId,
+    selectedLibraryId,
+    prefix,
+    selectedForMove,
+    createFolder: createFolder.mutateAsync,
+    moveObject: moveObject.mutateAsync,
+    clearSelection,
+    navigateToPrefix,
+    t,
+  });
 
   const handleSortByChange = React.useCallback(
     (value: SourceSortBy) => {
@@ -1112,7 +1053,9 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             </Button>
             <Button
               type="button"
-              onClick={handleMove}
+              onClick={() => {
+                void handleMove();
+              }}
               disabled={!selectedForMove || !moveName.trim() || !selectedLibraryId}
               data-testid="sources__move__submit"
             >
@@ -1209,11 +1152,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
         confirmText={t('file_manager.overwrite_action')}
         cancelText={t('file_manager.cancel')}
         variant="destructive"
-        onConfirm={async () => {
-          setMoveOverwrite(true);
-          setMoveConflictOpen(false);
-          await handleMove();
-        }}
+        onConfirm={confirmMoveOverwrite}
         testId="sources__dialog__move-conflict"
       />
 

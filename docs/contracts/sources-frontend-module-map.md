@@ -36,6 +36,9 @@ This document defines the closeout baseline and next decomposition targets for:
 - `src/components/sources/hooks/use-source-library-manager.ts`
 - Library create/rename/delete dialog state and mutation orchestration.
 
+- `src/components/sources/hooks/use-source-folder-move-manager.ts`
+- Create-folder, rename/move, destination picker, and conflict-overwrite flow orchestration.
+
 ## 2.1 Scope Update (Effective Immediately)
 
 The Sources module is being reworked to be a MinIO Console-like object browser and file manager:
@@ -85,6 +88,7 @@ Contract source of truth for this rewrite:
 - `use-source-objects` (list objects/prefixes, pagination token)
 - `use-source-upload-manager` (upload queue, drag-drop, conflict resolution)
 - `use-source-library-manager` (library lifecycle dialogs + actions)
+- `use-source-folder-move-manager` (create-folder + rename/move + destination picker)
 - `use-source-object-actions` (create folder, rename/move, delete, download)
 4. Keep details panel productized:
 - default `Overview` tab for non-technical users

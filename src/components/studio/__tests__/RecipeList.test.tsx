@@ -347,7 +347,7 @@ describe('RecipeList', () => {
   });
 
   describe('Header Content', () => {
-    it('renders studio title and description', () => {
+    it('renders studio title and primary action', () => {
       vi.mocked(useRecipes).mockReturnValue({
         data: { items: mockRecipes, total: 3, page: 1, page_size: 10 },
         isLoading: false,
@@ -358,7 +358,7 @@ describe('RecipeList', () => {
       });
 
       expect(screen.getByText('AI Studio')).toBeInTheDocument();
-      expect(screen.getByText('Manage your tasks and collaborate with agents')).toBeInTheDocument();
+      expect(screen.getByTestId('studio__create-recipe-btn')).toBeInTheDocument();
     });
   });
 });

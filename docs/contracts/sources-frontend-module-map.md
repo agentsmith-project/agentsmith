@@ -98,7 +98,9 @@ Contract source of truth for this rewrite:
 5. Keep file manager interaction discoverable:
 - selected-row summary in toolbar (`count + clear`)
 - selection summary uses a stable reserved slot (no layout jump on show/hide)
-- default single-select flow for preview; multi-select is explicit mode
+- default single-select flow for preview
+- enter multi-select via `Ctrl/Cmd+click` or `Shift+click` range selection
+- multi-select persists until explicit exit (`Esc`)
 - drag-and-drop upload target on object table area
 - batch download for selected files
 - up-navigation button for non-root prefixes

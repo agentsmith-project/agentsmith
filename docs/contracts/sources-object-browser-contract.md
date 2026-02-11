@@ -313,7 +313,8 @@ Playwright (`e2e/sources.spec.ts`) must cover:
 - Selection summary visibility (selected count + clear selection).
 - Selection model:
   - default single-select (clicking an object selects it for preview)
-  - explicit multi-select mode for batch actions
+  - enter multi-select via `Ctrl/Cmd+click` or `Shift+click` range selection
+  - keep multi-select active until explicit exit (`Esc`)
 - Drag-and-drop upload into current folder.
 - Batch download for multi-selected files (folder prefixes are not downloaded).
 - `Up` action for current prefix navigation.

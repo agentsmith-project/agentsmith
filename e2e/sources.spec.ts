@@ -11,11 +11,18 @@
 import { test, expect, goToProject } from './fixtures/test-base';
 
 test.describe('Sources Page (object browser)', () => {
+  const multiSelectModifier: 'Control' | 'Meta' = process.platform === 'darwin' ? 'Meta' : 'Control';
+
   const locateFile = async (authedPage: import('@playwright/test').Page, keyword: string) => {
     await authedPage.getByTestId('sources__search').fill(keyword);
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: keyword }).first()).toBeVisible({
       timeout: 10_000,
     });
+  };
+
+  const multiSelectRowByText = async (authedPage: import('@playwright/test').Page, text: string) => {
+    const row = authedPage.getByTestId('sources__object-row').filter({ hasText: text }).first();
+    await row.getByRole('button').click({ modifiers: [multiSelectModifier] });
   };
 
   test.beforeEach(async ({ authedPage }) => {
@@ -81,7 +88,6 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('restores per-library view state when switching libraries in same page session', async ({ authedPage }) => {
-    await authedPage.getByTestId('sources__selection-mode--multi').click();
     await authedPage.getByTestId('sources__search').fill('README');
     await expect(authedPage.getByTestId('sources__search')).toHaveValue('README');
 
@@ -90,8 +96,7 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__sort-header--size_bytes')).toHaveAttribute('data-active', 'true');
     await expect(authedPage.getByTestId('sources__sort-header--size_bytes')).toHaveAttribute('data-order', 'desc');
 
-    const readmeRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
-    await readmeRow.getByRole('button').click();
+    await multiSelectRowByText(authedPage, 'README.txt');
     await expect(authedPage.getByTestId('sources__selection-summary')).toContainText('1');
 
     await authedPage.getByTestId('sources__library-item--lib_large_bench').click();
@@ -125,9 +130,12 @@ test.describe('Sources Page (object browser)', () => {
     await expect(docsRow).toBeVisible();
     await docsRow.getByRole('button').click();
 
-    await expect(authedPage.getByTestId('sources__breadcrumb-root')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__breadcrumb-root')).toHaveCount(1);
     // After navigating into docs/, the root breadcrumb remains clickable.
-    await authedPage.getByTestId('sources__breadcrumb-root').click();
+    await authedPage
+      .getByTestId('sources__breadcrumb-root')
+      .evaluate((node) => (node as HTMLButtonElement).click());
+    await expect(authedPage.getByTestId('sources__go-up')).toHaveCount(0);
     await expect(authedPage.getByTestId('sources__objects-table')).toBeVisible();
   });
 
@@ -150,8 +158,9 @@ test.describe('Sources Page (object browser)', () => {
     await dialog.getByRole('textbox').fill(name);
     await dialog.getByRole('button', { name: /create/i }).click();
 
-    // Breadcrumb should include the created folder name.
-    await expect(authedPage.getByText(name).first()).toBeVisible();
+    // Creating a folder auto-enters it.
+    await expect(authedPage.getByTestId('sources__go-up')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__breadcrumb--1')).toContainText(name);
   });
 
   test('upload object and rename it', async ({ authedPage }) => {
@@ -277,13 +286,13 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('shows selection summary when rows are selected', async ({ authedPage }) => {
-    await authedPage.getByTestId('sources__selection-mode--multi').click();
     await locateFile(authedPage, 'README.txt');
-    const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
-    await row.getByRole('button').click();
+    await multiSelectRowByText(authedPage, 'README.txt');
 
     await expect(authedPage.getByTestId('sources__selection-summary')).toBeVisible();
     await authedPage.getByTestId('sources__clear-selection').click();
+    await expect(authedPage.getByTestId('sources__selection-summary')).toContainText('0');
+    await authedPage.keyboard.press('Escape');
     await expect(authedPage.getByTestId('sources__selection-summary')).toHaveClass(/opacity-0/);
   });
 
@@ -304,7 +313,6 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('downloads multiple selected files', async ({ authedPage }) => {
-    await authedPage.getByTestId('sources__selection-mode--multi').click();
     await authedPage.getByTestId('sources__upload').click();
     await authedPage.locator('input[type="file"]').setInputFiles([
       {
@@ -320,11 +328,9 @@ test.describe('Sources Page (object browser)', () => {
     ]);
 
     await locateFile(authedPage, 'e2e-download-a.txt');
-    const rowA = authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-download-a.txt' }).first();
-    await rowA.getByRole('button').click();
+    await multiSelectRowByText(authedPage, 'e2e-download-a.txt');
     await locateFile(authedPage, 'e2e-download-b.txt');
-    const rowB = authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-download-b.txt' }).first();
-    await rowB.getByRole('button').click();
+    await multiSelectRowByText(authedPage, 'e2e-download-b.txt');
 
     let downloadResponses = 0;
     const handler = (resp: { url: () => string; status: () => number }) => {
@@ -361,7 +367,6 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('shows failed delete result and can retry failed items', async ({ authedPage }) => {
-    await authedPage.getByTestId('sources__selection-mode--multi').click();
     await authedPage.getByTestId('sources__upload').click();
     await authedPage.locator('input[type="file"]').setInputFiles([
       {
@@ -377,11 +382,9 @@ test.describe('Sources Page (object browser)', () => {
     ]);
 
     await locateFile(authedPage, '__fail_once_delete__a.txt');
-    const failRow = authedPage.getByTestId('sources__object-row').filter({ hasText: '__fail_once_delete__a.txt' }).first();
-    await failRow.getByRole('button').click();
+    await multiSelectRowByText(authedPage, '__fail_once_delete__a.txt');
     await locateFile(authedPage, 'delete-ok-b.txt');
-    const okRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'delete-ok-b.txt' }).first();
-    await okRow.getByRole('button').click();
+    await multiSelectRowByText(authedPage, 'delete-ok-b.txt');
 
     await authedPage.getByTestId('sources__delete').click();
     await authedPage.getByTestId('sources__dialog__delete').getByRole('button', { name: /^delete$/i }).click();

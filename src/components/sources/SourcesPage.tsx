@@ -14,11 +14,9 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
-  CheckSquare,
   Download,
   Folder,
   FolderPlus,
-  MousePointer2,
   PanelRight,
   Plus,
   RefreshCw,
@@ -153,6 +151,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   } = useSourcesUrlState(libraries, { resetBrowseStateOnMount: true });
   const [selectedIds, setSelectedIds] = React.useState<SelectedRowId[]>([]);
   const [selectionMode, setSelectionMode] = React.useState<SourceSelectionMode>('single');
+  const [multiSelectAnchorIndex, setMultiSelectAnchorIndex] = React.useState<number | null>(null);
   const librarySnapshotsRef = React.useRef<Record<string, LibraryViewSnapshot>>({});
   const sessionResetAppliedRef = React.useRef(false);
 
@@ -221,6 +220,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       updateSort('name', 'asc');
       setSelectionMode('single');
       setSelectedIds([]);
+      setMultiSelectAnchorIndex(null);
       return;
     }
     setPrefix(snapshot.prefix);
@@ -228,6 +228,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     updateSort(snapshot.sortBy, snapshot.sortOrder);
     setSelectionMode(snapshot.selectionMode);
     setSelectedIds(snapshot.selectedIds);
+    setMultiSelectAnchorIndex(null);
   }, [setPrefix, setSearchImmediately, updateSort]);
 
   const selectLibrary = React.useCallback((libraryId: string) => {
@@ -245,16 +246,14 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     setSelectedIds([id]);
   }, []);
 
-  const setMultiMode = React.useCallback(() => {
+  const enterMultiMode = React.useCallback(() => {
     setSelectionMode('multi');
   }, []);
 
-  const setSingleMode = React.useCallback(() => {
+  const exitMultiMode = React.useCallback(() => {
     setSelectionMode('single');
-    setSelectedIds((prev) => {
-      const firstObject = prev.find((id) => id.startsWith('o:'));
-      return firstObject ? [firstObject] : [];
-    });
+    setSelectedIds([]);
+    setMultiSelectAnchorIndex(null);
   }, []);
 
   const visibleSelectedCount = React.useMemo(
@@ -269,12 +268,83 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     setSelectedIds((prev) => (prev.length > 0 ? [] : filteredItems.map((it) => rowId(it))));
   };
 
+  const handleRowActivate = React.useCallback(
+    (
+      event: React.MouseEvent<HTMLButtonElement>,
+      item: SourceObjectsListItem,
+      id: SelectedRowId,
+      index: number,
+    ) => {
+      const withCmdCtrl = event.metaKey || event.ctrlKey;
+      const withShift = event.shiftKey;
+
+      if (withCmdCtrl || withShift) {
+        if (selectionMode !== 'multi') {
+          enterMultiMode();
+        }
+
+        if (withShift && multiSelectAnchorIndex !== null) {
+          const start = Math.min(multiSelectAnchorIndex, index);
+          const end = Math.max(multiSelectAnchorIndex, index);
+          const rangeIds = filteredItems.slice(start, end + 1).map((it) => rowId(it));
+          setSelectedIds((prev) => {
+            if (withCmdCtrl) {
+              const merged = new Set(prev);
+              rangeIds.forEach((rid) => merged.add(rid));
+              return Array.from(merged);
+            }
+            return rangeIds;
+          });
+        } else {
+          toggleRow(id);
+        }
+
+        setMultiSelectAnchorIndex(index);
+        return;
+      }
+
+      if (selectionMode === 'multi') {
+        toggleRow(id);
+        setMultiSelectAnchorIndex(index);
+        return;
+      }
+
+      if (item.kind === 'prefix') {
+        navigateToPrefix(item.prefix);
+        return;
+      }
+
+      activateSingleObject(id);
+    },
+    [
+      activateSingleObject,
+      enterMultiMode,
+      filteredItems,
+      multiSelectAnchorIndex,
+      navigateToPrefix,
+      selectionMode,
+      toggleRow,
+    ],
+  );
+
   React.useEffect(() => {
     if (sessionResetAppliedRef.current) return;
     sessionResetAppliedRef.current = true;
     setSelectionMode('single');
     setSelectedIds([]);
+    setMultiSelectAnchorIndex(null);
   }, []);
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (selectionMode !== 'multi') return;
+      event.preventDefault();
+      exitMultiMode();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [exitMultiMode, selectionMode]);
 
   React.useEffect(() => {
     if (objectsQuery.isFetching && filteredItems.length === 0) return;
@@ -476,43 +546,6 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 <h1 className="text-[28px] font-semibold leading-none text-foreground">{t('title')}</h1>
               </div>
 
-              <div className="inline-flex items-center rounded-lg border border-subtle bg-surface-high/50 p-1" data-testid="sources__selection-mode">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    'h-8 gap-1.5 rounded-md px-3 transition-all',
-                    selectionMode === 'single'
-                      ? 'border border-accent/45 bg-accent/15 text-strong shadow-sm shadow-accent/10'
-                      : 'border border-transparent text-tertiary opacity-75 hover:opacity-100 hover:text-primary',
-                  )}
-                  onClick={setSingleMode}
-                  data-testid="sources__selection-mode--single"
-                >
-                  <MousePointer2 className={cn('h-3.5 w-3.5', selectionMode === 'single' ? 'text-accent' : 'text-tertiary')} />
-                  {t('file_manager.selection_mode_single')}
-                  {selectionMode === 'single' ? <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" /> : null}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    'h-8 gap-1.5 rounded-md px-3 transition-all',
-                    selectionMode === 'multi'
-                      ? 'border border-accent/45 bg-accent/15 text-strong shadow-sm shadow-accent/10'
-                      : 'border border-transparent text-tertiary opacity-75 hover:opacity-100 hover:text-primary',
-                  )}
-                  onClick={setMultiMode}
-                  data-testid="sources__selection-mode--multi"
-                >
-                  <CheckSquare className={cn('h-3.5 w-3.5', selectionMode === 'multi' ? 'text-accent' : 'text-tertiary')} />
-                  {t('file_manager.selection_mode_multi')}
-                  {selectionMode === 'multi' ? <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" /> : null}
-                </Button>
-              </div>
-
               {uploadInProgress ? (
                 <div className="hidden xl:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[300px]" data-testid="sources__upload-progress">
                   <div className="min-w-0 flex-1">
@@ -541,13 +574,14 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
               <div
                 className={cn(
-                  'items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[170px]',
-                  isMultiMode && hasSelection
+                  'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[170px]',
+                  isMultiMode
                     ? 'border-subtle bg-surface-high/40 text-primary opacity-100'
                     : 'border-transparent text-transparent opacity-0 pointer-events-none select-none',
                 )}
                 data-testid="sources__selection-summary"
               >
+                <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
                 <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
                 <Button
                   type="button"
@@ -555,6 +589,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                   size="sm"
                   className="h-6 px-2 text-xs"
                   onClick={clearSelection}
+                  disabled={!hasSelection}
                   data-testid="sources__clear-selection"
                 >
                   {t('file_manager.clear_selection')}
@@ -909,7 +944,13 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                onChange={() => toggleRow(id)}
+                                onChange={() => {
+                                  if (selectionMode !== 'multi') {
+                                    enterMultiMode();
+                                  }
+                                  toggleRow(id);
+                                  setMultiSelectAnchorIndex(_index);
+                                }}
                                 aria-label={t('file_manager.select_row')}
                               />
                             </div>
@@ -918,21 +959,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                             <button
                               type="button"
                               className="flex items-center gap-2 w-full text-left"
-                              onClick={() => {
-                                if (it.kind === 'prefix') {
-                                  if (selectionMode === 'multi') {
-                                    toggleRow(id);
-                                    return;
-                                  }
-                                  navigateToPrefix(it.prefix);
-                                  return;
-                                }
-                                if (selectionMode === 'multi') {
-                                  toggleRow(id);
-                                  return;
-                                }
-                                activateSingleObject(id);
-                              }}
+                              onClick={(event) => handleRowActivate(event, it, id, _index)}
                             >
                               <SourceItemIcon
                                 kind={it.kind}

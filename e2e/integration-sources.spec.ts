@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 test.describe('sources integration flow', () => {
   test('keycloak login, create project, and complete sources object-browser CRUD', async ({ page }) => {
     test.setTimeout(240_000);
+    const multiSelectModifier: 'Control' | 'Meta' = process.platform === 'darwin' ? 'Meta' : 'Control';
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
     const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
     const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
@@ -89,7 +90,7 @@ test.describe('sources integration flow', () => {
       .locator('[data-testid="sources__object-row"]')
       .filter({ hasText: 'integration-note.txt' })
       .first();
-    await page.getByTestId('sources__selection-mode--multi').click();
+    await row.getByRole('button').click({ modifiers: [multiSelectModifier] });
     await row.locator('input[type="checkbox"]').check();
 
     await page.getByTestId('sources__rename').click();
@@ -103,7 +104,7 @@ test.describe('sources integration flow', () => {
       page.locator('[data-testid="sources__object-row"]').filter({ hasText: 'integration-note-renamed.txt' }),
     ).toHaveCount(0);
 
-    await page.getByTestId('sources__selection-mode--single').click();
+    await page.keyboard.press('Escape');
     await page
       .locator('[data-testid="sources__object-row"]')
       .filter({ hasText: 'docs' })
@@ -116,7 +117,7 @@ test.describe('sources integration flow', () => {
       .filter({ hasText: 'integration-note-renamed.txt' })
       .first();
     await expect(movedRow).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('sources__selection-mode--multi').click();
+    await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
     const movedCheckbox = movedRow.locator('input[type="checkbox"]');
     await movedCheckbox.check();
     await expect(movedCheckbox).toBeChecked();

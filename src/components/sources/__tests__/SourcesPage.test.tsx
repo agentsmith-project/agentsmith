@@ -150,15 +150,19 @@ describe('SourcesPage (object browser)', () => {
   it('shows selection summary and can clear selection', async () => {
     wrap(<SourcesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
-    await user.click(screen.getByTestId('sources__selection-mode--multi'));
 
     const table = await screen.findByTestId('sources__objects-table');
     const row = within(table).getAllByTestId('sources__object-row').find((el) => el.textContent?.includes('README.txt'));
     expect(row).toBeDefined();
+    await user.keyboard('{Control>}');
     await user.click(within(row as HTMLElement).getByRole('button', { name: /README\.txt/i }));
+    await user.keyboard('{/Control}');
 
     expect(screen.getByTestId('sources__selection-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('sources__selection-summary')).not.toHaveClass('opacity-0');
     await user.click(screen.getByTestId('sources__clear-selection'));
+    expect(screen.getByTestId('sources__selection-summary')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
     expect(screen.getByTestId('sources__selection-summary')).toHaveClass('opacity-0');
   });
 

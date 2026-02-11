@@ -40,6 +40,20 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' })).toHaveCount(0);
   });
 
+  test('persists sort preference in url and after refresh', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__sort-by').click();
+    await authedPage.getByRole('option', { name: 'Sort: Size' }).click();
+    await expect(authedPage).toHaveURL(/sort_by=size_bytes/);
+
+    await authedPage.getByTestId('sources__sort-order').click();
+    await expect(authedPage).toHaveURL(/sort_order=desc/);
+
+    await authedPage.reload();
+    await expect(authedPage).toHaveURL(/sort_by=size_bytes/);
+    await expect(authedPage).toHaveURL(/sort_order=desc/);
+    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Descending');
+  });
+
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
     await authedPage.getByTestId('sources__library-item--lib_large_bench').click();
     await expect(authedPage.getByTestId('sources__load-more')).toBeVisible();

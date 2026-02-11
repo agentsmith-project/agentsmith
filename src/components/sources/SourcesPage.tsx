@@ -25,6 +25,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Virtuoso } from 'react-virtuoso';
 
 import { cn } from '@/lib/utils';
@@ -81,6 +82,18 @@ type UploadConflictState = {
   completed: number;
 };
 type BatchResultType = 'delete' | 'download';
+type SourceSortBy = 'name' | 'size_bytes' | 'last_modified';
+type SourceSortOrder = 'asc' | 'desc';
+
+function parseSortBy(value: string | null): SourceSortBy {
+  if (value === 'size_bytes' || value === 'last_modified') return value;
+  return 'name';
+}
+
+function parseSortOrder(value: string | null): SourceSortOrder {
+  if (value === 'desc') return 'desc';
+  return 'asc';
+}
 
 function rowId(item: SourceObjectsListItem): SelectedRowId {
   return item.kind === 'prefix' ? (`p:${item.prefix}` as const) : (`o:${item.key}` as const);
@@ -143,6 +156,9 @@ function parentPrefixForPrefix(prefix: string) {
 export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const t = useTranslations('sources');
   const canManage = useHasPermission('project:source:manage');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const { data: librariesData, isLoading: libsLoading } = useSourceLibraries(workspaceId, projectId);
   const libraries = React.useMemo(() => librariesData?.items ?? [], [librariesData?.items]);
@@ -157,9 +173,16 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const [prefix, setPrefix] = React.useState('');
   const [searchInput, setSearchInput] = React.useState('');
   const [search, setSearch] = React.useState('');
-  const [sortBy, setSortBy] = React.useState<'name' | 'size_bytes' | 'last_modified'>('name');
-  const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('asc');
+  const [sortBy, setSortBy] = React.useState<SourceSortBy>(parseSortBy(searchParams.get('sort_by')));
+  const [sortOrder, setSortOrder] = React.useState<SourceSortOrder>(parseSortOrder(searchParams.get('sort_order')));
   const [selectedIds, setSelectedIds] = React.useState<SelectedRowId[]>([]);
+
+  React.useEffect(() => {
+    const querySortBy = parseSortBy(searchParams.get('sort_by'));
+    const querySortOrder = parseSortOrder(searchParams.get('sort_order'));
+    if (querySortBy !== sortBy) setSortBy(querySortBy);
+    if (querySortOrder !== sortOrder) setSortOrder(querySortOrder);
+  }, [searchParams, sortBy, sortOrder]);
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -626,6 +649,39 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     }
   };
 
+  const syncSortToUrl = React.useCallback(
+    (nextSortBy: SourceSortBy, nextSortOrder: SourceSortOrder) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (nextSortBy === 'name') {
+        params.delete('sort_by');
+      } else {
+        params.set('sort_by', nextSortBy);
+      }
+      if (nextSortOrder === 'asc') {
+        params.delete('sort_order');
+      } else {
+        params.set('sort_order', nextSortOrder);
+      }
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
+  const handleSortByChange = React.useCallback(
+    (value: SourceSortBy) => {
+      setSortBy(value);
+      syncSortToUrl(value, sortOrder);
+    },
+    [sortOrder, syncSortToUrl],
+  );
+
+  const handleSortOrderToggle = React.useCallback(() => {
+    const nextOrder: SourceSortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortOrder(nextOrder);
+    syncSortToUrl(sortBy, nextOrder);
+  }, [sortBy, sortOrder, syncSortToUrl]);
+
   const loadNextObjectsPage = React.useCallback(() => {
     if (objectsQuery.hasNextPage && !objectsQuery.isFetchingNextPage) {
       void objectsQuery.fetchNextPage();
@@ -724,7 +780,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             <div className="hidden lg:flex items-center gap-2">
               <Select
                 value={sortBy}
-                onValueChange={(value: 'name' | 'size_bytes' | 'last_modified') => setSortBy(value)}
+                onValueChange={(value) => handleSortByChange(parseSortBy(value))}
               >
                 <SelectTrigger className="h-9 w-[180px]" data-testid="sources__sort-by">
                   <SelectValue />
@@ -739,7 +795,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 type="button"
                 variant="outline"
                 className="h-9 px-3"
-                onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                onClick={handleSortOrderToggle}
                 data-testid="sources__sort-order"
               >
                 <ArrowUpDown className="h-4 w-4 mr-2" />

@@ -41,7 +41,7 @@ export const ListProjectsResponseSchema = z.object({
 });
 
 export const ErrorResponseSchema = z.object({
-  code: z.string(),
+  error_code: z.string(),
   message: z.string(),
   request_id: z.string().optional(),
 });

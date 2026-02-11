@@ -3,7 +3,7 @@ import { ErrorResponseSchema } from '@mbos/contracts';
 interface MappedErrorResponse {
   status: number;
   body: {
-    code: string;
+    error_code: string;
     message: string;
   };
 }
@@ -21,19 +21,19 @@ export function mapRequestError(error: unknown): MappedErrorResponse {
   if (NOT_FOUND_ERRORS.has(message)) {
     return {
       status: 404,
-      body: { code: 'RESOURCE_NOT_FOUND', message },
+      body: { error_code: 'RESOURCE_NOT_FOUND', message },
     };
   }
 
   if (message === 'source_library_mismatch') {
     return {
       status: 422,
-      body: { code: 'VALIDATION_ERROR', message },
+      body: { error_code: 'VALIDATION_ERROR', message },
     };
   }
 
   const parsed = ErrorResponseSchema.safeParse({
-    code: 'VALIDATION_ERROR',
+    error_code: 'VALIDATION_ERROR',
     message,
   });
 
@@ -42,7 +42,7 @@ export function mapRequestError(error: unknown): MappedErrorResponse {
     body: parsed.success
       ? parsed.data
       : {
-          code: 'BAD_REQUEST',
+          error_code: 'BAD_REQUEST',
           message: 'Bad request',
         },
   };

@@ -18,8 +18,9 @@ A **library** is the user's "bucket-like" workspace namespace for storing object
 
 Backend mapping:
 
-- One library maps to exactly one object-storage namespace (MinIO/S3 bucket).
-- The mapping must be stable and immutable for the lifetime of the library.
+- A project uses an object-store bucket determined by deployment configuration.
+- One library maps to a stable `object_prefix` within that bucket (S3-style key prefix).
+- The `object_prefix` mapping must be stable and immutable for the lifetime of the library.
 
 ### 1.2 Folder
 
@@ -53,8 +54,7 @@ Response:
       "name": "Shared Docs",
       "description": "Default shared library",
       "visibility": "shared",
-      "provider": "s3",
-      "bucket": "mbos-proj-001-shared-docs",
+      "object_prefix": "ws_default/proj_001/lib_123/",
       "created_by_user_id": "user_001",
       "created_at": "2026-02-01T00:00:00Z",
       "updated_at": "2026-02-01T00:00:00Z"
@@ -65,8 +65,7 @@ Response:
 
 Notes:
 
-- `provider` is `"s3"` for MinIO/S3 compatible backends.
-- `bucket` is the actual bucket name used by the backend. This is useful for debugging/ops, but is not user-facing.
+- `object_prefix` is backend-managed and used to scope all object keys inside a shared bucket.
 
 2. `POST /workspaces/{ws}/projects/{project}/source-libraries`
 
@@ -246,7 +245,7 @@ Response:
 
 Errors must be JSON:
 ```json
-{ "error": "library_not_empty", "message": "Library is not empty" }
+{ "error_code": "library_not_empty", "message": "Library is not empty", "request_id": "optional" }
 ```
 
 Required codes:

@@ -148,18 +148,23 @@ export const sourceHandlers = [
       visibility?: 'shared';
     };
     if (!body.name) {
-      return HttpResponse.json({ error: 'invalid_request' }, { status: 400 });
+      return HttpResponse.json(
+        { error_code: 'VALIDATION_ERROR', message: 'invalid_request' },
+        { status: 400 },
+      );
     }
     const now = new Date().toISOString();
+    const id = `lib_${Date.now()}`;
     const created = {
-      id: `lib_${Date.now()}`,
+      id,
       workspace_id: String(params.ws ?? ''),
       project_id: String(params.prj ?? ''),
       name: body.name,
       description: body.description ?? '',
       visibility: 'shared' as const,
-      provider: 's3' as const,
-      bucket: `mbos-${String(params.prj ?? '')}-${body.name.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`,
+      object_prefix: `${String(params.ws ?? '')}/${String(params.prj ?? '')}/${id}/`,
+      doc_namespace: `${String(params.ws ?? '')}:${String(params.prj ?? '')}:${id}:doc`,
+      vector_namespace: `${String(params.ws ?? '')}:${String(params.prj ?? '')}:${id}:vec`,
       created_by_user_id: 'user_001',
       created_at: now,
       updated_at: now,
@@ -174,7 +179,7 @@ export const sourceHandlers = [
     };
     const index = sourceLibraries.findIndex((item) => item.id === params.id);
     if (index === -1) {
-      return HttpResponse.json({ error: 'not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'library_not_found', message: 'library_not_found' }, { status: 404 });
     }
     sourceLibraries[index] = {
       ...sourceLibraries[index],
@@ -186,7 +191,7 @@ export const sourceHandlers = [
   http.delete('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id', ({ params }) => {
     const index = sourceLibraries.findIndex((item) => item.id === params.id);
     if (index === -1) {
-      return HttpResponse.json({ error: 'not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'library_not_found', message: 'library_not_found' }, { status: 404 });
     }
     sourceLibraries.splice(index, 1);
     return HttpResponse.json(null, { status: 204 });
@@ -208,7 +213,7 @@ export const sourceHandlers = [
     const libraryId = String(params.id ?? '');
     const body = (await request.json().catch(() => ({}))) as { prefix?: string };
     const prefix = normalizePrefix(body.prefix ?? '');
-    if (!prefix) return HttpResponse.json({ error: 'invalid_prefix' }, { status: 400 });
+    if (!prefix) return HttpResponse.json({ error_code: 'invalid_prefix', message: 'invalid_prefix' }, { status: 400 });
 
     // Folder markers are implicit in this MSW mock; ensure the prefix exists by adding a dummy marker if needed.
     const db = objectDbByLibraryId[libraryId] ?? (objectDbByLibraryId[libraryId] = []);
@@ -250,14 +255,20 @@ export const sourceHandlers = [
     const body = (await request.json().catch(() => ({}))) as { from_key?: string; to_key?: string; overwrite?: boolean };
     const fromKey = String(body.from_key ?? '');
     const toKey = String(body.to_key ?? '');
-    if (!fromKey || !toKey) return HttpResponse.json({ error: 'invalid_key' }, { status: 400 });
+    if (!fromKey || !toKey) {
+      return HttpResponse.json({ error_code: 'invalid_key', message: 'invalid_key' }, { status: 400 });
+    }
 
     const db = objectDbByLibraryId[libraryId] ?? (objectDbByLibraryId[libraryId] = []);
     const exists = db.some((r) => r.kind === 'object' && r.key === toKey);
-    if (exists && !body.overwrite) return HttpResponse.json({ error: 'destination_exists' }, { status: 409 });
+    if (exists && !body.overwrite) {
+      return HttpResponse.json({ error_code: 'destination_exists', message: 'destination_exists' }, { status: 409 });
+    }
 
     const srcIdx = db.findIndex((r) => r.kind === 'object' && r.key === fromKey);
-    if (srcIdx === -1) return HttpResponse.json({ error: 'object_not_found' }, { status: 404 });
+    if (srcIdx === -1) {
+      return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
+    }
 
     const src = db[srcIdx] as Extract<ObjectRow, { kind: 'object' }>;
     db.splice(srcIdx, 1);
@@ -271,7 +282,7 @@ export const sourceHandlers = [
     const key = url.searchParams.get('key') ?? '';
     const db = objectDbByLibraryId[libraryId] ?? [];
     const obj = db.find((r) => r.kind === 'object' && r.key === key) as Extract<ObjectRow, { kind: 'object' }> | undefined;
-    if (!obj) return HttpResponse.json({ error: 'object_not_found' }, { status: 404 });
+    if (!obj) return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
     return HttpResponse.json({
       key: obj.key,
       size_bytes: obj.size_bytes,
@@ -289,7 +300,10 @@ export const sourceHandlers = [
     const prefix = normalizePrefix((form.get('prefix') as string | null) ?? '');
 
     if (!(file instanceof File)) {
-      return HttpResponse.json({ error: 'invalid_request', message: 'file is required' }, { status: 400 });
+      return HttpResponse.json(
+        { error_code: 'invalid_request', message: 'file_is_required' },
+        { status: 400 },
+      );
     }
 
     const key = `${prefix}${file.name}`;
@@ -333,7 +347,7 @@ export const sourceHandlers = [
     const key = url.searchParams.get('key') ?? '';
     const db = objectDbByLibraryId[libraryId] ?? [];
     const obj = db.find((r) => r.kind === 'object' && r.key === key) as Extract<ObjectRow, { kind: 'object' }> | undefined;
-    if (!obj) return HttpResponse.json({ error: 'object_not_found' }, { status: 404 });
+    if (!obj) return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
 
     const bytes = obj.content ? new TextEncoder().encode(obj.content) : new Uint8Array([1, 2, 3, 4]);
     return new HttpResponse(bytes, {

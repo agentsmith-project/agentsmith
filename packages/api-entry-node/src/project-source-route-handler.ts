@@ -66,7 +66,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'workspaceItem' && method === 'GET' && route.workspaceId) {
     const found = workspaces.find((item) => item.id === route.workspaceId);
     if (!found) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
       return true;
     }
     json(res, 200, found);
@@ -75,7 +75,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'workspaceMembers' && method === 'GET' && route.workspaceId) {
     if (!defaultWorkspace || route.workspaceId !== defaultWorkspace.id) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
       return true;
     }
     const member = {
@@ -95,7 +95,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   const workspaceIdInRoute = route.workspaceId ?? null;
   if (workspaceIdInRoute && !workspaces.some((item) => item.id === workspaceIdInRoute)) {
-    json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+    json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
     return true;
   }
 

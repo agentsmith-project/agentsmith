@@ -68,7 +68,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       record.projectId !== route.projectId ||
       record.sessionId !== route.sessionId
     ) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_stream_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_stream_not_found' });
       return true;
     }
 
@@ -110,7 +110,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     route.sessionId,
   );
   if (!session) {
-    json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+    json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
     return true;
   }
   const runningStreams = listActiveSessionStreams(route.workspaceId, route.projectId, route.sessionId);
@@ -124,7 +124,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       stopReason: 'session_stream_conflict',
     });
     json(res, 409, {
-      code: 'CHAT_SESSION_STREAM_CONFLICT',
+      error_code: 'CHAT_SESSION_STREAM_CONFLICT',
       message: 'chat_session_stream_conflict',
     });
     return true;

@@ -329,8 +329,8 @@ describe('api-entry-node projects routes', () => {
     });
 
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { code: string; message: string };
-    expect(body.code).toBe('VALIDATION_ERROR');
+    const body = (await res.json()) as { error_code: string; message: string };
+    expect(body.error_code).toBe('VALIDATION_ERROR');
     expect(body.message.length).toBeGreaterThan(0);
   });
 
@@ -339,8 +339,8 @@ describe('api-entry-node projects routes', () => {
 
     const res = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_missing');
     expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string; message: string };
-    expect(body.code).toBe('RESOURCE_NOT_FOUND');
+    const body = (await res.json()) as { error_code: string; message: string };
+    expect(body.error_code).toBe('RESOURCE_NOT_FOUND');
     expect(body.message).toBe('project_not_found');
   });
 
@@ -1018,8 +1018,8 @@ describe('api-entry-node projects routes', () => {
       '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/chat_sess_unknown/streams',
     );
     expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string; message: string };
-    expect(body.code).toBe('RESOURCE_NOT_FOUND');
+    const body = (await res.json()) as { error_code: string; message: string };
+    expect(body.error_code).toBe('RESOURCE_NOT_FOUND');
     expect(body.message).toBe('chat_session_not_found');
   });
 
@@ -1224,8 +1224,8 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(secondStream.status).toBe(409);
-    const secondBody = (await secondStream.json()) as { code: string; message: string };
-    expect(secondBody.code).toBe('CHAT_SESSION_STREAM_CONFLICT');
+    const secondBody = (await secondStream.json()) as { error_code: string; message: string };
+    expect(secondBody.error_code).toBe('CHAT_SESSION_STREAM_CONFLICT');
     expect(secondBody.message).toBe('chat_session_stream_conflict');
 
     const stopBySession = await apiFetch(

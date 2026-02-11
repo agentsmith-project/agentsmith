@@ -40,7 +40,7 @@ export async function handleRequest(
 
   const route = matchProjectsRoute(req.url ?? '');
   if (!route) {
-    json(res, 404, { code: 'NOT_FOUND', message: 'Route not found' });
+    json(res, 404, { error_code: 'NOT_FOUND', message: 'Route not found' });
     return;
   }
 
@@ -118,7 +118,7 @@ export async function handleRequest(
       return;
     }
 
-    json(res, 405, { code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
+    json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
   } catch (error) {
     const mapped = mapRequestError(error);
     json(res, mapped.status, mapped.body);

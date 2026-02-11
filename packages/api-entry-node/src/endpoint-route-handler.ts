@@ -82,7 +82,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
   if (route.kind === 'credentials' && method === 'POST' && route.workspaceId && route.projectId) {
     const raw = (await readBody(req)) as { name?: string; type?: string; value?: string };
     if (!raw.name?.trim() || !raw.value?.trim()) {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'credential_name_and_value_required' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'credential_name_and_value_required' });
       return true;
     }
     const created = await deps.endpointResourceService.createCredential(
@@ -101,7 +101,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
   if (route.kind === 'credentialRotate' && method === 'POST' && route.workspaceId && route.projectId && route.credentialId) {
     const raw = (await readBody(req)) as { value?: string };
     if (!raw.value?.trim()) {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'credential_value_required' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'credential_value_required' });
       return true;
     }
     const updated = await deps.endpointResourceService.rotateCredential(
@@ -111,7 +111,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       raw.value,
     );
     if (!updated) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
       return true;
     }
     json(res, 200, updated);
@@ -125,7 +125,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       route.credentialId,
     );
     if (!deleted) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
       return true;
     }
     res.statusCode = 204;
@@ -145,7 +145,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
   if (route.kind === 'endpoints' && method === 'POST' && route.workspaceId && route.projectId) {
     const raw = (await readBody(req)) as EndpointRecordInput;
     if (!raw.name?.trim() || !raw.openai_model?.trim() || !raw.base_url?.trim()) {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_required_fields_missing' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_required_fields_missing' });
       return true;
     }
     try {
@@ -157,7 +157,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       json(res, 201, created);
     } catch (error) {
       if (error instanceof Error && error.message === 'endpoint_model_conflict') {
-        json(res, 409, { code: 'ENDPOINT_MODEL_CONFLICT', message: 'endpoint_model_conflict' });
+        json(res, 409, { error_code: 'ENDPOINT_MODEL_CONFLICT', message: 'endpoint_model_conflict' });
         return true;
       }
       throw error;
@@ -172,7 +172,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       route.endpointId,
     );
     if (!endpoint) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
       return true;
     }
     json(res, 200, endpoint);
@@ -188,7 +188,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       raw,
     );
     if (!updated) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
       return true;
     }
     json(res, 200, updated);
@@ -202,7 +202,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       route.endpointId,
     );
     if (!deleted) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
       return true;
     }
     res.statusCode = 204;
@@ -228,15 +228,15 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       route.endpointId,
     );
     if (!endpoint) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
       return true;
     }
     if (endpoint.status !== 'active') {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_disabled' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_disabled' });
       return true;
     }
     if (!endpoint.credential_ref) {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_credential_missing' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_credential_missing' });
       return true;
     }
     const apiKey = await deps.endpointResourceService.getCredentialSecret(
@@ -245,7 +245,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       endpoint.credential_ref,
     );
     if (!apiKey) {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'endpoint_credential_not_found' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_credential_not_found' });
       return true;
     }
     await proxyJsonRequest(req, res, {

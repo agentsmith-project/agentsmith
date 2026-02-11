@@ -13,6 +13,8 @@ const NOT_FOUND_ERRORS = new Set([
   'source_not_found',
   'source_library_not_found',
   'ai_ready_job_not_found',
+  'object_not_found',
+  'library_not_found',
 ]);
 
 export function mapRequestError(error: unknown): MappedErrorResponse {
@@ -28,6 +30,32 @@ export function mapRequestError(error: unknown): MappedErrorResponse {
   if (message === 'source_library_mismatch') {
     return {
       status: 422,
+      body: { error_code: 'VALIDATION_ERROR', message },
+    };
+  }
+
+  if (message === 'destination_exists') {
+    return {
+      status: 409,
+      body: { error_code: 'destination_exists', message },
+    };
+  }
+
+  if (message === 'library_not_empty') {
+    return {
+      status: 409,
+      body: { error_code: 'library_not_empty', message },
+    };
+  }
+
+  if (
+    message === 'invalid_prefix' ||
+    message === 'invalid_key' ||
+    message === 'file_required' ||
+    message === 'source_library_prefix_missing'
+  ) {
+    return {
+      status: 400,
       body: { error_code: 'VALIDATION_ERROR', message },
     };
   }

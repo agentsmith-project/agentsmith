@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('minimal integration flow', () => {
-  test('keycloak login, create project, source library and file CRUD', async ({ page }) => {
+  test('keycloak login and create project', async ({ page }) => {
     test.setTimeout(180_000);
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
     const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
@@ -48,47 +48,5 @@ test.describe('minimal integration flow', () => {
 
     const projectMatch = page.url().match(/\/projects\/([^/]+)\//);
     expect(projectMatch?.[1]).toBeTruthy();
-    const projectId = projectMatch![1];
-
-    await page.getByRole('link', { name: /Sources|文件/i }).first().click();
-    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/sources`));
-    await page.getByTestId('sources__manage-libraries-btn').click();
-
-    await page.getByTestId('sources__library-create-input').fill('Integration Library');
-    await page.getByTestId('sources__library-create-btn').click();
-
-    const renameButton = page.locator('[data-testid^="sources__library-rename-btn--"]').first();
-    await expect(renameButton).toBeVisible();
-    await renameButton.click();
-    const renameInput = page.locator('[data-testid^="sources__library-rename-input--"]').first();
-    await renameInput.fill('Integration Library Updated');
-    await page.locator('[data-testid^="sources__library-rename-save--"]').first().click();
-    await expect(page.getByText('Integration Library Updated')).toBeVisible();
-    await page.keyboard.press('Escape');
-
-    await page.getByTestId('sources__upload-btn').click();
-    await page
-      .locator('[data-testid="sources__upload-dialog"] input[type="file"]')
-      .setInputFiles({
-        name: 'integration-note.txt',
-        mimeType: 'text/plain',
-        buffer: Buffer.from('integration-content', 'utf-8'),
-      });
-    await page.getByRole('button', { name: /Upload 1 file\(s\)|上传 1/i }).click();
-    await expect(page.getByText('integration-note.txt')).toBeVisible({ timeout: 30_000 });
-
-    await page.getByRole('checkbox', { name: /attach integration-note\.txt/i }).check();
-    const [download] = await Promise.all([
-      page.waitForEvent('download'),
-      page.getByRole('button', { name: /Download|下载/i }).click(),
-    ]);
-    expect(download.suggestedFilename()).toContain('integration-note.txt');
-
-    await page.getByRole('button', { name: /^Delete$|删除$/i }).first().click();
-    await page
-      .getByTestId('sources__delete-dialog')
-      .getByRole('button', { name: /^Delete$|删除$/i })
-      .click();
-    await expect(page.getByText('integration-note.txt')).toHaveCount(0);
   });
 });

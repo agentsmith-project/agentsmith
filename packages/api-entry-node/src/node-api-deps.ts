@@ -3,24 +3,31 @@ import type {
   BatchStartSourceAIReadyUseCase,
   CancelAIReadyJobUseCase,
   CancelSourceAIReadyUseCase,
+  CreateSourceFolderUseCase,
   CreateAIReadyJobUseCase,
   CreateProjectUseCase,
   CreateSourceLibraryUseCase,
   CreateSourceUseCase,
+  DeleteSourceObjectsUseCase,
   DeleteProjectUseCase,
   DeleteSourceLibraryUseCase,
   DeleteSourceUseCase,
+  DownloadSourceObjectUseCase,
   DownloadSourceUseCase,
   GetAIReadyJobUseCase,
   GetProjectUseCase,
+  GetSourceObjectMetaUseCase,
   GetSourceUseCase,
   GetSourcesQuotaUseCase,
   ListProjectsUseCase,
+  ListSourceLibraryObjectsUseCase,
   ListSourceLibrariesUseCase,
   ListSourcesUseCase,
+  MoveSourceObjectUseCase,
   RetrySourceAIReadyUseCase,
   RunQueuedAIReadyJobUseCase,
   StartSourceAIReadyUseCase,
+  UploadSourceObjectUseCase,
   UpdateProjectUseCase,
   UpdateSourceLibraryUseCase,
 } from '@mbos/application';
@@ -37,11 +44,17 @@ export interface NodeApiDeps {
   aiReadyJobQueue: InMemoryJobQueue;
   createAIReadyJobUseCase: CreateAIReadyJobUseCase;
   createSourceLibraryUseCase: CreateSourceLibraryUseCase;
+  createSourceFolderUseCase: CreateSourceFolderUseCase;
   createProjectUseCase: CreateProjectUseCase;
   createSourceUseCase: CreateSourceUseCase;
+  uploadSourceObjectUseCase: UploadSourceObjectUseCase;
   deleteSourceLibraryUseCase: DeleteSourceLibraryUseCase;
+  deleteSourceObjectsUseCase: DeleteSourceObjectsUseCase;
   deleteSourceUseCase: DeleteSourceUseCase;
+  moveSourceObjectUseCase: MoveSourceObjectUseCase;
+  downloadSourceObjectUseCase: DownloadSourceObjectUseCase;
   downloadSourceUseCase: DownloadSourceUseCase;
+  getSourceObjectMetaUseCase: GetSourceObjectMetaUseCase;
   getSourceUseCase: GetSourceUseCase;
   getAIReadyJobUseCase: GetAIReadyJobUseCase;
   getSourcesQuotaUseCase: GetSourcesQuotaUseCase;
@@ -54,6 +67,7 @@ export interface NodeApiDeps {
   getProjectUseCase: GetProjectUseCase;
   listProjectsUseCase: ListProjectsUseCase;
   listSourceLibrariesUseCase: ListSourceLibrariesUseCase;
+  listSourceLibraryObjectsUseCase: ListSourceLibraryObjectsUseCase;
   listSourcesUseCase: ListSourcesUseCase;
   updateSourceLibraryUseCase: UpdateSourceLibraryUseCase;
   updateProjectUseCase: UpdateProjectUseCase;

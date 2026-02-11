@@ -75,6 +75,65 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches source library object browser routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/objects'),
+    ).toEqual({
+      kind: 'sourceLibraryObjects',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/folders'),
+    ).toEqual({
+      kind: 'sourceLibraryFolders',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/objects/upload'),
+    ).toEqual({
+      kind: 'sourceLibraryObjectsUpload',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/objects/download'),
+    ).toEqual({
+      kind: 'sourceLibraryObjectsDownload',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/objects/delete'),
+    ).toEqual({
+      kind: 'sourceLibraryObjectsDelete',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/objects/move'),
+    ).toEqual({
+      kind: 'sourceLibraryObjectsMove',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/objects/meta'),
+    ).toEqual({
+      kind: 'sourceLibraryObjectsMeta',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+  });
+
   it('returns null for unknown route', () => {
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/unknown')).toBeNull();
   });

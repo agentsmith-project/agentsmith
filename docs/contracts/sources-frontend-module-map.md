@@ -32,7 +32,7 @@ This document defines the closeout baseline and next decomposition targets for:
 The Sources module is being reworked to be a MinIO Console-like object browser and file manager:
 
 - **Libraries** remain the primary grouping concept in the UI.
-- Each library maps to a backing object-storage namespace (MinIO/S3 bucket) on the backend.
+- Backend storage uses a shared MinIO/S3 bucket, and each library maps to a stable `object_prefix`.
 - The UI must support folders (prefixes), breadcrumb navigation, upload/download, create folder, rename/move, delete, multi-select, and a details panel.
 
 Out of scope for this phase:

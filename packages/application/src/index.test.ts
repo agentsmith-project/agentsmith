@@ -713,6 +713,7 @@ describe('Project use cases', () => {
 
   it('creates, updates, lists, and deletes source library', async () => {
     const libraryRepo = new FakeSourceLibraryRepo();
+    const objectStore = new FakeObjectStore();
     const cache = new InMemoryCache();
 
     const create = new CreateSourceLibraryUseCase(
@@ -733,7 +734,7 @@ describe('Project use cases', () => {
     expect(created.id).toBe('lib_fixed_001');
     expect(created.name).toBe('Shared');
     expect(created.object_prefix).toBe(
-      'workspaces/ws_a/projects/proj_1/libraries/lib_fixed_001',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_fixed_001/',
     );
     expect(created.doc_namespace).toBe('doc_ws_a_proj_1_lib_fixed_001');
     expect(created.vector_namespace).toBe('vec_ws_a_proj_1_lib_fixed_001');
@@ -756,7 +757,7 @@ describe('Project use cases', () => {
     });
     expect(listed.items).toHaveLength(1);
 
-    await new DeleteSourceLibraryUseCase(libraryRepo, cache).execute({
+    await new DeleteSourceLibraryUseCase(libraryRepo, objectStore, cache, 'mbos-dev').execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
       libraryId: created.id,

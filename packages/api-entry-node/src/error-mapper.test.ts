@@ -34,4 +34,15 @@ describe('mapRequestError', () => {
       },
     });
   });
+
+  it('maps destination_exists to 409 for object move/upload conflicts', () => {
+    const mapped = mapRequestError(new Error('destination_exists'));
+    expect(mapped).toEqual({
+      status: 409,
+      body: {
+        error_code: 'destination_exists',
+        message: 'destination_exists',
+      },
+    });
+  });
 });

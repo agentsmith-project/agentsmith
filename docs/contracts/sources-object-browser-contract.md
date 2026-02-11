@@ -90,7 +90,7 @@ Response: `200` with updated library.
 Behavior:
 
 - If the library is not empty, backend must fail-fast with `409 library_not_empty`.
-- If it is empty, delete the bucket/namespace and return `204`.
+- If it is empty, delete the library metadata and return `204`.
 
 ### 2.2 List Objects (browse)
 
@@ -103,7 +103,7 @@ Query:
   - non-empty must end with `/` to represent a folder.
 - `delimiter`: string, required. Always `/`.
 - `page_size`: int, optional. default `200`, max `1000`.
-- `continuation_token`: string, optional. Opaque pagination token.
+- `continuation_token`: string, optional. Pagination token for next page (MVP uses a key-based token, opaque to UI).
 
 Response:
 ```json
@@ -268,3 +268,6 @@ Playwright (`e2e/sources.spec.ts`) must cover:
 - Rename/move file.
 - Delete file (and folder prefix).
 - Download file (assert response headers and file bytes are non-empty).
+
+Integration coverage (`e2e/integration-sources.spec.ts`) must validate the same flow against
+real Node API + MinIO + Keycloak (no MSW).

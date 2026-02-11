@@ -1,26 +1,40 @@
 import {
   AIReadyJobSchema,
   CreateAIReadyJobRequestSchema,
+  CreateSourceFolderRequestSchema,
   CreateProjectRequestSchema,
   CreateSourceLibraryRequestSchema,
   CreateSourceRequestSchema,
+  DeleteSourceObjectsRequestSchema,
+  ListSourceObjectsResponseSchema,
+  MoveSourceObjectRequestSchema,
+  SourceObjectMetaResponseSchema,
+  UploadSourceObjectResponseSchema,
   UpdateSourceLibraryRequestSchema,
   UpdateProjectRequestSchema,
   type AIReadyJobDTO,
   type CreateAIReadyJobRequest,
+  type CreateSourceFolderRequest,
   type CreateSourceLibraryRequest,
   type CreateProjectRequest,
   type CreateSourceRequest,
+  type DeleteSourceObjectsRequest,
+  type DeleteSourceObjectsResponse,
+  type ListSourceObjectsResponse,
+  type MoveSourceObjectRequest,
   type ListProjectsResponse,
   type ListSourceLibrariesResponse,
   type ListSourcesResponse,
   type ProjectDTO,
+  type SourceObjectMetaResponse,
   type SourceLibraryDTO,
   type SourceDTO,
   type UpdateSourceLibraryRequest,
   type UpdateProjectRequest,
+  type UploadSourceObjectResponse,
 } from '@mbos/contracts';
 import { Project } from '@mbos/domain';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type {
   AIReadyJobRepoPort,
   CachePort,
@@ -96,6 +110,46 @@ export interface UpdateSourceLibraryCommand extends ListSourceLibrariesCommand {
 export interface DeleteSourceLibraryCommand extends ListSourceLibrariesCommand {
   libraryId: string;
 }
+
+export interface ListSourceLibraryObjectsCommand extends ListSourceLibrariesCommand {
+  libraryId: string;
+  prefix?: string;
+  delimiter?: string;
+  pageSize?: number;
+  continuationToken?: string;
+}
+
+export interface CreateSourceFolderCommand extends ListSourceLibrariesCommand {
+  libraryId: string;
+  input: CreateSourceFolderRequest;
+}
+
+export interface UploadSourceObjectCommand extends ListSourceLibrariesCommand {
+  libraryId: string;
+  fileName: string;
+  fileStream: WebReadableStream<Uint8Array>;
+  contentType?: string;
+  contentLength?: number;
+  prefix?: string;
+  overwrite?: boolean;
+}
+
+export interface DeleteSourceObjectsCommand extends ListSourceLibrariesCommand {
+  libraryId: string;
+  input: DeleteSourceObjectsRequest;
+}
+
+export interface MoveSourceObjectCommand extends ListSourceLibrariesCommand {
+  libraryId: string;
+  input: MoveSourceObjectRequest;
+}
+
+export interface GetSourceObjectMetaCommand extends ListSourceLibrariesCommand {
+  libraryId: string;
+  key: string;
+}
+
+export type DownloadSourceObjectCommand = GetSourceObjectMetaCommand;
 
 export interface SourceAIReadyJob {
   id: string;
@@ -243,10 +297,61 @@ function sourceLibraryTuple(workspaceId: string, projectId: string, libraryId: s
 } {
   const scope = `${workspaceId}_${projectId}_${libraryId}`;
   return {
-    objectPrefix: `workspaces/${workspaceId}/projects/${projectId}/libraries/${libraryId}`,
+    objectPrefix: `workspaces/${workspaceId}/projects/${projectId}/libraries/${libraryId}/`,
     docNamespace: `doc_${scope}`,
     vectorNamespace: `vec_${scope}`,
   };
+}
+
+function ensureLibrary(
+  library: SourceLibraryDTO | null,
+): SourceLibraryDTO & { object_prefix: string } {
+  if (!library) {
+    throw new Error('source_library_not_found');
+  }
+  if (!library.object_prefix) {
+    throw new Error('source_library_prefix_missing');
+  }
+  return library as SourceLibraryDTO & { object_prefix: string };
+}
+
+function normalizePrefix(value?: string): string {
+  const raw = (value ?? '').trim();
+  if (!raw) {
+    return '';
+  }
+  if (raw.startsWith('/') || raw.includes('\\') || raw.includes('..')) {
+    throw new Error('invalid_prefix');
+  }
+  const squashed = raw.replace(/\/{2,}/g, '/');
+  return squashed.endsWith('/') ? squashed : `${squashed}/`;
+}
+
+function normalizeKey(value: string): string {
+  const key = value.trim();
+  if (!key || key.startsWith('/') || key.includes('\\') || key.includes('..')) {
+    throw new Error('invalid_key');
+  }
+  return key.replace(/\/{2,}/g, '/');
+}
+
+function joinObjectKey(basePrefix: string, relative: string): string {
+  const left = basePrefix.endsWith('/') ? basePrefix : `${basePrefix}/`;
+  const right = relative.startsWith('/') ? relative.slice(1) : relative;
+  return `${left}${right}`;
+}
+
+function stripObjectPrefix(fullKey: string, libraryPrefix: string): string {
+  if (!fullKey.startsWith(libraryPrefix)) {
+    throw new Error('invalid_key');
+  }
+  return fullKey.slice(libraryPrefix.length);
+}
+
+function basenameFromKey(key: string): string {
+  const cleaned = key.endsWith('/') ? key.slice(0, -1) : key;
+  const idx = cleaned.lastIndexOf('/');
+  return idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
 }
 
 function decodeBase64(value: string): Uint8Array {
@@ -533,10 +638,26 @@ export class UpdateSourceLibraryUseCase {
 export class DeleteSourceLibraryUseCase {
   constructor(
     private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly objectStore: ObjectStorePort,
     private readonly cache: CachePort,
+    private readonly bucket: string,
   ) {}
 
   async execute(command: DeleteSourceLibraryCommand): Promise<void> {
+    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+    ));
+    const listed = await this.objectStore.listObjects(this.bucket, {
+      prefix: library.object_prefix,
+      delimiter: '/',
+      pageSize: 1,
+    });
+    if (listed.objects.length > 0 || listed.commonPrefixes.length > 0) {
+      throw new Error('library_not_empty');
+    }
+
     const deleted = await this.sourceLibraryRepo.delete(
       command.workspaceId,
       command.projectId,
@@ -547,6 +668,281 @@ export class DeleteSourceLibraryUseCase {
     }
 
     await this.cache.del(sourceLibrariesCacheKey(command.workspaceId, command.projectId));
+  }
+}
+
+export class ListSourceLibraryObjectsUseCase {
+  constructor(
+    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly objectStore: ObjectStorePort,
+    private readonly bucket: string,
+  ) {}
+
+  async execute(command: ListSourceLibraryObjectsCommand): Promise<ListSourceObjectsResponse> {
+    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+    ));
+    const prefix = normalizePrefix(command.prefix);
+    const delimiter = command.delimiter ?? '/';
+    const pageSize = Math.min(Math.max(1, command.pageSize ?? 200), 1000);
+    const listed = await this.objectStore.listObjects(this.bucket, {
+      prefix: joinObjectKey(library.object_prefix, prefix),
+      delimiter,
+      pageSize,
+      continuationToken: command.continuationToken,
+    });
+    const prefixItems = listed.commonPrefixes
+      .map((fullPrefix) => {
+        const relativePrefix = stripObjectPrefix(fullPrefix, library.object_prefix);
+        return {
+          kind: 'prefix' as const,
+          prefix: relativePrefix,
+          name: basenameFromKey(relativePrefix),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const objectItems = listed.objects
+      .map((obj) => {
+        const relativeKey = stripObjectPrefix(obj.key, library.object_prefix);
+        return {
+          kind: 'object' as const,
+          key: relativeKey,
+          name: basenameFromKey(relativeKey),
+          size_bytes: obj.sizeBytes,
+          content_type: 'application/octet-stream',
+          etag: obj.etag,
+          last_modified: obj.lastModified,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return ListSourceObjectsResponseSchema.parse({
+      prefix,
+      items: [...prefixItems, ...objectItems],
+      next_continuation_token: listed.nextContinuationToken,
+    });
+  }
+}
+
+export class CreateSourceFolderUseCase {
+  constructor(
+    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly objectStore: ObjectStorePort,
+    private readonly bucket: string,
+  ) {}
+
+  async execute(command: CreateSourceFolderCommand): Promise<void> {
+    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+    ));
+    const input = CreateSourceFolderRequestSchema.parse(command.input);
+    const prefix = normalizePrefix(input.prefix);
+    if (!prefix) {
+      throw new Error('invalid_prefix');
+    }
+    await this.objectStore.putObject(
+      this.bucket,
+      joinObjectKey(library.object_prefix, prefix),
+      new Uint8Array(0),
+      'application/x-directory',
+    );
+  }
+}
+
+export class UploadSourceObjectUseCase {
+  constructor(
+    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly objectStore: ObjectStorePort,
+    private readonly clock: ClockPort,
+    private readonly bucket: string,
+  ) {}
+
+  async execute(command: UploadSourceObjectCommand): Promise<UploadSourceObjectResponse> {
+    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+    ));
+    const prefix = normalizePrefix(command.prefix);
+    const fileName = basenameFromKey(normalizeKey(command.fileName));
+    const key = joinObjectKey(library.object_prefix, `${prefix}${fileName}`);
+    if (command.overwrite !== true) {
+      try {
+        await this.objectStore.statObject(this.bucket, key);
+        throw new Error('destination_exists');
+      } catch (error) {
+        if (error instanceof Error && error.message === 'destination_exists') {
+          throw error;
+        }
+      }
+    }
+    await this.objectStore.putObjectStream(this.bucket, key, command.fileStream, {
+      contentType: command.contentType ?? 'application/octet-stream',
+      sizeBytes: command.contentLength,
+    });
+    const stat = await this.objectStore.statObject(this.bucket, key);
+    return UploadSourceObjectResponseSchema.parse({
+      key: stripObjectPrefix(key, library.object_prefix),
+      size_bytes: stat.sizeBytes,
+      content_type: stat.contentType ?? 'application/octet-stream',
+      etag: stat.etag,
+      last_modified: stat.lastModified ?? this.clock.nowIso(),
+    });
+  }
+}
+
+export class DownloadSourceObjectUseCase {
+  constructor(
+    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly objectStore: ObjectStorePort,
+    private readonly bucket: string,
+  ) {}
+
+  async execute(command: DownloadSourceObjectCommand): Promise<{
+    key: string;
+    body: WebReadableStream<Uint8Array>;
+    contentType: string;
+    sizeBytes?: number;
+    etag?: string;
+    lastModified?: string;
+  }> {
+    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+    ));
+    const key = normalizeKey(command.key);
+    const object = await this.objectStore.getObjectStream(
+      this.bucket,
+      joinObjectKey(library.object_prefix, key),
+    );
+    return {
+      key,
+      body: object.body,
+      contentType: object.contentType ?? 'application/octet-stream',
+      sizeBytes: object.sizeBytes,
+      etag: object.etag,
+      lastModified: object.lastModified,
+    };
+  }
+}
+
+export class DeleteSourceObjectsUseCase {
+  constructor(
+    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly objectStore: ObjectStorePort,
+    private readonly bucket: string,
+  ) {}
+
+  async execute(command: DeleteSourceObjectsCommand): Promise<DeleteSourceObjectsResponse> {
+    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+    ));
+    const input = DeleteSourceObjectsRequestSchema.parse(command.input);
+    const results: DeleteSourceObjectsResponse['results'] = [];
+
+    for (const rawKey of input.keys) {
+      const key = normalizeKey(rawKey);
+      if (key.endsWith('/')) {
+        const fullPrefix = joinObjectKey(library.object_prefix, key);
+        const listed = await this.objectStore.listObjects(this.bucket, {
+          prefix: fullPrefix,
+          pageSize: 1000,
+        });
+        const keysToDelete = listed.objects.map((obj) => obj.key);
+        if (keysToDelete.length > 0) {
+          await this.objectStore.deleteMany(this.bucket, keysToDelete);
+        }
+        results.push({ key, status: 'deleted' });
+      } else {
+        await this.objectStore.deleteObject(this.bucket, joinObjectKey(library.object_prefix, key));
+        results.push({ key, status: 'deleted' });
+      }
+    }
+
+    return { results };
+  }
+}
+
+export class MoveSourceObjectUseCase {
+  constructor(
+    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly objectStore: ObjectStorePort,
+    private readonly bucket: string,
+  ) {}
+
+  async execute(command: MoveSourceObjectCommand): Promise<void> {
+    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+    ));
+    const input = MoveSourceObjectRequestSchema.parse(command.input);
+    const fromKey = normalizeKey(input.from_key);
+    const toKey = normalizeKey(input.to_key);
+    const overwrite = input.overwrite === true;
+    if (fromKey.endsWith('/')) {
+      const listed = await this.objectStore.listObjects(this.bucket, {
+        prefix: joinObjectKey(library.object_prefix, fromKey),
+        pageSize: 1000,
+      });
+      for (const obj of listed.objects) {
+        const relative = stripObjectPrefix(obj.key, library.object_prefix);
+        const suffix = relative.slice(fromKey.length);
+        const target = `${toKey.endsWith('/') ? toKey : `${toKey}/`}${suffix}`;
+        await this.objectStore.copyObject(
+          this.bucket,
+          obj.key,
+          joinObjectKey(library.object_prefix, target),
+          { overwrite },
+        );
+        await this.objectStore.deleteObject(this.bucket, obj.key);
+      }
+      return;
+    }
+
+    await this.objectStore.copyObject(
+      this.bucket,
+      joinObjectKey(library.object_prefix, fromKey),
+      joinObjectKey(library.object_prefix, toKey),
+      { overwrite },
+    );
+    await this.objectStore.deleteObject(this.bucket, joinObjectKey(library.object_prefix, fromKey));
+  }
+}
+
+export class GetSourceObjectMetaUseCase {
+  constructor(
+    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly objectStore: ObjectStorePort,
+    private readonly bucket: string,
+  ) {}
+
+  async execute(command: GetSourceObjectMetaCommand): Promise<SourceObjectMetaResponse> {
+    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+    ));
+    const key = normalizeKey(command.key);
+    const stat = await this.objectStore.statObject(
+      this.bucket,
+      joinObjectKey(library.object_prefix, key),
+    );
+    return SourceObjectMetaResponseSchema.parse({
+      key,
+      size_bytes: stat.sizeBytes,
+      content_type: stat.contentType ?? 'application/octet-stream',
+      etag: stat.etag,
+      last_modified: stat.lastModified,
+      user_metadata: stat.metadata ?? {},
+    });
   }
 }
 

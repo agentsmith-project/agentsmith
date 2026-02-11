@@ -37,16 +37,15 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('resets sort preference after refresh', async ({ authedPage }) => {
-    await authedPage.getByTestId('sources__sort-by').click();
-    await authedPage.getByRole('option', { name: 'Sort: Size' }).click();
-    await expect(authedPage.getByTestId('sources__sort-by')).toContainText('Sort: Size');
-
-    await authedPage.getByTestId('sources__sort-order').click();
-    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Descending');
+    await authedPage.getByTestId('sources__sort-header--size_bytes').click();
+    await expect(authedPage.getByTestId('sources__sort-header--size_bytes')).toHaveAttribute('data-active', 'true');
+    await expect(authedPage.getByTestId('sources__sort-header--size_bytes')).toHaveAttribute('data-order', 'asc');
+    await authedPage.getByTestId('sources__sort-header--size_bytes').click();
+    await expect(authedPage.getByTestId('sources__sort-header--size_bytes')).toHaveAttribute('data-order', 'desc');
 
     await authedPage.reload();
-    await expect(authedPage.getByTestId('sources__sort-by')).toContainText('Sort: Name');
-    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Ascending');
+    await expect(authedPage.getByTestId('sources__sort-header--name')).toHaveAttribute('data-active', 'true');
+    await expect(authedPage.getByTestId('sources__sort-header--name')).toHaveAttribute('data-order', 'asc');
   });
 
   test('resets search after refresh', async ({ authedPage }) => {
@@ -86,11 +85,10 @@ test.describe('Sources Page (object browser)', () => {
     await authedPage.getByTestId('sources__search').fill('README');
     await expect(authedPage.getByTestId('sources__search')).toHaveValue('README');
 
-    await authedPage.getByTestId('sources__sort-by').click();
-    await authedPage.getByRole('option', { name: 'Sort: Size' }).click();
-    await authedPage.getByTestId('sources__sort-order').click();
-    await expect(authedPage.getByTestId('sources__sort-by')).toContainText('Sort: Size');
-    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Descending');
+    await authedPage.getByTestId('sources__sort-header--size_bytes').click();
+    await authedPage.getByTestId('sources__sort-header--size_bytes').click();
+    await expect(authedPage.getByTestId('sources__sort-header--size_bytes')).toHaveAttribute('data-active', 'true');
+    await expect(authedPage.getByTestId('sources__sort-header--size_bytes')).toHaveAttribute('data-order', 'desc');
 
     const readmeRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
     await readmeRow.getByRole('button').click();
@@ -101,8 +99,8 @@ test.describe('Sources Page (object browser)', () => {
 
     await authedPage.getByTestId('sources__library-item--lib_shared_default').click();
     await expect(authedPage.getByTestId('sources__search')).toHaveValue('README');
-    await expect(authedPage.getByTestId('sources__sort-by')).toContainText('Sort: Size');
-    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Descending');
+    await expect(authedPage.getByTestId('sources__sort-header--size_bytes')).toHaveAttribute('data-active', 'true');
+    await expect(authedPage.getByTestId('sources__sort-header--size_bytes')).toHaveAttribute('data-order', 'desc');
     await expect(authedPage.getByTestId('sources__selection-summary')).toContainText('1');
   });
 

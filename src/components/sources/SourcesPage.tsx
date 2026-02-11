@@ -12,6 +12,7 @@
 import * as React from 'react';
 import {
   ArrowUp,
+  ArrowDown,
   ArrowUpDown,
   CheckSquare,
   Download,
@@ -40,7 +41,6 @@ import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -66,7 +66,7 @@ import {
   useSourceObjectsInfinite,
   useUploadSourceObject,
 } from '@/lib/hooks/use-source-objects';
-import { parseSourceSortBy, SourceSortBy, SourceSortOrder, useSourcesUrlState } from '@/lib/hooks/use-sources-url-state';
+import { SourceSortBy, SourceSortOrder, useSourcesUrlState } from '@/lib/hooks/use-sources-url-state';
 import { useSourcesLayoutMode } from '@/lib/hooks/use-sources-layout-mode';
 import { useSourceUploadManager } from '@/components/sources/hooks/use-source-upload-manager';
 import { useSourceBatchOperations } from '@/components/sources/hooks/use-source-batch-operations';
@@ -448,17 +448,17 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     t,
   });
 
-  const handleSortByChange = React.useCallback(
-    (value: SourceSortBy) => {
-      updateSort(value, sortOrder);
+  const handleSortHeaderClick = React.useCallback(
+    (nextSortBy: SourceSortBy) => {
+      if (sortBy === nextSortBy) {
+        const nextOrder: SourceSortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+        updateSort(nextSortBy, nextOrder);
+        return;
+      }
+      updateSort(nextSortBy, 'asc');
     },
-    [sortOrder, updateSort],
+    [sortBy, sortOrder, updateSort],
   );
-
-  const handleSortOrderToggle = React.useCallback(() => {
-    const nextOrder: SourceSortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-    updateSort(sortBy, nextOrder);
-  }, [sortBy, sortOrder, updateSort]);
 
   const loadNextObjectsPage = React.useCallback(() => {
     if (objectsQuery.hasNextPage && !objectsQuery.isFetchingNextPage) {
@@ -492,57 +492,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       }
       toolbar={(
         <PageToolbar>
-          <div className="w-full space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 max-w-xl">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
-                <Input
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder={t('file_manager.search_placeholder')}
-                  className="pl-9 pr-10"
-                  data-testid="sources__search"
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-tertiary hover:text-primary"
-                  onClick={() => void objectsQuery.refetch()}
-                  disabled={!selectedLibraryId}
-                  data-testid="sources__refresh"
-                  title={t('file_manager.refresh')}
-                  aria-label={t('file_manager.refresh')}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="ml-auto flex items-center gap-2">
-                <Select
-                  value={sortBy}
-                  onValueChange={(value) => handleSortByChange(parseSourceSortBy(value))}
-                >
-                  <SelectTrigger className="h-9 w-[180px]" data-testid="sources__sort-by">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="name">{t('file_manager.sort_name')}</SelectItem>
-                    <SelectItem value="size_bytes">{t('file_manager.sort_size')}</SelectItem>
-                    <SelectItem value="last_modified">{t('file_manager.sort_modified')}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 px-3"
-                  onClick={handleSortOrderToggle}
-                  data-testid="sources__sort-order"
-                >
-                  <ArrowUpDown className="h-4 w-4 mr-2" />
-                  {sortOrder === 'asc' ? t('file_manager.order_asc') : t('file_manager.order_desc')}
-                </Button>
-              </div>
-            </div>
+          <div className="w-full">
             <div className="flex items-center gap-2 flex-wrap">
               <div className="inline-flex items-center rounded-lg border border-subtle bg-surface-high/50 p-1" data-testid="sources__selection-mode">
                 <Button
@@ -695,17 +645,17 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 </Button>
               </div>
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                void handleFilesPicked(e.target.files);
-                e.currentTarget.value = '';
-              }}
-            />
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              void handleFilesPicked(e.target.files);
+              e.currentTarget.value = '';
+            }}
+          />
         </PageToolbar>
       )}
     >
@@ -846,15 +796,29 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               ))}
             </div>
             <div className="ml-auto flex items-center gap-3">
-              {selectionMode === 'single' ? (
-                <div className="hidden xl:block text-xs text-tertiary">
-                  {t('file_manager.single_select_hint')}
-                </div>
-              ) : (
-                <div className="hidden xl:block text-xs text-tertiary">
-                  {t('file_manager.multi_select_enabled')}
-                </div>
-              )}
+              <div className="relative w-[280px]">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
+                <Input
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder={t('file_manager.search_placeholder')}
+                  className="h-8 pl-9 pr-9 bg-surface-high/30"
+                  data-testid="sources__search"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-tertiary hover:text-primary"
+                  onClick={() => void objectsQuery.refetch()}
+                  disabled={!selectedLibraryId}
+                  data-testid="sources__refresh"
+                  title={t('file_manager.refresh')}
+                  aria-label={t('file_manager.refresh')}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </Button>
+              </div>
               <div className="text-xs text-tertiary tabular-nums">
                 {filteredItems.length} {t('file_manager.items')}
               </div>
@@ -875,9 +839,45 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                       />
                     </div>
                   ) : null}
-                  <div className="px-3 py-2">{t('file_manager.col_name')}</div>
-                  <div className="px-3 py-2 text-right">{t('file_manager.col_size')}</div>
-                  <div className="px-3 py-2">{t('file_manager.col_modified')}</div>
+                  <div className="px-3 py-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSortHeaderClick('name')}
+                      data-testid="sources__sort-header--name"
+                      data-active={sortBy === 'name' ? 'true' : 'false'}
+                      data-order={sortBy === 'name' ? sortOrder : 'none'}
+                    >
+                      {t('file_manager.col_name')}
+                      {sortBy !== 'name' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  <div className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSortHeaderClick('size_bytes')}
+                      data-testid="sources__sort-header--size_bytes"
+                      data-active={sortBy === 'size_bytes' ? 'true' : 'false'}
+                      data-order={sortBy === 'size_bytes' ? sortOrder : 'none'}
+                    >
+                      {t('file_manager.col_size')}
+                      {sortBy !== 'size_bytes' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  <div className="px-3 py-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSortHeaderClick('last_modified')}
+                      data-testid="sources__sort-header--last_modified"
+                      data-active={sortBy === 'last_modified' ? 'true' : 'false'}
+                      data-order={sortBy === 'last_modified' ? sortOrder : 'none'}
+                    >
+                      {t('file_manager.col_modified')}
+                      {sortBy !== 'last_modified' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
                 </div>
               </div>
 

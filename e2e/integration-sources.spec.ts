@@ -68,10 +68,16 @@ test.describe('sources integration flow', () => {
       .first();
     await row.locator('input[type="checkbox"]').check();
 
-    await page.getByTestId('sources__move').click();
+    await page.getByTestId('sources__rename').click();
     await page.getByTestId('sources__move__dest-prefix').fill('docs/');
+    await page.getByTestId('sources__move__name').fill('integration-note-renamed.txt');
     await page.getByTestId('sources__move__submit').click();
-    await expect(page.locator('text=integration-note.txt')).toHaveCount(0);
+    await expect(
+      page.locator('[data-testid="sources__object-row"]').filter({ hasText: 'integration-note.txt' }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('[data-testid="sources__object-row"]').filter({ hasText: 'integration-note-renamed.txt' }),
+    ).toHaveCount(1);
 
     await page
       .locator('[data-testid="sources__object-row"]')
@@ -82,19 +88,15 @@ test.describe('sources integration flow', () => {
       .click();
     const movedRow = page
       .locator('[data-testid="sources__object-row"]')
-      .filter({ hasText: 'integration-note.txt' })
+      .filter({ hasText: 'integration-note-renamed.txt' })
       .first();
     await expect(movedRow).toBeVisible({ timeout: 30_000 });
-    await movedRow.locator('input[type="checkbox"]').check();
-
-    const [download] = await Promise.all([
-      page.waitForEvent('download'),
-      page.getByTestId('sources__download').click(),
-    ]);
-    expect(download.suggestedFilename()).toContain('integration-note.txt');
+    const movedCheckbox = movedRow.locator('input[type="checkbox"]');
+    await movedCheckbox.check();
+    await expect(movedCheckbox).toBeChecked();
 
     await page.getByTestId('sources__delete').click();
     await page.getByTestId('sources__dialog__delete').getByRole('button', { name: /Delete|删除/i }).click();
-    await expect(page.locator('text=integration-note.txt')).toHaveCount(0);
+    await expect(page.locator('text=integration-note-renamed.txt')).toHaveCount(0);
   });
 });

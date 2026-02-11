@@ -46,6 +46,19 @@ const sourceLibraries = [
     created_at: new Date('2026-02-03T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-03T00:00:00Z').toISOString(),
   },
+  {
+    id: 'lib_large_bench',
+    workspace_id: 'ws_default',
+    project_id: 'proj_001',
+    name: 'Large Bench',
+    description: 'Large directory benchmark fixture',
+    visibility: 'shared' as const,
+    provider: 's3' as const,
+    bucket: 'mbos-proj-001-large-bench',
+    created_by_user_id: 'user_001',
+    created_at: new Date('2026-02-04T00:00:00Z').toISOString(),
+    updated_at: new Date('2026-02-04T00:00:00Z').toISOString(),
+  },
 ];
 
 const nowIso = () => new Date().toISOString();
@@ -76,6 +89,19 @@ const objectDbByLibraryId: Record<string, ObjectRow[]> = {
   lib_product_specs: [
     { kind: 'object', key: 'specs/api/openapi.json', name: 'openapi.json', size_bytes: 1500, content_type: 'application/json', etag: '"etag5"', last_modified: nowIso(), content: '{\"openapi\":\"3.0.0\"}' },
   ],
+  lib_large_bench: Array.from({ length: 260 }).map((_, index) => {
+    const name = `bulk-${String(index + 1).padStart(4, '0')}.txt`;
+    return {
+      kind: 'object' as const,
+      key: name,
+      name,
+      size_bytes: 100 + index,
+      content_type: 'text/plain',
+      etag: `"bulk-${index + 1}"`,
+      last_modified: nowIso(),
+      content: `bulk file ${index + 1}`,
+    };
+  }),
 };
 
 function normalizePrefix(prefix: string | null): string {
@@ -90,9 +116,22 @@ function basename(path: string) {
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
 }
 
-function listObjects(libraryId: string, prefix: string) {
+function listObjects(
+  libraryId: string,
+  prefix: string,
+  options?: {
+    search?: string;
+    sortBy?: 'name' | 'size_bytes' | 'last_modified';
+    sortOrder?: 'asc' | 'desc';
+  },
+) {
   const db = objectDbByLibraryId[libraryId] ?? [];
   const normalized = normalizePrefix(prefix);
+  const search = options?.search?.trim().toLowerCase() ?? '';
+  const hasSearch = search.length > 0;
+  const sortBy = options?.sortBy ?? 'name';
+  const sortOrder = options?.sortOrder ?? 'asc';
+  const sortFactor = sortOrder === 'desc' ? -1 : 1;
 
   const prefixes = new Set<string>();
   const objects: ObjectRow[] = [];
@@ -116,15 +155,20 @@ function listObjects(libraryId: string, prefix: string) {
     objects.push(row);
   }
 
-  const prefixItems: ObjectRow[] = Array.from(prefixes)
-    .sort((a, b) => a.localeCompare(b))
-    .map((p) => ({ kind: 'prefix', prefix: p, name: basename(p) }));
+  let prefixItems: ObjectRow[] = Array.from(prefixes)
+    .map((p) => ({ kind: 'prefix' as const, prefix: p, name: basename(p) }))
+    .sort((a, b) => {
+      if (a.kind !== 'prefix' || b.kind !== 'prefix') return 0;
+      return a.name.localeCompare(b.name) * sortFactor;
+    });
 
-  const objectItems = objects
+  let objectItems = objects
     .slice()
     .sort((a, b) => {
       if (a.kind !== 'object' || b.kind !== 'object') return 0;
-      return a.name.localeCompare(b.name);
+      if (sortBy === 'size_bytes') return (a.size_bytes - b.size_bytes) * sortFactor;
+      if (sortBy === 'last_modified') return a.last_modified.localeCompare(b.last_modified) * sortFactor;
+      return a.name.localeCompare(b.name) * sortFactor;
     })
     .map((o) => ({
       kind: 'object' as const,
@@ -135,6 +179,11 @@ function listObjects(libraryId: string, prefix: string) {
       etag: (o as Extract<ObjectRow, { kind: 'object' }>).etag,
       last_modified: (o as Extract<ObjectRow, { kind: 'object' }>).last_modified,
     }));
+
+  if (hasSearch) {
+    prefixItems = prefixItems.filter((item) => item.kind === 'prefix' && item.name.toLowerCase().includes(search));
+    objectItems = objectItems.filter((item) => item.kind === 'object' && item.name.toLowerCase().includes(search));
+  }
 
   return [...prefixItems, ...objectItems];
 }
@@ -212,11 +261,22 @@ export const sourceHandlers = [
     const libraryId = String(params.id ?? '');
     const url = new URL(request.url);
     const prefix = normalizePrefix(url.searchParams.get('prefix'));
-    const items = listObjects(libraryId, prefix);
+    const pageSize = Number(url.searchParams.get('page_size') ?? '200');
+    const safePageSize = Number.isFinite(pageSize) ? Math.min(Math.max(Math.floor(pageSize), 1), 1000) : 200;
+    const continuationToken = url.searchParams.get('continuation_token');
+    const offset = continuationToken ? Number(continuationToken) : 0;
+    const safeOffset = Number.isFinite(offset) && offset >= 0 ? Math.floor(offset) : 0;
+    const items = listObjects(libraryId, prefix, {
+      search: url.searchParams.get('search') ?? undefined,
+      sortBy: (url.searchParams.get('sort_by') as 'name' | 'size_bytes' | 'last_modified' | null) ?? undefined,
+      sortOrder: (url.searchParams.get('sort_order') as 'asc' | 'desc' | null) ?? undefined,
+    });
+    const pagedItems = items.slice(safeOffset, safeOffset + safePageSize);
+    const nextToken = safeOffset + safePageSize < items.length ? String(safeOffset + safePageSize) : null;
     return HttpResponse.json({
       prefix,
-      items,
-      next_continuation_token: null,
+      items: pagedItems,
+      next_continuation_token: nextToken,
     });
   }),
 

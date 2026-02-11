@@ -15,6 +15,21 @@ import { SourcesPage } from '../SourcesPage';
 
 import { vi } from 'vitest';
 
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: ({ data, itemContent, components }: {
+    data: Array<unknown>;
+    itemContent: (index: number, item: unknown) => React.ReactNode;
+    components?: { Footer?: React.ComponentType };
+  }) => (
+    <div data-testid="sources__virtuoso">
+      {data.map((item, index) => (
+        <div key={index}>{itemContent(index, item)}</div>
+      ))}
+      {components?.Footer ? <components.Footer /> : null}
+    </div>
+  ),
+}));
+
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: () => true,
 }));
@@ -46,6 +61,33 @@ vi.mock('@/lib/hooks/use-sources', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-source-objects', () => ({
+  useSourceObjectsInfinite: () => ({
+    data: {
+      pages: [
+        {
+          prefix: '',
+          items: [
+            { kind: 'prefix', prefix: 'docs/', name: 'docs' },
+            {
+              kind: 'object',
+              key: 'README.txt',
+              name: 'README.txt',
+              size_bytes: 10,
+              content_type: 'text/plain',
+              etag: '"etag"',
+              last_modified: new Date().toISOString(),
+            },
+          ],
+          next_continuation_token: null,
+        },
+      ],
+    },
+    isLoading: false,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: vi.fn(),
+    refetch: vi.fn(),
+  }),
   useSourceObjects: () => ({
     data: {
       prefix: '',

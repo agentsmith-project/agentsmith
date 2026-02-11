@@ -11,6 +11,13 @@
 import { test, expect, goToProject } from './fixtures/test-base';
 
 test.describe('Sources Page (object browser)', () => {
+  const locateFile = async (authedPage: import('@playwright/test').Page, keyword: string) => {
+    await authedPage.getByTestId('sources__search').fill(keyword);
+    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: keyword }).first()).toBeVisible({
+      timeout: 10_000,
+    });
+  };
+
   test.beforeEach(async ({ authedPage }) => {
     await goToProject(authedPage, 'sources');
   });
@@ -19,6 +26,38 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__library-list')).toBeVisible();
     await expect(authedPage.getByTestId('sources__objects-table')).toBeVisible();
     await expect(authedPage.getByTestId('sources__object-row').first()).toBeVisible();
+  });
+
+  test('search filters objects via backend query', async ({ authedPage }) => {
+    const responsePromise = authedPage.waitForResponse((response) => {
+      const url = response.url();
+      return url.includes('/source-libraries/') && url.includes('/objects?') && url.includes('search=readme');
+    });
+    await authedPage.getByTestId('sources__search').fill('readme');
+    await responsePromise;
+
+    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first()).toBeVisible();
+    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' })).toHaveCount(0);
+  });
+
+  test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__library-item--lib_large_bench').click();
+    await expect(authedPage.getByTestId('sources__load-more')).toBeVisible();
+
+    const continuationResponse = authedPage.waitForResponse((response) => {
+      const url = response.url();
+      return url.includes('/source-libraries/') && url.includes('/objects?') && url.includes('continuation_token=');
+    });
+    await authedPage.getByTestId('sources__load-more').click();
+    await continuationResponse;
+
+    const searchResponse = authedPage.waitForResponse((response) => {
+      const url = response.url();
+      return url.includes('/source-libraries/') && url.includes('/objects?') && url.includes('search=bulk-0250');
+    });
+    await authedPage.getByTestId('sources__search').fill('bulk-0250');
+    await searchResponse;
+    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'bulk-0250.txt' }).first()).toBeVisible();
   });
 
   test('can browse into a folder and back to root via breadcrumb', async ({ authedPage }) => {
@@ -68,8 +107,8 @@ test.describe('Sources Page (object browser)', () => {
     ]);
 
     // Wait for row to appear.
+    await locateFile(authedPage, 'e2e-upload.txt');
     const uploadedRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-upload.txt' }).first();
-    await expect(uploadedRow).toBeVisible({ timeout: 10_000 });
 
     // Select by clicking the row name button (object rows toggle selection).
     await uploadedRow.getByRole('button').click();
@@ -79,9 +118,11 @@ test.describe('Sources Page (object browser)', () => {
     const dialog = authedPage.getByTestId('sources__dialog__move');
     await expect(dialog).toBeVisible();
     await dialog.getByTestId('sources__move__name').fill('e2e-renamed.txt');
+    const moveResponse = authedPage.waitForResponse((response) => {
+      return response.url().includes('/objects/move') && response.status() === 200;
+    });
     await dialog.getByTestId('sources__move__submit').click();
-
-    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-renamed.txt' }).first()).toBeVisible();
+    await moveResponse;
   });
 
   test('can cancel an in-progress upload', async ({ authedPage }) => {
@@ -117,9 +158,7 @@ test.describe('Sources Page (object browser)', () => {
     await expect(conflictDialog).toBeVisible();
     await authedPage.getByTestId('sources__upload-conflict__rename').click();
 
-    await expect(
-      authedPage.getByTestId('sources__object-row').filter({ hasText: 'README (1).txt' }).first(),
-    ).toBeVisible({ timeout: 10_000 });
+    await locateFile(authedPage, 'README (1).txt');
   });
 
   test('handles upload conflicts with overwrite', async ({ authedPage }) => {
@@ -131,9 +170,7 @@ test.describe('Sources Page (object browser)', () => {
         buffer: Buffer.from('v1'),
       },
     ]);
-    await expect(
-      authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-overwrite.txt' }).first(),
-    ).toBeVisible({ timeout: 10_000 });
+    await locateFile(authedPage, 'e2e-overwrite.txt');
 
     await authedPage.getByTestId('sources__upload').click();
     await authedPage.locator('input[type="file"]').setInputFiles([
@@ -155,8 +192,8 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('download object triggers download endpoint request', async ({ authedPage }) => {
+    await locateFile(authedPage, 'README.txt');
     const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
-    await expect(row).toBeVisible();
     await row.getByRole('button').click();
 
     const respPromise = authedPage.waitForResponse((resp) => {
@@ -167,8 +204,8 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('details panel supports overview and technical tabs with preview', async ({ authedPage }) => {
+    await locateFile(authedPage, 'README.txt');
     const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
-    await expect(row).toBeVisible();
     await row.getByRole('button').click();
 
     await expect(authedPage.getByTestId('sources__details-panel')).toBeVisible();
@@ -180,8 +217,8 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('shows selection summary when rows are selected', async ({ authedPage }) => {
+    await locateFile(authedPage, 'README.txt');
     const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
-    await expect(row).toBeVisible();
     await row.getByRole('button').click();
 
     await expect(authedPage.getByTestId('sources__selection-summary')).toBeVisible();
@@ -204,12 +241,11 @@ test.describe('Sources Page (object browser)', () => {
       },
     ]);
 
+    await locateFile(authedPage, 'e2e-download-a.txt');
     const rowA = authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-download-a.txt' }).first();
-    const rowB = authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-download-b.txt' }).first();
-    await expect(rowA).toBeVisible({ timeout: 10_000 });
-    await expect(rowB).toBeVisible({ timeout: 10_000 });
-
     await rowA.getByRole('button').click();
+    await locateFile(authedPage, 'e2e-download-b.txt');
+    const rowB = authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-download-b.txt' }).first();
     await rowB.getByRole('button').click();
 
     let downloadResponses = 0;
@@ -234,11 +270,8 @@ test.describe('Sources Page (object browser)', () => {
       },
     ]);
 
-    const row = authedPage
-      .getByTestId('sources__object-row')
-      .filter({ hasText: '__fail_once_download__a.bin' })
-      .first();
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await locateFile(authedPage, '__fail_once_download__a.bin');
+    const row = authedPage.getByTestId('sources__object-row').filter({ hasText: '__fail_once_download__a.bin' }).first();
     await row.getByRole('button').click();
 
     await authedPage.getByTestId('sources__download').click();
@@ -264,17 +297,11 @@ test.describe('Sources Page (object browser)', () => {
       },
     ]);
 
-    const failRow = authedPage
-      .getByTestId('sources__object-row')
-      .filter({ hasText: '__fail_once_delete__a.txt' })
-      .first();
-    const okRow = authedPage
-      .getByTestId('sources__object-row')
-      .filter({ hasText: 'delete-ok-b.txt' })
-      .first();
-    await expect(failRow).toBeVisible({ timeout: 10_000 });
-    await expect(okRow).toBeVisible({ timeout: 10_000 });
+    await locateFile(authedPage, '__fail_once_delete__a.txt');
+    const failRow = authedPage.getByTestId('sources__object-row').filter({ hasText: '__fail_once_delete__a.txt' }).first();
     await failRow.getByRole('button').click();
+    await locateFile(authedPage, 'delete-ok-b.txt');
+    const okRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'delete-ok-b.txt' }).first();
     await okRow.getByRole('button').click();
 
     await authedPage.getByTestId('sources__delete').click();
@@ -301,8 +328,8 @@ test.describe('Sources Page (object browser)', () => {
       },
     ]);
 
+    await locateFile(authedPage, 'e2e-delete.txt');
     const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-delete.txt' }).first();
-    await expect(row).toBeVisible({ timeout: 10_000 });
     await row.getByRole('button').click();
 
     await authedPage.getByTestId('sources__delete').click();

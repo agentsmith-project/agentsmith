@@ -60,7 +60,7 @@ Contract source of truth for this rewrite:
 
 - E2E behavior baseline:
 - `npm run test:e2e -- e2e/sources.spec.ts --project=chromium --workers=1`
-- Result: passed (15/15)
+- Result: passed (21/21)
 
 - Visual baseline:
 - `npm run test:e2e -- --project=visual e2e/visual.spec.ts --grep "sources"`
@@ -72,7 +72,7 @@ Contract source of truth for this rewrite:
 2. Update frontend-backend contract per `docs/contracts/sources-object-browser-contract.md` and keep MSW handlers aligned.
 3. Refactor the orchestration hook into focused hooks (names are targets, not hard requirements):
 - `use-source-libraries` (list/create/rename/delete libraries)
-- `use-source-browser-state` (selected library, current prefix, view mode, selection)
+- `use-sources-url-state` (selected library/current prefix/search/sort with URL sync)
 - `use-source-objects` (list objects/prefixes, pagination token)
 - `use-source-object-actions` (upload, create folder, rename/move, delete, download)
 4. Keep details panel productized:
@@ -91,6 +91,7 @@ Contract source of truth for this rewrite:
  - backend-driven search/sort query for object list (no client-only filtering drift)
  - toolbar sorting controls (`sort_by` + `sort_order`) are first-class query inputs
  - selected library, folder location, and query preferences are URL-synced (`library_id`, `prefix`, `search`, `sort_by`, `sort_order`) for refresh/share reproducibility
+ - URL sync implementation is centralized in `src/lib/hooks/use-sources-url-state.ts` (single source of truth)
 6. Replace/refresh test baselines:
 - Unit tests for each extracted hook and key components.
 - E2E `e2e/sources.spec.ts` updated to the new UX and stable testids.

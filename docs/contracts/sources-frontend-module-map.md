@@ -85,7 +85,8 @@ Contract source of truth for this rewrite:
 - batch download for selected files
 - up-navigation button for non-root prefixes
 - upload conflict resolution dialog (overwrite vs keep-both rename)
- - upload progress strip with cancel action
+- upload progress strip with cancel action
+ - batch-result dialog with failed key retry (delete/download)
 6. Replace/refresh test baselines:
 - Unit tests for each extracted hook and key components.
 - E2E `e2e/sources.spec.ts` updated to the new UX and stable testids.

@@ -300,7 +300,14 @@
       "delete_partial_failed": "{failed} item(s) could not be deleted",
       "uploading": "Uploading {name} ({completed}/{total})",
       "upload_cancel": "Cancel",
-      "upload_canceled": "Upload canceled"
+      "upload_canceled": "Upload canceled",
+      "batch_delete_result_title": "Delete completed with failures",
+      "batch_download_result_title": "Download completed with failures",
+      "batch_result_failed_count": "{failed} item(s) failed",
+      "retry_failed": "Retry failed items",
+      "retry_partial_failed": "{failed} item(s) still failed after retry",
+      "retry_success": "Retry completed successfully",
+      "close": "Close"
     },
     "filter": {
       "status": {

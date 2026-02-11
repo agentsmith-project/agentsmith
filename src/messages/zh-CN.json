@@ -302,7 +302,14 @@
       "delete_partial_failed": "有 {failed} 项删除失败",
       "uploading": "正在上传 {name}（{completed}/{total}）",
       "upload_cancel": "取消",
-      "upload_canceled": "上传已取消"
+      "upload_canceled": "上传已取消",
+      "batch_delete_result_title": "删除完成，但存在失败项",
+      "batch_download_result_title": "下载完成，但存在失败项",
+      "batch_result_failed_count": "失败 {failed} 项",
+      "retry_failed": "重试失败项",
+      "retry_partial_failed": "重试后仍有 {failed} 项失败",
+      "retry_success": "重试成功",
+      "close": "关闭"
     },
     "filter": {
       "status": {

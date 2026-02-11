@@ -50,6 +50,17 @@ const sourceLibraries = [
 
 const nowIso = () => new Date().toISOString();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const failOnceCounters: Record<string, number> = {};
+
+function shouldFailOnce(kind: 'delete' | 'download', key: string) {
+  const marker = kind === 'delete' ? '__fail_once_delete__' : '__fail_once_download__';
+  if (!key.includes(marker)) return false;
+  const bucket = `${kind}:${key}`;
+  const count = failOnceCounters[bucket] ?? 0;
+  if (count > 0) return false;
+  failOnceCounters[bucket] = count + 1;
+  return true;
+}
 
 const objectDbByLibraryId: Record<string, ObjectRow[]> = {
   lib_shared_default: [
@@ -238,6 +249,14 @@ export const sourceHandlers = [
     const keys = (body.keys ?? []).filter(Boolean);
     const db = objectDbByLibraryId[libraryId] ?? (objectDbByLibraryId[libraryId] = []);
     const results = keys.map((k) => {
+      if (shouldFailOnce('delete', k)) {
+        return {
+          key: k,
+          status: 'error',
+          error_code: 'simulated_failure',
+          message: 'simulated_failure',
+        };
+      }
       if (k.endsWith('/')) {
         const before = db.length;
         objectDbByLibraryId[libraryId] = db.filter((r) => r.kind !== 'object' || !r.key.startsWith(k));
@@ -359,6 +378,9 @@ export const sourceHandlers = [
     const db = objectDbByLibraryId[libraryId] ?? [];
     const obj = db.find((r) => r.kind === 'object' && r.key === key) as Extract<ObjectRow, { kind: 'object' }> | undefined;
     if (!obj) return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
+    if (shouldFailOnce('download', key)) {
+      return HttpResponse.json({ error_code: 'simulated_failure', message: 'simulated_failure' }, { status: 500 });
+    }
 
     const bytes = obj.content ? new TextEncoder().encode(obj.content) : new Uint8Array([1, 2, 3, 4]);
     return new HttpResponse(bytes, {

@@ -283,6 +283,10 @@ Playwright (`e2e/sources.spec.ts`) must cover:
   - frontend shows per-file upload progress
   - user can cancel current upload
   - cancellation aborts the in-flight upload request without partial write in object list
+- Batch operation result panel:
+  - delete/download collect failed keys
+  - frontend shows failed key list
+  - retry action runs only on failed keys
 
 Integration coverage (`e2e/integration-sources.spec.ts`) must validate the same flow against
 real Node API + MinIO + Keycloak (no MSW).

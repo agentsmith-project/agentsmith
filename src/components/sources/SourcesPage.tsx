@@ -76,6 +76,7 @@ type UploadConflictState = {
   total: number;
   completed: number;
 };
+type BatchResultType = 'delete' | 'download';
 
 function rowId(item: SourceObjectsListItem): SelectedRowId {
   return item.kind === 'prefix' ? (`p:${item.prefix}` as const) : (`o:${item.key}` as const);
@@ -220,6 +221,10 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
   const [uploadConflictOpen, setUploadConflictOpen] = React.useState(false);
   const [uploadConflict, setUploadConflict] = React.useState<UploadConflictState | null>(null);
+  const [batchResultOpen, setBatchResultOpen] = React.useState(false);
+  const [batchResultType, setBatchResultType] = React.useState<BatchResultType>('delete');
+  const [batchFailedKeys, setBatchFailedKeys] = React.useState<string[]>([]);
+  const [batchRetryPending, setBatchRetryPending] = React.useState(false);
   const [uploadInProgress, setUploadInProgress] = React.useState(false);
   const [uploadCurrentFileName, setUploadCurrentFileName] = React.useState('');
   const [uploadCurrentProgress, setUploadCurrentProgress] = React.useState(0);
@@ -499,6 +504,9 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             .filter((item) => failedSet.has(item.kind === 'object' ? item.key : item.prefix))
             .map((item) => (item.kind === 'object' ? (`o:${item.key}` as const) : (`p:${item.prefix}` as const))),
         );
+        setBatchResultType('delete');
+        setBatchFailedKeys(failedKeys);
+        setBatchResultOpen(true);
         toast.error(t('file_manager.delete_partial_failed', { failed: String(failedKeys.length) }));
         return;
       }
@@ -510,31 +518,83 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     }
   };
 
+  const triggerBrowserDownload = (blob: Blob, key: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = basename(key) || 'download';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+
   const handleDownload = async () => {
     if (!selectedLibraryId || selectedObjects.length === 0) return;
     const api = new SourcesAPI(getApiClient());
-    let failedCount = 0;
+    const failedKeys: string[] = [];
     for (const objectItem of selectedObjects) {
       try {
         const blob = await api.downloadObject(workspaceId, projectId, selectedLibraryId, objectItem.key);
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = basename(objectItem.key) || 'download';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        triggerBrowserDownload(blob, objectItem.key);
       } catch {
-        failedCount += 1;
+        failedKeys.push(objectItem.key);
       }
     }
-    if (failedCount > 0) {
-      toast.error(t('file_manager.download_partial_failed', { failed: String(failedCount) }));
+    if (failedKeys.length > 0) {
+      setBatchResultType('download');
+      setBatchFailedKeys(failedKeys);
+      setBatchResultOpen(true);
+      toast.error(t('file_manager.download_partial_failed', { failed: String(failedKeys.length) }));
       return;
     }
     if (selectedObjects.length > 1) {
       toast.success(t('file_manager.download_started', { count: String(selectedObjects.length) }));
+    }
+  };
+
+  const handleRetryBatchFailures = async () => {
+    if (!selectedLibraryId || batchFailedKeys.length === 0) return;
+    setBatchRetryPending(true);
+    try {
+      if (batchResultType === 'delete') {
+        const result = await deleteObjects.mutateAsync({
+          workspaceId,
+          projectId,
+          libraryId: selectedLibraryId,
+          keys: batchFailedKeys,
+        });
+        const stillFailed = result.results
+          .filter((item) => item.status !== 'deleted')
+          .map((item) => item.key);
+        if (stillFailed.length > 0) {
+          setBatchFailedKeys(stillFailed);
+          toast.error(t('file_manager.retry_partial_failed', { failed: String(stillFailed.length) }));
+          return;
+        }
+        clearSelection();
+      } else {
+        const api = new SourcesAPI(getApiClient());
+        const stillFailed: string[] = [];
+        for (const key of batchFailedKeys) {
+          try {
+            const blob = await api.downloadObject(workspaceId, projectId, selectedLibraryId, key);
+            triggerBrowserDownload(blob, key);
+          } catch {
+            stillFailed.push(key);
+          }
+        }
+        if (stillFailed.length > 0) {
+          setBatchFailedKeys(stillFailed);
+          toast.error(t('file_manager.retry_partial_failed', { failed: String(stillFailed.length) }));
+          return;
+        }
+      }
+      setBatchResultOpen(false);
+      setBatchFailedKeys([]);
+      toast.success(t('file_manager.retry_success'));
+    } finally {
+      setBatchRetryPending(false);
     }
   };
 
@@ -1420,6 +1480,61 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             </Button>
             <Button type="button" variant="destructive" onClick={handleDelete} disabled={selected.length === 0}>
               {t('file_manager.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={batchResultOpen}
+        onOpenChange={(open) => {
+          setBatchResultOpen(open);
+          if (!open) {
+            setBatchFailedKeys([]);
+            setBatchRetryPending(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[620px]" data-testid="sources__dialog__batch-result">
+          <DialogHeader>
+            <DialogTitle>
+              {batchResultType === 'delete'
+                ? t('file_manager.batch_delete_result_title')
+                : t('file_manager.batch_download_result_title')}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm text-tertiary">
+              {t('file_manager.batch_result_failed_count', { failed: String(batchFailedKeys.length) })}
+            </div>
+            <div className="rounded-md border border-subtle bg-surface-high/20 max-h-[260px] overflow-auto">
+              <div className="divide-y divide-border-subtle">
+                {batchFailedKeys.map((key) => (
+                  <div key={key} className="px-3 py-2 text-xs font-mono break-all text-primary" data-testid="sources__batch-result__row">
+                    {key}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setBatchResultOpen(false);
+                setBatchFailedKeys([]);
+              }}
+            >
+              {t('file_manager.close')}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleRetryBatchFailures}
+              disabled={batchRetryPending || batchFailedKeys.length === 0}
+              data-testid="sources__batch-result__retry"
+            >
+              {t('file_manager.retry_failed')}
             </Button>
           </DialogFooter>
         </DialogContent>

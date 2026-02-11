@@ -224,6 +224,72 @@ test.describe('Sources Page (object browser)', () => {
     authedPage.off('response', handler);
   });
 
+  test('shows failed download result and can retry failed items', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__upload').click();
+    await authedPage.locator('input[type="file"]').setInputFiles([
+      {
+        name: '__fail_once_download__a.bin',
+        mimeType: 'application/octet-stream',
+        buffer: Buffer.from([0x00, 0x01, 0x02, 0x03]),
+      },
+    ]);
+
+    const row = authedPage
+      .getByTestId('sources__object-row')
+      .filter({ hasText: '__fail_once_download__a.bin' })
+      .first();
+    await expect(row).toBeVisible({ timeout: 10_000 });
+    await row.getByRole('button').click();
+
+    await authedPage.getByTestId('sources__download').click();
+    const resultDialog = authedPage.getByTestId('sources__dialog__batch-result');
+    await expect(resultDialog).toBeVisible({ timeout: 10_000 });
+    await expect(resultDialog.getByTestId('sources__batch-result__row')).toContainText('__fail_once_download__a.bin');
+    await authedPage.getByTestId('sources__batch-result__retry').click();
+    await expect(resultDialog).toHaveCount(0);
+  });
+
+  test('shows failed delete result and can retry failed items', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__upload').click();
+    await authedPage.locator('input[type="file"]').setInputFiles([
+      {
+        name: '__fail_once_delete__a.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('delete-fail-once'),
+      },
+      {
+        name: 'delete-ok-b.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('delete-ok'),
+      },
+    ]);
+
+    const failRow = authedPage
+      .getByTestId('sources__object-row')
+      .filter({ hasText: '__fail_once_delete__a.txt' })
+      .first();
+    const okRow = authedPage
+      .getByTestId('sources__object-row')
+      .filter({ hasText: 'delete-ok-b.txt' })
+      .first();
+    await expect(failRow).toBeVisible({ timeout: 10_000 });
+    await expect(okRow).toBeVisible({ timeout: 10_000 });
+    await failRow.getByRole('button').click();
+    await okRow.getByRole('button').click();
+
+    await authedPage.getByTestId('sources__delete').click();
+    await authedPage.getByTestId('sources__dialog__delete').getByRole('button', { name: /^delete$/i }).click();
+
+    const resultDialog = authedPage.getByTestId('sources__dialog__batch-result');
+    await expect(resultDialog).toBeVisible({ timeout: 10_000 });
+    await expect(resultDialog.getByTestId('sources__batch-result__row')).toContainText('__fail_once_delete__a.txt');
+    await authedPage.getByTestId('sources__batch-result__retry').click();
+    await expect(resultDialog).toHaveCount(0);
+    await expect(
+      authedPage.getByTestId('sources__object-row').filter({ hasText: '__fail_once_delete__a.txt' }),
+    ).toHaveCount(0);
+  });
+
   test('delete object removes it from the table', async ({ authedPage }) => {
     // Upload a file so we can delete deterministically.
     await authedPage.getByTestId('sources__upload').click();

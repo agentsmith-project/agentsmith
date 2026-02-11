@@ -123,6 +123,10 @@
     "select_workspace": "选择工作空间",
     "current_workspace": "当前",
     "current_project": "当前",
+    "layout_standard": "标准",
+    "layout_ultrawide": "超宽",
+    "switch_to_standard": "切换到标准布局",
+    "switch_to_ultrawide": "切换到超宽布局",
     "sidebar": {
       "collapse": "收起侧栏",
       "expand": "展开侧栏",

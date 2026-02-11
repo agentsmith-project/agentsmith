@@ -17,7 +17,6 @@ import {
   Download,
   Folder,
   FolderPlus,
-  PanelRight,
   Plus,
   RefreshCw,
   Search,
@@ -32,7 +31,6 @@ import { Virtuoso } from 'react-virtuoso';
 import { cn } from '@/lib/utils';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import { ProjectModuleHeader } from '@/components/layout/ProjectModuleHeader';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
@@ -65,7 +63,7 @@ import {
   useUploadSourceObject,
 } from '@/lib/hooks/use-source-objects';
 import { SourceSortBy, SourceSortOrder, useSourcesUrlState } from '@/lib/hooks/use-sources-url-state';
-import { useSourcesLayoutMode } from '@/lib/hooks/use-sources-layout-mode';
+import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { useSourceUploadManager } from '@/components/sources/hooks/use-source-upload-manager';
 import { useSourceBatchOperations } from '@/components/sources/hooks/use-source-batch-operations';
 import { useSourceLibraryManager } from '@/components/sources/hooks/use-source-library-manager';
@@ -133,7 +131,7 @@ function parentPrefixForPrefix(prefix: string) {
 export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const t = useTranslations('sources');
   const canManage = useHasPermission('project:source:manage');
-  const { layoutMode, showLayoutToggle, onToggleLayoutMode } = useSourcesLayoutMode();
+  const { layoutMode } = useProjectLayoutMode();
 
   const { data: librariesData, isLoading: libsLoading } = useSourceLibraries(workspaceId, projectId);
   const libraries = React.useMemo(() => librariesData?.items ?? [], [librariesData?.items]);
@@ -541,30 +539,9 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       density="immersive"
       contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
       toolbar={(
-        <PageToolbar className="gap-2">
-          <div className="w-full space-y-2">
-            <ProjectModuleHeader
-              title={t('title')}
-              actions={showLayoutToggle ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={onToggleLayoutMode}
-                  title={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
-                  aria-label={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
-                  data-testid="sources__layout-toggle"
-                  data-state={layoutMode}
-                >
-                  <PanelRight className="h-4 w-4" />
-                  {layoutMode === 'ultrawide' ? t('file_manager.layout_ultrawide') : t('file_manager.layout_standard')}
-                </Button>
-              ) : null}
-            />
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="ml-auto flex items-center gap-2">
+        <PageToolbar className="w-full justify-end gap-2">
+          <div className="flex w-full items-center justify-end gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -628,57 +605,56 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                   <Upload className="h-4 w-4 mr-2" />
                   {t('file_manager.upload')}
                 </Button>
-              </div>
+            </div>
 
-              {uploadInProgress ? (
-                <div className="hidden xl:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[300px]" data-testid="sources__upload-progress">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] text-primary truncate">
-                      {t('file_manager.uploading', {
-                        name: uploadCurrentFileName || '-',
-                        completed: String(uploadQueueCompleted),
-                        total: String(uploadQueueTotal),
-                      })}
-                    </div>
-                    <Progress value={uploadCurrentProgress} className="mt-1 h-1.5" />
+            {uploadInProgress ? (
+              <div className="hidden xl:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[300px]" data-testid="sources__upload-progress">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] text-primary truncate">
+                    {t('file_manager.uploading', {
+                      name: uploadCurrentFileName || '-',
+                      completed: String(uploadQueueCompleted),
+                      total: String(uploadQueueTotal),
+                    })}
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={handleCancelUpload}
-                    data-testid="sources__upload-cancel"
-                  >
-                    <X className="h-3.5 w-3.5 mr-1" />
-                    {t('file_manager.upload_cancel')}
-                  </Button>
+                  <Progress value={uploadCurrentProgress} className="mt-1 h-1.5" />
                 </div>
-              ) : null}
-
-              <div
-                className={cn(
-                  'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[170px]',
-                  isMultiMode
-                    ? 'border-subtle bg-surface-high/40 text-primary opacity-100'
-                    : 'border-transparent text-transparent opacity-0 pointer-events-none select-none',
-                )}
-                data-testid="sources__selection-summary"
-              >
-                <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
-                <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-xs"
-                  onClick={clearSelection}
-                  disabled={!hasSelection}
-                  data-testid="sources__clear-selection"
+                  onClick={handleCancelUpload}
+                  data-testid="sources__upload-cancel"
                 >
-                  {t('file_manager.clear_selection')}
+                  <X className="h-3.5 w-3.5 mr-1" />
+                  {t('file_manager.upload_cancel')}
                 </Button>
               </div>
+            ) : null}
+
+            <div
+              className={cn(
+                'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[170px]',
+                isMultiMode
+                  ? 'border-subtle bg-surface-high/40 text-primary opacity-100'
+                  : 'border-transparent text-transparent opacity-0 pointer-events-none select-none',
+              )}
+              data-testid="sources__selection-summary"
+            >
+              <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
+              <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={clearSelection}
+                disabled={!hasSelection}
+                data-testid="sources__clear-selection"
+              >
+                {t('file_manager.clear_selection')}
+              </Button>
             </div>
           </div>
           <input

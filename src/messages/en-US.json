@@ -121,6 +121,10 @@
     "select_workspace": "Select Workspace",
     "current_workspace": "Current",
     "current_project": "Current",
+    "layout_standard": "Standard",
+    "layout_ultrawide": "Ultrawide",
+    "switch_to_standard": "Switch to standard layout",
+    "switch_to_ultrawide": "Switch to ultrawide layout",
     "sidebar": {
       "collapse": "Collapse sidebar",
       "expand": "Expand sidebar",

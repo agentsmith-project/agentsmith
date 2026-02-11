@@ -6,12 +6,14 @@ import { Logo } from './Logo';
 import { UserMenu } from './UserMenu';
 import { useAuthStore, selectCurrentUser } from '@/lib/stores/authStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { Globe, FolderKanban, ChevronDown } from 'lucide-react';
+import { Globe, FolderKanban, ChevronDown, PanelRight } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useRouter, usePathname } from '@/lib/i18n/routing';
 import { useTranslations } from 'next-intl';
+import { Button } from '@/components/ui/button';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 import { useProjects, useProject } from '@/lib/hooks/use-projects-queries';
+import { broadcastProjectLayoutMode, useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import {
   Tooltip,
   TooltipContent,
@@ -38,6 +40,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   const { data: workspaces } = useWorkspaces();
   const { data: projects } = useProjects(workspaceId || '');
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
+  const { layoutMode, showLayoutToggle } = useProjectLayoutMode();
 
   // Get current workspace from workspaces list
   const currentWorkspace = React.useMemo(() => {
@@ -85,6 +88,11 @@ export function Topbar({ className = '' }: TopbarProps) {
     clearAuth();
     router.push(`/login`);
   };
+
+  const handleLayoutToggle = React.useCallback(() => {
+    const next = layoutMode === 'standard' ? 'ultrawide' : 'standard';
+    broadcastProjectLayoutMode(next);
+  }, [layoutMode]);
 
   return (
     <header data-testid="topbar" className={`h-14 flex items-center justify-between px-4 bg-panel border-b border-subtle ${className}`}>
@@ -181,6 +189,23 @@ export function Topbar({ className = '' }: TopbarProps) {
 
       {/* Right: Controls */}
       <div className="flex items-center gap-4">
+        {workspaceId && projectId && showLayoutToggle ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-2"
+            onClick={handleLayoutToggle}
+            title={layoutMode === 'ultrawide' ? t('switch_to_standard') : t('switch_to_ultrawide')}
+            aria-label={layoutMode === 'ultrawide' ? t('switch_to_standard') : t('switch_to_ultrawide')}
+            data-testid="topbar__layout-toggle"
+            data-state={layoutMode}
+          >
+            <PanelRight className="h-4 w-4" />
+            {layoutMode === 'ultrawide' ? t('layout_ultrawide') : t('layout_standard')}
+          </Button>
+        ) : null}
+
         <NotificationCenter />
 
         {/* User Menu */}

@@ -42,7 +42,7 @@ This checklist is the release gate for chat UX/runtime changes.
 ## 6. Layout Modes
 
 - Standard viewport (<1920): confirm no layout toggle is shown.
-- Ultrawide viewport (>=1920): confirm layout toggle appears in page header actions (top-right).
+- Ultrawide viewport (>=1920): confirm layout toggle appears in Topbar actions (top-right).
 - Toggle to ultrawide:
 - Confirm thread pane width expands and message area uses wider max width.
 - Refresh page and confirm layout mode preference persists.

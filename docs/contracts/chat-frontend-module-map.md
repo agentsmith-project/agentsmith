@@ -43,8 +43,8 @@ This document defines responsibility boundaries for the chat page implementation
 - `chat-view-model.ts`
 - Derived UI state (`activeStreamStatus`, `mergedStreamingSessionIds`, `disabled`) from runtime store + queries + local UI state.
 
-- `use-chat-layout-mode.ts`
-- Viewport-aware layout mode orchestration (`standard|ultrawide`) with localStorage preference persistence.
+- `use-project-layout-mode.ts` (`src/lib/hooks`)
+- Shared viewport-aware project layout mode orchestration (`standard|ultrawide`) with localStorage preference persistence.
 
 ## 3. UI Components (`src/components/chat`)
 
@@ -62,8 +62,8 @@ This document defines responsibility boundaries for the chat page implementation
 - `ChatHeader.tsx`
 - Session title/model control.
 
-- `page.tsx`
-- Owns the chat page header actions (including ultrawide layout toggle `chat__layout-toggle`).
+- `Topbar.tsx` (`src/components/app-shell/Topbar.tsx`)
+- Owns shared project-level header actions (including ultrawide layout toggle `topbar__layout-toggle`).
 
 - `MessageList.tsx` / `Composer.tsx`
 - Respect `layoutMode` to cap content width:
@@ -75,7 +75,8 @@ This document defines responsibility boundaries for the chat page implementation
 - Keep business logic in hooks; keep components primarily presentational.
 - Default layout must remain aligned with other module pages (readability first); ultrawide is opt-in only.
 - No migration toggles or temporary fallback flags for layout behavior.
-- Layout toggle only affects chat content area; must not trigger shell/topbar/sidebar flicker or full-page remount.
+- Layout toggle is project-global and controlled from Topbar; module pages should not render duplicate layout toggles.
+- Layout toggle only affects module content area; must not trigger shell/topbar/sidebar flicker or full-page remount.
 - For new chat behavior:
 1. Update or add a hook in `src/lib/chat`.
 2. Keep `page.tsx` limited to wiring and cross-hook coordination.

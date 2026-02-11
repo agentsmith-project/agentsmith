@@ -116,7 +116,7 @@ Contract source of truth for this rewrite:
  - preview supports inline mode and expanded modal mode for image/pdf/text
  - only selected library is URL-synced (`library_id`)
  - folder/search/sort/selection state is session-scoped in-memory only (switching libraries within current page session restores state; refresh/leave does not)
- - sources page supports ultrawide layout toggle aligned with chat behavior (`>=1920`, standard default, user-toggleable)
+ - sources page follows shared project layout mode (Topbar `topbar__layout-toggle`, `>=1920`, standard default, user-toggleable)
  - URL + session state implementation is centralized in `src/lib/hooks/use-sources-url-state.ts` (single source of truth)
 6. Replace/refresh test baselines:
 - Unit tests for each extracted hook and key components.

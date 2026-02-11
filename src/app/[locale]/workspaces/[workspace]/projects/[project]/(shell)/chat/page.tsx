@@ -31,21 +31,17 @@ import { buildChatViewModel } from '@/lib/chat/chat-view-model';
 import { useChatMessageActions } from '@/lib/chat/use-chat-message-actions';
 import { useChatThreadActions } from '@/lib/chat/use-chat-thread-actions';
 import { useChatDeleteDialog } from '@/lib/chat/use-chat-delete-dialog';
-import { useChatLayoutMode } from '@/lib/chat/use-chat-layout-mode';
+import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 
 import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
 import { ChatMainPane } from '@/components/chat/ChatMainPane';
 import { ChatDeleteDialog } from '@/components/chat/ChatDeleteDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { PageToolbar } from '@/components/layout/PageToolbar';
-import { ProjectModuleHeader } from '@/components/layout/ProjectModuleHeader';
 import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { PanelRight } from 'lucide-react';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -80,7 +76,7 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const { layoutMode, showLayoutToggle, onToggleLayoutMode } = useChatLayoutMode();
+  const { layoutMode } = useProjectLayoutMode();
 
   const apiClient = useMemo(() => getApiClient(), []);
   const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
@@ -338,29 +334,6 @@ export default function ChatPage({ params }: ChatPageProps) {
       <PageLayout
         density="immersive"
         contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
-        toolbar={(
-          <PageToolbar className="gap-2">
-            <ProjectModuleHeader
-              title={t('title')}
-              actions={showLayoutToggle ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={onToggleLayoutMode}
-                  title={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
-                  aria-label={layoutMode === 'ultrawide' ? t('header.switch_to_standard') : t('header.switch_to_ultrawide')}
-                  data-testid="chat__layout-toggle"
-                  data-state={layoutMode}
-                >
-                  <PanelRight className="w-4 h-4" />
-                  {layoutMode === 'ultrawide' ? t('header.layout_ultrawide') : t('header.layout_standard')}
-                </Button>
-              ) : null}
-            />
-          </PageToolbar>
-        )}
       >
         <div
           className={cn(

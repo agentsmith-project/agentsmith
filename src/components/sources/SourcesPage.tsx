@@ -171,8 +171,8 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   }, [libraries, selectedLibraryId]);
 
   const [prefix, setPrefix] = React.useState('');
-  const [searchInput, setSearchInput] = React.useState('');
-  const [search, setSearch] = React.useState('');
+  const [searchInput, setSearchInput] = React.useState(searchParams.get('search') ?? '');
+  const [search, setSearch] = React.useState(searchParams.get('search')?.trim() ?? '');
   const [sortBy, setSortBy] = React.useState<SourceSortBy>(parseSortBy(searchParams.get('sort_by')));
   const [sortOrder, setSortOrder] = React.useState<SourceSortOrder>(parseSortOrder(searchParams.get('sort_order')));
   const [selectedIds, setSelectedIds] = React.useState<SelectedRowId[]>([]);
@@ -180,9 +180,13 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   React.useEffect(() => {
     const querySortBy = parseSortBy(searchParams.get('sort_by'));
     const querySortOrder = parseSortOrder(searchParams.get('sort_order'));
+    const querySearch = searchParams.get('search') ?? '';
     if (querySortBy !== sortBy) setSortBy(querySortBy);
     if (querySortOrder !== sortOrder) setSortOrder(querySortOrder);
-  }, [searchParams, sortBy, sortOrder]);
+    if (querySearch !== searchInput) setSearchInput(querySearch);
+    const trimmedQuerySearch = querySearch.trim();
+    if (trimmedQuerySearch !== search) setSearch(trimmedQuerySearch);
+  }, [search, searchInput, searchParams, sortBy, sortOrder]);
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -667,6 +671,20 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     },
     [pathname, router, searchParams],
   );
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    const currentSearch = params.get('search') ?? '';
+    const nextSearch = search.trim();
+    if (nextSearch === currentSearch) return;
+    if (nextSearch) {
+      params.set('search', nextSearch);
+    } else {
+      params.delete('search');
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, search, searchParams]);
 
   const handleSortByChange = React.useCallback(
     (value: SourceSortBy) => {

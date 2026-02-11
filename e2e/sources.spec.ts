@@ -38,6 +38,7 @@ test.describe('Sources Page (object browser)', () => {
 
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first()).toBeVisible();
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' })).toHaveCount(0);
+    await expect(authedPage).toHaveURL(/search=readme/);
   });
 
   test('persists sort preference in url and after refresh', async ({ authedPage }) => {
@@ -52,6 +53,15 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage).toHaveURL(/sort_by=size_bytes/);
     await expect(authedPage).toHaveURL(/sort_order=desc/);
     await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Descending');
+  });
+
+  test('persists search in url and after refresh', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__search').fill('README');
+    await expect(authedPage).toHaveURL(/search=README/);
+    await authedPage.reload();
+    await expect(authedPage).toHaveURL(/search=README/);
+    await expect(authedPage.getByTestId('sources__search')).toHaveValue('README');
+    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first()).toBeVisible();
   });
 
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {

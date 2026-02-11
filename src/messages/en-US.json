@@ -290,6 +290,11 @@
       "dropzone_hint": "Files will be uploaded to the current folder",
       "go_up": "Up",
       "download_selected": "Download ({count})",
+      "sort_name": "Sort: Name",
+      "sort_size": "Sort: Size",
+      "sort_modified": "Sort: Modified",
+      "order_asc": "Ascending",
+      "order_desc": "Descending",
       "download_started": "Started {count} downloads",
       "download_partial_failed": "{failed} file(s) failed to download",
       "upload_conflict_title": "File already exists",
@@ -307,6 +312,7 @@
       "retry_failed": "Retry failed items",
       "retry_partial_failed": "{failed} item(s) still failed after retry",
       "retry_success": "Retry completed successfully",
+      "load_more": "Load more",
       "close": "Close"
     },
     "filter": {

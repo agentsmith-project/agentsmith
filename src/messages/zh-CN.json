@@ -292,6 +292,11 @@
       "dropzone_hint": "文件将上传到当前目录",
       "go_up": "上一级",
       "download_selected": "下载（{count}）",
+      "sort_name": "排序：名称",
+      "sort_size": "排序：大小",
+      "sort_modified": "排序：修改时间",
+      "order_asc": "升序",
+      "order_desc": "降序",
       "download_started": "已开始下载 {count} 个文件",
       "download_partial_failed": "有 {failed} 个文件下载失败",
       "upload_conflict_title": "文件已存在",
@@ -309,6 +314,7 @@
       "retry_failed": "重试失败项",
       "retry_partial_failed": "重试后仍有 {failed} 项失败",
       "retry_success": "重试成功",
+      "load_more": "加载更多",
       "close": "关闭"
     },
     "filter": {

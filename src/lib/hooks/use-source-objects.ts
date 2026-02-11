@@ -4,7 +4,7 @@
  * This is the new Sources contract direction. It intentionally does NOT include AIReady.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getApiClient, SourcesAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
@@ -26,6 +26,32 @@ export function useSourceObjects(
       if (!libraryId) throw new Error('libraryId is required');
       return sourcesAPI.listObjects(workspaceId, projectId, libraryId, params);
     },
+    enabled: !!workspaceId && !!projectId && !!libraryId,
+    staleTime: 5_000,
+  });
+}
+
+export function useSourceObjectsInfinite(
+  workspaceId: string,
+  projectId: string,
+  libraryId: string | null,
+  params: Omit<SourceObjectsListParams, 'continuation_token'>,
+) {
+  const sourcesAPI = new SourcesAPI(getApiClient());
+
+  return useInfiniteQuery({
+    queryKey: libraryId
+      ? ['source-objects', 'infinite', workspaceId, projectId, libraryId, params]
+      : ['source-objects', 'infinite', 'disabled', workspaceId, projectId, params],
+    queryFn: ({ pageParam }) => {
+      if (!libraryId) throw new Error('libraryId is required');
+      return sourcesAPI.listObjects(workspaceId, projectId, libraryId, {
+        ...params,
+        continuation_token: typeof pageParam === 'string' ? pageParam : undefined,
+      });
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_continuation_token ?? undefined,
     enabled: !!workspaceId && !!projectId && !!libraryId,
     staleTime: 5_000,
   });

@@ -12,6 +12,7 @@
 import * as React from 'react';
 import {
   ArrowUp,
+  ArrowUpDown,
   Download,
   Folder,
   FolderPlus,
@@ -24,6 +25,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { Virtuoso } from 'react-virtuoso';
 
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -35,6 +37,7 @@ import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -61,6 +64,7 @@ import {
   useDeleteSourceObjects,
   useMoveSourceObject,
   useSourceObjects,
+  useSourceObjectsInfinite,
   useUploadSourceObject,
 } from '@/lib/hooks/use-source-objects';
 
@@ -151,17 +155,36 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   }, [libraries, selectedLibraryId]);
 
   const [prefix, setPrefix] = React.useState('');
+  const [searchInput, setSearchInput] = React.useState('');
   const [search, setSearch] = React.useState('');
+  const [sortBy, setSortBy] = React.useState<'name' | 'size_bytes' | 'last_modified'>('name');
+  const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('asc');
   const [selectedIds, setSelectedIds] = React.useState<SelectedRowId[]>([]);
 
-  const listParams = React.useMemo(() => ({ prefix, delimiter: '/' as const, page_size: 200 }), [prefix]);
-  const objectsQuery = useSourceObjects(workspaceId, projectId, selectedLibraryId, listParams);
-  const items = React.useMemo(() => objectsQuery.data?.items ?? [], [objectsQuery.data?.items]);
-  const filteredItems = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((it) => it.name.toLowerCase().includes(q));
-  }, [items, search]);
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const listParams = React.useMemo(
+    () => ({
+      prefix,
+      delimiter: '/' as const,
+      page_size: 200,
+      search: search || undefined,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+    }),
+    [prefix, search, sortBy, sortOrder],
+  );
+  const objectsQuery = useSourceObjectsInfinite(workspaceId, projectId, selectedLibraryId, listParams);
+  const items = React.useMemo(
+    () => objectsQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [objectsQuery.data?.pages],
+  );
+  const filteredItems = items;
 
   const selected = React.useMemo(() => selectedIds.map(parseSelectedRowId), [selectedIds]);
   const selectedObjects = React.useMemo(
@@ -187,6 +210,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const navigateToPrefix = (nextPrefix: string) => {
     setPrefix(nextPrefix);
     setSearch('');
+    setSearchInput('');
     clearSelection();
   };
 
@@ -194,7 +218,11 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const allSelected = filteredItems.length > 0 && selectedIds.length === filteredItems.length;
+  const visibleSelectedCount = React.useMemo(
+    () => filteredItems.filter((it) => selectedIds.includes(rowId(it))).length,
+    [filteredItems, selectedIds],
+  );
+  const allSelected = filteredItems.length > 0 && visibleSelectedCount === filteredItems.length;
   const toggleAll = () => {
     setSelectedIds((prev) => (prev.length > 0 ? [] : filteredItems.map((it) => rowId(it))));
   };
@@ -598,6 +626,12 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     }
   };
 
+  const loadNextObjectsPage = React.useCallback(() => {
+    if (objectsQuery.hasNextPage && !objectsQuery.isFetchingNextPage) {
+      void objectsQuery.fetchNextPage();
+    }
+  }, [objectsQuery]);
+
   const handleCreateLibrary = async () => {
     const name = libraryName.trim();
     if (!name) return;
@@ -670,7 +704,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             <Button
               type="button"
               variant="outline"
-              onClick={() => objectsQuery.refetch()}
+              onClick={() => void objectsQuery.refetch()}
               disabled={!selectedLibraryId}
               data-testid="sources__refresh"
             >
@@ -680,12 +714,37 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             <div className="relative flex-1 max-w-md">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
               <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 placeholder={t('file_manager.search_placeholder')}
                 className="pl-9"
                 data-testid="sources__search"
               />
+            </div>
+            <div className="hidden lg:flex items-center gap-2">
+              <Select
+                value={sortBy}
+                onValueChange={(value: 'name' | 'size_bytes' | 'last_modified') => setSortBy(value)}
+              >
+                <SelectTrigger className="h-9 w-[180px]" data-testid="sources__sort-by">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">{t('file_manager.sort_name')}</SelectItem>
+                  <SelectItem value="size_bytes">{t('file_manager.sort_size')}</SelectItem>
+                  <SelectItem value="last_modified">{t('file_manager.sort_modified')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 px-3"
+                onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                data-testid="sources__sort-order"
+              >
+                <ArrowUpDown className="h-4 w-4 mr-2" />
+                {sortOrder === 'asc' ? t('file_manager.order_asc') : t('file_manager.order_desc')}
+              </Button>
             </div>
             <div className="ml-auto flex items-center gap-2">
               {uploadInProgress && (
@@ -842,6 +901,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                         setSelectedLibraryId(lib.id);
                         setPrefix('');
                         setSearch('');
+                        setSearchInput('');
                         clearSelection();
                       }}
                       onKeyDown={(e) => {
@@ -850,6 +910,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                         setSelectedLibraryId(lib.id);
                         setPrefix('');
                         setSearch('');
+                        setSearchInput('');
                         clearSelection();
                       }}
                       className={cn(
@@ -952,87 +1013,108 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-auto">
-            <table className="w-full text-sm" data-testid="sources__objects-table">
-              <thead className="sticky top-0 bg-surface border-b border-subtle text-xs text-tertiary">
-                <tr>
-                  <th className="w-10 px-3 py-2">
+          <div className="flex-1 min-h-0">
+            <div className="w-full h-full text-sm flex flex-col" data-testid="sources__objects-table">
+              <div className="sticky top-0 z-10 bg-surface border-b border-subtle text-xs text-tertiary">
+                <div className="grid grid-cols-[40px_minmax(0,1fr)_128px_192px]">
+                  <div className="px-3 py-2">
                     <input
                       type="checkbox"
                       checked={allSelected}
                       onChange={toggleAll}
                       aria-label={t('file_manager.select_all')}
                     />
-                  </th>
-                  <th className="text-left px-3 py-2">{t('file_manager.col_name')}</th>
-                  <th className="text-right px-3 py-2 w-32">{t('file_manager.col_size')}</th>
-                  <th className="text-left px-3 py-2 w-48">{t('file_manager.col_modified')}</th>
-                </tr>
-              </thead>
-              <tbody>
+                  </div>
+                  <div className="px-3 py-2">{t('file_manager.col_name')}</div>
+                  <div className="px-3 py-2 text-right">{t('file_manager.col_size')}</div>
+                  <div className="px-3 py-2">{t('file_manager.col_modified')}</div>
+                </div>
+              </div>
+
+              <div className="flex-1 min-h-0">
                 {objectsQuery.isLoading ? (
-                  <tr>
-                    <td colSpan={4} className="px-3 py-8 text-center text-tertiary">
-                      {t('file_manager.loading')}
-                    </td>
-                  </tr>
+                  <div className="px-3 py-8 text-center text-tertiary">{t('file_manager.loading')}</div>
                 ) : filteredItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-3 py-10 text-center text-tertiary">
-                      {t('file_manager.empty')}
-                    </td>
-                  </tr>
+                  <div className="px-3 py-10 text-center text-tertiary">{t('file_manager.empty')}</div>
                 ) : (
-                  filteredItems.map((it) => {
-                    const id = rowId(it);
-                    const checked = selectedIds.includes(id);
-                    return (
-                      <tr
-                        key={id}
-                        className={cn('border-b border-subtle hover:bg-hover/60', checked && 'bg-hover')}
-                        data-testid="sources__object-row"
-                        data-row-id={id}
-                      >
-                        <td className="px-3 py-2 align-middle">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleRow(id)}
-                            aria-label={t('file_manager.select_row')}
-                          />
-                        </td>
-                        <td className="px-3 py-2 align-middle">
-                          <button
-                            type="button"
-                            className="flex items-center gap-2 w-full text-left"
-                            onClick={() => {
-                              if (it.kind === 'prefix') {
-                                navigateToPrefix(it.prefix);
-                                return;
-                              }
-                              toggleRow(id);
-                            }}
-                          >
-                            {it.kind === 'prefix' ? (
-                              <Folder className="h-4 w-4 text-tertiary shrink-0" />
-                            ) : (
-                              <span className="h-4 w-4 rounded-sm bg-surface-high border border-subtle shrink-0" />
-                            )}
-                            <span className="truncate">{it.name}</span>
-                          </button>
-                        </td>
-                        <td className="px-3 py-2 text-right text-tertiary tabular-nums">
-                          {it.kind === 'object' ? it.size_bytes.toLocaleString() : ''}
-                        </td>
-                        <td className="px-3 py-2 text-tertiary">
-                          {it.kind === 'object' ? new Date(it.last_modified).toLocaleString() : ''}
-                        </td>
-                      </tr>
-                    );
-                  })
+                  <Virtuoso
+                    style={{ height: '100%' }}
+                    data={filteredItems}
+                    endReached={loadNextObjectsPage}
+                    overscan={240}
+                    itemContent={(_index, it) => {
+                      const id = rowId(it);
+                      const checked = selectedIds.includes(id);
+                      return (
+                        <div
+                          key={id}
+                          className={cn(
+                            'grid grid-cols-[40px_minmax(0,1fr)_128px_192px] border-b border-subtle hover:bg-hover/60',
+                            checked && 'bg-hover',
+                          )}
+                          data-testid="sources__object-row"
+                          data-row-id={id}
+                        >
+                          <div className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRow(id)}
+                              aria-label={t('file_manager.select_row')}
+                            />
+                          </div>
+                          <div className="px-3 py-2 min-w-0">
+                            <button
+                              type="button"
+                              className="flex items-center gap-2 w-full text-left"
+                              onClick={() => {
+                                if (it.kind === 'prefix') {
+                                  navigateToPrefix(it.prefix);
+                                  return;
+                                }
+                                toggleRow(id);
+                              }}
+                            >
+                              {it.kind === 'prefix' ? (
+                                <Folder className="h-4 w-4 text-tertiary shrink-0" />
+                              ) : (
+                                <span className="h-4 w-4 rounded-sm bg-surface-high border border-subtle shrink-0" />
+                              )}
+                              <span className="truncate">{it.name}</span>
+                            </button>
+                          </div>
+                          <div className="px-3 py-2 text-right text-tertiary tabular-nums">
+                            {it.kind === 'object' ? it.size_bytes.toLocaleString() : ''}
+                          </div>
+                          <div className="px-3 py-2 text-tertiary truncate">
+                            {it.kind === 'object' ? new Date(it.last_modified).toLocaleString() : ''}
+                          </div>
+                        </div>
+                      );
+                    }}
+                    components={{
+                      Footer: () =>
+                        objectsQuery.hasNextPage ? (
+                          <div className="flex items-center justify-center py-3">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={loadNextObjectsPage}
+                              disabled={objectsQuery.isFetchingNextPage}
+                              data-testid="sources__load-more"
+                            >
+                              {objectsQuery.isFetchingNextPage
+                                ? t('file_manager.loading')
+                                : t('file_manager.load_more')}
+                            </Button>
+                          </div>
+                        ) : null,
+                    }}
+                  />
                 )}
-              </tbody>
-            </table>
+              </div>
+            </div>
           </div>
 
           {isDropActive && (

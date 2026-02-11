@@ -19,7 +19,7 @@ This document defines the closeout baseline and next decomposition targets for:
 - Route gate + input validation only.
 
 - `src/components/sources/SourcesPage.tsx`
-- Compound composition layer (header, toolbar, table, dialogs, pagination).
+- Compound composition layer (header, toolbar, virtualized object list, dialogs, pagination).
 
 - `src/components/sources/SourcesContext.tsx`
 - Context boundary for page subcomponents.
@@ -85,8 +85,11 @@ Contract source of truth for this rewrite:
 - batch download for selected files
 - up-navigation button for non-root prefixes
 - upload conflict resolution dialog (overwrite vs keep-both rename)
-- upload progress strip with cancel action
+ - upload progress strip with cancel action
  - batch-result dialog with failed key retry (delete/download)
+ - continuation-token infinite pagination + virtualized list rendering (`react-virtuoso`)
+ - backend-driven search/sort query for object list (no client-only filtering drift)
+ - toolbar sorting controls (`sort_by` + `sort_order`) are first-class query inputs
 6. Replace/refresh test baselines:
 - Unit tests for each extracted hook and key components.
 - E2E `e2e/sources.spec.ts` updated to the new UX and stable testids.

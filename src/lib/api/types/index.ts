@@ -537,6 +537,9 @@ export interface SourceObjectsListParams {
   delimiter?: '/';
   page_size?: number;
   continuation_token?: string;
+  search?: string;
+  sort_by?: 'name' | 'size_bytes' | 'last_modified';
+  sort_order?: 'asc' | 'desc';
 }
 
 export interface SourceObjectsListResponse {

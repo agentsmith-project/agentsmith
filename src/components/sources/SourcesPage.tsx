@@ -68,6 +68,7 @@ import {
   useUploadSourceObject,
 } from '@/lib/hooks/use-source-objects';
 import { parseSourceSortBy, SourceSortBy, SourceSortOrder, useSourcesUrlState } from '@/lib/hooks/use-sources-url-state';
+import { useSourceUploadManager } from '@/components/sources/hooks/use-source-upload-manager';
 
 export interface SourcesPageProps {
   workspaceId: string;
@@ -75,12 +76,6 @@ export interface SourcesPageProps {
 }
 
 type SelectedRowId = `p:${string}` | `o:${string}`;
-type UploadConflictState = {
-  file: File;
-  remaining: File[];
-  total: number;
-  completed: number;
-};
 type BatchResultType = 'delete' | 'download';
 
 function rowId(item: SourceObjectsListItem): SelectedRowId {
@@ -96,16 +91,6 @@ function basename(path: string) {
   const trimmed = path.endsWith('/') ? path.slice(0, -1) : path;
   const idx = trimmed.lastIndexOf('/');
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-
-function renameWithIndex(originalName: string, index: number) {
-  const dotIndex = originalName.lastIndexOf('.');
-  if (dotIndex <= 0) {
-    return `${originalName} (${index})`;
-  }
-  const name = originalName.slice(0, dotIndex);
-  const ext = originalName.slice(dotIndex);
-  return `${name} (${index})${ext}`;
 }
 
 function buildCrumbs(prefix: string) {
@@ -240,20 +225,10 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const [moveOverwrite, setMoveOverwrite] = React.useState(false);
   const [moveConflictOpen, setMoveConflictOpen] = React.useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
-  const [uploadConflictOpen, setUploadConflictOpen] = React.useState(false);
-  const [uploadConflict, setUploadConflict] = React.useState<UploadConflictState | null>(null);
   const [batchResultOpen, setBatchResultOpen] = React.useState(false);
   const [batchResultType, setBatchResultType] = React.useState<BatchResultType>('delete');
   const [batchFailedKeys, setBatchFailedKeys] = React.useState<string[]>([]);
   const [batchRetryPending, setBatchRetryPending] = React.useState(false);
-  const [uploadInProgress, setUploadInProgress] = React.useState(false);
-  const [uploadCurrentFileName, setUploadCurrentFileName] = React.useState('');
-  const [uploadCurrentProgress, setUploadCurrentProgress] = React.useState(0);
-  const [uploadQueueTotal, setUploadQueueTotal] = React.useState(0);
-  const [uploadQueueCompleted, setUploadQueueCompleted] = React.useState(0);
-  const [isDropActive, setIsDropActive] = React.useState(false);
-  const dragDepthRef = React.useRef(0);
-  const uploadAbortRef = React.useRef<AbortController | null>(null);
 
   const selectedForMove = selected.length === 1 ? selected[0] : null;
   const moveNamePlaceholder = selectedForMove
@@ -275,172 +250,33 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const destPickerCrumbs = React.useMemo(() => buildCrumbs(destPickerPrefix), [destPickerPrefix]);
 
   const handleUploadClick = () => fileInputRef.current?.click();
-
-  const resetUploadProgress = React.useCallback(() => {
-    setUploadInProgress(false);
-    setUploadCurrentFileName('');
-    setUploadCurrentProgress(0);
-    setUploadQueueTotal(0);
-    setUploadQueueCompleted(0);
-    uploadAbortRef.current = null;
-  }, []);
-
-  const handleCancelUpload = React.useCallback(() => {
-    const controller = uploadAbortRef.current;
-    if (controller) controller.abort();
-  }, []);
-
-  const uploadSingleFile = React.useCallback(
-    async (file: File, overwrite = false) => {
-      if (!selectedLibraryId) throw new Error('library_not_selected');
-      const controller = new AbortController();
-      uploadAbortRef.current = controller;
-      setUploadCurrentFileName(file.name);
-      setUploadCurrentProgress(0);
-      await uploadObject.mutateAsync({
-        workspaceId,
-        projectId,
-        libraryId: selectedLibraryId,
-        file,
-        prefix: prefix || undefined,
-        overwrite,
-        signal: controller.signal,
-        onProgress: (progress) => setUploadCurrentProgress(Math.max(0, Math.min(100, Math.round(progress)))),
-      });
-      if (uploadAbortRef.current === controller) {
-        uploadAbortRef.current = null;
-      }
-    },
-    [prefix, projectId, selectedLibraryId, uploadObject, workspaceId],
-  );
-
-  const handleUploadConflict = React.useCallback((file: File, remaining: File[], total: number, completed: number) => {
-    setUploadConflict({ file, remaining, total, completed });
-    setUploadConflictOpen(true);
-  }, []);
-
-  const processUploadQueue = React.useCallback(
-    async (queue: File[], progress?: { total: number; completed: number }) => {
-      if (!selectedLibraryId || queue.length === 0) return;
-      const total = progress?.total ?? queue.length;
-      let completed = progress?.completed ?? 0;
-      setUploadInProgress(true);
-      setUploadQueueTotal(total);
-      setUploadQueueCompleted(completed);
-      for (let i = 0; i < queue.length; i += 1) {
-        const current = queue[i];
-        try {
-          await uploadSingleFile(current, false);
-          completed += 1;
-          setUploadQueueCompleted(completed);
-        } catch (err) {
-          const apiErr = err instanceof APIError ? err : null;
-          if (apiErr?.errorCode === 'destination_exists') {
-            setUploadInProgress(false);
-            handleUploadConflict(current, queue.slice(i + 1), total, completed);
-            return;
-          }
-          if (err instanceof Error && err.message === 'Upload was aborted') {
-            resetUploadProgress();
-            toast.success(t('file_manager.upload_canceled'));
-            return;
-          }
-          const msg = err instanceof Error ? err.message : String(err);
-          resetUploadProgress();
-          toast.error(`${t('file_manager.upload_failed')}: ${msg}`);
-          return;
-        }
-      }
-      resetUploadProgress();
-      toast.success(t('file_manager.upload_success'));
-    },
-    [handleUploadConflict, resetUploadProgress, selectedLibraryId, t, uploadSingleFile],
-  );
-
-  const handleFilesPicked = async (files: FileList | null) => {
-    if (!files || !selectedLibraryId || uploadInProgress) return;
-    const list = Array.from(files);
-    if (list.length === 0) return;
-    await processUploadQueue(list);
-  };
-
-  const handleDropEnter: React.DragEventHandler<HTMLDivElement> = (event) => {
-    event.preventDefault();
-    if (!selectedLibraryId) return;
-    dragDepthRef.current += 1;
-    setIsDropActive(true);
-  };
-
-  const handleDropLeave: React.DragEventHandler<HTMLDivElement> = (event) => {
-    event.preventDefault();
-    if (!selectedLibraryId) return;
-    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-    if (dragDepthRef.current === 0) setIsDropActive(false);
-  };
-
-  const handleDropOver: React.DragEventHandler<HTMLDivElement> = (event) => {
-    event.preventDefault();
-    if (!selectedLibraryId) return;
-    if (!isDropActive) setIsDropActive(true);
-  };
-
-  const handleDrop: React.DragEventHandler<HTMLDivElement> = (event) => {
-    event.preventDefault();
-    dragDepthRef.current = 0;
-    setIsDropActive(false);
-    if (!selectedLibraryId) return;
-    void handleFilesPicked(event.dataTransfer?.files ?? null);
-  };
-
-  const continueAfterConflict = React.useCallback(
-    async (remaining: File[], completed: number, total: number) => {
-      setUploadConflict(null);
-      setUploadConflictOpen(false);
-      if (remaining.length > 0) {
-        await processUploadQueue(remaining, { completed, total });
-      } else {
-        resetUploadProgress();
-        toast.success(t('file_manager.upload_success'));
-      }
-    },
-    [processUploadQueue, resetUploadProgress, t],
-  );
-
-  const resolveUploadConflictOverwrite = async () => {
-    if (!uploadConflict) return;
-    try {
-      await uploadSingleFile(uploadConflict.file, true);
-      await continueAfterConflict(uploadConflict.remaining, uploadConflict.completed + 1, uploadConflict.total);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t('file_manager.upload_failed')}: ${msg}`);
-    }
-  };
-
-  const resolveUploadConflictRename = async () => {
-    if (!uploadConflict) return;
-    const source = uploadConflict.file;
-    let attempt = 1;
-    while (attempt <= 20) {
-      const nextName = renameWithIndex(source.name, attempt);
-      const renamed = new File([source], nextName, { type: source.type, lastModified: source.lastModified });
-      try {
-        await uploadSingleFile(renamed, false);
-        await continueAfterConflict(uploadConflict.remaining, uploadConflict.completed + 1, uploadConflict.total);
-        return;
-      } catch (err) {
-        const apiErr = err instanceof APIError ? err : null;
-        if (apiErr?.errorCode === 'destination_exists') {
-          attempt += 1;
-          continue;
-        }
-        const msg = err instanceof Error ? err.message : String(err);
-        toast.error(`${t('file_manager.upload_failed')}: ${msg}`);
-        return;
-      }
-    }
-    toast.error(t('file_manager.upload_rename_exhausted'));
-  };
+  const {
+    dismissUploadConflict,
+    handleCancelUpload,
+    handleUploadConflictOpenChange,
+    handleDrop,
+    handleDropEnter,
+    handleDropLeave,
+    handleDropOver,
+    handleFilesPicked,
+    isDropActive,
+    resolveUploadConflictOverwrite,
+    resolveUploadConflictRename,
+    uploadConflictFileName,
+    uploadConflictOpen,
+    uploadCurrentFileName,
+    uploadCurrentProgress,
+    uploadInProgress,
+    uploadQueueCompleted,
+    uploadQueueTotal,
+  } = useSourceUploadManager({
+    workspaceId,
+    projectId,
+    selectedLibraryId,
+    prefix,
+    uploadObject: uploadObject.mutateAsync,
+    t,
+  });
 
   const handleCreateFolder = async () => {
     if (!selectedLibraryId) return;
@@ -1509,13 +1345,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
       <Dialog
         open={uploadConflictOpen}
-        onOpenChange={(open) => {
-          setUploadConflictOpen(open);
-          if (!open) {
-            setUploadConflict(null);
-            resetUploadProgress();
-          }
-        }}
+        onOpenChange={handleUploadConflictOpenChange}
       >
         <DialogContent className="sm:max-w-[520px]" data-testid="sources__dialog__upload-conflict">
           <DialogHeader>
@@ -1526,18 +1356,14 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               {t('file_manager.upload_conflict_description')}
             </div>
             <div className="rounded-sm border border-subtle bg-surface-high/40 px-3 py-2 font-mono text-xs break-all text-primary">
-              {uploadConflict?.file.name ?? '-'}
+              {uploadConflictFileName || '-'}
             </div>
           </div>
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                setUploadConflictOpen(false);
-                setUploadConflict(null);
-                resetUploadProgress();
-              }}
+              onClick={dismissUploadConflict}
             >
               {t('file_manager.cancel')}
             </Button>

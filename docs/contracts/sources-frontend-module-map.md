@@ -74,7 +74,8 @@ Contract source of truth for this rewrite:
 - `use-source-libraries` (list/create/rename/delete libraries)
 - `use-sources-url-state` (selected library/current prefix/search/sort with URL sync)
 - `use-source-objects` (list objects/prefixes, pagination token)
-- `use-source-object-actions` (upload, create folder, rename/move, delete, download)
+- `use-source-upload-manager` (upload queue, drag-drop, conflict resolution)
+- `use-source-object-actions` (create folder, rename/move, delete, download)
 4. Keep details panel productized:
 - default `Overview` tab for non-technical users
 - `Technical` tab for key/meta operations

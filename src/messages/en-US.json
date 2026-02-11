@@ -304,7 +304,7 @@
       "preview_expand": "Expand",
       "download_to_view": "Download to view",
       "selected_count": "{count} selected",
-      "clear_selection": "Clear",
+      "clear_selection": "Clear selection",
       "multi_select_hint_esc": "Multi-select mode · Press Esc to exit",
       "selection_shortcuts": "Click to select, double-click to open folders; Ctrl/Cmd for multi-select, Shift for range",
       "layout_standard": "Standard",

@@ -311,6 +311,8 @@ Playwright (`e2e/sources.spec.ts`) must cover:
 - Delete file (and folder prefix).
 - Download file (assert response headers and file bytes are non-empty).
 - Selection summary visibility (selected count + clear selection).
+- Selection summary bar must use a fixed-height reserved slot (no table jump when switching single/multi modes).
+- Global actions (`new folder`, `upload`) must live in object-browser header row with search.
 - Selection model:
   - default single-select (clicking an object selects it for preview)
   - single-click on folder selects it; double-click opens folder

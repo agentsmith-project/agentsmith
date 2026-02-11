@@ -30,7 +30,6 @@ import { Virtuoso } from 'react-virtuoso';
 
 import { cn } from '@/lib/utils';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { PageToolbar } from '@/components/layout/PageToolbar';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
@@ -545,142 +544,17 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     <PageLayout
       density="immersive"
       contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
-      toolbar={(
-        <PageToolbar className="w-full justify-end gap-2">
-          <div className="flex w-full items-center justify-end gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    if (selected.length !== 1) return;
-                    const target = selectedForMove;
-                    if (!target) return;
-                    const parent = target.kind === 'object'
-                      ? parentPrefixForKey(target.key)
-                      : parentPrefixForPrefix(target.prefix);
-                    setMoveDestPrefix(parent);
-                    setMoveName(moveNamePlaceholder);
-                    setMoveOverwrite(false);
-                    setMoveOpen(true);
-                  }}
-                  disabled={!selectedLibraryId || selected.length !== 1}
-                  data-testid="sources__rename"
-                >
-                  <Pencil className="h-4 w-4 mr-2" />
-                  {t('file_manager.rename')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDeleteConfirmOpen(true)}
-                  disabled={!selectedLibraryId || selected.length === 0}
-                  data-testid="sources__delete"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  {t('file_manager.delete')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleDownload}
-                  disabled={!selectedLibraryId || selectedObjects.length === 0}
-                  data-testid="sources__download"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  {selectedObjects.length > 1
-                    ? t('file_manager.download_selected', { count: String(selectedObjects.length) })
-                    : t('file_manager.download')}
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setCreateFolderOpen(true)}
-                  disabled={!selectedLibraryId}
-                  data-testid="sources__new-folder"
-                >
-                  <FolderPlus className="h-4 w-4 mr-2" />
-                  {t('file_manager.new_folder')}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleUploadClick}
-                  disabled={!selectedLibraryId || uploadInProgress}
-                  data-testid="sources__upload"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  {t('file_manager.upload')}
-                </Button>
-            </div>
-
-            {uploadInProgress ? (
-              <div className="hidden xl:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[300px]" data-testid="sources__upload-progress">
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] text-primary truncate">
-                    {t('file_manager.uploading', {
-                      name: uploadCurrentFileName || '-',
-                      completed: String(uploadQueueCompleted),
-                      total: String(uploadQueueTotal),
-                    })}
-                  </div>
-                  <Progress value={uploadCurrentProgress} className="mt-1 h-1.5" />
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={handleCancelUpload}
-                  data-testid="sources__upload-cancel"
-                >
-                  <X className="h-3.5 w-3.5 mr-1" />
-                  {t('file_manager.upload_cancel')}
-                </Button>
-              </div>
-            ) : null}
-
-            <div
-              className={cn(
-                'hidden xl:flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[300px]',
-                isMultiMode ? 'border-subtle bg-surface-high/40 text-primary' : 'border-subtle/60 bg-surface-high/20 text-tertiary',
-              )}
-              data-testid="sources__selection-summary"
-            >
-              {isMultiMode ? (
-                <>
-                  <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
-                  <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={clearSelection}
-                    disabled={!hasSelection}
-                    data-testid="sources__clear-selection"
-                  >
-                    {t('file_manager.clear_selection')}
-                  </Button>
-                </>
-              ) : (
-                <span data-testid="sources__selection-shortcuts">{t('file_manager.selection_shortcuts')}</span>
-              )}
-            </div>
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              void handleFilesPicked(e.target.files);
-              e.currentTarget.value = '';
-            }}
-          />
-        </PageToolbar>
-      )}
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void handleFilesPicked(e.target.files);
+          e.currentTarget.value = '';
+        }}
+      />
       <div
         className={cn(
           'flex-1 min-h-0 grid gap-3',
@@ -818,9 +692,6 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               ))}
             </div>
             <div className="ml-auto flex items-center gap-3">
-              <div className="hidden 2xl:block text-[11px] text-tertiary" data-testid="sources__selection-shortcuts-inline">
-                {t('file_manager.selection_shortcuts')}
-              </div>
               <div className="relative w-[280px]">
                 <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
                 <Input
@@ -847,6 +718,25 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               <div className="text-xs text-tertiary tabular-nums">
                 {filteredItems.length} {t('file_manager.items')}
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateFolderOpen(true)}
+                disabled={!selectedLibraryId}
+                data-testid="sources__new-folder"
+              >
+                <FolderPlus className="h-4 w-4 mr-2" />
+                {t('file_manager.new_folder')}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleUploadClick}
+                disabled={!selectedLibraryId || uploadInProgress}
+                data-testid="sources__upload"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                {t('file_manager.upload')}
+              </Button>
             </div>
           </div>
 
@@ -903,6 +793,115 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                       {sortBy !== 'last_modified' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
                     </button>
                   </div>
+                </div>
+              </div>
+
+              <div
+                className="h-10 border-b border-subtle px-3 flex items-center justify-between gap-2"
+                data-testid="sources__selection-summary"
+              >
+                {isMultiMode ? (
+                  <div className="flex items-center gap-2 min-w-0 text-xs text-primary">
+                    <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
+                    <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
+                  </div>
+                ) : selected.length === 1 ? (
+                  <div className="flex items-center gap-2 min-w-0 text-xs text-tertiary">
+                    <span>{t('file_manager.selected_count', { count: '1' })}</span>
+                  </div>
+                ) : (
+                  <div className="min-w-0 text-xs text-tertiary" data-testid="sources__selection-shortcuts">
+                    {t('file_manager.selection_shortcuts')}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {uploadInProgress ? (
+                    <div className="hidden 2xl:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[300px]" data-testid="sources__upload-progress">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] text-primary truncate">
+                          {t('file_manager.uploading', {
+                            name: uploadCurrentFileName || '-',
+                            completed: String(uploadQueueCompleted),
+                            total: String(uploadQueueTotal),
+                          })}
+                        </div>
+                        <Progress value={uploadCurrentProgress} className="mt-1 h-1.5" />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={handleCancelUpload}
+                        data-testid="sources__upload-cancel"
+                      >
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        {t('file_manager.upload_cancel')}
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2.5 text-xs"
+                    onClick={() => {
+                      if (selected.length !== 1) return;
+                      const target = selectedForMove;
+                      if (!target) return;
+                      const parent = target.kind === 'object'
+                        ? parentPrefixForKey(target.key)
+                        : parentPrefixForPrefix(target.prefix);
+                      setMoveDestPrefix(parent);
+                      setMoveName(moveNamePlaceholder);
+                      setMoveOverwrite(false);
+                      setMoveOpen(true);
+                    }}
+                    disabled={!selectedLibraryId || selected.length !== 1}
+                    data-testid="sources__rename"
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-1" />
+                    {t('file_manager.rename')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2.5 text-xs"
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    disabled={!selectedLibraryId || selected.length === 0}
+                    data-testid="sources__delete"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                    {t('file_manager.delete')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2.5 text-xs"
+                    onClick={handleDownload}
+                    disabled={!selectedLibraryId || selectedObjects.length === 0}
+                    data-testid="sources__download"
+                  >
+                    <Download className="h-3.5 w-3.5 mr-1" />
+                    {selectedObjects.length > 1
+                      ? t('file_manager.download_selected', { count: String(selectedObjects.length) })
+                      : t('file_manager.download')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs"
+                    onClick={clearSelection}
+                    disabled={!hasSelection}
+                    data-testid="sources__clear-selection"
+                  >
+                    {t('file_manager.clear_selection')}
+                  </Button>
                 </div>
               </div>
 
@@ -1200,13 +1199,13 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex h-8 items-center justify-between gap-2">
                   <Label htmlFor="sources-move-dest">{t('file_manager.dest_prefix')}</Label>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-8"
+                    className="h-7 px-2 text-xs"
                     onClick={() => {
                       setDestPickerPrefix(moveDestPrefix);
                       setDestPickerOpen(true);
@@ -1226,7 +1225,9 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 <div className="text-[11px] text-tertiary">{t('file_manager.dest_prefix_hint')}</div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="sources-move-name">{t('file_manager.new_name')}</Label>
+                <div className="flex h-8 items-center">
+                  <Label htmlFor="sources-move-name">{t('file_manager.new_name')}</Label>
+                </div>
                 <Input
                   id="sources-move-name"
                   value={moveName}
@@ -1242,7 +1243,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               <Checkbox
                 id="sources-move-overwrite"
                 checked={moveOverwrite}
-                onCheckedChange={(v) => setMoveOverwrite(v === true)}
+                onCheckedChange={(v: boolean | 'indeterminate') => setMoveOverwrite(v === true)}
                 data-testid="sources__move__overwrite"
               />
               <Label htmlFor="sources-move-overwrite" className="text-sm">

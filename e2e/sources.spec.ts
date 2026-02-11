@@ -291,9 +291,9 @@ test.describe('Sources Page (object browser)', () => {
 
     await expect(authedPage.getByTestId('sources__selection-summary')).toBeVisible();
     await authedPage.getByTestId('sources__clear-selection').click();
-    await expect(authedPage.getByTestId('sources__selection-summary')).toContainText('0');
+    await expect(authedPage.getByTestId('sources__clear-selection')).toBeDisabled();
     await authedPage.keyboard.press('Escape');
-    await expect(authedPage.getByTestId('sources__selection-shortcuts')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__selection-shortcuts')).toHaveCount(1);
   });
 
   test('details panel can generate object share links and expand preview', async ({ authedPage }) => {

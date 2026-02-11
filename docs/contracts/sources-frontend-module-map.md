@@ -96,8 +96,8 @@ Contract source of truth for this rewrite:
 - `Technical` tab for key/meta operations
 - in-panel preview for image/pdf/text via existing download endpoint
 5. Keep file manager interaction discoverable:
-- selected-row summary in toolbar (`count + clear`)
-- selection summary uses a stable reserved slot (no layout jump on show/hide)
+- global actions (`search/new-folder/upload`) live in the object-browser header, not in a separate top toolbar row
+- selected-row summary/actions use a stable reserved slot between table header and list (fixed height, no layout jump on state change)
 - default single-select flow for preview
 - enter multi-select via `Ctrl/Cmd+click` or `Shift+click` range selection
 - multi-select persists until explicit exit (`Esc`)

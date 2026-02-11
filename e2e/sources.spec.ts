@@ -30,10 +30,10 @@ test.describe('Sources Page (object browser)', () => {
 
   test('search filters objects via backend query', async ({ authedPage }) => {
     await authedPage.getByTestId('sources__search').fill('readme');
+    await expect(authedPage).toHaveURL(/search=readme/);
 
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first()).toBeVisible();
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' })).toHaveCount(0);
-    await expect(authedPage).toHaveURL(/search=readme/);
   });
 
   test('persists sort preference in url and after refresh', async ({ authedPage }) => {

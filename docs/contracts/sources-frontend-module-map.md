@@ -33,6 +33,9 @@ This document defines the closeout baseline and next decomposition targets for:
 - `src/components/sources/hooks/use-source-batch-operations.ts`
 - Batch delete/download and failed-key retry dialog semantics.
 
+- `src/components/sources/hooks/use-source-library-manager.ts`
+- Library create/rename/delete dialog state and mutation orchestration.
+
 ## 2.1 Scope Update (Effective Immediately)
 
 The Sources module is being reworked to be a MinIO Console-like object browser and file manager:
@@ -81,6 +84,7 @@ Contract source of truth for this rewrite:
 - `use-sources-url-state` (selected library/current prefix/search/sort with URL sync)
 - `use-source-objects` (list objects/prefixes, pagination token)
 - `use-source-upload-manager` (upload queue, drag-drop, conflict resolution)
+- `use-source-library-manager` (library lifecycle dialogs + actions)
 - `use-source-object-actions` (create folder, rename/move, delete, download)
 4. Keep details panel productized:
 - default `Overview` tab for non-technical users

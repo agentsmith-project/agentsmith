@@ -49,7 +49,7 @@ import { toast } from '@/components/ui/toast';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { SourceObjectDetailsPanel } from '@/components/sources/SourceObjectDetailsPanel';
 
-import type { SourceLibrary, SourceObjectsListItem } from '@/lib/api/types';
+import type { SourceObjectsListItem } from '@/lib/api/types';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { APIError } from '@/lib/api/errors';
 import {
@@ -69,6 +69,7 @@ import {
 import { parseSourceSortBy, SourceSortBy, SourceSortOrder, useSourcesUrlState } from '@/lib/hooks/use-sources-url-state';
 import { useSourceUploadManager } from '@/components/sources/hooks/use-source-upload-manager';
 import { useSourceBatchOperations } from '@/components/sources/hooks/use-source-batch-operations';
+import { useSourceLibraryManager } from '@/components/sources/hooks/use-source-library-manager';
 
 export interface SourcesPageProps {
   workspaceId: string;
@@ -204,18 +205,6 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     setSelectedIds((prev) => (prev.length > 0 ? [] : filteredItems.map((it) => rowId(it))));
   };
 
-  // Library dialogs (create/rename/delete)
-  const [libraryCreateOpen, setLibraryCreateOpen] = React.useState(false);
-  const [libraryName, setLibraryName] = React.useState('');
-  const [libraryDescription, setLibraryDescription] = React.useState('');
-  const [libraryRenameOpen, setLibraryRenameOpen] = React.useState(false);
-  const [libraryRenameTarget, setLibraryRenameTarget] = React.useState<SourceLibrary | null>(null);
-  const [libraryRenameName, setLibraryRenameName] = React.useState('');
-  const [libraryRenameDescription, setLibraryRenameDescription] = React.useState('');
-  const [libraryDeleteOpen, setLibraryDeleteOpen] = React.useState(false);
-  const [libraryDeleteTarget, setLibraryDeleteTarget] = React.useState<SourceLibrary | null>(null);
-  const [libraryDeleteConfirm, setLibraryDeleteConfirm] = React.useState('');
-
   const [createFolderOpen, setCreateFolderOpen] = React.useState(false);
   const [folderName, setFolderName] = React.useState('');
   const [moveOpen, setMoveOpen] = React.useState(false);
@@ -307,6 +296,45 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     t,
   });
 
+  const {
+    closeDeleteLibraryDialog,
+    closeRenameLibraryDialog,
+    handleCreateLibrary,
+    handleDeleteLibrary,
+    handleRenameLibrary,
+    libraryCreateOpen,
+    libraryDeleteConfirm,
+    libraryDeleteOpen,
+    libraryDeleteTarget,
+    libraryDescription,
+    libraryName,
+    libraryRenameDescription,
+    libraryRenameName,
+    libraryRenameOpen,
+    libraryRenameTarget,
+    openCreateLibraryDialog,
+    openDeleteLibraryDialog,
+    openRenameLibraryDialog,
+    setLibraryCreateOpen,
+    setLibraryDeleteConfirm,
+    setLibraryDeleteOpen,
+    setLibraryDescription,
+    setLibraryName,
+    setLibraryRenameDescription,
+    setLibraryRenameName,
+    setLibraryRenameOpen,
+  } = useSourceLibraryManager({
+    workspaceId,
+    projectId,
+    selectedLibraryId,
+    setSelectedLibraryId,
+    navigateToPrefix,
+    createLibrary: createLibrary.mutateAsync,
+    updateLibrary: updateLibrary.mutateAsync,
+    deleteLibrary: deleteLibrary.mutateAsync,
+    t,
+  });
+
   const handleCreateFolder = async () => {
     if (!selectedLibraryId) return;
     const name = folderName.trim();
@@ -391,69 +419,6 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       void objectsQuery.fetchNextPage();
     }
   }, [objectsQuery]);
-
-  const handleCreateLibrary = async () => {
-    const name = libraryName.trim();
-    if (!name) return;
-    try {
-      const created = await createLibrary.mutateAsync({
-        workspaceId,
-        projectId,
-        name,
-        description: libraryDescription.trim() || undefined,
-      });
-      toast.success(t('file_manager.library_created'));
-      setLibraryCreateOpen(false);
-      setSelectedLibraryId(created.id);
-      navigateToPrefix('');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t('file_manager.library_create_failed')}: ${msg}`);
-    }
-  };
-
-  const handleRenameLibrary = async () => {
-    if (!libraryRenameTarget) return;
-    const name = libraryRenameName.trim();
-    if (!name) return;
-    try {
-      await updateLibrary.mutateAsync({
-        workspaceId,
-        projectId,
-        libraryId: libraryRenameTarget.id,
-        name,
-        description: libraryRenameDescription.trim() || undefined,
-      });
-      toast.success(t('file_manager.library_renamed'));
-      setLibraryRenameOpen(false);
-      setLibraryRenameTarget(null);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t('file_manager.library_rename_failed')}: ${msg}`);
-    }
-  };
-
-  const handleDeleteLibrary = async () => {
-    if (!libraryDeleteTarget) return;
-    try {
-      await deleteLibrary.mutateAsync({
-        workspaceId,
-        projectId,
-        libraryId: libraryDeleteTarget.id,
-      });
-      toast.success(t('file_manager.library_deleted'));
-      setLibraryDeleteOpen(false);
-      const deletedId = libraryDeleteTarget.id;
-      setLibraryDeleteTarget(null);
-      if (selectedLibraryId === deletedId) {
-        setSelectedLibraryId(null);
-        navigateToPrefix('');
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t('file_manager.library_delete_failed')}: ${msg}`);
-    }
-  };
 
   return (
     <PageLayout
@@ -634,9 +599,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 size="icon"
                 variant="ghost"
                 onClick={() => {
-                  setLibraryName('');
-                  setLibraryDescription('');
-                  setLibraryCreateOpen(true);
+                  openCreateLibraryDialog();
                 }}
                 aria-label={t('file_manager.library_create')}
                 data-testid="sources__library-create"
@@ -693,10 +656,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              setLibraryRenameTarget(lib);
-                              setLibraryRenameName(lib.name);
-                              setLibraryRenameDescription(lib.description ?? '');
-                              setLibraryRenameOpen(true);
+                              openRenameLibraryDialog(lib);
                             }}
                             aria-label={t('file_manager.library_rename')}
                           >
@@ -710,9 +670,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              setLibraryDeleteTarget(lib);
-                              setLibraryDeleteConfirm('');
-                              setLibraryDeleteOpen(true);
+                              openDeleteLibraryDialog(lib);
                             }}
                             aria-label={t('file_manager.library_delete')}
                           >
@@ -970,10 +928,9 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                setLibraryRenameOpen(false);
-                setLibraryRenameTarget(null);
-              }}
+                onClick={() => {
+                  closeRenameLibraryDialog();
+                }}
             >
               {t('file_manager.cancel')}
             </Button>
@@ -1015,11 +972,9 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                setLibraryDeleteOpen(false);
-                setLibraryDeleteTarget(null);
-                setLibraryDeleteConfirm('');
-              }}
+                onClick={() => {
+                  closeDeleteLibraryDialog();
+                }}
             >
               {t('file_manager.cancel')}
             </Button>

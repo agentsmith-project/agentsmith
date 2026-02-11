@@ -23,6 +23,7 @@ import type {
 } from '../types';
 import { API_BASE } from '../client';
 import type { ApiClient } from '../client';
+import { APIError } from '../errors';
 
 interface BackendSourceItem {
   id: string;
@@ -450,6 +451,7 @@ export class SourcesAPI {
     libraryId: string,
     file: File,
     prefix?: string,
+    overwrite?: boolean,
     onProgress?: (progress: number) => void,
   ): Promise<SourceObjectItem> {
     const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/upload`;
@@ -459,6 +461,7 @@ export class SourcesAPI {
       const xhr = new XMLHttpRequest();
       const formData = new FormData();
       if (prefix) formData.append('prefix', prefix);
+      if (overwrite) formData.append('overwrite', 'true');
       formData.append('file', file);
 
       if (onProgress) {
@@ -483,7 +486,16 @@ export class SourcesAPI {
         }
 
         try {
-          const errorData = JSON.parse(xhr.responseText) as { message?: string };
+          const errorData = JSON.parse(xhr.responseText) as {
+            error_code?: string;
+            message?: string;
+            request_id?: string;
+            details?: Record<string, unknown>;
+          };
+          if (errorData.error_code && errorData.message) {
+            reject(new APIError(errorData.error_code, errorData.message, errorData.request_id, xhr.status, errorData.details));
+            return;
+          }
           reject(new Error(errorData.message || `Upload failed with status ${xhr.status}`));
         } catch {
           reject(new Error(`Upload failed with status ${xhr.status}`));

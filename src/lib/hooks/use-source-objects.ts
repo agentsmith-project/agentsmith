@@ -64,9 +64,18 @@ export function useUploadSourceObject() {
       libraryId: string;
       file: File;
       prefix?: string;
+      overwrite?: boolean;
       onProgress?: (progress: number) => void;
     }) =>
-      sourcesAPI.uploadObject(vars.workspaceId, vars.projectId, vars.libraryId, vars.file, vars.prefix, vars.onProgress),
+      sourcesAPI.uploadObject(
+        vars.workspaceId,
+        vars.projectId,
+        vars.libraryId,
+        vars.file,
+        vars.prefix,
+        vars.overwrite,
+        vars.onProgress,
+      ),
     onSuccess: async (_, vars) => {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.sourceObjects._def,

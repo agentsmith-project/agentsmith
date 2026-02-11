@@ -162,9 +162,8 @@ export const sourceHandlers = [
       name: body.name,
       description: body.description ?? '',
       visibility: 'shared' as const,
-      object_prefix: `${String(params.ws ?? '')}/${String(params.prj ?? '')}/${id}/`,
-      doc_namespace: `${String(params.ws ?? '')}:${String(params.prj ?? '')}:${id}:doc`,
-      vector_namespace: `${String(params.ws ?? '')}:${String(params.prj ?? '')}:${id}:vec`,
+      provider: 's3' as const,
+      bucket: `mbos-${String(params.prj ?? '')}-${id}`,
       created_by_user_id: 'user_001',
       created_at: now,
       updated_at: now,
@@ -298,6 +297,7 @@ export const sourceHandlers = [
     const form = await request.formData();
     const file = form.get('file');
     const prefix = normalizePrefix((form.get('prefix') as string | null) ?? '');
+    const overwrite = ((form.get('overwrite') as string | null) ?? '').toLowerCase() === 'true';
 
     if (!(file instanceof File)) {
       return HttpResponse.json(
@@ -324,7 +324,13 @@ export const sourceHandlers = [
     };
     // Overwrite for MSW simplicity.
     const existingIndex = db.findIndex((r) => r.kind === 'object' && r.key === key);
-    if (existingIndex >= 0) db.splice(existingIndex, 1);
+    if (existingIndex >= 0 && !overwrite) {
+      return HttpResponse.json(
+        { error_code: 'destination_exists', message: 'destination_exists' },
+        { status: 409 },
+      );
+    }
+    if (existingIndex >= 0 && overwrite) db.splice(existingIndex, 1);
     db.push(row);
 
     return HttpResponse.json(

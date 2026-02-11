@@ -11,6 +11,7 @@
 
 import * as React from 'react';
 import {
+  ArrowUp,
   Download,
   Folder,
   FolderPlus,
@@ -22,7 +23,6 @@ import {
   Pencil,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useQuery } from '@tanstack/react-query';
 
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/toast';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { SourceObjectDetailsPanel } from '@/components/sources/SourceObjectDetailsPanel';
 
 import { getApiClient, SourcesAPI } from '@/lib/api';
 import type { SourceLibrary, SourceObjectsListItem } from '@/lib/api/types';
@@ -60,7 +61,6 @@ import {
   useSourceObjects,
   useUploadSourceObject,
 } from '@/lib/hooks/use-source-objects';
-import { queryKeys } from '@/lib/query-keys';
 
 export interface SourcesPageProps {
   workspaceId: string;
@@ -68,6 +68,10 @@ export interface SourcesPageProps {
 }
 
 type SelectedRowId = `p:${string}` | `o:${string}`;
+type UploadConflictState = {
+  file: File;
+  remaining: File[];
+};
 
 function rowId(item: SourceObjectsListItem): SelectedRowId {
   return item.kind === 'prefix' ? (`p:${item.prefix}` as const) : (`o:${item.key}` as const);
@@ -82,6 +86,16 @@ function basename(path: string) {
   const trimmed = path.endsWith('/') ? path.slice(0, -1) : path;
   const idx = trimmed.lastIndexOf('/');
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function renameWithIndex(originalName: string, index: number) {
+  const dotIndex = originalName.lastIndexOf('.');
+  if (dotIndex <= 0) {
+    return `${originalName} (${index})`;
+  }
+  const name = originalName.slice(0, dotIndex);
+  const ext = originalName.slice(dotIndex);
+  return `${name} (${index})${ext}`;
 }
 
 function buildCrumbs(prefix: string) {
@@ -145,20 +159,10 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   }, [items, search]);
 
   const selected = React.useMemo(() => selectedIds.map(parseSelectedRowId), [selectedIds]);
-  const selectedObject = selected.length === 1 && selected[0].kind === 'object' ? selected[0] : null;
-
-  const metaQuery = useQuery({
-    queryKey: selectedLibraryId && selectedObject
-      ? queryKeys.sourceObjects.meta(workspaceId, projectId, selectedLibraryId, selectedObject.key)
-      : ['source-object-meta', 'disabled', workspaceId, projectId],
-    queryFn: async () => {
-      if (!selectedLibraryId || !selectedObject) throw new Error('meta disabled');
-      const api = new SourcesAPI(getApiClient());
-      return api.getObjectMeta(workspaceId, projectId, selectedLibraryId, selectedObject.key);
-    },
-    enabled: !!selectedLibraryId && !!selectedObject,
-    staleTime: 5_000,
-  });
+  const selectedObjects = React.useMemo(
+    () => selected.filter((s): s is { kind: 'object'; key: string } => s.kind === 'object'),
+    [selected],
+  );
 
   const createLibrary = useCreateSourceLibrary();
   const updateLibrary = useUpdateSourceLibrary();
@@ -210,6 +214,10 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const [moveOverwrite, setMoveOverwrite] = React.useState(false);
   const [moveConflictOpen, setMoveConflictOpen] = React.useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
+  const [uploadConflictOpen, setUploadConflictOpen] = React.useState(false);
+  const [uploadConflict, setUploadConflict] = React.useState<UploadConflictState | null>(null);
+  const [isDropActive, setIsDropActive] = React.useState(false);
+  const dragDepthRef = React.useRef(0);
 
   const selectedForMove = selected.length === 1 ? selected[0] : null;
   const moveNamePlaceholder = selectedForMove
@@ -232,27 +240,131 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
+  const uploadSingleFile = React.useCallback(
+    async (file: File, overwrite = false) => {
+      if (!selectedLibraryId) throw new Error('library_not_selected');
+      await uploadObject.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId: selectedLibraryId,
+        file,
+        prefix: prefix || undefined,
+        overwrite,
+      });
+    },
+    [prefix, projectId, selectedLibraryId, uploadObject, workspaceId],
+  );
+
+  const handleUploadConflict = React.useCallback((file: File, remaining: File[]) => {
+    setUploadConflict({ file, remaining });
+    setUploadConflictOpen(true);
+  }, []);
+
+  const processUploadQueue = React.useCallback(
+    async (queue: File[]) => {
+      if (!selectedLibraryId || queue.length === 0) return;
+      for (let i = 0; i < queue.length; i += 1) {
+        const current = queue[i];
+        try {
+          await uploadSingleFile(current, false);
+        } catch (err) {
+          const apiErr = err instanceof APIError ? err : null;
+          if (apiErr?.errorCode === 'destination_exists') {
+            handleUploadConflict(current, queue.slice(i + 1));
+            return;
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          toast.error(`${t('file_manager.upload_failed')}: ${msg}`);
+          return;
+        }
+      }
+      toast.success(t('file_manager.upload_success'));
+    },
+    [handleUploadConflict, selectedLibraryId, t, uploadSingleFile],
+  );
+
   const handleFilesPicked = async (files: FileList | null) => {
     if (!files || !selectedLibraryId) return;
     const list = Array.from(files);
     if (list.length === 0) return;
+    await processUploadQueue(list);
+  };
 
-    for (const f of list) {
+  const handleDropEnter: React.DragEventHandler<HTMLDivElement> = (event) => {
+    event.preventDefault();
+    if (!selectedLibraryId) return;
+    dragDepthRef.current += 1;
+    setIsDropActive(true);
+  };
+
+  const handleDropLeave: React.DragEventHandler<HTMLDivElement> = (event) => {
+    event.preventDefault();
+    if (!selectedLibraryId) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDropActive(false);
+  };
+
+  const handleDropOver: React.DragEventHandler<HTMLDivElement> = (event) => {
+    event.preventDefault();
+    if (!selectedLibraryId) return;
+    if (!isDropActive) setIsDropActive(true);
+  };
+
+  const handleDrop: React.DragEventHandler<HTMLDivElement> = (event) => {
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDropActive(false);
+    if (!selectedLibraryId) return;
+    void handleFilesPicked(event.dataTransfer?.files ?? null);
+  };
+
+  const continueAfterConflict = React.useCallback(
+    async (remaining: File[]) => {
+      setUploadConflict(null);
+      setUploadConflictOpen(false);
+      if (remaining.length > 0) {
+        await processUploadQueue(remaining);
+      } else {
+        toast.success(t('file_manager.upload_success'));
+      }
+    },
+    [processUploadQueue, t],
+  );
+
+  const resolveUploadConflictOverwrite = async () => {
+    if (!uploadConflict) return;
+    try {
+      await uploadSingleFile(uploadConflict.file, true);
+      await continueAfterConflict(uploadConflict.remaining);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`${t('file_manager.upload_failed')}: ${msg}`);
+    }
+  };
+
+  const resolveUploadConflictRename = async () => {
+    if (!uploadConflict) return;
+    const source = uploadConflict.file;
+    let attempt = 1;
+    while (attempt <= 20) {
+      const nextName = renameWithIndex(source.name, attempt);
+      const renamed = new File([source], nextName, { type: source.type, lastModified: source.lastModified });
       try {
-        await uploadObject.mutateAsync({
-          workspaceId,
-          projectId,
-          libraryId: selectedLibraryId,
-          file: f,
-          prefix: prefix || undefined,
-        });
+        await uploadSingleFile(renamed, false);
+        await continueAfterConflict(uploadConflict.remaining);
+        return;
       } catch (err) {
+        const apiErr = err instanceof APIError ? err : null;
+        if (apiErr?.errorCode === 'destination_exists') {
+          attempt += 1;
+          continue;
+        }
         const msg = err instanceof Error ? err.message : String(err);
         toast.error(`${t('file_manager.upload_failed')}: ${msg}`);
         return;
       }
     }
-    toast.success(t('file_manager.upload_success'));
+    toast.error(t('file_manager.upload_rename_exhausted'));
   };
 
   const handleCreateFolder = async () => {
@@ -337,21 +449,30 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   };
 
   const handleDownload = async () => {
-    if (!selectedLibraryId || !selectedObject) return;
-    try {
-      const api = new SourcesAPI(getApiClient());
-      const blob = await api.downloadObject(workspaceId, projectId, selectedLibraryId, selectedObject.key);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = basename(selectedObject.key) || 'download';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t('file_manager.download_failed')}: ${msg}`);
+    if (!selectedLibraryId || selectedObjects.length === 0) return;
+    const api = new SourcesAPI(getApiClient());
+    let failedCount = 0;
+    for (const objectItem of selectedObjects) {
+      try {
+        const blob = await api.downloadObject(workspaceId, projectId, selectedLibraryId, objectItem.key);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = basename(objectItem.key) || 'download';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch {
+        failedCount += 1;
+      }
+    }
+    if (failedCount > 0) {
+      toast.error(t('file_manager.download_partial_failed', { failed: String(failedCount) }));
+      return;
+    }
+    if (selectedObjects.length > 1) {
+      toast.success(t('file_manager.download_started', { count: String(selectedObjects.length) }));
     }
   };
 
@@ -445,6 +566,21 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               />
             </div>
             <div className="ml-auto flex items-center gap-2">
+              {selected.length > 0 && (
+                <div className="hidden md:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 text-xs text-primary" data-testid="sources__selection-summary">
+                  <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={clearSelection}
+                    data-testid="sources__clear-selection"
+                  >
+                    {t('file_manager.clear_selection')}
+                  </Button>
+                </div>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -490,11 +626,13 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 type="button"
                 variant="outline"
                 onClick={handleDownload}
-                disabled={!selectedLibraryId || !selectedObject}
+                disabled={!selectedLibraryId || selectedObjects.length === 0}
                 data-testid="sources__download"
               >
                 <Download className="h-4 w-4 mr-2" />
-                {t('file_manager.download')}
+                {selectedObjects.length > 1
+                  ? t('file_manager.download_selected', { count: String(selectedObjects.length) })
+                  : t('file_manager.download')}
               </Button>
               <Button
                 type="button"
@@ -621,9 +759,29 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
           </div>
         </div>
 
-        <div className="min-h-0 rounded-md border border-subtle bg-surface overflow-hidden flex flex-col">
+        <div
+          className="relative min-h-0 rounded-md border border-subtle bg-surface overflow-hidden flex flex-col"
+          onDragEnter={handleDropEnter}
+          onDragOver={handleDropOver}
+          onDragLeave={handleDropLeave}
+          onDrop={handleDrop}
+          data-testid="sources__dropzone"
+        >
           <div className="px-3 py-2 border-b border-subtle flex items-center gap-2">
             <div className="text-sm text-primary">{t('file_manager.location')}</div>
+            {prefix ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2"
+                onClick={() => navigateToPrefix(parentPrefixForPrefix(prefix))}
+                data-testid="sources__go-up"
+              >
+                <ArrowUp className="h-3.5 w-3.5 mr-1" />
+                {t('file_manager.go_up')}
+              </Button>
+            ) : null}
             <div className="flex items-center gap-1 min-w-0">
               {crumbs.map((c, idx) => (
                 <React.Fragment key={c.prefix || 'root'}>
@@ -726,56 +884,24 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               </tbody>
             </table>
           </div>
+
+          {isDropActive && (
+            <div className="absolute inset-0 z-20 bg-surface/95 backdrop-blur-[1px] border-2 border-dashed border-accent flex items-center justify-center pointer-events-none" data-testid="sources__dropzone-overlay">
+              <div className="text-center px-6">
+                <div className="text-sm font-medium text-strong">{t('file_manager.dropzone_title')}</div>
+                <div className="mt-1 text-xs text-tertiary">{t('file_manager.dropzone_hint')}</div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="min-h-0 rounded-md border border-subtle bg-surface overflow-hidden flex flex-col">
-          <div className="px-3 py-2 border-b border-subtle text-sm text-primary">
-            {t('file_manager.details')}
-          </div>
-          <div className="flex-1 min-h-0 overflow-auto p-3 text-sm">
-            {!selectedLibraryId ? (
-              <div className="text-tertiary">{t('file_manager.details_empty')}</div>
-            ) : selected.length === 0 ? (
-              <div className="text-tertiary">{t('file_manager.details_empty')}</div>
-            ) : selected.length > 1 ? (
-              <div className="text-tertiary">{t('file_manager.details_multi', { count: String(selected.length) })}</div>
-            ) : selected[0].kind === 'prefix' ? (
-              <div className="space-y-2">
-                <div className="text-xs text-tertiary">{t('file_manager.folder')}</div>
-                <div className="font-mono text-xs break-all">{selected[0].prefix}</div>
-              </div>
-            ) : metaQuery.isLoading ? (
-              <div className="text-tertiary">{t('file_manager.loading')}</div>
-            ) : metaQuery.data ? (
-              <div className="space-y-3">
-                <div>
-                  <div className="text-xs text-tertiary">{t('file_manager.key')}</div>
-                  <div className="font-mono text-xs break-all">{metaQuery.data.key}</div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-xs text-tertiary">{t('file_manager.size')}</div>
-                    <div className="tabular-nums">{metaQuery.data.size_bytes.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-tertiary">{t('file_manager.type')}</div>
-                    <div className="truncate">{metaQuery.data.content_type}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-tertiary">{t('file_manager.modified')}</div>
-                    <div className="truncate">{new Date(metaQuery.data.last_modified).toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-tertiary">{t('file_manager.etag')}</div>
-                    <div className="truncate">{metaQuery.data.etag ?? '-'}</div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-tertiary">{t('file_manager.details_empty')}</div>
-            )}
-          </div>
-        </div>
+        <SourceObjectDetailsPanel
+          workspaceId={workspaceId}
+          projectId={projectId}
+          selectedLibraryId={selectedLibraryId}
+          selected={selected}
+          onDownload={handleDownload}
+        />
       </div>
 
       <Dialog open={libraryCreateOpen} onOpenChange={setLibraryCreateOpen}>
@@ -1145,6 +1271,46 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
         }}
         testId="sources__dialog__move-conflict"
       />
+
+      <Dialog
+        open={uploadConflictOpen}
+        onOpenChange={(open) => {
+          setUploadConflictOpen(open);
+          if (!open) setUploadConflict(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]" data-testid="sources__dialog__upload-conflict">
+          <DialogHeader>
+            <DialogTitle>{t('file_manager.upload_conflict_title')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <div className="text-sm text-tertiary">
+              {t('file_manager.upload_conflict_description')}
+            </div>
+            <div className="rounded-sm border border-subtle bg-surface-high/40 px-3 py-2 font-mono text-xs break-all text-primary">
+              {uploadConflict?.file.name ?? '-'}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setUploadConflictOpen(false);
+                setUploadConflict(null);
+              }}
+            >
+              {t('file_manager.cancel')}
+            </Button>
+            <Button type="button" variant="outline" onClick={resolveUploadConflictRename} data-testid="sources__upload-conflict__rename">
+              {t('file_manager.upload_conflict_rename')}
+            </Button>
+            <Button type="button" variant="destructive" onClick={resolveUploadConflictOverwrite} data-testid="sources__upload-conflict__overwrite">
+              {t('file_manager.upload_conflict_overwrite')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent className="sm:max-w-[480px]" data-testid="sources__dialog__delete">

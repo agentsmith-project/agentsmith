@@ -6,6 +6,10 @@ import type { SourceLibrary } from '@/lib/api/types';
 export type SourceSortBy = 'name' | 'size_bytes' | 'last_modified';
 export type SourceSortOrder = 'asc' | 'desc';
 
+type UseSourcesUrlStateOptions = {
+  resetBrowseStateOnMount?: boolean;
+};
+
 export function parseSourceSortBy(value: string | null): SourceSortBy {
   if (value === 'size_bytes' || value === 'last_modified') return value;
   return 'name';
@@ -24,7 +28,10 @@ function normalizeBrowsePrefix(value: string | null): string {
   return withoutLeading.endsWith('/') ? withoutLeading : `${withoutLeading}/`;
 }
 
-export function useSourcesUrlState(libraries: SourceLibrary[]) {
+export function useSourcesUrlState(
+  libraries: SourceLibrary[],
+  { resetBrowseStateOnMount = false }: UseSourcesUrlStateOptions = {},
+) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -32,11 +39,17 @@ export function useSourcesUrlState(libraries: SourceLibrary[]) {
 
   const librarySelectionInitializedRef = useRef(false);
   const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
-  const [prefix, setPrefix] = useState(normalizeBrowsePrefix(searchParams.get('prefix')));
-  const [searchInput, setSearchInput] = useState(searchParams.get('search') ?? '');
-  const [search, setSearch] = useState(searchParams.get('search')?.trim() ?? '');
-  const [sortBy, setSortBy] = useState<SourceSortBy>(parseSourceSortBy(searchParams.get('sort_by')));
-  const [sortOrder, setSortOrder] = useState<SourceSortOrder>(parseSourceSortOrder(searchParams.get('sort_order')));
+  const [prefix, setPrefix] = useState(resetBrowseStateOnMount ? '' : normalizeBrowsePrefix(searchParams.get('prefix')));
+  const [searchInput, setSearchInput] = useState(resetBrowseStateOnMount ? '' : (searchParams.get('search') ?? ''));
+  const [search, setSearch] = useState(resetBrowseStateOnMount ? '' : (searchParams.get('search')?.trim() ?? ''));
+  const [sortBy, setSortBy] = useState<SourceSortBy>(
+    resetBrowseStateOnMount ? 'name' : parseSourceSortBy(searchParams.get('sort_by')),
+  );
+  const [sortOrder, setSortOrder] = useState<SourceSortOrder>(
+    resetBrowseStateOnMount ? 'asc' : parseSourceSortOrder(searchParams.get('sort_order')),
+  );
+  const browseResetAppliedRef = useRef(false);
+  const ignoreInitialBrowseQueryRef = useRef(resetBrowseStateOnMount);
 
   useEffect(() => {
     if (libraries.length === 0) {
@@ -78,20 +91,6 @@ export function useSourcesUrlState(libraries: SourceLibrary[]) {
   }, [libraries, searchParamsKey, selectedLibraryId]);
 
   useEffect(() => {
-    const params = new URLSearchParams(searchParamsKey);
-    const querySortBy = parseSourceSortBy(params.get('sort_by'));
-    const querySortOrder = parseSourceSortOrder(params.get('sort_order'));
-    const querySearch = params.get('search') ?? '';
-    const queryPrefix = normalizeBrowsePrefix(params.get('prefix'));
-    const trimmedQuerySearch = querySearch.trim();
-    setSortBy((prev) => (prev === querySortBy ? prev : querySortBy));
-    setSortOrder((prev) => (prev === querySortOrder ? prev : querySortOrder));
-    setSearchInput((prev) => (prev === querySearch ? prev : querySearch));
-    setSearch((prev) => (prev === trimmedQuerySearch ? prev : trimmedQuerySearch));
-    setPrefix((prev) => (prev === queryPrefix ? prev : queryPrefix));
-  }, [searchParamsKey]);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => {
       setSearch(searchInput.trim());
     }, 250);
@@ -109,6 +108,46 @@ export function useSourcesUrlState(libraries: SourceLibrary[]) {
   );
 
   useEffect(() => {
+    const params = new URLSearchParams(searchParamsKey);
+
+    if (ignoreInitialBrowseQueryRef.current) {
+      const hasBrowseKeys = ['prefix', 'search', 'sort_by', 'sort_order'].some((key) => params.has(key));
+      if (hasBrowseKeys) {
+        if (!browseResetAppliedRef.current) {
+          browseResetAppliedRef.current = true;
+          replaceQueryParams((nextParams) => {
+            let changed = false;
+            for (const key of ['prefix', 'search', 'sort_by', 'sort_order']) {
+              if (nextParams.has(key)) {
+                nextParams.delete(key);
+                changed = true;
+              }
+            }
+            return changed;
+          });
+        }
+        return;
+      }
+      ignoreInitialBrowseQueryRef.current = false;
+    }
+    if (resetBrowseStateOnMount) {
+      return;
+    }
+
+    const querySortBy = parseSourceSortBy(params.get('sort_by'));
+    const querySortOrder = parseSourceSortOrder(params.get('sort_order'));
+    const querySearch = params.get('search') ?? '';
+    const queryPrefix = normalizeBrowsePrefix(params.get('prefix'));
+    const trimmedQuerySearch = querySearch.trim();
+    setSortBy((prev) => (prev === querySortBy ? prev : querySortBy));
+    setSortOrder((prev) => (prev === querySortOrder ? prev : querySortOrder));
+    setSearchInput((prev) => (prev === querySearch ? prev : querySearch));
+    setSearch((prev) => (prev === trimmedQuerySearch ? prev : trimmedQuerySearch));
+    setPrefix((prev) => (prev === queryPrefix ? prev : queryPrefix));
+  }, [replaceQueryParams, resetBrowseStateOnMount, searchParamsKey]);
+
+  useEffect(() => {
+    if (resetBrowseStateOnMount) return;
     replaceQueryParams((params) => {
       const currentSearch = params.get('search') ?? '';
       const nextSearch = search.trim();
@@ -120,7 +159,7 @@ export function useSourcesUrlState(libraries: SourceLibrary[]) {
       }
       return true;
     });
-  }, [replaceQueryParams, search]);
+  }, [replaceQueryParams, resetBrowseStateOnMount, search]);
 
   useEffect(() => {
     replaceQueryParams((params) => {
@@ -138,6 +177,7 @@ export function useSourcesUrlState(libraries: SourceLibrary[]) {
   }, [replaceQueryParams, selectedLibraryId]);
 
   useEffect(() => {
+    if (resetBrowseStateOnMount) return;
     replaceQueryParams((params) => {
       const currentPrefix = normalizeBrowsePrefix(params.get('prefix'));
       const nextPrefix = normalizeBrowsePrefix(prefix);
@@ -149,7 +189,7 @@ export function useSourcesUrlState(libraries: SourceLibrary[]) {
       }
       return true;
     });
-  }, [prefix, replaceQueryParams]);
+  }, [prefix, replaceQueryParams, resetBrowseStateOnMount]);
 
   const setSearchImmediately = useCallback((value: string) => {
     setSearchInput(value);
@@ -160,6 +200,7 @@ export function useSourcesUrlState(libraries: SourceLibrary[]) {
     (nextSortBy: SourceSortBy, nextSortOrder: SourceSortOrder) => {
       setSortBy(nextSortBy);
       setSortOrder(nextSortOrder);
+      if (resetBrowseStateOnMount) return;
       replaceQueryParams((params) => {
         if (nextSortBy === 'name') {
           params.delete('sort_by');
@@ -174,7 +215,7 @@ export function useSourcesUrlState(libraries: SourceLibrary[]) {
         return true;
       });
     },
-    [replaceQueryParams],
+    [replaceQueryParams, resetBrowseStateOnMount],
   );
 
   return useMemo(

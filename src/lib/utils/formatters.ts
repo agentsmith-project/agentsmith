@@ -57,10 +57,13 @@ export function formatBytes(
   if (bytes < 0) return defaultValue;
   
   const k = binary ? 1024 : 1000;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   if (i < 0) return `${bytes} B`;
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+  const value = bytes / Math.pow(k, i);
+  if (i === 0) return `${Math.round(value)} ${sizes[i]}`;
+  const decimals = value >= 100 ? 0 : value >= 10 ? 1 : 1;
+  return `${value.toFixed(decimals)} ${sizes[i]}`;
 }
 
 /**

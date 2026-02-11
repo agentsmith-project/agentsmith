@@ -16,6 +16,7 @@ import {
   Download,
   Folder,
   FolderPlus,
+  PanelRight,
   Plus,
   RefreshCw,
   Search,
@@ -64,10 +65,13 @@ import {
   useUploadSourceObject,
 } from '@/lib/hooks/use-source-objects';
 import { parseSourceSortBy, SourceSortBy, SourceSortOrder, useSourcesUrlState } from '@/lib/hooks/use-sources-url-state';
+import { useSourcesLayoutMode } from '@/lib/hooks/use-sources-layout-mode';
 import { useSourceUploadManager } from '@/components/sources/hooks/use-source-upload-manager';
 import { useSourceBatchOperations } from '@/components/sources/hooks/use-source-batch-operations';
 import { useSourceLibraryManager } from '@/components/sources/hooks/use-source-library-manager';
 import { useSourceFolderMoveManager } from '@/components/sources/hooks/use-source-folder-move-manager';
+import { SourceItemIcon } from '@/components/sources/SourceItemIcon';
+import { formatBytes } from '@/lib/utils/formatters';
 
 export interface SourcesPageProps {
   workspaceId: string;
@@ -75,6 +79,16 @@ export interface SourcesPageProps {
 }
 
 type SelectedRowId = `p:${string}` | `o:${string}`;
+type SourceSelectionMode = 'single' | 'multi';
+
+interface LibraryViewSnapshot {
+  prefix: string;
+  searchInput: string;
+  sortBy: SourceSortBy;
+  sortOrder: SourceSortOrder;
+  selectedIds: SelectedRowId[];
+  selectionMode: SourceSelectionMode;
+}
 
 function rowId(item: SourceObjectsListItem): SelectedRowId {
   return item.kind === 'prefix' ? (`p:${item.prefix}` as const) : (`o:${item.key}` as const);
@@ -119,6 +133,7 @@ function parentPrefixForPrefix(prefix: string) {
 export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const t = useTranslations('sources');
   const canManage = useHasPermission('project:source:manage');
+  const { layoutMode, showLayoutToggle, onToggleLayoutMode } = useSourcesLayoutMode();
 
   const { data: librariesData, isLoading: libsLoading } = useSourceLibraries(workspaceId, projectId);
   const libraries = React.useMemo(() => librariesData?.items ?? [], [librariesData?.items]);
@@ -134,8 +149,11 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     sortBy,
     sortOrder,
     updateSort,
-  } = useSourcesUrlState(libraries);
+  } = useSourcesUrlState(libraries, { resetBrowseStateOnMount: true });
   const [selectedIds, setSelectedIds] = React.useState<SelectedRowId[]>([]);
+  const [selectionMode, setSelectionMode] = React.useState<SourceSelectionMode>('single');
+  const librarySnapshotsRef = React.useRef<Record<string, LibraryViewSnapshot>>({});
+  const sessionResetAppliedRef = React.useRef(false);
 
   const listParams = React.useMemo(
     () => ({
@@ -182,9 +200,61 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     clearSelection();
   };
 
-  const toggleRow = (id: SelectedRowId) => {
+  const snapshotCurrentLibraryView = React.useCallback(() => {
+    if (!selectedLibraryId) return;
+    librarySnapshotsRef.current[selectedLibraryId] = {
+      prefix,
+      searchInput,
+      sortBy,
+      sortOrder,
+      selectedIds,
+      selectionMode,
+    };
+  }, [prefix, searchInput, selectedIds, selectedLibraryId, selectionMode, sortBy, sortOrder]);
+
+  const restoreLibraryView = React.useCallback((libraryId: string) => {
+    const snapshot = librarySnapshotsRef.current[libraryId];
+    if (!snapshot) {
+      setPrefix('');
+      setSearchImmediately('');
+      updateSort('name', 'asc');
+      setSelectionMode('single');
+      setSelectedIds([]);
+      return;
+    }
+    setPrefix(snapshot.prefix);
+    setSearchImmediately(snapshot.searchInput);
+    updateSort(snapshot.sortBy, snapshot.sortOrder);
+    setSelectionMode(snapshot.selectionMode);
+    setSelectedIds(snapshot.selectedIds);
+  }, [setPrefix, setSearchImmediately, updateSort]);
+
+  const selectLibrary = React.useCallback((libraryId: string) => {
+    if (selectedLibraryId === libraryId) return;
+    snapshotCurrentLibraryView();
+    setSelectedLibraryId(libraryId);
+    restoreLibraryView(libraryId);
+  }, [restoreLibraryView, selectedLibraryId, setSelectedLibraryId, snapshotCurrentLibraryView]);
+
+  const toggleRow = React.useCallback((id: SelectedRowId) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
+  }, []);
+
+  const activateSingleObject = React.useCallback((id: SelectedRowId) => {
+    setSelectedIds([id]);
+  }, []);
+
+  const setMultiMode = React.useCallback(() => {
+    setSelectionMode('multi');
+  }, []);
+
+  const setSingleMode = React.useCallback(() => {
+    setSelectionMode('single');
+    setSelectedIds((prev) => {
+      const firstObject = prev.find((id) => id.startsWith('o:'));
+      return firstObject ? [firstObject] : [];
+    });
+  }, []);
 
   const visibleSelectedCount = React.useMemo(
     () => filteredItems.filter((it) => selectedIds.includes(rowId(it))).length,
@@ -192,8 +262,39 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   );
   const allSelected = filteredItems.length > 0 && visibleSelectedCount === filteredItems.length;
   const toggleAll = () => {
+    if (selectionMode !== 'multi') return;
     setSelectedIds((prev) => (prev.length > 0 ? [] : filteredItems.map((it) => rowId(it))));
   };
+
+  React.useEffect(() => {
+    if (sessionResetAppliedRef.current) return;
+    sessionResetAppliedRef.current = true;
+    setSelectionMode('single');
+    setSelectedIds([]);
+  }, []);
+
+  React.useEffect(() => {
+    if (objectsQuery.isFetching && filteredItems.length === 0) return;
+    const available = new Set(filteredItems.map((it) => rowId(it)));
+    setSelectedIds((prev) => {
+      const next = prev.filter((id) => available.has(id));
+      if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
+        return prev;
+      }
+      return next;
+    });
+  }, [filteredItems, objectsQuery.isFetching]);
+
+  React.useEffect(() => {
+    const availableLibraryIds = new Set(libraries.map((lib) => lib.id));
+    const next: Record<string, LibraryViewSnapshot> = {};
+    for (const [libraryId, snapshot] of Object.entries(librarySnapshotsRef.current)) {
+      if (availableLibraryIds.has(libraryId)) {
+        next[libraryId] = snapshot;
+      }
+    }
+    librarySnapshotsRef.current = next;
+  }, [libraries]);
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
 
@@ -363,7 +464,28 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
   return (
     <PageLayout
-      header={<PageHeader title={t('title')} />}
+      contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
+      header={
+        <PageHeader
+          title={t('title')}
+          actions={showLayoutToggle ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={onToggleLayoutMode}
+              title={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
+              aria-label={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
+              data-testid="sources__layout-toggle"
+              data-state={layoutMode}
+            >
+              <PanelRight className="h-4 w-4" />
+              {layoutMode === 'ultrawide' ? t('file_manager.layout_ultrawide') : t('file_manager.layout_standard')}
+            </Button>
+          ) : null}
+        />
+      }
       toolbar={(
         <PageToolbar>
           <div className="flex items-center gap-2 w-full">
@@ -388,6 +510,28 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               />
             </div>
             <div className="hidden lg:flex items-center gap-2">
+              <div className="inline-flex rounded-md border border-subtle overflow-hidden" data-testid="sources__selection-mode">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn('h-9 rounded-none', selectionMode === 'single' ? 'bg-hover text-strong' : '')}
+                  onClick={setSingleMode}
+                  data-testid="sources__selection-mode--single"
+                >
+                  {t('file_manager.selection_mode_single')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn('h-9 rounded-none', selectionMode === 'multi' ? 'bg-hover text-strong' : '')}
+                  onClick={setMultiMode}
+                  data-testid="sources__selection-mode--multi"
+                >
+                  {t('file_manager.selection_mode_multi')}
+                </Button>
+              </div>
               <Select
                 value={sortBy}
                 onValueChange={(value) => handleSortByChange(parseSourceSortBy(value))}
@@ -441,7 +585,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               <div
                 className={cn(
                   'hidden xl:flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-opacity min-w-[170px]',
-                  selected.length > 0
+                  selectionMode === 'multi' && selected.length > 0
                     ? 'border-subtle bg-surface-high/40 text-primary opacity-100'
                     : 'border-transparent text-transparent opacity-0 pointer-events-none select-none',
                 )}
@@ -536,7 +680,14 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
         </PageToolbar>
       )}
     >
-      <div className="flex-1 min-h-0 grid grid-cols-[260px_minmax(0,1fr)_320px] gap-3">
+      <div
+        className={cn(
+          'flex-1 min-h-0 grid gap-3',
+          layoutMode === 'ultrawide'
+            ? 'grid-cols-[300px_minmax(0,1fr)_520px]'
+            : 'grid-cols-[260px_minmax(0,1fr)_360px]',
+        )}
+      >
         <div className="min-h-0 rounded-md border border-subtle bg-surface">
           <div className="px-3 py-2 border-b border-subtle flex items-center justify-between">
             <div className="text-sm text-primary">{t('file_manager.libraries')}</div>
@@ -568,18 +719,12 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                     <div
                       key={lib.id}
                       onClick={() => {
-                        setSelectedLibraryId(lib.id);
-                        setPrefix('');
-                        setSearchImmediately('');
-                        clearSelection();
+                        selectLibrary(lib.id);
                       }}
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter' && e.key !== ' ') return;
                         e.preventDefault();
-                        setSelectedLibraryId(lib.id);
-                        setPrefix('');
-                        setSearchImmediately('');
-                        clearSelection();
+                        selectLibrary(lib.id);
                       }}
                       className={cn(
                         'w-full text-left px-3 py-2 rounded-sm flex items-center justify-between gap-2',
@@ -671,23 +816,36 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 </React.Fragment>
               ))}
             </div>
-            <div className="ml-auto text-xs text-tertiary tabular-nums">
-              {filteredItems.length} {t('file_manager.items')}
+            <div className="ml-auto flex items-center gap-3">
+              {selectionMode === 'single' ? (
+                <div className="hidden xl:block text-xs text-tertiary">
+                  {t('file_manager.single_select_hint')}
+                </div>
+              ) : (
+                <div className="hidden xl:block text-xs text-tertiary">
+                  {t('file_manager.multi_select_enabled')}
+                </div>
+              )}
+              <div className="text-xs text-tertiary tabular-nums">
+                {filteredItems.length} {t('file_manager.items')}
+              </div>
             </div>
           </div>
 
           <div className="flex-1 min-h-0">
             <div className="w-full h-full text-sm flex flex-col" data-testid="sources__objects-table">
               <div className="sticky top-0 z-10 bg-surface border-b border-subtle text-xs text-tertiary">
-                <div className="grid grid-cols-[40px_minmax(0,1fr)_128px_192px]">
-                  <div className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={toggleAll}
-                      aria-label={t('file_manager.select_all')}
-                    />
-                  </div>
+                <div className={cn('grid', selectionMode === 'multi' ? 'grid-cols-[40px_minmax(0,1fr)_128px_192px]' : 'grid-cols-[minmax(0,1fr)_128px_192px]')}>
+                  {selectionMode === 'multi' ? (
+                    <div className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        aria-label={t('file_manager.select_all')}
+                      />
+                    </div>
+                  ) : null}
                   <div className="px-3 py-2">{t('file_manager.col_name')}</div>
                   <div className="px-3 py-2 text-right">{t('file_manager.col_size')}</div>
                   <div className="px-3 py-2">{t('file_manager.col_modified')}</div>
@@ -712,42 +870,56 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                         <div
                           key={id}
                           className={cn(
-                            'grid grid-cols-[40px_minmax(0,1fr)_128px_192px] border-b border-subtle hover:bg-hover/60',
+                            'grid border-b border-subtle hover:bg-hover/60',
+                            selectionMode === 'multi' ? 'grid-cols-[40px_minmax(0,1fr)_128px_192px]' : 'grid-cols-[minmax(0,1fr)_128px_192px]',
                             checked && 'bg-hover',
                           )}
                           data-testid="sources__object-row"
                           data-row-id={id}
                         >
-                          <div className="px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleRow(id)}
-                              aria-label={t('file_manager.select_row')}
-                            />
-                          </div>
+                          {selectionMode === 'multi' ? (
+                            <div className="px-3 py-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleRow(id)}
+                                aria-label={t('file_manager.select_row')}
+                              />
+                            </div>
+                          ) : null}
                           <div className="px-3 py-2 min-w-0">
                             <button
                               type="button"
                               className="flex items-center gap-2 w-full text-left"
                               onClick={() => {
                                 if (it.kind === 'prefix') {
+                                  if (selectionMode === 'multi') {
+                                    toggleRow(id);
+                                    return;
+                                  }
                                   navigateToPrefix(it.prefix);
                                   return;
                                 }
-                                toggleRow(id);
+                                if (selectionMode === 'multi') {
+                                  toggleRow(id);
+                                  return;
+                                }
+                                activateSingleObject(id);
                               }}
                             >
-                              {it.kind === 'prefix' ? (
-                                <Folder className="h-4 w-4 text-tertiary shrink-0" />
-                              ) : (
-                                <span className="h-4 w-4 rounded-sm bg-surface-high border border-subtle shrink-0" />
-                              )}
-                              <span className="truncate">{it.name}</span>
+                              <SourceItemIcon
+                                kind={it.kind}
+                                name={it.name}
+                                contentType={it.kind === 'object' ? it.content_type : undefined}
+                                className="h-4 w-4 text-tertiary shrink-0"
+                              />
+                              <span className="truncate" title={it.name} aria-label={it.name}>
+                                {it.name}
+                              </span>
                             </button>
                           </div>
                           <div className="px-3 py-2 text-right text-tertiary tabular-nums">
-                            {it.kind === 'object' ? it.size_bytes.toLocaleString() : ''}
+                            {it.kind === 'object' ? formatBytes(it.size_bytes) : ''}
                           </div>
                           <div className="px-3 py-2 text-tertiary truncate">
                             {it.kind === 'object' ? new Date(it.last_modified).toLocaleString() : ''}

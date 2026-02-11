@@ -150,6 +150,7 @@ describe('SourcesPage (object browser)', () => {
   it('shows selection summary and can clear selection', async () => {
     wrap(<SourcesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
+    await user.click(screen.getByTestId('sources__selection-mode--multi'));
 
     const table = await screen.findByTestId('sources__objects-table');
     const row = within(table).getAllByTestId('sources__object-row').find((el) => el.textContent?.includes('README.txt'));

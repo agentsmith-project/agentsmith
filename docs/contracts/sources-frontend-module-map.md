@@ -11,7 +11,7 @@ This document defines the closeout baseline and next decomposition targets for:
 - delegates to `src/components/sources/SourcesPage.tsx`
 - UI composition is already split into compound components under `src/components/sources/*`.
 - Key state/behavior has been extracted into focused hooks:
-- `src/lib/hooks/use-sources-url-state.ts` (URL-synced library/prefix/search/sort)
+- `src/lib/hooks/use-sources-url-state.ts` (URL-synced `library_id`; browse/search/sort state is page-session local)
 - `src/components/sources/hooks/use-source-upload-manager.ts` (upload queue, drag-drop, conflict flow)
 - `src/components/sources/hooks/use-source-batch-operations.ts` (batch delete/download + retry workflow)
 - Remaining complexity is still concentrated in `src/components/sources/SourcesPage.tsx` (dialog orchestration + render tree).
@@ -25,7 +25,8 @@ This document defines the closeout baseline and next decomposition targets for:
 - Compound composition layer (header, toolbar, virtualized object list, dialogs, pagination).
 
 - `src/lib/hooks/use-sources-url-state.ts`
-- URL state source of truth (`library_id`, `prefix`, `search`, `sort_by`, `sort_order`).
+- URL state source of truth for `library_id` only.
+- Browse/search/sort state is intentionally **not URL-persisted** and resets on refresh/re-entry.
 
 - `src/components/sources/hooks/use-source-upload-manager.ts`
 - Upload queue, progress/cancel, drag-drop target, conflict resolution.
@@ -72,7 +73,7 @@ Contract source of truth for this rewrite:
 
 - E2E behavior baseline:
 - `npm run test:e2e -- e2e/sources.spec.ts --project=chromium --workers=1`
-- Result: passed (21/21)
+- Result: passed (23/23)
 
 - Visual baseline:
 - `npm run test:e2e -- --project=visual e2e/visual.spec.ts --grep "sources"`
@@ -84,7 +85,7 @@ Contract source of truth for this rewrite:
 2. Update frontend-backend contract per `docs/contracts/sources-object-browser-contract.md` and keep MSW handlers aligned.
 3. Refactor the orchestration hook into focused hooks (names are targets, not hard requirements):
 - `use-source-libraries` (list/create/rename/delete libraries)
-- `use-sources-url-state` (selected library/current prefix/search/sort with URL sync)
+- `use-sources-url-state` (selected library URL sync + session-scoped browse state)
 - `use-source-objects` (list objects/prefixes, pagination token)
 - `use-source-upload-manager` (upload queue, drag-drop, conflict resolution)
 - `use-source-library-manager` (library lifecycle dialogs + actions)
@@ -97,6 +98,7 @@ Contract source of truth for this rewrite:
 5. Keep file manager interaction discoverable:
 - selected-row summary in toolbar (`count + clear`)
 - selection summary uses a stable reserved slot (no layout jump on show/hide)
+- default single-select flow for preview; multi-select is explicit mode
 - drag-and-drop upload target on object table area
 - batch download for selected files
 - up-navigation button for non-root prefixes
@@ -109,8 +111,10 @@ Contract source of truth for this rewrite:
  - details panel action wording uses “object path” instead of “object key” for non-technical clarity
  - details panel supports temporary share-link generation (`15m/1h/24h/7d`) and copy link
  - preview supports inline mode and expanded modal mode for image/pdf/text
- - selected library, folder location, and query preferences are URL-synced (`library_id`, `prefix`, `search`, `sort_by`, `sort_order`) for refresh/share reproducibility
- - URL sync implementation is centralized in `src/lib/hooks/use-sources-url-state.ts` (single source of truth)
+ - only selected library is URL-synced (`library_id`)
+ - folder/search/sort/selection state is session-scoped in-memory only (switching libraries within current page session restores state; refresh/leave does not)
+ - sources page supports ultrawide layout toggle aligned with chat behavior (`>=1920`, standard default, user-toggleable)
+ - URL + session state implementation is centralized in `src/lib/hooks/use-sources-url-state.ts` (single source of truth)
 6. Replace/refresh test baselines:
 - Unit tests for each extracted hook and key components.
 - E2E `e2e/sources.spec.ts` updated to the new UX and stable testids.

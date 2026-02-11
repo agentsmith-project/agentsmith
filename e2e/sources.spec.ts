@@ -30,33 +30,32 @@ test.describe('Sources Page (object browser)', () => {
 
   test('search filters objects via backend query', async ({ authedPage }) => {
     await authedPage.getByTestId('sources__search').fill('readme');
-    await expect(authedPage).toHaveURL(/search=readme/);
+    await expect(authedPage.getByTestId('sources__search')).toHaveValue('readme');
 
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first()).toBeVisible();
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' })).toHaveCount(0);
   });
 
-  test('persists sort preference in url and after refresh', async ({ authedPage }) => {
+  test('resets sort preference after refresh', async ({ authedPage }) => {
     await authedPage.getByTestId('sources__sort-by').click();
     await authedPage.getByRole('option', { name: 'Sort: Size' }).click();
-    await expect(authedPage).toHaveURL(/sort_by=size_bytes/);
+    await expect(authedPage.getByTestId('sources__sort-by')).toContainText('Sort: Size');
 
     await authedPage.getByTestId('sources__sort-order').click();
-    await expect(authedPage).toHaveURL(/sort_order=desc/);
+    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Descending');
 
     await authedPage.reload();
-    await expect(authedPage).toHaveURL(/sort_by=size_bytes/);
-    await expect(authedPage).toHaveURL(/sort_order=desc/);
-    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Descending');
+    await expect(authedPage.getByTestId('sources__sort-by')).toContainText('Sort: Name');
+    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Ascending');
   });
 
-  test('persists search in url and after refresh', async ({ authedPage }) => {
+  test('resets search after refresh', async ({ authedPage }) => {
     await authedPage.getByTestId('sources__search').fill('README');
-    await expect(authedPage).toHaveURL(/search=README/);
-    await authedPage.reload();
-    await expect(authedPage).toHaveURL(/search=README/);
     await expect(authedPage.getByTestId('sources__search')).toHaveValue('README');
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first()).toBeVisible();
+    await authedPage.reload();
+    await expect(authedPage.getByTestId('sources__search')).toHaveValue('');
+    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' }).first()).toBeVisible();
   });
 
   test('persists selected library in url and after refresh', async ({ authedPage }) => {
@@ -70,18 +69,41 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__load-more')).toBeVisible();
   });
 
-  test('persists folder prefix in url and after refresh', async ({ authedPage }) => {
+  test('resets folder prefix after refresh', async ({ authedPage }) => {
     const docsRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' }).first();
     await expect(docsRow).toBeVisible();
     await docsRow.getByRole('button').click();
 
-    await expect(authedPage).toHaveURL(/prefix=docs%2F/);
     await expect(authedPage.getByTestId('sources__go-up')).toBeVisible();
 
     await authedPage.reload();
-    await expect(authedPage).toHaveURL(/prefix=docs%2F/);
-    await expect(authedPage.getByTestId('sources__go-up')).toBeVisible();
-    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'mbos-contracts.md' }).first()).toBeVisible();
+    await expect(authedPage.getByTestId('sources__go-up')).toHaveCount(0);
+    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' }).first()).toBeVisible();
+  });
+
+  test('restores per-library view state when switching libraries in same page session', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__selection-mode--multi').click();
+    await authedPage.getByTestId('sources__search').fill('README');
+    await expect(authedPage.getByTestId('sources__search')).toHaveValue('README');
+
+    await authedPage.getByTestId('sources__sort-by').click();
+    await authedPage.getByRole('option', { name: 'Sort: Size' }).click();
+    await authedPage.getByTestId('sources__sort-order').click();
+    await expect(authedPage.getByTestId('sources__sort-by')).toContainText('Sort: Size');
+    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Descending');
+
+    const readmeRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
+    await readmeRow.getByRole('button').click();
+    await expect(authedPage.getByTestId('sources__selection-summary')).toContainText('1');
+
+    await authedPage.getByTestId('sources__library-item--lib_large_bench').click();
+    await expect(authedPage.getByTestId('sources__load-more')).toBeVisible();
+
+    await authedPage.getByTestId('sources__library-item--lib_shared_default').click();
+    await expect(authedPage.getByTestId('sources__search')).toHaveValue('README');
+    await expect(authedPage.getByTestId('sources__sort-by')).toContainText('Sort: Size');
+    await expect(authedPage.getByTestId('sources__sort-order')).toContainText('Descending');
+    await expect(authedPage.getByTestId('sources__selection-summary')).toContainText('1');
   });
 
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
@@ -96,7 +118,7 @@ test.describe('Sources Page (object browser)', () => {
     await continuationResponse;
 
     await authedPage.getByTestId('sources__search').fill('bulk-0250');
-    await expect(authedPage).toHaveURL(/search=bulk-0250/);
+    await expect(authedPage.getByTestId('sources__search')).toHaveValue('bulk-0250');
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'bulk-0250.txt' }).first()).toBeVisible();
   });
 
@@ -257,6 +279,7 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('shows selection summary when rows are selected', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__selection-mode--multi').click();
     await locateFile(authedPage, 'README.txt');
     const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
     await row.getByRole('button').click();
@@ -283,6 +306,7 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('downloads multiple selected files', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__selection-mode--multi').click();
     await authedPage.getByTestId('sources__upload').click();
     await authedPage.locator('input[type="file"]').setInputFiles([
       {
@@ -339,6 +363,7 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('shows failed delete result and can retry failed items', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__selection-mode--multi').click();
     await authedPage.getByTestId('sources__upload').click();
     await authedPage.locator('input[type="file"]').setInputFiles([
       {

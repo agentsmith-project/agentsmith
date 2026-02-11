@@ -15,6 +15,8 @@ import { toast } from '@/components/ui/toast';
 import { getApiClient, SourcesAPI } from '@/lib/api';
 import type { SourceObjectMeta } from '@/lib/api/types';
 import { queryKeys } from '@/lib/query-keys';
+import { formatBytes } from '@/lib/utils/formatters';
+import { SourceItemIcon } from '@/components/sources/SourceItemIcon';
 
 type SelectedItem =
   | { kind: 'prefix'; prefix: string }
@@ -51,19 +53,6 @@ function extensionOf(filename: string) {
   return filename.slice(idx + 1).toLowerCase();
 }
 
-function formatBytes(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unitIdx = 0;
-  while (value >= 1024 && unitIdx < units.length - 1) {
-    value /= 1024;
-    unitIdx += 1;
-  }
-  const precision = value >= 100 || unitIdx === 0 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(precision)} ${units[unitIdx]}`;
-}
-
 function formatExpiry(iso: string) {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return iso;
@@ -93,11 +82,6 @@ function previewTypeLabel(kind: PreviewKind, t: ReturnType<typeof useTranslation
   if (kind === 'pdf') return t('file_manager.preview_type_pdf');
   if (kind === 'text') return t('file_manager.preview_type_text');
   return t('file_manager.preview_type_binary');
-}
-
-function FileKindIcon({ kind }: { kind: PreviewKind }) {
-  if (kind === 'image') return <ImageIcon className="h-5 w-5 text-accent" />;
-  return <FileType2 className="h-5 w-5 text-tertiary" />;
 }
 
 export function SourceObjectDetailsPanel({
@@ -294,7 +278,12 @@ export function SourceObjectDetailsPanel({
             <div className="rounded-md border border-subtle bg-surface-high/30 px-3 py-3" data-testid="sources__details-hero">
               <div className="flex items-start gap-3">
                 <div className="h-10 w-10 rounded-md border border-subtle bg-surface flex items-center justify-center">
-                  <FileKindIcon kind={previewKind} />
+                  <SourceItemIcon
+                    kind="object"
+                    name={filename}
+                    contentType={meta.content_type}
+                    className="h-5 w-5 text-tertiary"
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-strong font-medium">{filename}</div>
@@ -307,7 +296,7 @@ export function SourceObjectDetailsPanel({
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button type="button" size="sm" className="h-8" onClick={onDownload} data-testid="sources__details-download">
                   <Download className="h-3.5 w-3.5" />
                   {t('file_manager.download')}

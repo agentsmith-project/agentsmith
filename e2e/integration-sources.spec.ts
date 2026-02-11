@@ -89,6 +89,7 @@ test.describe('sources integration flow', () => {
       .locator('[data-testid="sources__object-row"]')
       .filter({ hasText: 'integration-note.txt' })
       .first();
+    await page.getByTestId('sources__selection-mode--multi').click();
     await row.locator('input[type="checkbox"]').check();
 
     await page.getByTestId('sources__rename').click();
@@ -102,6 +103,7 @@ test.describe('sources integration flow', () => {
       page.locator('[data-testid="sources__object-row"]').filter({ hasText: 'integration-note-renamed.txt' }),
     ).toHaveCount(0);
 
+    await page.getByTestId('sources__selection-mode--single').click();
     await page
       .locator('[data-testid="sources__object-row"]')
       .filter({ hasText: 'docs' })
@@ -114,6 +116,7 @@ test.describe('sources integration flow', () => {
       .filter({ hasText: 'integration-note-renamed.txt' })
       .first();
     await expect(movedRow).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('sources__selection-mode--multi').click();
     const movedCheckbox = movedRow.locator('input[type="checkbox"]');
     await movedCheckbox.check();
     await expect(movedCheckbox).toBeChecked();

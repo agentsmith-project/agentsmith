@@ -311,6 +311,9 @@ Playwright (`e2e/sources.spec.ts`) must cover:
 - Delete file (and folder prefix).
 - Download file (assert response headers and file bytes are non-empty).
 - Selection summary visibility (selected count + clear selection).
+- Selection model:
+  - default single-select (clicking an object selects it for preview)
+  - explicit multi-select mode for batch actions
 - Drag-and-drop upload into current folder.
 - Batch download for multi-selected files (folder prefixes are not downloaded).
 - `Up` action for current prefix navigation.
@@ -325,6 +328,10 @@ Playwright (`e2e/sources.spec.ts`) must cover:
   - delete/download collect failed keys
   - frontend shows failed key list
   - retry action runs only on failed keys
+- Library switch restore rule:
+  - restore folder/query/selection state only when switching libraries within the same Sources page session
+  - refresh or leaving Sources resets to default entry state (no cross-session restore)
+  - only `library_id` remains URL-persisted; folder/query/sort are session-local state
 
 Integration coverage (`e2e/integration-sources.spec.ts`) must validate the same flow against
 real Node API + MinIO + Keycloak (no MSW).

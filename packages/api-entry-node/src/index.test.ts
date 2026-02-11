@@ -548,6 +548,21 @@ describe('api-entry-node projects routes', () => {
     expect(uploaded.key).toBe('docs/readme.txt');
     expect(uploaded.content_type).toBe('text/plain');
 
+    const cnForm = new FormData();
+    cnForm.append('prefix', 'docs/');
+    cnForm.append('file', new Blob(['binary'], { type: 'application/octet-stream' }), '敲冰块.nes');
+    const cnUploadRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
+      {
+        method: 'POST',
+        body: cnForm,
+      },
+    );
+    expect(cnUploadRes.status).toBe(201);
+    const cnUploaded = (await cnUploadRes.json()) as { key: string };
+    expect(cnUploaded.key).toBe('docs/敲冰块.nes');
+
     const listRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=docs/&delimiter=/`,

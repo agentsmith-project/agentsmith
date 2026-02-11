@@ -312,7 +312,8 @@ function ensureLibrary(
   if (!library.object_prefix) {
     throw new Error('source_library_prefix_missing');
   }
-  return library as SourceLibraryDTO & { object_prefix: string };
+  const normalizedPrefix = `${library.object_prefix.trim().replace(/^\/+/, '').replace(/\/+$/, '')}/`;
+  return { ...library, object_prefix: normalizedPrefix };
 }
 
 function normalizePrefix(value?: string): string {

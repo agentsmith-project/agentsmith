@@ -16,6 +16,7 @@ import {
   GetProjectUseCase,
   RunQueuedAIReadyJobUseCase,
   GetAIReadyJobUseCase,
+  ListSourceLibraryObjectsUseCase,
   ListSourceLibrariesUseCase,
   ListProjectsUseCase,
   ListSourcesUseCase,
@@ -767,6 +768,50 @@ describe('Project use cases', () => {
       projectId: 'proj_1',
     });
     expect(afterDelete.items).toHaveLength(0);
+  });
+
+  it('lists objects with legacy library prefix (without trailing slash) correctly', async () => {
+    const libraryRepo = new FakeSourceLibraryRepo();
+    const objectStore = new FakeObjectStore();
+    const clock = new FixedClock();
+    libraryRepo.items.push({
+      id: 'lib_legacy',
+      workspace_id: 'ws_a',
+      project_id: 'proj_1',
+      name: 'Legacy',
+      visibility: 'shared',
+      // legacy stored prefix without trailing slash
+      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_legacy',
+      doc_namespace: 'doc_ws_a_proj_1_lib_legacy',
+      vector_namespace: 'vec_ws_a_proj_1_lib_legacy',
+      created_by_user_id: 'user_1',
+      created_at: clock.nowIso(),
+      updated_at: clock.nowIso(),
+    });
+    await objectStore.putObject(
+      'mbos-dev',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_legacy/docs/readme.txt',
+      new TextEncoder().encode('hello'),
+    );
+
+    const listed = await new ListSourceLibraryObjectsUseCase(
+      libraryRepo,
+      objectStore,
+      'mbos-dev',
+    ).execute({
+      workspaceId: 'ws_a',
+      projectId: 'proj_1',
+      libraryId: 'lib_legacy',
+      prefix: 'docs/',
+      delimiter: '/',
+      pageSize: 200,
+    });
+
+    const firstObject = listed.items.find((item) => item.kind === 'object');
+    expect(firstObject).toBeTruthy();
+    if (firstObject?.kind === 'object') {
+      expect(firstObject.key).toBe('docs/readme.txt');
+    }
   });
 
   it('creates, gets, and cancels library-scoped ai-ready job', async () => {

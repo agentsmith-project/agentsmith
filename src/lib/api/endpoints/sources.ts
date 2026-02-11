@@ -458,8 +458,8 @@ export class SourcesAPI {
     return new Promise<SourceObjectItem>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       const formData = new FormData();
-      formData.append('file', file);
       if (prefix) formData.append('prefix', prefix);
+      formData.append('file', file);
 
       if (onProgress) {
         xhr.upload.addEventListener('progress', (e) => {

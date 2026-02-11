@@ -87,8 +87,16 @@ async function parseUploadAndExecute(
       }
       fileSeen = true;
       const fileStream = Readable.toWeb(file) as unknown as WebReadableStream<Uint8Array>;
+      const originalFileName = info.filename || 'upload.bin';
+      const latin1ToUtf8 = Buffer.from(originalFileName, 'latin1').toString('utf8');
+      const hasCjk = (value: string) => /[\u3400-\u9FFF]/.test(value);
+      const decodedFileName =
+        (originalFileName.includes('�') && !latin1ToUtf8.includes('�')) ||
+        (!hasCjk(originalFileName) && hasCjk(latin1ToUtf8))
+          ? latin1ToUtf8
+          : originalFileName;
       uploadPromise = execute({
-        fileName: info.filename || 'upload.bin',
+        fileName: decodedFileName,
         fileStream,
         contentType: info.mimeType || 'application/octet-stream',
         prefix,

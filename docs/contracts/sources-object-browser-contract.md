@@ -268,6 +268,45 @@ Playwright (`e2e/sources.spec.ts`) must cover:
 - Rename/move file.
 - Delete file (and folder prefix).
 - Download file (assert response headers and file bytes are non-empty).
+- Selection summary visibility (selected count + clear selection).
+- Drag-and-drop upload into current folder.
+- Batch download for multi-selected files (folder prefixes are not downloaded).
+- `Up` action for current prefix navigation.
+- Upload conflict handling (`destination_exists`) with two explicit choices:
+  - overwrite existing object
+  - keep both by auto-renaming (`name (n).ext`)
 
 Integration coverage (`e2e/integration-sources.spec.ts`) must validate the same flow against
 real Node API + MinIO + Keycloak (no MSW).
+
+## 5. Details Panel UX Contract (2026-02-11 Update)
+
+The file details panel must provide two tabs:
+
+- `Overview` (default): user-friendly info and content preview when possible.
+- `Technical`: raw object key/meta for operations and debugging.
+
+Behavior rules:
+
+1. Empty/multi-selection states remain explicit:
+- No selected row: show empty hint.
+- Multi-selected rows: show only selection count.
+- Selected folder prefix: show folder prefix path only.
+
+2. For a selected object, metadata is fetched via:
+- `GET .../objects/meta?key=...`
+
+3. Preview uses the existing download endpoint (MVP does not add a dedicated preview API):
+- `GET .../objects/download?key=...`
+- Frontend decides preview mode by `content_type` plus filename extension:
+  - Image preview: common image MIME/ext (`png`, `jpg`, `jpeg`, `webp`, `gif`, `svg`, etc.)
+  - PDF preview: `application/pdf` or `.pdf`
+  - Text preview: `text/*` and common text-like types (`json`, `md`, `csv`, `xml`, `yaml`, etc.)
+  - Others: unsupported-preview placeholder
+
+4. Technical tab includes:
+- key, type, size, modified time, etag
+- user metadata JSON (empty object when absent)
+- copy-key action
+
+5. No migration-time fallback flags are introduced for this behavior.

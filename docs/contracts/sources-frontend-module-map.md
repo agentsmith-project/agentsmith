@@ -75,7 +75,17 @@ Contract source of truth for this rewrite:
 - `use-source-browser-state` (selected library, current prefix, view mode, selection)
 - `use-source-objects` (list objects/prefixes, pagination token)
 - `use-source-object-actions` (upload, create folder, rename/move, delete, download)
-4. Replace/refresh test baselines:
+4. Keep details panel productized:
+- default `Overview` tab for non-technical users
+- `Technical` tab for key/meta operations
+- in-panel preview for image/pdf/text via existing download endpoint
+5. Keep file manager interaction discoverable:
+- selected-row summary in toolbar (`count + clear`)
+- drag-and-drop upload target on object table area
+- batch download for selected files
+- up-navigation button for non-root prefixes
+ - upload conflict resolution dialog (overwrite vs keep-both rename)
+6. Replace/refresh test baselines:
 - Unit tests for each extracted hook and key components.
 - E2E `e2e/sources.spec.ts` updated to the new UX and stable testids.
 - Visual scenario updated (`visual --grep "sources"`).

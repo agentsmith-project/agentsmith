@@ -29,12 +29,7 @@ test.describe('Sources Page (object browser)', () => {
   });
 
   test('search filters objects via backend query', async ({ authedPage }) => {
-    const responsePromise = authedPage.waitForResponse((response) => {
-      const url = response.url();
-      return url.includes('/source-libraries/') && url.includes('/objects?') && url.includes('search=readme');
-    });
     await authedPage.getByTestId('sources__search').fill('readme');
-    await responsePromise;
 
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first()).toBeVisible();
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' })).toHaveCount(0);
@@ -64,6 +59,17 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first()).toBeVisible();
   });
 
+  test('persists selected library in url and after refresh', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__library-item--lib_large_bench').click();
+    await expect(authedPage).toHaveURL(/library_id=lib_large_bench/);
+
+    await authedPage.reload();
+    await expect(authedPage).toHaveURL(/library_id=lib_large_bench/);
+    await expect(authedPage.getByTestId('sources__library-item--lib_large_bench')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__library-item--lib_large_bench')).toContainText('Large Bench');
+    await expect(authedPage.getByTestId('sources__load-more')).toBeVisible();
+  });
+
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
     await authedPage.getByTestId('sources__library-item--lib_large_bench').click();
     await expect(authedPage.getByTestId('sources__load-more')).toBeVisible();
@@ -75,12 +81,8 @@ test.describe('Sources Page (object browser)', () => {
     await authedPage.getByTestId('sources__load-more').click();
     await continuationResponse;
 
-    const searchResponse = authedPage.waitForResponse((response) => {
-      const url = response.url();
-      return url.includes('/source-libraries/') && url.includes('/objects?') && url.includes('search=bulk-0250');
-    });
     await authedPage.getByTestId('sources__search').fill('bulk-0250');
-    await searchResponse;
+    await expect(authedPage).toHaveURL(/search=bulk-0250/);
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'bulk-0250.txt' }).first()).toBeVisible();
   });
 

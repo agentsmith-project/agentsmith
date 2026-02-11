@@ -159,16 +159,51 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
 
   const { data: librariesData, isLoading: libsLoading } = useSourceLibraries(workspaceId, projectId);
   const libraries = React.useMemo(() => librariesData?.items ?? [], [librariesData?.items]);
+  const librarySelectionInitializedRef = React.useRef(false);
 
   const [selectedLibraryId, setSelectedLibraryId] = React.useState<string | null>(null);
   React.useEffect(() => {
-    if (selectedLibraryId) return;
-    if (libraries.length === 0) return;
+    if (libraries.length === 0) {
+      if (selectedLibraryId !== null) {
+        setSelectedLibraryId(null);
+      }
+      librarySelectionInitializedRef.current = false;
+      return;
+    }
+
+    const params = new URLSearchParams(searchParamsKey);
+    const queryLibraryId = params.get('library_id');
+    const hasQueryLibrary = queryLibraryId
+      ? libraries.some((library) => library.id === queryLibraryId)
+      : false;
+
+    const hasSelectedLibrary = selectedLibraryId
+      ? libraries.some((library) => library.id === selectedLibraryId)
+      : false;
+    if (!librarySelectionInitializedRef.current) {
+      librarySelectionInitializedRef.current = true;
+      if (hasQueryLibrary && selectedLibraryId !== queryLibraryId) {
+        setSelectedLibraryId(queryLibraryId);
+        return;
+      }
+      if (!hasSelectedLibrary) {
+        setSelectedLibraryId(libraries[0].id);
+      }
+      return;
+    }
+
+    if (hasSelectedLibrary) return;
+
+    if (hasQueryLibrary && selectedLibraryId !== queryLibraryId) {
+      setSelectedLibraryId(queryLibraryId);
+      return;
+    }
     setSelectedLibraryId(libraries[0].id);
-  }, [libraries, selectedLibraryId]);
+  }, [libraries, searchParamsKey, selectedLibraryId]);
 
   const [prefix, setPrefix] = React.useState('');
   const [searchInput, setSearchInput] = React.useState(searchParams.get('search') ?? '');
@@ -178,15 +213,16 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const [selectedIds, setSelectedIds] = React.useState<SelectedRowId[]>([]);
 
   React.useEffect(() => {
-    const querySortBy = parseSortBy(searchParams.get('sort_by'));
-    const querySortOrder = parseSortOrder(searchParams.get('sort_order'));
-    const querySearch = searchParams.get('search') ?? '';
-    if (querySortBy !== sortBy) setSortBy(querySortBy);
-    if (querySortOrder !== sortOrder) setSortOrder(querySortOrder);
-    if (querySearch !== searchInput) setSearchInput(querySearch);
+    const params = new URLSearchParams(searchParamsKey);
+    const querySortBy = parseSortBy(params.get('sort_by'));
+    const querySortOrder = parseSortOrder(params.get('sort_order'));
+    const querySearch = params.get('search') ?? '';
     const trimmedQuerySearch = querySearch.trim();
-    if (trimmedQuerySearch !== search) setSearch(trimmedQuerySearch);
-  }, [search, searchInput, searchParams, sortBy, sortOrder]);
+    setSortBy((prev) => (prev === querySortBy ? prev : querySortBy));
+    setSortOrder((prev) => (prev === querySortOrder ? prev : querySortOrder));
+    setSearchInput((prev) => (prev === querySearch ? prev : querySearch));
+    setSearch((prev) => (prev === trimmedQuerySearch ? prev : trimmedQuerySearch));
+  }, [searchParamsKey]);
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -655,7 +691,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
   const syncSortToUrl = React.useCallback(
     (nextSortBy: SourceSortBy, nextSortOrder: SourceSortOrder) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(searchParamsKey);
       if (nextSortBy === 'name') {
         params.delete('sort_by');
       } else {
@@ -669,11 +705,11 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       const query = params.toString();
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
-    [pathname, router, searchParams],
+    [pathname, router, searchParamsKey],
   );
 
   React.useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParamsKey);
     const currentSearch = params.get('search') ?? '';
     const nextSearch = search.trim();
     if (nextSearch === currentSearch) return;
@@ -684,7 +720,22 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     }
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [pathname, router, search, searchParams]);
+  }, [pathname, router, search, searchParamsKey]);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    const currentLibraryId = params.get('library_id');
+    if (!selectedLibraryId) {
+      if (!currentLibraryId) return;
+      params.delete('library_id');
+    } else if (currentLibraryId !== selectedLibraryId) {
+      params.set('library_id', selectedLibraryId);
+    } else {
+      return;
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, searchParamsKey, selectedLibraryId]);
 
   const handleSortByChange = React.useCallback(
     (value: SourceSortBy) => {

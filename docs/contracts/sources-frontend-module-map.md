@@ -90,7 +90,7 @@ Contract source of truth for this rewrite:
  - continuation-token infinite pagination + virtualized list rendering (`react-virtuoso`)
  - backend-driven search/sort query for object list (no client-only filtering drift)
  - toolbar sorting controls (`sort_by` + `sort_order`) are first-class query inputs
- - search and sort preferences are URL-synced (`search`, `sort_by`, `sort_order`) for refresh/share reproducibility
+ - selected library and query preferences are URL-synced (`library_id`, `search`, `sort_by`, `sort_order`) for refresh/share reproducibility
 6. Replace/refresh test baselines:
 - Unit tests for each extracted hook and key components.
 - E2E `e2e/sources.spec.ts` updated to the new UX and stable testids.

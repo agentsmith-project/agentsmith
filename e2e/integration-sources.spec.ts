@@ -53,6 +53,7 @@ test.describe('sources integration flow', () => {
     await page.getByTestId('sources__dialog__new-folder').locator('input').fill('docs');
     await page.getByTestId('sources__dialog__new-folder').getByRole('button', { name: /Create|创建/i }).click();
     await expect(page.locator('text=docs')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('sources__breadcrumb-root').click();
 
     await page.getByTestId('sources__upload').click();
     await page.locator('input[type="file"]').setInputFiles({
@@ -61,6 +62,28 @@ test.describe('sources integration flow', () => {
       buffer: Buffer.from('integration-content', 'utf-8'),
     });
     await expect(page.locator('text=integration-note.txt')).toBeVisible({ timeout: 30_000 });
+
+    // Upload same name -> keep both (rename)
+    await page.getByTestId('sources__upload').click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'integration-note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('integration-content-2', 'utf-8'),
+    });
+    await expect(page.getByTestId('sources__dialog__upload-conflict')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('sources__upload-conflict__rename').click();
+    await expect(page.locator('text=integration-note (1).txt')).toBeVisible({ timeout: 30_000 });
+
+    // Upload same name -> overwrite
+    await page.getByTestId('sources__upload').click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'integration-note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('integration-content-3', 'utf-8'),
+    });
+    await expect(page.getByTestId('sources__dialog__upload-conflict')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('sources__upload-conflict__overwrite').click();
+    await expect(page.getByTestId('sources__dialog__upload-conflict')).toHaveCount(0);
 
     const row = page
       .locator('[data-testid="sources__object-row"]')
@@ -77,7 +100,7 @@ test.describe('sources integration flow', () => {
     ).toHaveCount(0);
     await expect(
       page.locator('[data-testid="sources__object-row"]').filter({ hasText: 'integration-note-renamed.txt' }),
-    ).toHaveCount(1);
+    ).toHaveCount(0);
 
     await page
       .locator('[data-testid="sources__object-row"]')

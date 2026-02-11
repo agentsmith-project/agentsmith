@@ -7,7 +7,7 @@
  */
 
 import * as React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 
@@ -103,5 +103,30 @@ describe('SourcesPage (object browser)', () => {
     // Breadcrumb should still render, and the table should remain present.
     expect(screen.getByTestId('sources__breadcrumb-root')).toBeInTheDocument();
     expect(screen.getByTestId('sources__objects-table')).toBeInTheDocument();
+  });
+
+  it('shows selection summary and can clear selection', async () => {
+    wrap(<SourcesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    const table = await screen.findByTestId('sources__objects-table');
+    const row = within(table).getAllByTestId('sources__object-row').find((el) => el.textContent?.includes('README.txt'));
+    expect(row).toBeDefined();
+    await user.click(within(row as HTMLElement).getByRole('button', { name: /README\.txt/i }));
+
+    expect(screen.getByTestId('sources__selection-summary')).toBeInTheDocument();
+    await user.click(screen.getByTestId('sources__clear-selection'));
+    expect(screen.queryByTestId('sources__selection-summary')).not.toBeInTheDocument();
+  });
+
+  it('shows dropzone overlay on drag enter', async () => {
+    wrap(<SourcesPage workspaceId="ws_default" projectId="proj_001" />);
+    const dropzone = await screen.findByTestId('sources__dropzone');
+
+    fireEvent.dragEnter(dropzone);
+    expect(screen.getByTestId('sources__dropzone-overlay')).toBeInTheDocument();
+
+    fireEvent.dragLeave(dropzone);
+    expect(screen.queryByTestId('sources__dropzone-overlay')).not.toBeInTheDocument();
   });
 });

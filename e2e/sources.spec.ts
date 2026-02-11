@@ -32,6 +32,16 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__objects-table')).toBeVisible();
   });
 
+  test('can navigate to parent folder via go-up action', async ({ authedPage }) => {
+    const docsRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' }).first();
+    await expect(docsRow).toBeVisible();
+    await docsRow.getByRole('button').click();
+
+    await expect(authedPage.getByTestId('sources__go-up')).toBeVisible();
+    await authedPage.getByTestId('sources__go-up').click();
+    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' }).first()).toBeVisible();
+  });
+
   test('create folder navigates into it', async ({ authedPage }) => {
     await authedPage.getByTestId('sources__new-folder').click();
     const dialog = authedPage.getByTestId('sources__dialog__new-folder');
@@ -74,6 +84,57 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-renamed.txt' }).first()).toBeVisible();
   });
 
+  test('handles upload conflicts with keep-both rename', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__upload').click();
+    await authedPage.locator('input[type="file"]').setInputFiles([
+      {
+        name: 'README.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('conflict-rename'),
+      },
+    ]);
+
+    const conflictDialog = authedPage.getByTestId('sources__dialog__upload-conflict');
+    await expect(conflictDialog).toBeVisible();
+    await authedPage.getByTestId('sources__upload-conflict__rename').click();
+
+    await expect(
+      authedPage.getByTestId('sources__object-row').filter({ hasText: 'README (1).txt' }).first(),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('handles upload conflicts with overwrite', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__upload').click();
+    await authedPage.locator('input[type="file"]').setInputFiles([
+      {
+        name: 'e2e-overwrite.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('v1'),
+      },
+    ]);
+    await expect(
+      authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-overwrite.txt' }).first(),
+    ).toBeVisible({ timeout: 10_000 });
+
+    await authedPage.getByTestId('sources__upload').click();
+    await authedPage.locator('input[type="file"]').setInputFiles([
+      {
+        name: 'e2e-overwrite.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('v2'),
+      },
+    ]);
+
+    const conflictDialog = authedPage.getByTestId('sources__dialog__upload-conflict');
+    await expect(conflictDialog).toBeVisible();
+    await authedPage.getByTestId('sources__upload-conflict__overwrite').click();
+    await expect(conflictDialog).toBeHidden();
+
+    await expect(
+      authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-overwrite.txt' }),
+    ).toHaveCount(1);
+  });
+
   test('download object triggers download endpoint request', async ({ authedPage }) => {
     const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
     await expect(row).toBeVisible();
@@ -84,6 +145,64 @@ test.describe('Sources Page (object browser)', () => {
     });
     await authedPage.getByTestId('sources__download').click();
     await respPromise;
+  });
+
+  test('details panel supports overview and technical tabs with preview', async ({ authedPage }) => {
+    const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
+    await expect(row).toBeVisible();
+    await row.getByRole('button').click();
+
+    await expect(authedPage.getByTestId('sources__details-panel')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__details-tabs')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__details-preview')).toBeVisible();
+
+    await authedPage.getByTestId('sources__details-tab--technical').click();
+    await expect(authedPage.getByTestId('sources__details-tabs').getByText(/README\.txt/i)).toBeVisible();
+  });
+
+  test('shows selection summary when rows are selected', async ({ authedPage }) => {
+    const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
+    await expect(row).toBeVisible();
+    await row.getByRole('button').click();
+
+    await expect(authedPage.getByTestId('sources__selection-summary')).toBeVisible();
+    await authedPage.getByTestId('sources__clear-selection').click();
+    await expect(authedPage.getByTestId('sources__selection-summary')).toHaveCount(0);
+  });
+
+  test('downloads multiple selected files', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__upload').click();
+    await authedPage.locator('input[type="file"]').setInputFiles([
+      {
+        name: 'e2e-download-a.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('hello-a'),
+      },
+      {
+        name: 'e2e-download-b.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('hello-b'),
+      },
+    ]);
+
+    const rowA = authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-download-a.txt' }).first();
+    const rowB = authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-download-b.txt' }).first();
+    await expect(rowA).toBeVisible({ timeout: 10_000 });
+    await expect(rowB).toBeVisible({ timeout: 10_000 });
+
+    await rowA.getByRole('button').click();
+    await rowB.getByRole('button').click();
+
+    let downloadResponses = 0;
+    const handler = (resp: { url: () => string; status: () => number }) => {
+      if (resp.url().includes('/objects/download') && resp.status() === 200) {
+        downloadResponses += 1;
+      }
+    };
+    authedPage.on('response', handler);
+    await authedPage.getByTestId('sources__download').click();
+    await expect.poll(() => downloadResponses, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+    authedPage.off('response', handler);
   });
 
   test('delete object removes it from the table', async ({ authedPage }) => {

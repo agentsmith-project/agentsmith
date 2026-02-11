@@ -329,8 +329,8 @@ describe('api-entry-node projects routes', () => {
     });
 
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { code: string; message: string };
-    expect(body.code).toBe('VALIDATION_ERROR');
+    const body = (await res.json()) as { error_code: string; message: string };
+    expect(body.error_code).toBe('VALIDATION_ERROR');
     expect(body.message.length).toBeGreaterThan(0);
   });
 
@@ -339,8 +339,8 @@ describe('api-entry-node projects routes', () => {
 
     const res = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_missing');
     expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string; message: string };
-    expect(body.code).toBe('RESOURCE_NOT_FOUND');
+    const body = (await res.json()) as { error_code: string; message: string };
+    expect(body.error_code).toBe('RESOURCE_NOT_FOUND');
     expect(body.message).toBe('project_not_found');
   });
 
@@ -504,6 +504,123 @@ describe('api-entry-node projects routes', () => {
       { method: 'DELETE' },
     );
     expect(deleteRes.status).toBe(204);
+  });
+
+  it('supports source library object browser routes', async () => {
+    const { baseUrl } = startServer();
+
+    const createLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Obj Docs', visibility: 'shared' }),
+      },
+    );
+    expect(createLibraryRes.status).toBe(201);
+    const library = (await createLibraryRes.json()) as { id: string };
+
+    const createFolderRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/folders`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prefix: 'docs/' }),
+      },
+    );
+    expect(createFolderRes.status).toBe(201);
+
+    const form = new FormData();
+    form.append('prefix', 'docs/');
+    form.append('file', new Blob(['hello object'], { type: 'text/plain' }), 'readme.txt');
+    const uploadRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
+      {
+        method: 'POST',
+        body: form,
+      },
+    );
+    expect(uploadRes.status).toBe(201);
+    const uploaded = (await uploadRes.json()) as { key: string; content_type: string };
+    expect(uploaded.key).toBe('docs/readme.txt');
+    expect(uploaded.content_type).toBe('text/plain');
+
+    const cnForm = new FormData();
+    cnForm.append('prefix', 'docs/');
+    cnForm.append('file', new Blob(['binary'], { type: 'application/octet-stream' }), '敲冰块.nes');
+    const cnUploadRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
+      {
+        method: 'POST',
+        body: cnForm,
+      },
+    );
+    expect(cnUploadRes.status).toBe(201);
+    const cnUploaded = (await cnUploadRes.json()) as { key: string };
+    expect(cnUploaded.key).toBe('docs/敲冰块.nes');
+
+    const listRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=docs/&delimiter=/`,
+    );
+    expect(listRes.status).toBe(200);
+    const listed = (await listRes.json()) as {
+      items: Array<{ kind: string; key?: string; prefix?: string }>;
+    };
+    expect(listed.items.some((item) => item.kind === 'object' && item.key === 'docs/readme.txt')).toBe(true);
+
+    const metaRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/meta?key=${encodeURIComponent('docs/readme.txt')}`,
+    );
+    expect(metaRes.status).toBe(200);
+    const meta = (await metaRes.json()) as { key: string; size_bytes: number };
+    expect(meta.key).toBe('docs/readme.txt');
+    expect(meta.size_bytes).toBeGreaterThan(0);
+
+    const moveRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/move`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          from_key: 'docs/readme.txt',
+          to_key: 'docs/readme-renamed.txt',
+          overwrite: false,
+        }),
+      },
+    );
+    expect(moveRes.status).toBe(200);
+
+    const downloadRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/download?key=${encodeURIComponent('docs/readme-renamed.txt')}`,
+    );
+    expect(downloadRes.status).toBe(200);
+    expect(await downloadRes.text()).toBe('hello object');
+
+    const deleteObjectsRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/delete`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ keys: ['docs/readme-renamed.txt', 'docs/'] }),
+      },
+    );
+    expect(deleteObjectsRes.status).toBe(200);
+
+    const deleteLibraryRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}`,
+      { method: 'DELETE' },
+    );
+    expect(deleteLibraryRes.status).toBe(204);
   });
 
   it('supports library scoped ai-ready-jobs create/get/cancel flow', async () => {
@@ -1018,8 +1135,8 @@ describe('api-entry-node projects routes', () => {
       '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/chat_sess_unknown/streams',
     );
     expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string; message: string };
-    expect(body.code).toBe('RESOURCE_NOT_FOUND');
+    const body = (await res.json()) as { error_code: string; message: string };
+    expect(body.error_code).toBe('RESOURCE_NOT_FOUND');
     expect(body.message).toBe('chat_session_not_found');
   });
 
@@ -1224,8 +1341,8 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(secondStream.status).toBe(409);
-    const secondBody = (await secondStream.json()) as { code: string; message: string };
-    expect(secondBody.code).toBe('CHAT_SESSION_STREAM_CONFLICT');
+    const secondBody = (await secondStream.json()) as { error_code: string; message: string };
+    expect(secondBody.error_code).toBe('CHAT_SESSION_STREAM_CONFLICT');
     expect(secondBody.message).toBe('chat_session_stream_conflict');
 
     const stopBySession = await apiFetch(

@@ -72,7 +72,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         ? endpoints.find((item) => item.id === raw.endpoint_id)
         : endpoints.find((item) => item.status === 'active')) ?? null;
     if (!chosenEndpoint) {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'active_endpoint_required' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'active_endpoint_required' });
       return true;
     }
     const created = await deps.chatResourceService.createSession({
@@ -93,7 +93,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.sessionId,
     );
     if (!session) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
     const runtimeStatus = await readSessionStreamState(
@@ -118,7 +118,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       raw,
     );
     if (!updated) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
     json(res, 200, updated);
@@ -138,7 +138,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.sessionId,
     );
     if (!deleted) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
     json(res, 200, { success: true });
@@ -152,7 +152,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.sessionId,
     );
     if (!session) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
     const stopped = await stopActiveSessionStreams(
@@ -176,7 +176,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.sessionId,
     );
     if (!session) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
     const items = listActiveSessionStreams(route.workspaceId, route.projectId, route.sessionId)
@@ -201,7 +201,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.sessionId,
     );
     if (!session) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
     const items = await deps.chatResourceService.listMessages(
@@ -227,7 +227,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.sessionId,
     );
     if (!session) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
     const raw = (await readBody(req)) as {
@@ -236,7 +236,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       parent_id?: string | null;
     };
     if (raw.role !== 'user' || !raw.content?.trim()) {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'chat_message_content_required' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_message_content_required' });
       return true;
     }
     const parentId = raw.parent_id ?? null;
@@ -248,7 +248,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         parentId,
       );
       if (!parent) {
-        json(res, 422, { code: 'VALIDATION_ERROR', message: 'chat_parent_message_not_found' });
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_parent_message_not_found' });
         return true;
       }
     }
@@ -267,7 +267,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   if (route.kind === 'chatMessageItem' && method === 'PATCH') {
     const raw = (await readBody(req)) as { content?: string };
     if (!raw.content?.trim()) {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'chat_message_content_required' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_message_content_required' });
       return true;
     }
     const revised = await deps.chatResourceService.updateMessage(
@@ -278,7 +278,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       raw.content,
     );
     if (!revised) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_message_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_message_not_found' });
       return true;
     }
     json(res, 200, revised);
@@ -297,7 +297,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.sessionId,
     );
     if (!session) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
     const items = await deps.chatResourceService.listAttachments(
@@ -316,7 +316,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.sessionId,
     );
     if (!session) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
     const raw = (await readBody(req)) as {
@@ -330,7 +330,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       typeof raw.file_size !== 'number' ||
       raw.file_size < 0
     ) {
-      json(res, 422, { code: 'VALIDATION_ERROR', message: 'attachment_fields_required' });
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'attachment_fields_required' });
       return true;
     }
     const attachment = await deps.chatResourceService.initAttachment({
@@ -353,7 +353,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.attachmentId,
     );
     if (!attachment) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'attachment_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'attachment_not_found' });
       return true;
     }
     json(res, 200, attachment);
@@ -368,7 +368,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.attachmentId,
     );
     if (!deleted) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'attachment_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'attachment_not_found' });
       return true;
     }
     json(res, 200, { success: true });
@@ -383,7 +383,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.attachmentId,
     );
     if (!attachment) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'attachment_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'attachment_not_found' });
       return true;
     }
     json(res, 200, attachment);

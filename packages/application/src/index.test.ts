@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AIReadyJobDTO, ProjectDTO } from '@mbos/contracts';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import {
   CancelAIReadyJobUseCase,
   CreateAIReadyJobUseCase,
@@ -15,6 +16,7 @@ import {
   GetProjectUseCase,
   RunQueuedAIReadyJobUseCase,
   GetAIReadyJobUseCase,
+  ListSourceLibraryObjectsUseCase,
   ListSourceLibrariesUseCase,
   ListProjectsUseCase,
   ListSourcesUseCase,
@@ -122,6 +124,24 @@ class FakeObjectStore implements ObjectStorePort {
     this.stored.set(`${bucket}/${key}`, new Uint8Array(body));
   }
 
+  async putObjectStream(
+    bucket: string,
+    key: string,
+    body: WebReadableStream<Uint8Array>,
+    options?: { contentType?: string; sizeBytes?: number; metadata?: Record<string, string> },
+  ): Promise<void> {
+    void options;
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+    const joined = chunks.length === 1 ? chunks[0] : new Uint8Array(Buffer.concat(chunks.map((c) => Buffer.from(c))));
+    this.stored.set(`${bucket}/${key}`, joined);
+  }
+
   async presignedGetObject(bucket: string, key: string): Promise<string> {
     return `fake://${bucket}/${key}`;
   }
@@ -134,8 +154,88 @@ class FakeObjectStore implements ObjectStorePort {
     return new Uint8Array(value);
   }
 
+  async getObjectStream(
+    bucket: string,
+    key: string,
+  ): Promise<{
+    body: WebReadableStream<Uint8Array>;
+    sizeBytes?: number;
+    contentType?: string;
+    etag?: string;
+    lastModified?: string;
+    metadata?: Record<string, string>;
+  }> {
+    const bytes = await this.getObject(bucket, key);
+    return {
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }) as unknown as WebReadableStream<Uint8Array>,
+      sizeBytes: bytes.byteLength,
+      lastModified: new Date().toISOString(),
+    };
+  }
+
+  async statObject(
+    bucket: string,
+    key: string,
+  ): Promise<{
+    key: string;
+    sizeBytes: number;
+    contentType?: string;
+    etag?: string;
+    lastModified: string;
+    metadata?: Record<string, string>;
+  }> {
+    const bytes = await this.getObject(bucket, key);
+    return {
+      key,
+      sizeBytes: bytes.byteLength,
+      lastModified: new Date().toISOString(),
+    };
+  }
+
+  async listObjects(
+    bucket: string,
+    options: { prefix: string; delimiter?: string; pageSize?: number; continuationToken?: string },
+  ): Promise<{
+    prefix: string;
+    objects: Array<{ key: string; sizeBytes: number; etag?: string; lastModified: string }>;
+    commonPrefixes: string[];
+    nextContinuationToken: string | null;
+  }> {
+    const keys = [...this.stored.keys()]
+      .filter((full) => full.startsWith(`${bucket}/`))
+      .map((full) => full.slice(bucket.length + 1))
+      .filter((k) => k.startsWith(options.prefix))
+      .sort();
+    return {
+      prefix: options.prefix,
+      objects: keys.map((k) => ({
+        key: k,
+        sizeBytes: this.stored.get(`${bucket}/${k}`)?.byteLength ?? 0,
+        lastModified: new Date().toISOString(),
+      })),
+      commonPrefixes: [],
+      nextContinuationToken: null,
+    };
+  }
+
+  async copyObject(bucket: string, fromKey: string, toKey: string): Promise<void> {
+    const bytes = await this.getObject(bucket, fromKey);
+    this.stored.set(`${bucket}/${toKey}`, bytes);
+  }
+
   async deleteObject(bucket: string, key: string): Promise<void> {
     this.stored.delete(`${bucket}/${key}`);
+  }
+
+  async deleteMany(bucket: string, keys: string[]): Promise<void> {
+    for (const key of keys) {
+      this.stored.delete(`${bucket}/${key}`);
+    }
   }
 }
 
@@ -614,6 +714,7 @@ describe('Project use cases', () => {
 
   it('creates, updates, lists, and deletes source library', async () => {
     const libraryRepo = new FakeSourceLibraryRepo();
+    const objectStore = new FakeObjectStore();
     const cache = new InMemoryCache();
 
     const create = new CreateSourceLibraryUseCase(
@@ -634,7 +735,7 @@ describe('Project use cases', () => {
     expect(created.id).toBe('lib_fixed_001');
     expect(created.name).toBe('Shared');
     expect(created.object_prefix).toBe(
-      'workspaces/ws_a/projects/proj_1/libraries/lib_fixed_001',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_fixed_001/',
     );
     expect(created.doc_namespace).toBe('doc_ws_a_proj_1_lib_fixed_001');
     expect(created.vector_namespace).toBe('vec_ws_a_proj_1_lib_fixed_001');
@@ -657,7 +758,7 @@ describe('Project use cases', () => {
     });
     expect(listed.items).toHaveLength(1);
 
-    await new DeleteSourceLibraryUseCase(libraryRepo, cache).execute({
+    await new DeleteSourceLibraryUseCase(libraryRepo, objectStore, cache, 'mbos-dev').execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
       libraryId: created.id,
@@ -667,6 +768,88 @@ describe('Project use cases', () => {
       projectId: 'proj_1',
     });
     expect(afterDelete.items).toHaveLength(0);
+  });
+
+  it('lists objects with legacy library prefix (without trailing slash) correctly', async () => {
+    const libraryRepo = new FakeSourceLibraryRepo();
+    const objectStore = new FakeObjectStore();
+    const clock = new FixedClock();
+    libraryRepo.items.push({
+      id: 'lib_legacy',
+      workspace_id: 'ws_a',
+      project_id: 'proj_1',
+      name: 'Legacy',
+      visibility: 'shared',
+      // legacy stored prefix without trailing slash
+      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_legacy',
+      doc_namespace: 'doc_ws_a_proj_1_lib_legacy',
+      vector_namespace: 'vec_ws_a_proj_1_lib_legacy',
+      created_by_user_id: 'user_1',
+      created_at: clock.nowIso(),
+      updated_at: clock.nowIso(),
+    });
+    await objectStore.putObject(
+      'mbos-dev',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_legacy/docs/readme.txt',
+      new TextEncoder().encode('hello'),
+    );
+
+    const listed = await new ListSourceLibraryObjectsUseCase(
+      libraryRepo,
+      objectStore,
+      'mbos-dev',
+    ).execute({
+      workspaceId: 'ws_a',
+      projectId: 'proj_1',
+      libraryId: 'lib_legacy',
+      prefix: 'docs/',
+      delimiter: '/',
+      pageSize: 200,
+    });
+
+    const firstObject = listed.items.find((item) => item.kind === 'object');
+    expect(firstObject).toBeTruthy();
+    if (firstObject?.kind === 'object') {
+      expect(firstObject.key).toBe('docs/readme.txt');
+    }
+  });
+
+  it('hides folder marker objects from object rows', async () => {
+    const libraryRepo = new FakeSourceLibraryRepo();
+    const objectStore = new FakeObjectStore();
+    const clock = new FixedClock();
+    libraryRepo.items.push({
+      id: 'lib_marker',
+      workspace_id: 'ws_a',
+      project_id: 'proj_1',
+      name: 'Marker',
+      visibility: 'shared',
+      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_marker/',
+      doc_namespace: 'doc_ws_a_proj_1_lib_marker',
+      vector_namespace: 'vec_ws_a_proj_1_lib_marker',
+      created_by_user_id: 'user_1',
+      created_at: clock.nowIso(),
+      updated_at: clock.nowIso(),
+    });
+    await objectStore.putObject('mbos-dev', 'workspaces/ws_a/projects/proj_1/libraries/lib_marker/docs/', new Uint8Array(0));
+    await objectStore.putObject(
+      'mbos-dev',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_marker/docs/readme.txt',
+      new TextEncoder().encode('hello'),
+    );
+
+    const listed = await new ListSourceLibraryObjectsUseCase(libraryRepo, objectStore, 'mbos-dev').execute({
+      workspaceId: 'ws_a',
+      projectId: 'proj_1',
+      libraryId: 'lib_marker',
+      prefix: 'docs/',
+      delimiter: '/',
+      pageSize: 200,
+    });
+    const objectNames = listed.items
+      .filter((item) => item.kind === 'object')
+      .map((item) => (item.kind === 'object' ? item.name : ''));
+    expect(objectNames).toEqual(['readme.txt']);
   });
 
   it('creates, gets, and cancels library-scoped ai-ready job', async () => {

@@ -41,7 +41,7 @@ export const ListProjectsResponseSchema = z.object({
 });
 
 export const ErrorResponseSchema = z.object({
-  code: z.string(),
+  error_code: z.string(),
   message: z.string(),
   request_id: z.string().optional(),
 });
@@ -111,6 +111,75 @@ export const UpdateSourceLibraryRequestSchema = z
     message: 'at_least_one_field_required',
   });
 
+export const SourceObjectListPrefixItemSchema = z.object({
+  kind: z.literal('prefix'),
+  prefix: z.string().min(1),
+  name: z.string().min(1),
+});
+
+export const SourceObjectListObjectItemSchema = z.object({
+  kind: z.literal('object'),
+  key: z.string().min(1),
+  name: z.string().min(1),
+  size_bytes: z.number().int().nonnegative(),
+  content_type: z.string().min(1),
+  etag: z.string().optional(),
+  last_modified: z.string().datetime(),
+});
+
+export const SourceObjectListItemSchema = z.union([
+  SourceObjectListPrefixItemSchema,
+  SourceObjectListObjectItemSchema,
+]);
+
+export const ListSourceObjectsResponseSchema = z.object({
+  prefix: z.string(),
+  items: z.array(SourceObjectListItemSchema),
+  next_continuation_token: z.string().nullable(),
+});
+
+export const CreateSourceFolderRequestSchema = z.object({
+  prefix: z.string().min(1),
+});
+
+export const UploadSourceObjectResponseSchema = z.object({
+  key: z.string().min(1),
+  size_bytes: z.number().int().nonnegative(),
+  content_type: z.string().min(1),
+  etag: z.string().optional(),
+  last_modified: z.string().datetime(),
+});
+
+export const DeleteSourceObjectsRequestSchema = z.object({
+  keys: z.array(z.string().min(1)).min(1),
+});
+
+export const DeleteSourceObjectsResponseSchema = z.object({
+  results: z.array(
+    z.object({
+      key: z.string().min(1),
+      status: z.enum(['deleted', 'not_found', 'error']),
+      error_code: z.string().optional(),
+      message: z.string().optional(),
+    }),
+  ),
+});
+
+export const MoveSourceObjectRequestSchema = z.object({
+  from_key: z.string().min(1),
+  to_key: z.string().min(1),
+  overwrite: z.boolean().optional(),
+});
+
+export const SourceObjectMetaResponseSchema = z.object({
+  key: z.string().min(1),
+  size_bytes: z.number().int().nonnegative(),
+  content_type: z.string().min(1),
+  etag: z.string().optional(),
+  last_modified: z.string().datetime(),
+  user_metadata: z.record(z.string(), z.string()).optional(),
+});
+
 export const AIReadyJobTypeSchema = z.enum(['document_ingest']);
 export const AIReadyJobStatusSchema = z.enum([
   'queued',
@@ -155,5 +224,12 @@ export type SourceLibraryDTO = z.infer<typeof SourceLibrarySchema>;
 export type ListSourceLibrariesResponse = z.infer<typeof ListSourceLibrariesResponseSchema>;
 export type CreateSourceLibraryRequest = z.infer<typeof CreateSourceLibraryRequestSchema>;
 export type UpdateSourceLibraryRequest = z.infer<typeof UpdateSourceLibraryRequestSchema>;
+export type ListSourceObjectsResponse = z.infer<typeof ListSourceObjectsResponseSchema>;
+export type CreateSourceFolderRequest = z.infer<typeof CreateSourceFolderRequestSchema>;
+export type UploadSourceObjectResponse = z.infer<typeof UploadSourceObjectResponseSchema>;
+export type DeleteSourceObjectsRequest = z.infer<typeof DeleteSourceObjectsRequestSchema>;
+export type DeleteSourceObjectsResponse = z.infer<typeof DeleteSourceObjectsResponseSchema>;
+export type MoveSourceObjectRequest = z.infer<typeof MoveSourceObjectRequestSchema>;
+export type SourceObjectMetaResponse = z.infer<typeof SourceObjectMetaResponseSchema>;
 export type AIReadyJobDTO = z.infer<typeof AIReadyJobSchema>;
 export type CreateAIReadyJobRequest = z.infer<typeof CreateAIReadyJobRequestSchema>;

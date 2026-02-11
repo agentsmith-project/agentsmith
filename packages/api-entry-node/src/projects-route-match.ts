@@ -9,6 +9,13 @@ export type ProjectsRoute =
   | { kind: 'sources'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibraries'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryObjects'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryFolders'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryObjectsUpload'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryObjectsDownload'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryObjectsDelete'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryObjectsMove'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryObjectsMeta'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryAIReadyJobs'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryAIReadyJobItem'; workspaceId: string; projectId: string; libraryId: string; jobId: string }
   | { kind: 'sourceLibraryAIReadyJobCancel'; workspaceId: string; projectId: string; libraryId: string; jobId: string }
@@ -100,6 +107,90 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(sourceLibraryItemMatched[1]),
       projectId: decodeURIComponent(sourceLibraryItemMatched[2]),
       libraryId: decodeURIComponent(sourceLibraryItemMatched[3]),
+    };
+  }
+
+  const sourceLibraryObjectsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/objects\/?$/,
+  );
+  if (sourceLibraryObjectsMatched) {
+    return {
+      kind: 'sourceLibraryObjects',
+      workspaceId: decodeURIComponent(sourceLibraryObjectsMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryObjectsMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryObjectsMatched[3]),
+    };
+  }
+
+  const sourceLibraryFoldersMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/folders\/?$/,
+  );
+  if (sourceLibraryFoldersMatched) {
+    return {
+      kind: 'sourceLibraryFolders',
+      workspaceId: decodeURIComponent(sourceLibraryFoldersMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryFoldersMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryFoldersMatched[3]),
+    };
+  }
+
+  const sourceLibraryObjectsUploadMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/objects\/upload\/?$/,
+  );
+  if (sourceLibraryObjectsUploadMatched) {
+    return {
+      kind: 'sourceLibraryObjectsUpload',
+      workspaceId: decodeURIComponent(sourceLibraryObjectsUploadMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryObjectsUploadMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryObjectsUploadMatched[3]),
+    };
+  }
+
+  const sourceLibraryObjectsDownloadMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/objects\/download\/?$/,
+  );
+  if (sourceLibraryObjectsDownloadMatched) {
+    return {
+      kind: 'sourceLibraryObjectsDownload',
+      workspaceId: decodeURIComponent(sourceLibraryObjectsDownloadMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryObjectsDownloadMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryObjectsDownloadMatched[3]),
+    };
+  }
+
+  const sourceLibraryObjectsDeleteMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/objects\/delete\/?$/,
+  );
+  if (sourceLibraryObjectsDeleteMatched) {
+    return {
+      kind: 'sourceLibraryObjectsDelete',
+      workspaceId: decodeURIComponent(sourceLibraryObjectsDeleteMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryObjectsDeleteMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryObjectsDeleteMatched[3]),
+    };
+  }
+
+  const sourceLibraryObjectsMoveMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/objects\/move\/?$/,
+  );
+  if (sourceLibraryObjectsMoveMatched) {
+    return {
+      kind: 'sourceLibraryObjectsMove',
+      workspaceId: decodeURIComponent(sourceLibraryObjectsMoveMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryObjectsMoveMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryObjectsMoveMatched[3]),
+    };
+  }
+
+  const sourceLibraryObjectsMetaMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/objects\/meta\/?$/,
+  );
+  if (sourceLibraryObjectsMetaMatched) {
+    return {
+      kind: 'sourceLibraryObjectsMeta',
+      workspaceId: decodeURIComponent(sourceLibraryObjectsMetaMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryObjectsMetaMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryObjectsMetaMatched[3]),
     };
   }
 

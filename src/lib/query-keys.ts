@@ -138,6 +138,15 @@ export const queryKeys = {
       ['source-libraries', workspaceId, projectId] as const,
   },
 
+  /** Source objects (MinIO-like browser) */
+  sourceObjects: {
+    _def: ['source-objects'] as const,
+    list: (workspaceId: string, projectId: string, libraryId: string, params?: object) =>
+      ['source-objects', workspaceId, projectId, libraryId, params] as const,
+    meta: (workspaceId: string, projectId: string, libraryId: string, key: string) =>
+      ['source-object-meta', workspaceId, projectId, libraryId, key] as const,
+  },
+
   /** Recipes (studio) */
   recipes: {
     _def: ['recipes'] as const,

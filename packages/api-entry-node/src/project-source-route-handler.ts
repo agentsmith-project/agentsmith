@@ -1,6 +1,12 @@
 import type http from 'node:http';
+import Busboy from 'busboy';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import {
+  CreateSourceFolderRequestSchema,
   CreateAIReadyJobRequestSchema,
+  DeleteSourceObjectsRequestSchema,
+  MoveSourceObjectRequestSchema,
   CreateProjectRequestSchema,
   CreateSourceLibraryRequestSchema,
   CreateSourceRequestSchema,
@@ -41,6 +47,82 @@ interface ProjectSourceHandlerArgs {
   resolveProjectPermissions: (ownerId: string, actorId: string) => readonly string[];
 }
 
+async function parseUploadAndExecute(
+  req: http.IncomingMessage,
+  execute: (input: {
+    fileName: string;
+    fileStream: WebReadableStream<Uint8Array>;
+    contentType?: string;
+    contentLength?: number;
+    prefix?: string;
+    overwrite?: boolean;
+  }) => Promise<unknown>,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const busboy = Busboy({ headers: req.headers });
+    let prefix: string | undefined;
+    let overwrite = false;
+    let uploadPromise: Promise<unknown> | null = null;
+    let fileSeen = false;
+    let settled = false;
+
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+
+    busboy.on('field', (name, value) => {
+      if (name === 'prefix') {
+        prefix = value;
+      } else if (name === 'overwrite') {
+        overwrite = value === 'true' || value === '1';
+      }
+    });
+
+    busboy.on('file', (name, file, info) => {
+      if (name !== 'file') {
+        file.resume();
+        return;
+      }
+      fileSeen = true;
+      const fileStream = Readable.toWeb(file) as unknown as WebReadableStream<Uint8Array>;
+      const originalFileName = info.filename || 'upload.bin';
+      const latin1ToUtf8 = Buffer.from(originalFileName, 'latin1').toString('utf8');
+      const hasCjk = (value: string) => /[\u3400-\u9FFF]/.test(value);
+      const decodedFileName =
+        (originalFileName.includes('�') && !latin1ToUtf8.includes('�')) ||
+        (!hasCjk(originalFileName) && hasCjk(latin1ToUtf8))
+          ? latin1ToUtf8
+          : originalFileName;
+      uploadPromise = execute({
+        fileName: decodedFileName,
+        fileStream,
+        contentType: info.mimeType || 'application/octet-stream',
+        prefix,
+        overwrite,
+      });
+      uploadPromise.catch((error) => settle(() => reject(error)));
+    });
+
+    busboy.on('error', (error) => settle(() => reject(error)));
+    busboy.on('finish', async () => {
+      if (!fileSeen || !uploadPromise) {
+        settle(() => reject(new Error('file_required')));
+        return;
+      }
+      try {
+        const result = await uploadPromise;
+        settle(() => resolve(result));
+      } catch (error) {
+        settle(() => reject(error));
+      }
+    });
+
+    req.pipe(busboy);
+  });
+}
+
 export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): Promise<boolean> {
   const {
     route,
@@ -66,7 +148,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'workspaceItem' && method === 'GET' && route.workspaceId) {
     const found = workspaces.find((item) => item.id === route.workspaceId);
     if (!found) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
       return true;
     }
     json(res, 200, found);
@@ -75,7 +157,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'workspaceMembers' && method === 'GET' && route.workspaceId) {
     if (!defaultWorkspace || route.workspaceId !== defaultWorkspace.id) {
-      json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
       return true;
     }
     const member = {
@@ -95,7 +177,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   const workspaceIdInRoute = route.workspaceId ?? null;
   if (workspaceIdInRoute && !workspaces.some((item) => item.id === workspaceIdInRoute)) {
-    json(res, 404, { code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+    json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
     return true;
   }
 
@@ -200,6 +282,129 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       input,
     });
     json(res, 201, created);
+    return true;
+  }
+
+  if (route.kind === 'sourceLibraryObjects' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
+    const prefix = requestUrl.searchParams.get('prefix') ?? undefined;
+    const delimiter = requestUrl.searchParams.get('delimiter') ?? '/';
+    const pageSizeRaw = requestUrl.searchParams.get('page_size');
+    const pageSize = pageSizeRaw ? Number(pageSizeRaw) : undefined;
+    const continuationToken = requestUrl.searchParams.get('continuation_token') ?? undefined;
+    const listed = await deps.listSourceLibraryObjectsUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      prefix,
+      delimiter,
+      pageSize,
+      continuationToken,
+    });
+    json(res, 200, listed);
+    return true;
+  }
+
+  if (route.kind === 'sourceLibraryFolders' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    const raw = await readBody(req);
+    const input = CreateSourceFolderRequestSchema.parse(raw);
+    await deps.createSourceFolderUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      input,
+    });
+    res.statusCode = 201;
+    res.end();
+    return true;
+  }
+
+  if (route.kind === 'sourceLibraryObjectsUpload' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    const workspaceId = route.workspaceId;
+    const projectId = route.projectId;
+    const libraryId = route.libraryId;
+    const contentType = req.headers['content-type'] ?? '';
+    if (!contentType.includes('multipart/form-data')) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'multipart_form_data_required' });
+      return true;
+    }
+
+    const uploaded = await parseUploadAndExecute(req, (input) =>
+      deps.uploadSourceObjectUseCase.execute({
+        workspaceId,
+        projectId,
+        libraryId,
+        fileName: input.fileName,
+        fileStream: input.fileStream,
+        contentType: input.contentType,
+        contentLength: input.contentLength,
+        prefix: input.prefix,
+        overwrite: input.overwrite,
+      }),
+    );
+    json(res, 201, uploaded);
+    return true;
+  }
+
+  if (route.kind === 'sourceLibraryObjectsDownload' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
+    const key = requestUrl.searchParams.get('key') ?? '';
+    const downloaded = await deps.downloadSourceObjectUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      key,
+    });
+    res.statusCode = 200;
+    res.setHeader('content-type', downloaded.contentType);
+    res.setHeader(
+      'content-disposition',
+      `attachment; filename=\"${encodeURIComponent(downloaded.key.split('/').at(-1) || 'download')}\"`,
+    );
+    const nodeStream = Readable.fromWeb(downloaded.body as unknown as Parameters<typeof Readable.fromWeb>[0]);
+    nodeStream.on('error', () => {
+      if (!res.writableEnded) {
+        res.end();
+      }
+    });
+    nodeStream.pipe(res);
+    return true;
+  }
+
+  if (route.kind === 'sourceLibraryObjectsDelete' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    const raw = await readBody(req);
+    const input = DeleteSourceObjectsRequestSchema.parse(raw);
+    const result = await deps.deleteSourceObjectsUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      input,
+    });
+    json(res, 200, result);
+    return true;
+  }
+
+  if (route.kind === 'sourceLibraryObjectsMove' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    const raw = await readBody(req);
+    const input = MoveSourceObjectRequestSchema.parse(raw);
+    await deps.moveSourceObjectUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      input,
+    });
+    res.statusCode = 200;
+    res.end();
+    return true;
+  }
+
+  if (route.kind === 'sourceLibraryObjectsMeta' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
+    const key = requestUrl.searchParams.get('key') ?? '';
+    const meta = await deps.getSourceObjectMetaUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      key,
+    });
+    json(res, 200, meta);
     return true;
   }
 

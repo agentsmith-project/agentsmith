@@ -7,7 +7,7 @@ describe('mapRequestError', () => {
     expect(mapped).toEqual({
       status: 404,
       body: {
-        code: 'RESOURCE_NOT_FOUND',
+        error_code: 'RESOURCE_NOT_FOUND',
         message: 'project_not_found',
       },
     });
@@ -18,7 +18,7 @@ describe('mapRequestError', () => {
     expect(mapped).toEqual({
       status: 422,
       body: {
-        code: 'VALIDATION_ERROR',
+        error_code: 'VALIDATION_ERROR',
         message: 'source_library_mismatch',
       },
     });
@@ -29,8 +29,19 @@ describe('mapRequestError', () => {
     expect(mapped).toEqual({
       status: 400,
       body: {
-        code: 'VALIDATION_ERROR',
+        error_code: 'VALIDATION_ERROR',
         message: 'invalid_payload',
+      },
+    });
+  });
+
+  it('maps destination_exists to 409 for object move/upload conflicts', () => {
+    const mapped = mapRequestError(new Error('destination_exists'));
+    expect(mapped).toEqual({
+      status: 409,
+      body: {
+        error_code: 'destination_exists',
+        message: 'destination_exists',
       },
     });
   });

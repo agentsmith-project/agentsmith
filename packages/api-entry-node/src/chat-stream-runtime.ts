@@ -148,7 +148,7 @@ export function listActiveSessionStreams(
       (stream.status === 'running' || stream.status === 'stopping'))
     .map(([streamId, stream]) => ({
       streamId,
-      status: stream.status,
+      status: stream.status === 'running' ? 'running' : 'stopping',
       startedAt: stream.startedAt,
     }));
 }

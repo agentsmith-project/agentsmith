@@ -2,6 +2,10 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 
 const sources = [...(p0.sources ?? [])];
+type ObjectRow =
+  | { kind: 'prefix'; prefix: string; name: string }
+  | { kind: 'object'; key: string; name: string; size_bytes: number; content_type: string; etag?: string; last_modified: string; content?: string };
+
 const sourceLibraries = [
   {
     id: 'lib_shared_default',
@@ -10,6 +14,8 @@ const sourceLibraries = [
     name: 'Shared Docs',
     description: 'Default shared library',
     visibility: 'shared' as const,
+    provider: 's3' as const,
+    bucket: 'mbos-proj-001-shared-docs',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-01T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-01T00:00:00Z').toISOString(),
@@ -21,6 +27,8 @@ const sourceLibraries = [
     name: 'Policy Rules',
     description: 'Shared policy and governance references',
     visibility: 'shared' as const,
+    provider: 's3' as const,
+    bucket: 'mbos-proj-001-policy-rules',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-02T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-02T00:00:00Z').toISOString(),
@@ -32,11 +40,92 @@ const sourceLibraries = [
     name: 'Product Specs',
     description: 'Shared product and API specifications',
     visibility: 'shared' as const,
+    provider: 's3' as const,
+    bucket: 'mbos-proj-001-product-specs',
     created_by_user_id: 'user_001',
     created_at: new Date('2026-02-03T00:00:00Z').toISOString(),
     updated_at: new Date('2026-02-03T00:00:00Z').toISOString(),
   },
 ];
+
+const nowIso = () => new Date().toISOString();
+
+const objectDbByLibraryId: Record<string, ObjectRow[]> = {
+  lib_shared_default: [
+    { kind: 'prefix', prefix: 'docs/', name: 'docs' },
+    { kind: 'prefix', prefix: 'images/', name: 'images' },
+    { kind: 'object', key: 'README.txt', name: 'README.txt', size_bytes: 42, content_type: 'text/plain', etag: '"etag1"', last_modified: nowIso(), content: 'Hello from Shared Docs\n' },
+    { kind: 'object', key: 'docs/mbos-contracts.md', name: 'mbos-contracts.md', size_bytes: 1200, content_type: 'text/markdown', etag: '"etag2"', last_modified: nowIso(), content: '# Contracts\n' },
+    { kind: 'object', key: 'images/logo.png', name: 'logo.png', size_bytes: 2048, content_type: 'image/png', etag: '"etag3"', last_modified: nowIso() },
+  ],
+  lib_policy_rules: [
+    { kind: 'object', key: 'policies/README.md', name: 'README.md', size_bytes: 900, content_type: 'text/markdown', etag: '"etag4"', last_modified: nowIso(), content: '# Policies\n' },
+  ],
+  lib_product_specs: [
+    { kind: 'object', key: 'specs/api/openapi.json', name: 'openapi.json', size_bytes: 1500, content_type: 'application/json', etag: '"etag5"', last_modified: nowIso(), content: '{\"openapi\":\"3.0.0\"}' },
+  ],
+};
+
+function normalizePrefix(prefix: string | null): string {
+  if (!prefix) return '';
+  if (prefix === '/') return '';
+  return prefix.endsWith('/') ? prefix : `${prefix}/`;
+}
+
+function basename(path: string) {
+  const trimmed = path.endsWith('/') ? path.slice(0, -1) : path;
+  const idx = trimmed.lastIndexOf('/');
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function listObjects(libraryId: string, prefix: string) {
+  const db = objectDbByLibraryId[libraryId] ?? [];
+  const normalized = normalizePrefix(prefix);
+
+  const prefixes = new Set<string>();
+  const objects: ObjectRow[] = [];
+
+  for (const row of db) {
+    if (row.kind !== 'object') continue;
+    // Hide folder markers from file rows; represent them as prefixes.
+    if (row.key.endsWith('/')) {
+      if (normalized && !row.key.startsWith(normalized)) continue;
+      if (row.key !== normalized) prefixes.add(row.key);
+      continue;
+    }
+    if (normalized && !row.key.startsWith(normalized)) continue;
+    const rest = row.key.slice(normalized.length);
+    const slash = rest.indexOf('/');
+    if (slash >= 0) {
+      const folder = `${normalized}${rest.slice(0, slash + 1)}`;
+      prefixes.add(folder);
+      continue;
+    }
+    objects.push(row);
+  }
+
+  const prefixItems: ObjectRow[] = Array.from(prefixes)
+    .sort((a, b) => a.localeCompare(b))
+    .map((p) => ({ kind: 'prefix', prefix: p, name: basename(p) }));
+
+  const objectItems = objects
+    .slice()
+    .sort((a, b) => {
+      if (a.kind !== 'object' || b.kind !== 'object') return 0;
+      return a.name.localeCompare(b.name);
+    })
+    .map((o) => ({
+      kind: 'object' as const,
+      key: (o as Extract<ObjectRow, { kind: 'object' }>).key,
+      name: (o as Extract<ObjectRow, { kind: 'object' }>).name,
+      size_bytes: (o as Extract<ObjectRow, { kind: 'object' }>).size_bytes,
+      content_type: (o as Extract<ObjectRow, { kind: 'object' }>).content_type,
+      etag: (o as Extract<ObjectRow, { kind: 'object' }>).etag,
+      last_modified: (o as Extract<ObjectRow, { kind: 'object' }>).last_modified,
+    }));
+
+  return [...prefixItems, ...objectItems];
+}
 
 export const sourceHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/sources', ({ params }) => {
@@ -59,16 +148,22 @@ export const sourceHandlers = [
       visibility?: 'shared';
     };
     if (!body.name) {
-      return HttpResponse.json({ error: 'invalid_request' }, { status: 400 });
+      return HttpResponse.json(
+        { error_code: 'VALIDATION_ERROR', message: 'invalid_request' },
+        { status: 400 },
+      );
     }
     const now = new Date().toISOString();
+    const id = `lib_${Date.now()}`;
     const created = {
-      id: `lib_${Date.now()}`,
+      id,
       workspace_id: String(params.ws ?? ''),
       project_id: String(params.prj ?? ''),
       name: body.name,
       description: body.description ?? '',
       visibility: 'shared' as const,
+      provider: 's3' as const,
+      bucket: `mbos-${String(params.prj ?? '')}-${id}`,
       created_by_user_id: 'user_001',
       created_at: now,
       updated_at: now,
@@ -83,7 +178,7 @@ export const sourceHandlers = [
     };
     const index = sourceLibraries.findIndex((item) => item.id === params.id);
     if (index === -1) {
-      return HttpResponse.json({ error: 'not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'library_not_found', message: 'library_not_found' }, { status: 404 });
     }
     sourceLibraries[index] = {
       ...sourceLibraries[index],
@@ -95,9 +190,178 @@ export const sourceHandlers = [
   http.delete('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id', ({ params }) => {
     const index = sourceLibraries.findIndex((item) => item.id === params.id);
     if (index === -1) {
-      return HttpResponse.json({ error: 'not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'library_not_found', message: 'library_not_found' }, { status: 404 });
     }
     sourceLibraries.splice(index, 1);
     return HttpResponse.json(null, { status: 204 });
+  }),
+
+  http.get('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects', ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const url = new URL(request.url);
+    const prefix = normalizePrefix(url.searchParams.get('prefix'));
+    const items = listObjects(libraryId, prefix);
+    return HttpResponse.json({
+      prefix,
+      items,
+      next_continuation_token: null,
+    });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/folders', async ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const body = (await request.json().catch(() => ({}))) as { prefix?: string };
+    const prefix = normalizePrefix(body.prefix ?? '');
+    if (!prefix) return HttpResponse.json({ error_code: 'invalid_prefix', message: 'invalid_prefix' }, { status: 400 });
+
+    // Folder markers are implicit in this MSW mock; ensure the prefix exists by adding a dummy marker if needed.
+    const db = objectDbByLibraryId[libraryId] ?? (objectDbByLibraryId[libraryId] = []);
+    const exists = db.some((r) => r.kind === 'object' && r.key === prefix);
+    if (!exists) {
+      db.push({
+        kind: 'object',
+        key: prefix,
+        name: basename(prefix),
+        size_bytes: 0,
+        content_type: 'application/x-directory',
+        etag: `"${Date.now()}"`,
+        last_modified: nowIso(),
+      });
+    }
+    return HttpResponse.json(null, { status: 201 });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects/delete', async ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const body = (await request.json().catch(() => ({}))) as { keys?: string[] };
+    const keys = (body.keys ?? []).filter(Boolean);
+    const db = objectDbByLibraryId[libraryId] ?? (objectDbByLibraryId[libraryId] = []);
+    const results = keys.map((k) => {
+      if (k.endsWith('/')) {
+        const before = db.length;
+        objectDbByLibraryId[libraryId] = db.filter((r) => r.kind !== 'object' || !r.key.startsWith(k));
+        return { key: k, status: objectDbByLibraryId[libraryId].length < before ? 'deleted' : 'deleted' };
+      }
+      const idx = db.findIndex((r) => r.kind === 'object' && r.key === k);
+      if (idx >= 0) db.splice(idx, 1);
+      return { key: k, status: 'deleted' };
+    });
+    return HttpResponse.json({ results });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects/move', async ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const body = (await request.json().catch(() => ({}))) as { from_key?: string; to_key?: string; overwrite?: boolean };
+    const fromKey = String(body.from_key ?? '');
+    const toKey = String(body.to_key ?? '');
+    if (!fromKey || !toKey) {
+      return HttpResponse.json({ error_code: 'invalid_key', message: 'invalid_key' }, { status: 400 });
+    }
+
+    const db = objectDbByLibraryId[libraryId] ?? (objectDbByLibraryId[libraryId] = []);
+    const exists = db.some((r) => r.kind === 'object' && r.key === toKey);
+    if (exists && !body.overwrite) {
+      return HttpResponse.json({ error_code: 'destination_exists', message: 'destination_exists' }, { status: 409 });
+    }
+
+    const srcIdx = db.findIndex((r) => r.kind === 'object' && r.key === fromKey);
+    if (srcIdx === -1) {
+      return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
+    }
+
+    const src = db[srcIdx] as Extract<ObjectRow, { kind: 'object' }>;
+    db.splice(srcIdx, 1);
+    db.push({ ...src, key: toKey, name: basename(toKey), last_modified: nowIso() });
+    return HttpResponse.json(null, { status: 200 });
+  }),
+
+  http.get('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects/meta', ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const url = new URL(request.url);
+    const key = url.searchParams.get('key') ?? '';
+    const db = objectDbByLibraryId[libraryId] ?? [];
+    const obj = db.find((r) => r.kind === 'object' && r.key === key) as Extract<ObjectRow, { kind: 'object' }> | undefined;
+    if (!obj) return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
+    return HttpResponse.json({
+      key: obj.key,
+      size_bytes: obj.size_bytes,
+      content_type: obj.content_type,
+      etag: obj.etag,
+      last_modified: obj.last_modified,
+      user_metadata: {},
+    });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects/upload', async ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const form = await request.formData();
+    const file = form.get('file');
+    const prefix = normalizePrefix((form.get('prefix') as string | null) ?? '');
+    const overwrite = ((form.get('overwrite') as string | null) ?? '').toLowerCase() === 'true';
+
+    if (!(file instanceof File)) {
+      return HttpResponse.json(
+        { error_code: 'invalid_request', message: 'file_is_required' },
+        { status: 400 },
+      );
+    }
+
+    const key = `${prefix}${file.name}`;
+    const db = objectDbByLibraryId[libraryId] ?? (objectDbByLibraryId[libraryId] = []);
+    const contentType = file.type || 'application/octet-stream';
+    const content = contentType.startsWith('text/')
+      ? await file.text().catch(() => '')
+      : undefined;
+    const row: Extract<ObjectRow, { kind: 'object' }> = {
+      kind: 'object',
+      key,
+      name: basename(key),
+      size_bytes: file.size,
+      content_type: contentType,
+      etag: `"${Date.now()}"`,
+      last_modified: nowIso(),
+      content,
+    };
+    // Overwrite for MSW simplicity.
+    const existingIndex = db.findIndex((r) => r.kind === 'object' && r.key === key);
+    if (existingIndex >= 0 && !overwrite) {
+      return HttpResponse.json(
+        { error_code: 'destination_exists', message: 'destination_exists' },
+        { status: 409 },
+      );
+    }
+    if (existingIndex >= 0 && overwrite) db.splice(existingIndex, 1);
+    db.push(row);
+
+    return HttpResponse.json(
+      {
+        kind: 'object',
+        key: row.key,
+        name: row.name,
+        size_bytes: row.size_bytes,
+        content_type: row.content_type,
+        etag: row.etag,
+        last_modified: row.last_modified,
+      },
+      { status: 201 },
+    );
+  }),
+
+  http.get('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects/download', ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const url = new URL(request.url);
+    const key = url.searchParams.get('key') ?? '';
+    const db = objectDbByLibraryId[libraryId] ?? [];
+    const obj = db.find((r) => r.kind === 'object' && r.key === key) as Extract<ObjectRow, { kind: 'object' }> | undefined;
+    if (!obj) return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
+
+    const bytes = obj.content ? new TextEncoder().encode(obj.content) : new Uint8Array([1, 2, 3, 4]);
+    return new HttpResponse(bytes, {
+      status: 200,
+      headers: {
+        'Content-Type': obj.content_type || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename=\"${basename(key) || 'download'}\"`,
+      },
+    });
   }),
 ];

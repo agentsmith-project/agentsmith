@@ -499,9 +499,59 @@ export interface SourceLibrary {
   name: string;
   description?: string;
   visibility: 'shared';
+  /** Storage provider backing this library (MVP: S3-compatible, e.g. MinIO). */
+  provider?: 's3';
+  /** Backend bucket name for ops/debug; not user-facing. */
+  bucket?: string;
   created_by_user_id: string;
   created_at: string;
   updated_at: string;
+}
+
+// ============================================================
+// Sources (Object Browser / MinIO-like File Manager)
+// ============================================================
+
+export interface SourcePrefixItem {
+  kind: 'prefix';
+  /** Normalized prefix with trailing slash, e.g. `docs/specs/`. */
+  prefix: string;
+  /** Last segment name, e.g. `specs`. */
+  name: string;
+}
+
+export interface SourceObjectItem {
+  kind: 'object';
+  key: string;
+  name: string;
+  size_bytes: number;
+  content_type: string;
+  etag?: string;
+  last_modified: string;
+}
+
+export type SourceObjectsListItem = SourcePrefixItem | SourceObjectItem;
+
+export interface SourceObjectsListParams {
+  prefix?: string;
+  delimiter?: '/';
+  page_size?: number;
+  continuation_token?: string;
+}
+
+export interface SourceObjectsListResponse {
+  prefix: string;
+  items: SourceObjectsListItem[];
+  next_continuation_token?: string | null;
+}
+
+export interface SourceObjectMeta {
+  key: string;
+  size_bytes: number;
+  content_type: string;
+  etag?: string;
+  last_modified: string;
+  user_metadata?: Record<string, string>;
 }
 
 // ============================================================

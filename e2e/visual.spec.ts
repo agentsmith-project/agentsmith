@@ -216,18 +216,22 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('dialog-invite-member.png');
   });
 
-  test('upload source dialog', async ({ authedPage }) => {
+  test('sources - create folder dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('sources'));
-    await authedPage.getByTestId('sources__upload-btn').click();
+    await authedPage.getByTestId('sources__new-folder').click();
     await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('dialog-upload-source.png');
+    await expect(authedPage).toHaveScreenshot('dialog-sources-create-folder.png');
   });
 
-  test('manage source libraries dialog', async ({ authedPage }) => {
+  test('sources - rename dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('sources'));
-    await authedPage.getByTestId('sources__manage-libraries-btn').click();
+    const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
+    await expect(row).toBeVisible();
+    await row.getByRole('button').click();
+    await authedPage.getByTestId('sources__rename').click();
+    await expect(authedPage.getByTestId('sources__dialog__move')).toBeVisible();
     await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('dialog-manage-source-libraries.png');
+    await expect(authedPage).toHaveScreenshot('dialog-sources-rename.png');
   });
 
   test('create API key dialog', async ({ authedPage }) => {

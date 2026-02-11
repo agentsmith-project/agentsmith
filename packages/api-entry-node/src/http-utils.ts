@@ -7,7 +7,7 @@ export function json(res: http.ServerResponse, status: number, data: unknown): v
 }
 
 export function unauthorized(res: http.ServerResponse): void {
-  json(res, 401, { code: 'UNAUTHORIZED', message: 'Missing or invalid bearer token' });
+  json(res, 401, { error_code: 'UNAUTHORIZED', message: 'Missing or invalid bearer token' });
 }
 
 export function applyCors(res: http.ServerResponse): void {

@@ -70,6 +70,20 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__load-more')).toBeVisible();
   });
 
+  test('persists folder prefix in url and after refresh', async ({ authedPage }) => {
+    const docsRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' }).first();
+    await expect(docsRow).toBeVisible();
+    await docsRow.getByRole('button').click();
+
+    await expect(authedPage).toHaveURL(/prefix=docs%2F/);
+    await expect(authedPage.getByTestId('sources__go-up')).toBeVisible();
+
+    await authedPage.reload();
+    await expect(authedPage).toHaveURL(/prefix=docs%2F/);
+    await expect(authedPage.getByTestId('sources__go-up')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'mbos-contracts.md' }).first()).toBeVisible();
+  });
+
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
     await authedPage.getByTestId('sources__library-item--lib_large_bench').click();
     await expect(authedPage.getByTestId('sources__load-more')).toBeVisible();

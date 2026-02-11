@@ -95,6 +95,14 @@ function parseSortOrder(value: string | null): SourceSortOrder {
   return 'asc';
 }
 
+function normalizeBrowsePrefix(value: string | null): string {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '/') return '';
+  const withoutLeading = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+  return withoutLeading.endsWith('/') ? withoutLeading : `${withoutLeading}/`;
+}
+
 function rowId(item: SourceObjectsListItem): SelectedRowId {
   return item.kind === 'prefix' ? (`p:${item.prefix}` as const) : (`o:${item.key}` as const);
 }
@@ -205,7 +213,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     setSelectedLibraryId(libraries[0].id);
   }, [libraries, searchParamsKey, selectedLibraryId]);
 
-  const [prefix, setPrefix] = React.useState('');
+  const [prefix, setPrefix] = React.useState(normalizeBrowsePrefix(searchParams.get('prefix')));
   const [searchInput, setSearchInput] = React.useState(searchParams.get('search') ?? '');
   const [search, setSearch] = React.useState(searchParams.get('search')?.trim() ?? '');
   const [sortBy, setSortBy] = React.useState<SourceSortBy>(parseSortBy(searchParams.get('sort_by')));
@@ -217,11 +225,13 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     const querySortBy = parseSortBy(params.get('sort_by'));
     const querySortOrder = parseSortOrder(params.get('sort_order'));
     const querySearch = params.get('search') ?? '';
+    const queryPrefix = normalizeBrowsePrefix(params.get('prefix'));
     const trimmedQuerySearch = querySearch.trim();
     setSortBy((prev) => (prev === querySortBy ? prev : querySortBy));
     setSortOrder((prev) => (prev === querySortOrder ? prev : querySortOrder));
     setSearchInput((prev) => (prev === querySearch ? prev : querySearch));
     setSearch((prev) => (prev === trimmedQuerySearch ? prev : trimmedQuerySearch));
+    setPrefix((prev) => (prev === queryPrefix ? prev : queryPrefix));
   }, [searchParamsKey]);
 
   React.useEffect(() => {
@@ -736,6 +746,20 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [pathname, router, searchParamsKey, selectedLibraryId]);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    const currentPrefix = normalizeBrowsePrefix(params.get('prefix'));
+    const nextPrefix = normalizeBrowsePrefix(prefix);
+    if (currentPrefix === nextPrefix) return;
+    if (!nextPrefix) {
+      params.delete('prefix');
+    } else {
+      params.set('prefix', nextPrefix);
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, prefix, router, searchParamsKey]);
 
   const handleSortByChange = React.useCallback(
     (value: SourceSortBy) => {

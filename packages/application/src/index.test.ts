@@ -852,6 +852,59 @@ describe('Project use cases', () => {
     expect(objectNames).toEqual(['readme.txt']);
   });
 
+  it('filters and sorts listed objects by search/sort options', async () => {
+    const libraryRepo = new FakeSourceLibraryRepo();
+    const objectStore = new FakeObjectStore();
+    const clock = new FixedClock();
+    libraryRepo.items.push({
+      id: 'lib_search_sort',
+      workspace_id: 'ws_a',
+      project_id: 'proj_1',
+      name: 'SearchSort',
+      visibility: 'shared',
+      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_search_sort/',
+      doc_namespace: 'doc_ws_a_proj_1_lib_search_sort',
+      vector_namespace: 'vec_ws_a_proj_1_lib_search_sort',
+      created_by_user_id: 'user_1',
+      created_at: clock.nowIso(),
+      updated_at: clock.nowIso(),
+    });
+    await objectStore.putObject(
+      'mbos-dev',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_search_sort/alpha-report.txt',
+      new TextEncoder().encode('12345'),
+    );
+    await objectStore.putObject(
+      'mbos-dev',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_search_sort/beta-report.txt',
+      new TextEncoder().encode('1234567890'),
+    );
+    await objectStore.putObject(
+      'mbos-dev',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_search_sort/gamma-note.txt',
+      new TextEncoder().encode('12'),
+    );
+
+    const listed = await new ListSourceLibraryObjectsUseCase(libraryRepo, objectStore, 'mbos-dev').execute({
+      workspaceId: 'ws_a',
+      projectId: 'proj_1',
+      libraryId: 'lib_search_sort',
+      prefix: '',
+      delimiter: '/',
+      pageSize: 200,
+      search: 'report',
+      sortBy: 'size_bytes',
+      sortOrder: 'desc',
+    });
+
+    const objectItems = listed.items.filter((item) => item.kind === 'object');
+    expect(objectItems).toHaveLength(2);
+    if (objectItems[0]?.kind === 'object' && objectItems[1]?.kind === 'object') {
+      expect(objectItems[0].name).toBe('beta-report.txt');
+      expect(objectItems[1].name).toBe('alpha-report.txt');
+    }
+  });
+
   it('creates, gets, and cancels library-scoped ai-ready job', async () => {
     const sourceRepo = new FakeSourceRepo();
     const libraryRepo = new FakeSourceLibraryRepo();

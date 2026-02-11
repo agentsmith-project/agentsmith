@@ -293,6 +293,9 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       delimiter: requestUrl.searchParams.get('delimiter') ?? '/',
       page_size: requestUrl.searchParams.get('page_size') ?? undefined,
       continuation_token: requestUrl.searchParams.get('continuation_token') ?? undefined,
+      search: requestUrl.searchParams.get('search') ?? undefined,
+      sort_by: requestUrl.searchParams.get('sort_by') ?? undefined,
+      sort_order: requestUrl.searchParams.get('sort_order') ?? undefined,
     });
     const listed = await deps.listSourceLibraryObjectsUseCase.execute({
       workspaceId: route.workspaceId,
@@ -302,6 +305,9 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       delimiter: query.delimiter,
       pageSize: query.page_size,
       continuationToken: query.continuation_token,
+      search: query.search,
+      sortBy: query.sort_by,
+      sortOrder: query.sort_order,
     });
     json(res, 200, listed);
     return true;

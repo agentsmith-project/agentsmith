@@ -117,6 +117,9 @@ export interface ListSourceLibraryObjectsCommand extends ListSourceLibrariesComm
   delimiter?: string;
   pageSize?: number;
   continuationToken?: string;
+  search?: string;
+  sortBy?: 'name' | 'size_bytes' | 'last_modified';
+  sortOrder?: 'asc' | 'desc';
 }
 
 export interface CreateSourceFolderCommand extends ListSourceLibrariesCommand {
@@ -688,13 +691,18 @@ export class ListSourceLibraryObjectsUseCase {
     const prefix = normalizePrefix(command.prefix);
     const delimiter = command.delimiter ?? '/';
     const pageSize = Math.min(Math.max(1, command.pageSize ?? 200), 1000);
+    const normalizedSearch = command.search?.trim().toLowerCase() ?? '';
+    const hasSearch = normalizedSearch.length > 0;
+    const sortBy = command.sortBy ?? 'name';
+    const sortOrder = command.sortOrder ?? 'asc';
+    const sortFactor = sortOrder === 'desc' ? -1 : 1;
     const listed = await this.objectStore.listObjects(this.bucket, {
       prefix: joinObjectKey(library.object_prefix, prefix),
       delimiter,
       pageSize,
       continuationToken: command.continuationToken,
     });
-    const prefixItems = listed.commonPrefixes
+    let prefixItems = listed.commonPrefixes
       .map((fullPrefix) => {
         const relativePrefix = stripObjectPrefix(fullPrefix, library.object_prefix);
         return {
@@ -704,7 +712,7 @@ export class ListSourceLibraryObjectsUseCase {
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-    const objectItems = listed.objects
+    let objectItems = listed.objects
       .map((obj) => {
         const relativeKey = stripObjectPrefix(obj.key, library.object_prefix);
         // Hide folder marker objects (e.g. "docs/" zero-byte placeholders).
@@ -723,6 +731,20 @@ export class ListSourceLibraryObjectsUseCase {
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
       .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (hasSearch) {
+      prefixItems = prefixItems.filter((item) => item.name.toLowerCase().includes(normalizedSearch));
+      objectItems = objectItems.filter((item) => item.name.toLowerCase().includes(normalizedSearch));
+    }
+
+    if (sortBy === 'size_bytes') {
+      objectItems = objectItems.slice().sort((a, b) => (a.size_bytes - b.size_bytes) * sortFactor);
+    } else if (sortBy === 'last_modified') {
+      objectItems = objectItems.slice().sort((a, b) => a.last_modified.localeCompare(b.last_modified) * sortFactor);
+    } else {
+      prefixItems = prefixItems.slice().sort((a, b) => a.name.localeCompare(b.name) * sortFactor);
+      objectItems = objectItems.slice().sort((a, b) => a.name.localeCompare(b.name) * sortFactor);
+    }
 
     return ListSourceObjectsResponseSchema.parse({
       prefix,

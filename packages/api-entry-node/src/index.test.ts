@@ -573,6 +573,18 @@ describe('api-entry-node projects routes', () => {
     };
     expect(listed.items.some((item) => item.kind === 'object' && item.key === 'docs/readme.txt')).toBe(true);
 
+    const searchedListRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=docs/&delimiter=/&search=readme&sort_by=name&sort_order=asc`,
+    );
+    expect(searchedListRes.status).toBe(200);
+    const searchedListed = (await searchedListRes.json()) as {
+      items: Array<{ kind: string; key?: string; name?: string }>;
+    };
+    const searchedObjects = searchedListed.items.filter((item) => item.kind === 'object');
+    expect(searchedObjects).toHaveLength(1);
+    expect(searchedObjects[0]?.key).toBe('docs/readme.txt');
+
     const invalidDelimiterRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=docs/&delimiter=.`,

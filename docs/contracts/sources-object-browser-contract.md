@@ -107,6 +107,9 @@ Query:
 - `delimiter`: string, required. Must be exactly `/` (otherwise `400`).
 - `page_size`: int, optional. default `200`, max `1000`.
 - `continuation_token`: string, optional. Pagination token for next page (MVP uses a key-based token, opaque to UI).
+- `search`: string, optional. Case-insensitive substring match on display `name`.
+- `sort_by`: enum, optional. One of `name | size_bytes | last_modified`, default `name`.
+- `sort_order`: enum, optional. One of `asc | desc`, default `asc`.
 
 Response:
 ```json
@@ -133,6 +136,13 @@ Rules:
 - Items must be stable-sorted for a given response (`prefix` rows first, then objects; both sorted by `name`).
 - `name` for objects is the final path segment (after last `/`).
 - `prefix` rows must include a normalized trailing `/`.
+- When `sort_by` is `size_bytes` or `last_modified`, sorting applies to object rows; prefix rows remain name-sorted.
+
+Frontend consumption guidance:
+
+- The object list is rendered with virtualization and incremental loading.
+- UI requests additional pages with `continuation_token` when the user scrolls near list end.
+- `next_continuation_token = null` means no more pages.
 
 ### 2.3 Create Folder
 

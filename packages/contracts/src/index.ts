@@ -151,6 +151,9 @@ export const ListSourceObjectsQuerySchema = z.object({
     .max(1000)
     .optional(),
   continuation_token: z.string().optional(),
+  search: z.string().trim().min(1).max(256).optional(),
+  sort_by: z.enum(['name', 'size_bytes', 'last_modified']).default('name'),
+  sort_order: z.enum(['asc', 'desc']).default('asc'),
 });
 
 export const CreateSourceFolderRequestSchema = z.object({

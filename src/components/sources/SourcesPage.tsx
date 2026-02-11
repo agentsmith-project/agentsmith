@@ -25,7 +25,6 @@ import {
   Pencil,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Virtuoso } from 'react-virtuoso';
 
 import { cn } from '@/lib/utils';
@@ -68,6 +67,7 @@ import {
   useSourceObjectsInfinite,
   useUploadSourceObject,
 } from '@/lib/hooks/use-source-objects';
+import { parseSourceSortBy, SourceSortBy, SourceSortOrder, useSourcesUrlState } from '@/lib/hooks/use-sources-url-state';
 
 export interface SourcesPageProps {
   workspaceId: string;
@@ -82,26 +82,6 @@ type UploadConflictState = {
   completed: number;
 };
 type BatchResultType = 'delete' | 'download';
-type SourceSortBy = 'name' | 'size_bytes' | 'last_modified';
-type SourceSortOrder = 'asc' | 'desc';
-
-function parseSortBy(value: string | null): SourceSortBy {
-  if (value === 'size_bytes' || value === 'last_modified') return value;
-  return 'name';
-}
-
-function parseSortOrder(value: string | null): SourceSortOrder {
-  if (value === 'desc') return 'desc';
-  return 'asc';
-}
-
-function normalizeBrowsePrefix(value: string | null): string {
-  if (!value) return '';
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === '/') return '';
-  const withoutLeading = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
-  return withoutLeading.endsWith('/') ? withoutLeading : `${withoutLeading}/`;
-}
 
 function rowId(item: SourceObjectsListItem): SelectedRowId {
   return item.kind === 'prefix' ? (`p:${item.prefix}` as const) : (`o:${item.key}` as const);
@@ -164,82 +144,23 @@ function parentPrefixForPrefix(prefix: string) {
 export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const t = useTranslations('sources');
   const canManage = useHasPermission('project:source:manage');
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const searchParamsKey = searchParams.toString();
 
   const { data: librariesData, isLoading: libsLoading } = useSourceLibraries(workspaceId, projectId);
   const libraries = React.useMemo(() => librariesData?.items ?? [], [librariesData?.items]);
-  const librarySelectionInitializedRef = React.useRef(false);
-
-  const [selectedLibraryId, setSelectedLibraryId] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    if (libraries.length === 0) {
-      if (selectedLibraryId !== null) {
-        setSelectedLibraryId(null);
-      }
-      librarySelectionInitializedRef.current = false;
-      return;
-    }
-
-    const params = new URLSearchParams(searchParamsKey);
-    const queryLibraryId = params.get('library_id');
-    const hasQueryLibrary = queryLibraryId
-      ? libraries.some((library) => library.id === queryLibraryId)
-      : false;
-
-    const hasSelectedLibrary = selectedLibraryId
-      ? libraries.some((library) => library.id === selectedLibraryId)
-      : false;
-    if (!librarySelectionInitializedRef.current) {
-      librarySelectionInitializedRef.current = true;
-      if (hasQueryLibrary && selectedLibraryId !== queryLibraryId) {
-        setSelectedLibraryId(queryLibraryId);
-        return;
-      }
-      if (!hasSelectedLibrary) {
-        setSelectedLibraryId(libraries[0].id);
-      }
-      return;
-    }
-
-    if (hasSelectedLibrary) return;
-
-    if (hasQueryLibrary && selectedLibraryId !== queryLibraryId) {
-      setSelectedLibraryId(queryLibraryId);
-      return;
-    }
-    setSelectedLibraryId(libraries[0].id);
-  }, [libraries, searchParamsKey, selectedLibraryId]);
-
-  const [prefix, setPrefix] = React.useState(normalizeBrowsePrefix(searchParams.get('prefix')));
-  const [searchInput, setSearchInput] = React.useState(searchParams.get('search') ?? '');
-  const [search, setSearch] = React.useState(searchParams.get('search')?.trim() ?? '');
-  const [sortBy, setSortBy] = React.useState<SourceSortBy>(parseSortBy(searchParams.get('sort_by')));
-  const [sortOrder, setSortOrder] = React.useState<SourceSortOrder>(parseSortOrder(searchParams.get('sort_order')));
+  const {
+    prefix,
+    search,
+    searchInput,
+    selectedLibraryId,
+    setPrefix,
+    setSearchImmediately,
+    setSearchInput,
+    setSelectedLibraryId,
+    sortBy,
+    sortOrder,
+    updateSort,
+  } = useSourcesUrlState(libraries);
   const [selectedIds, setSelectedIds] = React.useState<SelectedRowId[]>([]);
-
-  React.useEffect(() => {
-    const params = new URLSearchParams(searchParamsKey);
-    const querySortBy = parseSortBy(params.get('sort_by'));
-    const querySortOrder = parseSortOrder(params.get('sort_order'));
-    const querySearch = params.get('search') ?? '';
-    const queryPrefix = normalizeBrowsePrefix(params.get('prefix'));
-    const trimmedQuerySearch = querySearch.trim();
-    setSortBy((prev) => (prev === querySortBy ? prev : querySortBy));
-    setSortOrder((prev) => (prev === querySortOrder ? prev : querySortOrder));
-    setSearchInput((prev) => (prev === querySearch ? prev : querySearch));
-    setSearch((prev) => (prev === trimmedQuerySearch ? prev : trimmedQuerySearch));
-    setPrefix((prev) => (prev === queryPrefix ? prev : queryPrefix));
-  }, [searchParamsKey]);
-
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSearch(searchInput.trim());
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
 
   const listParams = React.useMemo(
     () => ({
@@ -282,8 +203,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
   const navigateToPrefix = (nextPrefix: string) => {
     setPrefix(nextPrefix);
-    setSearch('');
-    setSearchInput('');
+    setSearchImmediately('');
     clearSelection();
   };
 
@@ -699,81 +619,17 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     }
   };
 
-  const syncSortToUrl = React.useCallback(
-    (nextSortBy: SourceSortBy, nextSortOrder: SourceSortOrder) => {
-      const params = new URLSearchParams(searchParamsKey);
-      if (nextSortBy === 'name') {
-        params.delete('sort_by');
-      } else {
-        params.set('sort_by', nextSortBy);
-      }
-      if (nextSortOrder === 'asc') {
-        params.delete('sort_order');
-      } else {
-        params.set('sort_order', nextSortOrder);
-      }
-      const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-    },
-    [pathname, router, searchParamsKey],
-  );
-
-  React.useEffect(() => {
-    const params = new URLSearchParams(searchParamsKey);
-    const currentSearch = params.get('search') ?? '';
-    const nextSearch = search.trim();
-    if (nextSearch === currentSearch) return;
-    if (nextSearch) {
-      params.set('search', nextSearch);
-    } else {
-      params.delete('search');
-    }
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [pathname, router, search, searchParamsKey]);
-
-  React.useEffect(() => {
-    const params = new URLSearchParams(searchParamsKey);
-    const currentLibraryId = params.get('library_id');
-    if (!selectedLibraryId) {
-      if (!currentLibraryId) return;
-      params.delete('library_id');
-    } else if (currentLibraryId !== selectedLibraryId) {
-      params.set('library_id', selectedLibraryId);
-    } else {
-      return;
-    }
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [pathname, router, searchParamsKey, selectedLibraryId]);
-
-  React.useEffect(() => {
-    const params = new URLSearchParams(searchParamsKey);
-    const currentPrefix = normalizeBrowsePrefix(params.get('prefix'));
-    const nextPrefix = normalizeBrowsePrefix(prefix);
-    if (currentPrefix === nextPrefix) return;
-    if (!nextPrefix) {
-      params.delete('prefix');
-    } else {
-      params.set('prefix', nextPrefix);
-    }
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [pathname, prefix, router, searchParamsKey]);
-
   const handleSortByChange = React.useCallback(
     (value: SourceSortBy) => {
-      setSortBy(value);
-      syncSortToUrl(value, sortOrder);
+      updateSort(value, sortOrder);
     },
-    [sortOrder, syncSortToUrl],
+    [sortOrder, updateSort],
   );
 
   const handleSortOrderToggle = React.useCallback(() => {
     const nextOrder: SourceSortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-    setSortOrder(nextOrder);
-    syncSortToUrl(sortBy, nextOrder);
-  }, [sortBy, sortOrder, syncSortToUrl]);
+    updateSort(sortBy, nextOrder);
+  }, [sortBy, sortOrder, updateSort]);
 
   const loadNextObjectsPage = React.useCallback(() => {
     if (objectsQuery.hasNextPage && !objectsQuery.isFetchingNextPage) {
@@ -873,7 +729,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
             <div className="hidden lg:flex items-center gap-2">
               <Select
                 value={sortBy}
-                onValueChange={(value) => handleSortByChange(parseSortBy(value))}
+                onValueChange={(value) => handleSortByChange(parseSourceSortBy(value))}
               >
                 <SelectTrigger className="h-9 w-[180px]" data-testid="sources__sort-by">
                   <SelectValue />
@@ -1049,8 +905,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                       onClick={() => {
                         setSelectedLibraryId(lib.id);
                         setPrefix('');
-                        setSearch('');
-                        setSearchInput('');
+                        setSearchImmediately('');
                         clearSelection();
                       }}
                       onKeyDown={(e) => {
@@ -1058,8 +913,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                         e.preventDefault();
                         setSelectedLibraryId(lib.id);
                         setPrefix('');
-                        setSearch('');
-                        setSearchInput('');
+                        setSearchImmediately('');
                         clearSelection();
                       }}
                       className={cn(

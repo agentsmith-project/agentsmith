@@ -65,6 +65,7 @@ export function useUploadSourceObject() {
       file: File;
       prefix?: string;
       overwrite?: boolean;
+      signal?: AbortSignal;
       onProgress?: (progress: number) => void;
     }) =>
       sourcesAPI.uploadObject(
@@ -74,6 +75,7 @@ export function useUploadSourceObject() {
         vars.file,
         vars.prefix,
         vars.overwrite,
+        vars.signal,
         vars.onProgress,
       ),
     onSuccess: async (_, vars) => {

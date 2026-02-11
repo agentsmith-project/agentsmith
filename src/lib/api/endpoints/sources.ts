@@ -452,6 +452,7 @@ export class SourcesAPI {
     file: File,
     prefix?: string,
     overwrite?: boolean,
+    signal?: AbortSignal,
     onProgress?: (progress: number) => void,
   ): Promise<SourceObjectItem> {
     const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/upload`;
@@ -504,6 +505,15 @@ export class SourcesAPI {
 
       xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
       xhr.addEventListener('abort', () => reject(new Error('Upload was aborted')));
+
+      const handleAbort = () => xhr.abort();
+      if (signal) {
+        if (signal.aborted) {
+          xhr.abort();
+          return;
+        }
+        signal.addEventListener('abort', handleAbort, { once: true });
+      }
 
       xhr.open('POST', url);
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);

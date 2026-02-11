@@ -84,6 +84,25 @@ test.describe('Sources Page (object browser)', () => {
     await expect(authedPage.getByTestId('sources__object-row').filter({ hasText: 'e2e-renamed.txt' }).first()).toBeVisible();
   });
 
+  test('can cancel an in-progress upload', async ({ authedPage }) => {
+    await authedPage.getByTestId('sources__upload').click();
+    await authedPage.locator('input[type="file"]').setInputFiles([
+      {
+        name: 'slow-upload.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('slow-upload-content'),
+      },
+    ]);
+
+    await expect(authedPage.getByTestId('sources__upload-progress')).toBeVisible();
+    await authedPage.getByTestId('sources__upload-cancel').click();
+
+    await expect(authedPage.getByTestId('sources__upload-progress')).toHaveCount(0);
+    await expect(
+      authedPage.getByTestId('sources__object-row').filter({ hasText: 'slow-upload.txt' }).first(),
+    ).toHaveCount(0);
+  });
+
   test('handles upload conflicts with keep-both rename', async ({ authedPage }) => {
     await authedPage.getByTestId('sources__upload').click();
     await authedPage.locator('input[type="file"]').setInputFiles([

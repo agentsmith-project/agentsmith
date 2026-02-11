@@ -49,6 +49,7 @@ const sourceLibraries = [
 ];
 
 const nowIso = () => new Date().toISOString();
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const objectDbByLibraryId: Record<string, ObjectRow[]> = {
   lib_shared_default: [
@@ -304,6 +305,10 @@ export const sourceHandlers = [
         { error_code: 'invalid_request', message: 'file_is_required' },
         { status: 400 },
       );
+    }
+
+    if (file.name.includes('slow-upload')) {
+      await sleep(1200);
     }
 
     const key = `${prefix}${file.name}`;

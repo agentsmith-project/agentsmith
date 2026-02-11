@@ -279,6 +279,10 @@ Playwright (`e2e/sources.spec.ts`) must cover:
 - Upload conflict handling (`destination_exists`) with two explicit choices:
   - overwrite existing object
   - keep both by auto-renaming (`name (n).ext`)
+- Upload progress and cancel:
+  - frontend shows per-file upload progress
+  - user can cancel current upload
+  - cancellation aborts the in-flight upload request without partial write in object list
 
 Integration coverage (`e2e/integration-sources.spec.ts`) must validate the same flow against
 real Node API + MinIO + Keycloak (no MSW).

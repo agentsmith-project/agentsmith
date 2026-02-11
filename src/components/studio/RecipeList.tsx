@@ -62,11 +62,8 @@ export function RecipeList({
 
   return (
     <div className="h-full flex flex-col bg-background" data-testid="studio__recipe-list">
-      <div className="px-4 py-3 md:px-5 border-b border-subtle flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">AI Studio</h1>
-          <p className="text-sm text-tertiary mt-1">Manage your tasks and collaborate with agents</p>
-        </div>
+      <div className="px-4 py-3 md:px-5 border-b border-subtle flex items-center justify-between gap-3">
+        <h1 className="text-[28px] font-semibold leading-none text-foreground">AI Studio</h1>
         <Button
           onClick={() => setCreateDialogOpen(true)}
           disabled={!canCreateRecipe}

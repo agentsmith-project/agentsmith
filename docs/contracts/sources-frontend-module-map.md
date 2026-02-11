@@ -107,7 +107,8 @@ Contract source of truth for this rewrite:
  - batch-result dialog with failed key retry (delete/download)
  - continuation-token infinite pagination + virtualized list rendering (`react-virtuoso`)
  - backend-driven search/sort query for object list (no client-only filtering drift)
- - toolbar sorting controls (`sort_by` + `sort_order`) are first-class query inputs
+ - object-table header click sorting (`sort_by` + `sort_order`) is the primary sorting interaction
+ - folder search input is placed in the object browser header (right side), not global top toolbar
  - details panel action wording uses “object path” instead of “object key” for non-technical clarity
  - details panel supports temporary share-link generation (`15m/1h/24h/7d`) and copy link
  - preview supports inline mode and expanded modal mode for image/pdf/text

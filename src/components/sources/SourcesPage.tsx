@@ -32,7 +32,6 @@ import { useTranslations } from 'next-intl';
 import { Virtuoso } from 'react-virtuoso';
 
 import { cn } from '@/lib/utils';
-import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { Button } from '@/components/ui/button';
@@ -469,31 +468,14 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   return (
     <PageLayout
       contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
-      header={
-        <PageHeader
-          title={t('title')}
-          actions={showLayoutToggle ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={onToggleLayoutMode}
-              title={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
-              aria-label={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
-              data-testid="sources__layout-toggle"
-              data-state={layoutMode}
-            >
-              <PanelRight className="h-4 w-4" />
-              {layoutMode === 'ultrawide' ? t('file_manager.layout_ultrawide') : t('file_manager.layout_standard')}
-            </Button>
-          ) : null}
-        />
-      }
       toolbar={(
         <PageToolbar>
           <div className="w-full">
             <div className="flex items-center gap-2 flex-wrap">
+              <div className="mr-3 flex items-center">
+                <h1 className="text-[28px] font-semibold leading-none text-foreground">{t('title')}</h1>
+              </div>
+
               <div className="inline-flex items-center rounded-lg border border-subtle bg-surface-high/50 p-1" data-testid="sources__selection-mode">
                 <Button
                   type="button"
@@ -580,6 +562,22 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               </div>
 
               <div className="ml-auto flex items-center gap-2">
+                {showLayoutToggle ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={onToggleLayoutMode}
+                    title={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
+                    aria-label={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
+                    data-testid="sources__layout-toggle"
+                    data-state={layoutMode}
+                  >
+                    <PanelRight className="h-4 w-4" />
+                    {layoutMode === 'ultrawide' ? t('file_manager.layout_ultrawide') : t('file_manager.layout_standard')}
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"

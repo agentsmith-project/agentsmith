@@ -38,7 +38,7 @@ import { ThreadsPane } from '@/components/chat/ThreadsPane';
 import { ChatMainPane } from '@/components/chat/ChatMainPane';
 import { ChatDeleteDialog } from '@/components/chat/ChatDeleteDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { PageHeader } from '@/components/layout/PageHeader';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
@@ -337,11 +337,11 @@ export default function ChatPage({ params }: ChatPageProps) {
       <PageLayout
         density="immersive"
         contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
-        header={
-          <PageHeader
-            title={t('title')}
-            actions={
-              showLayoutToggle ? (
+        toolbar={(
+          <PageToolbar>
+            <div className="flex w-full items-center justify-between gap-3">
+              <h1 className="text-[28px] font-semibold leading-none text-foreground">{t('title')}</h1>
+              {showLayoutToggle ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -356,10 +356,10 @@ export default function ChatPage({ params }: ChatPageProps) {
                   <PanelRight className="w-4 h-4" />
                   {layoutMode === 'ultrawide' ? t('header.layout_ultrawide') : t('header.layout_standard')}
                 </Button>
-              ) : null
-            }
-          />
-        }
+              ) : null}
+            </div>
+          </PageToolbar>
+        )}
       >
         <div
           className={cn(

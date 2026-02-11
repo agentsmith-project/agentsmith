@@ -8,6 +8,7 @@ import {
   DeleteSourceObjectsRequestSchema,
   ListSourceObjectsQuerySchema,
   MoveSourceObjectRequestSchema,
+  SourceObjectShareLinkCreateRequestSchema,
   SourceObjectDownloadQuerySchema,
   CreateProjectRequestSchema,
   CreateSourceLibraryRequestSchema,
@@ -331,8 +332,9 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     const workspaceId = route.workspaceId;
     const projectId = route.projectId;
     const libraryId = route.libraryId;
-    const contentType = req.headers['content-type'] ?? '';
-    if (!contentType.includes('multipart/form-data')) {
+    const rawContentType = req.headers['content-type'];
+    const contentType = Array.isArray(rawContentType) ? rawContentType.join(';') : rawContentType ?? '';
+    if (!contentType.toLowerCase().includes('multipart/form-data')) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'multipart_form_data_required' });
       return true;
     }
@@ -420,6 +422,19 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       key,
     });
     json(res, 200, meta);
+    return true;
+  }
+
+  if (route.kind === 'sourceLibraryObjectsShareLink' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    const raw = await readBody(req);
+    const input = SourceObjectShareLinkCreateRequestSchema.parse(raw);
+    const shareLink = await deps.createSourceObjectShareLinkUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      input,
+    });
+    json(res, 200, shareLink);
     return true;
   }
 

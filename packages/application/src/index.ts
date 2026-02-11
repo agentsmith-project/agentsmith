@@ -8,6 +8,8 @@ import {
   DeleteSourceObjectsRequestSchema,
   ListSourceObjectsResponseSchema,
   MoveSourceObjectRequestSchema,
+  SourceObjectShareLinkCreateRequestSchema,
+  SourceObjectShareLinkResponseSchema,
   SourceObjectMetaResponseSchema,
   UploadSourceObjectResponseSchema,
   UpdateSourceLibraryRequestSchema,
@@ -26,6 +28,8 @@ import {
   type ListSourceLibrariesResponse,
   type ListSourcesResponse,
   type ProjectDTO,
+  type SourceObjectShareLinkCreateRequest,
+  type SourceObjectShareLinkResponse,
   type SourceObjectMetaResponse,
   type SourceLibraryDTO,
   type SourceDTO,
@@ -153,6 +157,11 @@ export interface GetSourceObjectMetaCommand extends ListSourceLibrariesCommand {
 }
 
 export type DownloadSourceObjectCommand = GetSourceObjectMetaCommand;
+
+export interface CreateSourceObjectShareLinkCommand extends ListSourceLibrariesCommand {
+  libraryId: string;
+  input: SourceObjectShareLinkCreateRequest;
+}
 
 export interface SourceAIReadyJob {
   id: string;
@@ -356,6 +365,14 @@ function basenameFromKey(key: string): string {
   const cleaned = key.endsWith('/') ? key.slice(0, -1) : key;
   const idx = cleaned.lastIndexOf('/');
   return idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
+}
+
+function addSecondsToIso(iso: string, seconds: number): string {
+  const base = Date.parse(iso);
+  if (!Number.isFinite(base)) {
+    throw new Error('invalid_clock');
+  }
+  return new Date(base + seconds * 1000).toISOString();
 }
 
 function decodeBase64(value: string): Uint8Array {
@@ -856,6 +873,40 @@ export class DownloadSourceObjectUseCase {
       etag: object.etag,
       lastModified: object.lastModified,
     };
+  }
+}
+
+export class CreateSourceObjectShareLinkUseCase {
+  constructor(
+    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly objectStore: ObjectStorePort,
+    private readonly clock: ClockPort,
+    private readonly bucket: string,
+  ) {}
+
+  async execute(command: CreateSourceObjectShareLinkCommand): Promise<SourceObjectShareLinkResponse> {
+    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+    ));
+    const input = SourceObjectShareLinkCreateRequestSchema.parse(command.input);
+    const key = normalizeKey(input.key);
+    const expiresInSeconds = input.expires_in_seconds ?? 900;
+    const fullKey = joinObjectKey(library.object_prefix, key);
+    await this.objectStore.statObject(this.bucket, fullKey);
+    const url = await this.objectStore.presignedGetObject(
+      this.bucket,
+      fullKey,
+      expiresInSeconds,
+    );
+    const now = this.clock.nowIso();
+    return SourceObjectShareLinkResponseSchema.parse({
+      key,
+      url,
+      expires_at: addSecondsToIso(now, expiresInSeconds),
+      expires_in_seconds: expiresInSeconds,
+    });
   }
 }
 

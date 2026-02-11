@@ -202,6 +202,23 @@ export const SourceObjectDownloadQuerySchema = z.object({
   key: z.string().min(1),
 });
 
+export const SourceObjectShareLinkCreateRequestSchema = z.object({
+  key: z.string().min(1),
+  expires_in_seconds: z
+    .number()
+    .int()
+    .min(60)
+    .max(604800)
+    .optional(),
+});
+
+export const SourceObjectShareLinkResponseSchema = z.object({
+  key: z.string().min(1),
+  url: z.string().url(),
+  expires_at: z.string().datetime(),
+  expires_in_seconds: z.number().int().min(60).max(604800),
+});
+
 export const AIReadyJobTypeSchema = z.enum(['document_ingest']);
 export const AIReadyJobStatusSchema = z.enum([
   'queued',
@@ -255,5 +272,7 @@ export type DeleteSourceObjectsResponse = z.infer<typeof DeleteSourceObjectsResp
 export type MoveSourceObjectRequest = z.infer<typeof MoveSourceObjectRequestSchema>;
 export type SourceObjectMetaResponse = z.infer<typeof SourceObjectMetaResponseSchema>;
 export type SourceObjectDownloadQuery = z.infer<typeof SourceObjectDownloadQuerySchema>;
+export type SourceObjectShareLinkCreateRequest = z.infer<typeof SourceObjectShareLinkCreateRequestSchema>;
+export type SourceObjectShareLinkResponse = z.infer<typeof SourceObjectShareLinkResponseSchema>;
 export type AIReadyJobDTO = z.infer<typeof AIReadyJobSchema>;
 export type CreateAIReadyJobRequest = z.infer<typeof CreateAIReadyJobRequestSchema>;

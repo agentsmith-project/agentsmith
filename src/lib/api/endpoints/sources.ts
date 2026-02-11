@@ -19,6 +19,7 @@ import type {
   SourceObjectsListParams,
   SourceObjectsListResponse,
   SourceObjectMeta,
+  SourceObjectShareLink,
   SourceObjectItem,
 } from '../types';
 import { API_BASE } from '../client';
@@ -580,6 +581,18 @@ export class SourcesAPI {
   ): Promise<SourceObjectMeta> {
     return this.client.get<SourceObjectMeta>(
       `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/meta?key=${encodeURIComponent(key)}`,
+    );
+  }
+
+  async createObjectShareLink(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    payload: { key: string; expires_in_seconds?: number },
+  ): Promise<SourceObjectShareLink> {
+    return this.client.post<SourceObjectShareLink>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/share-link`,
+      payload,
     );
   }
 }

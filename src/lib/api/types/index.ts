@@ -557,6 +557,13 @@ export interface SourceObjectMeta {
   user_metadata?: Record<string, string>;
 }
 
+export interface SourceObjectShareLink {
+  key: string;
+  url: string;
+  expires_at: string;
+  expires_in_seconds: number;
+}
+
 // ============================================================
 // Error Types
 // ============================================================

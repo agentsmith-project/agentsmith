@@ -71,6 +71,45 @@ function apiFetch(baseUrl: string, path: string, init?: RequestInit): Promise<Re
   });
 }
 
+function buildMultipartBody(
+  fields: Array<{ name: string; value: string }>,
+  file: { fieldName: string; filename: string; contentType: string; content: Uint8Array },
+): { body: Uint8Array; contentType: string } {
+  const boundary = `----mbos-boundary-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+
+  for (const field of fields) {
+    chunks.push(encoder.encode(`--${boundary}\r\n`));
+    chunks.push(encoder.encode(`Content-Disposition: form-data; name="${field.name}"\r\n\r\n`));
+    chunks.push(encoder.encode(field.value));
+    chunks.push(encoder.encode('\r\n'));
+  }
+
+  chunks.push(encoder.encode(`--${boundary}\r\n`));
+  chunks.push(
+    encoder.encode(
+      `Content-Disposition: form-data; name="${file.fieldName}"; filename="${file.filename}"\r\n`,
+    ),
+  );
+  chunks.push(encoder.encode(`Content-Type: ${file.contentType}\r\n\r\n`));
+  chunks.push(file.content);
+  chunks.push(encoder.encode('\r\n'));
+  chunks.push(encoder.encode(`--${boundary}--\r\n`));
+
+  const size = chunks.reduce((acc, cur) => acc + cur.byteLength, 0);
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return {
+    body,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
+
 function startUpstreamServer(): { server: Server; baseUrl: string; lastBody: () => unknown } {
   let body: unknown = null;
   const server = http.createServer((req, res) => {
@@ -532,15 +571,22 @@ describe('api-entry-node projects routes', () => {
     );
     expect(createFolderRes.status).toBe(201);
 
-    const form = new FormData();
-    form.append('prefix', 'docs/');
-    form.append('file', new Blob(['hello object'], { type: 'text/plain' }), 'readme.txt');
+    const form = buildMultipartBody(
+      [{ name: 'prefix', value: 'docs/' }],
+      {
+        fieldName: 'file',
+        filename: 'readme.txt',
+        contentType: 'text/plain',
+        content: new TextEncoder().encode('hello object'),
+      },
+    );
     const uploadRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
       {
         method: 'POST',
-        body: form,
+        headers: { 'content-type': form.contentType },
+        body: form.body,
       },
     );
     expect(uploadRes.status).toBe(201);
@@ -548,15 +594,22 @@ describe('api-entry-node projects routes', () => {
     expect(uploaded.key).toBe('docs/readme.txt');
     expect(uploaded.content_type).toBe('text/plain');
 
-    const cnForm = new FormData();
-    cnForm.append('prefix', 'docs/');
-    cnForm.append('file', new Blob(['binary'], { type: 'application/octet-stream' }), '敲冰块.nes');
+    const cnForm = buildMultipartBody(
+      [{ name: 'prefix', value: 'docs/' }],
+      {
+        fieldName: 'file',
+        filename: '敲冰块.nes',
+        contentType: 'application/octet-stream',
+        content: new TextEncoder().encode('binary'),
+      },
+    );
     const cnUploadRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
       {
         method: 'POST',
-        body: cnForm,
+        headers: { 'content-type': cnForm.contentType },
+        body: cnForm.body,
       },
     );
     expect(cnUploadRes.status).toBe(201);
@@ -599,6 +652,30 @@ describe('api-entry-node projects routes', () => {
     const meta = (await metaRes.json()) as { key: string; size_bytes: number };
     expect(meta.key).toBe('docs/readme.txt');
     expect(meta.size_bytes).toBeGreaterThan(0);
+
+    const shareRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/share-link`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          key: 'docs/readme.txt',
+          expires_in_seconds: 600,
+        }),
+      },
+    );
+    expect(shareRes.status).toBe(200);
+    const shared = (await shareRes.json()) as {
+      key: string;
+      url: string;
+      expires_in_seconds: number;
+      expires_at: string;
+    };
+    expect(shared.key).toBe('docs/readme.txt');
+    expect(shared.url).toContain(encodeURIComponent('readme.txt'));
+    expect(shared.expires_in_seconds).toBe(600);
+    expect(new Date(shared.expires_at).toString()).not.toBe('Invalid Date');
 
     const moveRes = await apiFetch(
       baseUrl,

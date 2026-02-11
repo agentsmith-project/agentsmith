@@ -118,6 +118,13 @@ test.describe('sources integration flow', () => {
     await movedCheckbox.check();
     await expect(movedCheckbox).toBeChecked();
 
+    await expect(page.getByTestId('sources__details-panel')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('sources__details-share').click();
+    await expect(page.getByTestId('sources__dialog__share-link')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('sources__share-generate').click();
+    await expect(page.getByTestId('sources__share-link-value')).toBeVisible({ timeout: 30_000 });
+    await page.keyboard.press('Escape');
+
     await page.getByTestId('sources__delete').click();
     await page.getByTestId('sources__dialog__delete').getByRole('button', { name: /Delete|删除/i }).click();
     await expect(page.locator('text=integration-note-renamed.txt')).toHaveCount(0);

@@ -4,6 +4,7 @@ import type {
   CancelAIReadyJobUseCase,
   CancelSourceAIReadyUseCase,
   CreateSourceFolderUseCase,
+  CreateSourceObjectShareLinkUseCase,
   CreateAIReadyJobUseCase,
   CreateProjectUseCase,
   CreateSourceLibraryUseCase,
@@ -45,6 +46,7 @@ export interface NodeApiDeps {
   createAIReadyJobUseCase: CreateAIReadyJobUseCase;
   createSourceLibraryUseCase: CreateSourceLibraryUseCase;
   createSourceFolderUseCase: CreateSourceFolderUseCase;
+  createSourceObjectShareLinkUseCase: CreateSourceObjectShareLinkUseCase;
   createProjectUseCase: CreateProjectUseCase;
   createSourceUseCase: CreateSourceUseCase;
   uploadSourceObjectUseCase: UploadSourceObjectUseCase;

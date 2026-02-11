@@ -372,6 +372,33 @@ export const sourceHandlers = [
     });
   }),
 
+  http.post('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects/share-link', async ({ params, request }) => {
+    const libraryId = String(params.id ?? '');
+    const body = (await request.json().catch(() => ({}))) as { key?: string; expires_in_seconds?: number };
+    const key = String(body.key ?? '').trim();
+    const expiresInSeconds = Number(body.expires_in_seconds ?? 900);
+    if (!key) {
+      return HttpResponse.json({ error_code: 'invalid_key', message: 'invalid_key' }, { status: 400 });
+    }
+    if (!Number.isFinite(expiresInSeconds) || expiresInSeconds < 60 || expiresInSeconds > 604800) {
+      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'invalid_expiry' }, { status: 400 });
+    }
+    const db = objectDbByLibraryId[libraryId] ?? [];
+    const obj = db.find((r) => r.kind === 'object' && r.key === key) as Extract<ObjectRow, { kind: 'object' }> | undefined;
+    if (!obj) {
+      return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
+    }
+
+    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+    const url = `https://mock-minio.local/${encodeURIComponent(libraryId)}/${encodeURIComponent(key)}?X-Amz-Expires=${expiresInSeconds}&X-Amz-Signature=mock`;
+    return HttpResponse.json({
+      key,
+      url,
+      expires_at: expiresAt,
+      expires_in_seconds: expiresInSeconds,
+    });
+  }),
+
   http.post('/api/v1/workspaces/:ws/projects/:prj/source-libraries/:id/objects/upload', async ({ params, request }) => {
     const libraryId = String(params.id ?? '');
     const form = await request.formData();

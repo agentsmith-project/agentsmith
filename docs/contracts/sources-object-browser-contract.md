@@ -255,6 +255,34 @@ Response:
 }
 ```
 
+### 2.9 Create Temporary Share Link
+
+`POST /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/objects/share-link`
+
+Request:
+```json
+{
+  "key": "docs/readme.md",
+  "expires_in_seconds": 3600
+}
+```
+
+Rules:
+
+- `key` uses the same validation as download/meta (`400 invalid_key`).
+- `expires_in_seconds` is optional, default `900`, valid range `60..604800`.
+- Backend returns a time-limited pre-signed URL (S3-compatible semantics).
+
+Response:
+```json
+{
+  "key": "docs/readme.md",
+  "url": "https://...signed-url...",
+  "expires_at": "2026-02-11T12:00:00Z",
+  "expires_in_seconds": 3600
+}
+```
+
 ## 3. Error Model
 
 Errors must be JSON:
@@ -332,3 +360,10 @@ Behavior rules:
 - copy-key action
 
 5. No migration-time fallback flags are introduced for this behavior.
+
+6. Overview tab action set:
+- download object
+- copy object path (key)
+- generate temporary share link
+
+7. Preview section supports expanded modal preview for image/pdf/text.

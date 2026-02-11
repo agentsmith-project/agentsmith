@@ -2,10 +2,14 @@
 
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, Download, FileText, FileType2, Image as ImageIcon } from 'lucide-react';
+import { Copy, Download, Expand, FileText, FileType2, Image as ImageIcon, Link2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/toast';
 import { getApiClient, SourcesAPI } from '@/lib/api';
@@ -58,6 +62,12 @@ function formatBytes(bytes: number) {
   }
   const precision = value >= 100 || unitIdx === 0 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(precision)} ${units[unitIdx]}`;
+}
+
+function formatExpiry(iso: string) {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  return new Date(ms).toLocaleString();
 }
 
 function resolvePreviewKind(contentType: string, key: string): PreviewKind {
@@ -135,6 +145,12 @@ export function SourceObjectDetailsPanel({
 
   const [objectUrl, setObjectUrl] = React.useState<string | null>(null);
   const [textPreview, setTextPreview] = React.useState('');
+  const [previewModalOpen, setPreviewModalOpen] = React.useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = React.useState(false);
+  const [shareExpirySeconds, setShareExpirySeconds] = React.useState('3600');
+  const [shareLinkValue, setShareLinkValue] = React.useState<string | null>(null);
+  const [shareExpiresAt, setShareExpiresAt] = React.useState<string | null>(null);
+  const [creatingShareLink, setCreatingShareLink] = React.useState(false);
 
   React.useEffect(() => {
     if (!previewQuery.data || !previewSupportsInline(previewKind)) {
@@ -177,7 +193,12 @@ export function SourceObjectDetailsPanel({
     [objectUrl],
   );
 
-  const copyKey = React.useCallback(async (key: string) => {
+  React.useEffect(() => {
+    setShareLinkValue(null);
+    setShareExpiresAt(null);
+  }, [selectedLibraryId, selectedObject?.key]);
+
+  const copyPath = React.useCallback(async (key: string) => {
     try {
       await navigator.clipboard.writeText(key);
       toast.success(t('file_manager.key_copied'));
@@ -185,6 +206,37 @@ export function SourceObjectDetailsPanel({
       toast.error(t('file_manager.key_copy_failed'));
     }
   }, [t]);
+
+  const copyShareLink = React.useCallback(async () => {
+    if (!shareLinkValue) return;
+    try {
+      await navigator.clipboard.writeText(shareLinkValue);
+      toast.success(t('file_manager.share_link_copied'));
+    } catch {
+      toast.error(t('file_manager.share_link_copy_failed'));
+    }
+  }, [shareLinkValue, t]);
+
+  const createShareLink = React.useCallback(async () => {
+    if (!selectedLibraryId || !selectedObject) return;
+    setCreatingShareLink(true);
+    try {
+      const expires = Number.parseInt(shareExpirySeconds, 10);
+      const api = new SourcesAPI(getApiClient());
+      const shared = await api.createObjectShareLink(workspaceId, projectId, selectedLibraryId, {
+        key: selectedObject.key,
+        expires_in_seconds: Number.isFinite(expires) ? expires : undefined,
+      });
+      setShareLinkValue(shared.url);
+      setShareExpiresAt(shared.expires_at);
+      toast.success(t('file_manager.share_link_created'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('file_manager.share_link_failed');
+      toast.error(message);
+    } finally {
+      setCreatingShareLink(false);
+    }
+  }, [projectId, selectedLibraryId, selectedObject, shareExpirySeconds, t, workspaceId]);
 
   const renderEmpty = () => {
     if (!selectedLibraryId || selected.length === 0) {
@@ -233,9 +285,9 @@ export function SourceObjectDetailsPanel({
 
       <div className="flex-1 min-h-0 overflow-auto p-3">
         <Tabs value={tab} onValueChange={(v) => setTab(v as 'overview' | 'technical')} className="w-full" data-testid="sources__details-tabs">
-          <TabsList className="w-full grid grid-cols-2 h-9">
-            <TabsTrigger value="overview" data-testid="sources__details-tab--overview">{t('file_manager.details_overview')}</TabsTrigger>
-            <TabsTrigger value="technical" data-testid="sources__details-tab--technical">{t('file_manager.details_technical')}</TabsTrigger>
+          <TabsList className="w-full grid grid-cols-2 h-9 rounded-md border border-subtle bg-surface-high/40 p-0.5 overflow-hidden">
+            <TabsTrigger className="h-full text-xs sm:text-sm" value="overview" data-testid="sources__details-tab--overview">{t('file_manager.details_overview')}</TabsTrigger>
+            <TabsTrigger className="h-full text-xs sm:text-sm" value="technical" data-testid="sources__details-tab--technical">{t('file_manager.details_technical')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-3 space-y-3">
@@ -260,9 +312,20 @@ export function SourceObjectDetailsPanel({
                   <Download className="h-3.5 w-3.5" />
                   {t('file_manager.download')}
                 </Button>
-                <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => copyKey(meta.key)}>
+                <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => copyPath(meta.key)}>
                   <Copy className="h-3.5 w-3.5" />
                   {t('file_manager.copy_key')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setShareDialogOpen(true)}
+                  data-testid="sources__details-share"
+                >
+                  <Link2 className="h-3.5 w-3.5" />
+                  {t('file_manager.share_link')}
                 </Button>
               </div>
             </div>
@@ -275,6 +338,7 @@ export function SourceObjectDetailsPanel({
               objectUrl={objectUrl}
               textPreview={textPreview}
               onDownload={onDownload}
+              onExpand={() => setPreviewModalOpen(true)}
               t={t}
             />
           </TabsContent>
@@ -299,13 +363,84 @@ export function SourceObjectDetailsPanel({
               <Button type="button" variant="outline" size="sm" className="h-8" onClick={onDownload}>
                 {t('file_manager.download')}
               </Button>
-              <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => copyKey(meta.key)}>
+              <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => copyPath(meta.key)}>
                 {t('file_manager.copy_key')}
               </Button>
             </div>
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent className="max-w-lg" data-testid="sources__dialog__share-link">
+          <DialogHeader>
+            <DialogTitle>{t('file_manager.share_link')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-xs text-tertiary break-all">{meta.key}</div>
+            <div className="space-y-1.5">
+              <Label htmlFor="share-expiry">{t('file_manager.share_link_expiry')}</Label>
+              <Select value={shareExpirySeconds} onValueChange={setShareExpirySeconds}>
+                <SelectTrigger id="share-expiry" data-testid="sources__share-expiry">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="900">{t('file_manager.share_expiry_15m')}</SelectItem>
+                  <SelectItem value="3600">{t('file_manager.share_expiry_1h')}</SelectItem>
+                  <SelectItem value="86400">{t('file_manager.share_expiry_24h')}</SelectItem>
+                  <SelectItem value="604800">{t('file_manager.share_expiry_7d')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button type="button" onClick={() => void createShareLink()} disabled={creatingShareLink} data-testid="sources__share-generate">
+                {creatingShareLink ? t('file_manager.generating') : t('file_manager.generate_link')}
+              </Button>
+              {shareLinkValue && (
+                <Button type="button" variant="outline" onClick={() => void copyShareLink()} data-testid="sources__share-copy">
+                  {t('file_manager.copy_link')}
+                </Button>
+              )}
+            </div>
+            {shareLinkValue && (
+              <div className="space-y-2">
+                <Input readOnly value={shareLinkValue} data-testid="sources__share-link-value" />
+                <div className="text-xs text-tertiary">
+                  {t('file_manager.share_link_expires_at', { time: formatExpiry(shareExpiresAt ?? '') })}
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
+        <DialogContent className="max-w-6xl h-[86vh] flex flex-col" data-testid="sources__dialog__preview-expand">
+          <DialogHeader>
+            <DialogTitle className="truncate">{filename}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0">
+            {previewKind === 'image' && objectUrl ? (
+              <div className="h-full rounded border border-subtle bg-black/20 p-3">
+                <img src={objectUrl} alt={basename(meta.key)} className="h-full w-full object-contain rounded" />
+              </div>
+            ) : previewKind === 'pdf' && objectUrl ? (
+              <iframe src={objectUrl} title={basename(meta.key)} className="h-full w-full rounded border border-subtle bg-surface" />
+            ) : previewKind === 'text' ? (
+              <div className="h-full rounded border border-subtle bg-surface p-3 overflow-auto">
+                <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words text-primary">
+                  {textPreview || t('file_manager.preview_loading')}
+                </pre>
+              </div>
+            ) : (
+              <div className="h-full rounded border border-subtle bg-surface flex flex-col items-center justify-center gap-2 text-tertiary">
+                <FileType2 className="h-5 w-5" />
+                <span>{t('file_manager.preview_unsupported')}</span>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -335,6 +470,7 @@ function PreviewSection({
   objectUrl,
   textPreview,
   onDownload,
+  onExpand,
   t,
 }: {
   meta: SourceObjectMeta;
@@ -344,11 +480,21 @@ function PreviewSection({
   objectUrl: string | null;
   textPreview: string;
   onDownload: () => void;
+  onExpand: () => void;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const expandable = previewKind !== 'none' && !previewLoading && !previewError;
   return (
     <div className="rounded-md border border-subtle bg-surface-high/20 p-3 space-y-2" data-testid="sources__details-preview">
-      <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.preview')}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.preview')}</div>
+        {expandable && (
+          <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={onExpand} data-testid="sources__preview-expand">
+            <Expand className="h-3.5 w-3.5" />
+            {t('file_manager.preview_expand')}
+          </Button>
+        )}
+      </div>
 
       {previewKind === 'none' ? (
         <div className="h-40 rounded border border-subtle bg-surface flex flex-col items-center justify-center text-tertiary gap-2">

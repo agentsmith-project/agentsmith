@@ -263,7 +263,23 @@ test.describe('Sources Page (object browser)', () => {
 
     await expect(authedPage.getByTestId('sources__selection-summary')).toBeVisible();
     await authedPage.getByTestId('sources__clear-selection').click();
-    await expect(authedPage.getByTestId('sources__selection-summary')).toHaveCount(0);
+    await expect(authedPage.getByTestId('sources__selection-summary')).toHaveClass(/opacity-0/);
+  });
+
+  test('details panel can generate object share links and expand preview', async ({ authedPage }) => {
+    await locateFile(authedPage, 'README.txt');
+    const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
+    await row.getByRole('button').click();
+
+    await authedPage.getByTestId('sources__details-share').click();
+    const shareDialog = authedPage.getByTestId('sources__dialog__share-link');
+    await expect(shareDialog).toBeVisible();
+    await authedPage.getByTestId('sources__share-generate').click();
+    await expect(authedPage.getByTestId('sources__share-link-value')).toBeVisible();
+    await authedPage.keyboard.press('Escape');
+
+    await authedPage.getByTestId('sources__preview-expand').click();
+    await expect(authedPage.getByTestId('sources__dialog__preview-expand')).toBeVisible();
   });
 
   test('downloads multiple selected files', async ({ authedPage }) => {

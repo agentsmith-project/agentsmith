@@ -16,6 +16,7 @@ export type ProjectsRoute =
   | { kind: 'sourceLibraryObjectsDelete'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryObjectsMove'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryObjectsMeta'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'sourceLibraryObjectsShareLink'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryAIReadyJobs'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryAIReadyJobItem'; workspaceId: string; projectId: string; libraryId: string; jobId: string }
   | { kind: 'sourceLibraryAIReadyJobCancel'; workspaceId: string; projectId: string; libraryId: string; jobId: string }
@@ -191,6 +192,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(sourceLibraryObjectsMetaMatched[1]),
       projectId: decodeURIComponent(sourceLibraryObjectsMetaMatched[2]),
       libraryId: decodeURIComponent(sourceLibraryObjectsMetaMatched[3]),
+    };
+  }
+
+  const sourceLibraryObjectsShareLinkMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/([^/]+)\/objects\/share-link\/?$/,
+  );
+  if (sourceLibraryObjectsShareLinkMatched) {
+    return {
+      kind: 'sourceLibraryObjectsShareLink',
+      workspaceId: decodeURIComponent(sourceLibraryObjectsShareLinkMatched[1]),
+      projectId: decodeURIComponent(sourceLibraryObjectsShareLinkMatched[2]),
+      libraryId: decodeURIComponent(sourceLibraryObjectsShareLinkMatched[3]),
     };
   }
 

@@ -158,7 +158,7 @@ describe('SourcesPage (object browser)', () => {
 
     expect(screen.getByTestId('sources__selection-summary')).toBeInTheDocument();
     await user.click(screen.getByTestId('sources__clear-selection'));
-    expect(screen.queryByTestId('sources__selection-summary')).not.toBeInTheDocument();
+    expect(screen.getByTestId('sources__selection-summary')).toHaveClass('opacity-0');
   });
 
   it('shows dropzone overlay on drag enter', async () => {

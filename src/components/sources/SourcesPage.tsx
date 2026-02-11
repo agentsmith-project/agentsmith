@@ -438,21 +438,27 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                   </Button>
                 </div>
               )}
-              {selected.length > 0 && (
-                <div className="hidden md:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 text-xs text-primary" data-testid="sources__selection-summary">
-                  <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={clearSelection}
-                    data-testid="sources__clear-selection"
-                  >
-                    {t('file_manager.clear_selection')}
-                  </Button>
-                </div>
-              )}
+              <div
+                className={cn(
+                  'hidden xl:flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-opacity min-w-[170px]',
+                  selected.length > 0
+                    ? 'border-subtle bg-surface-high/40 text-primary opacity-100'
+                    : 'border-transparent text-transparent opacity-0 pointer-events-none select-none',
+                )}
+                data-testid="sources__selection-summary"
+              >
+                <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={clearSelection}
+                  data-testid="sources__clear-selection"
+                >
+                  {t('file_manager.clear_selection')}
+                </Button>
+              </div>
               <Button
                 type="button"
                 variant="outline"

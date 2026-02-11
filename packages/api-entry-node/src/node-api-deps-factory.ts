@@ -4,6 +4,7 @@ import {
   BatchStartSourceAIReadyUseCase,
   CancelSourceAIReadyUseCase,
   CreateSourceFolderUseCase,
+  CreateSourceObjectShareLinkUseCase,
   CreateAIReadyJobUseCase,
   CreateSourceLibraryUseCase,
   CreateProjectUseCase,
@@ -112,6 +113,12 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     createSourceFolderUseCase: new CreateSourceFolderUseCase(
       sourceLibraryRepo,
       objectStore,
+      sourceBucket,
+    ),
+    createSourceObjectShareLinkUseCase: new CreateSourceObjectShareLinkUseCase(
+      sourceLibraryRepo,
+      objectStore,
+      clock,
       sourceBucket,
     ),
     createProjectUseCase: new CreateProjectUseCase(projectRepo, new SimpleIdGenerator(), new SystemClock()),
@@ -255,6 +262,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       createSourceFolderUseCase: new CreateSourceFolderUseCase(
         sourceLibraryRepo,
         objectStore,
+        sourceBucket,
+      ),
+      createSourceObjectShareLinkUseCase: new CreateSourceObjectShareLinkUseCase(
+        sourceLibraryRepo,
+        objectStore,
+        clock,
         sourceBucket,
       ),
       createProjectUseCase: new CreateProjectUseCase(

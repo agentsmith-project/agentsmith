@@ -96,6 +96,7 @@ Contract source of truth for this rewrite:
 - in-panel preview for image/pdf/text via existing download endpoint
 5. Keep file manager interaction discoverable:
 - selected-row summary in toolbar (`count + clear`)
+- selection summary uses a stable reserved slot (no layout jump on show/hide)
 - drag-and-drop upload target on object table area
 - batch download for selected files
 - up-navigation button for non-root prefixes
@@ -105,6 +106,9 @@ Contract source of truth for this rewrite:
  - continuation-token infinite pagination + virtualized list rendering (`react-virtuoso`)
  - backend-driven search/sort query for object list (no client-only filtering drift)
  - toolbar sorting controls (`sort_by` + `sort_order`) are first-class query inputs
+ - details panel action wording uses “object path” instead of “object key” for non-technical clarity
+ - details panel supports temporary share-link generation (`15m/1h/24h/7d`) and copy link
+ - preview supports inline mode and expanded modal mode for image/pdf/text
  - selected library, folder location, and query preferences are URL-synced (`library_id`, `prefix`, `search`, `sort_by`, `sort_order`) for refresh/share reproducibility
  - URL sync implementation is centralized in `src/lib/hooks/use-sources-url-state.ts` (single source of truth)
 6. Replace/refresh test baselines:

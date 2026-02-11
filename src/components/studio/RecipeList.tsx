@@ -3,7 +3,7 @@ import * as React from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ProjectModuleHeader } from '@/components/layout/ProjectModuleHeader';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import { Plus, Loader2, ChevronRight, Clock3, Bot } from 'lucide-react';
 import { useRecipes } from '@/lib/hooks/use-recipe';
 import { RecipeCreateDialog } from './RecipeCreateDialog';
@@ -63,23 +63,20 @@ export function RecipeList({
 
   return (
     <div className="h-full flex flex-col bg-background" data-testid="studio__recipe-list">
-      <div className="px-4 py-2 md:px-5 border-b border-subtle">
-        <ProjectModuleHeader
-          title="AI Studio"
-          actions={(
-            <Button
-              onClick={() => setCreateDialogOpen(true)}
-              disabled={!canCreateRecipe}
-              data-testid="studio__create-recipe-btn"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New Task
-            </Button>
-          )}
-        />
+      <div className="px-4 pb-2 pt-3 md:px-5">
+        <PageToolbar className="justify-end">
+          <Button
+            onClick={() => setCreateDialogOpen(true)}
+            disabled={!canCreateRecipe}
+            data-testid="studio__create-recipe-btn"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Task
+          </Button>
+        </PageToolbar>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 md:px-5 md:py-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-3 md:px-5 md:pb-4">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-6 w-6 animate-spin text-tertiary" />

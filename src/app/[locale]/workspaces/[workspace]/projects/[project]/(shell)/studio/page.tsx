@@ -13,6 +13,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
 interface StudioPageProps {
@@ -26,6 +27,7 @@ export default function StudioPage({ params }: StudioPageProps) {
     project?: string;
   } | null>(null);
   const canAccessStudio = useHasPermission('project:studio:access');
+  const { layoutMode } = useProjectLayoutMode();
 
   useEffect(() => {
     params.then((p) =>
@@ -68,7 +70,7 @@ export default function StudioPage({ params }: StudioPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout density="immersive" contentWidth="full">
+      <PageLayout density="immersive" contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}>
         <RecipeList
           workspaceId={resolvedParams.workspace}
           projectId={resolvedParams.project}

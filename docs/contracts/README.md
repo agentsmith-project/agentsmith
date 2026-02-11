@@ -41,6 +41,8 @@ This directory is the single source of truth for frontend permission and governa
   - Resource Policy page module boundaries and helper ownership.
 - `projects-frontend-module-map.md`
   - Projects page module boundaries and reusable view ownership.
+- `studio-frontend-module-map.md`
+  - AI Studio list page module boundaries and compact toolbar baseline.
 
 ## Update Policy
 

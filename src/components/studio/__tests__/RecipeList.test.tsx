@@ -346,8 +346,8 @@ describe('RecipeList', () => {
     });
   });
 
-  describe('Header Content', () => {
-    it('renders studio title and primary action', () => {
+  describe('Toolbar Content', () => {
+    it('renders primary action in compact toolbar', () => {
       vi.mocked(useRecipes).mockReturnValue({
         data: { items: mockRecipes, total: 3, page: 1, page_size: 10 },
         isLoading: false,
@@ -357,7 +357,6 @@ describe('RecipeList', () => {
         wrapper,
       });
 
-      expect(screen.getByText('AI Studio')).toBeInTheDocument();
       expect(screen.getByTestId('studio__create-recipe-btn')).toBeInTheDocument();
     });
   });

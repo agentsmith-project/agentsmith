@@ -39,6 +39,7 @@ import { ChatMainPane } from '@/components/chat/ChatMainPane';
 import { ChatDeleteDialog } from '@/components/chat/ChatDeleteDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageToolbar } from '@/components/layout/PageToolbar';
+import { ProjectModuleHeader } from '@/components/layout/ProjectModuleHeader';
 import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
@@ -339,9 +340,9 @@ export default function ChatPage({ params }: ChatPageProps) {
         contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
         toolbar={(
           <PageToolbar className="gap-2">
-            <div className="flex w-full items-center justify-between gap-2">
-              <h1 className="text-2xl font-semibold leading-tight text-foreground">{t('title')}</h1>
-              {showLayoutToggle ? (
+            <ProjectModuleHeader
+              title={t('title')}
+              actions={showLayoutToggle ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -357,7 +358,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                   {layoutMode === 'ultrawide' ? t('header.layout_ultrawide') : t('header.layout_standard')}
                 </Button>
               ) : null}
-            </div>
+            />
           </PageToolbar>
         )}
       >

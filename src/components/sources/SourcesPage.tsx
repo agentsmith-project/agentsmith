@@ -32,6 +32,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { cn } from '@/lib/utils';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageToolbar } from '@/components/layout/PageToolbar';
+import { ProjectModuleHeader } from '@/components/layout/ProjectModuleHeader';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
@@ -541,79 +542,29 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
       toolbar={(
         <PageToolbar className="gap-2">
-          <div className="w-full">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="mr-2 flex items-center">
-                <h1 className="text-2xl font-semibold leading-tight text-foreground">{t('title')}</h1>
-              </div>
-
-              {uploadInProgress ? (
-                <div className="hidden xl:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[300px]" data-testid="sources__upload-progress">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] text-primary truncate">
-                      {t('file_manager.uploading', {
-                        name: uploadCurrentFileName || '-',
-                        completed: String(uploadQueueCompleted),
-                        total: String(uploadQueueTotal),
-                      })}
-                    </div>
-                    <Progress value={uploadCurrentProgress} className="mt-1 h-1.5" />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={handleCancelUpload}
-                    data-testid="sources__upload-cancel"
-                  >
-                    <X className="h-3.5 w-3.5 mr-1" />
-                    {t('file_manager.upload_cancel')}
-                  </Button>
-                </div>
-              ) : null}
-
-              <div
-                className={cn(
-                  'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[170px]',
-                  isMultiMode
-                    ? 'border-subtle bg-surface-high/40 text-primary opacity-100'
-                    : 'border-transparent text-transparent opacity-0 pointer-events-none select-none',
-                )}
-                data-testid="sources__selection-summary"
-              >
-                <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
-                <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
+          <div className="w-full space-y-2">
+            <ProjectModuleHeader
+              title={t('title')}
+              actions={showLayoutToggle ? (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={clearSelection}
-                  disabled={!hasSelection}
-                  data-testid="sources__clear-selection"
+                  className="gap-2"
+                  onClick={onToggleLayoutMode}
+                  title={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
+                  aria-label={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
+                  data-testid="sources__layout-toggle"
+                  data-state={layoutMode}
                 >
-                  {t('file_manager.clear_selection')}
+                  <PanelRight className="h-4 w-4" />
+                  {layoutMode === 'ultrawide' ? t('file_manager.layout_ultrawide') : t('file_manager.layout_standard')}
                 </Button>
-              </div>
+              ) : null}
+            />
 
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="ml-auto flex items-center gap-2">
-                {showLayoutToggle ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={onToggleLayoutMode}
-                    title={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
-                    aria-label={layoutMode === 'ultrawide' ? t('file_manager.switch_to_standard') : t('file_manager.switch_to_ultrawide')}
-                    data-testid="sources__layout-toggle"
-                    data-state={layoutMode}
-                  >
-                    <PanelRight className="h-4 w-4" />
-                    {layoutMode === 'ultrawide' ? t('file_manager.layout_ultrawide') : t('file_manager.layout_standard')}
-                  </Button>
-                ) : null}
                 <Button
                   type="button"
                   variant="outline"
@@ -676,6 +627,56 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                 >
                   <Upload className="h-4 w-4 mr-2" />
                   {t('file_manager.upload')}
+                </Button>
+              </div>
+
+              {uploadInProgress ? (
+                <div className="hidden xl:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[300px]" data-testid="sources__upload-progress">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] text-primary truncate">
+                      {t('file_manager.uploading', {
+                        name: uploadCurrentFileName || '-',
+                        completed: String(uploadQueueCompleted),
+                        total: String(uploadQueueTotal),
+                      })}
+                    </div>
+                    <Progress value={uploadCurrentProgress} className="mt-1 h-1.5" />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={handleCancelUpload}
+                    data-testid="sources__upload-cancel"
+                  >
+                    <X className="h-3.5 w-3.5 mr-1" />
+                    {t('file_manager.upload_cancel')}
+                  </Button>
+                </div>
+              ) : null}
+
+              <div
+                className={cn(
+                  'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[170px]',
+                  isMultiMode
+                    ? 'border-subtle bg-surface-high/40 text-primary opacity-100'
+                    : 'border-transparent text-transparent opacity-0 pointer-events-none select-none',
+                )}
+                data-testid="sources__selection-summary"
+              >
+                <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
+                <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={clearSelection}
+                  disabled={!hasSelection}
+                  data-testid="sources__clear-selection"
+                >
+                  {t('file_manager.clear_selection')}
                 </Button>
               </div>
             </div>

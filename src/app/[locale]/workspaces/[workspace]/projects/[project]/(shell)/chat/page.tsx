@@ -338,9 +338,9 @@ export default function ChatPage({ params }: ChatPageProps) {
         density="immersive"
         contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
         toolbar={(
-          <PageToolbar>
-            <div className="flex w-full items-center justify-between gap-3">
-              <h1 className="text-[28px] font-semibold leading-none text-foreground">{t('title')}</h1>
+          <PageToolbar className="gap-2">
+            <div className="flex w-full items-center justify-between gap-2">
+              <h1 className="text-2xl font-semibold leading-tight text-foreground">{t('title')}</h1>
               {showLayoutToggle ? (
                 <Button
                   type="button"

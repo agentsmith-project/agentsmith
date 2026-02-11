@@ -537,13 +537,14 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
   return (
     <PageLayout
+      density="immersive"
       contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
       toolbar={(
-        <PageToolbar>
+        <PageToolbar className="gap-2">
           <div className="w-full">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="mr-3 flex items-center">
-                <h1 className="text-[28px] font-semibold leading-none text-foreground">{t('title')}</h1>
+              <div className="mr-2 flex items-center">
+                <h1 className="text-2xl font-semibold leading-tight text-foreground">{t('title')}</h1>
               </div>
 
               {uploadInProgress ? (

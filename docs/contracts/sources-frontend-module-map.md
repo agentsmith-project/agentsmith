@@ -101,6 +101,8 @@ Contract source of truth for this rewrite:
 - default single-select flow for preview
 - enter multi-select via `Ctrl/Cmd+click` or `Shift+click` range selection
 - multi-select persists until explicit exit (`Esc`)
+- folders open via double-click in single-select mode (single-click only selects)
+- shortcut hint remains visible in toolbar to reduce mode confusion
 - drag-and-drop upload target on object table area
 - batch download for selected files
 - up-navigation button for non-root prefixes

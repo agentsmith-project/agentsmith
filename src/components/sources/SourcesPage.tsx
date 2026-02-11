@@ -282,9 +282,10 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
           enterMultiMode();
         }
 
-        if (withShift && multiSelectAnchorIndex !== null) {
-          const start = Math.min(multiSelectAnchorIndex, index);
-          const end = Math.max(multiSelectAnchorIndex, index);
+        const anchorIndex = multiSelectAnchorIndex ?? index;
+        if (withShift) {
+          const start = Math.min(anchorIndex, index);
+          const end = Math.max(anchorIndex, index);
           const rangeIds = filteredItems.slice(start, end + 1).map((it) => rowId(it));
           setSelectedIds((prev) => {
             if (withCmdCtrl) {
@@ -308,12 +309,8 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
         return;
       }
 
-      if (item.kind === 'prefix') {
-        navigateToPrefix(item.prefix);
-        return;
-      }
-
       activateSingleObject(id);
+      setMultiSelectAnchorIndex(index);
     },
     [
       activateSingleObject,
@@ -324,6 +321,16 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       selectionMode,
       toggleRow,
     ],
+  );
+
+  const handleRowOpen = React.useCallback(
+    (item: SourceObjectsListItem) => {
+      if (selectionMode !== 'single') return;
+      if (item.kind === 'prefix') {
+        navigateToPrefix(item.prefix);
+      }
+    },
+    [navigateToPrefix, selectionMode],
   );
 
   React.useEffect(() => {
@@ -635,26 +642,30 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
             <div
               className={cn(
-                'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[170px]',
-                isMultiMode
-                  ? 'border-subtle bg-surface-high/40 text-primary opacity-100'
-                  : 'border-transparent text-transparent opacity-0 pointer-events-none select-none',
+                'hidden xl:flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[300px]',
+                isMultiMode ? 'border-subtle bg-surface-high/40 text-primary' : 'border-subtle/60 bg-surface-high/20 text-tertiary',
               )}
               data-testid="sources__selection-summary"
             >
-              <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
-              <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={clearSelection}
-                disabled={!hasSelection}
-                data-testid="sources__clear-selection"
-              >
-                {t('file_manager.clear_selection')}
-              </Button>
+              {isMultiMode ? (
+                <>
+                  <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
+                  <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={clearSelection}
+                    disabled={!hasSelection}
+                    data-testid="sources__clear-selection"
+                  >
+                    {t('file_manager.clear_selection')}
+                  </Button>
+                </>
+              ) : (
+                <span data-testid="sources__selection-shortcuts">{t('file_manager.selection_shortcuts')}</span>
+              )}
             </div>
           </div>
           <input
@@ -807,6 +818,9 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
               ))}
             </div>
             <div className="ml-auto flex items-center gap-3">
+              <div className="hidden 2xl:block text-[11px] text-tertiary" data-testid="sources__selection-shortcuts-inline">
+                {t('file_manager.selection_shortcuts')}
+              </div>
               <div className="relative w-[280px]">
                 <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
                 <Input
@@ -938,6 +952,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                               type="button"
                               className="flex items-center gap-2 w-full text-left"
                               onClick={(event) => handleRowActivate(event, it, id, _index)}
+                              onDoubleClick={() => handleRowOpen(it)}
                             >
                               <SourceItemIcon
                                 kind={it.kind}

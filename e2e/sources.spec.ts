@@ -78,7 +78,7 @@ test.describe('Sources Page (object browser)', () => {
   test('resets folder prefix after refresh', async ({ authedPage }) => {
     const docsRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' }).first();
     await expect(docsRow).toBeVisible();
-    await docsRow.getByRole('button').click();
+    await docsRow.getByRole('button').dblclick();
 
     await expect(authedPage.getByTestId('sources__go-up')).toBeVisible();
 
@@ -128,7 +128,7 @@ test.describe('Sources Page (object browser)', () => {
   test('can browse into a folder and back to root via breadcrumb', async ({ authedPage }) => {
     const docsRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' }).first();
     await expect(docsRow).toBeVisible();
-    await docsRow.getByRole('button').click();
+    await docsRow.getByRole('button').dblclick();
 
     await expect(authedPage.getByTestId('sources__breadcrumb-root')).toHaveCount(1);
     // After navigating into docs/, the root breadcrumb remains clickable.
@@ -142,7 +142,7 @@ test.describe('Sources Page (object browser)', () => {
   test('can navigate to parent folder via go-up action', async ({ authedPage }) => {
     const docsRow = authedPage.getByTestId('sources__object-row').filter({ hasText: 'docs' }).first();
     await expect(docsRow).toBeVisible();
-    await docsRow.getByRole('button').click();
+    await docsRow.getByRole('button').dblclick();
 
     await expect(authedPage.getByTestId('sources__go-up')).toBeVisible();
     await authedPage.getByTestId('sources__go-up').click();
@@ -293,7 +293,7 @@ test.describe('Sources Page (object browser)', () => {
     await authedPage.getByTestId('sources__clear-selection').click();
     await expect(authedPage.getByTestId('sources__selection-summary')).toContainText('0');
     await authedPage.keyboard.press('Escape');
-    await expect(authedPage.getByTestId('sources__selection-summary')).toHaveClass(/opacity-0/);
+    await expect(authedPage.getByTestId('sources__selection-shortcuts')).toBeVisible();
   });
 
   test('details panel can generate object share links and expand preview', async ({ authedPage }) => {

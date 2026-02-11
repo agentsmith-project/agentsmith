@@ -129,7 +129,7 @@ describe('SourcesPage (object browser)', () => {
     expect(screen.getByTestId('sources__objects-table')).toBeInTheDocument();
   });
 
-  it('navigates into a folder prefix row', async () => {
+  it('navigates into a folder prefix row on double click', async () => {
     wrap(<SourcesPage workspaceId="ws_default" projectId="proj_001" />);
 
     const user = userEvent.setup();
@@ -137,17 +137,17 @@ describe('SourcesPage (object browser)', () => {
     const rows = within(table).getAllByTestId('sources__object-row');
     expect(rows.length).toBeGreaterThan(0);
 
-    // Click the first row's name button (folder rows navigate).
+    // Double-click the first row's name button (folder rows open on double click).
     const firstRow = rows[0];
     const nameButton = within(firstRow).getByRole('button');
-    await user.click(nameButton);
+    await user.dblClick(nameButton);
 
     // Breadcrumb should still render, and the table should remain present.
     expect(screen.getByTestId('sources__breadcrumb-root')).toBeInTheDocument();
     expect(screen.getByTestId('sources__objects-table')).toBeInTheDocument();
   });
 
-  it('shows selection summary and can clear selection', async () => {
+  it('shows shortcut hint in single-select and summary in multi-select', async () => {
     wrap(<SourcesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
 
@@ -159,11 +159,12 @@ describe('SourcesPage (object browser)', () => {
     await user.keyboard('{/Control}');
 
     expect(screen.getByTestId('sources__selection-summary')).toBeInTheDocument();
-    expect(screen.getByTestId('sources__selection-summary')).not.toHaveClass('opacity-0');
+    expect(screen.queryByTestId('sources__selection-shortcuts')).not.toBeInTheDocument();
+    expect(screen.getByTestId('sources__clear-selection')).toBeInTheDocument();
     await user.click(screen.getByTestId('sources__clear-selection'));
     expect(screen.getByTestId('sources__selection-summary')).toBeInTheDocument();
     await user.keyboard('{Escape}');
-    expect(screen.getByTestId('sources__selection-summary')).toHaveClass('opacity-0');
+    expect(screen.getByTestId('sources__selection-shortcuts')).toBeInTheDocument();
   });
 
   it('shows dropzone overlay on drag enter', async () => {

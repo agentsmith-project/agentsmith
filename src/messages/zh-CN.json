@@ -308,6 +308,7 @@
       "selected_count": "已选择 {count} 项",
       "clear_selection": "清空",
       "multi_select_hint_esc": "多选模式 · 按 Esc 退出",
+      "selection_shortcuts": "单击选中，双击打开文件夹；Ctrl/Cmd 多选，Shift 连选",
       "layout_standard": "标准",
       "layout_ultrawide": "超宽",
       "switch_to_standard": "切换到标准布局",

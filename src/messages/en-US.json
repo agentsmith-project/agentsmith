@@ -306,6 +306,7 @@
       "selected_count": "{count} selected",
       "clear_selection": "Clear",
       "multi_select_hint_esc": "Multi-select mode · Press Esc to exit",
+      "selection_shortcuts": "Click to select, double-click to open folders; Ctrl/Cmd for multi-select, Shift for range",
       "layout_standard": "Standard",
       "layout_ultrawide": "Ultrawide",
       "switch_to_standard": "Switch to standard layout",

@@ -1,5 +1,6 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
+import type { EndpointImportPayload, EndpointRecord } from './resource-models.js';
 
 interface AnyRoute {
   kind: string;
@@ -10,46 +11,7 @@ interface AnyRoute {
   proxyPath?: string;
 }
 
-interface EndpointImportSection {
-  model?: string;
-  source_model?: string;
-  api_base?: string;
-  api_key?: string;
-  mode?: string;
-}
-
-interface EndpointImportPayload {
-  reranker?: EndpointImportSection;
-  embedding?: EndpointImportSection;
-  completion?: EndpointImportSection;
-}
-
-interface EndpointRecordInput {
-  name?: string;
-  openai_model?: string;
-  source_model?: string;
-  type?: string;
-  mode?: string;
-  base_url?: string;
-  credential_ref?: string;
-  status?: 'active' | 'disabled';
-  capabilities?: string[];
-  limits?: {
-    rpm?: number;
-    tpm?: number;
-    timeout_seconds?: number;
-    max_concurrency?: number;
-  };
-  tags?: string[];
-  priority?: number;
-  fallback_endpoint_id?: string;
-  health?: {
-    state?: 'unknown' | 'online' | 'degraded' | 'offline';
-    checked_at?: string;
-    fail_streak?: number;
-    last_error?: string;
-  };
-}
+type EndpointRecordInput = Partial<EndpointRecord>;
 
 interface EndpointHandlerArgs {
   route: AnyRoute;

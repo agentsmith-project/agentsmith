@@ -6,6 +6,7 @@ import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import { handleChatStreamRoute } from './chat-stream-handler.js';
 import { handleEndpointRoute } from './endpoint-route-handler.js';
 import { matchProjectsRoute } from './projects-route-match.js';
+import type { ChatRoute } from './chat-route-match.js';
 import {
   OWNER_WORKSPACE_PERMISSIONS,
   buildWorkspaceRecords,
@@ -13,6 +14,10 @@ import {
 } from './workspace-permissions.js';
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
 import { mapRequestError } from './error-mapper.js';
+
+function isChatRoute(route: { kind: string }): route is ChatRoute {
+  return route.kind.startsWith('chat');
+}
 
 function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
   const cleanBase = baseUrl.replace(/\/+$/, '');
@@ -74,33 +79,35 @@ export async function handleRequest(
       return;
     }
 
-    const handledChatNonStream = await handleChatNonStreamRoute({
-      route,
-      method,
-      req,
-      res,
-      deps,
-      requestUrl,
-      json,
-      readBody,
-    });
-    if (handledChatNonStream) {
-      return;
-    }
+    if (isChatRoute(route)) {
+      const handledChatNonStream = await handleChatNonStreamRoute({
+        route,
+        method,
+        req,
+        res,
+        deps,
+        requestUrl,
+        json,
+        readBody,
+      });
+      if (handledChatNonStream) {
+        return;
+      }
 
-    const handledChatStream = await handleChatStreamRoute({
-      route,
-      method,
-      req,
-      res,
-      deps,
-      json,
-      readBody,
-      buildUpstreamUrl,
-      sseWrite,
-    });
-    if (handledChatStream) {
-      return;
+      const handledChatStream = await handleChatStreamRoute({
+        route,
+        method,
+        req,
+        res,
+        deps,
+        json,
+        readBody,
+        buildUpstreamUrl,
+        sseWrite,
+      });
+      if (handledChatStream) {
+        return;
+      }
     }
 
     const handledEndpointRoute = await handleEndpointRoute({

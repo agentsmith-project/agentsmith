@@ -1,4 +1,5 @@
 import type { AIReadyJobDTO, ProjectDTO, SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
+import type { ReadableStream } from 'node:stream/web';
 
 export interface ProjectRepoPort {
   listByWorkspace(workspaceId: string): Promise<ProjectDTO[]>;
@@ -40,9 +41,67 @@ export interface ObjectStorePort {
     body: Uint8Array,
     contentType?: string,
   ): Promise<void>;
+  putObjectStream(
+    bucket: string,
+    key: string,
+    body: ReadableStream<Uint8Array>,
+    options?: {
+      contentType?: string;
+      sizeBytes?: number;
+      metadata?: Record<string, string>;
+    },
+  ): Promise<void>;
   presignedGetObject(bucket: string, key: string, expirySeconds?: number): Promise<string>;
   getObject(bucket: string, key: string): Promise<Uint8Array>;
+  getObjectStream(
+    bucket: string,
+    key: string,
+  ): Promise<{
+    body: ReadableStream<Uint8Array>;
+    sizeBytes?: number;
+    contentType?: string;
+    etag?: string;
+    lastModified?: string;
+    metadata?: Record<string, string>;
+  }>;
+  statObject(
+    bucket: string,
+    key: string,
+  ): Promise<{
+    key: string;
+    sizeBytes: number;
+    contentType?: string;
+    etag?: string;
+    lastModified: string;
+    metadata?: Record<string, string>;
+  }>;
+  listObjects(
+    bucket: string,
+    options: {
+      prefix: string;
+      delimiter?: string;
+      pageSize?: number;
+      continuationToken?: string;
+    },
+  ): Promise<{
+    prefix: string;
+    objects: Array<{
+      key: string;
+      sizeBytes: number;
+      etag?: string;
+      lastModified: string;
+    }>;
+    commonPrefixes: string[];
+    nextContinuationToken: string | null;
+  }>;
+  copyObject(
+    bucket: string,
+    fromKey: string,
+    toKey: string,
+    options?: { overwrite?: boolean },
+  ): Promise<void>;
   deleteObject(bucket: string, key: string): Promise<void>;
+  deleteMany(bucket: string, keys: string[]): Promise<void>;
 }
 
 export interface VectorChunkUpsert {

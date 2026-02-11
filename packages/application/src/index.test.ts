@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AIReadyJobDTO, ProjectDTO } from '@mbos/contracts';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import {
   CancelAIReadyJobUseCase,
   CreateAIReadyJobUseCase,
@@ -122,6 +123,24 @@ class FakeObjectStore implements ObjectStorePort {
     this.stored.set(`${bucket}/${key}`, new Uint8Array(body));
   }
 
+  async putObjectStream(
+    bucket: string,
+    key: string,
+    body: WebReadableStream<Uint8Array>,
+    options?: { contentType?: string; sizeBytes?: number; metadata?: Record<string, string> },
+  ): Promise<void> {
+    void options;
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+    const joined = chunks.length === 1 ? chunks[0] : new Uint8Array(Buffer.concat(chunks.map((c) => Buffer.from(c))));
+    this.stored.set(`${bucket}/${key}`, joined);
+  }
+
   async presignedGetObject(bucket: string, key: string): Promise<string> {
     return `fake://${bucket}/${key}`;
   }
@@ -134,8 +153,88 @@ class FakeObjectStore implements ObjectStorePort {
     return new Uint8Array(value);
   }
 
+  async getObjectStream(
+    bucket: string,
+    key: string,
+  ): Promise<{
+    body: WebReadableStream<Uint8Array>;
+    sizeBytes?: number;
+    contentType?: string;
+    etag?: string;
+    lastModified?: string;
+    metadata?: Record<string, string>;
+  }> {
+    const bytes = await this.getObject(bucket, key);
+    return {
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }) as unknown as WebReadableStream<Uint8Array>,
+      sizeBytes: bytes.byteLength,
+      lastModified: new Date().toISOString(),
+    };
+  }
+
+  async statObject(
+    bucket: string,
+    key: string,
+  ): Promise<{
+    key: string;
+    sizeBytes: number;
+    contentType?: string;
+    etag?: string;
+    lastModified: string;
+    metadata?: Record<string, string>;
+  }> {
+    const bytes = await this.getObject(bucket, key);
+    return {
+      key,
+      sizeBytes: bytes.byteLength,
+      lastModified: new Date().toISOString(),
+    };
+  }
+
+  async listObjects(
+    bucket: string,
+    options: { prefix: string; delimiter?: string; pageSize?: number; continuationToken?: string },
+  ): Promise<{
+    prefix: string;
+    objects: Array<{ key: string; sizeBytes: number; etag?: string; lastModified: string }>;
+    commonPrefixes: string[];
+    nextContinuationToken: string | null;
+  }> {
+    const keys = [...this.stored.keys()]
+      .filter((full) => full.startsWith(`${bucket}/`))
+      .map((full) => full.slice(bucket.length + 1))
+      .filter((k) => k.startsWith(options.prefix))
+      .sort();
+    return {
+      prefix: options.prefix,
+      objects: keys.map((k) => ({
+        key: k,
+        sizeBytes: this.stored.get(`${bucket}/${k}`)?.byteLength ?? 0,
+        lastModified: new Date().toISOString(),
+      })),
+      commonPrefixes: [],
+      nextContinuationToken: null,
+    };
+  }
+
+  async copyObject(bucket: string, fromKey: string, toKey: string): Promise<void> {
+    const bytes = await this.getObject(bucket, fromKey);
+    this.stored.set(`${bucket}/${toKey}`, bytes);
+  }
+
   async deleteObject(bucket: string, key: string): Promise<void> {
     this.stored.delete(`${bucket}/${key}`);
+  }
+
+  async deleteMany(bucket: string, keys: string[]): Promise<void> {
+    for (const key of keys) {
+      this.stored.delete(`${bucket}/${key}`);
+    }
   }
 }
 

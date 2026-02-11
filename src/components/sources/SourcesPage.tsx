@@ -438,8 +438,21 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     if (!selectedLibraryId || selected.length === 0) return;
     const keys = selected.map((s) => (s.kind === 'object' ? s.key : s.prefix));
     try {
-      await deleteObjects.mutateAsync({ workspaceId, projectId, libraryId: selectedLibraryId, keys });
+      const result = await deleteObjects.mutateAsync({ workspaceId, projectId, libraryId: selectedLibraryId, keys });
       setDeleteConfirmOpen(false);
+      const failedKeys = result.results
+        .filter((item) => item.status !== 'deleted')
+        .map((item) => item.key);
+      if (failedKeys.length > 0) {
+        const failedSet = new Set(failedKeys);
+        setSelectedIds(
+          selected
+            .filter((item) => failedSet.has(item.kind === 'object' ? item.key : item.prefix))
+            .map((item) => (item.kind === 'object' ? (`o:${item.key}` as const) : (`p:${item.prefix}` as const))),
+        );
+        toast.error(t('file_manager.delete_partial_failed', { failed: String(failedKeys.length) }));
+        return;
+      }
       clearSelection();
       toast.success(t('file_manager.deleted'));
     } catch (err) {

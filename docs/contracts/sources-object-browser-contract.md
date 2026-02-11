@@ -54,6 +54,8 @@ Response:
       "name": "Shared Docs",
       "description": "Default shared library",
       "visibility": "shared",
+      "provider": "s3",
+      "bucket": "mbos-shared-bucket",
       "object_prefix": "ws_default/proj_001/lib_123/",
       "created_by_user_id": "user_001",
       "created_at": "2026-02-01T00:00:00Z",
@@ -66,6 +68,7 @@ Response:
 Notes:
 
 - `object_prefix` is backend-managed and used to scope all object keys inside a shared bucket.
+- `provider` and `bucket` are optional response fields for ops/debug visibility.
 
 2. `POST /workspaces/{ws}/projects/{project}/source-libraries`
 
@@ -101,7 +104,7 @@ Query:
 - `prefix`: string, optional. Current folder prefix. Must be normalized:
   - empty string means root.
   - non-empty must end with `/` to represent a folder.
-- `delimiter`: string, required. Always `/`.
+- `delimiter`: string, required. Must be exactly `/` (otherwise `400`).
 - `page_size`: int, optional. default `200`, max `1000`.
 - `continuation_token`: string, optional. Pagination token for next page (MVP uses a key-based token, opaque to UI).
 
@@ -175,6 +178,7 @@ Response:
 Response:
 
 - `200` streaming body with correct `Content-Type` and `Content-Disposition`.
+- Missing/empty `key` is rejected with `400 invalid_key`.
 
 ### 2.6 Delete Objects
 

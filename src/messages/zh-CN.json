@@ -298,7 +298,8 @@
       "upload_conflict_description": "当前目录下已存在同名文件，请选择处理方式。",
       "upload_conflict_rename": "保留两份（重命名）",
       "upload_conflict_overwrite": "覆盖",
-      "upload_rename_exhausted": "无法为该文件找到可用的新名称"
+      "upload_rename_exhausted": "无法为该文件找到可用的新名称",
+      "delete_partial_failed": "有 {failed} 项删除失败"
     },
     "filter": {
       "status": {

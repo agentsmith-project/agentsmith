@@ -573,6 +573,12 @@ describe('api-entry-node projects routes', () => {
     };
     expect(listed.items.some((item) => item.kind === 'object' && item.key === 'docs/readme.txt')).toBe(true);
 
+    const invalidDelimiterRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=docs/&delimiter=.`,
+    );
+    expect(invalidDelimiterRes.status).toBe(400);
+
     const metaRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/meta?key=${encodeURIComponent('docs/readme.txt')}`,
@@ -603,6 +609,14 @@ describe('api-entry-node projects routes', () => {
     );
     expect(downloadRes.status).toBe(200);
     expect(await downloadRes.text()).toBe('hello object');
+
+    const downloadMissingKeyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/download`,
+    );
+    expect(downloadMissingKeyRes.status).toBe(400);
+    const downloadMissingKeyBody = (await downloadMissingKeyRes.json()) as { error_code: string; message: string };
+    expect(downloadMissingKeyBody.error_code).toBe('invalid_key');
 
     const deleteObjectsRes = await apiFetch(
       baseUrl,

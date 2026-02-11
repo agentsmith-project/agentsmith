@@ -540,8 +540,8 @@ export class SourcesAPI {
     projectId: string,
     libraryId: string,
     keys: string[],
-  ): Promise<{ results: Array<{ key: string; status: 'deleted' | 'failed' }> }> {
-    return this.client.post<{ results: Array<{ key: string; status: 'deleted' | 'failed' }> }>(
+  ): Promise<{ results: Array<{ key: string; status: 'deleted' | 'failed' | 'not_found' | 'error'; error_code?: string; message?: string }> }> {
+    return this.client.post<{ results: Array<{ key: string; status: 'deleted' | 'failed' | 'not_found' | 'error'; error_code?: string; message?: string }> }>(
       `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/delete`,
       { keys },
     );

@@ -84,6 +84,8 @@ export const SourceLibrarySchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   visibility: z.literal('shared'),
+  provider: z.literal('s3').optional(),
+  bucket: z.string().min(1).optional(),
   object_prefix: z.string().min(1).optional(),
   doc_namespace: z.string().min(1).optional(),
   vector_namespace: z.string().min(1).optional(),
@@ -138,6 +140,19 @@ export const ListSourceObjectsResponseSchema = z.object({
   next_continuation_token: z.string().nullable(),
 });
 
+export const ListSourceObjectsQuerySchema = z.object({
+  prefix: z.string().optional(),
+  delimiter: z.literal('/').default('/'),
+  page_size: z
+    .coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .optional(),
+  continuation_token: z.string().optional(),
+});
+
 export const CreateSourceFolderRequestSchema = z.object({
   prefix: z.string().min(1),
 });
@@ -178,6 +193,10 @@ export const SourceObjectMetaResponseSchema = z.object({
   etag: z.string().optional(),
   last_modified: z.string().datetime(),
   user_metadata: z.record(z.string(), z.string()).optional(),
+});
+
+export const SourceObjectDownloadQuerySchema = z.object({
+  key: z.string().min(1),
 });
 
 export const AIReadyJobTypeSchema = z.enum(['document_ingest']);
@@ -225,11 +244,13 @@ export type ListSourceLibrariesResponse = z.infer<typeof ListSourceLibrariesResp
 export type CreateSourceLibraryRequest = z.infer<typeof CreateSourceLibraryRequestSchema>;
 export type UpdateSourceLibraryRequest = z.infer<typeof UpdateSourceLibraryRequestSchema>;
 export type ListSourceObjectsResponse = z.infer<typeof ListSourceObjectsResponseSchema>;
+export type ListSourceObjectsQuery = z.infer<typeof ListSourceObjectsQuerySchema>;
 export type CreateSourceFolderRequest = z.infer<typeof CreateSourceFolderRequestSchema>;
 export type UploadSourceObjectResponse = z.infer<typeof UploadSourceObjectResponseSchema>;
 export type DeleteSourceObjectsRequest = z.infer<typeof DeleteSourceObjectsRequestSchema>;
 export type DeleteSourceObjectsResponse = z.infer<typeof DeleteSourceObjectsResponseSchema>;
 export type MoveSourceObjectRequest = z.infer<typeof MoveSourceObjectRequestSchema>;
 export type SourceObjectMetaResponse = z.infer<typeof SourceObjectMetaResponseSchema>;
+export type SourceObjectDownloadQuery = z.infer<typeof SourceObjectDownloadQuerySchema>;
 export type AIReadyJobDTO = z.infer<typeof AIReadyJobSchema>;
 export type CreateAIReadyJobRequest = z.infer<typeof CreateAIReadyJobRequestSchema>;

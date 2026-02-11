@@ -6,7 +6,9 @@ import {
   CreateSourceFolderRequestSchema,
   CreateAIReadyJobRequestSchema,
   DeleteSourceObjectsRequestSchema,
+  ListSourceObjectsQuerySchema,
   MoveSourceObjectRequestSchema,
+  SourceObjectDownloadQuerySchema,
   CreateProjectRequestSchema,
   CreateSourceLibraryRequestSchema,
   CreateSourceRequestSchema,
@@ -286,19 +288,20 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjects' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
-    const prefix = requestUrl.searchParams.get('prefix') ?? undefined;
-    const delimiter = requestUrl.searchParams.get('delimiter') ?? '/';
-    const pageSizeRaw = requestUrl.searchParams.get('page_size');
-    const pageSize = pageSizeRaw ? Number(pageSizeRaw) : undefined;
-    const continuationToken = requestUrl.searchParams.get('continuation_token') ?? undefined;
+    const query = ListSourceObjectsQuerySchema.parse({
+      prefix: requestUrl.searchParams.get('prefix') ?? undefined,
+      delimiter: requestUrl.searchParams.get('delimiter') ?? '/',
+      page_size: requestUrl.searchParams.get('page_size') ?? undefined,
+      continuation_token: requestUrl.searchParams.get('continuation_token') ?? undefined,
+    });
     const listed = await deps.listSourceLibraryObjectsUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
-      prefix,
-      delimiter,
-      pageSize,
-      continuationToken,
+      prefix: query.prefix,
+      delimiter: query.delimiter,
+      pageSize: query.page_size,
+      continuationToken: query.continuation_token,
     });
     json(res, 200, listed);
     return true;
@@ -346,12 +349,18 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsDownload' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
-    const key = requestUrl.searchParams.get('key') ?? '';
+    const rawKey = requestUrl.searchParams.get('key') ?? '';
+    if (!rawKey.trim()) {
+      throw new Error('invalid_key');
+    }
+    const query = SourceObjectDownloadQuerySchema.parse({
+      key: rawKey,
+    });
     const downloaded = await deps.downloadSourceObjectUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
-      key,
+      key: query.key,
     });
     res.statusCode = 200;
     res.setHeader('content-type', downloaded.contentType);

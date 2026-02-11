@@ -48,9 +48,14 @@ export function mapRequestError(error: unknown): MappedErrorResponse {
     };
   }
 
+  if (message === 'invalid_prefix' || message === 'invalid_key') {
+    return {
+      status: 400,
+      body: { error_code: message, message },
+    };
+  }
+
   if (
-    message === 'invalid_prefix' ||
-    message === 'invalid_key' ||
     message === 'file_required' ||
     message === 'source_library_prefix_missing'
   ) {

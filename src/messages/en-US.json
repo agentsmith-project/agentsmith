@@ -296,7 +296,8 @@
       "upload_conflict_description": "A file with the same name already exists in this folder. Choose how to proceed.",
       "upload_conflict_rename": "Keep both (rename)",
       "upload_conflict_overwrite": "Overwrite",
-      "upload_rename_exhausted": "Unable to find an available name for this file"
+      "upload_rename_exhausted": "Unable to find an available name for this file",
+      "delete_partial_failed": "{failed} item(s) could not be deleted"
     },
     "filter": {
       "status": {

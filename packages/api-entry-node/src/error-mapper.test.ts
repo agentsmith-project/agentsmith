@@ -45,4 +45,26 @@ describe('mapRequestError', () => {
       },
     });
   });
+
+  it('maps invalid_prefix to 400 with precise error code', () => {
+    const mapped = mapRequestError(new Error('invalid_prefix'));
+    expect(mapped).toEqual({
+      status: 400,
+      body: {
+        error_code: 'invalid_prefix',
+        message: 'invalid_prefix',
+      },
+    });
+  });
+
+  it('maps invalid_key to 400 with precise error code', () => {
+    const mapped = mapRequestError(new Error('invalid_key'));
+    expect(mapped).toEqual({
+      status: 400,
+      body: {
+        error_code: 'invalid_key',
+        message: 'invalid_key',
+      },
+    });
+  });
 });

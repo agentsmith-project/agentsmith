@@ -13,9 +13,11 @@ import * as React from 'react';
 import {
   ArrowUp,
   ArrowUpDown,
+  CheckSquare,
   Download,
   Folder,
   FolderPlus,
+  MousePointer2,
   PanelRight,
   Plus,
   RefreshCw,
@@ -260,6 +262,8 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     () => filteredItems.filter((it) => selectedIds.includes(rowId(it))).length,
     [filteredItems, selectedIds],
   );
+  const isMultiMode = selectionMode === 'multi';
+  const hasSelection = selected.length > 0;
   const allSelected = filteredItems.length > 0 && visibleSelectedCount === filteredItems.length;
   const toggleAll = () => {
     if (selectionMode !== 'multi') return;
@@ -488,76 +492,96 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       }
       toolbar={(
         <PageToolbar>
-          <div className="flex items-center gap-2 w-full">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void objectsQuery.refetch()}
-              disabled={!selectedLibraryId}
-              data-testid="sources__refresh"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('file_manager.refresh')}
-            </Button>
-            <div className="relative flex-1 max-w-md">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
-              <Input
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder={t('file_manager.search_placeholder')}
-                className="pl-9"
-                data-testid="sources__search"
-              />
+          <div className="w-full space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 max-w-xl">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
+                <Input
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder={t('file_manager.search_placeholder')}
+                  className="pl-9 pr-10"
+                  data-testid="sources__search"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-tertiary hover:text-primary"
+                  onClick={() => void objectsQuery.refetch()}
+                  disabled={!selectedLibraryId}
+                  data-testid="sources__refresh"
+                  title={t('file_manager.refresh')}
+                  aria-label={t('file_manager.refresh')}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <Select
+                  value={sortBy}
+                  onValueChange={(value) => handleSortByChange(parseSourceSortBy(value))}
+                >
+                  <SelectTrigger className="h-9 w-[180px]" data-testid="sources__sort-by">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="name">{t('file_manager.sort_name')}</SelectItem>
+                    <SelectItem value="size_bytes">{t('file_manager.sort_size')}</SelectItem>
+                    <SelectItem value="last_modified">{t('file_manager.sort_modified')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 px-3"
+                  onClick={handleSortOrderToggle}
+                  data-testid="sources__sort-order"
+                >
+                  <ArrowUpDown className="h-4 w-4 mr-2" />
+                  {sortOrder === 'asc' ? t('file_manager.order_asc') : t('file_manager.order_desc')}
+                </Button>
+              </div>
             </div>
-            <div className="hidden lg:flex items-center gap-2">
-              <div className="inline-flex rounded-md border border-subtle overflow-hidden" data-testid="sources__selection-mode">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="inline-flex items-center rounded-lg border border-subtle bg-surface-high/50 p-1" data-testid="sources__selection-mode">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className={cn('h-9 rounded-none', selectionMode === 'single' ? 'bg-hover text-strong' : '')}
+                  className={cn(
+                    'h-8 gap-1.5 rounded-md px-3 transition-all',
+                    selectionMode === 'single'
+                      ? 'border border-accent/45 bg-accent/15 text-strong shadow-sm shadow-accent/10'
+                      : 'border border-transparent text-tertiary opacity-75 hover:opacity-100 hover:text-primary',
+                  )}
                   onClick={setSingleMode}
                   data-testid="sources__selection-mode--single"
                 >
+                  <MousePointer2 className={cn('h-3.5 w-3.5', selectionMode === 'single' ? 'text-accent' : 'text-tertiary')} />
                   {t('file_manager.selection_mode_single')}
+                  {selectionMode === 'single' ? <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" /> : null}
                 </Button>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className={cn('h-9 rounded-none', selectionMode === 'multi' ? 'bg-hover text-strong' : '')}
+                  className={cn(
+                    'h-8 gap-1.5 rounded-md px-3 transition-all',
+                    selectionMode === 'multi'
+                      ? 'border border-accent/45 bg-accent/15 text-strong shadow-sm shadow-accent/10'
+                      : 'border border-transparent text-tertiary opacity-75 hover:opacity-100 hover:text-primary',
+                  )}
                   onClick={setMultiMode}
                   data-testid="sources__selection-mode--multi"
                 >
+                  <CheckSquare className={cn('h-3.5 w-3.5', selectionMode === 'multi' ? 'text-accent' : 'text-tertiary')} />
                   {t('file_manager.selection_mode_multi')}
+                  {selectionMode === 'multi' ? <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" /> : null}
                 </Button>
               </div>
-              <Select
-                value={sortBy}
-                onValueChange={(value) => handleSortByChange(parseSourceSortBy(value))}
-              >
-                <SelectTrigger className="h-9 w-[180px]" data-testid="sources__sort-by">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="name">{t('file_manager.sort_name')}</SelectItem>
-                  <SelectItem value="size_bytes">{t('file_manager.sort_size')}</SelectItem>
-                  <SelectItem value="last_modified">{t('file_manager.sort_modified')}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 px-3"
-                onClick={handleSortOrderToggle}
-                data-testid="sources__sort-order"
-              >
-                <ArrowUpDown className="h-4 w-4 mr-2" />
-                {sortOrder === 'asc' ? t('file_manager.order_asc') : t('file_manager.order_desc')}
-              </Button>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              {uploadInProgress && (
+
+              {uploadInProgress ? (
                 <div className="hidden xl:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[300px]" data-testid="sources__upload-progress">
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] text-primary truncate">
@@ -581,11 +605,12 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                     {t('file_manager.upload_cancel')}
                   </Button>
                 </div>
-              )}
+              ) : null}
+
               <div
                 className={cn(
-                  'hidden xl:flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-opacity min-w-[170px]',
-                  selectionMode === 'multi' && selected.length > 0
+                  'items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs min-w-[170px]',
+                  isMultiMode && hasSelection
                     ? 'border-subtle bg-surface-high/40 text-primary opacity-100'
                     : 'border-transparent text-transparent opacity-0 pointer-events-none select-none',
                 )}
@@ -603,79 +628,83 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                   {t('file_manager.clear_selection')}
                 </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCreateFolderOpen(true)}
-                disabled={!selectedLibraryId}
-                data-testid="sources__new-folder"
-              >
-                <FolderPlus className="h-4 w-4 mr-2" />
-                {t('file_manager.new_folder')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  if (selected.length !== 1) return;
-                  const target = selectedForMove;
-                  if (!target) return;
-                  const parent = target.kind === 'object'
-                    ? parentPrefixForKey(target.key)
-                    : parentPrefixForPrefix(target.prefix);
-                  setMoveDestPrefix(parent);
-                  setMoveName(moveNamePlaceholder);
-                  setMoveOverwrite(false);
-                  setMoveOpen(true);
-                }}
-                disabled={!selectedLibraryId || selected.length !== 1}
-                data-testid="sources__rename"
-              >
-                <Pencil className="h-4 w-4 mr-2" />
-                {t('file_manager.rename')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDeleteConfirmOpen(true)}
-                disabled={!selectedLibraryId || selected.length === 0}
-                data-testid="sources__delete"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {t('file_manager.delete')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDownload}
-                disabled={!selectedLibraryId || selectedObjects.length === 0}
-                data-testid="sources__download"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                {selectedObjects.length > 1
-                  ? t('file_manager.download_selected', { count: String(selectedObjects.length) })
-                  : t('file_manager.download')}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleUploadClick}
-                disabled={!selectedLibraryId || uploadInProgress}
-                data-testid="sources__upload"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {t('file_manager.upload')}
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  void handleFilesPicked(e.target.files);
-                  e.currentTarget.value = '';
-                }}
-              />
+
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (selected.length !== 1) return;
+                    const target = selectedForMove;
+                    if (!target) return;
+                    const parent = target.kind === 'object'
+                      ? parentPrefixForKey(target.key)
+                      : parentPrefixForPrefix(target.prefix);
+                    setMoveDestPrefix(parent);
+                    setMoveName(moveNamePlaceholder);
+                    setMoveOverwrite(false);
+                    setMoveOpen(true);
+                  }}
+                  disabled={!selectedLibraryId || selected.length !== 1}
+                  data-testid="sources__rename"
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  {t('file_manager.rename')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  disabled={!selectedLibraryId || selected.length === 0}
+                  data-testid="sources__delete"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {t('file_manager.delete')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDownload}
+                  disabled={!selectedLibraryId || selectedObjects.length === 0}
+                  data-testid="sources__download"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  {selectedObjects.length > 1
+                    ? t('file_manager.download_selected', { count: String(selectedObjects.length) })
+                    : t('file_manager.download')}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCreateFolderOpen(true)}
+                  disabled={!selectedLibraryId}
+                  data-testid="sources__new-folder"
+                >
+                  <FolderPlus className="h-4 w-4 mr-2" />
+                  {t('file_manager.new_folder')}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleUploadClick}
+                  disabled={!selectedLibraryId || uploadInProgress}
+                  data-testid="sources__upload"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {t('file_manager.upload')}
+                </Button>
+              </div>
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                void handleFilesPicked(e.target.files);
+                e.currentTarget.value = '';
+              }}
+            />
           </div>
         </PageToolbar>
       )}

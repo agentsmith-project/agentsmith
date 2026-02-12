@@ -742,60 +742,6 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
           <div className="flex-1 min-h-0">
             <div className="w-full h-full text-sm flex flex-col" data-testid="sources__objects-table">
-              <div className="sticky top-0 z-10 bg-surface border-b border-subtle text-xs text-tertiary">
-                <div className={cn('grid', selectionMode === 'multi' ? 'grid-cols-[40px_minmax(0,1fr)_128px_192px]' : 'grid-cols-[minmax(0,1fr)_128px_192px]')}>
-                  {selectionMode === 'multi' ? (
-                    <div className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        onChange={toggleAll}
-                        aria-label={t('file_manager.select_all')}
-                      />
-                    </div>
-                  ) : null}
-                  <div className="px-3 py-2">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:text-primary"
-                      onClick={() => handleSortHeaderClick('name')}
-                      data-testid="sources__sort-header--name"
-                      data-active={sortBy === 'name' ? 'true' : 'false'}
-                      data-order={sortBy === 'name' ? sortOrder : 'none'}
-                    >
-                      {t('file_manager.col_name')}
-                      {sortBy !== 'name' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                  <div className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:text-primary"
-                      onClick={() => handleSortHeaderClick('size_bytes')}
-                      data-testid="sources__sort-header--size_bytes"
-                      data-active={sortBy === 'size_bytes' ? 'true' : 'false'}
-                      data-order={sortBy === 'size_bytes' ? sortOrder : 'none'}
-                    >
-                      {t('file_manager.col_size')}
-                      {sortBy !== 'size_bytes' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                  <div className="px-3 py-2">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:text-primary"
-                      onClick={() => handleSortHeaderClick('last_modified')}
-                      data-testid="sources__sort-header--last_modified"
-                      data-active={sortBy === 'last_modified' ? 'true' : 'false'}
-                      data-order={sortBy === 'last_modified' ? sortOrder : 'none'}
-                    >
-                      {t('file_manager.col_modified')}
-                      {sortBy !== 'last_modified' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               <div
                 className="h-10 border-b border-subtle px-3 flex items-center justify-between gap-2"
                 data-testid="sources__selection-summary"
@@ -902,6 +848,60 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
                   >
                     {t('file_manager.clear_selection')}
                   </Button>
+                </div>
+              </div>
+
+              <div className="sticky top-0 z-10 bg-surface border-b border-subtle text-xs text-tertiary">
+                <div className={cn('grid', selectionMode === 'multi' ? 'grid-cols-[40px_minmax(0,1fr)_128px_192px]' : 'grid-cols-[minmax(0,1fr)_128px_192px]')}>
+                  {selectionMode === 'multi' ? (
+                    <div className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        aria-label={t('file_manager.select_all')}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="px-3 py-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSortHeaderClick('name')}
+                      data-testid="sources__sort-header--name"
+                      data-active={sortBy === 'name' ? 'true' : 'false'}
+                      data-order={sortBy === 'name' ? sortOrder : 'none'}
+                    >
+                      {t('file_manager.col_name')}
+                      {sortBy !== 'name' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  <div className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSortHeaderClick('size_bytes')}
+                      data-testid="sources__sort-header--size_bytes"
+                      data-active={sortBy === 'size_bytes' ? 'true' : 'false'}
+                      data-order={sortBy === 'size_bytes' ? sortOrder : 'none'}
+                    >
+                      {t('file_manager.col_size')}
+                      {sortBy !== 'size_bytes' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  <div className="px-3 py-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:text-primary"
+                      onClick={() => handleSortHeaderClick('last_modified')}
+                      data-testid="sources__sort-header--last_modified"
+                      data-active={sortBy === 'last_modified' ? 'true' : 'false'}
+                      data-order={sortBy === 'last_modified' ? sortOrder : 'none'}
+                    >
+                      {t('file_manager.col_modified')}
+                      {sortBy !== 'last_modified' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
                 </div>
               </div>
 

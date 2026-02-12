@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Markdown } from '@/components/chat/Markdown';
 import { type VariantGroups, getVariantMeta } from '@/lib/chat/branch';
 import type { ChatLayoutMode } from '@/lib/chat/layout';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -318,6 +318,9 @@ export const MessageItem = React.memo(function MessageItem({
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>{previewAttachment?.file_name ?? tChat('message_item.attachment_preview')}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {tChat('message_item.attachment_preview')}
+            </DialogDescription>
           </DialogHeader>
           {previewAttachment?.preview_url ? (
             <div className="flex max-h-[70vh] justify-center overflow-auto">

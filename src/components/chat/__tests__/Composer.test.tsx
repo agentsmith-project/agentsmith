@@ -201,6 +201,22 @@ describe('Composer', () => {
       expect(screen.getByText('test.pdf')).toBeInTheDocument();
     });
 
+    it('should render image thumbnail when preview_url is present', () => {
+      const imageAttachment: Attachment = {
+        ...mockAttachment,
+        id: 'att-img',
+        file_name: 'cat.png',
+        file_type: 'image/png',
+        preview_url: 'data:image/png;base64,AQIDBA==',
+      };
+
+      render(<Composer {...defaultProps} attachments={[imageAttachment]} />);
+
+      const image = screen.getByAltText('cat.png');
+      expect(image).toBeInTheDocument();
+      expect(image).toHaveAttribute('src', imageAttachment.preview_url);
+    });
+
     it('should show uploading status for uploading attachments', () => {
       render(<Composer {...defaultProps} attachments={[uploadingAttachment]} />);
 

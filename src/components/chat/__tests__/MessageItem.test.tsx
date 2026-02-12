@@ -127,6 +127,64 @@ describe('MessageItem', () => {
       expect(screen.getByText('Edited')).toBeInTheDocument();
       expect(screen.getByText('Hide diff')).toBeInTheDocument();
     });
+
+    it('renders attachment snapshots on user messages', () => {
+      const messageWithAttachments: ChatMessage = {
+        ...mockMessage,
+        attachment_snapshots: [
+          {
+            id: 'att_1',
+            file_name: 'cat.png',
+            file_type: 'image/png',
+            file_size: 1024,
+          },
+        ],
+      };
+
+      render(<MessageItem {...defaultProps} message={messageWithAttachments} />);
+
+      expect(screen.getByText('Attachments')).toBeInTheDocument();
+      expect(screen.getByText('cat.png')).toBeInTheDocument();
+    });
+
+    it('opens image preview dialog when clicking image attachment chip', async () => {
+      const user = userEvent.setup();
+      const messageWithAttachments: ChatMessage = {
+        ...mockMessage,
+        attachment_snapshots: [
+          {
+            id: 'att_1',
+            file_name: 'cat.png',
+            file_type: 'image/png',
+            file_size: 1024,
+          },
+        ],
+      };
+
+      render(
+        <MessageItem
+          {...defaultProps}
+          message={messageWithAttachments}
+          attachmentsById={{
+            att_1: {
+              id: 'att_1',
+              session_id: 'session-1',
+              file_name: 'cat.png',
+              file_type: 'image/png',
+              file_size: 1024,
+              upload_status: 'ready',
+              created_at: '2024-01-01T00:00:00Z',
+              preview_url: 'data:image/png;base64,AQIDBA==',
+            },
+          }}
+        />,
+      );
+
+      await user.click(screen.getByTestId('chat__message-attachment-att_1'));
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'cat.png' })).toBeInTheDocument();
+    });
   });
 
   describe('Assistant Messages', () => {

@@ -100,6 +100,10 @@ export function Composer({
             <div className="mb-2 flex flex-wrap gap-2">
               {attachments.map((a) => {
                 const status = a.upload_status;
+                const hasImagePreview =
+                  typeof a.preview_url === 'string' &&
+                  a.preview_url.length > 0 &&
+                  (a.file_type.startsWith('image/') || a.preview_url.startsWith('data:image/'));
                 return (
                   <div
                     key={a.id}
@@ -107,7 +111,7 @@ export function Composer({
                       'flex items-center gap-2 px-3 py-1.5 rounded-md border border-subtle bg-surface-high',
                     )}
                   >
-                    {a.file_type.startsWith('image/') && a.preview_url ? (
+                    {hasImagePreview ? (
                       <img
                         src={a.preview_url}
                         alt={a.file_name}

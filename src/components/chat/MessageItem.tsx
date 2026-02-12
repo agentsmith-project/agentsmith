@@ -130,10 +130,11 @@ export const MessageItem = React.memo(function MessageItem({
             <div className="flex flex-wrap gap-1.5">
               {attachmentSnapshots.map((attachment) => {
                 const currentAttachment = attachmentsById?.[attachment.id];
+                const previewUrl = currentAttachment?.preview_url;
                 const isImage =
-                  attachment.file_type.startsWith('image/') &&
-                  typeof currentAttachment?.preview_url === 'string' &&
-                  currentAttachment.preview_url.length > 0;
+                  typeof previewUrl === 'string' &&
+                  previewUrl.length > 0 &&
+                  (attachment.file_type.startsWith('image/') || previewUrl.startsWith('data:image/'));
                 return (
                   <button
                     key={attachment.id}

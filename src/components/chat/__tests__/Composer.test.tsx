@@ -217,6 +217,22 @@ describe('Composer', () => {
       expect(image).toHaveAttribute('src', imageAttachment.preview_url);
     });
 
+    it('should render image thumbnail when file_type is octet-stream but preview_url is data image', () => {
+      const imageAttachment: Attachment = {
+        ...mockAttachment,
+        id: 'att-img-octet',
+        file_name: 'cat.webp',
+        file_type: 'application/octet-stream',
+        preview_url: 'data:image/webp;base64,AQIDBA==',
+      };
+
+      render(<Composer {...defaultProps} attachments={[imageAttachment]} />);
+
+      const image = screen.getByAltText('cat.webp');
+      expect(image).toBeInTheDocument();
+      expect(image).toHaveAttribute('src', imageAttachment.preview_url);
+    });
+
     it('should show uploading status for uploading attachments', () => {
       render(<Composer {...defaultProps} attachments={[uploadingAttachment]} />);
 

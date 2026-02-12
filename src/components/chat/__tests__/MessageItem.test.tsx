@@ -185,6 +185,45 @@ describe('MessageItem', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'cat.png' })).toBeInTheDocument();
     });
+
+    it('opens image preview for octet-stream snapshot when preview url is data image', async () => {
+      const user = userEvent.setup();
+      const messageWithAttachments: ChatMessage = {
+        ...mockMessage,
+        attachment_snapshots: [
+          {
+            id: 'att_2',
+            file_name: 'cat.webp',
+            file_type: 'application/octet-stream',
+            file_size: 1024,
+          },
+        ],
+      };
+
+      render(
+        <MessageItem
+          {...defaultProps}
+          message={messageWithAttachments}
+          attachmentsById={{
+            att_2: {
+              id: 'att_2',
+              session_id: 'session-1',
+              file_name: 'cat.webp',
+              file_type: 'application/octet-stream',
+              file_size: 1024,
+              upload_status: 'ready',
+              created_at: '2024-01-01T00:00:00Z',
+              preview_url: 'data:image/webp;base64,AQIDBA==',
+            },
+          }}
+        />,
+      );
+
+      await user.click(screen.getByTestId('chat__message-attachment-att_2'));
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'cat.webp' })).toBeInTheDocument();
+    });
   });
 
   describe('Assistant Messages', () => {

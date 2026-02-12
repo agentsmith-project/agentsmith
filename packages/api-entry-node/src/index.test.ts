@@ -1050,7 +1050,7 @@ describe('api-entry-node projects routes', () => {
     );
   });
 
-  it('sends image attachments as data url even when file_type is octet-stream but filename is image', async () => {
+  it('treats octet-stream webp attachments as image in preview and upstream payload', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();
 
@@ -1116,7 +1116,7 @@ describe('api-entry-node projects routes', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          file_name: 'cat.png',
+          file_name: 'cat.webp',
           file_type: 'application/octet-stream',
           file_size: 4,
           content_base64: 'AQIDBA==',
@@ -1124,7 +1124,10 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(initAttachment.status).toBe(200);
-    const attachmentBody = (await initAttachment.json()) as { attachment: { id: string } };
+    const attachmentBody = (await initAttachment.json()) as {
+      attachment: { id: string; preview_url?: string };
+    };
+    expect(attachmentBody.attachment.preview_url?.startsWith('data:image/webp;base64,')).toBe(true);
 
     const streamRes = await apiFetch(
       baseUrl,
@@ -1151,7 +1154,7 @@ describe('api-entry-node projects routes', () => {
     const parts = userMessage?.content as Array<Record<string, unknown>>;
     const imagePart = parts.find((item) => item.type === 'image_url');
     expect(imagePart).toBeTruthy();
-    expect((imagePart?.image_url as { url?: string } | undefined)?.url?.startsWith('data:image/png;base64,')).toBe(
+    expect((imagePart?.image_url as { url?: string } | undefined)?.url?.startsWith('data:image/webp;base64,')).toBe(
       true,
     );
   });

@@ -1,6 +1,7 @@
 import type http from 'node:http';
 import type { ChatRoute } from './chat-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import { resolveImageMimeType, toImageDataUrl } from './chat-image-utils.js';
 import {
   ACTIVE_CHAT_STREAMS,
   STREAM_REGISTRY_FINAL_TTL_SECONDS,
@@ -42,20 +43,8 @@ function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: str
   );
 }
 
-function inferImageMimeType(fileName: string): string | null {
-  const ext = fileName.toLowerCase().split('.').pop() ?? '';
-  if (ext === 'png') return 'image/png';
-  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
-  if (ext === 'gif') return 'image/gif';
-  if (ext === 'webp') return 'image/webp';
-  if (ext === 'bmp') return 'image/bmp';
-  if (ext === 'svg') return 'image/svg+xml';
-  return null;
-}
-
-function toDataUrl(attachment: ChatAttachmentRecord, mimeType: string): string | null {
-  if (!attachment.content_base64) return null;
-  return `data:${mimeType};base64,${attachment.content_base64}`;
+function toDataUrl(attachment: ChatAttachmentRecord, mimeType: string | null): string | null {
+  return toImageDataUrl(attachment.content_base64, mimeType);
 }
 
 export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promise<boolean> {
@@ -348,12 +337,8 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     }
     for (const snapshot of item.attachment_snapshots) {
       const attachment = attachmentById.get(snapshot.id);
-      const declaredImage = snapshot.file_type.startsWith('image/');
-      const inferredImageMime = inferImageMimeType(snapshot.file_name);
-      const imageMimeType = declaredImage
-        ? snapshot.file_type
-        : (inferredImageMime ?? null);
-      const dataUrl = attachment && imageMimeType ? toDataUrl(attachment, imageMimeType) : null;
+      const imageMimeType = resolveImageMimeType(snapshot.file_type, snapshot.file_name);
+      const dataUrl = attachment ? toDataUrl(attachment, imageMimeType) : null;
       if (dataUrl && imageMimeType) {
         parts.push({
           type: 'image_url',

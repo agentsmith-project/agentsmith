@@ -1,6 +1,7 @@
 import type http from 'node:http';
 import { Buffer } from 'node:buffer';
 import type { ChatRoute } from './chat-route-match.js';
+import { resolveImageMimeType, toImageDataUrl } from './chat-image-utils.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { parsePagination } from './pagination.js';
 import {
@@ -447,10 +448,10 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       sourceLibraryId: raw.source_library_id,
       sourceObjectKey: raw.source_object_key,
       contentBase64: raw.content_base64,
-      previewUrl:
-        raw.content_base64 && raw.file_type.startsWith('image/')
-          ? `data:${raw.file_type};base64,${raw.content_base64}`
-          : undefined,
+      previewUrl: toImageDataUrl(
+        raw.content_base64,
+        resolveImageMimeType(raw.file_type, raw.file_name),
+      ) ?? undefined,
     });
     json(res, 200, { attachment });
     return true;

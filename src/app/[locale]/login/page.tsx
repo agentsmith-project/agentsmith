@@ -8,6 +8,7 @@ import { PageState } from '@/components/layout/PageState';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { Logo } from '@/components/app-shell/Logo';
 import { getKeycloakClientId, getKeycloakRealmBase } from '@/lib/auth/keycloak';
+import { createPkceChallenge, randomBase64Url } from '@/lib/auth/pkce';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,26 +24,6 @@ const mockWorkspaces = [
   { value: 'ws_default', label: 'Default Workspace' },
   { value: 'ws_test', label: 'Test Workspace' },
 ];
-
-function encodeBase64Url(bytes: Uint8Array): string {
-  let binary = '';
-  for (const value of bytes) {
-    binary += String.fromCharCode(value);
-  }
-
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function randomBase64Url(bytes = 32): string {
-  const data = new Uint8Array(bytes);
-  crypto.getRandomValues(data);
-  return encodeBase64Url(data);
-}
-
-async function createPkceChallenge(verifier: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-  return encodeBase64Url(new Uint8Array(digest));
-}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -109,7 +90,7 @@ export default function LoginPage() {
     try {
       const verifier = randomBase64Url(48);
       const state = randomBase64Url(24);
-      const challenge = await createPkceChallenge(verifier);
+      const pkce = await createPkceChallenge(verifier);
       const redirectUri = `${window.location.origin}/${locale}/login/callback`;
       sessionStorage.setItem(
         'mbos:keycloak:pkce',
@@ -122,8 +103,8 @@ export default function LoginPage() {
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', 'openid profile email');
       authUrl.searchParams.set('state', state);
-      authUrl.searchParams.set('code_challenge', challenge);
-      authUrl.searchParams.set('code_challenge_method', 'S256');
+      authUrl.searchParams.set('code_challenge', pkce.challenge);
+      authUrl.searchParams.set('code_challenge_method', pkce.method);
       window.location.assign(authUrl.toString());
     } catch (error) {
       setIsLoggingIn(false);

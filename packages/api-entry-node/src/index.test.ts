@@ -872,6 +872,78 @@ describe('api-entry-node projects routes', () => {
     expect(echoed.model).toBe('deepseek-chat');
   });
 
+  it('normalizes endpoint base_url when full chat/completions path is provided', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'glm-key',
+          type: 'api_key',
+          value: 'sk-glm-test',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'glm-chat',
+          openai_model: 'glm-4-flash',
+          type: 'custom',
+          mode: 'openai',
+          base_url: `${upstream.baseUrl}/chat/completions`,
+          credential_ref: credential.id,
+          provider_family: 'glm',
+          protocol: 'glm_native',
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string; base_url: string };
+    expect(endpoint.base_url.endsWith('/chat/completions')).toBe(false);
+
+    const streamRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'glm-4-flash',
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(201);
+    const session = (await streamRes.json()) as { id: string };
+
+    const sendRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          input: { role: 'user', content: 'hello glm' },
+        }),
+      },
+    );
+    expect(sendRes.status).toBe(200);
+    expect(upstream.lastPath()).toBe('/v1/chat/completions');
+  });
+
   it('imports openai-compatible endpoint config in one request', async () => {
     const { baseUrl } = startServer();
     const importRes = await apiFetch(

@@ -19,9 +19,20 @@ function isChatRoute(route: { kind: string }): route is ChatRoute {
   return route.kind.startsWith('chat');
 }
 
-function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
+export function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
   const cleanBase = baseUrl.replace(/\/+$/, '');
   const cleanPath = proxyPath.replace(/^\/+/, '');
+  if (!cleanPath) return cleanBase;
+
+  // Be tolerant of legacy/base URLs that already include the target API path.
+  // Example: base_url ".../chat/completions" + proxyPath "chat/completions".
+  if (
+    cleanBase.toLowerCase().endsWith(`/${cleanPath.toLowerCase()}`) ||
+    cleanBase.toLowerCase().endsWith(cleanPath.toLowerCase())
+  ) {
+    return cleanBase;
+  }
+
   return `${cleanBase}/${cleanPath}`;
 }
 

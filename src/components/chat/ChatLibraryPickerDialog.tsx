@@ -190,8 +190,8 @@ export function ChatLibraryPickerDialog(props: ChatLibraryPickerDialogProps) {
             ) : (
               <div className="flex h-full min-h-0 flex-col">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-xs text-tertiary border-b border-subtle bg-surface-high/50">
-                  <span>{t('library_picker.search_placeholder')}</span>
-                  <span>{items.length}</span>
+                  <span>{t('library_picker.name_column')}</span>
+                  <span>{t('library_picker.items_count', { count: items.length })}</span>
                 </div>
                 <div className="min-h-0 overflow-auto divide-y divide-subtle">
                   {items.map((item: SourceObjectsListItem) => {
@@ -200,7 +200,7 @@ export function ChatLibraryPickerDialog(props: ChatLibraryPickerDialogProps) {
                         <button
                           key={item.prefix}
                           type="button"
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-hover"
+                          className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left hover:bg-hover"
                           onClick={() => openPrefix(item.prefix)}
                           data-testid={`chat__library-picker-prefix-${item.name}`}
                         >
@@ -214,7 +214,7 @@ export function ChatLibraryPickerDialog(props: ChatLibraryPickerDialogProps) {
                     return (
                       <div
                         key={objectItem.key}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2"
+                        className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2"
                         data-testid={`chat__library-picker-object-${objectItem.name}`}
                       >
                         <div className="min-w-0 flex items-center gap-2">
@@ -228,7 +228,7 @@ export function ChatLibraryPickerDialog(props: ChatLibraryPickerDialogProps) {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="shrink-0"
+                          className="h-8 shrink-0"
                           disabled={loading}
                           onClick={() =>
                             onPickObject({

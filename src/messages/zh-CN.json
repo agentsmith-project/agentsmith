@@ -572,6 +572,8 @@
       "title": "从文件库选择文件",
       "select_library": "选择文件库",
       "search_placeholder": "搜索文件名",
+      "name_column": "名称",
+      "items_count": "{count} 项",
       "up": "上一级",
       "loading": "加载中...",
       "empty": "当前目录暂无文件",

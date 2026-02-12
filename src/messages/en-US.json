@@ -570,6 +570,8 @@
       "title": "Select file from library",
       "select_library": "Select library",
       "search_placeholder": "Search file name",
+      "name_column": "Name",
+      "items_count": "{count} items",
       "up": "Up",
       "loading": "Loading...",
       "empty": "No files in current folder",

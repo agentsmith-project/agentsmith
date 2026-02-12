@@ -47,4 +47,50 @@ describe('EndpointAPI', () => {
       payload,
     );
   });
+
+  it('calls capability task endpoints', async () => {
+    const mockPost = vi.fn().mockResolvedValue({});
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: vi.fn(),
+      post: mockPost,
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      connectSSE: () => new EventSource('http://localhost'),
+    };
+    const api = new EndpointAPI(client);
+
+    await api.runRerank('ws_1', 'proj_1', 'ep_1', { query: 'a', documents: ['b'] });
+    await api.generateImage('ws_1', 'proj_1', 'ep_1', { prompt: 'city' });
+    await api.generateVideo('ws_1', 'proj_1', 'ep_1', { prompt: 'ocean' });
+    await api.getVideoGenerationJob('ws_1', 'proj_1', 'ep_1', 'job_1');
+    await api.cancelVideoGenerationJob('ws_1', 'proj_1', 'ep_1', 'job_1');
+
+    expect(mockPost).toHaveBeenNthCalledWith(
+      1,
+      '/workspaces/ws_1/projects/proj_1/endpoints/ep_1/rerank',
+      { query: 'a', documents: ['b'] },
+    );
+    expect(mockPost).toHaveBeenNthCalledWith(
+      2,
+      '/workspaces/ws_1/projects/proj_1/endpoints/ep_1/images/generations',
+      { prompt: 'city' },
+    );
+    expect(mockPost).toHaveBeenNthCalledWith(
+      3,
+      '/workspaces/ws_1/projects/proj_1/endpoints/ep_1/videos/generations',
+      { prompt: 'ocean' },
+    );
+    expect(client.get).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/endpoints/ep_1/videos/generations/job_1',
+    );
+    expect(mockPost).toHaveBeenNthCalledWith(
+      4,
+      '/workspaces/ws_1/projects/proj_1/endpoints/ep_1/videos/generations/job_1/cancel',
+      {},
+    );
+  });
 });

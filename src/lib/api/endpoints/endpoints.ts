@@ -4,16 +4,31 @@
  * Typed API functions for endpoint operations.
  */
 
-import type { Endpoint, PaginationParams, PaginatedResponse } from '../types';
+import type {
+  Endpoint,
+  EndpointCapability,
+  EndpointDefaults,
+  EndpointModelBinding,
+  EndpointProtocol,
+  EndpointProviderFamily,
+  PaginationParams,
+  PaginatedResponse,
+} from '../types';
 import type { ApiClient } from '../client';
 
 export interface CreateEndpointRequest {
   name: string;
   description?: string;
-  openai_model: string;
+  openai_model?: string;
   type: 'openai' | 'anthropic' | 'custom';
   base_url: string;
   credential_ref?: string;
+  provider_family?: EndpointProviderFamily;
+  protocol?: EndpointProtocol;
+  capabilities?: EndpointCapability[];
+  models?: EndpointModelBinding[];
+  defaults?: EndpointDefaults;
+  meta?: Record<string, string>;
   limits?: {
     max_requests_per_minute?: number;
     max_requests_per_day?: number;
@@ -28,6 +43,12 @@ export interface UpdateEndpointRequest {
   openai_model?: string;
   base_url?: string;
   credential_ref?: string;
+  provider_family?: EndpointProviderFamily;
+  protocol?: EndpointProtocol;
+  capabilities?: EndpointCapability[];
+  models?: EndpointModelBinding[];
+  defaults?: EndpointDefaults;
+  meta?: Record<string, string>;
   status?: 'active' | 'disabled';
   limits?: {
     max_requests_per_minute?: number;
@@ -49,6 +70,8 @@ export interface ImportOpenAICompatibleRequest {
   reranker?: OpenAICompatibleImportItem;
   embedding?: OpenAICompatibleImportItem;
   completion?: OpenAICompatibleImportItem;
+  image_generation?: OpenAICompatibleImportItem;
+  video_generation?: OpenAICompatibleImportItem;
 }
 
 export class EndpointAPI {
@@ -109,6 +132,65 @@ export class EndpointAPI {
     return this.client.post<{ items: Endpoint[] }>(
       `/workspaces/${workspaceId}/projects/${projectId}/endpoints/import-openai-compatible`,
       payload,
+    );
+  }
+
+  async runRerank(
+    workspaceId: string,
+    projectId: string,
+    endpointId: string,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    return this.client.post<Record<string, unknown>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/rerank`,
+      payload,
+    );
+  }
+
+  async generateImage(
+    workspaceId: string,
+    projectId: string,
+    endpointId: string,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    return this.client.post<Record<string, unknown>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/images/generations`,
+      payload,
+    );
+  }
+
+  async generateVideo(
+    workspaceId: string,
+    projectId: string,
+    endpointId: string,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    return this.client.post<Record<string, unknown>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/videos/generations`,
+      payload,
+    );
+  }
+
+  async getVideoGenerationJob(
+    workspaceId: string,
+    projectId: string,
+    endpointId: string,
+    jobId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.client.get<Record<string, unknown>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/videos/generations/${jobId}`,
+    );
+  }
+
+  async cancelVideoGenerationJob(
+    workspaceId: string,
+    projectId: string,
+    endpointId: string,
+    jobId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.client.post<Record<string, unknown>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/videos/generations/${jobId}/cancel`,
+      {},
     );
   }
 }

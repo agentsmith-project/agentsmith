@@ -15,24 +15,7 @@ import { defineConfig, devices } from '@playwright/test';
  * - INTEGRATION_API_BASE=http://localhost:20000
  */
 const baseURL = process.env.BASE_URL || 'http://localhost:3001';
-const useManagedDevServer = !process.env.BASE_URL;
 const isCI = !!process.env.CI;
-
-const integrationApiBase = process.env.INTEGRATION_API_BASE || 'http://localhost:20000';
-
-const webServerCommand = [
-  'bash -lc',
-  JSON.stringify(
-    [
-      'NEXT_PUBLIC_USE_MSW=false',
-      `NEXT_PUBLIC_API_BASE=${integrationApiBase}`,
-      'NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms',
-      'NEXT_PUBLIC_KEYCLOAK_REALM=mbos',
-      'NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend',
-      'npm run dev:test -- --port 3001',
-    ].join(' '),
-  ),
-].join(' ');
 
 export default defineConfig({
   testDir: './e2e',
@@ -42,14 +25,9 @@ export default defineConfig({
   workers: isCI ? 2 : 1,
   reporter: isCI ? 'html' : 'line',
   timeout: 60000,
-  webServer: useManagedDevServer
-    ? {
-        command: webServerCommand,
-        url: 'http://localhost:3001',
-        reuseExistingServer: false,
-        timeout: 120000,
-      }
-    : undefined,
+  // Integration runs must target already-running frontend/backend services.
+  // Playwright-managed service startup is intentionally disabled.
+  webServer: undefined,
   use: {
     baseURL,
     trace: isCI ? 'on-first-retry' : 'off',

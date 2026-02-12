@@ -48,7 +48,8 @@ export async function proxyJsonRequest(
   },
 ): Promise<void> {
   const method = req.method ?? 'POST';
-  const rawBody = await readBody(req);
+  const isBodyAllowed = method !== 'GET' && method !== 'HEAD';
+  const rawBody = isBodyAllowed ? await readBody(req) : {};
   const body =
     rawBody && typeof rawBody === 'object'
       ? ({ ...(rawBody as Record<string, unknown>) } as Record<string, unknown>)
@@ -69,7 +70,7 @@ export async function proxyJsonRequest(
         Authorization: `Bearer ${options.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: isBodyAllowed ? JSON.stringify(body) : undefined,
       signal: abortController.signal,
     });
     const payload = Buffer.from(await upstreamRes.arrayBuffer());

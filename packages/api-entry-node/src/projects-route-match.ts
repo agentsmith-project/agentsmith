@@ -31,6 +31,11 @@ export type ProjectsRoute =
   | ChatRoute
   | { kind: 'endpoints'; workspaceId: string; projectId: string }
   | { kind: 'endpointItem'; workspaceId: string; projectId: string; endpointId: string }
+  | { kind: 'endpointRerank'; workspaceId: string; projectId: string; endpointId: string }
+  | { kind: 'endpointImageGeneration'; workspaceId: string; projectId: string; endpointId: string }
+  | { kind: 'endpointVideoGenerationCreate'; workspaceId: string; projectId: string; endpointId: string }
+  | { kind: 'endpointVideoGenerationPoll'; workspaceId: string; projectId: string; endpointId: string; jobId: string }
+  | { kind: 'endpointVideoGenerationCancel'; workspaceId: string; projectId: string; endpointId: string; jobId: string }
   | {
     kind: 'endpointProxy';
     workspaceId: string;
@@ -364,6 +369,68 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       projectId: decodeURIComponent(endpointProxyMatched[2]),
       endpointId: decodeURIComponent(endpointProxyMatched[3]),
       proxyPath: endpointProxyMatched[4],
+    };
+  }
+
+  const endpointVideoGenerationCancelMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/([^/]+)\/videos\/generations\/([^/]+)\/cancel\/?$/,
+  );
+  if (endpointVideoGenerationCancelMatched) {
+    return {
+      kind: 'endpointVideoGenerationCancel',
+      workspaceId: decodeURIComponent(endpointVideoGenerationCancelMatched[1]),
+      projectId: decodeURIComponent(endpointVideoGenerationCancelMatched[2]),
+      endpointId: decodeURIComponent(endpointVideoGenerationCancelMatched[3]),
+      jobId: decodeURIComponent(endpointVideoGenerationCancelMatched[4]),
+    };
+  }
+
+  const endpointVideoGenerationPollMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/([^/]+)\/videos\/generations\/([^/]+)\/?$/,
+  );
+  if (endpointVideoGenerationPollMatched) {
+    return {
+      kind: 'endpointVideoGenerationPoll',
+      workspaceId: decodeURIComponent(endpointVideoGenerationPollMatched[1]),
+      projectId: decodeURIComponent(endpointVideoGenerationPollMatched[2]),
+      endpointId: decodeURIComponent(endpointVideoGenerationPollMatched[3]),
+      jobId: decodeURIComponent(endpointVideoGenerationPollMatched[4]),
+    };
+  }
+
+  const endpointVideoGenerationCreateMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/([^/]+)\/videos\/generations\/?$/,
+  );
+  if (endpointVideoGenerationCreateMatched) {
+    return {
+      kind: 'endpointVideoGenerationCreate',
+      workspaceId: decodeURIComponent(endpointVideoGenerationCreateMatched[1]),
+      projectId: decodeURIComponent(endpointVideoGenerationCreateMatched[2]),
+      endpointId: decodeURIComponent(endpointVideoGenerationCreateMatched[3]),
+    };
+  }
+
+  const endpointImageGenerationMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/([^/]+)\/images\/generations\/?$/,
+  );
+  if (endpointImageGenerationMatched) {
+    return {
+      kind: 'endpointImageGeneration',
+      workspaceId: decodeURIComponent(endpointImageGenerationMatched[1]),
+      projectId: decodeURIComponent(endpointImageGenerationMatched[2]),
+      endpointId: decodeURIComponent(endpointImageGenerationMatched[3]),
+    };
+  }
+
+  const endpointRerankMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/([^/]+)\/rerank\/?$/,
+  );
+  if (endpointRerankMatched) {
+    return {
+      kind: 'endpointRerank',
+      workspaceId: decodeURIComponent(endpointRerankMatched[1]),
+      projectId: decodeURIComponent(endpointRerankMatched[2]),
+      endpointId: decodeURIComponent(endpointRerankMatched[3]),
     };
   }
 

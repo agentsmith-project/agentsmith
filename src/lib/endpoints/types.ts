@@ -10,4 +10,6 @@ export interface ImportOpenAICompatiblePayload {
   reranker?: OpenAICompatibleEndpointConfig;
   embedding?: OpenAICompatibleEndpointConfig;
   completion?: OpenAICompatibleEndpointConfig;
+  image_generation?: OpenAICompatibleEndpointConfig;
+  video_generation?: OpenAICompatibleEndpointConfig;
 }

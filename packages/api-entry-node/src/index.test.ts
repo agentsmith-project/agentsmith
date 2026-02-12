@@ -110,10 +110,17 @@ function buildMultipartBody(
   };
 }
 
-function startUpstreamServer(): { server: Server; baseUrl: string; lastBody: () => unknown } {
+function startUpstreamServer(): {
+  server: Server;
+  baseUrl: string;
+  lastBody: () => unknown;
+  lastPath: () => string;
+} {
   let body: unknown = null;
+  let path = '';
   const server = http.createServer((req, res) => {
     void (async () => {
+      path = req.url ?? '';
       const chunks: Buffer[] = [];
       for await (const chunk of req) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -128,7 +135,12 @@ function startUpstreamServer(): { server: Server; baseUrl: string; lastBody: () 
   server.listen(0);
   servers.push(server);
   const address = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
+  return {
+    server,
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    lastBody: () => body,
+    lastPath: () => path,
+  };
 }
 
 function startOpenAICompatibleUpstreamServer(): {
@@ -586,7 +598,7 @@ describe('api-entry-node projects routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': form.contentType },
-        body: form.body,
+        body: Buffer.from(form.body),
       },
     );
     expect(uploadRes.status).toBe(201);
@@ -609,7 +621,7 @@ describe('api-entry-node projects routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': cnForm.contentType },
-        body: cnForm.body,
+        body: Buffer.from(cnForm.body),
       },
     );
     expect(cnUploadRes.status).toBe(201);
@@ -903,6 +915,271 @@ describe('api-entry-node projects routes', () => {
     expect(listed.status).toBe(200);
     const body = (await listed.json()) as { items: Array<{ id: string }> };
     expect(body.items.length).toBe(3);
+  });
+
+  it('supports rerank route with capability model selection', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'rerank-key',
+          type: 'api_key',
+          value: 'sk-rerank',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'rerank-endpoint',
+          openai_model: 'qwen-reranker',
+          source_model: 'qwen-reranker',
+          type: 'custom',
+          mode: 'openai',
+          protocol: 'openai_compatible',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          capabilities: [{ type: 'rerank', enabled: true, default_model_id: 'qwen-reranker' }],
+          models: [{ capability: 'rerank', model_id: 'qwen-reranker', display_name: 'qwen-reranker' }],
+          defaults: { rerank_model_id: 'qwen-reranker' },
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const rerankRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/rerank`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored-model',
+          query: 'hello',
+          documents: ['a', 'b'],
+        }),
+      },
+    );
+    expect(rerankRes.status).toBe(200);
+    const echoed = upstream.lastBody() as { model?: string; query?: string; documents?: string[] };
+    expect(upstream.lastPath()).toBe('/v1/rerank');
+    expect(echoed.model).toBe('qwen-reranker');
+    expect(echoed.query).toBe('hello');
+    expect(echoed.documents).toEqual(['a', 'b']);
+  });
+
+  it('fails fast when endpoint capability is not enabled or unsupported by protocol', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'generic-key',
+          type: 'api_key',
+          value: 'sk-generic',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const disabledCapabilityEndpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-only',
+          openai_model: 'chat-model',
+          source_model: 'chat-model',
+          protocol: 'openai_compatible',
+          type: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'chat-model' }],
+          models: [{ capability: 'chat_completion', model_id: 'chat-model' }],
+          defaults: { chat_model_id: 'chat-model' },
+        }),
+      },
+    );
+    expect(disabledCapabilityEndpointRes.status).toBe(201);
+    const disabledCapabilityEndpoint = (await disabledCapabilityEndpointRes.json()) as { id: string };
+
+    const disabledRerankRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${disabledCapabilityEndpoint.id}/rerank`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: 'q', documents: ['a'] }),
+      },
+    );
+    expect(disabledRerankRes.status).toBe(422);
+    const disabledBody = (await disabledRerankRes.json()) as { message: string };
+    expect(disabledBody.message).toBe('endpoint_capability_not_enabled');
+
+    const unsupportedProtocolEndpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'google-rerank',
+          openai_model: 'gemini-rerank',
+          source_model: 'gemini-rerank',
+          protocol: 'google_gemini',
+          provider_family: 'google',
+          type: 'custom',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          capabilities: [{ type: 'rerank', enabled: true, default_model_id: 'gemini-rerank' }],
+          models: [{ capability: 'rerank', model_id: 'gemini-rerank' }],
+          defaults: { rerank_model_id: 'gemini-rerank' },
+        }),
+      },
+    );
+    expect(unsupportedProtocolEndpointRes.status).toBe(201);
+    const unsupportedProtocolEndpoint = (await unsupportedProtocolEndpointRes.json()) as { id: string };
+
+    const unsupportedRerankRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${unsupportedProtocolEndpoint.id}/rerank`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: 'q', documents: ['a'] }),
+      },
+    );
+    expect(unsupportedRerankRes.status).toBe(422);
+    const unsupportedBody = (await unsupportedRerankRes.json()) as { message: string };
+    expect(unsupportedBody.message).toBe('endpoint_capability_not_supported_for_protocol');
+  });
+
+  it('supports image/video generation routes with capability model binding', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'media-key',
+          type: 'api_key',
+          value: 'sk-media',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'media-endpoint',
+          openai_model: 'gpt-4o-mini',
+          source_model: 'gpt-4o-mini',
+          protocol: 'openai_compatible',
+          type: 'custom',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          capabilities: [
+            { type: 'image_generation', enabled: true, default_model_id: 'gpt-image-1' },
+            { type: 'video_generation', enabled: true, default_model_id: 'sora' },
+          ],
+          models: [
+            { capability: 'image_generation', model_id: 'gpt-image-1' },
+            { capability: 'video_generation', model_id: 'sora' },
+          ],
+          defaults: { image_model_id: 'gpt-image-1', video_model_id: 'sora' },
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const imageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/images/generations`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'red mountain' }),
+      },
+    );
+    expect(imageRes.status).toBe(200);
+    expect(upstream.lastPath()).toBe('/v1/images/generations');
+    const imagePayload = upstream.lastBody() as { model?: string; prompt?: string };
+    expect(imagePayload.model).toBe('gpt-image-1');
+    expect(imagePayload.prompt).toBe('red mountain');
+
+    const videoCreateRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/videos/generations`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'flying over city' }),
+      },
+    );
+    expect(videoCreateRes.status).toBe(200);
+    expect(upstream.lastPath()).toBe('/v1/videos/generations');
+    const videoPayload = upstream.lastBody() as { model?: string; prompt?: string };
+    expect(videoPayload.model).toBe('sora');
+    expect(videoPayload.prompt).toBe('flying over city');
+
+    const videoPollRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/videos/generations/job_123`,
+      {
+        method: 'GET',
+      },
+    );
+    expect(videoPollRes.status).toBe(200);
+    expect(upstream.lastPath()).toBe('/v1/videos/generations/job_123');
+    const pollPayload = upstream.lastBody() as { model?: string };
+    expect(pollPayload.model).toBeUndefined();
+
+    const videoCancelRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/videos/generations/job_123/cancel`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(videoCancelRes.status).toBe(200);
+    expect(upstream.lastPath()).toBe('/v1/videos/generations/job_123/cancel');
+    const cancelPayload = upstream.lastBody() as { model?: string };
+    expect(cancelPayload.model).toBe('sora');
   });
 
   it('supports chat stream via project endpoint and persists assistant reply', async () => {

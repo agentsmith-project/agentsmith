@@ -3,8 +3,12 @@ import type { JsonDocStorePort } from '@mbos/ports';
 import type {
   CredentialRecord,
   CredentialSecretRecord,
+  EndpointCapability,
+  EndpointCapabilityType,
+  EndpointDefaults,
   EndpointImportItem,
   EndpointImportPayload,
+  EndpointModelBinding,
   EndpointRecord,
 } from './resource-models.js';
 
@@ -29,6 +33,104 @@ export class EndpointResourceService {
 
   private credentialId(): string {
     return `cred_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  }
+
+  private dedupeCapabilities(capabilities: EndpointCapability[]): EndpointCapability[] {
+    const unique = new Map<EndpointCapabilityType, EndpointCapability>();
+    for (const capability of capabilities) {
+      unique.set(capability.type, capability);
+    }
+    return [...unique.values()];
+  }
+
+  private dedupeModels(models: EndpointModelBinding[]): EndpointModelBinding[] {
+    const unique = new Map<string, EndpointModelBinding>();
+    for (const model of models) {
+      unique.set(`${model.capability}:${model.model_id}`, model);
+    }
+    return [...unique.values()];
+  }
+
+  private buildDefaults(models: EndpointModelBinding[], current?: EndpointDefaults): EndpointDefaults | undefined {
+    const defaults: EndpointDefaults = { ...(current ?? {}) };
+    for (const model of models) {
+      if (model.capability === 'chat_completion' && !defaults.chat_model_id) defaults.chat_model_id = model.model_id;
+      if (model.capability === 'embedding' && !defaults.embedding_model_id) defaults.embedding_model_id = model.model_id;
+      if (model.capability === 'rerank' && !defaults.rerank_model_id) defaults.rerank_model_id = model.model_id;
+      if (model.capability === 'image_generation' && !defaults.image_model_id) defaults.image_model_id = model.model_id;
+      if (model.capability === 'video_generation' && !defaults.video_model_id) defaults.video_model_id = model.model_id;
+    }
+    return Object.keys(defaults).length > 0 ? defaults : undefined;
+  }
+
+  private inferProtocol(baseUrl: string, fallback: EndpointRecord['protocol']): EndpointRecord['protocol'] {
+    if (fallback) return fallback;
+    if (baseUrl.includes('generativelanguage.googleapis.com')) return 'google_gemini';
+    if (baseUrl.includes('bigmodel.cn')) return 'glm_native';
+    if (baseUrl.includes('dashscope.aliyuncs.com')) return 'dashscope_native';
+    return 'openai_compatible';
+  }
+
+  private inferProviderFamily(
+    protocol: EndpointRecord['protocol'],
+    fallback: EndpointRecord['provider_family'],
+  ): EndpointRecord['provider_family'] {
+    if (fallback) return fallback;
+    if (protocol === 'google_gemini') return 'google';
+    if (protocol === 'glm_native') return 'glm';
+    if (protocol === 'dashscope_native') return 'alibaba';
+    return 'custom';
+  }
+
+  private normalizeEndpointFields(input: Partial<EndpointRecord>, fallbackOpenAIModel?: string): {
+    openaiModel: string;
+    sourceModel?: string;
+    capabilities: EndpointCapability[] | undefined;
+    models: EndpointModelBinding[] | undefined;
+    defaults: EndpointDefaults | undefined;
+  } {
+    const normalizedModels = this.dedupeModels(
+      (input.models ?? []).filter((item) => item.model_id?.trim()).map((item) => ({
+        ...item,
+        model_id: item.model_id.trim(),
+      })),
+    );
+    const normalizedCapabilities = this.dedupeCapabilities(
+      (input.capabilities ?? []).map((item) => ({
+        type: item.type,
+        enabled: item.enabled !== false,
+        default_model_id: item.default_model_id?.trim() || undefined,
+      })),
+    );
+
+    const legacyOpenAIModel = String(input.openai_model ?? fallbackOpenAIModel ?? '').trim();
+    const chatModel = normalizedModels.find((item) => item.capability === 'chat_completion')?.model_id;
+    const primaryModel = chatModel ?? legacyOpenAIModel;
+    const sourceModel = input.source_model?.trim() || primaryModel || undefined;
+    const defaults = this.buildDefaults(normalizedModels, input.defaults);
+
+    if (normalizedCapabilities.length === 0 && primaryModel) {
+      normalizedCapabilities.push({
+        type: 'chat_completion',
+        enabled: true,
+        default_model_id: primaryModel,
+      });
+    }
+    if (normalizedModels.length === 0 && primaryModel) {
+      normalizedModels.push({
+        capability: 'chat_completion',
+        model_id: primaryModel,
+        display_name: primaryModel,
+      });
+    }
+
+    return {
+      openaiModel: primaryModel,
+      sourceModel,
+      capabilities: normalizedCapabilities.length > 0 ? normalizedCapabilities : undefined,
+      models: normalizedModels.length > 0 ? normalizedModels : undefined,
+      defaults,
+    };
   }
 
   async listCredentials(workspaceId: string, projectId: string): Promise<CredentialRecord[]> {
@@ -165,24 +267,36 @@ export class EndpointResourceService {
     projectId: string,
     input: Partial<EndpointRecord>,
   ): Promise<EndpointRecord> {
+    const normalized = this.normalizeEndpointFields(input);
+    if (!normalized.openaiModel) {
+      throw new Error('endpoint_model_required');
+    }
     const existing = await this.listEndpoints(workspaceId, projectId);
-    if (existing.some((item) => item.openai_model === String(input.openai_model ?? '').trim())) {
+    if (existing.some((item) => item.openai_model === normalized.openaiModel)) {
       throw new Error('endpoint_model_conflict');
     }
     const now = new Date().toISOString();
+    const protocol = this.inferProtocol(String(input.base_url ?? ''), input.protocol);
     const endpoint: EndpointRecord = {
       id: this.endpointId(),
       workspace_id: workspaceId,
       project_id: projectId,
       name: String(input.name ?? '').trim(),
       description: input.description?.trim() || undefined,
-      openai_model: String(input.openai_model ?? '').trim(),
-      source_model: input.source_model?.trim() || undefined,
+      openai_model: normalized.openaiModel,
+      source_model: normalized.sourceModel,
       type: (input.type as EndpointRecord['type']) ?? 'openai',
       mode: input.mode,
       base_url: this.normalizeBaseUrl(String(input.base_url ?? '')),
       status: (input.status as EndpointRecord['status']) ?? 'active',
       credential_ref: input.credential_ref?.trim() || undefined,
+      protocol,
+      provider_family: this.inferProviderFamily(protocol, input.provider_family),
+      capabilities: normalized.capabilities,
+      models: normalized.models,
+      defaults: normalized.defaults,
+      health: input.health ?? { status: 'unknown' },
+      meta: input.meta,
       limits: input.limits,
       created_at: now,
       updated_at: now,
@@ -201,22 +315,32 @@ export class EndpointResourceService {
     if (!existing) {
       return null;
     }
+    const normalized = this.normalizeEndpointFields(
+      {
+        ...existing,
+        ...patch,
+      },
+      existing.openai_model,
+    );
+    const protocol = this.inferProtocol(
+      patch.base_url !== undefined ? this.normalizeBaseUrl(String(patch.base_url)) : existing.base_url,
+      patch.protocol ?? existing.protocol,
+    );
     const updated: EndpointRecord = {
       ...existing,
       ...patch,
       name: patch.name !== undefined ? String(patch.name).trim() : existing.name,
-      openai_model:
-        patch.openai_model !== undefined
-          ? String(patch.openai_model).trim()
-          : existing.openai_model,
-      source_model:
-        patch.source_model !== undefined
-          ? String(patch.source_model).trim()
-          : existing.source_model,
+      openai_model: normalized.openaiModel,
+      source_model: normalized.sourceModel,
       base_url:
         patch.base_url !== undefined
           ? this.normalizeBaseUrl(String(patch.base_url))
           : existing.base_url,
+      protocol,
+      provider_family: this.inferProviderFamily(protocol, patch.provider_family ?? existing.provider_family),
+      capabilities: normalized.capabilities,
+      models: normalized.models,
+      defaults: normalized.defaults,
       updated_at: new Date().toISOString(),
     };
     await this.docStore.upsert(EndpointResourceService.endpointsCollection, endpointId, updated);
@@ -237,10 +361,17 @@ export class EndpointResourceService {
     projectId: string,
     payload: EndpointImportPayload,
   ): Promise<{ items: EndpointRecord[] }> {
-    const pairs: Array<{ name: string; item: EndpointImportItem | undefined; type: EndpointRecord['type'] }> = [
-      { name: 'reranker', item: payload.reranker, type: 'custom' },
-      { name: 'embedding', item: payload.embedding, type: 'openai' },
-      { name: 'completion', item: payload.completion, type: 'openai' },
+    const pairs: Array<{
+      name: string;
+      capability: EndpointCapabilityType;
+      item: EndpointImportItem | undefined;
+      type: EndpointRecord['type'];
+    }> = [
+      { name: 'reranker', capability: 'rerank', item: payload.reranker, type: 'custom' },
+      { name: 'embedding', capability: 'embedding', item: payload.embedding, type: 'openai' },
+      { name: 'completion', capability: 'chat_completion', item: payload.completion, type: 'openai' },
+      { name: 'image_generation', capability: 'image_generation', item: payload.image_generation, type: 'custom' },
+      { name: 'video_generation', capability: 'video_generation', item: payload.video_generation, type: 'custom' },
     ];
     const created: EndpointRecord[] = [];
 
@@ -259,6 +390,22 @@ export class EndpointResourceService {
         base_url: pair.item.api_base,
         credential_ref: credential.id,
         status: 'active',
+        protocol: 'openai_compatible',
+        provider_family: 'custom',
+        capabilities: [
+          {
+            type: pair.capability,
+            enabled: true,
+            default_model_id: pair.item.model,
+          },
+        ],
+        models: [
+          {
+            capability: pair.capability,
+            model_id: pair.item.model,
+            display_name: pair.item.source_model ?? pair.item.model,
+          },
+        ],
       });
       created.push(endpoint);
     }

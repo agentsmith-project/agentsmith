@@ -35,6 +35,10 @@ This directory is the single source of truth for frontend permission and governa
   - Endpoints page closeout baseline and target decomposition map.
 - `endpoints-closeout-summary.md`
   - Endpoints module closeout result and verification snapshot.
+- `endpoints-capability-contract.md`
+  - Capability-first endpoint data model and rerank/image/video route contract.
+- `models-catalog-offline.md`
+  - Offline metadata sync and runtime usage contract for model catalog/logo assets.
 - `sources-frontend-module-map.md`
   - Sources module baseline and next decomposition targets.
 - `resource-policy-frontend-module-map.md`

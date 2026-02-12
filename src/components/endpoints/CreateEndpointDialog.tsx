@@ -45,11 +45,35 @@ export function CreateEndpointDialog({
   const t = useTranslations('endpoints');
   const commonT = useTranslations('common');
   const locale = useLocale();
+  type ProviderOption = 'openai' | 'google' | 'glm' | 'alibaba' | 'custom';
+  type CapabilityOption =
+    | 'chat_completion'
+    | 'embedding'
+    | 'rerank'
+    | 'image_generation'
+    | 'video_generation';
+
+  const providerProtocolMap: Record<ProviderOption, { family: CreateEndpointRequest['provider_family']; protocol: CreateEndpointRequest['protocol'] }> = {
+    openai: { family: 'openai', protocol: 'openai_compatible' },
+    google: { family: 'google', protocol: 'google_gemini' },
+    glm: { family: 'glm', protocol: 'glm_native' },
+    alibaba: { family: 'alibaba', protocol: 'dashscope_native' },
+    custom: { family: 'custom', protocol: 'openai_compatible' },
+  };
+  const defaultBaseUrls: Record<ProviderOption, string> = {
+    openai: 'https://api.openai.com/v1',
+    google: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    glm: 'https://open.bigmodel.cn/api/paas/v4',
+    alibaba: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    custom: '',
+  };
+
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [openaiModel, setOpenaiModel] = React.useState('');
   const [baseUrl, setBaseUrl] = React.useState('');
-  const [provider, setProvider] = React.useState<'openai' | 'anthropic' | 'custom'>('openai');
+  const [provider, setProvider] = React.useState<ProviderOption>('openai');
+  const [capability, setCapability] = React.useState<CapabilityOption>('chat_completion');
   const [credentialRef, setCredentialRef] = React.useState<string>('');
   const [limitsExpanded, setLimitsExpanded] = React.useState(false);
   const [maxRequestsPerMinute, setMaxRequestsPerMinute] = React.useState<string>('');
@@ -89,6 +113,7 @@ export function CreateEndpointDialog({
     setOpenaiModel('');
     setBaseUrl('');
     setProvider('openai');
+    setCapability('chat_completion');
     setCredentialRef('');
     setLimitsExpanded(false);
     setMaxRequestsPerMinute('');
@@ -114,19 +139,29 @@ export function CreateEndpointDialog({
       return;
     }
 
-    const defaultBaseUrls: Record<string, string> = {
-      openai: 'https://api.openai.com/v1',
-      anthropic: 'https://api.anthropic.com/v1',
-    };
     const url = baseUrl.trim() || defaultBaseUrls[provider] || '';
+    const providerMapping = providerProtocolMap[provider];
 
     const data: CreateEndpointRequest = {
       name: name.trim(),
       description: description.trim() || undefined,
       openai_model: openaiModel.trim(),
-      type: provider,
+      type: provider === 'openai' ? 'openai' : 'custom',
       base_url: url,
       credential_ref: credentialRef,
+      provider_family: providerMapping.family,
+      protocol: providerMapping.protocol,
+      capabilities: [{ type: capability, enabled: true, default_model_id: openaiModel.trim() }],
+      models: [{ capability, model_id: openaiModel.trim(), display_name: openaiModel.trim() }],
+      defaults: capability === 'chat_completion'
+        ? { chat_model_id: openaiModel.trim() }
+        : capability === 'embedding'
+          ? { embedding_model_id: openaiModel.trim() }
+          : capability === 'rerank'
+            ? { rerank_model_id: openaiModel.trim() }
+            : capability === 'image_generation'
+              ? { image_model_id: openaiModel.trim() }
+              : { video_model_id: openaiModel.trim() },
     };
 
     if (limitsExpanded && (maxRequestsPerMinute || timeoutSeconds)) {
@@ -215,11 +250,33 @@ export function CreateEndpointDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">
+              Endpoint Capability <span className="text-error">*</span>
+            </label>
+            <Select
+              value={capability}
+              onValueChange={(v) => setCapability(v as CapabilityOption)}
+              disabled={createMutation.isPending}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="chat_completion">Chat Completion</SelectItem>
+                <SelectItem value="embedding">Embedding</SelectItem>
+                <SelectItem value="rerank">Reranker</SelectItem>
+                <SelectItem value="image_generation">Image Generation</SelectItem>
+                <SelectItem value="video_generation">Video Generation</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">
               {t('create_dialog.provider')} <span className="text-error">*</span>
             </label>
             <Select
               value={provider}
-              onValueChange={(v) => setProvider(v as 'openai' | 'anthropic' | 'custom')}
+              onValueChange={(v) => setProvider(v as ProviderOption)}
               disabled={createMutation.isPending}
             >
               <SelectTrigger>
@@ -227,7 +284,9 @@ export function CreateEndpointDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="openai">{t('create_dialog.provider_openai')}</SelectItem>
-                <SelectItem value="anthropic">{t('create_dialog.provider_anthropic')}</SelectItem>
+                <SelectItem value="google">Google (Gemini)</SelectItem>
+                <SelectItem value="glm">GLM (BigModel)</SelectItem>
+                <SelectItem value="alibaba">Alibaba (DashScope)</SelectItem>
                 <SelectItem value="custom">{t('create_dialog.provider_custom')}</SelectItem>
               </SelectContent>
             </Select>
@@ -245,8 +304,12 @@ export function CreateEndpointDialog({
               placeholder={
                 provider === 'openai'
                   ? 'https://api.openai.com/v1'
-                  : provider === 'anthropic'
-                    ? 'https://api.anthropic.com/v1'
+                  : provider === 'google'
+                    ? 'https://generativelanguage.googleapis.com/v1beta/openai'
+                    : provider === 'glm'
+                      ? 'https://open.bigmodel.cn/api/paas/v4'
+                      : provider === 'alibaba'
+                        ? 'https://dashscope.aliyuncs.com/compatible-mode/v1'
                     : 'https://your-api.example.com/v1'
               }
               disabled={createMutation.isPending}

@@ -50,11 +50,15 @@ test.describe('sources integration flow', () => {
     await expect(libraryItem).toBeVisible({ timeout: 30_000 });
     await libraryItem.click();
 
+    const folderName = `docs-${Date.now()}`;
     await page.getByTestId('sources__new-folder').click();
-    await page.getByTestId('sources__dialog__new-folder').locator('input').fill('docs');
+    await page.getByTestId('sources__dialog__new-folder').locator('input').fill(folderName);
     await page.getByTestId('sources__dialog__new-folder').getByRole('button', { name: /Create|创建/i }).click();
-    await expect(page.locator('text=docs')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('sources__breadcrumb-root').click();
+    await expect(page.getByRole('button', { name: folderName }).first()).toHaveCount(1, { timeout: 30_000 });
+    await page.getByRole('button', { name: /Up|上一级/i }).first().click();
+    await expect(
+      page.locator('[data-testid="sources__object-row"]').filter({ hasText: folderName }).first(),
+    ).toBeVisible({ timeout: 30_000 });
 
     await page.getByTestId('sources__upload').click();
     await page.locator('input[type="file"]').setInputFiles({
@@ -94,7 +98,7 @@ test.describe('sources integration flow', () => {
     await row.locator('input[type="checkbox"]').check();
 
     await page.getByTestId('sources__rename').click();
-    await page.getByTestId('sources__move__dest-prefix').fill('docs/');
+    await page.getByTestId('sources__move__dest-prefix').fill(`${folderName}/`);
     await page.getByTestId('sources__move__name').fill('integration-note-renamed.txt');
     await page.getByTestId('sources__move__submit').click();
     await expect(
@@ -107,11 +111,11 @@ test.describe('sources integration flow', () => {
     await page.keyboard.press('Escape');
     await page
       .locator('[data-testid="sources__object-row"]')
-      .filter({ hasText: 'docs' })
+      .filter({ hasText: folderName })
       .first()
       .locator('button')
       .first()
-      .click();
+      .dblclick();
     const movedRow = page
       .locator('[data-testid="sources__object-row"]')
       .filter({ hasText: 'integration-note-renamed.txt' })
@@ -128,7 +132,8 @@ test.describe('sources integration flow', () => {
     await page.getByTestId('sources__share-generate').click();
     await expect(page.getByTestId('sources__share-link-value')).toBeVisible({ timeout: 30_000 });
     await page.keyboard.press('Escape');
-
+    await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
+    await expect(movedCheckbox).toBeChecked();
     await page.getByTestId('sources__delete').click();
     await page.getByTestId('sources__dialog__delete').getByRole('button', { name: /Delete|删除/i }).click();
     await expect(page.locator('text=integration-note-renamed.txt')).toHaveCount(0);

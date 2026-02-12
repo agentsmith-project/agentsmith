@@ -187,15 +187,68 @@ export interface Endpoint {
   project_id: string;
   name: string;
   description?: string;
-  openai_model: string; // Unique within project
+  openai_model: string; // Deprecated: preserved for backward compatibility
   source_model?: string;
-  type: 'openai' | 'anthropic' | 'custom';
+  type: 'openai' | 'anthropic' | 'custom'; // Deprecated: preserved for backward compatibility
   base_url: string;
   status: 'active' | 'disabled';
   credential_ref?: string;
+  provider_family?: EndpointProviderFamily;
+  protocol?: EndpointProtocol;
+  capabilities?: EndpointCapability[];
+  models?: EndpointModelBinding[];
+  defaults?: EndpointDefaults;
+  health?: EndpointHealth;
+  meta?: Record<string, string>;
   limits?: EndpointLimits;
   created_at: string;
   updated_at: string;
+}
+
+export type EndpointProviderFamily = 'openai' | 'google' | 'glm' | 'alibaba' | 'custom';
+export type EndpointProtocol =
+  | 'openai_compatible'
+  | 'google_gemini'
+  | 'glm_native'
+  | 'dashscope_native';
+export type EndpointCapabilityType =
+  | 'chat_completion'
+  | 'embedding'
+  | 'rerank'
+  | 'image_generation'
+  | 'video_generation';
+
+export interface EndpointCapability {
+  type: EndpointCapabilityType;
+  enabled: boolean;
+  default_model_id?: string;
+}
+
+export interface EndpointModelBinding {
+  capability: EndpointCapabilityType;
+  model_id: string;
+  display_name?: string;
+  context_window?: number;
+  pricing?: {
+    input_per_million?: number;
+    output_per_million?: number;
+    unit?: string;
+    currency?: string;
+  };
+}
+
+export interface EndpointDefaults {
+  chat_model_id?: string;
+  embedding_model_id?: string;
+  rerank_model_id?: string;
+  image_model_id?: string;
+  video_model_id?: string;
+}
+
+export interface EndpointHealth {
+  status: 'unknown' | 'healthy' | 'degraded' | 'failed';
+  last_checked_at?: string;
+  last_error?: string;
 }
 
 export interface EndpointLimits {

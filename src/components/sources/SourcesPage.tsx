@@ -190,13 +190,13 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
   const crumbs = React.useMemo(() => buildCrumbs(prefix), [prefix]);
 
-  const clearSelection = () => setSelectedIds([]);
+  const clearSelection = React.useCallback(() => setSelectedIds([]), []);
 
-  const navigateToPrefix = (nextPrefix: string) => {
+  const navigateToPrefix = React.useCallback((nextPrefix: string) => {
     setPrefix(nextPrefix);
     setSearchImmediately('');
     clearSelection();
-  };
+  }, [clearSelection, setPrefix, setSearchImmediately]);
 
   const snapshotCurrentLibraryView = React.useCallback(() => {
     if (!selectedLibraryId) return;
@@ -316,7 +316,6 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
       enterMultiMode,
       filteredItems,
       multiSelectAnchorIndex,
-      navigateToPrefix,
       selectionMode,
       toggleRow,
     ],

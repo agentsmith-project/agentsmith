@@ -254,6 +254,10 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
 - Prefer explicit server reuse in unstable environments:
   - Start dev server in a persistent terminal session: `npm run dev:test -- --port 3001`
   - Run Playwright with `BASE_URL=http://localhost:3001` to bypass managed `webServer` startup ambiguity.
+- Mandatory local test rule:
+  - Do **not** let Playwright manage frontend/backend service startup for integration testing.
+  - Always start backend/frontend manually first, then run Playwright against existing services via `BASE_URL` / `INTEGRATION_API_BASE`.
+  - Before starting any service or test command, clear proxy environment variables (`http_proxy`, `https_proxy`, `all_proxy`, `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `no_proxy`, `NO_PROXY`).
 - For fast triage, run targeted smoke first:
   - `npx playwright test --project=smoke e2e/smoke.spec.ts --grep "<route-pattern>" --max-failures=1 --workers=1`
 - If route navigation hangs, separate infra vs app failure:

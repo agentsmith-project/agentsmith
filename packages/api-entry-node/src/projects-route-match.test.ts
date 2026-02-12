@@ -73,6 +73,53 @@ describe('matchProjectsRoute', () => {
       endpointId: 'ep_1',
       proxyPath: 'chat/completions',
     });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/rerank'),
+    ).toEqual({
+      kind: 'endpointRerank',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: 'ep_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/images/generations'),
+    ).toEqual({
+      kind: 'endpointImageGeneration',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: 'ep_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/videos/generations'),
+    ).toEqual({
+      kind: 'endpointVideoGenerationCreate',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: 'ep_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/videos/generations/job_1'),
+    ).toEqual({
+      kind: 'endpointVideoGenerationPoll',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: 'ep_1',
+      jobId: 'job_1',
+    });
+
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/videos/generations/job_1/cancel'),
+    ).toEqual({
+      kind: 'endpointVideoGenerationCancel',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      endpointId: 'ep_1',
+      jobId: 'job_1',
+    });
   });
 
   it('matches source library object browser routes', () => {

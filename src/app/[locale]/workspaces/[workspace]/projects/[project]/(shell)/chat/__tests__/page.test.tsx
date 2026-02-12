@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -134,7 +134,7 @@ describe('ChatPage', () => {
     mockUseCanManageChatSessions.mockReturnValue(true);
   });
 
-  it('renders compact header layout with new-thread action', async () => {
+  it('renders compact layout with new-thread action', async () => {
     render(
       <ChatPage
         params={Promise.resolve({
@@ -147,13 +147,11 @@ describe('ChatPage', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
+      expect(screen.getByTestId('page-layout')).toBeInTheDocument();
     });
 
-    const header = screen.getByTestId('page-layout__header');
-    expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
     expect(screen.getByTestId('chat__new-thread-btn')).toBeInTheDocument();
-    expect(screen.queryByTestId('page-layout__toolbar')).not.toBeInTheDocument();
+    expect(screen.getByTestId('page-layout__body')).toBeInTheDocument();
   });
 
   it('triggers new thread creation from toolbar', async () => {

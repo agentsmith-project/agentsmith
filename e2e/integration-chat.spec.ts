@@ -444,14 +444,38 @@ async function createEndpoint(
   await endpointDialog.locator('#endpoint-name').fill(endpointName);
   await endpointDialog.locator('#endpoint-model').fill(endpointModel);
 
-  const providerSelect = endpointDialog.locator('[role="combobox"]').first();
-  await providerSelect.click();
-  await page.getByRole('option', { name: /custom/i }).click();
+  const comboBoxes = endpointDialog.locator('[role="combobox"]');
+  const comboCount = await comboBoxes.count();
+  let providerSelected = false;
+  for (let i = 0; i < comboCount; i += 1) {
+    const combo = comboBoxes.nth(i);
+    await combo.click();
+    const customOption = page.getByRole('option', { name: /custom|自定义/i }).first();
+    if (await customOption.isVisible({ timeout: 750 }).catch(() => false)) {
+      await customOption.click();
+      providerSelected = true;
+      break;
+    }
+    await page.keyboard.press('Escape');
+  }
+  expect(providerSelected).toBeTruthy();
   await endpointDialog.locator('#endpoint-base-url').fill(upstreamBaseUrl);
 
-  const credentialSelect = endpointDialog.locator('[role="combobox"]').last();
-  await credentialSelect.click();
-  await page.getByRole('option', { name: new RegExp(credentialName, 'i') }).click();
+  const comboBoxesAfterProvider = endpointDialog.locator('[role="combobox"]');
+  const comboCountAfterProvider = await comboBoxesAfterProvider.count();
+  let credentialSelected = false;
+  for (let i = 0; i < comboCountAfterProvider; i += 1) {
+    const combo = comboBoxesAfterProvider.nth(i);
+    await combo.click();
+    const credentialOption = page.getByRole('option', { name: new RegExp(credentialName, 'i') }).first();
+    if (await credentialOption.isVisible({ timeout: 750 }).catch(() => false)) {
+      await credentialOption.click();
+      credentialSelected = true;
+      break;
+    }
+    await page.keyboard.press('Escape');
+  }
+  expect(credentialSelected).toBeTruthy();
 
   const createEndpointResponse = page.waitForResponse((res) =>
     res.request().method() === 'POST' &&
@@ -1181,11 +1205,13 @@ test.describe('integration chat flow', () => {
         'branch-regen-1 branch-regen-2',
       );
 
-      await page.getByRole('button', { name: 'Edit message' }).first().click();
-      const inlineEditTextarea = page.locator('[data-testid="chat__message"] textarea').first();
+      const firstMessage = page.locator('[data-testid="chat__message"]').first();
+      await firstMessage.hover();
+      await page.getByRole('button', { name: /Edit|编辑/i }).first().click();
+      const inlineEditTextarea = page.getByTestId('chat__composer').locator('textarea');
       await expect(inlineEditTextarea).toBeVisible({ timeout: 10_000 });
       await inlineEditTextarea.fill('edited historical input');
-      await page.getByRole('button', { name: 'Save' }).first().click();
+      await page.getByTestId('chat__send-btn').click();
 
       await expect(page.getByTestId('chat__stream-status')).toHaveText(/Generating|Streaming/i, { timeout: 15_000 });
       await expect(

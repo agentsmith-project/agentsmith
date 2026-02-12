@@ -42,6 +42,26 @@ export function EditEndpointDialog({
   const t = useTranslations('endpoints');
   const commonT = useTranslations('common');
   const { handleError } = useApiError();
+  type ProviderOption = 'openai' | 'google' | 'glm' | 'alibaba' | 'custom';
+  type CapabilityOption =
+    | 'chat_completion'
+    | 'embedding'
+    | 'rerank'
+    | 'image_generation'
+    | 'video_generation';
+  const providerProtocolMap: Record<
+    ProviderOption,
+    { family: 'openai' | 'google' | 'glm' | 'alibaba' | 'custom'; protocol: 'openai_compatible' | 'google_gemini' | 'glm_native' | 'dashscope_native' }
+  > = {
+    openai: { family: 'openai', protocol: 'openai_compatible' },
+    google: { family: 'google', protocol: 'google_gemini' },
+    glm: { family: 'glm', protocol: 'glm_native' },
+    alibaba: { family: 'alibaba', protocol: 'dashscope_native' },
+    custom: { family: 'custom', protocol: 'openai_compatible' },
+  };
+
+  const [provider, setProvider] = React.useState<ProviderOption>('openai');
+  const [capability, setCapability] = React.useState<CapabilityOption>('chat_completion');
   const [name, setName] = React.useState(endpoint.name);
   const [description, setDescription] = React.useState(endpoint.description ?? '');
   const [openaiModel, setOpenaiModel] = React.useState(endpoint.openai_model);
@@ -67,6 +87,17 @@ export function EditEndpointDialog({
     setBaseUrl(endpoint.base_url);
     setStatus(endpoint.status);
     setCredentialRef(endpoint.credential_ref ?? '');
+    const family = endpoint.provider_family ?? 'openai';
+    setProvider(
+      family === 'google' || family === 'glm' || family === 'alibaba' || family === 'custom'
+        ? family
+        : 'openai',
+    );
+    const selectedCapability =
+      endpoint.capabilities?.find((item) => item.enabled)?.type ??
+      endpoint.models?.[0]?.capability ??
+      'chat_completion';
+    setCapability(selectedCapability);
   }, [open, endpoint]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -81,6 +112,20 @@ export function EditEndpointDialog({
         base_url: baseUrl.trim(),
         status,
         credential_ref: credentialRef,
+        provider_family: providerProtocolMap[provider].family,
+        protocol: providerProtocolMap[provider].protocol,
+        capabilities: [{ type: capability, enabled: true, default_model_id: openaiModel.trim() }],
+        models: [{ capability, model_id: openaiModel.trim(), display_name: openaiModel.trim() }],
+        defaults:
+          capability === 'chat_completion'
+            ? { chat_model_id: openaiModel.trim() }
+            : capability === 'embedding'
+              ? { embedding_model_id: openaiModel.trim() }
+              : capability === 'rerank'
+                ? { rerank_model_id: openaiModel.trim() }
+                : capability === 'image_generation'
+                  ? { image_model_id: openaiModel.trim() }
+                  : { video_model_id: openaiModel.trim() },
       });
       toast.success(t('edit_dialog.success'));
       onSuccess?.();
@@ -142,6 +187,50 @@ export function EditEndpointDialog({
                 disabled={isSaving}
                 className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                Endpoint Capability <span className="text-error">*</span>
+              </label>
+              <Select
+                value={capability}
+                onValueChange={(v) => setCapability(v as CapabilityOption)}
+                disabled={isSaving}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="chat_completion">Chat Completion</SelectItem>
+                  <SelectItem value="embedding">Embedding</SelectItem>
+                  <SelectItem value="rerank">Reranker</SelectItem>
+                  <SelectItem value="image_generation">Image Generation</SelectItem>
+                  <SelectItem value="video_generation">Video Generation</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                {t('create_dialog.provider')} <span className="text-error">*</span>
+              </label>
+              <Select
+                value={provider}
+                onValueChange={(v) => setProvider(v as ProviderOption)}
+                disabled={isSaving}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai">{t('create_dialog.provider_openai')}</SelectItem>
+                  <SelectItem value="google">Google (Gemini)</SelectItem>
+                  <SelectItem value="glm">GLM (BigModel)</SelectItem>
+                  <SelectItem value="alibaba">Alibaba (DashScope)</SelectItem>
+                  <SelectItem value="custom">{t('create_dialog.provider_custom')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">

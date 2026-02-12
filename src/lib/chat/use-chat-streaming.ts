@@ -403,15 +403,17 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
   }, []);
 
   const runStream = async (runArgs: RunChatStreamArgs): Promise<void> => {
-    const previousStopped = await stopStreamingSession(runArgs.sessionId, 'replace');
-    if (!previousStopped) {
-      return;
+    const mode = runArgs.mode ?? (runArgs.fromMessageId ? 'replace' : 'append');
+    if (mode === 'replace') {
+      const previousStopped = await stopStreamingSession(runArgs.sessionId, 'replace');
+      if (!previousStopped) {
+        return;
+      }
     }
 
     const controller = new AbortController();
     streamControllersRef.current.set(runArgs.sessionId, controller);
 
-    const mode = runArgs.mode ?? (runArgs.fromMessageId ? 'replace' : 'append');
     const now = Date.now();
     setSessionStreamState(runArgs.sessionId, {
       status: 'connecting',

@@ -21,8 +21,6 @@ interface UseChatComposerActionsArgs {
   runStream: (args: RunChatStreamArgs) => Promise<void>;
   initAttachment: (args: { sessionId: string; file: File }) => Promise<unknown>;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  supportsMultimodalAttachments: boolean;
-  onAttachmentCapabilityError?: () => void;
 }
 
 interface UseChatComposerActionsResult {
@@ -45,8 +43,6 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
     runStream,
     initAttachment,
     fileInputRef,
-    supportsMultimodalAttachments,
-    onAttachmentCapabilityError,
   } = args;
 
   const handleSend = useCallback(async () => {
@@ -61,10 +57,6 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
     const readyAttachmentIds = attachments.filter((a) => a.upload_status === 'ready').map((a) => a.id);
     const hasBlocking = attachments.some((a) => a.upload_status !== 'ready');
     if (hasBlocking) return;
-    if (readyAttachmentIds.length > 0 && !supportsMultimodalAttachments) {
-      onAttachmentCapabilityError?.();
-      return;
-    }
 
     if (editingMessageId) return;
 
@@ -94,8 +86,6 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
     createMessage,
     runStream,
     setComposerBySession,
-    supportsMultimodalAttachments,
-    onAttachmentCapabilityError,
   ]);
 
   const onPickFiles = useCallback(() => {

@@ -60,6 +60,10 @@ export function MessageList({
   const virtuosoRef = React.useRef<import('react-virtuoso').VirtuosoHandle>(null);
   const [isAtBottom, setIsAtBottom] = React.useState(true);
   const showJump = !isAtBottom;
+  const attachmentsById = React.useMemo(
+    () => Object.fromEntries(attachments.map((item) => [item.id, item])),
+    [attachments],
+  );
 
   if (chain.length === 0) {
     return (
@@ -71,10 +75,6 @@ export function MessageList({
 
   const shouldFollow = followOutput && isAtBottom && !suppressAutoScroll;
   const contentWidthClass = getChatContentWidthClass(layoutMode);
-  const attachmentsById = React.useMemo(
-    () => Object.fromEntries(attachments.map((item) => [item.id, item])),
-    [attachments],
-  );
 
   return (
     <div className="h-full relative">

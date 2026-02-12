@@ -160,36 +160,57 @@ async function startOpenAIStreamingUpstreamWith(args: {
 }
 
 async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
+  await page.context().clearCookies();
   await page.goto(`/${locale}/login`);
-  await page.getByTestId('login__keycloak-btn').click();
-
-  const keycloakError = page.getByTestId('login__keycloak-error');
-  if (await keycloakError.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    throw new Error(`Keycloak login bootstrap failed: ${await keycloakError.textContent()}`);
-  }
-
-  await page.waitForURL(/\/realms\/.+\/protocol\/openid-connect\/auth|\/login-actions\/authenticate/i, {
-    timeout: 30_000,
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
   });
-  await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
-  await page.locator('input#password, input[name="password"]').first().fill(password);
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
-    page.locator('#kc-login, button[type="submit"]').first().click(),
-  ]);
-  const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (await workspaceCard.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      break;
+
+  for (let cycle = 0; cycle < 2; cycle += 1) {
+    if (!new RegExp(`/${locale}/login`).test(page.url())) {
+      await page.goto(`/${locale}/login`);
     }
-    const retryButton = page.getByTestId('workspace-select__retry-btn');
-    if (await retryButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      await retryButton.click();
+
+    await page.getByTestId('login__keycloak-btn').click();
+    const keycloakError = page.getByTestId('login__keycloak-error');
+    if (await keycloakError.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      throw new Error(`Keycloak login bootstrap failed: ${await keycloakError.textContent()}`);
     }
+
+    await page.waitForURL(/\/realms\/.+\/protocol\/openid-connect\/auth|\/login-actions\/authenticate/i, {
+      timeout: 30_000,
+    });
+    await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
+    await page.locator('input#password, input[name="password"]').first().fill(password);
+    await Promise.all([
+      page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
+      page.locator('#kc-login, button[type="submit"]').first().click(),
+    ]);
+
+    const reloginBtn = page.getByTestId('workspace-select__relogin-btn');
+    if (await reloginBtn.isVisible({ timeout: 1_500 }).catch(() => false)) {
+      await reloginBtn.click();
+      continue;
+    }
+
+    const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (await workspaceCard.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        break;
+      }
+      const retryButton = page.getByTestId('workspace-select__retry-btn');
+      if (await retryButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+        await retryButton.click();
+      }
+    }
+    await expect(workspaceCard).toBeVisible({ timeout: 15_000 });
+    await workspaceCard.click();
+    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 30_000 });
+    return;
   }
-  await expect(workspaceCard).toBeVisible({ timeout: 15_000 });
-  await workspaceCard.click();
-  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 30_000 });
+
+  throw new Error('Unable to complete workspace selection after Keycloak login retries.');
 }
 
 function loadOpenAICompatiblePayloadForE2E() {
@@ -289,8 +310,7 @@ async function openChatAndSendExpectAssistantAny(
 
   const streamResponse = page.waitForResponse((res) =>
     res.request().method() === 'POST' &&
-    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages\/stream$/.test(res.url()) &&
-    res.status() === 200,
+    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages\/stream$/.test(res.url()),
   );
   await page.getByTestId('chat__send-btn').click();
   await streamResponse;
@@ -327,7 +347,11 @@ async function provisionCredentialAndEndpoint(
   locale: string,
   projectId: string,
   upstreamBaseUrl: string,
+  options?: {
+    capability?: 'chat_completion' | 'multimodal_completion';
+  },
 ) {
+  const { capability = 'chat_completion' } = options ?? {};
   const suffix = Date.now();
   const credentialName = `Integration Credential ${suffix}`;
   const endpointName = `Integration Endpoint ${suffix}`;
@@ -340,6 +364,7 @@ async function provisionCredentialAndEndpoint(
     endpointModel: 'integration-chat-model',
     upstreamBaseUrl,
     credentialName,
+    capability,
   });
 }
 
@@ -438,9 +463,10 @@ async function createEndpoint(
     endpointModel: string;
     upstreamBaseUrl: string;
     credentialName: string;
+    capability?: 'chat_completion' | 'multimodal_completion';
   },
 ): Promise<string> {
-  const { endpointName, endpointModel, upstreamBaseUrl, credentialName } = args;
+  const { endpointName, endpointModel, upstreamBaseUrl, credentialName, capability = 'chat_completion' } = args;
   await page.getByRole('link', { name: /endpoints|端点/i }).first().click();
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/endpoints`), {
     timeout: 30_000,
@@ -453,20 +479,17 @@ async function createEndpoint(
   await endpointDialog.locator('#endpoint-model').fill(endpointModel);
 
   const comboBoxes = endpointDialog.locator('[role="combobox"]');
-  const comboCount = await comboBoxes.count();
-  let providerSelected = false;
-  for (let i = 0; i < comboCount; i += 1) {
-    const combo = comboBoxes.nth(i);
-    await combo.click();
-    const customOption = page.getByRole('option', { name: /custom|自定义/i }).first();
-    if (await customOption.isVisible({ timeout: 750 }).catch(() => false)) {
-      await customOption.click();
-      providerSelected = true;
-      break;
-    }
-    await page.keyboard.press('Escape');
+  const capabilityCombo = comboBoxes.first();
+  await capabilityCombo.click();
+  if (capability === 'multimodal_completion') {
+    await page.getByRole('option', { name: /multimodal completion/i }).first().click();
+  } else {
+    await page.getByRole('option', { name: /chat completion/i }).first().click();
   }
-  expect(providerSelected).toBeTruthy();
+
+  const providerCombo = comboBoxes.nth(1);
+  await providerCombo.click();
+  await page.getByRole('option', { name: /custom|自定义/i }).first().click();
   await endpointDialog.locator('#endpoint-base-url').fill(upstreamBaseUrl);
 
   const comboBoxesAfterProvider = endpointDialog.locator('[role="combobox"]');
@@ -489,9 +512,16 @@ async function createEndpoint(
     res.request().method() === 'POST' &&
     /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/endpoints$/.test(res.url()),
   );
+  await endpointDialog.locator('#endpoint-name').fill(endpointName);
+  await endpointDialog.locator('#endpoint-model').fill(endpointModel);
+  await expect(endpointDialog.getByRole('button', { name: /^create$/i })).toBeEnabled({ timeout: 10_000 });
   await endpointDialog.getByRole('button', { name: /^create$/i }).click();
   const endpointRes = await createEndpointResponse;
   expect(endpointRes.ok()).toBeTruthy();
+  const endpointCreateBody = endpointRes.request().postDataJSON() as {
+    capabilities?: Array<{ type?: string }>;
+  } | null;
+  expect(endpointCreateBody?.capabilities?.[0]?.type).toBe(capability);
   captureApiAuthContextFromResponse(endpointRes);
   const endpointJson = (await endpointRes.json().catch(() => null)) as
     | { id?: string; data?: { id?: string } }
@@ -654,11 +684,14 @@ async function openChatAndSend(
 
   const streamResponse = page.waitForResponse((res) =>
     res.request().method() === 'POST' &&
-    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages\/stream$/.test(res.url()) &&
-    res.status() === 200,
+    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages\/stream$/.test(res.url()),
   );
   await sendBtn.click();
-  await streamResponse;
+  const streamRes = await streamResponse;
+  if (!streamRes.ok()) {
+    const bodyText = await streamRes.text().catch(() => '');
+    throw new Error(`Stream request failed (${streamRes.status()}): ${bodyText}`);
+  }
   await expect(page.getByText(expectedReply).first()).toBeVisible({ timeout: 60_000 });
   return selectedThreadId!;
 }
@@ -715,17 +748,29 @@ async function openChatAttachAndSend(
     req.method() === 'POST' &&
     /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages$/.test(req.url()),
   );
+  const createMessageResponse = page.waitForResponse((res) =>
+    res.request().method() === 'POST' &&
+    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages$/.test(res.url()),
+  );
   const streamResponse = page.waitForResponse((res) =>
     res.request().method() === 'POST' &&
-    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages\/stream$/.test(res.url()) &&
-    res.status() === 200,
+    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages\/stream$/.test(res.url()),
   );
   await sendBtn.click();
   const msgReq = await createMessageRequest;
+  const msgRes = await createMessageResponse;
   const body = msgReq.postDataJSON() as { attachments?: string[] } | null;
   expect(Array.isArray(body?.attachments)).toBeTruthy();
   expect((body?.attachments ?? []).length).toBeGreaterThan(0);
-  await streamResponse;
+  if (!msgRes.ok()) {
+    const bodyText = await msgRes.text().catch(() => '');
+    throw new Error(`Create message failed (${msgRes.status()}): ${bodyText}`);
+  }
+  const streamRes = await streamResponse;
+  if (!streamRes.ok()) {
+    const bodyText = await streamRes.text().catch(() => '');
+    throw new Error(`Stream request failed (${streamRes.status()}): ${bodyText}`);
+  }
   await expect(page.getByText(expectedReply).first()).toBeVisible({ timeout: 60_000 });
   return selectedThreadId!;
 }
@@ -753,7 +798,9 @@ test.describe('integration chat flow', () => {
     try {
       await keycloakLogin(page, locale, username, password);
       const projectId = await createProjectFromUi(page, locale);
-      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl, {
+        capability: 'multimodal_completion',
+      });
       await openChatAndSend(page, locale, projectId, 'Integration chat ping');
       expect(upstream.getRequestCount()).toBeGreaterThan(0);
     } finally {
@@ -771,7 +818,9 @@ test.describe('integration chat flow', () => {
     try {
       await keycloakLogin(page, locale, username, password);
       const projectId = await createProjectFromUi(page, locale);
-      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl, {
+        capability: 'multimodal_completion',
+      });
 
       const selectedThreadId = await openChatAndSend(page, locale, projectId, 'Reconnect test - message 1');
       const firstThread = page.getByTestId('chat__thread-item').first();
@@ -1194,7 +1243,9 @@ test.describe('integration chat flow', () => {
     try {
       await keycloakLogin(page, locale, username, password);
       const projectId = await createProjectFromUi(page, locale);
-      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl, {
+        capability: 'multimodal_completion',
+      });
 
       const threadId = await openChatAndSend(
         page,
@@ -1429,7 +1480,9 @@ test.describe('integration chat flow', () => {
     try {
       await keycloakLogin(page, locale, username, password);
       const projectId = await createProjectFromUi(page, locale);
-      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl, {
+        capability: 'multimodal_completion',
+      });
 
       await openChatAttachAndSend(page, locale, projectId, {
         text: 'Message with attached file',

@@ -1050,6 +1050,103 @@ describe('api-entry-node projects routes', () => {
     );
   });
 
+  it('rejects attachment stream when endpoint is not multimodal', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-key',
+          type: 'api_key',
+          value: 'sk-chat',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-only-endpoint',
+          openai_model: 'gpt-4o-mini',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          provider_family: 'openai',
+          protocol: 'openai_compatible',
+          capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'gpt-4o-mini' }],
+          models: [{ capability: 'chat_completion', model_id: 'gpt-4o-mini' }],
+          defaults: { chat_model_id: 'gpt-4o-mini' },
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'gpt-4o-mini',
+        }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    const initAttachment = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/attachments/init`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          file_name: 'cat.png',
+          file_type: 'image/png',
+          file_size: 4,
+          content_base64: 'AQIDBA==',
+        }),
+      },
+    );
+    expect(initAttachment.status).toBe(200);
+    const attachmentBody = (await initAttachment.json()) as { attachment: { id: string } };
+
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          input: {
+            role: 'user',
+            content: 'describe this image',
+            attachments: [attachmentBody.attachment.id],
+          },
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(422);
+    const body = (await streamRes.json()) as { message?: string };
+    expect(body.message).toBe('chat_endpoint_not_multimodal');
+    expect(upstream.lastBody()).toBeNull();
+  });
+
   it('imports openai-compatible endpoint config in one request', async () => {
     const { baseUrl } = startServer();
     const importRes = await apiFetch(

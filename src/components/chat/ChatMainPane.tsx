@@ -144,6 +144,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
         ) : (
           <MessageList
             messages={messages}
+            attachments={attachments}
             activeVariantIndexByGroup={activeVariantIndexByGroup}
             editingMessageId={editingMessageId}
             onSelectVariant={onSelectVariant}

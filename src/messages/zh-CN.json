@@ -563,7 +563,10 @@
       "regenerate": "重新生成",
       "prev_variant": "上一个变体",
       "next_variant": "下一个变体",
-      "copy": "复制"
+      "copy": "复制",
+      "attachments": "附件",
+      "attachment_preview": "附件预览",
+      "attachment_preview_unavailable": "无法预览该附件"
     },
     "library_picker": {
       "title": "从文件库选择文件",

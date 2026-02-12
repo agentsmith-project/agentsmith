@@ -561,7 +561,10 @@
       "regenerate": "Regenerate",
       "prev_variant": "Previous variant",
       "next_variant": "Next variant",
-      "copy": "Copy"
+      "copy": "Copy",
+      "attachments": "Attachments",
+      "attachment_preview": "Attachment Preview",
+      "attachment_preview_unavailable": "Preview unavailable"
     },
     "library_picker": {
       "title": "Select file from library",

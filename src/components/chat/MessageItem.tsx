@@ -4,13 +4,26 @@ import * as React from 'react';
 import { Copy, Pencil, RotateCcw, ChevronLeft, ChevronRight, Check, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-import type { ChatMessage } from '@/lib/api/types';
+import type { Attachment, ChatMessage } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import { Markdown } from '@/components/chat/Markdown';
 import { type VariantGroups, getVariantMeta } from '@/lib/chat/branch';
 import type { ChatLayoutMode } from '@/lib/chat/layout';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
 
 export const MessageItem = React.memo(function MessageItem({
   message,
@@ -26,6 +39,7 @@ export const MessageItem = React.memo(function MessageItem({
   streamingMeta,
   disabled,
   layoutMode = 'standard',
+  attachmentsById,
 }: {
   message: ChatMessage;
   variantGroups: VariantGroups;
@@ -40,6 +54,7 @@ export const MessageItem = React.memo(function MessageItem({
   streamingMeta?: { startedAt: number; lastTokenAt: number } | null;
   disabled: boolean;
   layoutMode?: ChatLayoutMode;
+  attachmentsById?: Record<string, Attachment>;
 }) {
   const t = useTranslations('common.toast');
   const tChat = useTranslations('chat');
@@ -51,6 +66,11 @@ export const MessageItem = React.memo(function MessageItem({
   const activeVariantIndex = variantMeta ? (activeVariantIndexByGroup[variantMeta.groupId] ?? variantMeta.index) : null;
   const [draft, setDraft] = React.useState(message.content);
   const [showDiff, setShowDiff] = React.useState(false);
+  const [previewAttachmentId, setPreviewAttachmentId] = React.useState<string | null>(null);
+  const attachmentSnapshots = message.attachment_snapshots ?? [];
+  const previewAttachment = previewAttachmentId
+    ? attachmentsById?.[previewAttachmentId] ?? null
+    : null;
 
   React.useEffect(() => {
     if (isEditing) setDraft(message.content);
@@ -101,6 +121,38 @@ export const MessageItem = React.memo(function MessageItem({
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse [animation-delay:240ms]" />
               </span>
             )}
+          </div>
+        )}
+
+        {attachmentSnapshots.length > 0 && !isEditing && (
+          <div className="mb-2">
+            <div className="mb-1 text-[11px] text-tertiary">{tChat('message_item.attachments')}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {attachmentSnapshots.map((attachment) => {
+                const currentAttachment = attachmentsById?.[attachment.id];
+                const isImage =
+                  attachment.file_type.startsWith('image/') &&
+                  typeof currentAttachment?.preview_url === 'string' &&
+                  currentAttachment.preview_url.length > 0;
+                return (
+                  <button
+                    key={attachment.id}
+                    type="button"
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-sm border border-subtle bg-surface-high px-2 py-1 text-left',
+                      isImage ? 'hover:bg-hover cursor-pointer' : 'cursor-default',
+                    )}
+                    onClick={() => {
+                      if (isImage) setPreviewAttachmentId(attachment.id);
+                    }}
+                    data-testid={`chat__message-attachment-${attachment.id}`}
+                  >
+                    <span className="max-w-[180px] truncate text-[11px] text-primary">{attachment.file_name}</span>
+                    <span className="text-[10px] text-tertiary">{formatSize(attachment.file_size)}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -257,6 +309,29 @@ export const MessageItem = React.memo(function MessageItem({
           </Button>
         </div>
       </div>
+      <Dialog
+        open={previewAttachmentId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPreviewAttachmentId(null);
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{previewAttachment?.file_name ?? tChat('message_item.attachment_preview')}</DialogTitle>
+          </DialogHeader>
+          {previewAttachment?.preview_url ? (
+            <div className="flex max-h-[70vh] justify-center overflow-auto">
+              <img
+                src={previewAttachment.preview_url}
+                alt={previewAttachment.file_name}
+                className="max-h-[70vh] w-auto rounded-md border border-subtle object-contain"
+              />
+            </div>
+          ) : (
+            <div className="text-sm text-tertiary">{tChat('message_item.attachment_preview_unavailable')}</div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });

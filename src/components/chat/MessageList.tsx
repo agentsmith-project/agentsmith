@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { useTranslations } from 'next-intl';
 
-import type { ChatMessage } from '@/lib/api/types';
+import type { Attachment, ChatMessage } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
 import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
 import { cn } from '@/lib/utils';
@@ -26,6 +26,7 @@ export function MessageList({
   suppressAutoScroll = false,
   disabled,
   layoutMode = 'standard',
+  attachments = [],
 }: {
   messages: ChatMessage[];
   activeVariantIndexByGroup: Record<string, number>;
@@ -47,6 +48,7 @@ export function MessageList({
   suppressAutoScroll?: boolean;
   disabled: boolean;
   layoutMode?: ChatLayoutMode;
+  attachments?: Attachment[];
 }) {
   const t = useTranslations('chat');
   const groups = React.useMemo(() => buildVariantGroups(messages), [messages]);
@@ -69,6 +71,10 @@ export function MessageList({
 
   const shouldFollow = followOutput && isAtBottom && !suppressAutoScroll;
   const contentWidthClass = getChatContentWidthClass(layoutMode);
+  const attachmentsById = React.useMemo(
+    () => Object.fromEntries(attachments.map((item) => [item.id, item])),
+    [attachments],
+  );
 
   return (
     <div className="h-full relative">
@@ -104,6 +110,7 @@ export function MessageList({
                 }
                 disabled={disabled}
                 layoutMode={layoutMode}
+                attachmentsById={attachmentsById}
               />
             </div>
           </div>

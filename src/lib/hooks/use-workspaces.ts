@@ -7,6 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApiClient } from '@/lib/api/client';
 import { WorkspaceAPI } from '@/lib/api/endpoints/workspaces';
+import { useAuthStore } from '@/lib/stores/authStore';
 
 // Query keys factory
 export const workspaceKeys = {
@@ -19,6 +20,7 @@ export const workspaceKeys = {
  * Get all workspaces for current user
  */
 export function useWorkspaces() {
+  const token = useAuthStore((state) => state.token);
   return useQuery({
     queryKey: workspaceKeys.all,
     queryFn: async () => {
@@ -26,6 +28,7 @@ export function useWorkspaces() {
       const api = new WorkspaceAPI(client);
       return api.list();
     },
+    enabled: Boolean(token),
     staleTime: 60_000, // 1 minute
   });
 }
@@ -34,6 +37,7 @@ export function useWorkspaces() {
  * Get a single workspace by ID
  */
 export function useWorkspace(id: string) {
+  const token = useAuthStore((state) => state.token);
   return useQuery({
     queryKey: workspaceKeys.detail(id),
     queryFn: async () => {
@@ -41,7 +45,7 @@ export function useWorkspace(id: string) {
       const api = new WorkspaceAPI(client);
       return api.get(id);
     },
-    enabled: !!id,
+    enabled: !!id && Boolean(token),
     staleTime: 60_000,
   });
 }
@@ -50,6 +54,7 @@ export function useWorkspace(id: string) {
  * Get workspace members by workspace ID
  */
 export function useWorkspaceMembers(id: string) {
+  const token = useAuthStore((state) => state.token);
   return useQuery({
     queryKey: workspaceKeys.members(id),
     queryFn: async () => {
@@ -57,7 +62,7 @@ export function useWorkspaceMembers(id: string) {
       const api = new WorkspaceAPI(client);
       return api.listMembers(id);
     },
-    enabled: !!id,
+    enabled: !!id && Boolean(token),
     staleTime: 60_000,
   });
 }

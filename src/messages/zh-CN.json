@@ -517,7 +517,8 @@
       "save": "保存",
       "send": "发送",
       "hotkey_edit": "Enter 保存 · Shift+Enter 换行",
-      "hotkey_compose": "Enter 发送 · Shift+Enter 换行"
+      "hotkey_compose": "Enter 发送 · Shift+Enter 换行",
+      "attach_from_library": "从文件库添加"
     },
     "header": {
       "status_generating": "生成中...",
@@ -563,6 +564,15 @@
       "prev_variant": "上一个变体",
       "next_variant": "下一个变体",
       "copy": "复制"
+    },
+    "library_picker": {
+      "title": "从文件库选择文件",
+      "select_library": "选择文件库",
+      "search_placeholder": "搜索文件名",
+      "up": "上一级",
+      "loading": "加载中...",
+      "empty": "当前目录暂无文件",
+      "add": "添加"
     }
   },
   "studio": {

@@ -53,6 +53,7 @@ export interface ChatMainPaneProps {
   onSend: () => void;
   onStop: () => void;
   onPickFiles: () => void;
+  onPickFromLibrary: () => void;
   onFilePicked: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemoveAttachment: (attachmentId: string) => void;
   onRetryAttachment: (attachmentId: string) => void;
@@ -93,6 +94,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     onSend,
     onStop,
     onPickFiles,
+    onPickFromLibrary,
     onFilePicked,
     onRemoveAttachment,
     onRetryAttachment,
@@ -183,6 +185,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
           mode="compose"
           autoFocus={!editingMessageId && activeStreamStatus === 'idle'}
           onPickFiles={onPickFiles}
+          onPickFromLibrary={onPickFromLibrary}
           attachments={attachments}
           onRemoveAttachment={onRemoveAttachment}
           onRetryAttachment={onRetryAttachment}

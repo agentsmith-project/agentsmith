@@ -48,6 +48,10 @@ export interface InitAttachmentRequest {
   file_name: string;
   file_type: string;
   file_size: number;
+  content_base64?: string;
+  source_type?: 'local_upload' | 'library_import';
+  source_library_id?: string;
+  source_object_key?: string;
 }
 
 export interface InitAttachmentResponse {

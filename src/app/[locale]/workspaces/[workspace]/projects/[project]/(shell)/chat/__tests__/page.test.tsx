@@ -44,6 +44,9 @@ const mockEndpointList = vi.fn().mockResolvedValue({
   page_size: 500,
   has_more: false,
 });
+const mockListLibraries = vi.fn().mockResolvedValue({ items: [] });
+const mockListObjects = vi.fn().mockResolvedValue({ prefix: '', items: [] });
+const mockDownloadObject = vi.fn().mockResolvedValue(new Blob());
 
 vi.mock('@/lib/api', () => ({
   getApiClient: vi.fn(() => ({})),
@@ -73,6 +76,16 @@ vi.mock('@/lib/api/endpoints/endpoints', () => ({
   EndpointAPI: vi.fn().mockImplementation(function () {
     return {
       list: mockEndpointList,
+    };
+  }),
+}));
+
+vi.mock('@/lib/api/endpoints/sources', () => ({
+  SourcesAPI: vi.fn().mockImplementation(function () {
+    return {
+      listLibraries: mockListLibraries,
+      listObjects: mockListObjects,
+      downloadObject: mockDownloadObject,
     };
   }),
 }));

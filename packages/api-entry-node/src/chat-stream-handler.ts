@@ -17,6 +17,7 @@ import {
   safeAssistantUsageTokens,
 } from './chat-openai-payload.js';
 import { logChatStreamEvent } from './chat-observability.js';
+import type { ChatAttachmentRecord } from './resource-models.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -28,6 +29,22 @@ interface ChatStreamHandlerArgs {
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
   buildUpstreamUrl: (baseUrl: string, proxyPath: string) => string;
   sseWrite: (res: http.ServerResponse, event: string, data: unknown) => void;
+}
+
+const MAX_ATTACHMENTS_PER_MESSAGE = 8;
+const MAX_ATTACHMENT_TOTAL_SIZE_BYTES = 60 * 1024 * 1024;
+
+function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: string; enabled: boolean }> }): boolean {
+  return (
+    endpoint.capabilities?.some(
+      (capability) => capability.type === 'multimodal_completion' && capability.enabled,
+    ) ?? false
+  );
+}
+
+function toDataUrl(attachment: ChatAttachmentRecord): string | null {
+  if (!attachment.content_base64 || !attachment.file_type) return null;
+  return `data:${attachment.file_type};base64,${attachment.content_base64}`;
 }
 
 export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promise<boolean> {
@@ -180,7 +197,63 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   }
 
   if (raw.input?.content?.trim()) {
-    let branchLeaf: { id: string; role: string; content: string } | null = null;
+    const attachmentIds = Array.isArray(raw.input.attachments)
+      ? raw.input.attachments.filter((item): item is string => typeof item === 'string' && item.length > 0)
+      : [];
+    if (attachmentIds.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_limit_exceeded' });
+      return true;
+    }
+    let attachmentSnapshots: Array<{
+      id: string;
+      file_name: string;
+      file_type: string;
+      file_size: number;
+      source_type?: 'local_upload' | 'library_import';
+      source_library_id?: string;
+      source_object_key?: string;
+    }> = [];
+    if (attachmentIds.length > 0) {
+      if (!endpointSupportsMultimodal(endpoint)) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_not_multimodal' });
+        return true;
+      }
+      const attachments = await deps.chatResourceService.listAttachmentsByIds(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        attachmentIds,
+      );
+      if (attachments.length !== attachmentIds.length) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_not_found' });
+        return true;
+      }
+      const notReady = attachments.find((item) => item.upload_status !== 'ready');
+      if (notReady) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_not_ready' });
+        return true;
+      }
+      const totalSize = attachments.reduce((acc, item) => acc + item.file_size, 0);
+      if (totalSize > MAX_ATTACHMENT_TOTAL_SIZE_BYTES) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_limit_exceeded' });
+        return true;
+      }
+      attachmentSnapshots = attachments.map((attachment) => ({
+        id: attachment.id,
+        file_name: attachment.file_name,
+        file_type: attachment.file_type,
+        file_size: attachment.file_size,
+        source_type: attachment.source_type,
+        source_library_id: attachment.source_library_id,
+        source_object_key: attachment.source_object_key,
+      }));
+    }
+    let branchLeaf: {
+      id: string;
+      role: string;
+      content: string;
+      attachment_snapshots?: Array<{ id: string }>;
+    } | null = null;
     if (raw.branch_leaf_message_id) {
       branchLeaf = await deps.chatResourceService.getMessage(
         route.workspaceId,
@@ -193,10 +266,13 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         return true;
       }
     }
+    const branchLeafAttachmentIds = new Set((branchLeaf?.attachment_snapshots ?? []).map((item) => item.id));
     const canReuseLeafUser =
       !!branchLeaf &&
       branchLeaf.role === 'user' &&
-      branchLeaf.content === raw.input.content;
+      branchLeaf.content === raw.input.content &&
+      attachmentSnapshots.length === branchLeafAttachmentIds.size &&
+      attachmentSnapshots.every((item) => branchLeafAttachmentIds.has(item.id));
     if (canReuseLeafUser && branchLeaf) {
       parentForAssistant = branchLeaf.id;
     } else {
@@ -208,6 +284,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         content: raw.input.content,
         parentId: raw.branch_leaf_message_id ?? null,
         logicalId: undefined,
+        attachmentSnapshots: attachmentSnapshots.length > 0 ? attachmentSnapshots : undefined,
       });
       parentForAssistant = createdInput.id;
     }
@@ -232,6 +309,52 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     route.projectId,
     route.sessionId,
   );
+  const attachmentIds = Array.from(
+    new Set(
+      messages.flatMap((message) => (message.attachment_snapshots ?? []).map((snapshot) => snapshot.id)),
+    ),
+  );
+  const attachmentById = new Map<string, ChatAttachmentRecord>();
+  if (attachmentIds.length > 0) {
+    const attachments = await deps.chatResourceService.listAttachmentsByIds(
+      route.workspaceId,
+      route.projectId,
+      route.sessionId,
+      attachmentIds,
+    );
+    for (const attachment of attachments) {
+      attachmentById.set(attachment.id, attachment);
+    }
+  }
+
+  const upstreamMessages = messages.map((item) => {
+    if (item.role !== 'user' || !item.attachment_snapshots || item.attachment_snapshots.length === 0) {
+      return { role: item.role, content: item.content };
+    }
+    const parts: Array<Record<string, unknown>> = [];
+    if (item.content.trim().length > 0) {
+      parts.push({ type: 'text', text: item.content });
+    }
+    for (const snapshot of item.attachment_snapshots) {
+      const attachment = attachmentById.get(snapshot.id);
+      const dataUrl = attachment ? toDataUrl(attachment) : null;
+      if (dataUrl && snapshot.file_type.startsWith('image/')) {
+        parts.push({
+          type: 'image_url',
+          image_url: { url: dataUrl },
+        });
+      } else {
+        parts.push({
+          type: 'text',
+          text: `[attached_file] ${snapshot.file_name} (${snapshot.file_type}, ${snapshot.file_size}B)`,
+        });
+      }
+    }
+    if (parts.length === 0) {
+      return { role: item.role, content: item.content };
+    }
+    return { role: item.role, content: parts };
+  });
 
   const variantMeta = await deps.chatResourceService.buildNextAssistantVariant(
     route.workspaceId,
@@ -314,7 +437,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       body: JSON.stringify({
         model: raw.model ?? endpoint.openai_model,
         stream: true,
-        messages: messages.map((item) => ({ role: item.role, content: item.content })),
+        messages: upstreamMessages,
       }),
       signal: streamAbortController.signal,
     });

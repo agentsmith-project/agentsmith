@@ -18,6 +18,7 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
+import { SourcesAPI } from '@/lib/api/endpoints/sources';
 import type { ChatMessage } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
@@ -37,6 +38,7 @@ import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
 import { ChatMainPane } from '@/components/chat/ChatMainPane';
 import { ChatDeleteDialog } from '@/components/chat/ChatDeleteDialog';
+import { ChatLibraryPickerDialog } from '@/components/chat/ChatLibraryPickerDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
@@ -63,6 +65,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [composerBySession, setComposerBySession] = useState<Record<string, string>>({});
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -81,6 +84,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const apiClient = useMemo(() => getApiClient(), []);
   const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
   const endpointAPI = useMemo(() => new EndpointAPI(apiClient), [apiClient]);
+  const sourcesAPI = useMemo(() => new SourcesAPI(apiClient), [apiClient]);
 
   const {
     sessions,
@@ -123,10 +127,12 @@ export default function ChatPage({ params }: ChatPageProps) {
     createMessageMutation,
     editMessageMutation,
     initAttachmentMutation,
+    addLibraryAttachmentMutation,
     deleteAttachmentMutation,
     retryAttachmentMutation,
   } = useChatMutations({
     chatAPI,
+    sourcesAPI,
     queryClient,
     workspaceId,
     projectId,
@@ -299,6 +305,31 @@ export default function ChatPage({ params }: ChatPageProps) {
     onPickFiles();
   }, [editingMessageId, onPickFiles, t]);
 
+  const handlePickFromLibrary = useCallback(() => {
+    if (editingMessageId) {
+      toast.info(t('attachments.disabled_while_editing'));
+      return;
+    }
+    if (!currentSessionId) return;
+    setLibraryPickerOpen(true);
+  }, [currentSessionId, editingMessageId, t]);
+
+  const handleAddLibraryObject = useCallback((input: {
+    libraryId: string;
+    key: string;
+    name: string;
+    contentType?: string;
+  }) => {
+    if (!currentSessionId) return;
+    addLibraryAttachmentMutation.mutate({
+      sessionId: currentSessionId,
+      libraryId: input.libraryId,
+      key: input.key,
+      name: input.name,
+      contentType: input.contentType,
+    });
+  }, [addLibraryAttachmentMutation, currentSessionId]);
+
   const handleRemoveAttachment = useCallback((attachmentId: string) => {
     if (!canUseChat || !currentSessionId) return;
     deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
@@ -415,6 +446,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             onSend={handleSend}
             onStop={stopStreaming}
             onPickFiles={handlePickFiles}
+            onPickFromLibrary={handlePickFromLibrary}
             onFilePicked={onFilePicked}
             onRemoveAttachment={handleRemoveAttachment}
             onRetryAttachment={handleRetryAttachment}
@@ -431,6 +463,15 @@ export default function ChatPage({ params }: ChatPageProps) {
             cancel: t('delete_confirm_cancel'),
             confirm: t('delete_confirm_action'),
           }}
+        />
+        <ChatLibraryPickerDialog
+          open={libraryPickerOpen}
+          onOpenChange={setLibraryPickerOpen}
+          workspaceId={workspaceId}
+          projectId={projectId}
+          sourcesAPI={sourcesAPI}
+          loading={addLibraryAttachmentMutation.isPending}
+          onPickObject={handleAddLibraryObject}
         />
       </PageLayout>
     </PageState>

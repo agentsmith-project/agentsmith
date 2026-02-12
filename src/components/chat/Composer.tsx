@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Paperclip, Send, Square } from 'lucide-react';
+import { FolderOpen, Paperclip, Send, Square } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import type { Attachment } from '@/lib/api/types';
@@ -22,6 +22,7 @@ export function Composer({
   mode = 'compose',
   onCancelEdit,
   onPickFiles,
+  onPickFromLibrary,
   attachments,
   onRemoveAttachment,
   onRetryAttachment,
@@ -37,6 +38,7 @@ export function Composer({
   mode?: 'compose' | 'edit';
   onCancelEdit?: () => void;
   onPickFiles: () => void;
+  onPickFromLibrary: () => void;
   attachments: Attachment[];
   onRemoveAttachment: (attachmentId: string) => void;
   onRetryAttachment: (attachmentId: string) => void;
@@ -143,6 +145,18 @@ export function Composer({
               title={t('composer.attach_files')}
             >
               <Paperclip className="w-4 h-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10"
+              onClick={onPickFromLibrary}
+              disabled={disabled || streaming}
+              aria-label={t('composer.attach_from_library')}
+              title={t('composer.attach_from_library')}
+            >
+              <FolderOpen className="w-4 h-4" />
             </Button>
 
             <div className="flex-1">

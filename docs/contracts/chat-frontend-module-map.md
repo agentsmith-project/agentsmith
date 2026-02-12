@@ -20,6 +20,7 @@ This document defines responsibility boundaries for the chat page implementation
 
 - `use-chat-mutations.ts`
 - Session/message/attachment mutation orchestration and cache invalidation.
+- Includes local file attachment encoding and library-object import flow for chat attachments.
 
 - `use-chat-streaming.ts`
 - SSE runtime, stream/session stop control, stream-id recovery after refresh, and stream state machine.
@@ -55,6 +56,7 @@ This document defines responsibility boundaries for the chat page implementation
 - `ChatMainPane.tsx`
 - Main pane composition (`ChatHeader`, `MessageList`, `Composer`) and empty/loading states.
 - Owns layout mode propagation to `ChatHeader` / `MessageList` / `Composer`.
+- Integrates `ChatLibraryPickerDialog` for selecting file-library objects into chat attachments.
 
 - `ChatDeleteDialog.tsx`
 - Delete confirmation dialog rendering.
@@ -69,6 +71,9 @@ This document defines responsibility boundaries for the chat page implementation
 - Respect `layoutMode` to cap content width:
 - `standard`: keep dense, module-consistent readable width.
 - `ultrawide`: expand chat content area without remounting shell/sidebar/topbar.
+- Composer supports two attachment sources:
+  - local file picker
+  - source-library object picker
 
 ## 4. Guardrails
 
@@ -84,6 +89,13 @@ This document defines responsibility boundaries for the chat page implementation
 - Hook/view-model unit tests in `src/lib/chat/__tests__`.
 - Component tests in `src/components/chat/__tests__`.
 - Integration behavior in `e2e/integration-chat.spec.ts` when runtime behavior changes.
+
+## 7. Attachment + Multimodal Baseline (v1)
+
+- Chat attachments are message-scoped snapshots persisted with the user message.
+- Sending with attachments requires endpoint capability `multimodal_completion`.
+- Local files and library-selected objects are converted to chat attachments before send.
+- Current v1 library path uses browser-mediated download/upload conversion.
 
 ## 5. Closeout Status
 

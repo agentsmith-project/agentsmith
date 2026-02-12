@@ -1,6 +1,7 @@
 import type { JsonDocStorePort } from '@mbos/ports';
 import type {
   ChatAttachmentRecord,
+  ChatAttachmentSnapshotRecord,
   ChatMessageRecord,
   ChatSessionRecord,
 } from './resource-models.js';
@@ -136,6 +137,7 @@ export class ChatResourceService {
     variantGroupId?: string;
     variantIndex?: number;
     isStale?: boolean;
+    attachmentSnapshots?: ChatAttachmentSnapshotRecord[];
   }): Promise<ChatMessageRecord> {
     const now = new Date().toISOString();
     const generatedId = this.messageId();
@@ -165,6 +167,7 @@ export class ChatResourceService {
       variant_group_id: input.variantGroupId,
       variant_index: input.variantIndex,
       is_stale: input.isStale ?? false,
+      attachment_snapshots: input.attachmentSnapshots,
     };
     await this.docStore.upsert(ChatResourceService.messagesCollection, message.id, message);
     const session = await this.getSession(input.workspaceId, input.projectId, input.sessionId);
@@ -327,6 +330,10 @@ export class ChatResourceService {
     fileName: string;
     fileType: string;
     fileSize: number;
+    sourceType?: 'local_upload' | 'library_import';
+    sourceLibraryId?: string;
+    sourceObjectKey?: string;
+    contentBase64?: string;
   }): Promise<ChatAttachmentRecord> {
     const now = new Date().toISOString();
     const attachment: ChatAttachmentRecord = {
@@ -339,6 +346,10 @@ export class ChatResourceService {
       file_size: input.fileSize,
       upload_status: 'ready',
       created_at: now,
+      source_type: input.sourceType,
+      source_library_id: input.sourceLibraryId,
+      source_object_key: input.sourceObjectKey,
+      content_base64: input.contentBase64,
     };
     await this.docStore.upsert(ChatResourceService.attachmentsCollection, attachment.id, attachment);
     return attachment;
@@ -389,6 +400,23 @@ export class ChatResourceService {
       return null;
     }
     return attachment;
+  }
+
+  async listAttachmentsByIds(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    attachmentIds: string[],
+  ): Promise<ChatAttachmentRecord[]> {
+    if (attachmentIds.length === 0) return [];
+    const resolved: ChatAttachmentRecord[] = [];
+    for (const attachmentId of attachmentIds) {
+      const attachment = await this.getAttachment(workspaceId, projectId, sessionId, attachmentId);
+      if (attachment) {
+        resolved.push(attachment);
+      }
+    }
+    return resolved;
   }
 
   async deleteAttachment(

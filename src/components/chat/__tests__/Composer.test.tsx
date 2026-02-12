@@ -12,6 +12,7 @@ describe('Composer', () => {
     mode: 'compose' as const,
     onCancelEdit: vi.fn(),
     onPickFiles: vi.fn(),
+    onPickFromLibrary: vi.fn(),
     attachments: [],
     onRemoveAttachment: vi.fn(),
     onRetryAttachment: vi.fn(),

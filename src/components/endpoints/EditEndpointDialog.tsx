@@ -234,7 +234,7 @@ export function EditEndpointDialog({
                     <SelectItem key={item.key} value={item.key}>
                       <span className="flex items-center gap-2">
                         {item.logo_path ? (
-                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-sm border border-subtle bg-surface-high">
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-white/90 p-[2px] ring-1 ring-black/10">
                             <Image
                               src={item.logo_path}
                               alt={item.display_name}

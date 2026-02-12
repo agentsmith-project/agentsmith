@@ -154,6 +154,17 @@ export interface ChatMessageRecord {
   variant_group_id?: string;
   variant_index?: number;
   is_stale?: boolean;
+  attachment_snapshots?: ChatAttachmentSnapshotRecord[];
+}
+
+export interface ChatAttachmentSnapshotRecord {
+  id: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  source_type?: 'local_upload' | 'library_import';
+  source_library_id?: string;
+  source_object_key?: string;
 }
 
 export interface ChatAttachmentRecord {
@@ -167,4 +178,8 @@ export interface ChatAttachmentRecord {
   upload_status: 'uploading' | 'processing' | 'ready' | 'failed';
   created_at: string;
   error_message?: string;
+  source_type?: 'local_upload' | 'library_import';
+  source_library_id?: string;
+  source_object_key?: string;
+  content_base64?: string;
 }

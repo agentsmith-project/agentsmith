@@ -515,7 +515,8 @@
       "save": "Save",
       "send": "Send",
       "hotkey_edit": "Enter to save · Shift+Enter for newline",
-      "hotkey_compose": "Enter to send · Shift+Enter for newline"
+      "hotkey_compose": "Enter to send · Shift+Enter for newline",
+      "attach_from_library": "Attach from library"
     },
     "header": {
       "status_generating": "Generating...",
@@ -561,6 +562,15 @@
       "prev_variant": "Previous variant",
       "next_variant": "Next variant",
       "copy": "Copy"
+    },
+    "library_picker": {
+      "title": "Select file from library",
+      "select_library": "Select library",
+      "search_placeholder": "Search file name",
+      "up": "Up",
+      "loading": "Loading...",
+      "empty": "No files in current folder",
+      "add": "Add"
     }
   },
   "studio": {

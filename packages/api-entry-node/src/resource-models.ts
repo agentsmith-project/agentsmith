@@ -182,4 +182,5 @@ export interface ChatAttachmentRecord {
   source_library_id?: string;
   source_object_key?: string;
   content_base64?: string;
+  preview_url?: string;
 }

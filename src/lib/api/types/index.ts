@@ -355,6 +355,7 @@ export interface Attachment {
   source_type?: 'local_upload' | 'library_import';
   source_library_id?: string;
   source_object_key?: string;
+  preview_url?: string;
 }
 
 // ============================================================

@@ -447,6 +447,10 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       sourceLibraryId: raw.source_library_id,
       sourceObjectKey: raw.source_object_key,
       contentBase64: raw.content_base64,
+      previewUrl:
+        raw.content_base64 && raw.file_type.startsWith('image/')
+          ? `data:${raw.file_type};base64,${raw.content_base64}`
+          : undefined,
     });
     json(res, 200, { attachment });
     return true;

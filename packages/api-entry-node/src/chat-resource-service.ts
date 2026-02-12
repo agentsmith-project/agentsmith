@@ -334,6 +334,7 @@ export class ChatResourceService {
     sourceLibraryId?: string;
     sourceObjectKey?: string;
     contentBase64?: string;
+    previewUrl?: string;
   }): Promise<ChatAttachmentRecord> {
     const now = new Date().toISOString();
     const attachment: ChatAttachmentRecord = {
@@ -350,6 +351,7 @@ export class ChatResourceService {
       source_library_id: input.sourceLibraryId,
       source_object_key: input.sourceObjectKey,
       content_base64: input.contentBase64,
+      preview_url: input.previewUrl,
     };
     await this.docStore.upsert(ChatResourceService.attachmentsCollection, attachment.id, attachment);
     return attachment;

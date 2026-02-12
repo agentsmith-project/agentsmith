@@ -107,6 +107,13 @@ export function Composer({
                       'flex items-center gap-2 px-3 py-1.5 rounded-md border border-subtle bg-surface-high',
                     )}
                   >
+                    {a.file_type.startsWith('image/') && a.preview_url ? (
+                      <img
+                        src={a.preview_url}
+                        alt={a.file_name}
+                        className="h-8 w-8 rounded-sm border border-subtle object-cover"
+                      />
+                    ) : null}
                     <div className="min-w-0">
                       <div className="text-xs text-primary truncate max-w-[260px]">{a.file_name}</div>
                       {status !== 'ready' && (

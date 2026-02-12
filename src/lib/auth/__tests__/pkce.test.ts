@@ -28,7 +28,9 @@ describe('pkce helpers', () => {
   });
 
   it('uses S256 when subtle.digest is available', async () => {
-    const digestMock = vi.fn(async () => new Uint8Array([1, 2, 3, 4]).buffer);
+    const digestMock = vi.fn<(algorithm: string, data: BufferSource) => Promise<ArrayBuffer>>(
+      async () => new Uint8Array([1, 2, 3, 4]).buffer,
+    );
     const originalCrypto = globalThis.crypto;
     Object.defineProperty(globalThis, 'crypto', {
       configurable: true,
@@ -44,11 +46,11 @@ describe('pkce helpers', () => {
     expect(result.method).toBe('S256');
     expect(result.challenge).toBe('AQIDBA');
     expect(digestMock).toHaveBeenCalledTimes(1);
-    const firstCall = digestMock.mock.calls[0];
+    const firstCall = digestMock.mock.calls.at(0);
     expect(firstCall).toBeDefined();
-    const payload = firstCall?.[1];
+    const payload = firstCall![1];
     expect(ArrayBuffer.isView(payload)).toBe(true);
-    expect(Array.from(payload as ArrayLike<number>)).toEqual([97, 98, 99]);
+    expect(Array.from(payload as Uint8Array)).toEqual([97, 98, 99]);
 
     Object.defineProperty(globalThis, 'crypto', {
       configurable: true,

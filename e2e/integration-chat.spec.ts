@@ -177,7 +177,18 @@ async function keycloakLogin(page: import('@playwright/test').Page, locale: stri
     page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
     page.locator('#kc-login, button[type="submit"]').first().click(),
   ]);
-  await page.getByTestId('workspace-select__card--ws_default').click();
+  const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await workspaceCard.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      break;
+    }
+    const retryButton = page.getByTestId('workspace-select__retry-btn');
+    if (await retryButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await retryButton.click();
+    }
+  }
+  await expect(workspaceCard).toBeVisible({ timeout: 15_000 });
+  await workspaceCard.click();
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 30_000 });
 }
 

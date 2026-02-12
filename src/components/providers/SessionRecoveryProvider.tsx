@@ -15,6 +15,11 @@ function resolveLocaleFromPathname(pathname: string | null): string {
   return 'en-US';
 }
 
+function isWorkspaceSelectPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return /^\/(en-US|zh-CN)\/login\/workspace\/?$/.test(pathname);
+}
+
 export function SessionRecoveryProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -76,6 +81,11 @@ export function SessionRecoveryProvider({ children }: { children: React.ReactNod
     });
 
     const unsubscribe = addSessionRecoveryListener(() => {
+      if (isWorkspaceSelectPath(pathname)) {
+        // Workspace select page has dedicated UX for session-expired/retry handling.
+        // Avoid global hard-redirect loop that hides that state.
+        return;
+      }
       if (handlingRef.current) return;
       handlingRef.current = true;
       clearAuth();
@@ -90,7 +100,7 @@ export function SessionRecoveryProvider({ children }: { children: React.ReactNod
       unsubscribe();
       setSessionRefreshHandler(null);
     };
-  }, [clearAuth, locale, queryClient, router]);
+  }, [clearAuth, locale, pathname, queryClient, router]);
 
   return <>{children}</>;
 }

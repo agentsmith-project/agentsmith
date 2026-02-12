@@ -18,7 +18,6 @@ without adding runtime feature switches.
 
 - Legacy compatibility:
 - `openai_model`
-- `source_model`
 - `type`
 - Capability-first:
 - `provider_family`: `openai | google | glm | alibaba | custom`
@@ -63,7 +62,6 @@ Each item:
 ```json
 {
   "model": "string",
-  "source_model": "string",
   "api_base": "https://...",
   "api_key": "string",
   "mode": "openai"

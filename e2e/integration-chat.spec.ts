@@ -196,21 +196,18 @@ function loadOpenAICompatiblePayloadForE2E() {
   return JSON.parse(raw) as {
     reranker?: {
       model: string;
-      source_model?: string;
       api_base: string;
       api_key: string;
       mode?: 'openai';
     };
     embedding?: {
       model: string;
-      source_model?: string;
       api_base: string;
       api_key: string;
       mode?: 'openai';
     };
     completion?: {
       model: string;
-      source_model?: string;
       api_base: string;
       api_key: string;
       mode?: 'openai';

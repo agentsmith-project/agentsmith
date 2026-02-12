@@ -312,7 +312,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: raw.model ?? endpoint.source_model ?? endpoint.openai_model,
+        model: raw.model ?? endpoint.openai_model,
         stream: true,
         messages: messages.map((item) => ({ role: item.role, content: item.content })),
       }),

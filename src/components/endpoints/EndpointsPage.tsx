@@ -54,7 +54,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
   const [endpointToDelete, setEndpointToDelete] = useState<Endpoint | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importPayloadText, setImportPayloadText] = useState(
-    '{\n  "completion": {\n    "model": "deepseek-chat",\n    "source_model": "deepseek-chat",\n    "api_base": "https://api.deepseek.com",\n    "api_key": "YOUR_API_KEY"\n  }\n}',
+    '{\n  "completion": {\n    "model": "deepseek-chat",\n    "api_base": "https://api.deepseek.com",\n    "api_key": "YOUR_API_KEY"\n  }\n}',
   );
   const canProjectEndpointRead = useHasPermission('project:endpoint:use');
   const canProjectEndpointUpdate = useHasPermission('project:endpoint:manage');
@@ -116,7 +116,6 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
         name: endpoint.name,
         description: endpoint.description,
         model: endpoint.openai_model,
-        source_model: endpoint.source_model,
         type: endpoint.type,
         provider_family: endpoint.provider_family,
         protocol: endpoint.protocol,
@@ -131,35 +130,30 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
       openai_compatible_template: {
         reranker: {
           model: '',
-          source_model: '',
           api_base: '',
           api_key: '',
           mode: 'openai',
         },
         embedding: {
           model: '',
-          source_model: '',
           api_base: '',
           api_key: '',
           mode: 'openai',
         },
         completion: {
           model: '',
-          source_model: '',
           api_base: '',
           api_key: '',
           mode: 'openai',
         },
         image_generation: {
           model: '',
-          source_model: '',
           api_base: '',
           api_key: '',
           mode: 'openai',
         },
         video_generation: {
           model: '',
-          source_model: '',
           api_base: '',
           api_key: '',
           mode: 'openai',

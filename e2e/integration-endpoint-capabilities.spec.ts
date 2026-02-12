@@ -156,7 +156,6 @@ test.describe('integration endpoint capabilities', () => {
           data: {
             name: 'it-capability-endpoint',
             openai_model: 'deepseek-chat',
-            source_model: 'deepseek-chat',
             type: 'custom',
             protocol: 'openai_compatible',
             provider_family: 'custom',

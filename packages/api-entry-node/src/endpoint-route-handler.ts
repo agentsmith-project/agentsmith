@@ -31,7 +31,7 @@ interface EndpointHandlerArgs {
   proxyJsonRequest: (
     req: http.IncomingMessage,
     res: http.ServerResponse,
-    options: { upstreamUrl: string; apiKey: string; sourceModel?: string; timeoutSeconds?: number },
+    options: { upstreamUrl: string; apiKey: string; model?: string; timeoutSeconds?: number },
   ) => Promise<void>;
 }
 
@@ -104,7 +104,6 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     const resolvedModel =
       defaultModelByCapability[capability] ??
       endpoint.models?.find((item) => item.capability === capability)?.model_id ??
-      endpoint.source_model ??
       endpoint.openai_model;
     if (!resolvedModel) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_model_required' });
@@ -114,7 +113,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     await proxyJsonRequest(req, res, {
       upstreamUrl: buildUpstreamUrl(endpoint.base_url, resolved.proxyPath || proxyPath),
       apiKey,
-      sourceModel: resolvedModel,
+      model: resolvedModel,
       timeoutSeconds: endpoint.limits?.timeout_seconds,
     });
     return true;

@@ -13,7 +13,7 @@ export function unauthorized(res: http.ServerResponse): void {
 export function applyCors(res: http.ServerResponse): void {
   const allowOrigin = process.env.CORS_ALLOW_ORIGIN ?? '*';
   res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
     'Content-Type, Authorization, Idempotency-Key',
@@ -43,7 +43,7 @@ export async function proxyJsonRequest(
   options: {
     upstreamUrl: string;
     apiKey: string;
-    sourceModel?: string;
+    model?: string;
     timeoutSeconds?: number;
   },
 ): Promise<void> {
@@ -55,8 +55,8 @@ export async function proxyJsonRequest(
       ? ({ ...(rawBody as Record<string, unknown>) } as Record<string, unknown>)
       : {};
 
-  if (options.sourceModel) {
-    body.model = options.sourceModel;
+  if (options.model) {
+    body.model = options.model;
   }
 
   const abortController = new AbortController();

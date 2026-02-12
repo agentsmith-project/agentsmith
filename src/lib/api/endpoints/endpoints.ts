@@ -60,7 +60,6 @@ export interface UpdateEndpointRequest {
 
 export interface OpenAICompatibleImportItem {
   model: string;
-  source_model?: string;
   api_base: string;
   api_key: string;
   mode?: 'openai';

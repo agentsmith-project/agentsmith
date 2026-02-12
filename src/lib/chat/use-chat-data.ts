@@ -44,7 +44,10 @@ export function useChatData(args: UseChatDataArgs): UseChatDataResult {
     enabled: !!workspaceId && !!projectId && canReadThreads,
   });
 
-  const endpoints = endpointsData?.items ?? [];
+  const endpoints = (endpointsData?.items ?? []).filter((endpoint) => {
+    if (!endpoint.capabilities || endpoint.capabilities.length === 0) return true;
+    return endpoint.capabilities.some((capability) => capability.type === 'chat_completion' && capability.enabled);
+  });
 
   const { data: messagesData, isLoading: messagesLoading } = useQuery({
     queryKey: chatMessagesKey(workspaceId, projectId, currentSessionId ?? ''),

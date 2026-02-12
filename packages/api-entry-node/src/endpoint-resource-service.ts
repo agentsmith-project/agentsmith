@@ -84,7 +84,6 @@ export class EndpointResourceService {
 
   private normalizeEndpointFields(input: Partial<EndpointRecord>, fallbackOpenAIModel?: string): {
     openaiModel: string;
-    sourceModel?: string;
     capabilities: EndpointCapability[] | undefined;
     models: EndpointModelBinding[] | undefined;
     defaults: EndpointDefaults | undefined;
@@ -106,7 +105,6 @@ export class EndpointResourceService {
     const legacyOpenAIModel = String(input.openai_model ?? fallbackOpenAIModel ?? '').trim();
     const chatModel = normalizedModels.find((item) => item.capability === 'chat_completion')?.model_id;
     const primaryModel = chatModel ?? legacyOpenAIModel;
-    const sourceModel = input.source_model?.trim() || primaryModel || undefined;
     const defaults = this.buildDefaults(normalizedModels, input.defaults);
 
     if (normalizedCapabilities.length === 0 && primaryModel) {
@@ -126,7 +124,6 @@ export class EndpointResourceService {
 
     return {
       openaiModel: primaryModel,
-      sourceModel,
       capabilities: normalizedCapabilities.length > 0 ? normalizedCapabilities : undefined,
       models: normalizedModels.length > 0 ? normalizedModels : undefined,
       defaults,
@@ -284,7 +281,6 @@ export class EndpointResourceService {
       name: String(input.name ?? '').trim(),
       description: input.description?.trim() || undefined,
       openai_model: normalized.openaiModel,
-      source_model: normalized.sourceModel,
       type: (input.type as EndpointRecord['type']) ?? 'openai',
       mode: input.mode,
       base_url: this.normalizeBaseUrl(String(input.base_url ?? '')),
@@ -331,7 +327,6 @@ export class EndpointResourceService {
       ...patch,
       name: patch.name !== undefined ? String(patch.name).trim() : existing.name,
       openai_model: normalized.openaiModel,
-      source_model: normalized.sourceModel,
       base_url:
         patch.base_url !== undefined
           ? this.normalizeBaseUrl(String(patch.base_url))
@@ -384,7 +379,6 @@ export class EndpointResourceService {
       const endpoint = await this.createEndpoint(workspaceId, projectId, {
         name: `${pair.name}-${pair.item.model}`,
         openai_model: pair.item.model,
-        source_model: pair.item.source_model ?? pair.item.model,
         type: pair.type,
         mode: pair.item.mode,
         base_url: pair.item.api_base,
@@ -403,7 +397,7 @@ export class EndpointResourceService {
           {
             capability: pair.capability,
             model_id: pair.item.model,
-            display_name: pair.item.source_model ?? pair.item.model,
+            display_name: pair.item.model,
           },
         ],
       });

@@ -842,7 +842,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'deepseek-chat',
           openai_model: 'deepseek-chat',
-          source_model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -884,20 +883,17 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           reranker: {
             model: 'qwen3-reranker-0.6b',
-            source_model: 'qwen3-reranker-0.6b',
             api_base: 'http://pullot.com:20551/v1',
             api_key: '20552055',
             mode: 'openai',
           },
           embedding: {
             model: 'qwen3-embedding-0.6b',
-            source_model: 'qwen3-embedding-0.6b',
             api_base: 'http://pullot.com:20553/v1',
             api_key: '20552055',
           },
           completion: {
             model: 'deepseek-chat',
-            source_model: 'deepseek-chat',
             api_base: 'https://api.deepseek.com',
             api_key: 'sk-test',
           },
@@ -946,7 +942,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'rerank-endpoint',
           openai_model: 'qwen-reranker',
-          source_model: 'qwen-reranker',
           type: 'custom',
           mode: 'openai',
           protocol: 'openai_compatible',
@@ -1011,7 +1006,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'chat-only',
           openai_model: 'chat-model',
-          source_model: 'chat-model',
           protocol: 'openai_compatible',
           type: 'openai',
           base_url: upstream.baseUrl,
@@ -1047,7 +1041,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'google-rerank',
           openai_model: 'gemini-rerank',
-          source_model: 'gemini-rerank',
           protocol: 'google_gemini',
           provider_family: 'google',
           type: 'custom',
@@ -1105,7 +1098,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'media-endpoint',
           openai_model: 'gpt-4o-mini',
-          source_model: 'gpt-4o-mini',
           protocol: 'openai_compatible',
           type: 'custom',
           base_url: upstream.baseUrl,
@@ -1211,7 +1203,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'chat-endpoint',
           openai_model: 'deepseek-chat',
-          source_model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -1320,7 +1311,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'chat-endpoint',
           openai_model: 'deepseek-chat',
-          source_model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -1424,7 +1414,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'chat-endpoint',
           openai_model: 'deepseek-chat',
-          source_model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -1549,7 +1538,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'chat-endpoint',
           openai_model: 'deepseek-chat',
-          source_model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -1649,7 +1637,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'chat-endpoint',
           openai_model: 'deepseek-chat',
-          source_model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -1767,7 +1754,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'chat-endpoint',
           openai_model: 'deepseek-chat',
-          source_model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -1868,7 +1854,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'branch-endpoint',
           openai_model: 'deepseek-chat',
-          source_model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -2025,7 +2010,6 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'chat-endpoint',
           openai_model: 'deepseek-chat',
-          source_model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,

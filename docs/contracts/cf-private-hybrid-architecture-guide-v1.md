@@ -475,7 +475,7 @@ packages/
 3. OpenAI 兼容代理
 - `POST /workspaces/{ws}/projects/{project}/endpoints/{endpointId}/proxy/{openai_path}`
 - 例如：`proxy/chat/completions`、`proxy/embeddings`
-- 代理层按 endpoint 绑定的 credential 注入 `Authorization: Bearer <api_key>`，并支持 `source_model` 覆盖 `model`。
+- 代理层按 endpoint 绑定的 credential 注入 `Authorization: Bearer <api_key>`，并按 capability/defaults 解析 `model`。
 
 4. Chat 运行时最小链路（已落地）
 - `GET/POST /workspaces/{ws}/projects/{project}/chat/sessions`

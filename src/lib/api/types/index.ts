@@ -188,7 +188,6 @@ export interface Endpoint {
   name: string;
   description?: string;
   openai_model: string; // Deprecated: preserved for backward compatibility
-  source_model?: string;
   type: 'openai' | 'anthropic' | 'custom'; // Deprecated: preserved for backward compatibility
   base_url: string;
   status: 'active' | 'disabled';

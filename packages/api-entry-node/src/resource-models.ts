@@ -31,7 +31,6 @@ export interface EndpointRecord {
   name: string;
   description?: string;
   openai_model: string; // Deprecated compatibility field.
-  source_model?: string;
   type: 'openai' | 'anthropic' | 'custom'; // Deprecated compatibility field.
   mode?: 'openai';
   base_url: string;
@@ -95,7 +94,6 @@ export interface EndpointHealth {
 
 export interface EndpointImportItem {
   model: string;
-  source_model?: string;
   api_base: string;
   api_key: string;
   mode?: 'openai';

@@ -21,20 +21,17 @@ describe('EndpointAPI', () => {
     const payload = {
       reranker: {
         model: 'qwen3-reranker-0.6b',
-        source_model: 'qwen3-reranker-0.6b',
         api_base: 'http://pullot.com:20551/v1',
         api_key: '20552055',
         mode: 'openai' as const,
       },
       embedding: {
         model: 'qwen3-embedding-0.6b',
-        source_model: 'qwen3-embedding-0.6b',
         api_base: 'http://pullot.com:20553/v1',
         api_key: '20552055',
       },
       completion: {
         model: 'deepseek-chat',
-        source_model: 'deepseek-chat',
         api_base: 'https://api.deepseek.com',
         api_key: 'sk-test',
       },

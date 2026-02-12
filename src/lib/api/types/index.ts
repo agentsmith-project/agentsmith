@@ -204,7 +204,16 @@ export interface Endpoint {
   updated_at: string;
 }
 
-export type EndpointProviderFamily = 'openai' | 'google' | 'glm' | 'alibaba' | 'custom';
+export type EndpointProviderFamily =
+  | 'openai'
+  | 'anthropic'
+  | 'deepseek'
+  | 'minimax'
+  | 'kimi'
+  | 'google'
+  | 'glm'
+  | 'alibaba'
+  | 'custom';
 export type EndpointProtocol =
   | 'openai_compatible'
   | 'google_gemini'
@@ -212,6 +221,7 @@ export type EndpointProtocol =
   | 'dashscope_native';
 export type EndpointCapabilityType =
   | 'chat_completion'
+  | 'multimodal_completion'
   | 'embedding'
   | 'rerank'
   | 'image_generation'
@@ -238,6 +248,7 @@ export interface EndpointModelBinding {
 
 export interface EndpointDefaults {
   chat_model_id?: string;
+  multimodal_model_id?: string;
   embedding_model_id?: string;
   rerank_model_id?: string;
   image_model_id?: string;

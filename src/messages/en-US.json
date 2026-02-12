@@ -482,7 +482,8 @@
     "threads_days_ago": "{days} days ago",
     "thread_generating": "Generating",
     "attachments": {
-      "disabled_while_editing": "Attachments are disabled while editing."
+      "disabled_while_editing": "Attachments are disabled while editing.",
+      "multimodal_required": "Current endpoint does not support image/file input. Please switch to a multimodal completion endpoint."
     },
     "delete_confirm_title": "Delete Chat Session",
     "delete_confirm_message": "Delete chat session \"{name}\"? This action cannot be undone.",

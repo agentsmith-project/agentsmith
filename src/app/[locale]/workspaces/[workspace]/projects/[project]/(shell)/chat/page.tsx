@@ -105,6 +105,16 @@ export default function ChatPage({ params }: ChatPageProps) {
   }, [currentSessionId, sessions]);
 
   const activeSession = sessions.find((s) => s.id === currentSessionId) ?? null;
+  const activeEndpoint = useMemo(() => {
+    if (!activeSession) return null;
+    return endpoints.find((endpoint) => endpoint.id === activeSession.endpoint_id) ?? null;
+  }, [activeSession, endpoints]);
+  const supportsMultimodalAttachments = useMemo(() => {
+    if (!activeEndpoint?.capabilities || activeEndpoint.capabilities.length === 0) return false;
+    return activeEndpoint.capabilities.some(
+      (capability) => capability.type === 'multimodal_completion' && capability.enabled,
+    );
+  }, [activeEndpoint]);
 
   const {
     createSessionMutation,
@@ -219,6 +229,10 @@ export default function ChatPage({ params }: ChatPageProps) {
     runStream,
     initAttachment: (input) => initAttachmentMutation.mutateAsync(input),
     fileInputRef,
+    supportsMultimodalAttachments,
+    onAttachmentCapabilityError: () => {
+      toast.info(t('attachments.multimodal_required'));
+    },
   });
 
   const {

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 type EndpointCapabilityType =
   | 'chat_completion'
+  | 'multimodal_completion'
   | 'embedding'
   | 'rerank'
   | 'image_generation'
@@ -41,15 +42,49 @@ type RawCatalog = Record<string, RawProviderRecord>;
 const MODELS_DEV_API_URL = 'https://models.dev/api.json';
 const MODELS_DEV_LOGO_URL = 'https://models.dev/logos';
 const OUTPUT_ROOT = resolve(process.cwd(), 'assets/models-catalog');
+const RUNTIME_OUTPUT_PATH = resolve(process.cwd(), 'src/lib/endpoints/models-catalog.runtime.json');
+const PUBLIC_LOGO_ROOT = resolve(process.cwd(), 'public/models-catalog/logos');
+
+type RuntimeProviderKey =
+  | 'openai'
+  | 'anthropic'
+  | 'deepseek'
+  | 'minimax'
+  | 'kimi'
+  | 'google'
+  | 'glm'
+  | 'alibaba';
+
+const RUNTIME_PROVIDER_MAP: Array<{
+  key: RuntimeProviderKey;
+  display_name: string;
+  aliases: string[];
+  logo_key: string;
+}> = [
+  { key: 'openai', display_name: 'OpenAI', aliases: ['openai'], logo_key: 'openai' },
+  { key: 'anthropic', display_name: 'Anthropic', aliases: ['anthropic'], logo_key: 'anthropic' },
+  { key: 'deepseek', display_name: 'DeepSeek', aliases: ['deepseek'], logo_key: 'deepseek' },
+  { key: 'minimax', display_name: 'MiniMax', aliases: ['minimax', 'minimax-cn'], logo_key: 'minimax' },
+  { key: 'kimi', display_name: 'Kimi', aliases: ['moonshotai', 'moonshotai-cn'], logo_key: 'moonshotai' },
+  { key: 'google', display_name: 'Google', aliases: ['google', 'google-vertex'], logo_key: 'google' },
+  { key: 'glm', display_name: 'GLM', aliases: ['zhipuai', 'zai'], logo_key: 'zhipuai' },
+  { key: 'alibaba', display_name: 'Alibaba', aliases: ['alibaba', 'alibaba-cn'], logo_key: 'alibaba' },
+];
 
 function inferCapabilities(modelId: string, raw: RawModelRecord): EndpointCapabilityType[] {
   const id = modelId.toLowerCase();
-  const input = raw.modalities?.input ?? [];
-  const output = raw.modalities?.output ?? [];
+  const input = (raw.modalities?.input ?? []).map((item) => item.toLowerCase());
+  const output = (raw.modalities?.output ?? []).map((item) => item.toLowerCase());
   const capabilities = new Set<EndpointCapabilityType>();
+  const hasTextOutput = output.includes('text');
+  const hasTextInput = input.includes('text') || input.length === 0;
+  const hasNonTextInput = input.some((item) => ['image', 'audio', 'video', 'file'].includes(item));
+  const isEmbeddingModel =
+    id.includes('embedding') || output.includes('embedding') || output.includes('embeddings');
+  const isRerankModel = id.includes('rerank');
 
-  if (id.includes('rerank')) capabilities.add('rerank');
-  if (id.includes('embedding') || output.includes('embedding') || output.includes('embeddings')) {
+  if (isRerankModel) capabilities.add('rerank');
+  if (isEmbeddingModel) {
     capabilities.add('embedding');
   }
   if (output.includes('image') || id.includes('image') || id.includes('imagen') || id.includes('wanx')) {
@@ -58,11 +93,18 @@ function inferCapabilities(modelId: string, raw: RawModelRecord): EndpointCapabi
   if (output.includes('video') || id.includes('video') || id.includes('veo')) {
     capabilities.add('video_generation');
   }
-  if ((input.includes('text') || input.length === 0) && output.includes('text')) {
+  if (!isEmbeddingModel && !isRerankModel && hasTextOutput && hasTextInput) {
     capabilities.add('chat_completion');
+  }
+  if (!isEmbeddingModel && !isRerankModel && hasTextOutput && hasNonTextInput) {
+    capabilities.add('multimodal_completion');
   }
 
   return [...capabilities];
+}
+
+function byProviderAliases<T extends { key: string }>(providers: T[], aliases: string[]): T[] {
+  return providers.filter((provider) => aliases.includes(provider.key));
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -119,10 +161,50 @@ async function run(): Promise<void> {
 
   await mkdir(OUTPUT_ROOT, { recursive: true });
   await mkdir(resolve(OUTPUT_ROOT, 'logos'), { recursive: true });
+  await mkdir(PUBLIC_LOGO_ROOT, { recursive: true });
 
   await writeFile(
     resolve(OUTPUT_ROOT, 'catalog.normalized.json'),
     `${JSON.stringify(normalized, null, 2)}\n`,
+    'utf-8',
+  );
+
+  const runtimeProviders = RUNTIME_PROVIDER_MAP.map((providerDef) => {
+    const matchedProviders = byProviderAliases(providers, providerDef.aliases);
+    const allModels = matchedProviders.flatMap((provider) => provider.models);
+    const seen = new Set<string>();
+    const models = allModels
+      .filter((model) => model.capabilities.length > 0)
+      .filter((model) => {
+        if (seen.has(model.model_id)) return false;
+        seen.add(model.model_id);
+        return true;
+      })
+      .slice(0, 120)
+      .map((model) => ({
+        model_id: model.model_id,
+        name: model.name,
+        capabilities: model.capabilities,
+      }));
+    return {
+      key: providerDef.key,
+      display_name: providerDef.display_name,
+      logo_path: `/models-catalog/logos/${providerDef.logo_key}.svg`,
+      models,
+    };
+  });
+
+  await writeFile(
+    RUNTIME_OUTPUT_PATH,
+    `${JSON.stringify(
+      {
+        source: MODELS_DEV_API_URL,
+        generated_at: new Date().toISOString(),
+        providers: runtimeProviders,
+      },
+      null,
+      2,
+    )}\n`,
     'utf-8',
   );
 
@@ -133,6 +215,7 @@ async function run(): Promise<void> {
       continue;
     }
     await writeFile(resolve(OUTPUT_ROOT, 'logos', `${provider.key}.svg`), logo, 'utf-8');
+    await writeFile(resolve(PUBLIC_LOGO_ROOT, `${provider.key}.svg`), logo, 'utf-8');
     logosWritten += 1;
   }
 

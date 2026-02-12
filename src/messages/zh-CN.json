@@ -484,7 +484,8 @@
     "threads_days_ago": "{days} 天前",
     "thread_generating": "推理中",
     "attachments": {
-      "disabled_while_editing": "编辑时禁用附件。"
+      "disabled_while_editing": "编辑时禁用附件。",
+      "multimodal_required": "当前端点不支持图片/文件输入，请切换到多模态补全端点。"
     },
     "delete_confirm_title": "删除会话",
     "delete_confirm_message": "确定要删除会话「{name}」吗？此操作不可撤销。",

@@ -9,7 +9,12 @@ export type EndpointTaskAction =
   | 'video_generation_cancel';
 
 export interface ResolvedEndpointTaskRoute {
-  capability: 'chat_completion' | 'rerank' | 'image_generation' | 'video_generation';
+  capability:
+    | 'chat_completion'
+    | 'multimodal_completion'
+    | 'rerank'
+    | 'image_generation'
+    | 'video_generation';
   proxyPath: string;
 }
 

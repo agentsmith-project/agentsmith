@@ -88,15 +88,23 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       });
       return true;
     }
-    const enabled =
-      endpoint.capabilities?.find((item) => item.type === capability)?.enabled ??
-      (capability === 'chat_completion');
+    const isChatRoute = capability === 'chat_completion';
+    const chatEnabled =
+      endpoint.capabilities?.find((item) => item.type === 'chat_completion')?.enabled ??
+      true;
+    const multimodalEnabled =
+      endpoint.capabilities?.find((item) => item.type === 'multimodal_completion')?.enabled ??
+      false;
+    const enabled = isChatRoute
+      ? chatEnabled || multimodalEnabled
+      : (endpoint.capabilities?.find((item) => item.type === capability)?.enabled ?? false);
     if (!enabled) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_capability_not_enabled' });
       return true;
     }
     const defaultModelByCapability = {
-      chat_completion: endpoint.defaults?.chat_model_id,
+      chat_completion: endpoint.defaults?.chat_model_id ?? endpoint.defaults?.multimodal_model_id,
+      multimodal_completion: endpoint.defaults?.multimodal_model_id ?? endpoint.defaults?.chat_model_id,
       rerank: endpoint.defaults?.rerank_model_id,
       image_generation: endpoint.defaults?.image_model_id,
       video_generation: endpoint.defaults?.video_model_id,
@@ -104,6 +112,9 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     const resolvedModel =
       defaultModelByCapability[capability] ??
       endpoint.models?.find((item) => item.capability === capability)?.model_id ??
+      (isChatRoute
+        ? endpoint.models?.find((item) => item.capability === 'multimodal_completion')?.model_id
+        : undefined) ??
       endpoint.openai_model;
     if (!resolvedModel) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_model_required' });

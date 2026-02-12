@@ -24,7 +24,13 @@ export class EndpointResourceService {
   }
 
   private normalizeBaseUrl(baseUrl: string): string {
-    return baseUrl.replace(/\/+$/, '');
+    const cleaned = baseUrl.trim().replace(/\/+$/, '');
+    return cleaned
+      .replace(/\/chat\/completions$/i, '')
+      .replace(/\/embeddings$/i, '')
+      .replace(/\/rerank$/i, '')
+      .replace(/\/images\/generations$/i, '')
+      .replace(/\/videos\/generations(?:\/[^/]+(?:\/cancel)?)?$/i, '');
   }
 
   private endpointId(): string {
@@ -55,6 +61,9 @@ export class EndpointResourceService {
     const defaults: EndpointDefaults = { ...(current ?? {}) };
     for (const model of models) {
       if (model.capability === 'chat_completion' && !defaults.chat_model_id) defaults.chat_model_id = model.model_id;
+      if (model.capability === 'multimodal_completion' && !defaults.multimodal_model_id) {
+        defaults.multimodal_model_id = model.model_id;
+      }
       if (model.capability === 'embedding' && !defaults.embedding_model_id) defaults.embedding_model_id = model.model_id;
       if (model.capability === 'rerank' && !defaults.rerank_model_id) defaults.rerank_model_id = model.model_id;
       if (model.capability === 'image_generation' && !defaults.image_model_id) defaults.image_model_id = model.model_id;
@@ -104,19 +113,22 @@ export class EndpointResourceService {
 
     const legacyOpenAIModel = String(input.openai_model ?? fallbackOpenAIModel ?? '').trim();
     const chatModel = normalizedModels.find((item) => item.capability === 'chat_completion')?.model_id;
-    const primaryModel = chatModel ?? legacyOpenAIModel;
+    const multimodalModel = normalizedModels.find(
+      (item) => item.capability === 'multimodal_completion',
+    )?.model_id;
+    const primaryModel = chatModel ?? multimodalModel ?? legacyOpenAIModel;
     const defaults = this.buildDefaults(normalizedModels, input.defaults);
 
     if (normalizedCapabilities.length === 0 && primaryModel) {
       normalizedCapabilities.push({
-        type: 'chat_completion',
+        type: chatModel ? 'chat_completion' : multimodalModel ? 'multimodal_completion' : 'chat_completion',
         enabled: true,
         default_model_id: primaryModel,
       });
     }
     if (normalizedModels.length === 0 && primaryModel) {
       normalizedModels.push({
-        capability: 'chat_completion',
+        capability: chatModel ? 'chat_completion' : multimodalModel ? 'multimodal_completion' : 'chat_completion',
         model_id: primaryModel,
         display_name: primaryModel,
       });

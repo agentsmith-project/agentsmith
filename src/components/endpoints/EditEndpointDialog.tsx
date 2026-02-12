@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
+import Image from 'next/image';
 import {
   Sheet,
   SheetContent,
@@ -18,7 +19,13 @@ import {
 } from '@/components/ui/select';
 import { useQuery } from '@tanstack/react-query';
 import { CredentialsAPI, EndpointAPI, getApiClient } from '@/lib/api';
-import type { Endpoint } from '@/lib/api/types';
+import type { Endpoint, EndpointCapabilityType } from '@/lib/api/types';
+import {
+  ENDPOINT_PROVIDER_OPTIONS,
+  getModelsByCapability,
+  getProviderOption,
+  type ProviderOption,
+} from '@/lib/endpoints/provider-catalog';
 import { toast } from '@/components/ui/toast';
 import { useApiError } from '@/lib/hooks/use-api-error';
 
@@ -42,23 +49,7 @@ export function EditEndpointDialog({
   const t = useTranslations('endpoints');
   const commonT = useTranslations('common');
   const { handleError } = useApiError();
-  type ProviderOption = 'openai' | 'google' | 'glm' | 'alibaba' | 'custom';
-  type CapabilityOption =
-    | 'chat_completion'
-    | 'embedding'
-    | 'rerank'
-    | 'image_generation'
-    | 'video_generation';
-  const providerProtocolMap: Record<
-    ProviderOption,
-    { family: 'openai' | 'google' | 'glm' | 'alibaba' | 'custom'; protocol: 'openai_compatible' | 'google_gemini' | 'glm_native' | 'dashscope_native' }
-  > = {
-    openai: { family: 'openai', protocol: 'openai_compatible' },
-    google: { family: 'google', protocol: 'google_gemini' },
-    glm: { family: 'glm', protocol: 'glm_native' },
-    alibaba: { family: 'alibaba', protocol: 'dashscope_native' },
-    custom: { family: 'custom', protocol: 'openai_compatible' },
-  };
+  type CapabilityOption = EndpointCapabilityType;
 
   const [provider, setProvider] = React.useState<ProviderOption>('openai');
   const [capability, setCapability] = React.useState<CapabilityOption>('chat_completion');
@@ -72,6 +63,11 @@ export function EditEndpointDialog({
 
   const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
   const credentialsAPI = React.useMemo(() => new CredentialsAPI(getApiClient()), []);
+  const selectedProvider = React.useMemo(() => getProviderOption(provider), [provider]);
+  const providerModels = React.useMemo(
+    () => getModelsByCapability(selectedProvider, capability),
+    [selectedProvider, capability],
+  );
 
   const { data: credentials = [] } = useQuery({
     queryKey: ['credentials', workspaceId, projectId],
@@ -89,7 +85,14 @@ export function EditEndpointDialog({
     setCredentialRef(endpoint.credential_ref ?? '');
     const family = endpoint.provider_family ?? 'openai';
     setProvider(
-      family === 'google' || family === 'glm' || family === 'alibaba' || family === 'custom'
+      family === 'anthropic' ||
+      family === 'deepseek' ||
+      family === 'minimax' ||
+      family === 'kimi' ||
+      family === 'google' ||
+      family === 'glm' ||
+      family === 'alibaba' ||
+      family === 'custom'
         ? family
         : 'openai',
     );
@@ -112,13 +115,15 @@ export function EditEndpointDialog({
         base_url: baseUrl.trim(),
         status,
         credential_ref: credentialRef,
-        provider_family: providerProtocolMap[provider].family,
-        protocol: providerProtocolMap[provider].protocol,
+        provider_family: selectedProvider.family,
+        protocol: selectedProvider.protocol,
         capabilities: [{ type: capability, enabled: true, default_model_id: openaiModel.trim() }],
         models: [{ capability, model_id: openaiModel.trim(), display_name: openaiModel.trim() }],
         defaults:
           capability === 'chat_completion'
             ? { chat_model_id: openaiModel.trim() }
+            : capability === 'multimodal_completion'
+              ? { multimodal_model_id: openaiModel.trim() }
             : capability === 'embedding'
               ? { embedding_model_id: openaiModel.trim() }
               : capability === 'rerank'
@@ -203,6 +208,7 @@ export function EditEndpointDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="chat_completion">Chat Completion</SelectItem>
+                  <SelectItem value="multimodal_completion">Multimodal Completion</SelectItem>
                   <SelectItem value="embedding">Embedding</SelectItem>
                   <SelectItem value="rerank">Reranker</SelectItem>
                   <SelectItem value="image_generation">Image Generation</SelectItem>
@@ -224,10 +230,24 @@ export function EditEndpointDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="openai">{t('create_dialog.provider_openai')}</SelectItem>
-                  <SelectItem value="google">Google (Gemini)</SelectItem>
-                  <SelectItem value="glm">GLM (BigModel)</SelectItem>
-                  <SelectItem value="alibaba">Alibaba (DashScope)</SelectItem>
+                  {ENDPOINT_PROVIDER_OPTIONS.map((item) => (
+                    <SelectItem key={item.key} value={item.key}>
+                      <span className="flex items-center gap-2">
+                        {item.logo_path ? (
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-sm border border-subtle bg-surface-high">
+                            <Image
+                              src={item.logo_path}
+                              alt={item.display_name}
+                              width={14}
+                              height={14}
+                              className="object-contain"
+                            />
+                          </span>
+                        ) : null}
+                        <span>{item.display_name}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
                   <SelectItem value="custom">{t('create_dialog.provider_custom')}</SelectItem>
                 </SelectContent>
               </Select>
@@ -245,6 +265,28 @@ export function EditEndpointDialog({
                 required
               />
             </div>
+
+            {providerModels.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Catalog Models</label>
+                <Select
+                  value={openaiModel}
+                  onValueChange={setOpenaiModel}
+                  disabled={isSaving}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select from catalog (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providerModels.slice(0, 100).map((model) => (
+                      <SelectItem key={model.model_id} value={model.model_id}>
+                        {model.name} ({model.model_id})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <label htmlFor="endpoint-base-url" className="text-sm font-medium text-foreground">

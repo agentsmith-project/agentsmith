@@ -5,6 +5,7 @@
 Define a single extensible endpoint contract that supports:
 
 - `chat_completion`
+- `multimodal_completion`
 - `embedding`
 - `rerank`
 - `image_generation`
@@ -20,7 +21,7 @@ without adding runtime feature switches.
 - `openai_model`
 - `type`
 - Capability-first:
-- `provider_family`: `openai | google | glm | alibaba | custom`
+- `provider_family`: `openai | anthropic | deepseek | minimax | kimi | google | glm | alibaba | custom`
 - `protocol`: `openai_compatible | google_gemini | glm_native | dashscope_native`
 - `capabilities[]`: enabled capability + default model binding per capability
 - `models[]`: model records bound to capability
@@ -52,6 +53,7 @@ These routes proxy through the configured endpoint with auth credential resoluti
 OpenAI-compatible bulk import supports:
 
 - `completion`
+- `multimodal_completion` (reserved; currently unified with chat route)
 - `embedding`
 - `reranker`
 - `image_generation`
@@ -78,6 +80,8 @@ Output:
 
 - `assets/models-catalog/catalog.normalized.json`
 - `assets/models-catalog/logos/*.svg`
+- `src/lib/endpoints/models-catalog.runtime.json` (UI-consumable subset)
+- `public/models-catalog/logos/*.svg` (runtime logo assets)
 
 ## Verification
 

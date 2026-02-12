@@ -46,7 +46,11 @@ export function useChatData(args: UseChatDataArgs): UseChatDataResult {
 
   const endpoints = (endpointsData?.items ?? []).filter((endpoint) => {
     if (!endpoint.capabilities || endpoint.capabilities.length === 0) return true;
-    return endpoint.capabilities.some((capability) => capability.type === 'chat_completion' && capability.enabled);
+    return endpoint.capabilities.some(
+      (capability) =>
+        (capability.type === 'chat_completion' || capability.type === 'multimodal_completion') &&
+        capability.enabled,
+    );
   });
 
   const { data: messagesData, isLoading: messagesLoading } = useQuery({

@@ -1050,6 +1050,112 @@ describe('api-entry-node projects routes', () => {
     );
   });
 
+  it('sends image attachments as data url even when file_type is octet-stream but filename is image', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startUpstreamServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'vision-key-infer',
+          type: 'api_key',
+          value: 'sk-vision',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'vision-endpoint-infer',
+          openai_model: 'gpt-4o',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          provider_family: 'openai',
+          protocol: 'openai_compatible',
+          capabilities: [{ type: 'multimodal_completion', enabled: true, default_model_id: 'gpt-4o' }],
+          models: [{ capability: 'multimodal_completion', model_id: 'gpt-4o' }],
+          defaults: { multimodal_model_id: 'gpt-4o' },
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpoint.id,
+          model: 'gpt-4o',
+        }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    const initAttachment = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/attachments/init`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          file_name: 'cat.png',
+          file_type: 'application/octet-stream',
+          file_size: 4,
+          content_base64: 'AQIDBA==',
+        }),
+      },
+    );
+    expect(initAttachment.status).toBe(200);
+    const attachmentBody = (await initAttachment.json()) as { attachment: { id: string } };
+
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          input: {
+            role: 'user',
+            content: 'describe this image',
+            attachments: [attachmentBody.attachment.id],
+          },
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(200);
+
+    const upstreamBody = upstream.lastBody() as {
+      messages?: Array<{ role: string; content: unknown }>;
+    };
+    const userMessage = upstreamBody.messages?.find((item) => item.role === 'user');
+    expect(Array.isArray(userMessage?.content)).toBe(true);
+    const parts = userMessage?.content as Array<Record<string, unknown>>;
+    const imagePart = parts.find((item) => item.type === 'image_url');
+    expect(imagePart).toBeTruthy();
+    expect((imagePart?.image_url as { url?: string } | undefined)?.url?.startsWith('data:image/png;base64,')).toBe(
+      true,
+    );
+  });
+
   it('rejects attachment stream when endpoint is not multimodal', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();

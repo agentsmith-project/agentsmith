@@ -42,9 +42,20 @@ function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: str
   );
 }
 
-function toDataUrl(attachment: ChatAttachmentRecord): string | null {
-  if (!attachment.content_base64 || !attachment.file_type) return null;
-  return `data:${attachment.file_type};base64,${attachment.content_base64}`;
+function inferImageMimeType(fileName: string): string | null {
+  const ext = fileName.toLowerCase().split('.').pop() ?? '';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'gif') return 'image/gif';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'bmp') return 'image/bmp';
+  if (ext === 'svg') return 'image/svg+xml';
+  return null;
+}
+
+function toDataUrl(attachment: ChatAttachmentRecord, mimeType: string): string | null {
+  if (!attachment.content_base64) return null;
+  return `data:${mimeType};base64,${attachment.content_base64}`;
 }
 
 export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promise<boolean> {
@@ -337,8 +348,13 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     }
     for (const snapshot of item.attachment_snapshots) {
       const attachment = attachmentById.get(snapshot.id);
-      const dataUrl = attachment ? toDataUrl(attachment) : null;
-      if (dataUrl && snapshot.file_type.startsWith('image/')) {
+      const declaredImage = snapshot.file_type.startsWith('image/');
+      const inferredImageMime = inferImageMimeType(snapshot.file_name);
+      const imageMimeType = declaredImage
+        ? snapshot.file_type
+        : (inferredImageMime ?? null);
+      const dataUrl = attachment && imageMimeType ? toDataUrl(attachment, imageMimeType) : null;
+      if (dataUrl && imageMimeType) {
         parts.push({
           type: 'image_url',
           image_url: { url: dataUrl },

@@ -257,6 +257,7 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
 - Mandatory local test rule:
   - Do **not** let Playwright manage frontend/backend service startup for integration testing.
   - Always start backend/frontend manually first, then run Playwright against existing services via `BASE_URL` / `INTEGRATION_API_BASE`.
+  - In Codex sessions, the agent should start/stop required services automatically; do not require the user to manually boot services before integration/e2e runs.
   - Before starting any service or test command, clear proxy environment variables (`http_proxy`, `https_proxy`, `all_proxy`, `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `no_proxy`, `NO_PROXY`).
 - For fast triage, run targeted smoke first:
   - `npx playwright test --project=smoke e2e/smoke.spec.ts --grep "<route-pattern>" --max-failures=1 --workers=1`

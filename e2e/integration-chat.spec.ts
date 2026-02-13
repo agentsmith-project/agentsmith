@@ -644,6 +644,16 @@ async function deleteThreadInChat(
   });
 }
 
+async function deleteAllThreadsInChat(page: import('@playwright/test').Page): Promise<void> {
+  for (let i = 0; i < 10; i += 1) {
+    const count = await page.getByTestId('chat__thread-item').count();
+    if (count === 0) return;
+    const threadId = await page.getByTestId('chat__thread-item').first().getAttribute('data-thread-id');
+    if (!threadId) return;
+    await deleteThreadInChat(page, threadId);
+  }
+}
+
 async function openChatAndSend(
   page: import('@playwright/test').Page,
   locale: string,
@@ -860,8 +870,8 @@ test.describe('integration chat flow', () => {
       const projectId = await createProjectFromUi(page, locale);
       await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
 
-      const threadId = await createNewThreadInChat(page, locale, projectId);
-      await deleteThreadInChat(page, threadId);
+      await createNewThreadInChat(page, locale, projectId);
+      await deleteAllThreadsInChat(page);
 
       await expect(page.getByTestId('chat__header-create-thread')).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId('chat__empty-create-btn')).toBeVisible({ timeout: 15_000 });

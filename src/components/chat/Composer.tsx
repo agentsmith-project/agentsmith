@@ -241,6 +241,7 @@ export function Composer({
                 onPaste={onPaste}
                 rows={2}
                 placeholder={mode === 'edit' ? t('composer.placeholder_edit') : t('composer.placeholder_compose')}
+                disabled={disabled || streaming}
                 className={cn(
                   'w-full resize-none rounded-lg border border-subtle bg-surface-high px-3 py-2 text-sm text-primary',
                   'placeholder:text-tertiary',

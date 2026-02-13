@@ -103,9 +103,12 @@ export default function ChatPage({ params }: ChatPageProps) {
   });
 
   useEffect(() => {
-    if (!currentSessionId && sessions.length > 0) {
-      setCurrentSessionId(sessions[0].id);
+    if (sessions.length === 0) {
+      if (currentSessionId !== null) setCurrentSessionId(null);
+      return;
     }
+    const hasCurrent = currentSessionId ? sessions.some((session) => session.id === currentSessionId) : false;
+    if (!hasCurrent) setCurrentSessionId(sessions[0].id);
   }, [currentSessionId, sessions]);
 
   const activeSession = sessions.find((s) => s.id === currentSessionId) ?? null;

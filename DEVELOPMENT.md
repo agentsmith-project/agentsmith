@@ -50,6 +50,10 @@ make e2e-int-chat-ux-auto # 自动启动并执行 chat UX 关键集成用例
 make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx' # 启动外部 agent 测试进程
 make deps-down     # 关闭依赖
 make deps-reset    # 关闭并清空依赖数据卷
+make openapi-generate # 基于 OpenAPI contract 生成前端类型
+make openapi-check-generated # 校验 generated types 是否需要更新
+make openapi-changelog # 生成 OpenAPI 相对 origin/main 的变更摘要
+make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 ```
 
 说明：`*-auto` 目标会自动清理代理环境变量（`http_proxy/https_proxy/all_proxy` 等）后再启动服务和执行 Playwright。
@@ -159,6 +163,24 @@ Current scope:
 2. `src/app/[locale]/workspaces/[workspace]/projects/page.tsx`
 
 CI runs the same command and fails the pipeline on missing coverage.
+
+## API 合约与文档入口
+
+后端提供统一文档入口：
+
+- `http://localhost:20000/docs`：Swagger UI（HTTP API）
+- `http://localhost:20000/docs/asyncapi`：AsyncAPI 可视化页面（Agent Runtime WS）
+- `http://localhost:20000/api/v1/openapi.json`：OpenAPI JSON
+- `http://localhost:20000/api/v1/asyncapi.json`：AsyncAPI JSON（Agent Runtime WS）
+
+本地治理命令：
+
+```bash
+npm run contracts:check-openapi
+npm run openapi:generate
+npm run openapi:check-generated
+npm run openapi:changelog
+```
 
 ## Playwright E2E Runbook (Recommended)
 

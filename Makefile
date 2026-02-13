@@ -4,7 +4,7 @@
 	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
 	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api \
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-chat-ux-auto \
-	agent-test-runner urls
+	agent-test-runner openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls
 
 NPM ?= npm
 
@@ -73,6 +73,10 @@ help:
 	@echo "  make e2e-int-agent-auto     # auto start deps+api+web and run integration-agent spec"
 	@echo "  make e2e-int-chat-ux-auto   # auto start deps+api+web and run targeted chat UX integration checks"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
+	@echo "  make openapi-generate   # generate frontend API types from docs/contracts/specs/openapi.yaml"
+	@echo "  make openapi-check-generated # verify generated API types are in sync"
+	@echo "  make openapi-changelog  # generate OpenAPI diff changelog vs origin/main"
+	@echo "  make contracts-check-openapi # run OpenAPI core coverage + route-kind coverage + breaking checks"
 	@echo ""
 	@echo "Utility:"
 	@echo "  make urls          # print local URLs and test users"
@@ -252,9 +256,23 @@ agent-test-runner:
 	MBOS_AGENT_MODE="$(AGENT_MODE)" \
 	$(NPM) run agent:test-runner
 
+openapi-generate:
+	$(NPM) run openapi:generate
+
+openapi-check-generated:
+	$(NPM) run openapi:check-generated
+
+openapi-changelog:
+	$(NPM) run openapi:changelog
+
+contracts-check-openapi:
+	$(NPM) run contracts:check-openapi
+
 urls:
 	@echo "Frontend:         http://localhost:$(PORT_WEB)/$(LOCALE)/login"
 	@echo "API base:         http://localhost:$(PORT_API)/api/v1"
+	@echo "API docs:         http://localhost:$(PORT_API)/docs"
+	@echo "AsyncAPI viewer:  http://localhost:$(PORT_API)/docs/asyncapi"
 	@echo "Keycloak admin:   http://localhost:18080  (admin/admin)"
 	@echo "MinIO console:    http://localhost:19001  (mbos/mbos_dev_password)"
 	@echo "Test user 1:      dev-admin / dev-admin-123"

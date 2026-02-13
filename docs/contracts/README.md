@@ -25,6 +25,26 @@ This directory contains only current-state documents: functional contracts, arch
 - `api-entry-node-module-map.md`
 - `agent-runtime-protocol.md`
 
+## Machine-Readable Specs
+
+- `specs/openapi.json` / `specs/openapi.yaml` - HTTP API contract
+- `specs/asyncapi.json` / `specs/asyncapi.yaml` - External agent runtime WS protocol
+
+## Validation Commands
+
+- `npm run contracts:check-openapi-core`
+- `npm run contracts:check-openapi-route-kinds`
+- `npm run contracts:check-openapi-breaking`
+- `npm run contracts:check-openapi`
+- `npm run openapi:generate`
+- `npm run openapi:check-generated`
+- `npm run openapi:changelog`
+
+`contracts:check-openapi-breaking` runs in strict mode on CI (fails if `origin/main` baseline is unavailable).
+
+Route-kind mapping source: `specs/openapi-route-kind-map.json`.
+OpenAPI diff changelog output: `specs/CHANGELOG.md`.
+
 ## Contract Maintenance Rules
 
 - Keep documents normative and current-state only.

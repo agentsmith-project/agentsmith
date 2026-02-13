@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -28,3 +30,9 @@ jobs:
 
       - name: Run release baseline sync check
         run: npm run contracts:check-release-sync
+
+      - name: Run OpenAPI governance checks
+        run: npm run contracts:check-openapi
+
+      - name: Verify OpenAPI generated types are in sync
+        run: npm run openapi:check-generated

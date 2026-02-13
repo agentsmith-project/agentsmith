@@ -21,6 +21,9 @@ export interface ChatComposerStateInput {
 
 export function hasEndpointBinding(session: ChatSession | null): boolean {
   if (!session) return false;
+  const externalAgentId =
+    typeof session.external_agent_id === 'string' ? session.external_agent_id : '';
+  if (externalAgentId.trim().length > 0) return true;
   const endpointId = typeof session.endpoint_id === 'string' ? session.endpoint_id : '';
   const model = typeof session.model === 'string' ? session.model : '';
   return endpointId.trim().length > 0 && model.trim().length > 0;

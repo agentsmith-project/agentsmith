@@ -78,8 +78,21 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Focus visible styles for accessibility */
-  :focus-visible {
+  /*
+    Focus-visible baseline:
+    Scope to keyboard-focusable controls only, avoid applying a global ring to
+    Radix popover/menu containers (which are programmatically focused on open).
+  */
+  :where(
+    a,
+    button,
+    input,
+    textarea,
+    select,
+    summary,
+    [role="button"],
+    [tabindex]:not([tabindex="-1"])
+  ):focus-visible {
     @apply outline-none ring-2 ring-accent;
     --tw-ring-opacity: 0.5;
   }

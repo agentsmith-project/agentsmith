@@ -24,6 +24,17 @@ vi.mock('@/components/ui/toast', () => ({
   },
 }));
 
+const streamMessages = {
+  streamError: 'stream error',
+  streamingFailed: 'streaming failed',
+  stopRequiredBeforeReplaceFailed: 'stop required',
+  stopFailedRetry: 'stop failed',
+  streamErrorAgentOffline: 'agent offline',
+  streamErrorAgentTimeout: 'agent timeout',
+  streamErrorAgentProtocol: 'agent protocol error',
+  streamErrorAgentUpstream: 'agent upstream error',
+};
+
 function createSseResponse(events: Array<{ event: string; data: unknown }>): Response {
   const encoder = new TextEncoder();
   const payload = events
@@ -87,12 +98,7 @@ describe('useChatStreaming attach recovery', () => {
           currentSessionId: 's_1',
           chatAPI: chatAPI as unknown as ChatAPI,
           queryClient: qc,
-          messages: {
-            streamError: 'stream error',
-            streamingFailed: 'streaming failed',
-            stopRequiredBeforeReplaceFailed: 'stop required',
-            stopFailedRetry: 'stop failed',
-          },
+          messages: streamMessages,
           upsertStreamAssistantToCache,
           patchStreamAssistantInCache,
         }),
@@ -172,12 +178,7 @@ describe('useChatStreaming attach recovery', () => {
           currentSessionId: 's_1',
           chatAPI: chatAPI as unknown as ChatAPI,
           queryClient: qc,
-          messages: {
-            streamError: 'stream error',
-            streamingFailed: 'streaming failed',
-            stopRequiredBeforeReplaceFailed: 'stop required',
-            stopFailedRetry: 'stop failed',
-          },
+          messages: streamMessages,
           upsertStreamAssistantToCache,
           patchStreamAssistantInCache,
         }),
@@ -245,12 +246,7 @@ describe('useChatStreaming attach recovery', () => {
           currentSessionId: 's_1',
           chatAPI: chatAPI as unknown as ChatAPI,
           queryClient: qc,
-          messages: {
-            streamError: 'stream error',
-            streamingFailed: 'streaming failed',
-            stopRequiredBeforeReplaceFailed: 'stop required',
-            stopFailedRetry: 'stop failed',
-          },
+          messages: streamMessages,
           upsertStreamAssistantToCache,
           patchStreamAssistantInCache,
         }),
@@ -266,5 +262,78 @@ describe('useChatStreaming attach recovery', () => {
     });
 
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('maps agent protocol stream error to dedicated user message', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockResolvedValue(
+      createSseResponse([
+        { event: 'meta', data: { stream_id: 'st_protocol', assistant_message_id: 'm_asst' } },
+        { event: 'error', data: { error_code: 'AGENT_PROTOCOL_ERROR', message: 'agent_response_delta_invalid' } },
+      ]),
+    );
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const chatAPI: Pick<ChatAPI, 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'not_found_or_finished' }),
+      stopStream: vi.fn().mockResolvedValue({ success: true, stream_id: 'st_protocol', state: 'stopping' }),
+    };
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+      },
+    ];
+
+    const upsertStreamAssistantToCache = vi.fn((_sessionId: string, _message: ChatMessage) => {});
+    const patchStreamAssistantInCache = vi.fn((_sessionId: string, _messageId: string, _patch: unknown) => {});
+
+    const { result } = renderHook(
+      () =>
+        useChatStreaming({
+          token: 'tkn',
+          workspaceId: 'ws_1',
+          projectId: 'p_1',
+          sessions,
+          currentSessionId: 's_1',
+          chatAPI: chatAPI as unknown as ChatAPI,
+          queryClient: qc,
+          messages: streamMessages,
+          upsertStreamAssistantToCache,
+          patchStreamAssistantInCache,
+        }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.runStream({
+        sessionId: 's_1',
+        model: 'm',
+        endpointId: 'ep_1',
+        input: { role: 'user', content: 'hello' },
+        mode: 'append',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.streamStateBySession['s_1']?.status ?? 'idle').toBe('error');
+    });
+    expect(toast.error).toHaveBeenCalledWith('agent protocol error');
+
+    vi.stubGlobal('fetch', originalFetch);
   });
 });

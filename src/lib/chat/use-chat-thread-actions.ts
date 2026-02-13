@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { Endpoint, ChatSession } from '@/lib/api/types';
+import type { Endpoint, ChatSession, Agent } from '@/lib/api/types';
 
 interface ThreadToDelete {
   id: string;
@@ -14,7 +14,7 @@ interface UseChatThreadActionsArgs {
   createSession: () => void;
   updateSession: (args: {
     sessionId: string;
-    data: Partial<Pick<ChatSession, 'title' | 'model' | 'endpoint_id' | 'pinned' | 'starred'>>;
+    data: Partial<Pick<ChatSession, 'title' | 'model' | 'endpoint_id' | 'external_agent_id' | 'pinned' | 'starred'>>;
   }) => void;
   setCurrentSessionId: (sessionId: string | null) => void;
   setEditingMessageId: (messageId: string | null) => void;
@@ -31,6 +31,7 @@ interface UseChatThreadActionsResult {
   onDeleteThreadRequest: (sessionId: string) => void;
   onRenameActiveSession: (title: string) => void;
   onSelectActiveEndpoint: (endpoint: Endpoint) => void;
+  onSelectExternalAgent: (agent: Agent) => void;
 }
 
 export function useChatThreadActions(args: UseChatThreadActionsArgs): UseChatThreadActionsResult {
@@ -88,7 +89,15 @@ export function useChatThreadActions(args: UseChatThreadActionsArgs): UseChatThr
     if (!canManageChatSessions || !activeSession) return;
     updateSession({
       sessionId: activeSession.id,
-      data: { endpoint_id: endpoint.id, model: endpoint.openai_model },
+      data: { endpoint_id: endpoint.id, external_agent_id: undefined, model: endpoint.openai_model },
+    });
+  }, [activeSession, canManageChatSessions, updateSession]);
+
+  const onSelectExternalAgent = useCallback((agent: Agent) => {
+    if (!canManageChatSessions || !activeSession) return;
+    updateSession({
+      sessionId: activeSession.id,
+      data: { external_agent_id: agent.id, endpoint_id: '', model: activeSession.model || 'external-agent' },
     });
   }, [activeSession, canManageChatSessions, updateSession]);
 
@@ -101,5 +110,6 @@ export function useChatThreadActions(args: UseChatThreadActionsArgs): UseChatThr
     onDeleteThreadRequest,
     onRenameActiveSession,
     onSelectActiveEndpoint,
+    onSelectExternalAgent,
   };
 }

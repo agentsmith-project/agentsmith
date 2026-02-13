@@ -2,7 +2,7 @@ import * as React from 'react';
 import { ChevronDown, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-import type { ChatSession, Endpoint } from '@/lib/api/types';
+import type { Agent, ChatSession, Endpoint } from '@/lib/api/types';
 import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
 import { cn } from '@/lib/utils';
 
@@ -18,9 +18,11 @@ import {
 export function ChatHeader({
   session,
   endpoints,
+  externalAgents,
   streamStatus,
   onRename,
   onSelectEndpoint,
+  onSelectExternalAgent,
   onCreateThread,
   canCreateThread = true,
   createPending = false,
@@ -28,9 +30,11 @@ export function ChatHeader({
 }: {
   session: ChatSession | null;
   endpoints: Endpoint[];
+  externalAgents?: Agent[];
   streamStatus: 'idle' | 'connecting' | 'streaming' | 'stopped' | 'error';
   onRename: (title: string) => void;
   onSelectEndpoint: (endpoint: Endpoint) => void;
+  onSelectExternalAgent?: (agent: Agent) => void;
   onCreateThread?: () => void;
   canCreateThread?: boolean;
   createPending?: boolean;
@@ -52,6 +56,11 @@ export function ChatHeader({
     if (!session) return null;
     return endpoints.find((e) => e.id === session.endpoint_id) || null;
   }, [endpoints, session]);
+  const currentAgent = React.useMemo(() => {
+    if (!session?.external_agent_id) return null;
+    return (externalAgents ?? []).find((agent) => agent.id === session.external_agent_id) ?? null;
+  }, [externalAgents, session?.external_agent_id]);
+  const usingExternalAgent = !!session?.external_agent_id;
 
   const statusText = React.useMemo(() => {
     if (streamStatus === 'connecting' || streamStatus === 'streaming') return t('header.status_generating');
@@ -126,9 +135,15 @@ export function ChatHeader({
           </div>
           {session ? (
             <div className="text-xs text-tertiary truncate">
-              {currentEndpoint?.name || session.endpoint_id}
-              <span className="text-tertiary/70"> · </span>
-              {currentEndpoint?.openai_model || session.model}
+              {usingExternalAgent ? (
+                `${currentAgent?.name ?? t('header.external_agent')} · ${session.external_agent_id}`
+              ) : (
+                <>
+                  {currentEndpoint?.name || session.endpoint_id}
+                  <span className="text-tertiary/70"> · </span>
+                  {currentEndpoint?.openai_model || session.model}
+                </>
+              )}
             </div>
           ) : (
             <div className="text-xs text-tertiary truncate">{t('header.no_active_thread_hint')}</div>
@@ -137,6 +152,61 @@ export function ChatHeader({
 
         <div className="flex items-center gap-2">
           {session ? (
+            usingExternalAgent ? (
+              <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2" data-testid="chat__model-trigger">
+                    <span className="max-w-[220px] truncate">
+                      {currentAgent?.name ?? t('header.external_agent')}
+                    </span>
+                    <ChevronDown className="w-4 h-4 text-icon-default" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[18rem]">
+                  <div className="px-3 py-2 text-xs text-tertiary">{t('header.models')}</div>
+                  <DropdownMenuSeparator />
+                  {endpoints.map((e) => {
+                    const disabled = e.status === 'disabled';
+                    return (
+                      <DropdownMenuItem
+                        key={e.id}
+                        data-disabled={disabled ? '' : undefined}
+                        onSelect={(ev) => {
+                          ev.preventDefault();
+                          setModelOpen(false);
+                          if (disabled) return;
+                          onSelectEndpoint(e);
+                        }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className={cn('text-sm truncate', disabled ? 'text-tertiary' : 'text-primary')}>
+                            {e.name}
+                          </div>
+                          <div className="text-xs text-tertiary truncate">{e.openai_model}</div>
+                        </div>
+                        {disabled && <span className="text-xs text-tertiary">{t('header.disabled')}</span>}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  {(externalAgents ?? []).length > 0 && endpoints.length > 0 && <DropdownMenuSeparator />}
+                  {(externalAgents ?? []).map((agent) => (
+                    <DropdownMenuItem
+                      key={agent.id}
+                      onSelect={(ev) => {
+                        ev.preventDefault();
+                        setModelOpen(false);
+                        onSelectExternalAgent?.(agent);
+                      }}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm truncate">{agent.name}</div>
+                        <div className="text-xs text-tertiary truncate">{t('header.external_agent')}</div>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
             <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-2" data-testid="chat__model-trigger">
@@ -149,7 +219,7 @@ export function ChatHeader({
               <DropdownMenuContent align="end" className="min-w-[18rem]">
                 <div className="px-3 py-2 text-xs text-tertiary">{t('header.models')}</div>
                 <DropdownMenuSeparator />
-                {endpoints.length === 0 ? (
+                {endpoints.length === 0 && (externalAgents ?? []).length === 0 ? (
                   <div className="px-3 py-2 text-sm text-tertiary">{t('header.no_endpoints')}</div>
                 ) : (
                   endpoints.map((e) => {
@@ -179,8 +249,26 @@ export function ChatHeader({
                     );
                   })
                 )}
+                {(externalAgents ?? []).length > 0 && <DropdownMenuSeparator />}
+                {(externalAgents ?? []).map((agent) => (
+                  <DropdownMenuItem
+                    key={agent.id}
+                    onSelect={(ev) => {
+                      ev.preventDefault();
+                      setModelOpen(false);
+                      onSelectExternalAgent?.(agent);
+                    }}
+                    className={cn(session?.external_agent_id === agent.id && 'bg-hover')}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm truncate">{agent.name}</div>
+                      <div className="text-xs text-tertiary truncate">{t('header.external_agent')}</div>
+                    </div>
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
+            )
           ) : (
             <Button
               variant="outline"

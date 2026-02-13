@@ -23,10 +23,14 @@ import {
 } from '@/components/ui/select';
 import { Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { EndpointAPI, CredentialsAPI, getApiClient, handleErrorForToast } from '@/lib/api';
-import { ApiError } from '@/lib/api/client';
+import { EndpointAPI, CredentialsAPI, getApiClient } from '@/lib/api';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
 import type { EndpointCapabilityType } from '@/lib/api/types';
+import {
+  APIError,
+  resolveApiErrorPresentation,
+  resolveErrorMessageByCode,
+} from '@/lib/api/errors';
 import {
   ENDPOINT_PROVIDER_OPTIONS,
   getModelsByCapability,
@@ -51,6 +55,7 @@ export function CreateEndpointDialog({
   onSuccess,
 }: CreateEndpointDialogProps) {
   const t = useTranslations('endpoints');
+  const tErrors = useTranslations('errors');
   const commonT = useTranslations('common');
   const locale = useLocale();
   type CapabilityOption = EndpointCapabilityType;
@@ -92,11 +97,31 @@ export function CreateEndpointDialog({
       onSuccess?.();
     },
     onError: (error: unknown) => {
-      if (error instanceof ApiError && error.errorCode === 'ENDPOINT_MODEL_CONFLICT') {
-        toast.error(t('create_dialog.model_conflict'));
-      } else {
-        handleErrorForToast(error);
+      if (error instanceof APIError) {
+        const overrideMessage = resolveErrorMessageByCode(
+          error.errorCode,
+          {
+            ENDPOINT_MODEL_CONFLICT: t('create_dialog.model_conflict'),
+          },
+          '',
+        );
+        if (overrideMessage) {
+          toast.error(overrideMessage);
+          return;
+        }
+        const resolved = resolveApiErrorPresentation({
+          error,
+          t: tErrors,
+          fallbackMessage: t('create_dialog.failed'),
+        });
+        toast.error(`${resolved.title}: ${resolved.description}`);
+        return;
       }
+      if (error instanceof Error) {
+        toast.error(error.message || t('create_dialog.failed'));
+        return;
+      }
+      toast.error(t('create_dialog.failed'));
     },
   });
 

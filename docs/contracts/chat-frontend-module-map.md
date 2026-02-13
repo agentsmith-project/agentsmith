@@ -15,20 +15,21 @@ Scope: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`
   - `editing`
   - `streaming`
   - `pending`
-  - `error_recoverable`
   - `ready`
-- Endpoint binding is mandatory for send (`endpoint_id` and `model` non-empty).
+- Send binding is mandatory:
+  - either endpoint binding (`endpoint_id` + `model`)
+  - or external agent binding (`external_agent_id`)
 - Header model presentation contract:
-  - Primary label: endpoint name
-  - Secondary label: routed model id
+  - Endpoint session: primary label = endpoint name, secondary label = routed model id
+  - External agent session: primary label = external agent name, secondary label = external agent id
 - Thread pane contract:
   - Show streaming indicator per thread
   - Show aggregate generating count badge
   - Show no-active-thread hint when sessions exist but none selected
 
 ## 3. Attachment and Capability Contract
-- Attachment send requires endpoint capability `multimodal_completion`.
-- On non-multimodal endpoint:
+- Attachment send requires multimodal capability from the active runtime binding.
+- On non-multimodal runtime (endpoint or external agent):
   - Hide attachment actions in composer
   - Keep text send available
   - Frontend must pre-block attachment input attempts with explicit message
@@ -48,4 +49,17 @@ Scope: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`
 - Hook/view-model tests: `src/lib/chat/__tests__`
 - Component tests: `src/components/chat/__tests__`
 - Integration/runtime behavior: `e2e/integration-chat.spec.ts`
+- External agent integration behavior: `e2e/integration-agents-external.spec.ts`
 - Any change to invariants in sections 2-4 must update tests in all three layers.
+
+## 6. Stream Error Mapping Contract
+- Stream errors must show user-visible banner (`chat__stream-error-banner`) with deterministic copy.
+- For external-agent sessions, frontend maps server/SSE error codes:
+  - `AGENT_OFFLINE` -> reconnect agent and retry hint
+  - `AGENT_TIMEOUT` -> timeout/retry hint
+  - `AGENT_PROTOCOL_ERROR` -> agent implementation/protocol hint
+  - `AGENT_UPSTREAM_ERROR` -> upstream error hint
+- Backend must emit these codes consistently for:
+  - stream bootstrap failures (HTTP JSON error),
+  - in-stream failures (SSE `error` event).
+- Frontend mapping should use centralized resolver (`resolveErrorMessageByCode`) to avoid per-module ad-hoc `if/else` chains.

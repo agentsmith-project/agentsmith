@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { AlertTriangle, MessageSquare, Plus } from 'lucide-react';
 
-import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
+import type { Agent, Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
 import { deriveChatComposerState } from '@/lib/chat/composer-state';
 import type { SessionStreamStatus, SessionStreamingAssistant } from '@/lib/chat/stream-state';
 
@@ -30,6 +30,7 @@ export interface ChatMainPaneProps {
   currentSessionId: string | null;
   activeSession: ChatSession | null;
   endpoints: Endpoint[];
+  externalAgents?: Agent[];
   messages: ChatMessage[];
   messagesLoading: boolean;
   attachments: Attachment[];
@@ -53,6 +54,7 @@ export interface ChatMainPaneProps {
   onCreateThread: () => void;
   onRenameActiveSession: (title: string) => void;
   onSelectActiveEndpoint: (endpoint: Endpoint) => void;
+  onSelectExternalAgent?: (agent: Agent) => void;
   onSelectVariant: (groupId: string, nextIndex: number) => void;
   onEditMessage: (message: ChatMessage) => void;
   onEditCommit: (message: ChatMessage, nextContent: string) => void;
@@ -74,6 +76,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     currentSessionId,
     activeSession,
     endpoints,
+    externalAgents = [],
     messages,
     messagesLoading,
     attachments,
@@ -97,6 +100,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     onCreateThread,
     onRenameActiveSession,
     onSelectActiveEndpoint,
+    onSelectExternalAgent = () => {},
     onSelectVariant,
     onEditMessage,
     onEditCommit,
@@ -141,9 +145,11 @@ export function ChatMainPane(props: ChatMainPaneProps) {
       <ChatHeader
         session={activeSession}
         endpoints={endpoints}
+        externalAgents={externalAgents}
         streamStatus={activeStreamStatus}
         onRename={onRenameActiveSession}
         onSelectEndpoint={onSelectActiveEndpoint}
+        onSelectExternalAgent={onSelectExternalAgent}
         onCreateThread={onCreateThread}
         canCreateThread={canUseChat}
         createPending={createPending}

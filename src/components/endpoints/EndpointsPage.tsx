@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react';
 import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { Server, Plus, Upload, Download } from 'lucide-react';
-import { APIError } from '@/lib/api/errors';
+import { APIError, resolveApiErrorPresentation } from '@/lib/api/errors';
 import type { Endpoint } from '@/lib/api/types';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { DataTable } from '@/components/ui/data-table';
@@ -89,7 +89,16 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
       setImportDialogOpen(false);
     },
     onImportError: (error) => {
-      const message = error instanceof APIError ? error.message : t('import_failed');
+      const message = error instanceof APIError
+        ? (() => {
+            const resolved = resolveApiErrorPresentation({
+              error,
+              t: tErrors,
+              fallbackMessage: t('import_failed'),
+            });
+            return `${resolved.title}: ${resolved.description}`;
+          })()
+        : t('import_failed');
       toast.error(message);
     },
   });

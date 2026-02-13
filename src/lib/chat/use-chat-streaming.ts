@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { ChatMessage, ChatSession } from '@/lib/api/types';
 import { ApiError } from '@/lib/api/client';
+import { resolveErrorMessageByCode } from '@/lib/api/errors';
 import { getChatStreamAttach, postChatStream, streamSseJson } from '@/lib/chat/stream'; 
 import { createThrottle } from '@/lib/chat/throttle';
 import { chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
@@ -34,6 +35,10 @@ export interface UseChatStreamingArgs {
     streamingFailed: string;
     stopRequiredBeforeReplaceFailed: string;
     stopFailedRetry: string;
+    streamErrorAgentOffline: string;
+    streamErrorAgentTimeout: string;
+    streamErrorAgentProtocol: string;
+    streamErrorAgentUpstream: string;
   };
   upsertStreamAssistantToCache: (sessionId: string, message: ChatMessage) => void;
   patchStreamAssistantInCache: (
@@ -48,6 +53,37 @@ export interface UseChatStreamingResult {
   stopStreamingSession: (sessionId: string, reason?: 'user' | 'replace') => Promise<boolean>;
   stopStreaming: () => void;
   runStream: (args: RunChatStreamArgs) => Promise<void>;
+}
+
+class StreamUiError extends Error {
+  code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'StreamUiError';
+    this.code = code;
+  }
+}
+
+function mapStreamErrorMessage(error: unknown, messages: UseChatStreamingArgs['messages']): string {
+  const code = (() => {
+    if (error instanceof StreamUiError) return error.code;
+    if (error instanceof ApiError) return error.errorCode;
+    return '';
+  })();
+  const mapped = resolveErrorMessageByCode(
+    code,
+    {
+      AGENT_TIMEOUT: messages.streamErrorAgentTimeout,
+      AGENT_PROTOCOL_ERROR: messages.streamErrorAgentProtocol,
+      AGENT_UPSTREAM_ERROR: messages.streamErrorAgentUpstream,
+      AGENT_OFFLINE: messages.streamErrorAgentOffline,
+    },
+    '',
+  );
+  if (mapped) return mapped;
+  if (error instanceof Error) return error.message;
+  return messages.streamingFailed;
 }
 
 export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingResult {
@@ -282,8 +318,9 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
                 }
               } else if (ev.event === 'error') {
                 const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
+                const code = data && typeof data.error_code === 'string' ? data.error_code : 'CHAT_STREAM_ERROR';
                 const message = data && typeof data.message === 'string' ? data.message : messages.streamError;
-                throw new Error(message);
+                throw new StreamUiError(code, message);
               } else if (ev.event === 'done') {
                 break;
               }
@@ -311,7 +348,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
               queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
               return;
             }
-            const errorMessage = e instanceof Error ? e.message : messages.streamingFailed;
+            const errorMessage = mapStreamErrorMessage(e, messages);
             setSessionStreamState(session.id, { status: 'error', assistant: null, errorMessage });
             toast.error(errorMessage);
           } finally {
@@ -331,6 +368,10 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
       cancelled = true;
     };
   }, [
+    messages.streamErrorAgentOffline,
+    messages.streamErrorAgentProtocol,
+    messages.streamErrorAgentTimeout,
+    messages.streamErrorAgentUpstream,
     messages.streamError,
     messages.streamingFailed,
     patchStreamAssistantInCache,
@@ -551,8 +592,9 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
           }
         } else if (ev.event === 'error') {
           const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
+          const code = data && typeof data.error_code === 'string' ? data.error_code : 'CHAT_STREAM_ERROR';
           const message = data && typeof data.message === 'string' ? data.message : messages.streamError;
-          throw new Error(message);
+          throw new StreamUiError(code, message);
         } else if (ev.event === 'done') {
           break;
         }
@@ -574,7 +616,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
         return;
       }
-      const errorMessage = e instanceof Error ? e.message : messages.streamingFailed;
+      const errorMessage = mapStreamErrorMessage(e, messages);
       setSessionStreamState(runArgs.sessionId, { status: 'error', assistant: null, errorMessage });
       toast.error(errorMessage);
       queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, runArgs.sessionId) });

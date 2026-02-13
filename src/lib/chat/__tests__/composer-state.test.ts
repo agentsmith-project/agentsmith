@@ -20,6 +20,7 @@ function createSession(overrides?: Partial<ChatSession>): ChatSession {
 describe('composer-state', () => {
   it('detects endpoint binding', () => {
     expect(hasEndpointBinding(createSession())).toBe(true);
+    expect(hasEndpointBinding(createSession({ endpoint_id: '', external_agent_id: 'ag_1' }))).toBe(true);
     expect(hasEndpointBinding(createSession({ endpoint_id: '' }))).toBe(false);
     expect(hasEndpointBinding(createSession({ model: '' }))).toBe(false);
     expect(

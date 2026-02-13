@@ -168,7 +168,7 @@ CI runs the same command and fails the pipeline on missing coverage.
 
 后端提供统一文档入口：
 
-- `http://localhost:20000/docs`：Swagger UI（HTTP API）
+- `http://localhost:20000/docs`：Scalar API Reference（HTTP API）
 - `http://localhost:20000/docs/asyncapi`：AsyncAPI 可视化页面（Agent Runtime WS）
 - `http://localhost:20000/api/v1/openapi.json`：OpenAPI JSON
 - `http://localhost:20000/api/v1/asyncapi.json`：AsyncAPI JSON（Agent Runtime WS）

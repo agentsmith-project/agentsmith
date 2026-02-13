@@ -6,12 +6,12 @@ import { fileURLToPath } from 'node:url';
 const SOURCE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SOURCE_DIR, '../../..');
 const CONTRACT_SPECS_DIR = path.join(REPO_ROOT, 'docs', 'contracts', 'specs');
-const SWAGGER_DIST_DIR = path.join(REPO_ROOT, 'node_modules', 'swagger-ui-dist');
+const SCALAR_DIST_DIR = path.join(REPO_ROOT, 'node_modules', '@scalar', 'api-reference', 'dist');
 
 type ApiSpecName = 'openapi' | 'asyncapi';
 
 const specCache: Partial<Record<ApiSpecName, unknown>> = {};
-const swaggerAssetCache: Record<string, Buffer> = {};
+const docsAssetCache: Record<string, Buffer> = {};
 
 function readJsonSpec(name: ApiSpecName): unknown {
   const cached = specCache[name];
@@ -24,14 +24,14 @@ function readJsonSpec(name: ApiSpecName): unknown {
   return parsed;
 }
 
-function getSwaggerAsset(assetName: string): Buffer {
-  const cached = swaggerAssetCache[assetName];
+function getDocsAsset(assetName: string): Buffer {
+  const cached = docsAssetCache[assetName];
   if (cached) {
     return cached;
   }
-  const fullPath = path.join(SWAGGER_DIST_DIR, assetName);
+  const fullPath = path.join(SCALAR_DIST_DIR, assetName);
   const content = readFileSync(fullPath);
-  swaggerAssetCache[assetName] = content;
+  docsAssetCache[assetName] = content;
   return content;
 }
 
@@ -42,7 +42,6 @@ function docsHtml(): string {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MBOS API Docs</title>
-    <link rel="stylesheet" href="/docs/swagger-ui.css" />
     <style>
       body { margin: 0; background: #0f1115; color: #d4d4d4; font-family: Inter, system-ui, sans-serif; }
       .topbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #262626; }
@@ -61,16 +60,16 @@ function docsHtml(): string {
         <a href="/api/v1/asyncapi.json" target="_blank" rel="noopener noreferrer">AsyncAPI JSON</a>
       </div>
     </div>
-    <div id="swagger-ui"></div>
-    <script src="/docs/swagger-ui-bundle.js"></script>
-    <script src="/docs/swagger-ui-standalone-preset.js"></script>
+    <div id="scalar-root" style="height: calc(100vh - 52px);"></div>
+    <script src="/docs/scalar.standalone.js"></script>
     <script>
-      window.ui = SwaggerUIBundle({
+      Scalar.createApiReference('#scalar-root', {
         url: '/api/v1/openapi.json',
-        dom_id: '#swagger-ui',
-        deepLinking: true,
-        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-        layout: 'BaseLayout',
+        theme: 'moon',
+        layout: 'modern',
+        darkMode: true,
+        hideModels: false,
+        defaultHttpClient: { targetKey: 'js', clientKey: 'fetch' }
       });
     </script>
   </body>
@@ -97,7 +96,7 @@ function asyncApiHtml(): string {
     <div class="topbar">
       <div class="title">MBOS AsyncAPI Viewer</div>
       <div class="links">
-        <a href="/docs">Swagger UI</a>
+        <a href="/docs">API Reference</a>
         <a href="/api/v1/asyncapi.json" target="_blank" rel="noopener noreferrer">Raw JSON</a>
         <button id="copy">Copy JSON</button>
       </div>
@@ -154,20 +153,12 @@ export function handleApiDocsRoute(
     serveBinary(res, 200, 'text/html; charset=utf-8', asyncApiHtml());
     return true;
   }
-  if (pathname === '/docs/swagger-ui.css') {
-    serveBinary(res, 200, 'text/css; charset=utf-8', getSwaggerAsset('swagger-ui.css'));
-    return true;
-  }
-  if (pathname === '/docs/swagger-ui-bundle.js') {
-    serveBinary(res, 200, 'application/javascript; charset=utf-8', getSwaggerAsset('swagger-ui-bundle.js'));
-    return true;
-  }
-  if (pathname === '/docs/swagger-ui-standalone-preset.js') {
+  if (pathname === '/docs/scalar.standalone.js') {
     serveBinary(
       res,
       200,
       'application/javascript; charset=utf-8',
-      getSwaggerAsset('swagger-ui-standalone-preset.js'),
+      getDocsAsset(path.join('browser', 'standalone.js')),
     );
     return true;
   }

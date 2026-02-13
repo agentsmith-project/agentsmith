@@ -16,7 +16,7 @@
 
 - `api-docs-handler.ts`
 - 提供 OpenAPI/AsyncAPI JSON 输出
-- 提供内嵌 Swagger UI 文档入口（离线可用，本地静态资源）
+- 提供内嵌 Scalar API Reference 文档入口（离线可用，本地静态资源）
 
 - `error-mapper.ts`
 - 统一维护 request 层错误到 HTTP 响应的映射策略

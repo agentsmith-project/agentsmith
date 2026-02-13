@@ -59,7 +59,7 @@ describe('handleApiDocsRoute', () => {
 
     expect(handled).toBe(true);
     expect(state.headers['content-type']).toContain('text/html');
-    expect(state.body).toContain('SwaggerUIBundle');
+    expect(state.body).toContain('Scalar.createApiReference');
     expect(state.body).toContain('/docs/asyncapi');
   });
 

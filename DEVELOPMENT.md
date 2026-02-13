@@ -45,9 +45,13 @@ make web-msw       # 前端 mock 模式
 make e2e                # mock e2e (MSW)
 make e2e-int-minimal    # 最小集成测试
 make e2e-int-chat       # chat 集成测试
+make e2e-int-chat-auto  # 自动启动依赖+API+前端后执行 chat 集成测试
+make e2e-int-chat-ux-auto # 自动启动并执行 chat UX 关键集成用例
 make deps-down     # 关闭依赖
 make deps-reset    # 关闭并清空依赖数据卷
 ```
+
+说明：`*-auto` 目标会自动清理代理环境变量（`http_proxy/https_proxy/all_proxy` 等）后再启动服务和执行 Playwright。
 
 ## Environment Setup
 

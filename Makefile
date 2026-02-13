@@ -3,6 +3,7 @@
 	e2e e2e-local \
 	e2e-int-minimal e2e-int-chat e2e-int-chat-real e2e-int-local \
 	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-chat-real-local-api \
+	e2e-int-chat-auto e2e-int-chat-ux-auto \
 	urls
 
 NPM ?= npm
@@ -63,6 +64,8 @@ help:
 	@echo "  make e2e-int-minimal-local-api  # run minimal integration e2e with current node api"
 	@echo "  make e2e-int-chat-local-api     # run chat integration e2e with current node api"
 	@echo "  make e2e-int-chat-real-local-api # run real deepseek chat e2e with current node api"
+	@echo "  make e2e-int-chat-auto      # auto start deps+api+web and run integration-chat spec"
+	@echo "  make e2e-int-chat-ux-auto   # auto start deps+api+web and run targeted chat UX integration checks"
 	@echo ""
 	@echo "Utility:"
 	@echo "  make urls          # print local URLs and test users"
@@ -192,6 +195,24 @@ e2e-int-chat-real-local-api:
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
 	$(NPM) run test:e2e:integration:chat:real:with-api
+
+e2e-int-chat-auto:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	KEYCLOAK_URL=$(KEYCLOAK_URL) \
+	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts
+
+e2e-int-chat-ux-auto:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	KEYCLOAK_URL=$(KEYCLOAK_URL) \
+	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts --grep "deleting the only thread shows clear empty-state actions and disabled composer|text-only endpoint hides attachment actions in composer"
 
 urls:
 	@echo "Frontend:         http://localhost:$(PORT_WEB)/$(LOCALE)/login"

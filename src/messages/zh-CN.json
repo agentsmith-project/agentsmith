@@ -483,6 +483,8 @@
     "threads_yesterday": "昨天",
     "threads_days_ago": "{days} 天前",
     "thread_generating": "推理中",
+    "threads_generating_count": "{count} 个生成中",
+    "threads_no_active_hint": "请选择会话或新建聊天",
     "attachments": {
       "disabled_while_editing": "编辑时禁用附件。",
       "multimodal_required": "当前端点不支持图片/文件输入，请切换到多模态补全端点。"

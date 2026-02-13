@@ -240,6 +240,17 @@ describe('ThreadsPane', () => {
       render(<ThreadsPane {...defaultProps} streamingSessionIds={['session-2']} />);
       expect(screen.getByTestId('chat__thread-streaming-indicator')).toBeInTheDocument();
     });
+
+    it('should show generating count badge in header when sessions are streaming', () => {
+      render(<ThreadsPane {...defaultProps} streamingSessionIds={['session-2', 'session-3']} />);
+      expect(screen.getByTestId('chat__threads-generating-count')).toBeInTheDocument();
+      expect(screen.getByText('threads_generating_count')).toBeInTheDocument();
+    });
+
+    it('should show no-active-thread hint when there are sessions but no active one', () => {
+      render(<ThreadsPane {...defaultProps} activeSessionId={null} />);
+      expect(screen.getByText('threads_no_active_hint')).toBeInTheDocument();
+    });
   });
 
   describe('Thread Item Interactions', () => {

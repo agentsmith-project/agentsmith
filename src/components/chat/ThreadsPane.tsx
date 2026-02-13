@@ -58,6 +58,10 @@ export function ThreadsPane({
     if (!q) return sorted;
     return sorted.filter((s) => (s.title || '').toLowerCase().includes(q));
   }, [sessions, searchQuery]);
+  const generatingCount = React.useMemo(
+    () => new Set(streamingSessionIds).size,
+    [streamingSessionIds],
+  );
 
   return (
     <aside
@@ -91,6 +95,21 @@ export function ThreadsPane({
             className="h-8 pl-9"
           />
         </div>
+        {(generatingCount > 0 || (!activeSessionId && sessions.length > 0)) && (
+          <div className="flex items-center justify-between gap-2 text-[11px] text-tertiary">
+            <div className="min-w-0 truncate">
+              {!activeSessionId && sessions.length > 0 ? t('threads_no_active_hint') : ''}
+            </div>
+            {generatingCount > 0 && (
+              <div
+                className="inline-flex shrink-0 items-center rounded-full border border-subtle bg-surface-high px-2 py-0.5 text-[10px] text-tertiary"
+                data-testid="chat__threads-generating-count"
+              >
+                {t('threads_generating_count', { count: generatingCount })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0">

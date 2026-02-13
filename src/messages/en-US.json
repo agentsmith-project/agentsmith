@@ -481,6 +481,8 @@
     "threads_yesterday": "Yesterday",
     "threads_days_ago": "{days} days ago",
     "thread_generating": "Generating",
+    "threads_generating_count": "{count} generating",
+    "threads_no_active_hint": "Select a thread or create a new chat",
     "attachments": {
       "disabled_while_editing": "Attachments are disabled while editing.",
       "multimodal_required": "Current endpoint does not support image/file input. Please switch to a multimodal completion endpoint."

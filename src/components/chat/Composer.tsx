@@ -28,6 +28,8 @@ export function Composer({
   onRetryAttachment,
   disabled,
   streaming,
+  attachmentEnabled = true,
+  attachmentDisabledReason = '',
   autoFocus,
   layoutMode = 'standard',
 }: {
@@ -44,6 +46,8 @@ export function Composer({
   onRetryAttachment: (attachmentId: string) => void;
   disabled: boolean;
   streaming: boolean;
+  attachmentEnabled?: boolean;
+  attachmentDisabledReason?: string;
   autoFocus?: boolean;
   layoutMode?: ChatLayoutMode;
 }) {
@@ -145,30 +149,38 @@ export function Composer({
           ) : null}
 
           <div className="flex items-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10"
-              onClick={onPickFiles}
-              disabled={disabled || streaming}
-              aria-label={t('composer.attach_files')}
-              title={t('composer.attach_files')}
-            >
-              <Paperclip className="w-4 h-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10"
-              onClick={onPickFromLibrary}
-              disabled={disabled || streaming}
-              aria-label={t('composer.attach_from_library')}
-              title={t('composer.attach_from_library')}
-            >
-              <FolderOpen className="w-4 h-4" />
-            </Button>
+            {attachmentEnabled ? (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10"
+                  onClick={onPickFiles}
+                  disabled={disabled || streaming}
+                  aria-label={t('composer.attach_files')}
+                  title={t('composer.attach_files')}
+                >
+                  <Paperclip className="w-4 h-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10"
+                  onClick={onPickFromLibrary}
+                  disabled={disabled || streaming}
+                  aria-label={t('composer.attach_from_library')}
+                  title={t('composer.attach_from_library')}
+                >
+                  <FolderOpen className="w-4 h-4" />
+                </Button>
+              </>
+            ) : (
+              <div className="hidden sm:flex h-10 items-center px-1 text-xs text-tertiary">
+                {attachmentDisabledReason}
+              </div>
+            )}
 
             <div className="flex-1">
               <textarea
@@ -207,7 +219,7 @@ export function Composer({
           </div>
 
           <div className="mt-2 flex items-center justify-between gap-3 text-xs text-tertiary">
-            <div className="min-w-0 truncate">{helperText}</div>
+            <div className="min-w-0 truncate">{helperText || attachmentDisabledReason}</div>
             <div className="flex-shrink-0">{hotkeyText}</div>
           </div>
         </div>

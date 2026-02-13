@@ -350,6 +350,20 @@ describe('Composer', () => {
       const fileButton = screen.getByTitle('Attach files');
       expect(fileButton).toBeDisabled();
     });
+
+    it('should hide attachment buttons when attachment is not enabled', () => {
+      render(
+        <Composer
+          {...defaultProps}
+          attachmentEnabled={false}
+          attachmentDisabledReason="Current endpoint only supports text."
+        />,
+      );
+
+      expect(screen.queryByTitle('Attach files')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('Attach from library')).not.toBeInTheDocument();
+      expect(screen.getAllByText('Current endpoint only supports text.').length).toBeGreaterThan(0);
+    });
   });
 
   describe('Edit Mode', () => {

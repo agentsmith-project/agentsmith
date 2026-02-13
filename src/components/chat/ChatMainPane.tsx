@@ -16,7 +16,10 @@ export interface ChatMainPaneLabels {
   loading: string;
   noActiveThreadTitle: string;
   noActiveThreadDescription: string;
+  noActiveThreadHint: string;
   newThread: string;
+  selectThreadHint: string;
+  attachmentsDisabledReason: string;
   assistant: string;
 }
 
@@ -38,6 +41,7 @@ export interface ChatMainPaneProps {
   editMessagePending: boolean;
   initAttachmentPending: boolean;
   canUseChat: boolean;
+  canAttachFiles: boolean;
   composerValue: string;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   labels: ChatMainPaneLabels;
@@ -79,6 +83,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     editMessagePending,
     initAttachmentPending,
     canUseChat,
+    canAttachFiles,
     composerValue,
     fileInputRef,
     labels,
@@ -115,6 +120,9 @@ export function ChatMainPane(props: ChatMainPaneProps) {
         streamStatus={activeStreamStatus}
         onRename={onRenameActiveSession}
         onSelectEndpoint={onSelectActiveEndpoint}
+        onCreateThread={onCreateThread}
+        canCreateThread={canUseChat}
+        createPending={createPending}
         layoutMode={layoutMode}
       />
 
@@ -125,6 +133,11 @@ export function ChatMainPane(props: ChatMainPaneProps) {
               <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
               <div className="text-foreground font-medium mb-1">{labels.noActiveThreadTitle}</div>
               <div className="text-tertiary text-sm">{labels.noActiveThreadDescription}</div>
+              <div className="mt-3 text-xs text-tertiary">
+                {labels.noActiveThreadHint}
+                <span className="mx-1">·</span>
+                {labels.selectThreadHint}
+              </div>
               <Button
                 className="mt-4"
                 variant="outline"
@@ -177,32 +190,34 @@ export function ChatMainPane(props: ChatMainPaneProps) {
 
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePicked} />
 
-      {currentSessionId && (
-        <Composer
-          value={composerValue}
-          onChange={onComposerChange}
-          onSend={onSend}
-          onStop={onStop}
-          mode="compose"
-          autoFocus={!editingMessageId && activeStreamStatus === 'idle'}
-          onPickFiles={onPickFiles}
-          onPickFromLibrary={onPickFromLibrary}
-          attachments={attachments}
-          onRemoveAttachment={onRemoveAttachment}
-          onRetryAttachment={onRetryAttachment}
-          disabled={
-            !currentSessionId ||
-            !canUseChat ||
-            createMessagePending ||
-            editMessagePending ||
-            initAttachmentPending ||
-            disabled ||
-            !!editingMessageId
-          }
-          streaming={disabled}
-          layoutMode={layoutMode}
-        />
-      )}
+      <Composer
+        value={composerValue}
+        onChange={onComposerChange}
+        onSend={onSend}
+        onStop={onStop}
+        mode="compose"
+        autoFocus={!editingMessageId && activeStreamStatus === 'idle'}
+        onPickFiles={onPickFiles}
+        onPickFromLibrary={onPickFromLibrary}
+        attachments={currentSessionId ? attachments : []}
+        onRemoveAttachment={onRemoveAttachment}
+        onRetryAttachment={onRetryAttachment}
+        disabled={
+          !currentSessionId ||
+          !canUseChat ||
+          createMessagePending ||
+          editMessagePending ||
+          initAttachmentPending ||
+          disabled ||
+          !!editingMessageId
+        }
+        streaming={disabled}
+        attachmentEnabled={Boolean(currentSessionId && canAttachFiles)}
+        attachmentDisabledReason={
+          !currentSessionId ? labels.noActiveThreadHint : (!canAttachFiles ? labels.attachmentsDisabledReason : '')
+        }
+        layoutMode={layoutMode}
+      />
     </section>
   );
 }

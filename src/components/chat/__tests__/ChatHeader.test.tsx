@@ -57,6 +57,7 @@ const defaultProps = {
   streamStatus: 'idle' as const,
   onRename: vi.fn(),
   onSelectEndpoint: vi.fn(),
+  onCreateThread: vi.fn(),
 };
 
 describe('ChatHeader', () => {
@@ -80,16 +81,16 @@ describe('ChatHeader', () => {
     it('should render current endpoint info', () => {
       const { container } = render(<ChatHeader {...defaultProps} />);
 
-      expect(screen.getByText('gpt-4')).toBeInTheDocument();
+      expect(screen.getByText('Primary Endpoint')).toBeInTheDocument();
       // The endpoint name should be rendered (it's found by matching endpoint_id)
       const endpointText = container.textContent || '';
-      expect(endpointText).toContain('Primary');
+      expect(endpointText).toContain('gpt-4');
     });
 
     it('should render model selector button', () => {
       render(<ChatHeader {...defaultProps} />);
 
-      expect(screen.getByText('gpt-4')).toBeInTheDocument();
+      expect(screen.getByTestId('chat__model-trigger')).toHaveTextContent('Primary Endpoint');
     });
   });
 
@@ -256,15 +257,16 @@ describe('ChatHeader', () => {
     it('should show model dropdown trigger', () => {
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       expect(trigger).toBeInTheDocument();
+      expect(trigger).toHaveTextContent('Primary Endpoint');
     });
 
     it('should open dropdown when trigger is clicked', async () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       expect(screen.getByText('Models')).toBeInTheDocument();
@@ -274,7 +276,7 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       // Dropdown should open
@@ -285,7 +287,7 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       // gpt-3.5-turbo should be visible in dropdown
@@ -296,11 +298,11 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
-      const gpt35Option = screen.getByText('gpt-3.5-turbo');
-      await user.click(gpt35Option);
+      const secondaryOption = screen.getByText('Secondary Endpoint');
+      await user.click(secondaryOption);
 
       expect(defaultProps.onSelectEndpoint).toHaveBeenCalledWith(mockEndpoints[1]);
     });
@@ -309,7 +311,7 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       // Dropdown should open
@@ -320,10 +322,10 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
-      const disabledOption = screen.getByText('claude-3');
+      const disabledOption = screen.getByText('Disabled Endpoint');
       const disabledContainer = disabledOption.closest('[data-disabled]');
       expect(disabledContainer).toBeInTheDocument();
     });
@@ -332,10 +334,10 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
-      const disabledOption = screen.getByText('claude-3');
+      const disabledOption = screen.getByText('Disabled Endpoint');
       await user.click(disabledOption);
 
       expect(defaultProps.onSelectEndpoint).not.toHaveBeenCalled();
@@ -345,7 +347,7 @@ describe('ChatHeader', () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       expect(screen.getByText('Disabled')).toBeInTheDocument();
@@ -354,21 +356,21 @@ describe('ChatHeader', () => {
     it('should show "No endpoints" when endpoints array is empty', async () => {
       render(<ChatHeader {...defaultProps} endpoints={[]} />);
 
-      // When endpoints are empty but session exists, it shows session.model
-      expect(screen.getByText('gpt-4')).toBeInTheDocument();
+      // When endpoints are empty but session exists, trigger falls back to endpoint_id
+      expect(screen.getByTestId('chat__model-trigger')).toHaveTextContent('endpoint-1');
     });
 
     it('should close dropdown after selection', async () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} />);
 
-      const trigger = screen.getByText('gpt-4');
+      const trigger = screen.getByTestId('chat__model-trigger');
       await user.click(trigger);
 
       expect(screen.getByText('Models')).toBeInTheDocument();
 
-      const gpt35Option = screen.getByText('gpt-3.5-turbo');
-      await user.click(gpt35Option);
+      const secondaryOption = screen.getByText('Secondary Endpoint');
+      await user.click(secondaryOption);
 
       expect(screen.queryByText('Models')).not.toBeInTheDocument();
     });
@@ -379,7 +381,7 @@ describe('ChatHeader', () => {
       render(<ChatHeader {...defaultProps} session={null} />);
 
       expect(screen.getByText('Chat')).toBeInTheDocument();
-      expect(screen.getByText('Select model')).toBeInTheDocument();
+      expect(screen.getByTestId('chat__header-create-thread')).toBeInTheDocument();
     });
 
     it('should not show endpoint info when session is null', () => {
@@ -389,14 +391,13 @@ describe('ChatHeader', () => {
       expect(screen.queryByText('Primary Endpoint')).not.toBeInTheDocument();
     });
 
-    it('should still allow model selection when session is null', async () => {
+    it('should allow creating a thread when session is null', async () => {
       const user = userEvent.setup();
       render(<ChatHeader {...defaultProps} session={null} />);
 
-      const trigger = screen.getByText('Select model');
-      await user.click(trigger);
-
-      expect(screen.getByText('Models')).toBeInTheDocument();
+      const createButton = screen.getByTestId('chat__header-create-thread');
+      await user.click(createButton);
+      expect(defaultProps.onCreateThread).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -415,9 +416,9 @@ describe('ChatHeader', () => {
         endpoint_id: 'unknown-endpoint',
       };
 
-      render(<ChatHeader {...defaultProps} session={unknownEndpointSession} />);
-
-      expect(screen.getByText('gpt-4')).toBeInTheDocument();
+      const { container } = render(<ChatHeader {...defaultProps} session={unknownEndpointSession} />);
+      const headerText = container.textContent ?? '';
+      expect(headerText).toContain('gpt-4');
     });
   });
 

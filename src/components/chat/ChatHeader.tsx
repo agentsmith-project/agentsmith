@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import type { ChatSession, Endpoint } from '@/lib/api/types';
@@ -21,6 +21,9 @@ export function ChatHeader({
   streamStatus,
   onRename,
   onSelectEndpoint,
+  onCreateThread,
+  canCreateThread = true,
+  createPending = false,
   layoutMode = 'standard',
 }: {
   session: ChatSession | null;
@@ -28,6 +31,9 @@ export function ChatHeader({
   streamStatus: 'idle' | 'connecting' | 'streaming' | 'stopped' | 'error';
   onRename: (title: string) => void;
   onSelectEndpoint: (endpoint: Endpoint) => void;
+  onCreateThread?: () => void;
+  canCreateThread?: boolean;
+  createPending?: boolean;
   layoutMode?: ChatLayoutMode;
 }) {
   const t = useTranslations('chat');
@@ -96,78 +102,98 @@ export function ChatHeader({
                 )}
               />
             ) : (
-              <button
-                type="button"
-                onClick={() => setEditing(true)}
-                className={cn(
-                  'text-sm font-medium text-foreground truncate',
-                  'hover:text-foreground/90 transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm px-1 -mx-1',
-                )}
-                title={t('header.rename_thread')}
-              >
-                {session?.title || t('header.default_title')}
-              </button>
+              session ? (
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className={cn(
+                    'text-sm font-medium text-foreground truncate',
+                    'hover:text-foreground/90 transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm px-1 -mx-1',
+                  )}
+                  title={t('header.rename_thread')}
+                >
+                  {session.title || t('header.default_title')}
+                </button>
+              ) : (
+                <div className="text-sm font-medium text-foreground truncate">{t('header.default_title')}</div>
+              )
             )}
 
             {statusText && (
               <span className="text-xs text-tertiary" data-testid="chat__stream-status">{statusText}</span>
             )}
           </div>
-          {session && (
+          {session ? (
             <div className="text-xs text-tertiary truncate">
-              {currentEndpoint?.openai_model || session.model}
-              <span className="text-tertiary/70"> · </span>
               {currentEndpoint?.name || session.endpoint_id}
+              <span className="text-tertiary/70"> · </span>
+              {currentEndpoint?.openai_model || session.model}
             </div>
+          ) : (
+            <div className="text-xs text-tertiary truncate">{t('header.no_active_thread_hint')}</div>
           )}
         </div>
 
         <div className="flex items-center gap-2">
-          <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2" data-testid="chat__model-trigger">
-                <span className="max-w-[220px] truncate">
-                  {currentEndpoint?.openai_model || session?.model || t('header.select_model')}
-                </span>
-                <ChevronDown className="w-4 h-4 text-icon-default" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[18rem]">
-              <div className="px-3 py-2 text-xs text-tertiary">{t('header.models')}</div>
-              <DropdownMenuSeparator />
-              {endpoints.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-tertiary">{t('header.no_endpoints')}</div>
-              ) : (
-                endpoints.map((e) => {
-                  const disabled = e.status === 'disabled';
-                  const active = session?.endpoint_id === e.id;
-                  return (
-                    <DropdownMenuItem
-                      key={e.id}
-                      data-testid={`chat__model-item--${e.id}`}
-                      data-disabled={disabled ? '' : undefined}
-                      onSelect={(ev) => {
-                        ev.preventDefault();
-                        setModelOpen(false);
-                        if (disabled) return;
-                        onSelectEndpoint(e);
-                      }}
-                      className={cn(active && 'bg-hover')}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className={cn('text-sm truncate', disabled ? 'text-tertiary' : 'text-primary')}>
-                          {e.openai_model}
+          {session ? (
+            <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2" data-testid="chat__model-trigger">
+                  <span className="max-w-[220px] truncate">
+                    {currentEndpoint?.name || session?.endpoint_id || t('header.select_model')}
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-icon-default" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[18rem]">
+                <div className="px-3 py-2 text-xs text-tertiary">{t('header.models')}</div>
+                <DropdownMenuSeparator />
+                {endpoints.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-tertiary">{t('header.no_endpoints')}</div>
+                ) : (
+                  endpoints.map((e) => {
+                    const disabled = e.status === 'disabled';
+                    const active = session?.endpoint_id === e.id;
+                    return (
+                      <DropdownMenuItem
+                        key={e.id}
+                        data-testid={`chat__model-item--${e.id}`}
+                        data-disabled={disabled ? '' : undefined}
+                        onSelect={(ev) => {
+                          ev.preventDefault();
+                          setModelOpen(false);
+                          if (disabled) return;
+                          onSelectEndpoint(e);
+                        }}
+                        className={cn(active && 'bg-hover')}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className={cn('text-sm truncate', disabled ? 'text-tertiary' : 'text-primary')}>
+                            {e.name}
+                          </div>
+                          <div className="text-xs text-tertiary truncate">{e.openai_model}</div>
                         </div>
-                        <div className="text-xs text-tertiary truncate">{e.name}</div>
-                      </div>
-                      {disabled && <span className="text-xs text-tertiary">{t('header.disabled')}</span>}
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                        {disabled && <span className="text-xs text-tertiary">{t('header.disabled')}</span>}
+                      </DropdownMenuItem>
+                    );
+                  })
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={!canCreateThread || createPending}
+              onClick={() => onCreateThread?.()}
+              data-testid="chat__header-create-thread"
+            >
+              <Plus className="w-4 h-4" />
+              {t('new_thread')}
+            </Button>
+          )}
         </div>
       </div>
     </div>

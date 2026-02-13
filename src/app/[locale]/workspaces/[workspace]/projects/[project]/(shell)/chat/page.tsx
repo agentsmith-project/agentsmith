@@ -113,6 +113,14 @@ export default function ChatPage({ params }: ChatPageProps) {
     if (!activeSession) return null;
     return endpoints.find((endpoint) => endpoint.id === activeSession.endpoint_id) ?? null;
   }, [activeSession, endpoints]);
+  const canAttachFiles = useMemo(() => {
+    if (!activeEndpoint) return false;
+    return (
+      activeEndpoint.capabilities?.some(
+        (capability) => capability.type === 'multimodal_completion' && capability.enabled,
+      ) ?? false
+    );
+  }, [activeEndpoint]);
   const {
     createSessionMutation,
     updateSessionMutation,
@@ -291,8 +299,12 @@ export default function ChatPage({ params }: ChatPageProps) {
       toast.info(t('attachments.disabled_while_editing'));
       return;
     }
+    if (!canAttachFiles) {
+      toast.info(t('attachments.multimodal_required'));
+      return;
+    }
     onPickFiles();
-  }, [editingMessageId, onPickFiles, t]);
+  }, [canAttachFiles, editingMessageId, onPickFiles, t]);
 
   const handlePickFromLibrary = useCallback(() => {
     if (editingMessageId) {
@@ -300,8 +312,12 @@ export default function ChatPage({ params }: ChatPageProps) {
       return;
     }
     if (!currentSessionId) return;
+    if (!canAttachFiles) {
+      toast.info(t('attachments.multimodal_required'));
+      return;
+    }
     setLibraryPickerOpen(true);
-  }, [currentSessionId, editingMessageId, t]);
+  }, [canAttachFiles, currentSessionId, editingMessageId, t]);
 
   const handleAddLibraryObject = useCallback((input: {
     libraryId: string;
@@ -310,6 +326,10 @@ export default function ChatPage({ params }: ChatPageProps) {
     contentType?: string;
   }) => {
     if (!currentSessionId) return;
+    if (!canAttachFiles) {
+      toast.info(t('attachments.multimodal_required'));
+      return;
+    }
     addLibraryAttachmentMutation.mutate({
       sessionId: currentSessionId,
       libraryId: input.libraryId,
@@ -317,7 +337,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       name: input.name,
       contentType: input.contentType,
     });
-  }, [addLibraryAttachmentMutation, currentSessionId]);
+  }, [addLibraryAttachmentMutation, canAttachFiles, currentSessionId, t]);
 
   const handleRemoveAttachment = useCallback((attachmentId: string) => {
     if (!canUseChat || !currentSessionId) return;
@@ -411,6 +431,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             editMessagePending={editMessageMutation.isPending}
             initAttachmentPending={initAttachmentMutation.isPending}
             canUseChat={canUseChat}
+            canAttachFiles={canAttachFiles}
             composerValue={composerValue}
             fileInputRef={fileInputRef}
             layoutMode={layoutMode}
@@ -418,6 +439,9 @@ export default function ChatPage({ params }: ChatPageProps) {
               loading: t('loading'),
               noActiveThreadTitle: t('no_active_thread_title'),
               noActiveThreadDescription: t('no_active_thread_description'),
+              noActiveThreadHint: t('no_active_thread_hint_create'),
+              selectThreadHint: t('no_active_thread_hint_select'),
+              attachmentsDisabledReason: t('attachments.multimodal_required'),
               newThread: t('new_thread'),
               assistant: t('assistant'),
             }}

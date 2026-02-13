@@ -29,6 +29,7 @@ const sampleLibrary: SourceLibrary = {
 
 describe('useSourceLibraryManager', () => {
   const t = (key: string) => key;
+  const tErrors = (key: string) => key;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -50,6 +51,7 @@ describe('useSourceLibraryManager', () => {
         updateLibrary: vi.fn(),
         deleteLibrary: vi.fn(),
         t,
+        tErrors,
       }),
     );
 
@@ -89,6 +91,7 @@ describe('useSourceLibraryManager', () => {
         updateLibrary: vi.fn(),
         deleteLibrary,
         t,
+        tErrors,
       }),
     );
 

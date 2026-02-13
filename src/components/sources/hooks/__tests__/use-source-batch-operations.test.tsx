@@ -15,6 +15,7 @@ vi.mock('@/components/ui/toast', () => ({
 describe('useSourceBatchOperations', () => {
   const t = (key: string, values?: Record<string, string>) =>
     values ? `${key}:${JSON.stringify(values)}` : key;
+  const tErrors = (key: string) => key;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -38,6 +39,7 @@ describe('useSourceBatchOperations', () => {
         deleteObjects,
         onDeletePartialFailure,
         t,
+        tErrors,
       }),
     );
 
@@ -84,6 +86,7 @@ describe('useSourceBatchOperations', () => {
         deleteObjects,
         onDeletePartialFailure,
         t,
+        tErrors,
       }),
     );
 

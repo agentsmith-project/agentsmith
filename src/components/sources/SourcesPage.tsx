@@ -129,6 +129,7 @@ function parentPrefixForPrefix(prefix: string) {
 
 export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
   const t = useTranslations('sources');
+  const tErrors = useTranslations('errors');
   const canManage = useHasPermission('project:source:manage');
   const { layoutMode } = useProjectLayoutMode();
 
@@ -407,6 +408,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     prefix,
     uploadObject: uploadObject.mutateAsync,
     t,
+    tErrors,
   });
 
   const handleDeletePartialFailureSelection = React.useCallback(
@@ -441,6 +443,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     deleteObjects: deleteObjects.mutateAsync,
     onDeletePartialFailure: handleDeletePartialFailureSelection,
     t,
+    tErrors,
   });
 
   const {
@@ -480,6 +483,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     updateLibrary: updateLibrary.mutateAsync,
     deleteLibrary: deleteLibrary.mutateAsync,
     t,
+    tErrors,
   });
 
   const {
@@ -519,6 +523,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
     clearSelection,
     navigateToPrefix,
     t,
+    tErrors,
   });
 
   const handleSortHeaderClick = React.useCallback(

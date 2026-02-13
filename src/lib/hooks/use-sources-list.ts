@@ -9,6 +9,7 @@
 
 import { useCallback, useMemo, useEffect } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
 import {
   useSources,
   useQuota,
@@ -23,6 +24,7 @@ import {
 import { useErrorHandler } from './use-error-handler';
 import { toast } from '@/components/ui/toast';
 import { MemberAPI, SourcesAPI, getApiClient } from '@/lib/api';
+import { APIError, resolveApiErrorPresentation } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
 import { getResourcePolicyStatus, type ResourcePolicyStatusMeta } from '@/lib/constants/resource-policy';
 import { useSourcesQueryState } from './use-sources-query-state';
@@ -34,7 +36,24 @@ export interface UseSourcesListOptions {
 
 export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions) {
   const queryClient = useQueryClient();
+  const t = useTranslations('sources');
+  const tErrors = useTranslations('errors');
   const { handleError } = useErrorHandler();
+  const resolveErrorDetail = useCallback(
+    (error: unknown, fallback: string) => {
+      if (error instanceof APIError) {
+        const resolved = resolveApiErrorPresentation({
+          error,
+          t: tErrors,
+          fallbackMessage: fallback,
+        });
+        return resolved.description;
+      }
+      if (error instanceof Error) return error.message || fallback;
+      return fallback;
+    },
+    [tErrors],
+  );
   const {
     page,
     setPage,
@@ -139,7 +158,7 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
         handleError(error, { logContext: 'SourcesPage.upload', showToast: false });
         setUploadErrors((prev) => ({
           ...prev,
-          [file.name]: error instanceof Error ? error.message : 'Upload failed',
+          [file.name]: resolveErrorDetail(error, t('file_manager.upload_failed')),
         }));
         uploadResults[file.name] = false;
       }
@@ -200,9 +219,9 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
     setFilesToDelete(null);
     setSelectedFileIds([]);
     if (failed > 0) {
-      toast.error(`Failed to delete ${failed} file(s)`);
+      toast.error(t('file_manager.delete_partial_failed', { failed: String(failed) }));
     }
-  }, [filesToDelete, deleteMutation, workspaceId, projectId, setDeleteDialogOpen, setFilesToDelete, setSelectedFileIds]);
+  }, [deleteMutation, filesToDelete, projectId, setDeleteDialogOpen, setFilesToDelete, setSelectedFileIds, t, workspaceId]);
 
   // Check quota before batch operations
   const quotaStatus = useMemo(() => {
@@ -257,11 +276,11 @@ export function useSourcesList({ workspaceId, projectId }: UseSourcesListOptions
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast.success('File downloaded successfully');
+      toast.success(t('file_manager.download_success'));
     } catch (error) {
       handleError(error, { logContext: 'SourcesPage.download' });
     }
-  }, [workspaceId, projectId, sourcesData, handleError]);
+  }, [workspaceId, projectId, sourcesData, handleError, t]);
 
   const handleToggleSelection = useCallback((fileId: string) => {
     setSelectedFileIds((prev) =>

@@ -10,7 +10,7 @@ import { getApiClient, SourcesAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import type { SourcesListParams } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
-import { handleErrorForToast } from '@/lib/api/errors';
+import { APIError, handleErrorForToast, resolveApiErrorPresentation } from '@/lib/api/errors';
 
 /**
  * Hook to query source files list
@@ -336,6 +336,7 @@ export function useBatchAIReadyActions() {
   const queryClient = useQueryClient();
   const sourcesAPI = new SourcesAPI(getApiClient());
   const t = useTranslations('common.toast');
+  const tErrors = useTranslations('errors');
 
   const batchStart = useMutation({
     mutationFn: ({
@@ -367,8 +368,17 @@ export function useBatchAIReadyActions() {
         toast.success(t('ai_ready_batch_started', { count: successCount.toString() }));
       }
     },
-    onError: (error: Error) => {
-      toast.error(t('ai_ready_batch_failed', { error: error.message }));
+    onError: (error: unknown) => {
+      const detail = error instanceof APIError
+        ? resolveApiErrorPresentation({
+            error,
+            t: tErrors,
+            fallbackMessage: t('ai_ready_batch_failed', { error: 'unknown' }),
+          }).description
+        : error instanceof Error
+          ? error.message
+          : tErrors('unknown.description');
+      toast.error(t('ai_ready_batch_failed', { error: detail }));
     },
   });
 

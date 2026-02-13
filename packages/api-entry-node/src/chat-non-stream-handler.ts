@@ -104,7 +104,26 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       title?: string;
       model?: string;
       endpoint_id?: string;
+      external_agent_id?: string;
     };
+    const externalAgentId = typeof raw.external_agent_id === 'string' ? raw.external_agent_id : undefined;
+    if (externalAgentId) {
+      const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
+      if (!agent || agent.mode !== 'external' || agent.status !== 'enabled') {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'external_agent_unavailable' });
+        return true;
+      }
+      const created = await deps.chatResourceService.createSession({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        title: raw.title,
+        model: raw.model ?? 'external-agent',
+        endpointId: raw.endpoint_id ?? '',
+        externalAgentId,
+      });
+      json(res, 201, created);
+      return true;
+    }
     const endpoints = await deps.endpointResourceService.listEndpoints(route.workspaceId, route.projectId);
     const chosenEndpoint =
       (raw.endpoint_id
@@ -150,11 +169,19 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
 
   if (route.kind === 'chatSessionItem' && method === 'PATCH') {
     const raw = (await readBody(req)) as Record<string, unknown>;
+    const patch = { ...raw };
+    if (typeof raw.external_agent_id === 'string' && raw.external_agent_id.length > 0) {
+      const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, raw.external_agent_id);
+      if (!agent || agent.mode !== 'external' || agent.status !== 'enabled') {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'external_agent_unavailable' });
+        return true;
+      }
+    }
     const updated = await deps.chatResourceService.updateSession(
       route.workspaceId,
       route.projectId,
       route.sessionId,
-      raw,
+      patch,
     );
     if (!updated) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
@@ -299,14 +326,26 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     }
     const attachmentSnapshots = [];
     if (attachmentIds.length > 0) {
-      const endpoint = await deps.endpointResourceService.getEndpoint(
-        route.workspaceId,
-        route.projectId,
-        session.endpoint_id,
-      );
-      if (!endpoint || !endpointSupportsMultimodal(endpoint)) {
-        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_not_multimodal' });
-        return true;
+      if (session.external_agent_id) {
+        const agent = await deps.agentResourceService.getAgent(
+          route.workspaceId,
+          route.projectId,
+          session.external_agent_id,
+        );
+        if (!agent || !agent.capabilities?.multimodal_completion) {
+          json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'external_agent_not_multimodal' });
+          return true;
+        }
+      } else {
+        const endpoint = await deps.endpointResourceService.getEndpoint(
+          route.workspaceId,
+          route.projectId,
+          session.endpoint_id,
+        );
+        if (!endpoint || !endpointSupportsMultimodal(endpoint)) {
+          json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_not_multimodal' });
+          return true;
+        }
       }
       const attachments = await deps.chatResourceService.listAttachmentsByIds(
         route.workspaceId,
@@ -441,16 +480,16 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       sessionId: route.sessionId,
-      fileName: raw.file_name,
-      fileType: raw.file_type,
-      fileSize: raw.file_size,
+      fileName: raw.file_name!,
+      fileType: raw.file_type!,
+      fileSize: raw.file_size!,
       sourceType: raw.source_type,
       sourceLibraryId: raw.source_library_id,
       sourceObjectKey: raw.source_object_key,
       contentBase64: raw.content_base64,
       previewUrl: toImageDataUrl(
         raw.content_base64,
-        resolveImageMimeType(raw.file_type, raw.file_name),
+        resolveImageMimeType(raw.file_type!, raw.file_name!),
       ) ?? undefined,
     });
     json(res, 200, { attachment });

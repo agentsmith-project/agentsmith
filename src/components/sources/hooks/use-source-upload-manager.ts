@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { APIError } from '@/lib/api/errors';
 import { toast } from '@/components/ui/toast';
+import { getOperationErrorDetail } from './error-utils';
 
 type UploadConflictState = {
   file: File;
@@ -28,6 +29,7 @@ type UseSourceUploadManagerParams = {
   prefix: string;
   uploadObject: (input: UploadMutationInput) => Promise<unknown>;
   t: (key: string, values?: Record<string, string>) => string;
+  tErrors: (key: string, values?: Record<string, string | number>) => string;
 };
 
 function renameWithIndex(originalName: string, index: number) {
@@ -45,6 +47,7 @@ export function useSourceUploadManager({
   prefix,
   uploadObject,
   t,
+  tErrors,
 }: UseSourceUploadManagerParams) {
   const [uploadConflictOpen, setUploadConflictOpen] = React.useState(false);
   const [uploadConflict, setUploadConflict] = React.useState<UploadConflictState | null>(null);
@@ -127,7 +130,7 @@ export function useSourceUploadManager({
             toast.success(t('file_manager.upload_canceled'));
             return;
           }
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = getOperationErrorDetail(err, tErrors, t('file_manager.upload_failed'));
           resetUploadProgress();
           toast.error(`${t('file_manager.upload_failed')}: ${msg}`);
           return;
@@ -136,7 +139,7 @@ export function useSourceUploadManager({
       resetUploadProgress();
       toast.success(t('file_manager.upload_success'));
     },
-    [handleUploadConflict, resetUploadProgress, selectedLibraryId, t, uploadSingleFile],
+    [handleUploadConflict, resetUploadProgress, selectedLibraryId, t, tErrors, uploadSingleFile],
   );
 
   const handleFilesPicked = React.useCallback(
@@ -209,10 +212,10 @@ export function useSourceUploadManager({
       await uploadSingleFile(uploadConflict.file, true);
       await continueAfterConflict(uploadConflict.remaining, uploadConflict.completed + 1, uploadConflict.total);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getOperationErrorDetail(err, tErrors, t('file_manager.upload_failed'));
       toast.error(`${t('file_manager.upload_failed')}: ${msg}`);
     }
-  }, [continueAfterConflict, t, uploadConflict, uploadSingleFile]);
+  }, [continueAfterConflict, t, tErrors, uploadConflict, uploadSingleFile]);
 
   const resolveUploadConflictRename = React.useCallback(async () => {
     if (!uploadConflict) return;
@@ -231,13 +234,13 @@ export function useSourceUploadManager({
           attempt += 1;
           continue;
         }
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getOperationErrorDetail(err, tErrors, t('file_manager.upload_failed'));
         toast.error(`${t('file_manager.upload_failed')}: ${msg}`);
         return;
       }
     }
     toast.error(t('file_manager.upload_rename_exhausted'));
-  }, [continueAfterConflict, t, uploadConflict, uploadSingleFile]);
+  }, [continueAfterConflict, t, tErrors, uploadConflict, uploadSingleFile]);
 
   const dismissUploadConflict = React.useCallback(() => {
     setUploadConflictOpen(false);

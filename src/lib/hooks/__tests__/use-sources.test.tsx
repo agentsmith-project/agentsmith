@@ -101,11 +101,15 @@ vi.mock('@/components/ui/toast', () => ({
   },
 }));
 
-vi.mock('@/lib/api/errors', () => ({
-  handleErrorForToast: vi.fn((error) => {
-    console.error(error);
-  }),
-}));
+vi.mock('@/lib/api/errors', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api/errors')>('@/lib/api/errors');
+  return {
+    ...actual,
+    handleErrorForToast: vi.fn((error) => {
+      console.error(error);
+    }),
+  };
+});
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,

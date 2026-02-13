@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import type { SourceLibrary } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
+import { getOperationErrorDetail } from './error-utils';
 
 type UseSourceLibraryManagerParams = {
   workspaceId: string;
@@ -24,6 +25,7 @@ type UseSourceLibraryManagerParams = {
   }) => Promise<unknown>;
   deleteLibrary: (input: { workspaceId: string; projectId: string; libraryId: string }) => Promise<unknown>;
   t: (key: string, values?: Record<string, string>) => string;
+  tErrors: (key: string, values?: Record<string, string | number>) => string;
 };
 
 export function useSourceLibraryManager({
@@ -36,6 +38,7 @@ export function useSourceLibraryManager({
   updateLibrary,
   deleteLibrary,
   t,
+  tErrors,
 }: UseSourceLibraryManagerParams) {
   const [libraryCreateOpen, setLibraryCreateOpen] = React.useState(false);
   const [libraryName, setLibraryName] = React.useState('');
@@ -93,7 +96,7 @@ export function useSourceLibraryManager({
       setSelectedLibraryId(created.id);
       navigateToPrefix('');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getOperationErrorDetail(err, tErrors, t('file_manager.library_create_failed'));
       toast.error(`${t('file_manager.library_create_failed')}: ${msg}`);
     }
   }, [
@@ -104,6 +107,7 @@ export function useSourceLibraryManager({
     projectId,
     setSelectedLibraryId,
     t,
+    tErrors,
     workspaceId,
   ]);
 
@@ -123,10 +127,10 @@ export function useSourceLibraryManager({
       setLibraryRenameOpen(false);
       setLibraryRenameTarget(null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getOperationErrorDetail(err, tErrors, t('file_manager.library_rename_failed'));
       toast.error(`${t('file_manager.library_rename_failed')}: ${msg}`);
     }
-  }, [libraryRenameDescription, libraryRenameName, libraryRenameTarget, projectId, t, updateLibrary, workspaceId]);
+  }, [libraryRenameDescription, libraryRenameName, libraryRenameTarget, projectId, t, tErrors, updateLibrary, workspaceId]);
 
   const handleDeleteLibrary = React.useCallback(async () => {
     if (!libraryDeleteTarget) return;
@@ -145,7 +149,7 @@ export function useSourceLibraryManager({
         navigateToPrefix('');
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getOperationErrorDetail(err, tErrors, t('file_manager.library_delete_failed'));
       toast.error(`${t('file_manager.library_delete_failed')}: ${msg}`);
     }
   }, [
@@ -156,6 +160,7 @@ export function useSourceLibraryManager({
     selectedLibraryId,
     setSelectedLibraryId,
     t,
+    tErrors,
     workspaceId,
   ]);
 

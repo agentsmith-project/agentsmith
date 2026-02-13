@@ -53,6 +53,7 @@ export class ChatResourceService {
     projectId: string;
     model: string;
     endpointId: string;
+    externalAgentId?: string;
     title?: string;
   }): Promise<ChatSessionRecord> {
     const now = new Date().toISOString();
@@ -63,6 +64,7 @@ export class ChatResourceService {
       title: input.title?.trim() || 'New Chat',
       model: input.model,
       endpoint_id: input.endpointId,
+      external_agent_id: input.externalAgentId,
       pinned: false,
       starred: false,
       created_at: now,

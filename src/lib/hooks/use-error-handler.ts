@@ -9,7 +9,7 @@ import { useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api/client';
-import { formatErrorForToast } from '@/lib/api/errors';
+import { resolveApiErrorPresentation } from '@/lib/api/errors';
 
 export interface ErrorHandlerOptions {
   showToast?: boolean;
@@ -38,9 +38,14 @@ export function useErrorHandler() {
       };
 
       if (error instanceof ApiError) {
+        const presentation = resolveApiErrorPresentation({
+          error,
+          t,
+          fallbackMessage,
+        });
         errorInfo = {
           errorCode: error.errorCode,
-          message: formatErrorForToast(error) || error.message,
+          message: `${presentation.title}: ${presentation.description}`,
           requestId: error.requestId,
         };
       } else if (error instanceof Error) {

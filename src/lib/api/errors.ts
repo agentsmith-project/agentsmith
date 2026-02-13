@@ -105,6 +105,142 @@ export class APIError extends Error {
   }
 }
 
+/**
+ * Resolve a user-facing message by error code.
+ * Used by feature modules to keep code->message mapping centralized.
+ */
+export function resolveErrorMessageByCode(
+  errorCode: string | null | undefined,
+  overrides: Record<string, string>,
+  fallback: string,
+): string {
+  if (!errorCode) return fallback;
+  return overrides[errorCode] ?? fallback;
+}
+
+interface ErrorTranslator {
+  (key: string, values?: Record<string, string | number>): string;
+}
+
+function pickTranslated(
+  t: ErrorTranslator,
+  keys: string[],
+  fallback: string,
+  values?: Record<string, string | number>,
+): string {
+  for (const key of keys) {
+    const value = t(key, values);
+    if (value && value !== key) return value;
+  }
+  return fallback;
+}
+
+export function resolveApiErrorPresentation(args: {
+  error: APIError;
+  t: ErrorTranslator;
+  context?: string;
+  fallbackMessage?: string;
+}): { title: string; description: string } {
+  const { error, t, context, fallbackMessage } = args;
+  const unknownTitle = pickTranslated(t, ['unknown.title'], 'Error');
+  const unknownDescription = pickTranslated(t, ['unknown.description'], 'An unexpected error occurred.');
+  const defaultDescription = error.message || fallbackMessage || unknownDescription;
+
+  if (error.errorCode === 'AGENT_OFFLINE') {
+    return {
+      title: pickTranslated(t, ['agentOffline.title'], unknownTitle),
+      description: pickTranslated(t, ['agentOffline.description'], defaultDescription),
+    };
+  }
+  if (error.errorCode === 'AGENT_TIMEOUT') {
+    return {
+      title: pickTranslated(t, ['agentTimeout.title'], unknownTitle),
+      description: pickTranslated(t, ['agentTimeout.description'], defaultDescription),
+    };
+  }
+  if (error.errorCode === 'AGENT_PROTOCOL_ERROR') {
+    return {
+      title: pickTranslated(t, ['agentProtocol.title'], unknownTitle),
+      description: pickTranslated(t, ['agentProtocol.description'], defaultDescription),
+    };
+  }
+  if (error.errorCode === 'AGENT_UPSTREAM_ERROR') {
+    return {
+      title: pickTranslated(t, ['agentUpstream.title'], unknownTitle),
+      description: pickTranslated(t, ['agentUpstream.description'], defaultDescription),
+    };
+  }
+
+  switch (error.statusCode) {
+    case 400:
+      return {
+        title: pickTranslated(t, ['badRequest.title'], 'Invalid Request'),
+        description: error.message || pickTranslated(t, ['badRequest.description'], defaultDescription),
+      };
+    case 401:
+      return {
+        title: pickTranslated(t, ['unauthorized.title', 'unauthorizedError.title'], 'Authentication Required'),
+        description: pickTranslated(
+          t,
+          ['unauthorized.description', 'unauthorizedError.description'],
+          defaultDescription,
+        ),
+      };
+    case 403:
+      return {
+        title: pickTranslated(t, ['forbidden.title', 'forbiddenError.title'], 'Access Denied'),
+        description: pickTranslated(
+          t,
+          ['forbidden.description', 'forbiddenError.description'],
+          defaultDescription,
+        ),
+      };
+    case 404:
+      return {
+        title: pickTranslated(t, ['notFound.title', 'notFoundError.title'], 'Not Found'),
+        description: context
+          ? pickTranslated(
+            t,
+            ['notFound.withContext', 'notFoundError.withContext'],
+            `${context} not found`,
+            { context },
+          )
+          : pickTranslated(
+            t,
+            ['notFound.description', 'notFoundError.description'],
+            defaultDescription,
+          ),
+      };
+    case 409:
+      return {
+        title: pickTranslated(t, ['conflict.title'], 'Conflict'),
+        description: error.message || pickTranslated(t, ['conflict.description'], defaultDescription),
+      };
+    case 429:
+      return {
+        title: pickTranslated(t, ['rateLimit.title', 'rateLimitError.title'], 'Too Many Requests'),
+        description: pickTranslated(
+          t,
+          ['rateLimit.description', 'rateLimitError.description'],
+          defaultDescription,
+        ),
+      };
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return {
+        title: pickTranslated(t, ['serverError.title'], 'Server Error'),
+        description: pickTranslated(t, ['serverError.description'], defaultDescription),
+      };
+    default:
+      return {
+        title: unknownTitle,
+        description: defaultDescription,
+      };
+  }
+}
+
 // ============================================================
 // Error Parsing Utilities
 // ============================================================
@@ -290,4 +426,3 @@ export function getErrorSuggestions(error: APIError): string[] {
 
   return suggestions;
 }
-

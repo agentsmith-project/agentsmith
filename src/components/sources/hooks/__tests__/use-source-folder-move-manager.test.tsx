@@ -22,6 +22,7 @@ vi.mock('@/lib/hooks/use-source-objects', () => ({
 
 describe('useSourceFolderMoveManager', () => {
   const t = (key: string) => key;
+  const tErrors = (key: string) => key;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,6 +44,7 @@ describe('useSourceFolderMoveManager', () => {
         clearSelection: vi.fn(),
         navigateToPrefix,
         t,
+        tErrors,
       }),
     );
 
@@ -79,6 +81,7 @@ describe('useSourceFolderMoveManager', () => {
         clearSelection: vi.fn(),
         navigateToPrefix: vi.fn(),
         t,
+        tErrors,
       }),
     );
 

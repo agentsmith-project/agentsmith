@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { getApiClient, SourcesAPI } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
+import { getOperationErrorDetail } from './error-utils';
 
 type BatchResultType = 'delete' | 'download';
 type SelectedEntry = { kind: 'prefix'; prefix: string } | { kind: 'object'; key: string };
@@ -21,6 +22,7 @@ type UseSourceBatchOperationsParams = {
   deleteObjects: (input: { workspaceId: string; projectId: string; libraryId: string; keys: string[] }) => Promise<DeleteObjectsResponse>;
   onDeletePartialFailure: (failedKeys: string[]) => void;
   t: (key: string, values?: Record<string, string>) => string;
+  tErrors: (key: string, values?: Record<string, string | number>) => string;
 };
 
 function basename(path: string) {
@@ -50,6 +52,7 @@ export function useSourceBatchOperations({
   deleteObjects,
   onDeletePartialFailure,
   t,
+  tErrors,
 }: UseSourceBatchOperationsParams) {
   const [batchResultOpen, setBatchResultOpen] = React.useState(false);
   const [batchResultType, setBatchResultType] = React.useState<BatchResultType>('delete');
@@ -75,10 +78,10 @@ export function useSourceBatchOperations({
       clearSelection();
       toast.success(t('file_manager.deleted'));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getOperationErrorDetail(err, tErrors, t('file_manager.delete_failed'));
       toast.error(`${t('file_manager.delete_failed')}: ${msg}`);
     }
-  }, [clearSelection, deleteObjects, onDeletePartialFailure, projectId, selected, selectedLibraryId, t, workspaceId]);
+  }, [clearSelection, deleteObjects, onDeletePartialFailure, projectId, selected, selectedLibraryId, t, tErrors, workspaceId]);
 
   const handleDownload = React.useCallback(async () => {
     if (!selectedLibraryId || selectedObjects.length === 0) return;

@@ -31,7 +31,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { APIError } from '@/lib/api/errors';
+import { APIError, resolveApiErrorPresentation } from '@/lib/api/errors';
 import { toast } from '@/components/ui/toast';
 import { useTranslations } from 'next-intl';
 
@@ -66,46 +66,14 @@ export function useApiError(): UseApiErrorReturn {
 
       if (err instanceof APIError) {
         errorObj = err;
-
-        // Map error codes to user-friendly messages
-        switch (err.statusCode) {
-          case 400:
-            title = t('badRequest.title');
-            description = err.message || t('badRequest.description');
-            break;
-          case 401:
-            title = t('unauthorized.title');
-            description = t('unauthorized.description');
-            break;
-          case 403:
-            title = t('forbidden.title');
-            description = t('forbidden.description');
-            break;
-          case 404:
-            title = t('notFound.title');
-            description = context
-              ? t('notFound.withContext', { context })
-              : t('notFound.description');
-            break;
-          case 409:
-            title = t('conflict.title');
-            description = err.message || t('conflict.description');
-            break;
-          case 429:
-            title = t('rateLimit.title');
-            description = t('rateLimit.description');
-            break;
-          case 500:
-          case 502:
-          case 503:
-          case 504:
-            title = t('serverError.title');
-            description = t('serverError.description');
-            break;
-          default:
-            title = t('unknown.title');
-            description = err.message || fallbackMessage || t('unknown.description');
-        }
+        const resolved = resolveApiErrorPresentation({
+          error: err,
+          t,
+          context,
+          fallbackMessage,
+        });
+        title = resolved.title;
+        description = resolved.description;
       } else if (err instanceof TypeError && err.message.includes('fetch')) {
         // Network error
         errorObj = new Error('Network error');

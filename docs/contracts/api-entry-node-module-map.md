@@ -12,6 +12,11 @@
 - `request-handler.ts`
 - 负责 HTTP 请求编排（鉴权、路由分发、统一错误映射）
 - 串联 `project/source`、`chat`、`endpoint`、`agent` 四类 handler
+- 维护 API 文档入口分发（`/docs`、`/api/v1/openapi.json`、`/api/v1/asyncapi.json`）
+
+- `api-docs-handler.ts`
+- 提供 OpenAPI/AsyncAPI JSON 输出
+- 提供内嵌 Swagger UI 文档入口（离线可用，本地静态资源）
 
 - `error-mapper.ts`
 - 统一维护 request 层错误到 HTTP 响应的映射策略

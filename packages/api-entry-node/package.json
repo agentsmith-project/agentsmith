@@ -11,10 +11,11 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@mbos/application": "0.1.0",
     "@mbos/adapters-private": "0.1.0",
+    "@mbos/application": "0.1.0",
     "@mbos/contracts": "0.1.0",
     "busboy": "^1.6.0",
+    "swagger-ui-dist": "^5.31.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {

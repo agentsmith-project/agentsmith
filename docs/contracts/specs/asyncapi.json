@@ -1,0 +1,232 @@
+{
+  "asyncapi": "3.0.0",
+  "info": {
+    "title": "MBOS External Agent Runtime",
+    "version": "1.0.0",
+    "description": "Runtime WebSocket protocol between MBOS and external agents."
+  },
+  "servers": {
+    "local": {
+      "host": "localhost:20000",
+      "pathname": "/api/v1/agent-runtime/ws",
+      "protocol": "ws",
+      "description": "Use query parameter agent_id and header Authorization: Bearer ask_*"
+    }
+  },
+  "channels": {
+    "agentRuntime": {
+      "address": "/api/v1/agent-runtime/ws?agent_id={agentId}",
+      "parameters": {
+        "agentId": {
+          "description": "Agent identifier",
+          "location": "$message.header#/agent_id"
+        }
+      },
+      "messages": {
+        "serverHello": { "$ref": "#/components/messages/serverHello" },
+        "serverRequestStart": { "$ref": "#/components/messages/serverRequestStart" },
+        "serverRequestCancel": { "$ref": "#/components/messages/serverRequestCancel" },
+        "serverPing": { "$ref": "#/components/messages/serverPing" },
+        "agentReady": { "$ref": "#/components/messages/agentReady" },
+        "agentPong": { "$ref": "#/components/messages/agentPong" },
+        "agentResponseDelta": { "$ref": "#/components/messages/agentResponseDelta" },
+        "agentResponseDone": { "$ref": "#/components/messages/agentResponseDone" },
+        "agentResponseError": { "$ref": "#/components/messages/agentResponseError" }
+      }
+    }
+  },
+  "operations": {
+    "receiveFromServer": {
+      "action": "receive",
+      "channel": { "$ref": "#/channels/agentRuntime" },
+      "messages": [
+        { "$ref": "#/channels/agentRuntime/messages/serverHello" },
+        { "$ref": "#/channels/agentRuntime/messages/serverRequestStart" },
+        { "$ref": "#/channels/agentRuntime/messages/serverRequestCancel" },
+        { "$ref": "#/channels/agentRuntime/messages/serverPing" }
+      ]
+    },
+    "sendToServer": {
+      "action": "send",
+      "channel": { "$ref": "#/channels/agentRuntime" },
+      "messages": [
+        { "$ref": "#/channels/agentRuntime/messages/agentReady" },
+        { "$ref": "#/channels/agentRuntime/messages/agentPong" },
+        { "$ref": "#/channels/agentRuntime/messages/agentResponseDelta" },
+        { "$ref": "#/channels/agentRuntime/messages/agentResponseDone" },
+        { "$ref": "#/channels/agentRuntime/messages/agentResponseError" }
+      ]
+    }
+  },
+  "components": {
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": ["type", "timestamp", "payload"],
+        "properties": {
+          "type": { "type": "string" },
+          "request_id": { "type": "string" },
+          "session_id": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "payload": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "messages": {
+      "serverHello": {
+        "name": "server.hello",
+        "payload": {
+          "type": "object",
+          "required": ["type", "timestamp", "payload"],
+          "properties": {
+            "type": { "const": "server.hello" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "payload": {
+              "type": "object",
+              "required": ["protocol_version", "heartbeat_interval_sec"],
+              "properties": {
+                "protocol_version": { "type": "string" },
+                "heartbeat_interval_sec": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "serverRequestStart": {
+        "name": "server.request.start",
+        "payload": {
+          "type": "object",
+          "required": ["type", "timestamp", "request_id", "payload"],
+          "properties": {
+            "type": { "const": "server.request.start" },
+            "request_id": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "payload": {
+              "type": "object",
+              "required": ["model", "stream", "messages"],
+              "properties": {
+                "model": { "type": "string" },
+                "stream": { "const": true },
+                "messages": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+              }
+            }
+          }
+        }
+      },
+      "serverRequestCancel": {
+        "name": "server.request.cancel",
+        "payload": {
+          "type": "object",
+          "required": ["type", "timestamp", "request_id", "payload"],
+          "properties": {
+            "type": { "const": "server.request.cancel" },
+            "request_id": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "payload": {
+              "type": "object",
+              "required": ["reason"],
+              "properties": {
+                "reason": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "serverPing": {
+        "name": "server.ping",
+        "payload": {
+          "type": "object",
+          "required": ["type", "timestamp", "payload"],
+          "properties": {
+            "type": { "const": "server.ping" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "payload": { "type": "object" }
+          }
+        }
+      },
+      "agentReady": {
+        "name": "agent.ready",
+        "payload": {
+          "type": "object",
+          "required": ["type", "timestamp", "payload"],
+          "properties": {
+            "type": { "const": "agent.ready" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "payload": { "type": "object", "additionalProperties": true }
+          }
+        }
+      },
+      "agentPong": {
+        "name": "agent.pong",
+        "payload": {
+          "type": "object",
+          "required": ["type", "timestamp", "payload"],
+          "properties": {
+            "type": { "const": "agent.pong" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "payload": { "type": "object" }
+          }
+        }
+      },
+      "agentResponseDelta": {
+        "name": "agent.response.delta",
+        "payload": {
+          "type": "object",
+          "required": ["type", "timestamp", "request_id", "payload"],
+          "properties": {
+            "type": { "const": "agent.response.delta" },
+            "request_id": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "payload": {
+              "type": "object",
+              "required": ["delta"],
+              "properties": {
+                "delta": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "agentResponseDone": {
+        "name": "agent.response.done",
+        "payload": {
+          "type": "object",
+          "required": ["type", "timestamp", "request_id", "payload"],
+          "properties": {
+            "type": { "const": "agent.response.done" },
+            "request_id": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "payload": {
+              "type": "object",
+              "required": ["finish_reason", "usage_tokens"],
+              "properties": {
+                "finish_reason": { "type": "string" },
+                "usage_tokens": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "agentResponseError": {
+        "name": "agent.response.error",
+        "payload": {
+          "type": "object",
+          "required": ["type", "timestamp", "request_id", "payload"],
+          "properties": {
+            "type": { "const": "agent.response.error" },
+            "request_id": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "payload": {
+              "type": "object",
+              "required": ["error_code", "error_message"],
+              "properties": {
+                "error_code": { "type": "string" },
+                "error_message": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -15,6 +15,7 @@ import {
 } from './workspace-permissions.js';
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
 import { mapRequestError } from './error-mapper.js';
+import { handleApiDocsRoute } from './api-docs-handler.js';
 
 function isChatRoute(route: { kind: string }): route is ChatRoute {
   return route.kind.startsWith('chat');
@@ -65,6 +66,11 @@ export async function handleRequest(
     return;
   }
 
+  const requestUrl = new URL(req.url ?? '', 'http://localhost');
+  if (handleApiDocsRoute(req, res, requestUrl, json)) {
+    return;
+  }
+
   const route = matchProjectsRoute(req.url ?? '');
   if (!route) {
     json(res, 404, { error_code: 'NOT_FOUND', message: 'Route not found' });
@@ -72,7 +78,6 @@ export async function handleRequest(
   }
 
   try {
-    const requestUrl = new URL(req.url ?? '', 'http://localhost');
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);

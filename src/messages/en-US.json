@@ -494,6 +494,7 @@
     "no_active_thread_description": "Create a new chat to start.",
     "no_active_thread_hint_create": "Click \"New Chat\" to start now",
     "no_active_thread_hint_select": "or select an existing thread from the left",
+    "no_active_endpoint_hint": "Select an available endpoint model before sending messages",
     "stream_stop_failed_retry": "Failed to stop generation. Please try stopping again.",
     "stream_stop_required_before_replace_failed": "Failed to stop previous generation, regenerate is canceled.",
     "stream_error": "Stream error",

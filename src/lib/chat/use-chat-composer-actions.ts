@@ -1,6 +1,7 @@
 import { useCallback, type RefObject } from 'react';
 import type React from 'react';
 import type { Attachment, ChatMessage, ChatSession } from '@/lib/api/types';
+import { hasEndpointBinding } from '@/lib/chat/composer-state';
 import type { RunChatStreamArgs } from '@/lib/chat/use-chat-streaming';
 
 interface UseChatComposerActionsArgs {
@@ -50,6 +51,7 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
     if (!canUseChat) return;
     if (!currentSessionId) return;
     if (!activeSession) return;
+    if (!hasEndpointBinding(activeSession)) return;
 
     const composerValue = composerBySession[currentSessionId] || '';
     const content = composerValue.trim();

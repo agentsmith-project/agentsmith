@@ -496,6 +496,7 @@
     "no_active_thread_description": "创建一个新会话开始对话。",
     "no_active_thread_hint_create": "点击“新建聊天”立即开始",
     "no_active_thread_hint_select": "或从左侧选择已有会话",
+    "no_active_endpoint_hint": "请先选择可用端点模型后发送消息",
     "stream_stop_failed_retry": "停止生成失败，请重试停止。",
     "stream_stop_required_before_replace_failed": "停止上一个生成失败，已取消重新生成。",
     "stream_error": "流式响应异常",

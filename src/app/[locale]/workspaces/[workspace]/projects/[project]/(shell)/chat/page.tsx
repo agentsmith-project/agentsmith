@@ -456,6 +456,7 @@ export default function ChatPage({ params }: ChatPageProps) {
               noActiveThreadTitle: t('no_active_thread_title'),
               noActiveThreadDescription: t('no_active_thread_description'),
               noActiveThreadHint: t('no_active_thread_hint_create'),
+              noEndpointHint: t('no_active_endpoint_hint'),
               selectThreadHint: t('no_active_thread_hint_select'),
               attachmentsDisabledReason: t('attachments.multimodal_required'),
               newThread: t('new_thread'),

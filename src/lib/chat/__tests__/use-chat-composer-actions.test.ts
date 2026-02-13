@@ -4,7 +4,7 @@ import type React from 'react';
 import type { Attachment, ChatSession } from '@/lib/api/types';
 import { useChatComposerActions } from '@/lib/chat/use-chat-composer-actions';
 
-function createSession(): ChatSession {
+function createSession(overrides?: Partial<ChatSession>): ChatSession {
   return {
     id: 'session_1',
     project_id: 'project_1',
@@ -15,6 +15,7 @@ function createSession(): ChatSession {
     updated_at: new Date().toISOString(),
     message_count: 0,
     total_tokens: 0,
+    ...overrides,
   };
 }
 
@@ -85,6 +86,33 @@ describe('useChatComposerActions', () => {
         composerBySession: { session_1: 'hello' },
         setComposerBySession: vi.fn(),
         attachments: [createAttachment({ upload_status: 'uploading' })],
+        editingMessageId: null,
+        visibleLeafId: null,
+        createMessage,
+        runStream,
+        initAttachment: vi.fn(),
+        fileInputRef: { current: null },
+      }),
+    );
+
+    await result.current.handleSend();
+
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(runStream).not.toHaveBeenCalled();
+  });
+
+  it('does not send when active session has no endpoint binding', async () => {
+    const createMessage = vi.fn();
+    const runStream = vi.fn();
+
+    const { result } = renderHook(() =>
+      useChatComposerActions({
+        canUseChat: true,
+        currentSessionId: 'session_1',
+        activeSession: createSession({ endpoint_id: '' }),
+        composerBySession: { session_1: 'hello' },
+        setComposerBySession: vi.fn(),
+        attachments: [],
         editingMessageId: null,
         visibleLeafId: null,
         createMessage,

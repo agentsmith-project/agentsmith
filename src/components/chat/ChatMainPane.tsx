@@ -4,6 +4,7 @@ import * as React from 'react';
 import { MessageSquare, Plus } from 'lucide-react';
 
 import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
+import { deriveChatComposerState } from '@/lib/chat/composer-state';
 import type { SessionStreamStatus, SessionStreamingAssistant } from '@/lib/chat/stream-state';
 
 import { ChatHeader } from '@/components/chat/ChatHeader';
@@ -17,6 +18,7 @@ export interface ChatMainPaneLabels {
   noActiveThreadTitle: string;
   noActiveThreadDescription: string;
   noActiveThreadHint: string;
+  noEndpointHint: string;
   newThread: string;
   selectThreadHint: string;
   attachmentsDisabledReason: string;
@@ -113,6 +115,22 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     activeStreamingAssistant.mode === 'append' &&
     !activeStreamingAssistant.messageId,
   );
+  const composerState = deriveChatComposerState({
+    currentSessionId,
+    activeSession,
+    editingMessageId,
+    streaming: disabled,
+    createMessagePending: createPending || createMessagePending,
+    editMessagePending,
+    initAttachmentPending,
+  });
+  const composerDisabled = composerState !== 'ready';
+  const composerDisabledReason =
+    composerState === 'no_thread'
+      ? labels.noActiveThreadHint
+      : composerState === 'need_endpoint'
+        ? labels.noEndpointHint
+        : (!canAttachFiles ? labels.attachmentsDisabledReason : '');
 
   return (
     <section className="flex-1 flex min-w-0 flex-col bg-background overflow-hidden" data-testid="chat__main-pane">
@@ -205,20 +223,10 @@ export function ChatMainPane(props: ChatMainPaneProps) {
         attachments={currentSessionId ? attachments : []}
         onRemoveAttachment={onRemoveAttachment}
         onRetryAttachment={onRetryAttachment}
-        disabled={
-          !currentSessionId ||
-          !canUseChat ||
-          createMessagePending ||
-          editMessagePending ||
-          initAttachmentPending ||
-          disabled ||
-          !!editingMessageId
-        }
+        disabled={composerDisabled || !canUseChat}
         streaming={disabled}
-        attachmentEnabled={Boolean(currentSessionId && canAttachFiles)}
-        attachmentDisabledReason={
-          !currentSessionId ? labels.noActiveThreadHint : (!canAttachFiles ? labels.attachmentsDisabledReason : '')
-        }
+        attachmentEnabled={Boolean(currentSessionId && canAttachFiles && composerState !== 'need_endpoint')}
+        attachmentDisabledReason={composerDisabledReason}
         layoutMode={layoutMode}
       />
     </section>

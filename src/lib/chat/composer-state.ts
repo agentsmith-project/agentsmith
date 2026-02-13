@@ -1,4 +1,5 @@
 import type { ChatSession } from '@/lib/api/types';
+import type { SessionStreamStatus } from '@/lib/chat/stream-state';
 
 export type ChatComposerState =
   | 'no_thread'
@@ -6,13 +7,14 @@ export type ChatComposerState =
   | 'editing'
   | 'streaming'
   | 'pending'
+  | 'error_recoverable'
   | 'ready';
 
 export interface ChatComposerStateInput {
   currentSessionId: string | null;
   activeSession: ChatSession | null;
   editingMessageId: string | null;
-  streaming: boolean;
+  streamStatus: SessionStreamStatus;
   createMessagePending: boolean;
   editMessagePending: boolean;
   initAttachmentPending: boolean;
@@ -27,7 +29,8 @@ export function deriveChatComposerState(input: ChatComposerStateInput): ChatComp
   if (!input.currentSessionId || !input.activeSession) return 'no_thread';
   if (!hasEndpointBinding(input.activeSession)) return 'need_endpoint';
   if (input.editingMessageId) return 'editing';
-  if (input.streaming) return 'streaming';
+  if (input.streamStatus === 'connecting' || input.streamStatus === 'streaming') return 'streaming';
   if (input.createMessagePending || input.editMessagePending || input.initAttachmentPending) return 'pending';
+  if (input.streamStatus === 'error') return 'error_recoverable';
   return 'ready';
 }

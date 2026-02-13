@@ -30,7 +30,7 @@ describe('composer-state', () => {
         currentSessionId: null,
         activeSession: null,
         editingMessageId: null,
-        streaming: false,
+        streamStatus: 'idle',
         createMessagePending: false,
         editMessagePending: false,
         initAttachmentPending: false,
@@ -44,7 +44,7 @@ describe('composer-state', () => {
         currentSessionId: 'session_1',
         activeSession: createSession({ endpoint_id: '' }),
         editingMessageId: null,
-        streaming: false,
+        streamStatus: 'idle',
         createMessagePending: false,
         editMessagePending: false,
         initAttachmentPending: false,
@@ -58,11 +58,25 @@ describe('composer-state', () => {
         currentSessionId: 'session_1',
         activeSession: createSession(),
         editingMessageId: null,
-        streaming: false,
+        streamStatus: 'idle',
         createMessagePending: false,
         editMessagePending: false,
         initAttachmentPending: false,
       }),
     ).toBe('ready');
+  });
+
+  it('derives error_recoverable when last stream failed', () => {
+    expect(
+      deriveChatComposerState({
+        currentSessionId: 'session_1',
+        activeSession: createSession(),
+        editingMessageId: null,
+        streamStatus: 'error',
+        createMessagePending: false,
+        editMessagePending: false,
+        initAttachmentPending: false,
+      }),
+    ).toBe('error_recoverable');
   });
 });

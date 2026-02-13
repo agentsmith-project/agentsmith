@@ -19,6 +19,7 @@ export interface ChatMainPaneLabels {
   noActiveThreadDescription: string;
   noActiveThreadHint: string;
   noEndpointHint: string;
+  streamErrorHint: string;
   newThread: string;
   selectThreadHint: string;
   attachmentsDisabledReason: string;
@@ -119,7 +120,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     currentSessionId,
     activeSession,
     editingMessageId,
-    streaming: disabled,
+    streamStatus: activeStreamStatus,
     createMessagePending: createPending || createMessagePending,
     editMessagePending,
     initAttachmentPending,
@@ -130,7 +131,9 @@ export function ChatMainPane(props: ChatMainPaneProps) {
       ? labels.noActiveThreadHint
       : composerState === 'need_endpoint'
         ? labels.noEndpointHint
-        : (!canAttachFiles ? labels.attachmentsDisabledReason : '');
+        : composerState === 'error_recoverable'
+          ? labels.streamErrorHint
+          : (!canAttachFiles ? labels.attachmentsDisabledReason : '');
 
   return (
     <section className="flex-1 flex min-w-0 flex-col bg-background overflow-hidden" data-testid="chat__main-pane">

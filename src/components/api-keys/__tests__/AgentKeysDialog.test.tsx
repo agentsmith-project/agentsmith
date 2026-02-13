@@ -144,7 +144,7 @@ describe('AgentKeysDialog', () => {
     it('renders when open', () => {
       render(<AgentKeysDialog {...defaultProps} />, { wrapper });
 
-      expect(screen.getByText(/Agent Keys/)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Agent Keys/ })).toBeInTheDocument();
       expect(screen.getByText(/Test Agent/)).toBeInTheDocument();
     });
 
@@ -464,7 +464,7 @@ describe('AgentKeysDialog', () => {
 
       // Should not crash
       await waitFor(() => {
-        expect(screen.getByText(/agent keys/i)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /agent keys/i })).toBeInTheDocument();
       });
     });
 

@@ -16,13 +16,22 @@ function loadCurrent(): OpenApiDoc {
 
 function loadBaseFromGit(): OpenApiDoc | null {
   try {
+    execSync('git rev-parse --verify origin/main', {
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+  } catch {
+    return null;
+  }
+
+  try {
     const raw = execSync('git show origin/main:docs/contracts/specs/openapi.json', {
       stdio: ['ignore', 'pipe', 'ignore'],
       encoding: 'utf-8',
     });
     return JSON.parse(raw) as OpenApiDoc;
   } catch {
-    return null;
+    // Baseline branch exists but has no OpenAPI spec yet.
+    return {};
   }
 }
 

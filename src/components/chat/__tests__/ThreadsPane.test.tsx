@@ -249,7 +249,7 @@ describe('ThreadsPane', () => {
 
     it('should show no-active-thread hint when there are sessions but no active one', () => {
       render(<ThreadsPane {...defaultProps} activeSessionId={null} />);
-      expect(screen.getByText('threads_no_active_hint')).toBeInTheDocument();
+      expect(screen.getByTestId('chat__threads-no-active-hint')).toBeInTheDocument();
     });
   });
 

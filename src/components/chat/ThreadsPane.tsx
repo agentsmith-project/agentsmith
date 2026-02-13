@@ -98,7 +98,9 @@ export function ThreadsPane({
         {(generatingCount > 0 || (!activeSessionId && sessions.length > 0)) && (
           <div className="flex items-center justify-between gap-2 text-[11px] text-tertiary">
             <div className="min-w-0 truncate">
-              {!activeSessionId && sessions.length > 0 ? t('threads_no_active_hint') : ''}
+              {!activeSessionId && sessions.length > 0 ? (
+                <span data-testid="chat__threads-no-active-hint">{t('threads_no_active_hint')}</span>
+              ) : ''}
             </div>
             {generatingCount > 0 && (
               <div

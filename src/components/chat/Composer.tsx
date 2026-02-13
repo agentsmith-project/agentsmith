@@ -204,6 +204,7 @@ export function Composer({
                   variant="ghost"
                   size="icon"
                   className="h-10 w-10"
+                  data-testid="chat__attach-local-btn"
                   onClick={onPickFiles}
                   disabled={disabled || streaming}
                   aria-label={t('composer.attach_files')}
@@ -216,6 +217,7 @@ export function Composer({
                   variant="ghost"
                   size="icon"
                   className="h-10 w-10"
+                  data-testid="chat__attach-library-btn"
                   onClick={onPickFromLibrary}
                   disabled={disabled || streaming}
                   aria-label={t('composer.attach_from_library')}

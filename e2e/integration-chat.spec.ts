@@ -848,6 +848,54 @@ test.describe('integration chat flow', () => {
     }
   });
 
+  test('deleting the only thread shows clear empty-state actions and disabled composer', async ({ page }) => {
+    test.setTimeout(240_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const upstream = await startOpenAICompatibleUpstream();
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
+
+      const threadId = await createNewThreadInChat(page, locale, projectId);
+      await deleteThreadInChat(page, threadId);
+
+      await expect(page.getByTestId('chat__header-create-thread')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('chat__empty-create-btn')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('chat__send-btn')).toBeDisabled();
+      await expect(page.getByTestId('chat__composer').locator('textarea')).toBeDisabled();
+    } finally {
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+    }
+  });
+
+  test('text-only endpoint hides attachment actions in composer', async ({ page }) => {
+    test.setTimeout(240_000);
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    const upstream = await startOpenAICompatibleUpstream();
+    try {
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl, {
+        capability: 'chat_completion',
+      });
+
+      await createNewThreadInChat(page, locale, projectId);
+      await expect(page.getByTestId('chat__composer')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('chat__attach-local-btn')).toHaveCount(0);
+      await expect(page.getByTestId('chat__attach-library-btn')).toHaveCount(0);
+      await expect(page.getByTestId('chat__send-btn')).toBeVisible();
+    } finally {
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+    }
+  });
+
   test('chat can switch endpoint and route next message to selected upstream', async ({ page }) => {
     test.setTimeout(300_000);
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';

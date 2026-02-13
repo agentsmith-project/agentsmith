@@ -22,7 +22,9 @@ export interface ChatComposerStateInput {
 
 export function hasEndpointBinding(session: ChatSession | null): boolean {
   if (!session) return false;
-  return session.endpoint_id.trim().length > 0 && session.model.trim().length > 0;
+  const endpointId = typeof session.endpoint_id === 'string' ? session.endpoint_id : '';
+  const model = typeof session.model === 'string' ? session.model : '';
+  return endpointId.trim().length > 0 && model.trim().length > 0;
 }
 
 export function deriveChatComposerState(input: ChatComposerStateInput): ChatComposerState {

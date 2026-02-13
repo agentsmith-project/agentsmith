@@ -7,6 +7,22 @@
 
 import { test, expect, goToProject } from './fixtures/test-base';
 
+async function ensureComposerEnabled(page: import('@playwright/test').Page) {
+  const composer = page.getByTestId('chat__composer');
+  await expect(composer).toBeVisible({ timeout: 10000 });
+  const input = composer.locator('textarea, input[type="text"], [contenteditable="true"]').first();
+  const disabled = await input.isDisabled().catch(() => false);
+  if (!disabled) return;
+
+  const trigger = page.getByTestId('chat__model-trigger');
+  await expect(trigger).toBeVisible({ timeout: 10000 });
+  await trigger.click();
+  const firstModel = page.locator('[data-testid^="chat__model-item--"]').first();
+  await expect(firstModel).toBeVisible({ timeout: 10000 });
+  await firstModel.click();
+  await expect(input).toBeEnabled({ timeout: 10000 });
+}
+
 test.describe('Chat Page', () => {
   test.beforeEach(async ({ authedPage }) => {
     await goToProject(authedPage, 'chat');
@@ -79,6 +95,7 @@ test.describe('Chat Page', () => {
     const composer = authedPage.getByTestId('chat__composer');
     const sendBtn = authedPage.getByTestId('chat__send-btn');
 
+    await ensureComposerEnabled(authedPage);
     await expect(composer).toBeVisible({ timeout: 10000 });
 
     // Composer should have an input or textarea
@@ -99,6 +116,7 @@ test.describe('Chat Page', () => {
   });
 
   test('should support sending with Enter key', async ({ authedPage }) => {
+    await ensureComposerEnabled(authedPage);
     const composer = authedPage.getByTestId('chat__composer');
     await expect(composer).toBeVisible({ timeout: 10000 });
 
@@ -111,6 +129,7 @@ test.describe('Chat Page', () => {
   });
 
   test('should send a message via send button', async ({ authedPage }) => {
+    await ensureComposerEnabled(authedPage);
     const composer = authedPage.getByTestId('chat__composer');
     const sendBtn = authedPage.getByTestId('chat__send-btn');
 

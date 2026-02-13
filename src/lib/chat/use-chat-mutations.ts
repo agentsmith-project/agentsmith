@@ -59,6 +59,11 @@ export function useChatMutations(args: UseChatMutationsArgs) {
     onSuccess: (data: ChatSession) => {
       onSessionCreated(data.id);
       onResetSessionUi();
+      queryClient.setQueryData<ChatSession[]>(chatSessionsKey(workspaceId, projectId), (prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const withoutCurrent = list.filter((session) => session.id !== data.id);
+        return [data, ...withoutCurrent];
+      });
       queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
     },
   });

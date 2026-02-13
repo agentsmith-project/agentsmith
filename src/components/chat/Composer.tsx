@@ -76,6 +76,7 @@ export function Composer({
     }
     return '';
   }, [attachments, t]);
+  const footerHint = helperText || (attachmentEnabled ? t('composer.helper_attach_hint') : attachmentDisabledReason || '');
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -135,7 +136,7 @@ export function Composer({
       <div className={cn('mx-auto w-full px-4 py-4', contentWidthClass)}>
         <div
           className={cn(
-            'rounded-xl border border-subtle bg-surface p-3 sm:p-3.5 transition-colors',
+            'rounded-2xl border border-subtle bg-surface px-3 py-3 sm:px-4 sm:py-3.5 transition-colors',
             dragActive && 'border-accent/50 bg-surface-high',
           )}
         >
@@ -196,14 +197,14 @@ export function Composer({
             </div>
           ) : null}
 
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2.5">
             {attachmentEnabled ? (
-              <>
+              <div className="flex h-11 items-center gap-1 rounded-xl border border-subtle bg-surface-high px-1">
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-10 w-10"
+                  className="h-9 w-9 rounded-lg"
                   data-testid="chat__attach-local-btn"
                   onClick={onPickFiles}
                   disabled={disabled || streaming}
@@ -216,7 +217,7 @@ export function Composer({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-10 w-10"
+                  className="h-9 w-9 rounded-lg"
                   data-testid="chat__attach-library-btn"
                   onClick={onPickFromLibrary}
                   disabled={disabled || streaming}
@@ -225,14 +226,10 @@ export function Composer({
                 >
                   <FolderOpen className="w-4 h-4" />
                 </Button>
-              </>
-            ) : (
-              <div className="hidden sm:flex h-10 items-center px-1 text-xs text-tertiary">
-                {attachmentDisabledReason}
               </div>
-            )}
+            ) : null}
 
-            <div className="flex-1">
+            <div className="flex-1 rounded-xl border border-subtle bg-surface-high px-3 py-2 focus-within:ring-2 focus-within:ring-accent/40">
               <textarea
                 ref={textareaRef}
                 value={value}
@@ -243,9 +240,9 @@ export function Composer({
                 placeholder={mode === 'edit' ? t('composer.placeholder_edit') : t('composer.placeholder_compose')}
                 disabled={disabled || streaming}
                 className={cn(
-                  'w-full resize-none rounded-lg border border-subtle bg-surface-high px-3 py-2 text-sm text-primary',
+                  'min-h-[44px] w-full resize-none border-0 bg-transparent text-sm text-primary outline-none appearance-none',
                   'placeholder:text-tertiary',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+                  'ring-0 focus:ring-0 focus:outline-none focus-visible:outline-none',
                 )}
               />
             </div>
@@ -261,7 +258,7 @@ export function Composer({
                 variant="primary"
                 onClick={onSend}
                 disabled={!canSend}
-                className="h-10 gap-2"
+                className="h-11 gap-2 px-4"
                 data-testid="chat__send-btn"
               >
                 <Send className="w-4 h-4" />
@@ -271,9 +268,7 @@ export function Composer({
           </div>
 
           <div className="mt-2 flex items-center justify-between gap-3 text-xs text-tertiary">
-            <div className="min-w-0 truncate">
-              {helperText || attachmentDisabledReason || (attachmentEnabled ? t('composer.helper_attach_hint') : '')}
-            </div>
+            <div className="min-w-0 truncate">{footerHint}</div>
             <div className="flex-shrink-0">{hotkeyText}</div>
           </div>
         </div>

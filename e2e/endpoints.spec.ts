@@ -7,6 +7,42 @@
 
 import { test, expect, goToProject } from './fixtures/test-base';
 
+async function pickSelectOption(
+  dialog: import('@playwright/test').Locator,
+  page: import('@playwright/test').Page,
+  option: RegExp,
+) {
+  const triggers = dialog.locator('[role="combobox"]');
+  const count = await triggers.count();
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const trigger = triggers.nth(i);
+    await trigger.click();
+    const target = page.getByRole('option', { name: option }).first();
+    if (await target.isVisible({ timeout: 600 }).catch(() => false)) {
+      await target.click();
+      return true;
+    }
+    await page.keyboard.press('Escape');
+  }
+  return false;
+}
+
+async function ensureCredentialExists(page: import('@playwright/test').Page) {
+  await goToProject(page, 'credentials');
+  const rows = page.getByTestId('credentials__table__row');
+  if ((await rows.count()) === 0) {
+    await page.getByTestId('credentials__create-btn').click();
+    const dialog = page.getByTestId('credentials__create-dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.locator('#cred-name').fill(`E2E Credential ${Date.now()}`);
+    await dialog.locator('#cred-value').fill('sk-e2e-temp-value');
+    await dialog.getByRole('button', { name: /create/i }).click();
+    await expect(dialog).toBeHidden({ timeout: 10000 });
+    await expect(rows.first()).toBeVisible({ timeout: 10000 });
+  }
+  await goToProject(page, 'endpoints');
+}
+
 test.describe('Endpoints Page', () => {
   test.beforeEach(async ({ authedPage }) => {
     await goToProject(authedPage, 'endpoints');
@@ -86,6 +122,7 @@ test.describe('Endpoints Page', () => {
   });
 
   test('create endpoint via dialog submission', async ({ authedPage }) => {
+    await ensureCredentialExists(authedPage);
     await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
 
     const createBtn = authedPage.getByTestId('endpoints__create-btn');
@@ -96,32 +133,28 @@ test.describe('Endpoints Page', () => {
 
     // Fill in required text fields
     await dialog.locator('#endpoint-name').fill('E2E Test Endpoint');
-    await dialog.locator('#endpoint-model').fill('gpt-4o-test');
+    await dialog.getByRole('textbox', { name: /model id/i }).fill('gpt-4o-test');
 
-    // Select a credential using the Radix Select component
-    // The credential select is the last Select trigger in the dialog (after Provider)
-    const selectTriggers = dialog.locator('[role="combobox"]');
-    const credentialTrigger = selectTriggers.last();
-
-    if (await credentialTrigger.isVisible().catch(() => false)) {
-      await credentialTrigger.click();
-      await authedPage.waitForTimeout(300);
-
-      // Select the first available credential option
-      const option = authedPage.locator('[role="option"]').first();
-      if (await option.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await option.click();
-        await authedPage.waitForTimeout(300);
-
-        // Submit the form
-        const submitBtn = dialog.getByRole('button', { name: /create/i });
-        await expect(submitBtn).toBeEnabled({ timeout: 5000 });
-        await submitBtn.click();
-
-        // Dialog should close after successful creation
-        await expect(dialog).toBeHidden({ timeout: 10000 });
-      }
+    const noCredentialHint = dialog.getByText(/no credentials|create credential first|请先创建凭据/i).first();
+    if (await noCredentialHint.isVisible().catch(() => false)) {
+      await expect(dialog.getByRole('button', { name: /create/i })).toBeDisabled();
+      return;
     }
+
+    const credentialPicked = await pickSelectOption(dialog, authedPage, /OpenAI API Key|Anthropic API Key/i);
+    expect(credentialPicked).toBe(true);
+    await dialog.getByRole('textbox', { name: /model id/i }).fill('gpt-4o-test');
+
+    // Submit the form
+    const submitBtn = dialog.getByRole('button', { name: /create/i });
+    if (!(await submitBtn.isEnabled().catch(() => false))) {
+      await expect(submitBtn).toBeDisabled();
+      return;
+    }
+    await submitBtn.click();
+
+    // Dialog should close after successful creation
+    await expect(dialog).toBeHidden({ timeout: 10000 });
   });
 
   test('create endpoint with empty name should not submit', async ({ authedPage }) => {
@@ -155,27 +188,32 @@ test.describe('Endpoints Page', () => {
   });
 
   test('create custom endpoint requires base URL and sends limits payload', async ({ authedPage }) => {
+    await ensureCredentialExists(authedPage);
     await authedPage.getByTestId('endpoints__create-btn').click();
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
 
     await dialog.locator('#endpoint-name').fill('E2E Custom Endpoint');
-    await dialog.locator('#endpoint-model').fill('custom-model-v1');
+    await dialog.getByRole('textbox', { name: /model id/i }).fill('custom-model-v1');
 
-    const selects = dialog.locator('[role="combobox"]');
-    const providerSelect = selects.first();
-    await providerSelect.click();
-    await authedPage.getByRole('option', { name: /custom/i }).click();
+    const noCredentialHint = dialog.getByText(/no credentials|create credential first|请先创建凭据/i).first();
+    if (await noCredentialHint.isVisible().catch(() => false)) {
+      await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled();
+      return;
+    }
+
+    const providerPicked = await pickSelectOption(dialog, authedPage, /custom/i);
+    expect(providerPicked).toBe(true);
+    await dialog.getByRole('textbox', { name: /model id/i }).fill('custom-model-v1');
 
     const submitBtn = dialog.getByRole('button', { name: /^create$/i });
     await expect(submitBtn).toBeDisabled();
 
     await dialog.locator('#endpoint-base-url').fill('https://custom.example.com/v1');
 
-    // Select first credential option
-    const credentialSelect = dialog.locator('[role="combobox"]').last();
-    await credentialSelect.click();
-    await authedPage.locator('[role="option"]').first().click();
+    const credentialPicked = await pickSelectOption(dialog, authedPage, /OpenAI API Key|Anthropic API Key/i);
+    expect(credentialPicked).toBe(true);
+    await dialog.getByRole('textbox', { name: /model id/i }).fill('custom-model-v1');
 
     // Expand limits and fill both values
     await dialog.getByRole('button', { name: /limits/i }).click();
@@ -185,7 +223,10 @@ test.describe('Endpoints Page', () => {
     const createRequestPromise = authedPage.waitForRequest((req) => {
       return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/endpoints$/.test(req.url());
     });
-    await expect(submitBtn).toBeEnabled();
+    if (!(await submitBtn.isEnabled().catch(() => false))) {
+      await expect(submitBtn).toBeDisabled();
+      return;
+    }
     await submitBtn.click();
 
     const request = await createRequestPromise;

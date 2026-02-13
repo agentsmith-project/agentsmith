@@ -7,7 +7,6 @@ export type ChatComposerState =
   | 'editing'
   | 'streaming'
   | 'pending'
-  | 'error_recoverable'
   | 'ready';
 
 export interface ChatComposerStateInput {
@@ -33,6 +32,5 @@ export function deriveChatComposerState(input: ChatComposerStateInput): ChatComp
   if (input.editingMessageId) return 'editing';
   if (input.streamStatus === 'connecting' || input.streamStatus === 'streaming') return 'streaming';
   if (input.createMessagePending || input.editMessagePending || input.initAttachmentPending) return 'pending';
-  if (input.streamStatus === 'error') return 'error_recoverable';
   return 'ready';
 }

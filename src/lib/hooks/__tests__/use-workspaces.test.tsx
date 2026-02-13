@@ -3,7 +3,10 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('@/lib/api/client', () => ({
-  getApiClient: vi.fn(() => ({})),
+  getApiClient: vi.fn(() => ({
+    setToken: vi.fn(),
+    clearToken: vi.fn(),
+  })),
 }));
 
 vi.mock('@/lib/api/endpoints/workspaces', () => {
@@ -12,6 +15,10 @@ vi.mock('@/lib/api/endpoints/workspaces', () => {
   }
   return { WorkspaceAPI: MockWorkspaceAPI };
 });
+
+vi.mock('@/lib/stores/authStore', () => ({
+  useAuthStore: (selector: (state: { token: string | null }) => unknown) => selector({ token: 'test-token' }),
+}));
 
 import { useWorkspaceMembers } from '../use-workspaces';
 

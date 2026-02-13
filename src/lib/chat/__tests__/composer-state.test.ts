@@ -70,7 +70,7 @@ describe('composer-state', () => {
     ).toBe('ready');
   });
 
-  it('derives error_recoverable when last stream failed', () => {
+  it('keeps composer ready when last stream failed', () => {
     expect(
       deriveChatComposerState({
         currentSessionId: 'session_1',
@@ -81,6 +81,6 @@ describe('composer-state', () => {
         editMessagePending: false,
         initAttachmentPending: false,
       }),
-    ).toBe('error_recoverable');
+    ).toBe('ready');
   });
 });

@@ -12,7 +12,6 @@ import {
 } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { getApiClient, RecipeAPI } from '@/lib/api';
-import { ApiError } from '@/lib/api/client';
 import { handleErrorForToast } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
 import type {
@@ -55,45 +54,7 @@ export function useRecipe(
 
   return useQuery<Recipe>({
     queryKey: queryKeys.recipes.detail(workspaceId, projectId, recipeId),
-    queryFn: async () => {
-      try {
-        return await recipeAPI.get(workspaceId, projectId, recipeId);
-      } catch (error) {
-        // Extract detailed error information
-        let errorInfo: Record<string, unknown> = {
-          workspaceId,
-          projectId,
-          recipeId,
-        };
-
-        if (error instanceof ApiError) {
-          errorInfo = {
-            ...errorInfo,
-            errorCode: error.errorCode,
-            message: error.message,
-            requestId: error.requestId,
-            name: error.name,
-          };
-        } else if (error instanceof Error) {
-          errorInfo = {
-            ...errorInfo,
-            message: error.message,
-            name: error.name,
-            stack: error.stack,
-          };
-        } else {
-          errorInfo = {
-            ...errorInfo,
-            error: String(error),
-            errorType: typeof error,
-            rawError: error,
-          };
-        }
-
-        console.error('[useRecipe] Error fetching recipe:', errorInfo);
-        throw error;
-      }
-    },
+    queryFn: () => recipeAPI.get(workspaceId, projectId, recipeId),
     enabled: !!workspaceId && !!projectId && !!recipeId,
     retry: false, // Don't retry on 404
   });

@@ -131,9 +131,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
       ? labels.noActiveThreadHint
       : composerState === 'need_endpoint'
         ? labels.noEndpointHint
-        : composerState === 'error_recoverable'
-          ? labels.streamErrorHint
-          : (!canAttachFiles ? labels.attachmentsDisabledReason : '');
+        : (!canAttachFiles ? labels.attachmentsDisabledReason : '');
 
   return (
     <section className="flex-1 flex min-w-0 flex-col bg-background overflow-hidden" data-testid="chat__main-pane">

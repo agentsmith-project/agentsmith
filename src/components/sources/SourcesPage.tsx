@@ -762,7 +762,7 @@ export function SourcesPage({ workspaceId, projectId }: SourcesPageProps) {
 
                 <div className="flex items-center gap-2 shrink-0">
                   {uploadInProgress ? (
-                    <div className="hidden 2xl:flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[300px]" data-testid="sources__upload-progress">
+                    <div className="flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[260px]" data-testid="sources__upload-progress">
                       <div className="min-w-0 flex-1">
                         <div className="text-[11px] text-primary truncate">
                           {t('file_manager.uploading', {

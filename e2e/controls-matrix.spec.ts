@@ -33,9 +33,9 @@ test.describe('Controls Matrix', () => {
     await expect(authedPage.getByTestId('studio__send-btn')).toBeVisible();
 
     await goToProject(authedPage, 'sources');
-    await expect(authedPage.getByTestId('sources__library-select')).toBeVisible();
-    await expect(authedPage.getByTestId('sources__upload-btn')).toBeVisible();
-    await expect(authedPage.getByTestId('sources__manage-libraries-btn')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__library-list')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__upload')).toBeVisible();
+    await expect(authedPage.getByTestId('sources__new-folder')).toBeVisible();
 
     await goToProject(authedPage, 'agents');
     await expect(authedPage.getByTestId('agents__create-btn')).toBeVisible();

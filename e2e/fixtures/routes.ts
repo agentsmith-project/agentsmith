@@ -4,7 +4,7 @@ export const ROUTES = {
     { path: '/app-shell', title: /App Shell/i },
     { path: '/zh-CN', title: /MBOS|Login|Sign in|登录/i },
     { path: '/zh-CN/login', title: /Login|Sign in|登录/i },
-    { path: '/zh-CN/login/workspace', title: /Workspace|Select|工作区/i },
+    { path: '/zh-CN/login/workspace', title: /Workspace|Select|工作区|工作空间/i },
     { path: '/zh-CN/join', title: /Invalid|Join|加入|邀请无效|加入项目/i },
   ],
   user: [
@@ -26,7 +26,7 @@ export const ROUTES = {
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/members', title: /Members|成员/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/audit', title: /Audit|审计/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/usage', title: /Usage|用量/i },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/sources', testId: 'sources__library-select' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/sources', testId: 'sources__library-list' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/credentials', title: /Credentials|Keys|凭据/i },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/settings', title: /Settings|Project|设置/i },
   ],

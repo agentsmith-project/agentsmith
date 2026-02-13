@@ -136,4 +136,33 @@ describe('useChatComposerActions', () => {
     expect(initAttachment).toHaveBeenNthCalledWith(2, { sessionId: 'session_1', file: fileB });
     expect(event.target.value).toBe('');
   });
+
+  it('initializes attachments for externally attached files', async () => {
+    const initAttachment = vi.fn().mockResolvedValue(undefined);
+    const fileA = new File(['a'], 'a.txt', { type: 'text/plain' });
+    const fileB = new File(['b'], 'b.txt', { type: 'text/plain' });
+
+    const { result } = renderHook(() =>
+      useChatComposerActions({
+        canUseChat: true,
+        currentSessionId: 'session_1',
+        activeSession: createSession(),
+        composerBySession: { session_1: '' },
+        setComposerBySession: vi.fn(),
+        attachments: [],
+        editingMessageId: null,
+        visibleLeafId: null,
+        createMessage: vi.fn(),
+        runStream: vi.fn(),
+        initAttachment,
+        fileInputRef: { current: null },
+      }),
+    );
+
+    await result.current.onAttachFiles([fileA, fileB]);
+
+    expect(initAttachment).toHaveBeenCalledTimes(2);
+    expect(initAttachment).toHaveBeenNthCalledWith(1, { sessionId: 'session_1', file: fileA });
+    expect(initAttachment).toHaveBeenNthCalledWith(2, { sessionId: 'session_1', file: fileB });
+  });
 });

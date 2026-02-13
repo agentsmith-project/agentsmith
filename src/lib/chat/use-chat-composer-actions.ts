@@ -27,6 +27,7 @@ interface UseChatComposerActionsResult {
   handleSend: () => Promise<void>;
   onPickFiles: () => void;
   onFilePicked: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
+  onAttachFiles: (files: File[]) => Promise<void>;
 }
 
 export function useChatComposerActions(args: UseChatComposerActionsArgs): UseChatComposerActionsResult {
@@ -93,9 +94,7 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
     fileInputRef.current?.click();
   }, [canUseChat, fileInputRef]);
 
-  const onFilePicked = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
+  const onAttachFiles = useCallback(async (files: File[]) => {
     if (!canUseChat) return;
     if (!currentSessionId) return;
     if (files.length === 0) return;
@@ -104,9 +103,16 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
     }
   }, [canUseChat, currentSessionId, initAttachment]);
 
+  const onFilePicked = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    await onAttachFiles(files);
+  }, [onAttachFiles]);
+
   return {
     handleSend,
     onPickFiles,
     onFilePicked,
+    onAttachFiles,
   };
 }

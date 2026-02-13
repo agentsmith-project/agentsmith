@@ -23,6 +23,7 @@ export function Composer({
   onCancelEdit,
   onPickFiles,
   onPickFromLibrary,
+  onAttachFiles,
   attachments,
   onRemoveAttachment,
   onRetryAttachment,
@@ -41,6 +42,7 @@ export function Composer({
   onCancelEdit?: () => void;
   onPickFiles: () => void;
   onPickFromLibrary: () => void;
+  onAttachFiles?: (files: File[]) => Promise<void> | void;
   attachments: Attachment[];
   onRemoveAttachment: (attachmentId: string) => void;
   onRetryAttachment: (attachmentId: string) => void;
@@ -53,6 +55,7 @@ export function Composer({
 }) {
   const t = useTranslations('chat');
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const [dragActive, setDragActive] = React.useState(false);
   const blocked = hasBlockingAttachment(attachments);
 
   React.useEffect(() => {
@@ -84,13 +87,58 @@ export function Composer({
     }
   };
 
+  const canAcceptAttachments = attachmentEnabled && !disabled && !streaming;
+
+  const onDropFiles = async (files: File[]) => {
+    if (!canAcceptAttachments || !onAttachFiles || files.length === 0) return;
+    await onAttachFiles(files);
+  };
+
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!canAcceptAttachments) return;
+    const hasFiles = Array.from(e.dataTransfer.types).includes('Files');
+    if (!hasFiles) return;
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const onDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!canAcceptAttachments) return;
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDragActive(false);
+  };
+
+  const onDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    if (!canAcceptAttachments) return;
+    e.preventDefault();
+    setDragActive(false);
+    const files = Array.from(e.dataTransfer.files ?? []);
+    await onDropFiles(files);
+  };
+
+  const onPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!canAcceptAttachments) return;
+    const files = Array.from(e.clipboardData.files ?? []);
+    if (files.length === 0) return;
+    e.preventDefault();
+    await onDropFiles(files);
+  };
+
   return (
     <div
       className="border-t border-subtle bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85"
       data-testid="chat__composer"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
     >
       <div className={cn('mx-auto w-full px-4 py-4', contentWidthClass)}>
-        <div className="rounded-xl border border-subtle bg-surface p-3 sm:p-3.5">
+        <div
+          className={cn(
+            'rounded-xl border border-subtle bg-surface p-3 sm:p-3.5 transition-colors',
+            dragActive && 'border-accent/50 bg-surface-high',
+          )}
+        >
           {mode === 'edit' ? (
             <div className="mb-2 flex items-center justify-between">
               <div className="text-xs text-tertiary">{t('composer.editing_message')}</div>
@@ -188,6 +236,7 @@ export function Composer({
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 onKeyDown={onKeyDown}
+                onPaste={onPaste}
                 rows={2}
                 placeholder={mode === 'edit' ? t('composer.placeholder_edit') : t('composer.placeholder_compose')}
                 className={cn(

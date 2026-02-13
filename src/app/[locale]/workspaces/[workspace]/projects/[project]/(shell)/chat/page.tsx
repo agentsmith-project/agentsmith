@@ -223,7 +223,7 @@ export default function ChatPage({ params }: ChatPageProps) {
     return last?.id ?? null;
   }, [messages, activeVariantIndexByGroup]);
 
-  const { handleSend, onPickFiles, onFilePicked } = useChatComposerActions({
+  const { handleSend, onPickFiles, onFilePicked, onAttachFiles } = useChatComposerActions({
     canUseChat,
     currentSessionId,
     activeSession,
@@ -338,6 +338,22 @@ export default function ChatPage({ params }: ChatPageProps) {
       contentType: input.contentType,
     });
   }, [addLibraryAttachmentMutation, canAttachFiles, currentSessionId, t]);
+
+  const handleAttachFiles = useCallback(async (files: File[]) => {
+    if (editingMessageId) {
+      toast.info(t('attachments.disabled_while_editing'));
+      return;
+    }
+    if (!currentSessionId) {
+      toast.info(t('no_active_thread_description'));
+      return;
+    }
+    if (!canAttachFiles) {
+      toast.info(t('attachments.multimodal_required'));
+      return;
+    }
+    await onAttachFiles(files);
+  }, [canAttachFiles, currentSessionId, editingMessageId, onAttachFiles, t]);
 
   const handleRemoveAttachment = useCallback((attachmentId: string) => {
     if (!canUseChat || !currentSessionId) return;
@@ -461,6 +477,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             onPickFiles={handlePickFiles}
             onPickFromLibrary={handlePickFromLibrary}
             onFilePicked={onFilePicked}
+            onAttachFiles={handleAttachFiles}
             onRemoveAttachment={handleRemoveAttachment}
             onRetryAttachment={handleRetryAttachment}
             onCancelEdit={() => setEditingMessageId(null)}

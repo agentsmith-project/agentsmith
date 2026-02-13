@@ -364,6 +364,35 @@ describe('Composer', () => {
       expect(screen.queryByTitle('Attach from library')).not.toBeInTheDocument();
       expect(screen.getAllByText('Current endpoint only supports text.').length).toBeGreaterThan(0);
     });
+
+    it('should attach pasted files when attachment is enabled', async () => {
+      const onAttachFiles = vi.fn().mockResolvedValue(undefined);
+      const file = new File(['img'], 'paste.png', { type: 'image/png' });
+      render(<Composer {...defaultProps} onAttachFiles={onAttachFiles} />);
+
+      const textarea = screen.getByPlaceholderText('Message…');
+      fireEvent.paste(textarea, {
+        clipboardData: { files: [file] },
+      });
+
+      await waitFor(() => expect(onAttachFiles).toHaveBeenCalledWith([file]));
+    });
+
+    it('should attach dropped files when attachment is enabled', async () => {
+      const onAttachFiles = vi.fn().mockResolvedValue(undefined);
+      const file = new File(['img'], 'drop.png', { type: 'image/png' });
+      render(<Composer {...defaultProps} onAttachFiles={onAttachFiles} />);
+
+      const composer = screen.getByTestId('chat__composer');
+      fireEvent.dragOver(composer, {
+        dataTransfer: { types: ['Files'] },
+      });
+      fireEvent.drop(composer, {
+        dataTransfer: { files: [file] },
+      });
+
+      await waitFor(() => expect(onAttachFiles).toHaveBeenCalledWith([file]));
+    });
   });
 
   describe('Edit Mode', () => {

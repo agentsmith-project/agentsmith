@@ -14,9 +14,11 @@
     "@mbos/application": "0.1.0",
     "@mbos/adapters-private": "0.1.0",
     "@mbos/contracts": "0.1.0",
-    "busboy": "^1.6.0"
+    "busboy": "^1.6.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
-    "@types/busboy": "^1.5.4"
+    "@types/busboy": "^1.5.4",
+    "@types/ws": "^8.18.1"
   }
 }

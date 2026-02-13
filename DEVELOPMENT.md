@@ -47,6 +47,7 @@ make e2e-int-minimal    # 最小集成测试
 make e2e-int-chat       # chat 集成测试
 make e2e-int-chat-auto  # 自动启动依赖+API+前端后执行 chat 集成测试
 make e2e-int-chat-ux-auto # 自动启动并执行 chat UX 关键集成用例
+make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx' # 启动外部 agent 测试进程
 make deps-down     # 关闭依赖
 make deps-reset    # 关闭并清空依赖数据卷
 ```
@@ -207,6 +208,7 @@ npm run test:e2e -- --project=chromium
 ```bash
 npm run test:e2e:integration:minimal
 npm run test:e2e:integration:chat
+npm run test:e2e:integration:agents
 ```
 
 ### 3) Use route-targeted smoke for fast triage
@@ -231,8 +233,10 @@ Makefile shortcuts:
 make e2e
 make e2e-int-minimal
 make e2e-int-chat
+make e2e-int-agent
 make e2e-int-minimal-local-api
 make e2e-int-chat-local-api
+make e2e-int-agent-local-api
 ```
 
 ### 4) Distinguish infra failure from app failure

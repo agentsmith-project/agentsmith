@@ -23,6 +23,7 @@ This directory contains only current-state documents: functional contracts, arch
 - `projects-frontend-module-map.md`
 - `studio-frontend-module-map.md`
 - `api-entry-node-module-map.md`
+- `agent-runtime-protocol.md`
 
 ## Contract Maintenance Rules
 

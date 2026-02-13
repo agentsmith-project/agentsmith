@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
+import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
 
 const servers: Server[] = [];
@@ -870,6 +871,150 @@ describe('api-entry-node projects routes', () => {
     expect(proxied.ok).toBe(true);
     const echoed = upstream.lastBody() as { model?: string };
     expect(echoed.model).toBe('deepseek-chat');
+  });
+
+  it('streams chat via external agent websocket runtime', async () => {
+    const { baseUrl } = startServer();
+
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'echo-agent',
+          mode: 'external',
+          interaction_mode: 'chat',
+          capabilities: { streaming_completion: true, multimodal_completion: true },
+        }),
+      },
+    );
+    expect(createAgentRes.status).toBe(201);
+    const agent = (await createAgentRes.json()) as { id: string };
+
+    const keyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
+    expect(keyRes.status).toBe(201);
+    const keyPayload = (await keyRes.json()) as { key: string };
+    expect(keyPayload.key).toBeTruthy();
+
+    const connInfoRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+    );
+    expect(connInfoRes.status).toBe(200);
+    const connInfo = (await connInfoRes.json()) as { ws_url: string };
+    const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
+
+    const ws = new WebSocket(wsUrl, {
+      headers: { Authorization: `Bearer ${keyPayload.key}` },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
+    });
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString('utf-8')) as { type?: string; request_id?: string; payload?: { messages?: unknown[] } };
+      if (msg.type !== 'server.request.start' || !msg.request_id) return;
+      ws.send(JSON.stringify({
+        type: 'agent.response.delta',
+        request_id: msg.request_id,
+        payload: { delta: 'echo:' },
+      }));
+      ws.send(JSON.stringify({
+        type: 'agent.response.delta',
+        request_id: msg.request_id,
+        payload: { delta: ' hello' },
+      }));
+      ws.send(JSON.stringify({
+        type: 'agent.response.done',
+        request_id: msg.request_id,
+        payload: { finish_reason: 'stop', usage_tokens: 6 },
+      }));
+    });
+
+    const createSessionRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ external_agent_id: agent.id, model: 'external-echo' }),
+      },
+    );
+    expect(createSessionRes.status).toBe(201);
+    const session = (await createSessionRes.json()) as { id: string };
+
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: { role: 'user', content: 'hello' },
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(200);
+    const text = await streamRes.text();
+    expect(text).toContain('event: delta');
+    expect(text).toContain('echo:');
+    expect(text).toContain('event: done');
+    ws.close();
+  });
+
+  it('returns AGENT_OFFLINE when external agent session streams without active runtime socket', async () => {
+    const { baseUrl } = startServer();
+
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'offline-agent',
+          mode: 'external',
+          interaction_mode: 'chat',
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createAgentRes.status).toBe(201);
+    const agent = (await createAgentRes.json()) as { id: string };
+
+    const createSessionRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ external_agent_id: agent.id, model: 'external-echo' }),
+      },
+    );
+    expect(createSessionRes.status).toBe(201);
+    const session = (await createSessionRes.json()) as { id: string };
+
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: { role: 'user', content: 'hello' },
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(502);
+    const body = (await streamRes.json()) as { error_code?: string; message?: string };
+    expect(body.error_code).toBe('AGENT_OFFLINE');
+    expect(body.message).toBe('agent_offline');
   });
 
   it('normalizes endpoint base_url when full chat/completions path is provided', async () => {

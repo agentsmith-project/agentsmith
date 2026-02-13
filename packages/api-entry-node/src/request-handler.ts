@@ -5,6 +5,7 @@ import { handleProjectSourceRoute } from './project-source-route-handler.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import { handleChatStreamRoute } from './chat-stream-handler.js';
 import { handleEndpointRoute } from './endpoint-route-handler.js';
+import { handleAgentRoute } from './agent-route-handler.js';
 import { matchProjectsRoute } from './projects-route-match.js';
 import type { ChatRoute } from './chat-route-match.js';
 import {
@@ -17,6 +18,16 @@ import { mapRequestError } from './error-mapper.js';
 
 function isChatRoute(route: { kind: string }): route is ChatRoute {
   return route.kind.startsWith('chat');
+}
+
+function isAgentRoute(route: { kind: string }): boolean {
+  return route.kind === 'agents'
+    || route.kind === 'agentItem'
+    || route.kind === 'agentDiagnostics'
+    || route.kind === 'agentRuntimeConfig'
+    || route.kind === 'agentConnectionInfo'
+    || route.kind === 'agentKeys'
+    || route.kind === 'agentKeyItem';
 }
 
 export function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
@@ -117,6 +128,21 @@ export async function handleRequest(
         sseWrite,
       });
       if (handledChatStream) {
+        return;
+      }
+    }
+
+    if (isAgentRoute(route)) {
+      const handledAgentRoute = await handleAgentRoute({
+        route,
+        method,
+        req,
+        res,
+        deps,
+        json,
+        readBody,
+      });
+      if (handledAgentRoute) {
         return;
       }
     }

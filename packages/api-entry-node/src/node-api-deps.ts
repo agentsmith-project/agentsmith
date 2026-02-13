@@ -36,11 +36,15 @@ import type { InMemoryJobQueue } from '@mbos/adapters-private';
 import type { CachePort } from '@mbos/ports';
 import type { ChatResourceService } from './chat-resource-service.js';
 import type { EndpointResourceService } from './endpoint-resource-service.js';
+import type { AgentResourceService } from './agent-resource-service.js';
+import type { AgentRuntimeService } from './agent-runtime-service.js';
 
 export interface NodeApiDeps {
   cache: CachePort;
   chatResourceService: ChatResourceService;
   endpointResourceService: EndpointResourceService;
+  agentResourceService: AgentResourceService;
+  agentRuntimeService: AgentRuntimeService;
   sourceBucket: string;
   aiReadyJobQueue: InMemoryJobQueue;
   createAIReadyJobUseCase: CreateAIReadyJobUseCase;

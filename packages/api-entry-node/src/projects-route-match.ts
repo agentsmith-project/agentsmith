@@ -29,6 +29,19 @@ export type ProjectsRoute =
   | { kind: 'sourceItem'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'sourceDownload'; workspaceId: string; projectId: string; sourceId: string }
   | ChatRoute
+  | { kind: 'agents'; workspaceId: string; projectId: string }
+  | { kind: 'agentItem'; workspaceId: string; projectId: string; agentId: string }
+  | { kind: 'agentDiagnostics'; workspaceId: string; projectId: string; agentId: string }
+  | { kind: 'agentRuntimeConfig'; workspaceId: string; projectId: string; agentId: string }
+  | { kind: 'agentConnectionInfo'; workspaceId: string; projectId: string; agentId: string }
+  | { kind: 'agentKeys'; workspaceId: string; projectId: string; agentId: string }
+  | {
+    kind: 'agentKeyItem';
+    workspaceId: string;
+    projectId: string;
+    agentId: string;
+    keyId: string;
+  }
   | { kind: 'endpoints'; workspaceId: string; projectId: string }
   | { kind: 'endpointItem'; workspaceId: string; projectId: string; endpointId: string }
   | { kind: 'endpointRerank'; workspaceId: string; projectId: string; endpointId: string }
@@ -346,6 +359,90 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   const chatRoute = matchChatRoute(pathname);
   if (chatRoute) {
     return chatRoute;
+  }
+
+  const agentKeyItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/keys\/([^/]+)\/?$/,
+  );
+  if (agentKeyItemMatched) {
+    return {
+      kind: 'agentKeyItem',
+      workspaceId: decodeURIComponent(agentKeyItemMatched[1]),
+      projectId: decodeURIComponent(agentKeyItemMatched[2]),
+      agentId: decodeURIComponent(agentKeyItemMatched[3]),
+      keyId: decodeURIComponent(agentKeyItemMatched[4]),
+    };
+  }
+
+  const agentKeysMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/keys\/?$/,
+  );
+  if (agentKeysMatched) {
+    return {
+      kind: 'agentKeys',
+      workspaceId: decodeURIComponent(agentKeysMatched[1]),
+      projectId: decodeURIComponent(agentKeysMatched[2]),
+      agentId: decodeURIComponent(agentKeysMatched[3]),
+    };
+  }
+
+  const agentConnectionInfoMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/connection-info\/?$/,
+  );
+  if (agentConnectionInfoMatched) {
+    return {
+      kind: 'agentConnectionInfo',
+      workspaceId: decodeURIComponent(agentConnectionInfoMatched[1]),
+      projectId: decodeURIComponent(agentConnectionInfoMatched[2]),
+      agentId: decodeURIComponent(agentConnectionInfoMatched[3]),
+    };
+  }
+
+  const agentRuntimeConfigMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/runtime-config\/?$/,
+  );
+  if (agentRuntimeConfigMatched) {
+    return {
+      kind: 'agentRuntimeConfig',
+      workspaceId: decodeURIComponent(agentRuntimeConfigMatched[1]),
+      projectId: decodeURIComponent(agentRuntimeConfigMatched[2]),
+      agentId: decodeURIComponent(agentRuntimeConfigMatched[3]),
+    };
+  }
+
+  const agentDiagnosticsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/diagnostics\/?$/,
+  );
+  if (agentDiagnosticsMatched) {
+    return {
+      kind: 'agentDiagnostics',
+      workspaceId: decodeURIComponent(agentDiagnosticsMatched[1]),
+      projectId: decodeURIComponent(agentDiagnosticsMatched[2]),
+      agentId: decodeURIComponent(agentDiagnosticsMatched[3]),
+    };
+  }
+
+  const agentItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/?$/,
+  );
+  if (agentItemMatched) {
+    return {
+      kind: 'agentItem',
+      workspaceId: decodeURIComponent(agentItemMatched[1]),
+      projectId: decodeURIComponent(agentItemMatched[2]),
+      agentId: decodeURIComponent(agentItemMatched[3]),
+    };
+  }
+
+  const agentsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/?$/,
+  );
+  if (agentsMatched) {
+    return {
+      kind: 'agents',
+      workspaceId: decodeURIComponent(agentsMatched[1]),
+      projectId: decodeURIComponent(agentsMatched[2]),
+    };
   }
 
   const endpointImportMatched = pathname.match(

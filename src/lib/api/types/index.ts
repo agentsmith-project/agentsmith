@@ -132,6 +132,13 @@ export interface Agent {
   admin_name?: string;
   /** Expected interaction: chat, studio, or both */
   interaction_mode?: AgentInteractionMode;
+  capabilities?: {
+    streaming_completion?: boolean;
+    multimodal_completion?: boolean;
+    accepted_mime_types?: string[];
+    max_file_count?: number;
+    max_total_bytes?: number;
+  };
   created_at: string;
   updated_at: string;
 }
@@ -278,6 +285,7 @@ export interface ChatSession {
   title: string;
   model: string;
   endpoint_id: string;
+  external_agent_id?: string;
   pinned?: boolean;
   starred?: boolean;
   created_at: string;

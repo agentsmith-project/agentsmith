@@ -17,6 +17,13 @@ export interface CreateAgentRequest {
     env?: Record<string, string>;
     max_concurrent_sessions_override?: number;
   };
+  capabilities?: {
+    streaming_completion?: boolean;
+    multimodal_completion?: boolean;
+    accepted_mime_types?: string[];
+    max_file_count?: number;
+    max_total_bytes?: number;
+  };
 }
 
 export interface UpdateAgentRequest {
@@ -33,6 +40,13 @@ export interface UpdateAgentRequest {
     max_concurrent_sessions_override?: number;
   };
   runtime_preferences?: Record<string, unknown>;
+  capabilities?: {
+    streaming_completion?: boolean;
+    multimodal_completion?: boolean;
+    accepted_mime_types?: string[];
+    max_file_count?: number;
+    max_total_bytes?: number;
+  };
 }
 
 export class AgentAPI {
@@ -87,6 +101,16 @@ export class AgentAPI {
     return this.client.get(
       `/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/runtime-config`,
       { headers: { Authorization: `Bearer ${agentKey}` } }
+    );
+  }
+
+  async getConnectionInfo(
+    workspaceId: string,
+    projectId: string,
+    agentId: string,
+  ): Promise<{ ws_url: string; agent_id: string; protocol_version: string; heartbeat_interval_sec: number }> {
+    return this.client.get(
+      `/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/connection-info`,
     );
   }
 

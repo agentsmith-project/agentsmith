@@ -1,4 +1,4 @@
-# api-entry-node 模块结构（2026-02-09）
+# api-entry-node 模块结构（2026-02-13）
 
 本文档定义 `packages/api-entry-node/src` 的职责边界，后续开发按此结构继续演进，避免再次回到超大入口文件。
 
@@ -6,11 +6,12 @@
 
 - `index.ts`
 - 仅保留服务启动与生命周期管理（HTTP server + job worker + CLI 启动）
+- 负责 WebSocket upgrade 分发（agent runtime）
 - 不再承载业务路由与资源逻辑
 
 - `request-handler.ts`
 - 负责 HTTP 请求编排（鉴权、路由分发、统一错误映射）
-- 串联 `project/source`、`chat`、`endpoint` 三类 handler
+- 串联 `project/source`、`chat`、`endpoint`、`agent` 四类 handler
 
 - `error-mapper.ts`
 - 统一维护 request 层错误到 HTTP 响应的映射策略
@@ -34,12 +35,19 @@
 
 - `chat-resource-service.ts`
 - chat 会话、消息、附件资源读写逻辑
+- 会话支持 `external_agent_id` 线程绑定
+
+- `agent-resource-service.ts`
+- agent/agent-key 资源读写与连接状态元信息
+
+- `agent-runtime-service.ts`
+- external agent websocket runtime（鉴权、在线会话、请求分发、流式事件回传）
 
 - `endpoint-resource-service.ts`
 - endpoint/credential 资源读写与 OpenAI-compatible 批量导入逻辑
 
 - `resource-models.ts`
-- 资源文档模型定义（chat/endpoint/workspace）
+- 资源文档模型定义（chat/endpoint/agent/workspace）
 
 ## 2. 当前开发约束
 

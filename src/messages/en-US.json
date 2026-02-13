@@ -201,6 +201,7 @@
       "upload_success": "Uploaded successfully",
       "upload_failed": "Upload failed",
       "download_failed": "Download failed",
+      "download_success": "Downloaded successfully",
       "deleted": "Deleted",
       "delete_failed": "Delete failed",
       "renamed": "Renamed",
@@ -502,6 +503,10 @@
     "stream_stop_required_before_replace_failed": "Failed to stop previous generation, regenerate is canceled.",
     "stream_error": "Stream error",
     "streaming_failed": "Streaming failed",
+    "stream_error_agent_offline": "External agent is offline. Reconnect the agent and retry.",
+    "stream_error_agent_timeout": "External agent timed out. Please retry or increase timeout.",
+    "stream_error_agent_protocol": "External agent protocol error. Please check agent implementation.",
+    "stream_error_agent_upstream": "External agent returned an upstream error.",
     "upload_failed": "Upload failed",
     "assistant": "Assistant",
     "composer": {
@@ -538,6 +543,7 @@
       "no_active_thread_hint": "Create or select a thread first, then choose a model and send messages",
       "select_model": "Select model",
       "models": "Models",
+      "external_agent": "External Agent",
       "no_endpoints": "No endpoints",
       "disabled": "Disabled"
     },
@@ -701,6 +707,11 @@
       "add_env": "Add variable",
       "max_concurrent_sessions": "Max Concurrent Sessions",
       "max_concurrent_sessions_placeholder": "Optional override",
+      "capabilities_title": "External Runtime Capabilities",
+      "multimodal_enabled": "Enable multimodal input",
+      "accepted_mime_types": "Accepted MIME types (comma-separated)",
+      "max_file_count": "Max files per message",
+      "max_total_bytes": "Max total bytes per message",
       "success": "Agent created successfully"
     },
     "edit": "Edit",
@@ -729,6 +740,7 @@
     "enable_hint": "Re-enable agent.",
     "disabled_access_message": "This agent has been disabled and cannot be accessed until re-enabled.",
     "connection_duration": "Duration",
+    "connection_address": "WebSocket Address",
     "pods_running": "Pods",
     "desired_replicas": "Desired",
     "admin": "Admin",
@@ -813,6 +825,7 @@
       "credential_required": "Please select a credential",
       "base_url_required": "Base URL is required for custom providers",
       "model_conflict": "Model ID already exists in this project",
+      "failed": "Failed to create endpoint",
       "limits": "Limits (optional)",
       "max_rpm": "Max requests/min",
       "timeout_seconds": "Timeout (seconds)",
@@ -1065,6 +1078,22 @@
     "networkError": {
       "title": "Network Error",
       "description": "Please check your connection and try again."
+    },
+    "agentOffline": {
+      "title": "Agent Offline",
+      "description": "The external agent is offline. Reconnect it and try again."
+    },
+    "agentTimeout": {
+      "title": "Agent Timeout",
+      "description": "The external agent response timed out. Try again."
+    },
+    "agentProtocol": {
+      "title": "Agent Protocol Error",
+      "description": "The external agent returned an invalid protocol payload."
+    },
+    "agentUpstream": {
+      "title": "Agent Upstream Error",
+      "description": "The external agent returned an upstream error."
     },
     "unknown": {
       "title": "Error",

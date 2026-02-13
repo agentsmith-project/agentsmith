@@ -1,10 +1,10 @@
 .PHONY: help bootstrap deps-up deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
 	e2e e2e-local \
-	e2e-int-minimal e2e-int-chat e2e-int-chat-real e2e-int-local \
-	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-chat-real-local-api \
-	e2e-int-chat-auto e2e-int-chat-ux-auto \
-	urls
+	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
+	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api \
+	e2e-int-chat-auto e2e-int-agent-auto e2e-int-chat-ux-auto \
+	agent-test-runner urls
 
 NPM ?= npm
 
@@ -15,6 +15,9 @@ KEYCLOAK_BASE_URL ?= http://localhost:18080
 KEYCLOAK_REALM ?= mbos
 KEYCLOAK_URL ?= http://localhost:18080/realms
 KEYCLOAK_CLIENT_ID ?= mbos-frontend
+AGENT_WS_URL ?=
+AGENT_KEY ?=
+AGENT_MODE ?= echo
 
 MINIO_ENDPOINT ?= localhost
 MINIO_PORT ?= 19000
@@ -59,13 +62,17 @@ help:
 	@echo "  make e2e-local     # run mock e2e against a manually started web server (BASE_URL)"
 	@echo "  make e2e-int-minimal   # run minimal integration e2e (real backend)"
 	@echo "  make e2e-int-chat      # run chat integration e2e (real backend)"
+	@echo "  make e2e-int-agent     # run external-agent integration e2e (real backend)"
 	@echo "  make e2e-int-chat-real # run real deepseek chat integration e2e (real upstream)"
 	@echo "  make e2e-int-local     # run integration e2e against a manually started web server (BASE_URL)"
 	@echo "  make e2e-int-minimal-local-api  # run minimal integration e2e with current node api"
 	@echo "  make e2e-int-chat-local-api     # run chat integration e2e with current node api"
+	@echo "  make e2e-int-agent-local-api    # run external-agent integration e2e with current node api"
 	@echo "  make e2e-int-chat-real-local-api # run real deepseek chat e2e with current node api"
 	@echo "  make e2e-int-chat-auto      # auto start deps+api+web and run integration-chat spec"
+	@echo "  make e2e-int-agent-auto     # auto start deps+api+web and run integration-agent spec"
 	@echo "  make e2e-int-chat-ux-auto   # auto start deps+api+web and run targeted chat UX integration checks"
+	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo ""
 	@echo "Utility:"
 	@echo "  make urls          # print local URLs and test users"
@@ -171,6 +178,9 @@ e2e-int-minimal:
 e2e-int-chat:
 	$(NPM) run test:e2e:integration:chat
 
+e2e-int-agent:
+	$(NPM) run test:e2e:integration:agents
+
 e2e-int-chat-real:
 	$(NPM) run test:e2e:integration:chat:real
 
@@ -190,6 +200,12 @@ e2e-int-chat-local-api:
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
 	$(NPM) run test:e2e:integration:chat:with-api
 
+e2e-int-agent-local-api:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	$(NPM) run test:e2e:integration:agents:with-api
+
 e2e-int-chat-real-local-api:
 	INTEGRATION_API_PORT=$(PORT_API) \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
@@ -205,6 +221,15 @@ e2e-int-chat-auto:
 	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts
 
+e2e-int-agent-auto:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	KEYCLOAK_URL=$(KEYCLOAK_URL) \
+	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	./scripts/run-integration-e2e-full.sh e2e/integration-agents-external.spec.ts
+
 e2e-int-chat-ux-auto:
 	INTEGRATION_API_PORT=$(PORT_API) \
 	INTEGRATION_WEB_PORT=$(PORT_WEB) \
@@ -213,6 +238,19 @@ e2e-int-chat-ux-auto:
 	KEYCLOAK_URL=$(KEYCLOAK_URL) \
 	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts --grep "deleting the only thread shows clear empty-state actions and disabled composer|text-only endpoint hides attachment actions in composer"
+
+agent-test-runner:
+	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
+		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
+		echo "[make] Example:"; \
+		echo "  make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
+		exit 1; \
+	fi
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
+	MBOS_AGENT_KEY="$(AGENT_KEY)" \
+	MBOS_AGENT_MODE="$(AGENT_MODE)" \
+	$(NPM) run agent:test-runner
 
 urls:
 	@echo "Frontend:         http://localhost:$(PORT_WEB)/$(LOCALE)/login"

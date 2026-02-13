@@ -125,6 +125,7 @@ export interface ChatSessionRecord {
   title: string;
   model: string;
   endpoint_id: string;
+  external_agent_id?: string;
   pinned?: boolean;
   starred?: boolean;
   created_at: string;
@@ -132,6 +133,49 @@ export interface ChatSessionRecord {
   message_count: number;
   total_tokens: number;
   runtime_status?: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
+}
+
+export interface AgentRecord {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  mode: 'external' | 'internal';
+  presence?: 'online' | 'offline' | 'managed';
+  status: 'enabled' | 'disabled';
+  config?: {
+    image?: string;
+    env?: Record<string, string>;
+    max_concurrent_sessions_override?: number;
+  };
+  runtime_preferences_json?: Record<string, unknown>;
+  interaction_mode?: 'chat' | 'studio' | 'both';
+  owner_id?: string;
+  admin_id?: string;
+  capabilities?: {
+    streaming_completion?: boolean;
+    multimodal_completion?: boolean;
+    accepted_mime_types?: string[];
+    max_file_count?: number;
+    max_total_bytes?: number;
+  };
+  created_at: string;
+  updated_at: string;
+  last_seen_at?: string;
+}
+
+export interface AgentServiceKeyRecord {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  agent_id: string;
+  key_prefix: string;
+  key_hash: string;
+  status: 'active' | 'suspended' | 'revoked' | 'expired';
+  created_at: string;
+  expires_at?: string;
+  last_used_at?: string;
 }
 
 export interface ChatMessageRecord {

@@ -122,6 +122,41 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches agent management and key routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents'),
+    ).toEqual({
+      kind: 'agents',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents/ag_1'),
+    ).toEqual({
+      kind: 'agentItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      agentId: 'ag_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents/ag_1/connection-info'),
+    ).toEqual({
+      kind: 'agentConnectionInfo',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      agentId: 'ag_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents/ag_1/keys/key_1'),
+    ).toEqual({
+      kind: 'agentKeyItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      agentId: 'ag_1',
+      keyId: 'key_1',
+    });
+  });
+
   it('matches source library object browser routes', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/objects'),

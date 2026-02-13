@@ -45,6 +45,10 @@ export function EditAgentDialog({
   const [interactionMode, setInteractionMode] = React.useState<'chat' | 'studio' | 'both'>('both');
   const [runtimePrefsOpen, setRuntimePrefsOpen] = React.useState(false);
   const [runtimePreferences, setRuntimePreferences] = React.useState<RuntimePreferences>({});
+  const [externalMultimodal, setExternalMultimodal] = React.useState(false);
+  const [externalAcceptedMimeTypes, setExternalAcceptedMimeTypes] = React.useState('');
+  const [externalMaxFileCount, setExternalMaxFileCount] = React.useState('');
+  const [externalMaxTotalBytes, setExternalMaxTotalBytes] = React.useState('');
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
 
@@ -69,6 +73,18 @@ export function EditAgentDialog({
       setDescription(agent.description ?? '');
       setInteractionMode(agent.interaction_mode ?? 'both');
       setRuntimePreferences((agent.runtime_preferences_json as RuntimePreferences) ?? {});
+      setExternalMultimodal(agent.capabilities?.multimodal_completion ?? false);
+      setExternalAcceptedMimeTypes((agent.capabilities?.accepted_mime_types ?? []).join(','));
+      setExternalMaxFileCount(
+        typeof agent.capabilities?.max_file_count === 'number'
+          ? String(agent.capabilities.max_file_count)
+          : '',
+      );
+      setExternalMaxTotalBytes(
+        typeof agent.capabilities?.max_total_bytes === 'number'
+          ? String(agent.capabilities.max_total_bytes)
+          : '',
+      );
     }
   }, [open, agent]);
 
@@ -84,6 +100,22 @@ export function EditAgentDialog({
         Object.keys(runtimePreferences).length > 0
           ? (runtimePreferences as Record<string, unknown>)
           : undefined,
+      capabilities: agent.mode === 'external'
+        ? {
+          streaming_completion: true,
+          multimodal_completion: externalMultimodal,
+          accepted_mime_types: externalAcceptedMimeTypes
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean),
+          max_file_count: Number.isFinite(Number.parseInt(externalMaxFileCount, 10))
+            ? Number.parseInt(externalMaxFileCount, 10)
+            : undefined,
+          max_total_bytes: Number.isFinite(Number.parseInt(externalMaxTotalBytes, 10))
+            ? Number.parseInt(externalMaxTotalBytes, 10)
+            : undefined,
+        }
+        : undefined,
     };
 
     updateMutation.mutate(data);
@@ -157,6 +189,52 @@ export function EditAgentDialog({
               <option value="both">{t('interaction_both')}</option>
             </select>
           </div>
+
+          {agent.mode === 'external' && (
+            <div className="space-y-4 p-4 rounded-sm border border-subtle bg-surface-low">
+              <h4 className="text-sm font-medium text-foreground">{t('create_dialog.capabilities_title')}</h4>
+              <label className="flex items-center gap-2 text-sm text-primary">
+                <input
+                  type="checkbox"
+                  checked={externalMultimodal}
+                  onChange={(event) => setExternalMultimodal(event.target.checked)}
+                  disabled={updateMutation.isPending}
+                />
+                {t('create_dialog.multimodal_enabled')}
+              </label>
+              <div className="space-y-2">
+                <label className="text-sm text-primary">{t('create_dialog.accepted_mime_types')}</label>
+                <Input
+                  value={externalAcceptedMimeTypes}
+                  onChange={(event) => setExternalAcceptedMimeTypes(event.target.value)}
+                  placeholder="image/png,image/jpeg"
+                  disabled={updateMutation.isPending}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.max_file_count')}</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={externalMaxFileCount}
+                    onChange={(event) => setExternalMaxFileCount(event.target.value)}
+                    disabled={updateMutation.isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.max_total_bytes')}</label>
+                  <Input
+                    type="number"
+                    min={1024}
+                    value={externalMaxTotalBytes}
+                    onChange={(event) => setExternalMaxTotalBytes(event.target.value)}
+                    disabled={updateMutation.isPending}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="border border-subtle rounded-sm">
             <button

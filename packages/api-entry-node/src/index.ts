@@ -20,6 +20,9 @@ export function createNodeApiServer(
   const server = http.createServer((req, res) => {
     void handleRequest(req, res, deps);
   });
+  server.on('upgrade', (req, socket, head) => {
+    deps.agentRuntimeService.handleUpgrade(req, socket, head);
+  });
 
   const jobWorkerInterval = setInterval(() => {
     void drainJobQueue(deps.aiReadyJobQueue, async (item) => {

@@ -55,6 +55,8 @@ import {
 } from '@mbos/adapters-private';
 import { EndpointResourceService } from './endpoint-resource-service.js';
 import { ChatResourceService } from './chat-resource-service.js';
+import { AgentResourceService } from './agent-resource-service.js';
+import { AgentRuntimeService } from './agent-runtime-service.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 
 export function createDefaultNodeApiDeps(): NodeApiDeps {
@@ -69,6 +71,8 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   const aiReadyJobQueue = new InMemoryJobQueue();
   const objectStore = new InMemoryObjectStore();
   const endpointResourceService = new EndpointResourceService(docStore);
+  const agentResourceService = new AgentResourceService(docStore);
+  const agentRuntimeService = new AgentRuntimeService(agentResourceService);
   const sourceBucket = 'mbos-dev';
   const vectorStore = new NoopVectorStore();
   const parser = new Utf8DocumentParser();
@@ -94,6 +98,8 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     cache,
     chatResourceService,
     endpointResourceService,
+    agentResourceService,
+    agentRuntimeService,
     sourceBucket,
     aiReadyJobQueue,
     createAIReadyJobUseCase: new CreateAIReadyJobUseCase(
@@ -201,6 +207,8 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const aiReadyJobRepo = new JsonDocAIReadyJobRepo(docStore);
   const aiReadyJobQueue = new InMemoryJobQueue();
   const endpointResourceService = new EndpointResourceService(docStore);
+  const agentResourceService = new AgentResourceService(docStore);
+  const agentRuntimeService = new AgentRuntimeService(agentResourceService);
   const sourceBucket = env.MINIO_BUCKET ?? 'mbos-dev';
   const parser = new Utf8DocumentParser();
   const chunker = new FixedCharTextChunker({
@@ -243,6 +251,8 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       cache,
       chatResourceService,
       endpointResourceService,
+      agentResourceService,
+      agentRuntimeService,
       sourceBucket,
       aiReadyJobQueue,
       createAIReadyJobUseCase: new CreateAIReadyJobUseCase(

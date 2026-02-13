@@ -203,6 +203,7 @@
       "upload_success": "上传成功",
       "upload_failed": "上传失败",
       "download_failed": "下载失败",
+      "download_success": "下载成功",
       "deleted": "已删除",
       "delete_failed": "删除失败",
       "renamed": "已重命名",
@@ -504,6 +505,10 @@
     "stream_stop_required_before_replace_failed": "停止上一个生成失败，已取消重新生成。",
     "stream_error": "流式响应异常",
     "streaming_failed": "流式生成失败",
+    "stream_error_agent_offline": "外部 Agent 当前离线，请先连接后重试。",
+    "stream_error_agent_timeout": "外部 Agent 响应超时，请重试或调整超时配置。",
+    "stream_error_agent_protocol": "外部 Agent 协议错误，请检查 Agent 实现。",
+    "stream_error_agent_upstream": "外部 Agent 返回上游错误。",
     "upload_failed": "上传失败",
     "assistant": "助手",
     "composer": {
@@ -540,6 +545,7 @@
       "no_active_thread_hint": "请先创建或选择会话，然后再选择模型并发送消息",
       "select_model": "选择模型",
       "models": "模型",
+      "external_agent": "外部 Agent",
       "no_endpoints": "暂无端点",
       "disabled": "已禁用"
     },
@@ -703,6 +709,11 @@
       "add_env": "添加变量",
       "max_concurrent_sessions": "最大并发会话数",
       "max_concurrent_sessions_placeholder": "可选覆盖",
+      "capabilities_title": "外部运行时能力",
+      "multimodal_enabled": "启用多模态输入",
+      "accepted_mime_types": "允许的 MIME 类型（逗号分隔）",
+      "max_file_count": "每条消息最大文件数",
+      "max_total_bytes": "每条消息最大总字节数",
       "success": "智能体创建成功"
     },
     "edit": "编辑",
@@ -731,6 +742,7 @@
     "enable_hint": "重新启用智能体。",
     "disabled_access_message": "该智能体已被禁用，在重新启用前无法访问。",
     "connection_duration": "接入时长",
+    "connection_address": "WebSocket 地址",
     "pods_running": "运行中 Pod",
     "desired_replicas": "期望副本",
     "admin": "维护人",
@@ -815,6 +827,7 @@
       "credential_required": "请选择凭据",
       "base_url_required": "自定义提供商需要填写 Base URL",
       "model_conflict": "此项目中已存在该模型 ID",
+      "failed": "创建端点失败",
       "limits": "限制（可选）",
       "max_rpm": "最大请求/分钟",
       "timeout_seconds": "超时（秒）",
@@ -1067,6 +1080,22 @@
     "networkError": {
       "title": "网络错误",
       "description": "请检查您的网络连接后重试。"
+    },
+    "agentOffline": {
+      "title": "Agent 离线",
+      "description": "外部 Agent 当前离线，请先连接后重试。"
+    },
+    "agentTimeout": {
+      "title": "Agent 超时",
+      "description": "外部 Agent 响应超时，请重试。"
+    },
+    "agentProtocol": {
+      "title": "Agent 协议错误",
+      "description": "外部 Agent 返回了无效协议数据。"
+    },
+    "agentUpstream": {
+      "title": "Agent 上游错误",
+      "description": "外部 Agent 返回了上游错误。"
     },
     "unknown": {
       "title": "错误",

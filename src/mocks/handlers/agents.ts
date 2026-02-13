@@ -54,6 +54,14 @@ export const agentHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/agents/:id/diagnostics', () =>
     HttpResponse.json(p0.agent_diagnostics),
   ),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/agents/:id/connection-info', ({ params }) =>
+    HttpResponse.json({
+      ws_url: `ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=${encodeURIComponent(String(params.id ?? ''))}`,
+      agent_id: String(params.id ?? ''),
+      protocol_version: '1.0',
+      heartbeat_interval_sec: 15,
+    }),
+  ),
   http.get('/api/v1/workspaces/:ws/projects/:prj/agents/:id/keys', ({ params }) => {
     const agentId = String(params.id ?? '');
     return HttpResponse.json({

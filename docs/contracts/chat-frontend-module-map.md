@@ -1,117 +1,51 @@
-# Chat Frontend Module Map (2026-02-10)
+# Chat Frontend Contract
 
-This document defines responsibility boundaries for the chat page implementation under:
-`src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`.
+Scope: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`
 
-## 1. Composition Boundary
+## 1. Module Boundaries
+- `page.tsx`: route param validation, permission gate, hook wiring, cross-hook coordination.
+- `src/lib/chat`: business logic and state derivation (`runtime-store`, data/mutation hooks, streaming orchestration, composer actions, variants, view model).
+- `src/components/chat`: presentational composition and interaction rendering (`ThreadsPane`, `ChatHeader`, `MessageList`, `Composer`, dialogs).
 
-- `page.tsx`
-- Owns route param validation, permission gates, data/mutation hook wiring, and cross-hook orchestration only.
-- Must not grow back into a UI-heavy monolith.
+## 2. Interaction Invariants
+- Active session is required for sending; no active thread must show explicit CTA (`New Chat`) and disabled composer.
+- Composer state machine is canonicalized in `src/lib/chat/composer-state.ts`:
+  - `no_thread`
+  - `need_endpoint`
+  - `editing`
+  - `streaming`
+  - `pending`
+  - `error_recoverable`
+  - `ready`
+- Endpoint binding is mandatory for send (`endpoint_id` and `model` non-empty).
+- Header model presentation contract:
+  - Primary label: endpoint name
+  - Secondary label: routed model id
+- Thread pane contract:
+  - Show streaming indicator per thread
+  - Show aggregate generating count badge
+  - Show no-active-thread hint when sessions exist but none selected
 
-## 2. State and Runtime Hooks (`src/lib/chat`)
-
-- `runtime-store.ts`
-- Global (non-persistent) runtime store for chat streaming state.
-- Holds per-session `streamId` and streaming assistant state so refresh/resume, branch switching, and stop controls do not depend on component-local memory.
-
-- `use-chat-data.ts`
-- Query orchestration for sessions, messages, attachments, and endpoint options.
-
-- `use-chat-mutations.ts`
-- Session/message/attachment mutation orchestration and cache invalidation.
-- Includes local file attachment encoding and library-object import flow for chat attachments.
-
-- `use-chat-streaming.ts`
-- SSE runtime, stream/session stop control, stream-id recovery after refresh, and stream state machine.
-- Uses `runtime-store.ts` as the single source of truth for per-session runtime state.
-
-- `use-chat-thread-actions.ts`
-- Thread-level actions (select/create/rename/pin/star/delete request, endpoint switch).
-
-- `use-chat-message-actions.ts`
-- Message edit/regenerate branch actions.
-
-- `use-chat-delete-dialog.ts`
-- Delete-thread dialog state + confirm action.
-
-- `use-chat-composer-actions.ts`
-- Composer send and attachment-pick orchestration.
-
-- `use-chat-variants.ts`
-- Variant selection and auto-variant activation handling.
-
-- `chat-view-model.ts`
-- Derived UI state (`activeStreamStatus`, `mergedStreamingSessionIds`, `disabled`) from runtime store + queries + local UI state.
-
-- `use-project-layout-mode.ts` (`src/lib/hooks`)
-- Shared viewport-aware project layout mode orchestration (`standard|ultrawide`) with localStorage preference persistence.
-
-## 3. UI Components (`src/components/chat`)
-
-- `ThreadsPane.tsx`
-- Thread list and thread actions UI.
-- Supports `layoutMode` (`standard|ultrawide`) for compact/default and wide-display widths.
-
-- `ChatMainPane.tsx`
-- Main pane composition (`ChatHeader`, `MessageList`, `Composer`) and empty/loading states.
-- Owns layout mode propagation to `ChatHeader` / `MessageList` / `Composer`.
-- Integrates `ChatLibraryPickerDialog` for selecting file-library objects into chat attachments.
-
-- `ChatDeleteDialog.tsx`
-- Delete confirmation dialog rendering.
-
-- `ChatHeader.tsx`
-- Session title/model control.
-
-- `Topbar.tsx` (`src/components/app-shell/Topbar.tsx`)
-- Owns shared project-level header actions (including ultrawide layout toggle `topbar__layout-toggle`).
-
-- `MessageList.tsx` / `Composer.tsx`
-- Respect `layoutMode` to cap content width:
-- `standard`: keep dense, module-consistent readable width.
-- `ultrawide`: expand chat content area without remounting shell/sidebar/topbar.
-- Composer supports two attachment sources:
+## 3. Attachment and Capability Contract
+- Attachment send requires endpoint capability `multimodal_completion`.
+- On non-multimodal endpoint:
+  - Hide attachment actions in composer
+  - Keep text send available
+  - Frontend must pre-block attachment input attempts with explicit message
+- Supported attachment entry points:
   - local file picker
-  - source-library object picker
+  - source-library picker
+  - drag-and-drop into composer
+  - paste files/images into composer textarea
+- Attachments are message-scoped snapshots and are persisted with the user message before stream send.
 
-## 4. Guardrails
+## 4. Layout and UX Rules
+- Default layout is `standard`; `ultrawide` is explicit opt-in.
+- Layout toggle is topbar-owned (`topbar__layout-toggle`), project-global.
+- Chat layout changes must not remount shell/topbar/sidebar.
 
-- Keep business logic in hooks; keep components primarily presentational.
-- Default layout must remain aligned with other module pages (readability first); ultrawide is opt-in only.
-- No migration toggles or temporary fallback flags for layout behavior.
-- Layout toggle is project-global and controlled from Topbar; module pages should not render duplicate layout toggles.
-- Layout toggle only affects module content area; must not trigger shell/topbar/sidebar flicker or full-page remount.
-- For new chat behavior:
-1. Update or add a hook in `src/lib/chat`.
-2. Keep `page.tsx` limited to wiring and cross-hook coordination.
-3. Add/adjust tests:
-- Hook/view-model unit tests in `src/lib/chat/__tests__`.
-- Component tests in `src/components/chat/__tests__`.
-- Integration behavior in `e2e/integration-chat.spec.ts` when runtime behavior changes.
-
-## 7. Attachment + Multimodal Baseline (v1)
-
-- Chat attachments are message-scoped snapshots persisted with the user message.
-- Sending with attachments requires endpoint capability `multimodal_completion`.
-- Local files and library-selected objects are converted to chat attachments before send.
-- Current v1 library path uses browser-mediated download/upload conversion.
-
-## 5. Closeout Status
-
-- Status: `completed` (Phase: chat structure split + stream recoverability baseline)
-- Baseline commits include:
-  - `6eb388f` (`ChatMainPane` + `ChatDeleteDialog` extraction)
-  - `f4e5a62` (refresh recovery + dual stop-path integration coverage)
-  - `655797d` (temporary backlog merged into canonical contracts)
-- Verified baseline:
-  - `npm test -- chat`
-  - `npm run test:e2e -- e2e/chat.spec.ts --project=chromium --workers=1`
-  - `npm run test:e2e -- --project=visual e2e/visual.spec.ts --grep "chat"`
-  - `npx tsc --noEmit`
-  - `npm run lint`
-
-## 6. Next-Phase Boundary
-
-- Chat refactor is considered stable at current module boundaries.
-- Next work should focus on new capability delivery (not page-size driven split), and any new behavior must follow this map.
+## 5. Testing Contract
+- Hook/view-model tests: `src/lib/chat/__tests__`
+- Component tests: `src/components/chat/__tests__`
+- Integration/runtime behavior: `e2e/integration-chat.spec.ts`
+- Any change to invariants in sections 2-4 must update tests in all three layers.

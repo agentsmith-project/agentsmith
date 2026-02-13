@@ -1,8 +1,8 @@
 # Contracts Index
 
-This directory is the single source of truth for frontend permission and governance contracts.
+This directory contains only current-state documents: functional contracts, architecture boundaries, and governance rules.
 
-## Canonical Documents (Read in this order)
+## Core Architecture and Governance
 
 1. `cf-private-hybrid-architecture-guide-v1.md`
 2. `frontend-token-interaction-contract.md`
@@ -11,45 +11,21 @@ This directory is the single source of truth for frontend permission and governa
 5. `auth-permission-model.md`
 6. `route-gate-test-checklist.md`
 
-## Current MVP Contract Baseline
+## Module Contracts
 
-- Dual-deploy architecture is contract-first: Cloudflare trial path + private deployment path share the same domain/application semantics.
-- Runtime authorization is token-only.
-- Role/group names are governance template labels, not runtime gate inputs.
-- Chat and AI Studio are access-only gated modules.
-- Resource usage control is defined by resource policy (defaults + resource override + subject override).
-- Active resource types: `endpoint`, `source_library`, `agent`.
-
-## Operational References
-
-- `../../DEVELOPMENT.md`
-  - Playwright runbook and gate-hook safety rule.
-  - Manual UAT flow and freeze-ready criteria.
-- `../../docs/verification-summary.md`
-  - Latest automated verification status and business-flow UAT script.
 - `chat-frontend-module-map.md`
-  - Chat page module boundaries and growth guardrails.
-- `chat-manual-acceptance-checklist.md`
-  - Manual release gate checklist for chat UX/runtime changes.
 - `endpoints-frontend-module-map.md`
-  - Endpoints page closeout baseline and target decomposition map.
-- `endpoints-closeout-summary.md`
-  - Endpoints module closeout result and verification snapshot.
 - `endpoints-capability-contract.md`
-  - Capability-first endpoint data model and rerank/image/video route contract.
 - `models-catalog-offline.md`
-  - Offline metadata sync and runtime usage contract for model catalog/logo assets.
 - `sources-frontend-module-map.md`
-  - Sources module baseline and next decomposition targets.
+- `sources-object-browser-contract.md`
 - `resource-policy-frontend-module-map.md`
-  - Resource Policy page module boundaries and helper ownership.
 - `projects-frontend-module-map.md`
-  - Projects page module boundaries and reusable view ownership.
 - `studio-frontend-module-map.md`
-  - AI Studio list page module boundaries and compact toolbar baseline.
+- `api-entry-node-module-map.md`
 
-## Update Policy
+## Contract Maintenance Rules
 
-- Update existing canonical docs in place.
-- Do not create parallel snapshot versions for active contracts.
-- Remove stale or conflicting contract documents instead of keeping both old and new wording.
+- Keep documents normative and current-state only.
+- Merge updates into canonical files; do not keep temporary/process snapshots.
+- Remove stale or conflicting wording immediately.

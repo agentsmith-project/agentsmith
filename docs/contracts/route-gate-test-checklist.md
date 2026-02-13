@@ -1,52 +1,42 @@
-# Route Gate Test Checklist (Shell Routes)
+# Route Gate and Test Contract (Shell Routes)
 
-Use this checklist for every new route under:
-`src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/**/page.tsx`
-and for:
-`src/app/[locale]/workspaces/[workspace]/projects/page.tsx`
+Applies to:
+- `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/**/page.tsx`
+- `src/app/[locale]/workspaces/[workspace]/projects/page.tsx`
 
-## Required Implementation
+## 1. Route Safety Contract
 
-1. Validate route params with:
-- `validateWorkspaceParam()`
-- `validateProjectParam()` for routes that include `[project]`
+- Validate URL params with:
+  - `validateWorkspaceParam()`
+  - `validateProjectParam()` when `[project]` exists
+- Permission hooks must be called unconditionally.
+  - Do not short-circuit hooks (`useHasPermission('a') || useHasPermission('b')` is forbidden).
+  - Combine boolean results after hook calls.
 
-2. Add route-level permission gate when page has access control requirements.
-   - Chat route: `project:chat:access`
-   - AI Studio route: `project:studio:access`
-   - Do not split Chat/AI Studio into action-level FE permission gates in MVP.
+## 2. Permission Contract
 
-3. Permission hook safety rule:
-- Do not short-circuit hooks (for example `useHasPermission('a') || useHasPermission('b')`).
-- Call each permission hook unconditionally, then combine booleans in plain expressions.
+- Use explicit route-level permission gates for protected modules.
+  - Chat: `project:chat:access`
+  - Studio: `project:studio:access`
+- Workspace project list route (`/workspaces/[workspace]/projects`) may bootstrap with authenticated workspace context before project context exists.
+- Backend remains the final authorization authority (`401/403`).
 
-4. Workspace-scoped route note (`/workspaces/[workspace]/projects`):
-- This route has no `[project]` param, so project-scoped permission context may be empty during bootstrap.
-- FE may use authenticated/workspace-loaded fallback for initial route render.
-- Backend remains authoritative for actual API authorization (`401/403`).
+## 3. Test Contract
 
-## Required Tests
+Each route must include `__tests__/page.test.tsx` with:
+- successful render case
+- invalid-param case
+- forbidden/denied case for permission-gated routes
 
-Create `__tests__/page.test.tsx` beside the route.
+Workspace project list route must include:
+- denied bootstrap case (`no auth + no workspace context`)
+- authenticated bootstrap pass-through case
 
-Each route test file must include:
+## 4. Enforcement Contract
 
-1. Happy path render test.
-2. Invalid param test (unsafe workspace/project should produce validation error state).
-3. Forbidden/permission denied test for permission-gated routes.
-4. For workspace-scoped project list route, include both:
-- permission-denied case (`no auth + no workspace context`)
-- authenticated fallback case (`auth true` should not hard-fail gate before backend response)
-
-## CI Enforcement
-
-`npm run contracts:check` enforces:
-
-1. Known permission names only.
-2. Route param validation presence.
-3. Route test file existence.
-4. Invalid-param test coverage.
-5. Forbidden coverage for routes that use `useHasPermission(...)`.
-   - for wrapper hooks (for example `useCanAccessChat/useCanAccessStudio`), treat them as permission-gated routes and require forbidden coverage as well.
-
-If any rule is missing, CI fails.
+`npm run contracts:check` must fail when any of the following are missing:
+- known permission name usage
+- required param validation
+- route test file
+- invalid-param coverage
+- forbidden coverage for permission-gated routes (including wrapper permission hooks)

@@ -1,79 +1,63 @@
-# Endpoints Frontend Module Map (2026-02-10)
+# Endpoints Frontend Module Contract
 
-This document defines the closeout baseline and decomposition plan for:
-`src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/endpoints/page.tsx`.
+Applies to route:
+`src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/endpoints/page.tsx`
 
-## 1. Current State
+## 1. Module Boundaries
 
-- The route currently centralizes:
-- route param resolution and permission gates
-- query/mutation wiring
-- table column/action definitions
-- import/export payload UX
-- create/edit/delete dialogs and status toggling
-- Current implementation works, but page-level responsibility is too broad.
+- Route page (`page.tsx`)
+  - validates URL params
+  - applies permission gate
+  - composes page-level component only
+- View component
+  - `src/components/endpoints/EndpointsPage.tsx`
+  - owns toolbar/dialog/table composition
+- Data hooks
+  - `src/lib/endpoints/use-endpoints-data.ts`
+  - `src/lib/endpoints/use-endpoints-mutations.ts`
+- Table contract
+  - `src/lib/endpoints/use-endpoints-table-columns.tsx`
+  - row actions are callback-driven and typed
 
-## 2. Target Module Boundaries
+## 2. Permission and Behavior Rules
 
-- `page.tsx`
-- Keep only route param validation, permission gates, and top-level composition.
+- Read access requires one of:
+  - `project:endpoint:use`
+  - `project:endpoint:manage`
+- Mutations require:
+  - `project:endpoint:manage`
+- No compatibility fallback paths.
+- Fail fast on invalid payload and invalid params.
 
-- `src/lib/endpoints/use-endpoints-data.ts`
-- Own list query and loading/error data model.
+## 3. Data and API Contract
 
-- `src/lib/endpoints/use-endpoints-mutations.ts`
-- Own create/update/delete/import mutations and query invalidation.
+- Endpoint payload follows `docs/contracts/endpoints-capability-contract.md`.
+- Catalog metadata uses offline cache contract in `docs/contracts/models-catalog-offline.md`.
+- Frontend must not call remote provider catalogs at runtime.
+- Create/update/import/export must preserve capability semantics:
+  - `chat_completion`
+  - `multimodal_completion`
+  - `embedding`
+  - `reranker`
+  - `image_generation`
+  - `video_generation`
 
-- `src/lib/endpoints/use-endpoints-table-columns.tsx`
-- Own table column factory and row action binding.
+## 4. UX Contract
 
-- `src/components/endpoints/EndpointsPage.tsx`
-- Presentational composition for toolbar + table + dialogs.
+- Provider/model selection is capability-first.
+- Display name shown to user should prioritize endpoint display name.
+- Model id remains visible as secondary metadata.
+- Chat model selector only lists completion-capable endpoints.
 
-- `src/components/endpoints/ImportEndpointsDialog.tsx`
-- Isolate import payload parse/validation/submit UX.
+## 5. Test Contract
 
-## 3. Guardrails
-
-- Business logic and side effects go to hooks, not page component.
-- Keep permission checks explicit:
-- read: `project:endpoint:use` or `project:endpoint:manage`
-- mutate: `project:endpoint:manage`
-- No compatibility fallback flags.
-- Fail fast on invalid payload and invalid route params.
-- Preserve stable test IDs for e2e selectors.
-
-## 4. Verification Baseline (Completed)
-
-- Unit route baseline:
-- `npm test -- 'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/endpoints/__tests__/page.test.tsx'`
-- Result: passed (4/4)
-
-- E2E behavior baseline:
-- `npm run test:e2e -- e2e/endpoints.spec.ts --project=chromium --workers=1`
-- Result: passed (10/10)
-
-- Visual baseline:
-- `npm run test:e2e -- --project=visual e2e/visual.spec.ts --grep "endpoints"`
-- Result: passed (1/1)
-
-## 5. Next Closeout Steps
-
-1. Extract `EndpointsPage` presentational component from route page.
-Status: completed (`src/components/endpoints/EndpointsPage.tsx`), route file now thin wrapper.
-2. Move mutation/query orchestration to `src/lib/endpoints/*` hooks.
-Status: completed (`src/lib/endpoints/use-endpoints-data.ts`, `src/lib/endpoints/use-endpoints-mutations.ts`).
-3. Extract table columns into dedicated module with typed callbacks.
-Status: completed (`src/lib/endpoints/use-endpoints-table-columns.tsx`).
-4. Add focused hook unit tests for import/update/delete flows.
-Status: completed. Added:
-- `src/lib/endpoints/__tests__/use-endpoints-mutations.test.tsx` (delete/update/import success+failure).
-- `src/lib/endpoints/__tests__/use-endpoints-data.test.tsx` (query enable gate + data path).
-5. Keep `e2e/endpoints.spec.ts` green and add one visual snapshot test for endpoints page.
-Status: completed.
-
-## 6. Closeout Status
-
-- Module closeout status: `completed`.
-- Route page is thin, orchestration is hook-based, table spec is modularized, and verification gates are green.
-- Remaining enhancement (optional): extract import dialog into dedicated component if payload UX grows further.
+- Route unit tests:
+  - URL validation
+  - permission denied
+  - successful render
+- Hook tests:
+  - data query enable/disable behavior
+  - create/update/delete/import mutation success + failure
+- E2E:
+  - endpoint create/edit/delete/import/export flows
+  - CORS-safe update path (PUT preflight allowed)

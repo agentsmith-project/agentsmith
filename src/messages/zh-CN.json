@@ -507,6 +507,7 @@
       "cancel": "取消",
       "helper_failed_attachments": "请移除或重试失败附件后再发送。",
       "helper_attachments_preparing": "附件仍在准备中...",
+      "helper_attach_hint": "支持拖拽或粘贴文件到输入区",
       "attachment_status_uploading": "上传中...",
       "attachment_status_processing": "处理中...",
       "attachment_status_failed": "失败",

@@ -30,6 +30,7 @@ describe('Composer', () => {
 
       expect(screen.getByPlaceholderText('Message…')).toBeInTheDocument();
       expect(screen.getByText('Enter to send · Shift+Enter for newline')).toBeInTheDocument();
+      expect(screen.getByText('composer.helper_attach_hint')).toBeInTheDocument();
     });
 
     it('should render composer in edit mode', () => {

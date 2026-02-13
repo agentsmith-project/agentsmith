@@ -505,6 +505,7 @@
       "cancel": "Cancel",
       "helper_failed_attachments": "Remove or retry failed attachments to send.",
       "helper_attachments_preparing": "Attachments are still preparing...",
+      "helper_attach_hint": "Drag or paste files into the input area",
       "attachment_status_uploading": "Uploading...",
       "attachment_status_processing": "Processing...",
       "attachment_status_failed": "Failed",

@@ -268,7 +268,9 @@ export function Composer({
           </div>
 
           <div className="mt-2 flex items-center justify-between gap-3 text-xs text-tertiary">
-            <div className="min-w-0 truncate">{helperText || attachmentDisabledReason}</div>
+            <div className="min-w-0 truncate">
+              {helperText || attachmentDisabledReason || (attachmentEnabled ? t('composer.helper_attach_hint') : '')}
+            </div>
             <div className="flex-shrink-0">{hotkeyText}</div>
           </div>
         </div>

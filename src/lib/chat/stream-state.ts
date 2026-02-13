@@ -15,6 +15,7 @@ export interface SessionStreamingAssistant {
 export interface SessionStreamState {
   status: SessionStreamStatus;
   assistant: SessionStreamingAssistant | null;
+  errorMessage?: string | null;
 }
 
 export function mapRuntimeStatusToStreamStatus(

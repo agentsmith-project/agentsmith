@@ -42,6 +42,7 @@ describe('buildChatViewModel', () => {
     expect(model.activeStreamStatus).toBe('streaming');
     expect(model.disabled).toBe(true);
     expect(model.activeStreamingAssistant?.content).toBe('partial');
+    expect(model.activeStreamErrorMessage).toBeNull();
     expect(model.mergedStreamingSessionIds).toContain(session.id);
   });
 
@@ -57,6 +58,7 @@ describe('buildChatViewModel', () => {
     expect(model.activeStreamStatus).toBe('streaming');
     expect(model.disabled).toBe(true);
     expect(model.activeStreamingAssistant).toBeNull();
+    expect(model.activeStreamErrorMessage).toBeNull();
     expect(model.mergedStreamingSessionIds).toContain(session.id);
   });
 
@@ -71,6 +73,27 @@ describe('buildChatViewModel', () => {
     expect(model.activeStreamStatus).toBe('idle');
     expect(model.disabled).toBe(false);
     expect(model.activeStreamingAssistant).toBeNull();
+    expect(model.activeStreamErrorMessage).toBeNull();
     expect(model.mergedStreamingSessionIds).toHaveLength(0);
+  });
+
+  it('exposes active stream error message when stream failed', () => {
+    const session = makeSession({});
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {
+        [session.id]: {
+          status: 'error',
+          assistant: null,
+          errorMessage: 'Upstream rate limit',
+        },
+      },
+    });
+
+    expect(model.activeStreamStatus).toBe('error');
+    expect(model.activeStreamErrorMessage).toBe('Upstream rate limit');
+    expect(model.disabled).toBe(false);
   });
 });

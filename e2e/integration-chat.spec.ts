@@ -383,6 +383,7 @@ async function sendExpectStreamError(
   await expect(sendBtn).toBeEnabled({ timeout: 15_000 });
   await sendBtn.click();
   await expect(page.getByTestId('chat__stream-status')).toHaveText('Error', { timeout: 60_000 });
+  await expect(page.getByTestId('chat__stream-error-banner')).toBeVisible({ timeout: 15_000 });
 }
 
 async function sendExpectStreamErrorMessage(

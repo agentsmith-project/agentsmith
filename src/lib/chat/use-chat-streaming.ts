@@ -98,7 +98,10 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
       const next = typeof updater === 'function'
         ? (updater as (p: SessionStreamState) => SessionStreamState)(prev)
         : updater;
-      if ((next.status === 'stopped' || next.status === 'error') && !next.assistant) {
+      const normalized: SessionStreamState = next.status === 'error'
+        ? next
+        : { ...next, errorMessage: null };
+      if ((normalized.status === 'stopped' || normalized.status === 'error') && !normalized.assistant) {
         const timer = window.setTimeout(() => {
           const currentState = useChatRuntimeStore.getState().streamStateBySession[sessionId];
           if (!currentState) return;
@@ -108,7 +111,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         }, 60_000);
         cleanupTimers.set(sessionId, timer);
       }
-      if (next.status === 'idle' && !next.assistant) {
+      if (normalized.status === 'idle' && !normalized.assistant) {
         // Keep the runtime store minimal; remove idle empty states.
         const schedule = typeof queueMicrotask === 'function'
           ? queueMicrotask
@@ -120,7 +123,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
           }
         });
       }
-      return next;
+      return normalized;
     });
   }, [clearStreamState, setStreamState]);
 
@@ -308,8 +311,9 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
               queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
               return;
             }
-            setSessionStreamState(session.id, { status: 'error', assistant: null });
-            toast.error(e instanceof Error ? e.message : messages.streamingFailed);
+            const errorMessage = e instanceof Error ? e.message : messages.streamingFailed;
+            setSessionStreamState(session.id, { status: 'error', assistant: null, errorMessage });
+            toast.error(errorMessage);
           } finally {
             if (streamControllersRef.current.get(session.id) === controller) {
               streamControllersRef.current.delete(session.id);
@@ -570,8 +574,9 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
         return;
       }
-      setSessionStreamState(runArgs.sessionId, { status: 'error', assistant: null });
-      toast.error(e instanceof Error ? e.message : messages.streamingFailed);
+      const errorMessage = e instanceof Error ? e.message : messages.streamingFailed;
+      setSessionStreamState(runArgs.sessionId, { status: 'error', assistant: null, errorMessage });
+      toast.error(errorMessage);
       queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, runArgs.sessionId) });
       queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
     } finally {

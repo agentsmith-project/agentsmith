@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { MessageSquare, Plus } from 'lucide-react';
+import { AlertTriangle, MessageSquare, Plus } from 'lucide-react';
 
 import type { Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
 import { deriveChatComposerState } from '@/lib/chat/composer-state';
@@ -38,6 +38,7 @@ export interface ChatMainPaneProps {
   disabled: boolean;
   activeStreamStatus: SessionStreamStatus;
   activeStreamingAssistant: SessionStreamingAssistant | null;
+  activeStreamErrorMessage: string | null;
   suppressAutoScroll: boolean;
   createPending: boolean;
   createMessagePending: boolean;
@@ -81,6 +82,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     disabled,
     activeStreamStatus,
     activeStreamingAssistant,
+    activeStreamErrorMessage,
     suppressAutoScroll,
     createPending,
     createMessagePending,
@@ -126,6 +128,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     initAttachmentPending,
   });
   const composerDisabled = composerState !== 'ready';
+  const showStreamErrorBanner = activeStreamStatus === 'error' && Boolean(currentSessionId);
   const composerDisabledReason =
     composerState === 'no_thread'
       ? labels.noActiveThreadHint
@@ -208,6 +211,23 @@ export function ChatMainPane(props: ChatMainPaneProps) {
           />
         )}
       </div>
+
+      {showStreamErrorBanner ? (
+        <div
+          className="mx-4 mb-3 rounded-lg border border-error/30 bg-error/10 px-3 py-2"
+          data-testid="chat__stream-error-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-error" aria-hidden />
+            <div className="min-w-0">
+              <div className="text-sm text-error">{activeStreamErrorMessage || labels.streamErrorHint}</div>
+              <div className="mt-1 text-xs text-tertiary">{labels.streamErrorHint}</div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePicked} />
 

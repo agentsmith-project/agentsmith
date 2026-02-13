@@ -209,6 +209,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const {
     activeStreamStatus,
     activeStreamingAssistant,
+    activeStreamErrorMessage,
     mergedStreamingSessionIds,
     disabled,
   } = buildChatViewModel({
@@ -444,6 +445,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             disabled={disabled}
             activeStreamStatus={activeStreamStatus}
             activeStreamingAssistant={activeStreamingAssistant}
+            activeStreamErrorMessage={activeStreamErrorMessage}
             suppressAutoScroll={suppressAutoScroll}
             createPending={createSessionMutation.isPending}
             createMessagePending={createMessageMutation.isPending}

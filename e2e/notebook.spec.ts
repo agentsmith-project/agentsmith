@@ -118,7 +118,7 @@ test.describe('Notebook Page', () => {
     test('should open edit dialog and submit update payload', async ({ authedPage }) => {
       const patchRequestPromise = authedPage.waitForRequest((req) => {
         return req.method() === 'PATCH'
-          && /\/api\/v1\/workspaces\/.*\/projects\/.*\/tasks\/task_001$/.test(req.url());
+          && /\/api\/v1\/workspaces\/.*\/projects\/.*\/recipes\/task_001$/.test(req.url());
       });
 
       await authedPage.getByRole('button', { name: /edit/i }).click();

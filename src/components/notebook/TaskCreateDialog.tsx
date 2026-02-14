@@ -51,7 +51,12 @@ export function TaskCreateDialog({
     enabled: open && !!workspaceId && !!projectId,
   });
 
-  const agents = agentsData?.items || [];
+  const agents = React.useMemo(
+    () => (agentsData?.items || []).filter(
+      (agent) => agent.status === 'enabled' && agent.interaction_mode !== 'chat',
+    ),
+    [agentsData?.items],
+  );
 
   // Reset form when dialog opens
   React.useEffect(() => {
@@ -60,6 +65,13 @@ export function TaskCreateDialog({
       setAgentId('');
     }
   }, [open]);
+
+  React.useEffect(() => {
+    if (!agentId) return;
+    if (!agents.some((agent) => agent.id === agentId)) {
+      setAgentId('');
+    }
+  }, [agentId, agents]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

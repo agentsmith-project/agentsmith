@@ -40,7 +40,7 @@ export class TaskAPI {
 
     const query = searchParams.toString();
     return this.client.get<TaskListResponse>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks${query ? `?${query}` : ''}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes${query ? `?${query}` : ''}`,
     );
   }
 
@@ -49,7 +49,7 @@ export class TaskAPI {
    */
   async get(workspaceId: string, projectId: string, taskId: string): Promise<Task> {
     return this.client.get<Task>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}`,
     );
   }
 
@@ -62,7 +62,7 @@ export class TaskAPI {
     data: CreateTaskRequest,
   ): Promise<Task> {
     return this.client.post<Task>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes`,
       data,
     );
   }
@@ -77,7 +77,7 @@ export class TaskAPI {
     data: UpdateTaskRequest,
   ): Promise<Task> {
     return this.client.patch<Task>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}`,
       data,
     );
   }
@@ -87,7 +87,7 @@ export class TaskAPI {
    */
   async delete(workspaceId: string, projectId: string, taskId: string): Promise<void> {
     return this.client.delete<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}`,
     );
   }
 
@@ -101,7 +101,7 @@ export class TaskAPI {
     fileIds: string[],
   ): Promise<Task> {
     return this.client.post<Task>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/sources`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}/sources`,
       { source_ids: fileIds },
     );
   }
@@ -116,7 +116,7 @@ export class TaskAPI {
     fileId: string,
   ): Promise<Task> {
     return this.client.delete<Task>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/sources/${fileId}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}/sources/${fileId}`,
     );
   }
 
@@ -129,7 +129,7 @@ export class TaskAPI {
     taskId: string,
   ): Promise<TaskMessage[]> {
     return this.client.get<TaskMessage[]>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/messages`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}/messages`,
     );
   }
 
@@ -143,7 +143,7 @@ export class TaskAPI {
     data: SendMessageRequest,
   ): Promise<TaskMessage> {
     return this.client.post<TaskMessage>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/messages`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}/messages`,
       data,
     );
   }
@@ -157,7 +157,7 @@ export class TaskAPI {
     taskId: string,
   ): Promise<Artifact[]> {
     return this.client.get<Artifact[]>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/artifacts`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}/artifacts`,
     );
   }
 
@@ -172,7 +172,7 @@ export class TaskAPI {
     data: SaveArtifactRequest,
   ): Promise<FileItem> {
     return this.client.post<FileItem>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/artifacts/${artifactId}/save`,
+      `/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}/artifacts/${artifactId}/save`,
       data,
     );
   }
@@ -187,7 +187,7 @@ export class TaskAPI {
     artifactId: string,
   ): Promise<Blob> {
     const { API_BASE } = await import('../client');
-    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/artifacts/${artifactId}/download`;
+    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}/artifacts/${artifactId}/download`;
     const token = this.client.getToken();
 
     const response = await fetch(url, {
@@ -212,7 +212,7 @@ export class TaskAPI {
    * which adds a unified `?ticket=` parameter.
    */
   getSSEUrl(workspaceId: string, projectId: string, taskId: string): string {
-    return `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/events`;
+    return `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/recipes/${taskId}/events`;
   }
 }
 

@@ -874,7 +874,7 @@ export interface paths {
         };
         get: operations["listSourceLibraries"];
         put?: never;
-        post: operations["createSourceLibrary"];
+        post: operations["createFileLibrary"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1330,10 +1330,10 @@ export interface components {
             openai_model: string;
             provider: string;
         };
-        CreateProjectRequest: {
+        CreateFileLibraryRequest: {
             name: string;
         };
-        CreateSourceLibraryRequest: {
+        CreateProjectRequest: {
             name: string;
         };
         Endpoint: {
@@ -1344,14 +1344,14 @@ export interface components {
             openai_model: string;
             provider: string;
         };
+        FileLibrary: {
+            id: string;
+            name: string;
+        };
         Project: {
             id: string;
             name: string;
             workspace_id: string;
-        };
-        SourceLibrary: {
-            id: string;
-            name: string;
         };
         SourceObject: {
             content_type?: string;
@@ -3028,12 +3028,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SourceLibrary"][];
+                    "application/json": components["schemas"]["FileLibrary"][];
                 };
             };
         };
     };
-    createSourceLibrary: {
+    createFileLibrary: {
         parameters: {
             query?: never;
             header?: never;
@@ -3045,7 +3045,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateSourceLibraryRequest"];
+                "application/json": components["schemas"]["CreateFileLibraryRequest"];
             };
         };
         responses: {
@@ -3055,7 +3055,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SourceLibrary"];
+                    "application/json": components["schemas"]["FileLibrary"];
                 };
             };
         };

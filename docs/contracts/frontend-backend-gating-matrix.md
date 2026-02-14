@@ -35,12 +35,12 @@ Backend should enforce 401/403 according to this matrix. Frontend already applie
 | projects list | delete project | `project:settings:manage` | `DELETE /workspaces/{ws}/projects/{project}` | destructive dialog fails gracefully |
 | chat | access chat page and all chat operations | `project:chat:access` | `/chat/sessions`, `/messages`, `/attachments` | page-level permission denied |
 | chat | stream chat via external agent (thread-level binding) | `project:chat:access` + `project:agent:use` | `POST /chat/sessions/{id}/messages/stream` (when `external_agent_id` is set in session) | fail-fast stream error with explicit message |
-| ai-studio list/detail | access studio page and task operations | `project:studio:access` | `GET/POST/PATCH/DELETE /recipes*`, `GET /recipes/{id}/events` | page-level permission denied |
-| sources | view/use sources and libraries | `project:source:use` | `GET /sources*`, `GET /source-libraries*` | page-level permission denied |
-| sources | switch source library context | `project:source:use` | `GET /source-libraries*`, `GET /source-libraries/{libraryId}/files*`, `GET /source-libraries/{libraryId}/ai-ready-jobs*` | keep page visible, block unavailable context with deterministic error |
-| sources | create/update/delete source or library | `project:source:manage` | `POST/PATCH/DELETE /sources*`, `POST/PATCH/DELETE /source-libraries*` | mutating controls disabled |
-| sources | file CRUD in selected library | `project:source:manage` | `POST/PATCH/DELETE /source-libraries/{libraryId}/files*` | mutating controls disabled |
-| sources | start/cancel AIReady job | `project:source:manage` | `POST /source-libraries/{libraryId}/ai-ready-jobs`, `POST /source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel` | mutating controls disabled; keep job status visible |
+| notebook list/detail | access notebook page and task operations | `project:notebook:access` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events` | page-level permission denied |
+| files | view/use files and libraries | `project:source:use` | `GET /sources*`, `GET /source-libraries*` | page-level permission denied |
+| files | switch file library context | `project:source:use` | `GET /source-libraries*`, `GET /source-libraries/{libraryId}/files*`, `GET /source-libraries/{libraryId}/ai-ready-jobs*` | keep page visible, block unavailable context with deterministic error |
+| files | create/update/delete file or library | `project:source:manage` | `POST/PATCH/DELETE /sources*`, `POST/PATCH/DELETE /source-libraries*` | mutating controls disabled |
+| files | file CRUD in selected library | `project:source:manage` | `POST/PATCH/DELETE /source-libraries/{libraryId}/files*` | mutating controls disabled |
+| files | start/cancel AIReady job | `project:source:manage` | `POST /source-libraries/{libraryId}/ai-ready-jobs`, `POST /source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel` | mutating controls disabled; keep job status visible |
 | agents | view/use agents | `project:agent:use` | `GET /agents*`, `GET /agents/{id}/runtime-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
 | agents | create/update/delete agent and keys | `project:agent:manage` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
 | agents runtime | agent websocket connect (external process) | agent service key (`Authorization: Bearer ask_*`) | `GET /api/v1/agent-runtime/ws?agent_id=*` | connection rejected with 401/403 |

@@ -1,14 +1,14 @@
 import { useMutation } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
-import type { SourcesAPI } from '@/lib/api/endpoints/sources';
+import type { FilesAPI } from '@/lib/api/endpoints/files';
 import type { ChatSession, Endpoint } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { chatAttachmentsKey, chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
 
 interface UseChatMutationsArgs {
   chatAPI: ChatAPI;
-  sourcesAPI: SourcesAPI;
+  sourcesAPI: FilesAPI;
   queryClient: QueryClient;
   workspaceId: string;
   projectId: string;

@@ -53,7 +53,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       description: typeof raw.description === 'string' ? raw.description : undefined,
       mode: raw.mode === 'internal' ? 'internal' : 'external',
       interaction_mode:
-        raw.interaction_mode === 'chat' || raw.interaction_mode === 'studio' || raw.interaction_mode === 'both'
+        raw.interaction_mode === 'chat' || raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both'
           ? raw.interaction_mode
           : 'both',
       status: raw.status === 'disabled' ? 'disabled' : 'enabled',
@@ -84,7 +84,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       description: typeof raw.description === 'string' ? raw.description : undefined,
       mode: raw.mode === 'internal' || raw.mode === 'external' ? raw.mode : undefined,
       interaction_mode:
-        raw.interaction_mode === 'chat' || raw.interaction_mode === 'studio' || raw.interaction_mode === 'both'
+        raw.interaction_mode === 'chat' || raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both'
           ? raw.interaction_mode
           : undefined,
       presence:

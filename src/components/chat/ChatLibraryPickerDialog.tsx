@@ -4,8 +4,8 @@ import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Folder, File, ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
-import type { SourcesAPI } from '@/lib/api/endpoints/sources';
-import type { SourceLibrary, SourceObjectItem, SourceObjectsListItem } from '@/lib/api/types';
+import type { FilesAPI } from '@/lib/api/endpoints/files';
+import type { FileLibrary, FileObjectItem, FileObjectsListItem } from '@/lib/api/types';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,7 +16,7 @@ interface ChatLibraryPickerDialogProps {
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
   projectId: string;
-  sourcesAPI: SourcesAPI;
+  sourcesAPI: FilesAPI;
   loading?: boolean;
   onPickObject: (input: {
     libraryId: string;
@@ -128,7 +128,7 @@ export function ChatLibraryPickerDialog(props: ChatLibraryPickerDialogProps) {
                   <SelectValue placeholder={t('library_picker.select_library')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {libraries.map((library: SourceLibrary) => (
+                  {libraries.map((library: FileLibrary) => (
                     <SelectItem key={library.id} value={library.id}>
                       {library.name}
                     </SelectItem>
@@ -194,7 +194,7 @@ export function ChatLibraryPickerDialog(props: ChatLibraryPickerDialogProps) {
                   <span>{t('library_picker.items_count', { count: items.length })}</span>
                 </div>
                 <div className="min-h-0 overflow-auto divide-y divide-subtle">
-                  {items.map((item: SourceObjectsListItem) => {
+                  {items.map((item: FileObjectsListItem) => {
                     if (item.kind === 'prefix') {
                       return (
                         <button
@@ -210,7 +210,7 @@ export function ChatLibraryPickerDialog(props: ChatLibraryPickerDialogProps) {
                       );
                     }
 
-                    const objectItem = item as SourceObjectItem;
+                    const objectItem = item as FileObjectItem;
                     return (
                       <div
                         key={objectItem.key}

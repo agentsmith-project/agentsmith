@@ -22,8 +22,8 @@ Related docs:
 
 1. Keycloak responsibility ends at identity/workspace membership.
 2. Frontend runtime gate is token-only.
-3. Chat and AI Studio are access-only modules in MVP.
-4. Resource usage limits are governed by resource policy rules, not by extra chat/studio quotas.
+3. Chat and Notebook are access-only modules in MVP.
+4. Resource usage limits are governed by resource policy rules, not by extra chat/notebook quotas.
 5. Credentials are governed by `project:credential:manage` only in MVP.
 
 ## Canonical Token Set (MVP)
@@ -36,7 +36,7 @@ Related docs:
 ### Project base and access
 - `project:read`
 - `project:chat:access`
-- `project:studio:access`
+- `project:notebook:access`
 
 ### Resources
 - `project:source:use`
@@ -62,8 +62,8 @@ Related docs:
 - Projects list: `workspace:read`
 - Project overview: `project:read`
 - Chat: `project:chat:access`
-- AI Studio list/detail: `project:studio:access`
-- Sources: `project:source:use`
+- Notebook list/detail: `project:notebook:access`
+- Files: `project:source:use`
 - Endpoints: `project:endpoint:use`
 - Agents: `project:agent:use`
 - Members: `project:member:view`

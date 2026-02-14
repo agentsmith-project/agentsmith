@@ -2,32 +2,32 @@
  * Next.js Middleware
  *
  * Runs next-intl middleware for locale-from-URL (so /zh-CN/ shows Chinese),
- * plus custom route validation (e.g. invalid recipe ID redirect).
+ * plus custom route validation (e.g. invalid task ID redirect).
  */
 
 import createMiddleware from 'next-intl/middleware';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { routing } from '@/lib/i18n/routing';
-import { validateRecipeId } from '@/lib/utils/validation';
+import { validateTaskId } from '@/lib/utils/validation';
 
 const intlMiddleware = createMiddleware(routing);
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Custom: invalid recipe ID -> redirect to studio list
-  // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/studio/recipes/[recipeId]
-  const recipeMatch = pathname.match(
-    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/studio\/recipes\/([^/]+)/,
+  // Custom: invalid task ID -> redirect to notebook list
+  // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/notebook/tasks/[taskId]
+  const taskMatch = pathname.match(
+    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/notebook\/tasks\/([^/]+)/,
   );
 
-  if (recipeMatch) {
-    const [, locale, workspace, project, recipeId] = recipeMatch;
-    const validation = validateRecipeId(recipeId);
+  if (taskMatch) {
+    const [, locale, workspace, project, taskId] = taskMatch;
+    const validation = validateTaskId(taskId);
     if (!validation.valid) {
       const redirectUrl = new URL(
-        `/${locale}/workspaces/${workspace}/projects/${project}/studio`,
+        `/${locale}/workspaces/${workspace}/projects/${project}/notebook`,
         request.url,
       );
       return NextResponse.redirect(redirectUrl);

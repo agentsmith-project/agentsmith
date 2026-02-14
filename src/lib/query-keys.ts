@@ -122,42 +122,42 @@ export const queryKeys = {
       ['governance-defaults', workspaceId, projectId] as const,
   },
 
-  /** Sources (files) */
-  sources: {
-    _def: ['sources'] as const,
+  /** Files */
+  files: {
+    _def: ['files'] as const,
     list: (workspaceId: string, projectId: string, params?: object) =>
-      ['sources', workspaceId, projectId, params] as const,
+      ['files', workspaceId, projectId, params] as const,
     detail: (workspaceId: string, projectId: string, fileId: string) =>
-      ['source', workspaceId, projectId, fileId] as const,
+      ['file', workspaceId, projectId, fileId] as const,
   },
 
-  /** Source libraries */
-  sourceLibraries: {
-    _def: ['source-libraries'] as const,
+  /** File libraries */
+  fileLibraries: {
+    _def: ['file-libraries'] as const,
     list: (workspaceId: string, projectId: string) =>
-      ['source-libraries', workspaceId, projectId] as const,
+      ['file-libraries', workspaceId, projectId] as const,
   },
 
-  /** Source objects (MinIO-like browser) */
-  sourceObjects: {
-    _def: ['source-objects'] as const,
+  /** File objects (MinIO-like browser) */
+  fileObjects: {
+    _def: ['file-objects'] as const,
     list: (workspaceId: string, projectId: string, libraryId: string, params?: object) =>
-      ['source-objects', workspaceId, projectId, libraryId, params] as const,
+      ['file-objects', workspaceId, projectId, libraryId, params] as const,
     meta: (workspaceId: string, projectId: string, libraryId: string, key: string) =>
-      ['source-object-meta', workspaceId, projectId, libraryId, key] as const,
+      ['file-object-meta', workspaceId, projectId, libraryId, key] as const,
   },
 
-  /** Recipes (studio) */
-  recipes: {
-    _def: ['recipes'] as const,
+  /** Tasks (notebook) */
+  tasks: {
+    _def: ['tasks'] as const,
     list: (workspaceId: string, projectId: string, params?: object) =>
-      ['recipes', workspaceId, projectId, params] as const,
-    detail: (workspaceId: string, projectId: string, recipeId: string) =>
-      ['recipe', workspaceId, projectId, recipeId] as const,
-    messages: (workspaceId: string, projectId: string, recipeId: string) =>
-      ['recipe-messages', workspaceId, projectId, recipeId] as const,
-    artifacts: (workspaceId: string, projectId: string, recipeId: string) =>
-      ['recipe-artifacts', workspaceId, projectId, recipeId] as const,
+      ['tasks', workspaceId, projectId, params] as const,
+    detail: (workspaceId: string, projectId: string, taskId: string) =>
+      ['task', workspaceId, projectId, taskId] as const,
+    messages: (workspaceId: string, projectId: string, taskId: string) =>
+      ['task-messages', workspaceId, projectId, taskId] as const,
+    artifacts: (workspaceId: string, projectId: string, taskId: string) =>
+      ['task-artifacts', workspaceId, projectId, taskId] as const,
   },
 
   /** Agents */

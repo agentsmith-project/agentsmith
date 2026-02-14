@@ -10,10 +10,10 @@ import {
   useHasAnyPermission,
   useHasAllPermissions,
   useCanAccessChat,
-  useCanAccessStudio,
-  useCanCreateRecipe,
-  useCanUpdateRecipe,
-  useCanDeleteRecipe,
+  useCanAccessNotebook,
+  useCanCreateTask,
+  useCanUpdateTask,
+  useCanDeleteTask,
 } from '../use-permissions';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -186,7 +186,7 @@ describe('use-permissions hooks', () => {
     });
   });
 
-  describe('chat/studio access hooks', () => {
+  describe('chat/notebook access hooks', () => {
     it('useCanAccessChat should require project:chat:access', () => {
       const mockProject = {
         id: 'proj_001',
@@ -209,7 +209,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('useCanAccessStudio should require project:studio:access', () => {
+    it('useCanAccessNotebook should require project:notebook:access', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -219,19 +219,19 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:studio:access'],
+        permissions: ['project:notebook:access'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useCanAccessStudio(), {
+      const { result } = renderHook(() => useCanAccessNotebook(), {
         wrapper: createWrapper(),
       });
 
       expect(result.current).toBe(true);
     });
 
-    it('studio recipe capability hooks should all follow studio access', () => {
+    it('notebook task capability hooks should all follow notebook access', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -241,18 +241,18 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:studio:access'],
+        permissions: ['project:notebook:access'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result: createResult } = renderHook(() => useCanCreateRecipe(), {
+      const { result: createResult } = renderHook(() => useCanCreateTask(), {
         wrapper: createWrapper(),
       });
-      const { result: updateResult } = renderHook(() => useCanUpdateRecipe(), {
+      const { result: updateResult } = renderHook(() => useCanUpdateTask(), {
         wrapper: createWrapper(),
       });
-      const { result: deleteResult } = renderHook(() => useCanDeleteRecipe(), {
+      const { result: deleteResult } = renderHook(() => useCanDeleteTask(), {
         wrapper: createWrapper(),
       });
 

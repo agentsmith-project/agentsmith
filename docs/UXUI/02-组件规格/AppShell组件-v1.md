@@ -23,7 +23,7 @@
   - 菜单项高度保持 `40px`，图标保持 `20px`，保证可读性不下降
 - 页面空间利用策略：
   - Sidebar 继续保持“不滚动”，仅内容区滚动
-  - Chat / AI Studio 页面推荐沉浸式内容布局（减少外圈留白）
+  - Chat / Notebook 页面推荐沉浸式内容布局（减少外圈留白）
 
 ---
 
@@ -35,7 +35,7 @@
 中间：
 - Workspace Switcher（见入口规格）
 - Project Switcher（见入口规格）
-- Mode Switcher：Chat / AI Studio（在 project 内显示）
+- Mode Switcher：Chat / Notebook（在 project 内显示）
 
 右侧：
 - 全局 loading/connection 状态（可选：SSE/WS indicator）

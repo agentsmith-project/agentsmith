@@ -27,7 +27,7 @@ export function isValidUUIDv7(id: string): boolean {
 
 /**
  * Check if a string looks like a reserved route name
- * (e.g., 'chat', 'overview', 'sources', etc.)
+ * (e.g., 'chat', 'overview', 'files', etc.)
  *
  * @param id - String to check
  * @returns True if it looks like a reserved route
@@ -36,15 +36,15 @@ export function isReservedRouteName(id: string): boolean {
   const reservedRoutes = [
     'chat',
     'overview',
-    'sources',
+    'files',
     'agents',
     'endpoints',
     'members',
     'settings',
     'audit',
     'usage',
-    'studio',
-    'recipes',
+    'notebook',
+    'tasks',
     'api',
     'auth',
     'login',
@@ -54,28 +54,28 @@ export function isReservedRouteName(id: string): boolean {
 }
 
 /**
- * Validate recipe ID format
- * Recipe IDs must be UUIDv7 format and not reserved route names
+ * Validate task ID format
+ * Task IDs must be UUIDv7 format and not reserved route names
  *
- * @param recipeId - Recipe ID to validate
+ * @param taskId - Task ID to validate
  * @returns Validation result with error message if invalid
  */
-export function validateRecipeId(recipeId: string): { valid: boolean; error?: string } {
-  if (!recipeId || typeof recipeId !== 'string') {
-    return { valid: false, error: 'Recipe ID is required' };
+export function validateTaskId(taskId: string): { valid: boolean; error?: string } {
+  if (!taskId || typeof taskId !== 'string') {
+    return { valid: false, error: 'Task ID is required' };
   }
 
-  if (isReservedRouteName(recipeId)) {
+  if (isReservedRouteName(taskId)) {
     return {
       valid: false,
-      error: `'${recipeId}' is a reserved route name and cannot be used as a recipe ID`,
+      error: `'${taskId}' is a reserved route name and cannot be used as a task ID`,
     };
   }
 
-  // For now, we accept any non-reserved string as recipe ID
+  // For now, we accept any non-reserved string as task ID
   // In production, you might want to enforce UUIDv7 format:
-  // if (!isValidUUIDv7(recipeId)) {
-  //   return { valid: false, error: 'Recipe ID must be a valid UUIDv7 format' };
+  // if (!isValidUUIDv7(taskId)) {
+  //   return { valid: false, error: 'Task ID must be a valid UUIDv7 format' };
   // }
 
   return { valid: true };

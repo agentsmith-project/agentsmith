@@ -121,22 +121,22 @@ export function useCanManageChatSessions(): boolean {
   return useCanAccessChat();
 }
 
-export function useCanAccessStudio(): boolean {
-  return useHasPermission('project:studio:access');
+export function useCanAccessNotebook(): boolean {
+  return useHasPermission('project:notebook:access');
 }
 
-export function useCanReadRecipes(): boolean {
-  return useCanAccessStudio();
+export function useCanReadTasks(): boolean {
+  return useCanAccessNotebook();
 }
 
-export function useCanCreateRecipe(): boolean {
-  return useCanAccessStudio();
+export function useCanCreateTask(): boolean {
+  return useCanAccessNotebook();
 }
 
-export function useCanUpdateRecipe(): boolean {
-  return useCanAccessStudio();
+export function useCanUpdateTask(): boolean {
+  return useCanAccessNotebook();
 }
 
-export function useCanDeleteRecipe(): boolean {
-  return useCanAccessStudio();
+export function useCanDeleteTask(): boolean {
+  return useCanAccessNotebook();
 }

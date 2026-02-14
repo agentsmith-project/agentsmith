@@ -3,7 +3,7 @@ import type { WorkspaceRecord } from './resource-models.js';
 export const OWNER_PROJECT_PERMISSIONS = [
   'project:read',
   'project:chat:access',
-  'project:studio:access',
+  'project:notebook:access',
   'project:source:use',
   'project:source:manage',
   'project:endpoint:use',

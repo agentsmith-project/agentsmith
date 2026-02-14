@@ -14,7 +14,7 @@ This directory contains frontend-specific type definitions that are not part of 
 
 **Examples**:
 - `UsageKPI`, `UsageRecord`, `AuditEvent` (from backend API)
-- `SourceFileWithAIReady` (matches backend schema)
+- `FileItemWithAIReady` (matches backend schema)
 - `PaginationParams`, `PaginatedResponse` (API contract)
 
 ### `lib/types/`
@@ -27,12 +27,12 @@ This directory contains frontend-specific type definitions that are not part of 
 - Frontend-only utility types
 
 **Examples**:
-- `Recipe`, `RecipeMessage`, `Artifact` (if these are frontend-only transformations)
+- `Task`, `TaskMessage`, `Artifact` (if these are frontend-only transformations)
 - Component-specific prop interfaces
 
 ## Migration Notes
 
-If a type is used by both frontend and backend (e.g., `Recipe`), it should be placed in `lib/api/types/` to ensure consistency with the backend contract.
+If a type is used by both frontend and backend (e.g., `Task`), it should be placed in `lib/api/types/` to ensure consistency with the backend contract.
 
 If a type is only used in the frontend (e.g., component props, local state), it can remain in `lib/types/`.
 

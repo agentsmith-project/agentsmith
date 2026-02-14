@@ -195,18 +195,18 @@
     "thread_info_id": "线程 ID",
     "thread_info_status": "状态",
     "thread_info_user": "最终用户",
-    "recipe": {
-      "title": "Recipe",
-      "new": "新建 Recipe",
-      "create": "创建 Recipe",
-      "create_title": "Recipe 标题",
+    "task": {
+      "title": "Task",
+      "new": "新建 Task",
+      "create": "创建 Task",
+      "create_title": "Task 标题",
       "select_agent": "选择 Agent",
       "agent_fixed_notice": "创建后 Agent 不可更改",
       "history_immutable_notice": "对话历史不可修改",
-      "leave": "离开 Recipe",
+      "leave": "离开 Task",
       "leave_tooltip": "返回 AI Studio 列表，任务将在后台继续运行",
-      "delete": "删除 Recipe",
-      "delete_confirm_message": "确定要删除此 Recipe 吗？此操作不可撤销。所有消息和生成物将被永久删除。",
+      "delete": "删除 Task",
+      "delete_confirm_message": "确定要删除此 Task 吗？此操作不可撤销。所有消息和生成物将被永久删除。",
       "delete_cancel": "取消",
       "status": {
         "active": "活跃",
@@ -216,13 +216,13 @@
     },
     "attached_sources": {
       "title": "已附加来源",
-      "subtitle": "附加到此 Recipe 的文件",
+      "subtitle": "附加到此 Task 的文件",
       "add": "添加来源",
       "remove": "移除",
       "empty": "未附加任何来源",
       "empty_description": "从您的文件库中添加 AIReady 文件，为 Agent 提供上下文",
       "select_dialog": {
-        "title": "添加来源到 Recipe",
+        "title": "添加来源到 Task",
         "description": "从您的文件库中选择 AIReady 文件作为上下文",
         "search_placeholder": "搜索您的文件...",
         "confirm": "添加选中",
@@ -230,8 +230,8 @@
         "from_library": "来自您的文件库"
       },
       "tooltip": {
-        "attached_file": "此文件已附加到此 Recipe 作为上下文",
-        "remove_file": "从 Recipe 中移除（文件仍保留在您的文件库中）"
+        "attached_file": "此文件已附加到此 Task 作为上下文",
+        "remove_file": "从 Task 中移除（文件仍保留在您的文件库中）"
       }
     },
     "conversation": {

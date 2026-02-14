@@ -150,7 +150,7 @@ export interface AgentRecord {
     max_concurrent_sessions_override?: number;
   };
   runtime_preferences_json?: Record<string, unknown>;
-  interaction_mode?: 'chat' | 'studio' | 'both';
+  interaction_mode?: 'chat' | 'notebook' | 'both';
   owner_id?: string;
   admin_id?: string;
   capabilities?: {

@@ -50,8 +50,8 @@ export {
   UserAPIKeyService,
   MeAPI,
   ChatAPI,
-  SourcesAPI,
-  RecipeAPI,
+  FilesAPI,
+  TaskAPI,
 } from './endpoints';
 
 export type {
@@ -68,15 +68,15 @@ export type {
   CreateUserKeyRequest,
   CreateSessionRequest,
   CreateMessageRequest,
-  Recipe,
-  RecipeMessage,
+  Task,
+  TaskMessage,
   Artifact,
-  CreateRecipeRequest,
-  UpdateRecipeRequest,
+  CreateTaskRequest,
+  UpdateTaskRequest,
   SendMessageRequest,
   SaveArtifactRequest,
-  RecipeListParams,
-  RecipeListResponse,
+  TaskListParams,
+  TaskListResponse,
 } from './endpoints';
 
 // Adapters (for advanced usage)

@@ -14,8 +14,8 @@ export { AuditAPI, UsageAPI } from './audit-usage';
 export { UserAPIKeyService } from './user-keys';
 export { MeAPI } from './me';
 export { ChatAPI } from './chat';
-export { SourcesAPI } from './sources';
-export { RecipeAPI } from './recipes';
+export { FilesAPI } from './files';
+export { TaskAPI } from './tasks';
 
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';
@@ -31,13 +31,13 @@ export type { UsageKPI } from '../types';
 export type { CreateUserKeyRequest } from './user-keys';
 export type { CreateSessionRequest, CreateMessageRequest } from './chat';
 export type {
-  Recipe,
-  RecipeMessage,
+  Task,
+  TaskMessage,
   Artifact,
-  CreateRecipeRequest,
-  UpdateRecipeRequest,
+  CreateTaskRequest,
+  UpdateTaskRequest,
   SendMessageRequest,
   SaveArtifactRequest,
-  RecipeListParams,
-  RecipeListResponse,
-} from './recipes';
+  TaskListParams,
+  TaskListResponse,
+} from './tasks';

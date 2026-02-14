@@ -64,7 +64,7 @@ test.describe('Overview Page', () => {
 
     // Quick access should contain navigation links to key sections
     await expect(quickAccess.getByText(/Chat/i).first()).toBeVisible();
-    await expect(quickAccess.getByText(/AI Studio|Workbench/i).first()).toBeVisible();
+    await expect(quickAccess.getByText(/Notebook|Workbench/i).first()).toBeVisible();
     await expect(quickAccess.getByText(/Agents/i).first()).toBeVisible();
     await expect(quickAccess.getByText(/Endpoints/i).first()).toBeVisible();
   });

@@ -104,8 +104,8 @@ export interface AgentDiagnostics {
   memory_mb?: number;
 }
 
-/** Expected interaction mode: chat, studio, or both */
-export type AgentInteractionMode = 'chat' | 'studio' | 'both';
+/** Expected interaction mode: chat, notebook, or both */
+export type AgentInteractionMode = 'chat' | 'notebook' | 'both';
 
 export interface Agent {
   id: string;
@@ -130,7 +130,7 @@ export interface Agent {
   /** Maintainer (admin) */
   admin_id?: string;
   admin_name?: string;
-  /** Expected interaction: chat, studio, or both */
+  /** Expected interaction: chat, notebook, or both */
   interaction_mode?: AgentInteractionMode;
   capabilities?: {
     streaming_completion?: boolean;
@@ -367,7 +367,7 @@ export interface Attachment {
 }
 
 // ============================================================
-// AI Studio (Agent Thread & Turn)
+// Notebook (Agent Thread & Turn)
 // ============================================================
 
 export interface AgentThread {
@@ -505,12 +505,12 @@ export interface CreateUserKeyResponse extends UserAPIKey {
 }
 
 // ============================================================
-// Sources (File Management & AIReady)
+// Files (File Management & AIReady)
 // ============================================================
 
 export type AIReadyStatus = 'idle' | 'preparing' | 'ready' | 'failed' | 'cancelled';
 
-export interface SourceFile {
+export interface FileItem {
   id: string;
   workspace_id: string;
   project_id: string;
@@ -547,7 +547,7 @@ export interface AIReadyUsage {
   embedding_tokens?: number;
 }
 
-export interface SourceFileWithAIReady extends SourceFile {
+export interface FileItemWithAIReady extends FileItem {
   ai_ready?: AIReadyJob;
   ai_ready_usage?: AIReadyUsage;
 }
@@ -567,7 +567,7 @@ export interface QuotaSummary {
   };
 }
 
-export interface SourcesListParams extends PaginationParams {
+export interface FilesListParams extends PaginationParams {
   search?: string;
   library_id?: string;
   status?: AIReadyStatus | 'all';
@@ -576,9 +576,9 @@ export interface SourcesListParams extends PaginationParams {
   sort_order?: 'asc' | 'desc';
 }
 
-export type SourcesListResponse = PaginatedResponse<SourceFileWithAIReady>;
+export type FilesListResponse = PaginatedResponse<FileItemWithAIReady>;
 
-export interface SourceLibrary {
+export interface FileLibrary {
   id: string;
   workspace_id: string;
   project_id: string;
@@ -595,10 +595,10 @@ export interface SourceLibrary {
 }
 
 // ============================================================
-// Sources (Object Browser / MinIO-like File Manager)
+// Files (Object Browser / MinIO-like File Manager)
 // ============================================================
 
-export interface SourcePrefixItem {
+export interface FilePrefixItem {
   kind: 'prefix';
   /** Normalized prefix with trailing slash, e.g. `docs/specs/`. */
   prefix: string;
@@ -606,7 +606,7 @@ export interface SourcePrefixItem {
   name: string;
 }
 
-export interface SourceObjectItem {
+export interface FileObjectItem {
   kind: 'object';
   key: string;
   name: string;
@@ -616,9 +616,9 @@ export interface SourceObjectItem {
   last_modified: string;
 }
 
-export type SourceObjectsListItem = SourcePrefixItem | SourceObjectItem;
+export type FileObjectsListItem = FilePrefixItem | FileObjectItem;
 
-export interface SourceObjectsListParams {
+export interface FileObjectsListParams {
   prefix?: string;
   delimiter?: '/';
   page_size?: number;
@@ -628,13 +628,13 @@ export interface SourceObjectsListParams {
   sort_order?: 'asc' | 'desc';
 }
 
-export interface SourceObjectsListResponse {
+export interface FileObjectsListResponse {
   prefix: string;
-  items: SourceObjectsListItem[];
+  items: FileObjectsListItem[];
   next_continuation_token?: string | null;
 }
 
-export interface SourceObjectMeta {
+export interface FileObjectMeta {
   key: string;
   size_bytes: number;
   content_type: string;
@@ -643,7 +643,7 @@ export interface SourceObjectMeta {
   user_metadata?: Record<string, string>;
 }
 
-export interface SourceObjectShareLink {
+export interface FileObjectShareLink {
   key: string;
   url: string;
   expires_at: string;

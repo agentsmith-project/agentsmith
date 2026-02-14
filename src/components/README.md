@@ -18,8 +18,8 @@ This directory contains all React components for the MBOS frontend application.
 **Purpose**: Module-specific components.
 
 **Examples**:
-- `components/sources/` - Sources module components
-- `components/studio/` - AI Studio / Task module components (directory name kept for compatibility)
+- `components/files/` - Files module components
+- `components/notebook/` - Notebook / Task module components
 - `components/audit-usage/` - Audit & Usage module components
 
 ### Shared Components
@@ -72,8 +72,8 @@ Some components are shared across multiple modules:
 
 ### Component Naming
 
-- Use PascalCase: `RecipeList.tsx`, `SourceSelectDialog.tsx`
-- Be descriptive: `RecipeCreateDialog` not `CreateDialog`
+- Use PascalCase: `TaskList.tsx`, `FileSelectDialog.tsx`
+- Be descriptive: `TaskCreateDialog` not `CreateDialog`
 - Match file name to component name
 
 ### Component Structure

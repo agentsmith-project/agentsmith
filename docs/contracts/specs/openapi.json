@@ -923,7 +923,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/SourceLibrary"
+                    "$ref": "#/components/schemas/FileLibrary"
                   }
                 }
               }
@@ -935,13 +935,13 @@
         "tags": [
           "Sources"
         ],
-        "operationId": "createSourceLibrary",
+        "operationId": "createFileLibrary",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateSourceLibraryRequest"
+                "$ref": "#/components/schemas/CreateFileLibraryRequest"
               }
             }
           }
@@ -952,7 +952,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceLibrary"
+                  "$ref": "#/components/schemas/FileLibrary"
                 }
               }
             }
@@ -3310,7 +3310,7 @@
           }
         ]
       },
-      "SourceLibrary": {
+      "FileLibrary": {
         "type": "object",
         "required": [
           "id",
@@ -3325,7 +3325,7 @@
           }
         }
       },
-      "CreateSourceLibraryRequest": {
+      "CreateFileLibraryRequest": {
         "type": "object",
         "required": [
           "name"

@@ -524,24 +524,24 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/SourceLibrary"
+                  $ref: "#/components/schemas/FileLibrary"
     post:
       tags:
         - Sources
-      operationId: createSourceLibrary
+      operationId: createFileLibrary
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateSourceLibraryRequest"
+              $ref: "#/components/schemas/CreateFileLibraryRequest"
       responses:
         "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SourceLibrary"
+                $ref: "#/components/schemas/FileLibrary"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -2036,7 +2036,7 @@ components:
     UpdateEndpointRequest:
       allOf:
         - $ref: "#/components/schemas/CreateEndpointRequest"
-    SourceLibrary:
+    FileLibrary:
       type: object
       required:
         - id
@@ -2046,7 +2046,7 @@ components:
           type: string
         name:
           type: string
-    CreateSourceLibraryRequest:
+    CreateFileLibraryRequest:
       type: object
       required:
         - name

@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { AgentAPI, EndpointAPI, MemberAPI, SourcesAPI, getApiClient } from '@/lib/api';
+import { AgentAPI, EndpointAPI, MemberAPI, FilesAPI, getApiClient } from '@/lib/api';
 import type { Member, ProjectGroup } from '@/lib/api/endpoints/members';
 import type {
   Agent,
@@ -18,7 +18,7 @@ import type {
   PolicyRuleKey,
   ResourcePolicy,
   ResourcePolicyUpdateRequest,
-  SourceLibrary,
+  FileLibrary,
 } from '@/lib/api/types';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -89,7 +89,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
   const endpointAPI = useMemo(() => new EndpointAPI(getApiClient()), []);
-  const sourcesAPI = useMemo(() => new SourcesAPI(getApiClient()), []);
+  const sourcesAPI = useMemo(() => new FilesAPI(getApiClient()), []);
   const agentAPI = useMemo(() => new AgentAPI(getApiClient()), []);
   const memberAPI = useMemo(() => new MemberAPI(getApiClient()), []);
 
@@ -117,7 +117,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       name: item.name,
       subtitle: item.openai_model,
     }));
-    const sourceLibraries = (librariesData?.items ?? []).map((item: SourceLibrary) => ({
+    const sourceLibraries = (librariesData?.items ?? []).map((item: FileLibrary) => ({
       id: item.id,
       type: 'source_library' as const,
       name: item.name,

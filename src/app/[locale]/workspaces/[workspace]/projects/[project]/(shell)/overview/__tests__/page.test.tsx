@@ -50,7 +50,7 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
   useCurrentPermissions: vi.fn(() => [
     'project:chat:access',
-    'project:studio:access',
+    'project:notebook:access',
     'project:agent:use',
     'project:endpoint:use',
     'project:member:view',

@@ -10,7 +10,7 @@ import {
 import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from './EmptyState';
-import { SourcesTableSkeleton } from '@/components/sources/SourcesTableSkeleton';
+import { FilesTableSkeleton } from '@/components/files/FilesTableSkeleton';
 import { formatNumber, formatBytes, formatDuration } from '@/lib/utils/formatters';
 import { useTranslations } from 'next-intl';
 import type { UsageRecord } from '@/lib/api/types';
@@ -143,7 +143,7 @@ export function UsageTable({ data, loading = false, onClearFilters, hasActiveFil
   });
 
   if (loading) {
-    return <SourcesTableSkeleton />;
+    return <FilesTableSkeleton />;
   }
 
   if (data.length === 0) {

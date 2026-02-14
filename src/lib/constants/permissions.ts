@@ -11,7 +11,7 @@ export const PLATFORM_PERMISSIONS = {
 
   PROJECT_BASE: ['project:read'] as const,
 
-  ACCESS: ['project:chat:access', 'project:studio:access'] as const,
+  ACCESS: ['project:chat:access', 'project:notebook:access'] as const,
 
   SOURCE: ['project:source:use', 'project:source:manage'] as const,
 
@@ -50,7 +50,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'workspace:governance:update': 'Update workspace governance groups',
   'project:read': 'View project shell and overview',
   'project:chat:access': 'Access chat page and features',
-  'project:studio:access': 'Access AI Studio page and tasks',
+  'project:notebook:access': 'Access Notebook page and tasks',
   'project:source:use': 'Use source libraries and files',
   'project:source:manage': 'Manage source libraries and files',
   'project:endpoint:use': 'Use model endpoints',
@@ -74,7 +74,7 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
   },
   {
     id: 'access',
-    name: 'Chat / Studio Access',
+    name: 'Chat / Notebook Access',
     permissions: PLATFORM_PERMISSIONS.ACCESS,
   },
   {

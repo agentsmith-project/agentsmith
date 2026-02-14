@@ -110,6 +110,30 @@ const TEST_TRANSLATIONS: Record<string, string> = {
   'streaming_failed': 'Streaming failed',
   'stream_error': 'Stream error',
   'upload_failed': 'Upload failed',
+  'notebook.conversation.input_placeholder': 'Type your message...',
+  'notebook.conversation.send': 'Send',
+  'notebook.conversation.hotkey_compose': 'Enter to send · Shift+Enter for newline',
+  'notebook.task.important': 'Important:',
+  'notebook.artifacts.title': 'Artifacts',
+  'notebook.artifacts.empty': 'No artifacts yet',
+  'notebook.artifacts.empty_description': 'Start a conversation to generate artifacts',
+  'notebook.artifacts.filter.all': 'All',
+  'notebook.artifacts.filter.text': 'Text',
+  'notebook.artifacts.filter.image': 'Image',
+  'notebook.artifacts.filter.file': 'File',
+  'notebook.artifacts.filter.other': 'Other',
+  'notebook.artifacts.save_dialog.title': 'Save Artifact to Library',
+  'notebook.artifacts.save_dialog.description': "Save this artifact to your file library. You'll need to start AIReady processing separately if you want to use it in tasks.",
+  'notebook.artifacts.save_dialog.filename_optional': 'Filename (optional)',
+  'notebook.artifacts.save_dialog.filename_placeholder': 'Enter filename',
+  'notebook.artifacts.save_dialog.description_optional': 'Description (optional)',
+  'notebook.artifacts.save_dialog.description_placeholder': 'Enter description',
+  'notebook.artifacts.save_dialog.note_title': 'Note:',
+  'notebook.artifacts.save_dialog.note_body': 'Saved files need to be processed with AIReady before they can be used in tasks.',
+  'notebook.artifacts.save_dialog.confirm': 'Save to Library',
+  'notebook.artifacts.image_viewer.default_title': 'Image Artifact',
+  'notebook.artifacts.image_viewer.created_at': 'Created {date}',
+  'notebook.artifacts.image_viewer.no_image': 'No image available',
   assistant: 'Assistant',
 };
 
@@ -124,6 +148,12 @@ function mockTranslate(
 }
 
 vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string, values?: Record<string, string | number | Date>) => mockTranslate(key, values),
+  useTranslations: (namespace?: string) => (key: string, values?: Record<string, string | number | Date>) => {
+    if (!namespace) return mockTranslate(key, values);
+    const scopedKey = `${namespace}.${key}`;
+    const scoped = mockTranslate(scopedKey, values);
+    if (scoped !== scopedKey) return scoped;
+    return mockTranslate(key, values);
+  },
   useLocale: () => 'en-US',
 }));

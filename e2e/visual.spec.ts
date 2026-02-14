@@ -97,14 +97,14 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('chat-ultrawide.png', { fullPage: true });
   });
 
-  test('studio', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('studio'));
-    await expect(authedPage).toHaveScreenshot('studio.png', { fullPage: true });
+  test('notebook', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('notebook'));
+    await expect(authedPage).toHaveScreenshot('notebook.png', { fullPage: true });
   });
 
-  test('studio recipe detail', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('studio/recipes/recipe_001'));
-    await expect(authedPage).toHaveScreenshot('studio-recipe-detail.png', { fullPage: true });
+  test('notebook task detail', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('notebook/tasks/task_001'));
+    await expect(authedPage).toHaveScreenshot('notebook-task-detail.png', { fullPage: true });
   });
 
   test('agents', async ({ authedPage }) => {
@@ -127,9 +127,9 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('members.png', { fullPage: true });
   });
 
-  test('sources', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('sources'));
-    await expect(authedPage).toHaveScreenshot('sources.png', { fullPage: true });
+  test('files', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('files'));
+    await expect(authedPage).toHaveScreenshot('files.png', { fullPage: true });
   });
 
   test('audit', async ({ authedPage }) => {
@@ -216,22 +216,22 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('dialog-invite-member.png');
   });
 
-  test('sources - create folder dialog', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('sources'));
-    await authedPage.getByTestId('sources__new-folder').click();
+  test('files - create folder dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('files'));
+    await authedPage.getByTestId('files__new-folder').click();
     await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('dialog-sources-create-folder.png');
+    await expect(authedPage).toHaveScreenshot('dialog-files-create-folder.png');
   });
 
-  test('sources - rename dialog', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('sources'));
-    const row = authedPage.getByTestId('sources__object-row').filter({ hasText: 'README.txt' }).first();
+  test('files - rename dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('files'));
+    const row = authedPage.getByTestId('files__object-row').filter({ hasText: 'README.txt' }).first();
     await expect(row).toBeVisible();
     await row.getByRole('button').click();
-    await authedPage.getByTestId('sources__rename').click();
-    await expect(authedPage.getByTestId('sources__dialog__move')).toBeVisible();
+    await authedPage.getByTestId('files__rename').click();
+    await expect(authedPage.getByTestId('files__dialog__move')).toBeVisible();
     await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('dialog-sources-rename.png');
+    await expect(authedPage).toHaveScreenshot('dialog-files-rename.png');
   });
 
   test('create API key dialog', async ({ authedPage }) => {

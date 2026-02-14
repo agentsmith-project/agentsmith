@@ -119,19 +119,19 @@ test.describe('Settings Form Interaction', () => {
 
 test.describe('Table Selection', () => {
   test('source table supports row selection via checkboxes', async ({ authedPage }) => {
-    await goToProject(authedPage, 'sources');
+    await goToProject(authedPage, 'files');
 
-    const table = authedPage.getByTestId('sources__objects-table');
+    const table = authedPage.getByTestId('files__objects-table');
     await expect(table).toBeVisible({ timeout: 10000 });
 
-    const rows = authedPage.getByTestId('sources__object-row');
+    const rows = authedPage.getByTestId('files__object-row');
     await expect(rows.first()).toBeVisible({ timeout: 10000 });
 
     // Enter multi-select mode via Ctrl/Cmd click and verify selection summary.
     await rows.first().getByRole('button').click({
       modifiers: process.platform === 'darwin' ? ['Meta'] : ['Control'],
     });
-    await expect(authedPage.getByTestId('sources__selection-summary')).toBeVisible({ timeout: 5000 });
+    await expect(authedPage.getByTestId('files__selection-summary')).toBeVisible({ timeout: 5000 });
   });
 
   test('members table supports row selection', async ({ authedPage }) => {

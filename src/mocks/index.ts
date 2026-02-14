@@ -5,12 +5,12 @@ import { endpointHandlers } from './handlers/endpoints';
 import { agentHandlers } from './handlers/agents';
 import { credentialHandlers } from './handlers/credentials';
 import { memberHandlers } from './handlers/members';
-import { sourceHandlers } from './handlers/sources';
+import { fileHandlers } from './handlers/files';
 import { auditHandlers } from './handlers/audit';
 import { usageHandlers } from './handlers/usage';
 import { chatHandlers } from './handlers/chat';
-import { studioHandlers } from './handlers/studio';
-import { recipeHandlers } from './handlers/recipes';
+import { notebookHandlers } from './handlers/notebook';
+import { taskHandlers } from './handlers/tasks';
 import { meHandlers } from './handlers/me';
 import { userKeyHandlers } from './handlers/user-keys';
 
@@ -23,11 +23,11 @@ export const handlers = [
   ...agentHandlers,
   ...credentialHandlers,
   ...memberHandlers,
-  ...sourceHandlers,
+  ...fileHandlers,
   ...auditHandlers,
   ...usageHandlers,
   ...chatHandlers,
-  ...studioHandlers,
-  ...recipeHandlers,
+  ...notebookHandlers,
+  ...taskHandlers,
   ...userKeyHandlers,
 ];

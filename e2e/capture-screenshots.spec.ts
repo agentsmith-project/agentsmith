@@ -21,14 +21,14 @@ const DIRS = [
   '02-projects',
   '03-overview',
   '04-chat',
-  '05-studio',
+  '05-notebook',
   '06-agents',
   '07-endpoints',
   '08-members',
   '09-audit',
   '10-usage',
   '11-settings',
-  '12-sources',
+  '12-files',
   '13-credentials',
   '14-user',
   '16-workspace',
@@ -121,22 +121,22 @@ test.describe('Screenshot Capture', () => {
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(BASE, '04-chat', 'chat.png'), fullPage: true });
 
-    // === 05-studio ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/studio`, { waitUntil: 'networkidle' });
+    // === 05-notebook ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(800);
-    await page.screenshot({ path: path.join(BASE, '05-studio', 'studio.png'), fullPage: true });
+    await page.screenshot({ path: path.join(BASE, '05-notebook', 'notebook.png'), fullPage: true });
 
-    const createRecipeBtn = page.getByTestId('studio__create-recipe-btn');
-    if (await createRecipeBtn.isVisible()) {
-      await createRecipeBtn.click();
+    const createTaskBtn = page.getByTestId('notebook__create-task-btn');
+    if (await createTaskBtn.isVisible()) {
+      await createTaskBtn.click();
       await page.waitForTimeout(500);
-      await page.screenshot({ path: path.join(BASE, '05-studio', 'create-recipe-dialog.png'), fullPage: true });
+      await page.screenshot({ path: path.join(BASE, '05-notebook', 'create-task-dialog.png'), fullPage: true });
       await page.keyboard.press('Escape');
     }
 
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/studio/recipes/recipe_001`, { waitUntil: 'networkidle' });
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook/tasks/task_001`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
-    await page.screenshot({ path: path.join(BASE, '05-studio', 'recipe-detail.png'), fullPage: true });
+    await page.screenshot({ path: path.join(BASE, '05-notebook', 'task-detail.png'), fullPage: true });
 
     // === 06-agents ===
     await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agents`, { waitUntil: 'networkidle' });
@@ -201,10 +201,10 @@ test.describe('Screenshot Capture', () => {
       await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-runtime-with-tokens.png'), fullPage: true });
     }
 
-    // === 12-sources ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/sources`, { waitUntil: 'networkidle' });
+    // === 12-files ===
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/files`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(800);
-    await page.screenshot({ path: path.join(BASE, '12-sources', 'sources.png'), fullPage: true });
+    await page.screenshot({ path: path.join(BASE, '12-files', 'files.png'), fullPage: true });
 
     // === 13-credentials ===
     await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/credentials`, { waitUntil: 'networkidle' });
@@ -235,15 +235,15 @@ test.describe('Screenshot Capture', () => {
       path.join(BASE, '02-projects', 'projects-list.png'),
       path.join(BASE, '03-overview', 'overview.png'),
       path.join(BASE, '04-chat', 'chat.png'),
-      path.join(BASE, '05-studio', 'studio.png'),
-      path.join(BASE, '05-studio', 'recipe-detail.png'),
+      path.join(BASE, '05-notebook', 'notebook.png'),
+      path.join(BASE, '05-notebook', 'task-detail.png'),
       path.join(BASE, '06-agents', 'agents.png'),
       path.join(BASE, '07-endpoints', 'endpoints.png'),
       path.join(BASE, '08-members', 'members-list.png'),
       path.join(BASE, '09-audit', 'audit.png'),
       path.join(BASE, '10-usage', 'usage.png'),
       path.join(BASE, '11-settings', 'settings-general.png'),
-      path.join(BASE, '12-sources', 'sources.png'),
+      path.join(BASE, '12-files', 'files.png'),
       path.join(BASE, '13-credentials', 'credentials-list.png'),
       path.join(BASE, '14-user', 'profile.png'),
       path.join(BASE, '14-user', 'api-keys.png'),

@@ -10,6 +10,7 @@ This directory contains only current-state documents: functional contracts, arch
 4. `frontend-backend-gating-matrix.md`
 5. `auth-permission-model.md`
 6. `route-gate-test-checklist.md`
+7. `product-terminology.md`
 
 ## Module Contracts
 
@@ -17,11 +18,11 @@ This directory contains only current-state documents: functional contracts, arch
 - `endpoints-frontend-module-map.md`
 - `endpoints-capability-contract.md`
 - `models-catalog-offline.md`
-- `sources-frontend-module-map.md`
-- `sources-object-browser-contract.md`
+- `files-frontend-module-map.md` (Files module contract)
+- `files-object-browser-contract.md` (Files object browser backend contract)
 - `resource-policy-frontend-module-map.md`
 - `projects-frontend-module-map.md`
-- `studio-frontend-module-map.md`
+- `notebook-frontend-module-map.md` (Notebook module contract)
 - `api-entry-node-module-map.md`
 - `agent-runtime-protocol.md`
 

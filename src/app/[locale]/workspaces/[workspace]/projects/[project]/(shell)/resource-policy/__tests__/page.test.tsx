@@ -87,7 +87,7 @@ vi.mock('@/lib/api', () => ({
   EndpointAPI: vi.fn().mockImplementation(function () {
     return { list: mockListEndpoints };
   }),
-  SourcesAPI: vi.fn().mockImplementation(function () {
+  FilesAPI: vi.fn().mockImplementation(function () {
     return { listLibraries: mockListLibraries };
   }),
   AgentAPI: vi.fn().mockImplementation(function () {

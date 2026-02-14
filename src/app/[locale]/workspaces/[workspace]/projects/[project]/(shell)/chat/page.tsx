@@ -18,7 +18,7 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
-import { SourcesAPI } from '@/lib/api/endpoints/sources';
+import { FilesAPI } from '@/lib/api/endpoints/files';
 import { AgentAPI } from '@/lib/api/endpoints/agents';
 import type { ChatMessage } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
@@ -85,7 +85,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const apiClient = useMemo(() => getApiClient(), []);
   const chatAPI = useMemo(() => new ChatAPI(apiClient), [apiClient]);
   const endpointAPI = useMemo(() => new EndpointAPI(apiClient), [apiClient]);
-  const sourcesAPI = useMemo(() => new SourcesAPI(apiClient), [apiClient]);
+  const sourcesAPI = useMemo(() => new FilesAPI(apiClient), [apiClient]);
   const agentAPI = useMemo(() => new AgentAPI(apiClient), [apiClient]);
 
   const {

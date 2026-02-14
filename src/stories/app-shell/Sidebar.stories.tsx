@@ -36,9 +36,9 @@ export const ChatMode: Story = {
 };
 
 /*
- * Sidebar with studio mode active
+ * Sidebar with notebook mode active
  */
-export const StudioMode: Story = {
+export const NotebookMode: Story = {
   args: {},
 };
 

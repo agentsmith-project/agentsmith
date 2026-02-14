@@ -34,7 +34,7 @@ This document is the product-facing source for UX behavior; API-level details re
 - resource limits
 
 2. Project admin can manage project resources:
-- source library
+- files library
 - LLM endpoints
 - project-scoped credentials
 
@@ -68,29 +68,29 @@ This document is the product-facing source for UX behavior; API-level details re
 
 1. Users (including admins) can use:
 - chat
-- AI Studio
-- source library
+- Notebook
+- files library
 - completion endpoints API
 
 2. MVP resource types are unified and do not distinguish private/shared in data model:
 - endpoint
-- source library
+- files library
 - agent
 3. Simplification rule for MVP:
 - all project members can access resources by default
 - new resources inherit project defaults
 - project admin can add per-resource/per-subject overrides when needed
-4. Chat / AI Studio page access uses dedicated access tokens:
+4. Chat / Notebook page access uses dedicated access tokens:
 - `project:chat:access`
-- `project:studio:access`
-5. Chat / AI Studio do not define independent quota/rate rules in MVP.
+- `project:notebook:access`
+5. Chat / Notebook do not define independent quota/rate rules in MVP.
 - usage constraints are surfaced from endpoint/source_library/agent policy outcomes
 
 ## Resource Policy Model (MVP Draft Alignment)
 
 1. Policy granularity is resource-level only:
 - endpoint
-- source library
+- files library
 - agent
 - no file-level policy in MVP
 
@@ -140,6 +140,6 @@ This document is the product-facing source for UX behavior; API-level details re
 
 1. Workspace governance group persistence is frontend-local state; backend persistence contract is required for release freeze.
 2. Project admin assignment UX should be template-first across all member flows.
-3. Shared library first-class CRUD is implemented in Sources page, but advanced governance UX (library ownership transfer, archive lifecycle, bulk policy assignment) is not yet implemented.
+3. Shared library first-class CRUD is implemented in Files page, but advanced governance UX (library ownership transfer, archive lifecycle, bulk policy assignment) is not yet implemented.
 4. Unified `Resource Policy` page should be the single resource-centric policy entry for endpoint/library/agent with subject-based overrides.
 5. Policy stale-subject cleanup UX and governance audit timeline are not yet implemented.

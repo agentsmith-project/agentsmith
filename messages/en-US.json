@@ -195,18 +195,18 @@
     "thread_info_id": "Thread ID",
     "thread_info_status": "Status",
     "thread_info_user": "End User",
-    "recipe": {
-      "title": "Recipe",
-      "new": "New Recipe",
-      "create": "Create Recipe",
-      "create_title": "Recipe Title",
+    "task": {
+      "title": "Task",
+      "new": "New Task",
+      "create": "Create Task",
+      "create_title": "Task Title",
       "select_agent": "Select Agent",
       "agent_fixed_notice": "Agent cannot be changed after creation",
       "history_immutable_notice": "Conversation history cannot be modified",
-      "leave": "Leave Recipe",
+      "leave": "Leave Task",
       "leave_tooltip": "Return to AI Studio list. Task will continue running in the background.",
-      "delete": "Delete Recipe",
-      "delete_confirm_message": "Are you sure you want to delete this recipe? This action cannot be undone. All messages and artifacts will be permanently deleted.",
+      "delete": "Delete Task",
+      "delete_confirm_message": "Are you sure you want to delete this task? This action cannot be undone. All messages and artifacts will be permanently deleted.",
       "delete_cancel": "Cancel",
       "status": {
         "active": "Active",
@@ -216,13 +216,13 @@
     },
     "attached_sources": {
       "title": "Attached Sources",
-      "subtitle": "Files attached to this recipe",
+      "subtitle": "Files attached to this task",
       "add": "Add Sources",
       "remove": "Remove",
       "empty": "No sources attached",
       "empty_description": "Add AIReady files from your library to provide context for the agent",
       "select_dialog": {
-        "title": "Add Sources to Recipe",
+        "title": "Add Sources to Task",
         "description": "Choose AIReady files from your library to add as context",
         "search_placeholder": "Search your files...",
         "confirm": "Add Selected",
@@ -230,8 +230,8 @@
         "from_library": "From your Sources library"
       },
       "tooltip": {
-        "attached_file": "This file is attached to this recipe as context",
-        "remove_file": "Remove from recipe (file remains in your library)"
+        "attached_file": "This file is attached to this task as context",
+        "remove_file": "Remove from task (file remains in your library)"
       }
     },
     "conversation": {
@@ -488,8 +488,8 @@
       "template_description": {
         "owner": "Owner has full access to all project resources and settings.",
         "admin": "Admin has full access except project deletion. Can manage members and policies.",
-        "developer": "Developer can create recipes, manage sources, and issue agent keys. Cannot manage members or policies.",
-        "user": "User has read-only access and can create recipes. Limited to basic operations."
+        "developer": "Developer can create tasks, manage sources, and issue agent keys. Cannot manage members or policies.",
+        "user": "User has read-only access and can create tasks. Limited to basic operations."
       },
       "custom_mode": "Custom permissions mode. Switch to Advanced Mode to edit individual permissions.",
       "no_permissions_found": "No permissions found matching \"{query}\"",

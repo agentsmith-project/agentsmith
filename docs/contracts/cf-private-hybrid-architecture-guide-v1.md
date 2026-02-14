@@ -449,7 +449,6 @@ packages/
 - `POST /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs`
 - `GET /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}`
 - `POST /workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel`
-- 迁移兼容期可保留旧接口 `/sources/{sourceId}/ai-ready/*`，但新功能必须优先对接 library-scoped jobs。
 - 当前实现基线：`document_ingest` 在 Node 入口以进程内 worker 执行，状态至少覆盖 `queued/running/succeeded/failed/cancelled`。
 
 4. 字段约束
@@ -631,4 +630,4 @@ packages/
 4. 再新增 `packages/api-entry-cf`，验证同用例在 CF 路由可运行。
 5. 用一组 E2E 用例同时打两套入口，确保行为一致。
 
-当这 5 步跑通后，再扩展到 agents/sources/studio 等复杂模块，风险会明显下降。
+当这 5 步跑通后，再扩展到 agents/files/notebook 等复杂模块，风险会明显下降。

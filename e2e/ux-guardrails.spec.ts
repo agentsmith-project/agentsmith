@@ -11,13 +11,13 @@ import { gotoAndWait } from './utils/navigation';
 const PROJECT_SECTIONS = [
   'overview',
   'chat',
-  'studio',
+  'notebook',
   'agents',
   'endpoints',
   'members',
   'audit',
   'usage',
-  'sources',
+  'files',
   'settings',
 ] as const;
 

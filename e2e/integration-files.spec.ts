@@ -1,0 +1,141 @@
+import { expect, test } from '@playwright/test';
+
+test.describe('files integration flow', () => {
+  test('keycloak login, create project, and complete files object-browser CRUD', async ({ page }) => {
+    test.setTimeout(240_000);
+    const multiSelectModifier: 'Control' | 'Meta' = process.platform === 'darwin' ? 'Meta' : 'Control';
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+
+    await page.goto(`/${locale}/login`);
+    await page.getByTestId('login__keycloak-btn').click();
+    await page.waitForURL(/\/realms\/.+\/protocol\/openid-connect\/auth|\/login-actions\/authenticate/i, {
+      timeout: 30_000,
+    });
+    await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
+    await page.locator('input#password, input[name="password"]').first().fill(password);
+    await Promise.all([
+      page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
+      page.locator('#kc-login, button[type="submit"]').first().click(),
+    ]);
+
+    await page.getByTestId('workspace-select__card--ws_default').click();
+    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`));
+
+    const projectName = `it-src-${Date.now()}`;
+    const createButton = page.getByTestId('projects__create-btn');
+    if (await createButton.isVisible().catch(() => false)) {
+      await createButton.click();
+    } else {
+      await page.getByRole('button', { name: /New Project|Create|创建|新建项目/i }).first().click();
+    }
+    await page.locator('#project-name').fill(projectName);
+    await Promise.all([
+      page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/.+/overview`), { timeout: 30_000 }),
+      page.getByRole('button', { name: /Create|创建/i }).click(),
+    ]);
+
+    const projectMatch = page.url().match(/\/projects\/([^/]+)\//);
+    expect(projectMatch?.[1]).toBeTruthy();
+    const projectId = projectMatch![1];
+
+    await page.getByRole('link', { name: /Files|文件/i }).first().click();
+    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/files`));
+
+    await page.getByTestId('files__library-create').click();
+    await page.getByTestId('files__library-create__name').fill('Integration Library');
+    await page.getByTestId('files__library-create__submit').click();
+    const libraryItem = page.locator('[data-testid^="files__library-item--"]').first();
+    await expect(libraryItem).toBeVisible({ timeout: 30_000 });
+    await libraryItem.click();
+
+    const folderName = `docs-${Date.now()}`;
+    await page.getByTestId('files__new-folder').click();
+    await page.getByTestId('files__dialog__new-folder').locator('input').fill(folderName);
+    await page.getByTestId('files__dialog__new-folder').getByRole('button', { name: /Create|创建/i }).click();
+    await expect(page.getByRole('button', { name: folderName }).first()).toHaveCount(1, { timeout: 30_000 });
+    await page.getByRole('button', { name: /Up|上一级/i }).first().click();
+    await expect(
+      page.locator('[data-testid="files__object-row"]').filter({ hasText: folderName }).first(),
+    ).toBeVisible({ timeout: 30_000 });
+
+    await page.getByTestId('files__upload').click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'integration-note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('integration-content', 'utf-8'),
+    });
+    await expect(page.locator('text=integration-note.txt')).toBeVisible({ timeout: 30_000 });
+
+    // Upload same name -> keep both (rename)
+    await page.getByTestId('files__upload').click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'integration-note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('integration-content-2', 'utf-8'),
+    });
+    await expect(page.getByTestId('files__dialog__upload-conflict')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('files__upload-conflict__rename').click();
+    await expect(page.locator('text=integration-note (1).txt')).toBeVisible({ timeout: 30_000 });
+
+    // Upload same name -> overwrite
+    await page.getByTestId('files__upload').click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'integration-note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('integration-content-3', 'utf-8'),
+    });
+    await expect(page.getByTestId('files__dialog__upload-conflict')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('files__upload-conflict__overwrite').click();
+    await expect(page.getByTestId('files__dialog__upload-conflict')).toHaveCount(0);
+
+    const row = page
+      .locator('[data-testid="files__object-row"]')
+      .filter({ hasText: 'integration-note.txt' })
+      .first();
+    await row.getByRole('button').click({ modifiers: [multiSelectModifier] });
+    await row.locator('input[type="checkbox"]').check();
+
+    await page.getByTestId('files__rename').click();
+    await page.getByTestId('files__move__dest-prefix').fill(`${folderName}/`);
+    await page.getByTestId('files__move__name').fill('integration-note-renamed.txt');
+    await page.getByTestId('files__move__submit').click();
+    await expect(
+      page.locator('[data-testid="files__object-row"]').filter({ hasText: 'integration-note.txt' }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('[data-testid="files__object-row"]').filter({ hasText: 'integration-note-renamed.txt' }),
+    ).toHaveCount(0);
+
+    await page.keyboard.press('Escape');
+    await page
+      .locator('[data-testid="files__object-row"]')
+      .filter({ hasText: folderName })
+      .first()
+      .locator('button')
+      .first()
+      .dblclick();
+    const movedRow = page
+      .locator('[data-testid="files__object-row"]')
+      .filter({ hasText: 'integration-note-renamed.txt' })
+      .first();
+    await expect(movedRow).toBeVisible({ timeout: 30_000 });
+    await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
+    const movedCheckbox = movedRow.locator('input[type="checkbox"]');
+    await movedCheckbox.check();
+    await expect(movedCheckbox).toBeChecked();
+
+    await expect(page.getByTestId('files__details-panel')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('files__details-share').click();
+    await expect(page.getByTestId('files__dialog__share-link')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('files__share-generate').click();
+    await expect(page.getByTestId('files__share-link-value')).toBeVisible({ timeout: 30_000 });
+    await page.keyboard.press('Escape');
+    await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
+    await expect(movedCheckbox).toBeChecked();
+    await page.getByTestId('files__delete').click();
+    await page.getByTestId('files__dialog__delete').getByRole('button', { name: /Delete|删除/i }).click();
+    await expect(page.locator('text=integration-note-renamed.txt')).toHaveCount(0);
+  });
+});

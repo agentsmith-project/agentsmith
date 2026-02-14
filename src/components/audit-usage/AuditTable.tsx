@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MoreHorizontal, Copy, Eye } from 'lucide-react';
 import { EmptyState } from './EmptyState';
-import { SourcesTableSkeleton } from '@/components/sources/SourcesTableSkeleton';
+import { FilesTableSkeleton } from '@/components/files/FilesTableSkeleton';
 import {
   Tooltip,
   TooltipContent,
@@ -281,7 +281,7 @@ export function AuditTable({
   });
 
   if (loading) {
-    return <SourcesTableSkeleton />;
+    return <FilesTableSkeleton />;
   }
 
   if (data.length === 0) {

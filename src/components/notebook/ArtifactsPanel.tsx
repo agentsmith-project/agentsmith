@@ -1,0 +1,95 @@
+'use client';
+import * as React from 'react';
+import { useTranslations } from 'next-intl';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ArtifactCard } from './ArtifactCard';
+import { ArtifactImageGrid } from './ArtifactImageGrid';
+import { EmptyState } from '@/components/ui/loading';
+import type { Artifact, ArtifactType } from '@/lib/types/task';
+
+export interface ArtifactsPanelProps {
+  artifacts: Artifact[];
+  onView?: (artifact: Artifact) => void;
+  onSave?: (artifact: Artifact) => void;
+  onDownload?: (artifact: Artifact) => void;
+  disabled?: boolean;
+}
+
+export function ArtifactsPanel({
+  artifacts,
+  onView,
+  onSave,
+  onDownload,
+  disabled = false,
+}: ArtifactsPanelProps) {
+  const t = useTranslations('notebook.artifacts');
+  const [filterType, setFilterType] = React.useState<ArtifactType | 'all'>('all');
+
+  const filteredArtifacts = React.useMemo(() => {
+    if (filterType === 'all') return artifacts;
+    return artifacts.filter((a) => a.type === filterType);
+  }, [artifacts, filterType]);
+
+  const imageArtifacts = filteredArtifacts.filter((a) => a.type === 'image');
+  const nonImageArtifacts = filteredArtifacts.filter((a) => a.type !== 'image');
+
+  return (
+    <div className="h-full flex flex-col bg-surface border-l border-subtle">
+      <div className="p-4 border-b border-subtle">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
+        </div>
+        <Select value={filterType} onValueChange={(v) => setFilterType(v as ArtifactType | 'all')}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('filter.all')}</SelectItem>
+            <SelectItem value="text">{t('filter.text')}</SelectItem>
+            <SelectItem value="image">{t('filter.image')}</SelectItem>
+            <SelectItem value="file">{t('filter.file')}</SelectItem>
+            <SelectItem value="other">{t('filter.other')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        {filteredArtifacts.length === 0 ? (
+          <EmptyState
+            title={t('empty')}
+            description={t('empty_description')}
+          />
+        ) : (
+          <div className="space-y-4">
+            {imageArtifacts.length > 0 && (
+              <ArtifactImageGrid
+                artifacts={imageArtifacts}
+                onImageClick={(artifact) => onView?.(artifact)}
+              />
+            )}
+            {nonImageArtifacts.length > 0 && (
+              <div className="space-y-2">
+                {nonImageArtifacts.map((artifact) => (
+                  <ArtifactCard
+                    key={artifact.id}
+                    artifact={artifact}
+                    onView={onView ? () => onView(artifact) : undefined}
+                    onSave={onSave ? () => onSave(artifact) : undefined}
+                    onDownload={onDownload ? () => onDownload(artifact) : undefined}
+                    disabled={disabled}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

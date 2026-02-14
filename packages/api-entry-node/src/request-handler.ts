@@ -16,6 +16,7 @@ import {
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
+import { handleTaskRoute } from './task-route-handler.js';
 
 function isChatRoute(route: { kind: string }): route is ChatRoute {
   return route.kind.startsWith('chat');
@@ -29,6 +30,18 @@ function isAgentRoute(route: { kind: string }): boolean {
     || route.kind === 'agentConnectionInfo'
     || route.kind === 'agentKeys'
     || route.kind === 'agentKeyItem';
+}
+
+function isTaskRoute(route: { kind: string }): boolean {
+  return route.kind === 'tasks'
+    || route.kind === 'taskItem'
+    || route.kind === 'taskSources'
+    || route.kind === 'taskSourceItem'
+    || route.kind === 'taskMessages'
+    || route.kind === 'taskArtifacts'
+    || route.kind === 'taskArtifactSave'
+    || route.kind === 'taskArtifactDownload'
+    || route.kind === 'taskEvents';
 }
 
 export function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
@@ -148,6 +161,21 @@ export async function handleRequest(
         readBody,
       });
       if (handledAgentRoute) {
+        return;
+      }
+    }
+
+    if (isTaskRoute(route)) {
+      const handledTaskRoute = await handleTaskRoute({
+        route,
+        method,
+        req,
+        res,
+        deps,
+        json,
+        readBody,
+      });
+      if (handledTaskRoute) {
         return;
       }
     }

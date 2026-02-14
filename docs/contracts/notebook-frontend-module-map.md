@@ -11,6 +11,7 @@ Terminology note:
 - Route: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/page.tsx`
 - List UI: `src/components/notebook/TaskList.tsx`
 - Detail route is intentionally out of this document.
+- Fixed HTTP contract namespace: `/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/*`
 
 ## Current Structure
 

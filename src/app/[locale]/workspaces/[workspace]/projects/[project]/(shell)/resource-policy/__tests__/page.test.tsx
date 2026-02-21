@@ -96,6 +96,9 @@ vi.mock('@/lib/api', () => ({
   MemberAPI: vi.fn().mockImplementation(function () {
     return { getResourcePolicy: mockGetResourcePolicy };
   }),
+  AuditAPI: vi.fn().mockImplementation(function () {
+    return { list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, has_more: false }) };
+  }),
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({

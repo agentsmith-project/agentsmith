@@ -7,7 +7,7 @@
 
 import type { ApiClient, ApiRequestOptions } from '../client';
 import { API_BASE, ApiError } from '../client';
-import { createAuthenticatedSSE } from '../sse-client';
+import { createAuthenticatedSSE, fetchSSETicket } from '../sse-client';
 import { notifyUnauthorized, tryRefreshSession } from '@/lib/auth/session-recovery';
 
 export class FetchApiClient implements ApiClient {
@@ -139,7 +139,7 @@ export class FetchApiClient implements ApiClient {
     return this.request<T>(path, { ...options, method: 'DELETE' });
   }
 
-  connectSSE(path: string, options?: ApiRequestOptions): EventSource {
+  async connectSSE(path: string, options?: ApiRequestOptions): Promise<EventSource> {
     let url = `${API_BASE}${path}`;
 
     if (options?.params) {
@@ -153,7 +153,8 @@ export class FetchApiClient implements ApiClient {
       }
     }
 
-    return createAuthenticatedSSE(url, this.token, {
+    const ticket = await fetchSSETicket(this.token, API_BASE);
+    return createAuthenticatedSSE(url, ticket, {
       onError: (error) => {
         console.error('[SSE] Connection error:', error);
       },

@@ -44,3 +44,27 @@ export function findDuplicateSubjects(subjects: EditableSubjectDraft[]): Duplica
   return duplicates;
 }
 
+/**
+ * Returns rowIds of subjects that are stale: user no longer in project members,
+ * or group no longer in project groups. Used to show stale indicator and one-click cleanup.
+ */
+export function findStaleSubjectRowIds(
+  subjects: Array<{ rowId: string; subject_type: 'group' | 'user'; subject_id: string }>,
+  memberIds: string[],
+  groupIds: string[],
+): string[] {
+  const memberSet = new Set(memberIds);
+  const groupSet = new Set(groupIds);
+  const staleRowIds: string[] = [];
+  for (const subject of subjects) {
+    const id = normalizeSubjectId(subject.subject_id);
+    if (!id) continue;
+    if (subject.subject_type === 'user' && !memberSet.has(id)) {
+      staleRowIds.push(subject.rowId);
+    } else if (subject.subject_type === 'group' && !groupSet.has(id)) {
+      staleRowIds.push(subject.rowId);
+    }
+  }
+  return staleRowIds;
+}
+

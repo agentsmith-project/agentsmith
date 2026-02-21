@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { AgentAPI, EndpointAPI, MemberAPI, FilesAPI, getApiClient } from '@/lib/api';
+import { AgentAPI, AuditAPI, EndpointAPI, MemberAPI, FilesAPI, getApiClient } from '@/lib/api';
 import type { Member, ProjectGroup } from '@/lib/api/endpoints/members';
 import type {
   Agent,
@@ -42,6 +42,7 @@ import {
 } from '@/lib/constants/resource-policy';
 import {
   findDuplicateSubjects,
+  findStaleSubjectRowIds,
   normalizeSubjectId,
   type EditableSubjectDraft,
 } from '@/lib/utils/resource-policy-subjects';
@@ -92,6 +93,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const sourcesAPI = useMemo(() => new FilesAPI(getApiClient()), []);
   const agentAPI = useMemo(() => new AgentAPI(getApiClient()), []);
   const memberAPI = useMemo(() => new MemberAPI(getApiClient()), []);
+  const auditAPI = useMemo(() => new AuditAPI(getApiClient()), []);
 
   const { data: endpointsData, isLoading: endpointsLoading } = useQuery({
     queryKey: ['resource-policy', 'endpoints', workspaceId, projectId],
@@ -186,6 +188,27 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const { data: groupsData } = useProjectGroups(workspaceId, projectId);
   const updatePolicyMutation = useUpdateResourcePolicy(workspaceId, projectId, selectedType, selectedId);
 
+  const auditTimeRange = useMemo(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    return { start_time: start.toISOString(), end_time: end.toISOString() };
+  }, []);
+  const { data: auditData } = useQuery({
+    queryKey: ['resource-policy', 'governance-audit', workspaceId, projectId, auditTimeRange.start_time, auditTimeRange.end_time],
+    queryFn: () =>
+      auditAPI.list(workspaceId, projectId, {
+        ...auditTimeRange,
+        resource_type: 'resource_policy',
+        page_size: 20,
+        sort_by: 'timestamp',
+        sort_order: 'desc',
+      }),
+    enabled: !!workspaceId && !!projectId && canReadPolicy,
+    staleTime: 60 * 1000,
+  });
+  const policyAuditEvents = auditData?.items ?? [];
+
   const userOptions = useMemo(
     () =>
       (membersData ?? []).map((member: Member) => ({
@@ -230,6 +253,14 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       }))
     );
   }, [selectedPolicy, selectedResource?.type]);
+
+  const memberIds = useMemo(() => (userOptions ?? []).map((o) => o.id), [userOptions]);
+  const groupIds = useMemo(() => (groupOptions ?? []).map((o) => o.id), [groupOptions]);
+  const staleSubjectRowIds = useMemo(
+    () => findStaleSubjectRowIds(subjects, memberIds, groupIds),
+    [subjects, memberIds, groupIds],
+  );
+  const hasStaleSubjects = staleSubjectRowIds.length > 0;
 
   const duplicateSubjects = findDuplicateSubjects(subjects);
   const duplicateSubjectRowIds = new Set(duplicateSubjects.flatMap((subject) => subject.rows));
@@ -296,6 +327,10 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
 
   const removeSubject = (rowId: string) => {
     setSubjects((prev) => prev.filter((subject) => subject.rowId !== rowId));
+  };
+
+  const removeStaleSubjects = () => {
+    setSubjects((prev) => prev.filter((subject) => !staleSubjectRowIds.includes(subject.rowId)));
   };
 
   const updateSubject = (rowId: string, patch: Partial<EditableSubject>) => {
@@ -405,19 +440,34 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                   </div>
 
                   <div className="rounded-sm border border-subtle bg-surface p-3 space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <p className="text-xs text-tertiary">{tResource('subjects.title')}</p>
-                      <Button
-                        type="button"
-                        onClick={addSubject}
-                        disabled={!canUpdatePolicy}
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-3 text-xs"
-                        data-testid="resource-policy__add-subject"
-                      >
-                        {tResource('subjects.add')}
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {hasStaleSubjects ? (
+                          <Button
+                            type="button"
+                            onClick={removeStaleSubjects}
+                            disabled={!canUpdatePolicy}
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-3 text-xs"
+                            data-testid="resource-policy__remove-stale"
+                          >
+                            {tResource('subjects.remove_stale')}
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          onClick={addSubject}
+                          disabled={!canUpdatePolicy}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-3 text-xs"
+                          data-testid="resource-policy__add-subject"
+                        >
+                          {tResource('subjects.add')}
+                        </Button>
+                      </div>
                     </div>
                     {subjects.length === 0 ? (
                       <p className="text-xs text-tertiary">{tResource('subjects.empty')}</p>
@@ -428,10 +478,11 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                             key={subject.rowId}
                             className={`rounded-sm border bg-surface p-3 space-y-2 ${
                               duplicateSubjectRowIds.has(subject.rowId) ? 'border-error/60' : 'border-subtle'
-                            }`}
+                            } ${staleSubjectRowIds.includes(subject.rowId) ? 'border-warning/50' : ''}`}
                             data-testid={`resource-policy__subject--${subject.rowId}`}
                           >
-                            <div className="grid gap-2 md:grid-cols-[120px_1fr_auto]">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="grid gap-2 md:grid-cols-[120px_1fr_auto] flex-1 min-w-0">
                               <select
                                 value={subject.subject_type}
                                 onChange={(event) =>
@@ -479,6 +530,15 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                               >
                                 {tResource('subjects.remove')}
                               </Button>
+                              </div>
+                            {staleSubjectRowIds.includes(subject.rowId) ? (
+                              <span
+                                className="shrink-0 text-xs text-warning border border-warning/50 rounded px-2 py-0.5"
+                                data-testid={`resource-policy__subject-stale--${subject.rowId}`}
+                              >
+                                {tResource('subjects.stale')}
+                              </span>
+                            ) : null}
                             </div>
                             {duplicateSubjectRowIds.has(subject.rowId) ? (
                               <p
@@ -631,6 +691,35 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                         })}
                       </div>
                     ) : null}
+                  </div>
+
+                  <div
+                    className="rounded-sm border border-subtle bg-surface p-3 space-y-2"
+                    data-testid="resource-policy__governance-audit"
+                  >
+                    <p className="text-xs font-medium text-foreground">{tResource('governance_audit.title')}</p>
+                    {policyAuditEvents.length === 0 ? (
+                      <p className="text-xs text-tertiary">{tResource('governance_audit.empty')}</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {policyAuditEvents.map((event) => (
+                          <li
+                            key={event.id}
+                            className="text-xs text-tertiary flex flex-wrap gap-x-2 gap-y-0.5"
+                            data-testid="resource-policy__audit-event"
+                          >
+                            <span>{new Date(event.timestamp).toLocaleString()}</span>
+                            <span className="text-primary">{tResource('governance_audit.actor')}: {event.actor_id}</span>
+                            <span className="text-primary">{tResource('governance_audit.action')}: {event.action}</span>
+                            {event.resource_type != null || event.resource_id != null ? (
+                              <span className="text-primary">
+                                {tResource('governance_audit.resource')}: {[event.resource_type, event.resource_id].filter(Boolean).join(' / ')}
+                              </span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </>
               )}

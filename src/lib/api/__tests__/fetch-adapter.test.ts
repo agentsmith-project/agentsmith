@@ -430,23 +430,23 @@ describe('FetchApiClient', () => {
       global.EventSource = MockEventSource as unknown as typeof EventSource;
     });
 
-    it('should create EventSource with correct URL', () => {
-      const eventSource = client.connectSSE('/events');
+    it('should create EventSource with correct URL', async () => {
+      const eventSource = await client.connectSSE('/events');
 
       expect(capturedUrl).toBe(`${API_BASE}/events`);
       expect(eventSource).toBeInstanceOf(EventSource);
     });
 
-    it('should append ticket as query parameter for SSE', () => {
+    it('should append ticket as query parameter for SSE', async () => {
       client.setToken(testToken);
-      const eventSource = client.connectSSE('/events');
+      const eventSource = await client.connectSSE('/events');
 
       expect(capturedUrl).toBe(`${API_BASE}/events?ticket=${encodeURIComponent(testToken)}`);
       expect(eventSource).toBeInstanceOf(EventSource);
     });
 
-    it('should append query parameters to SSE URL', () => {
-      const eventSource = client.connectSSE('/events', {
+    it('should append query parameters to SSE URL', async () => {
+      const eventSource = await client.connectSSE('/events', {
         params: { filter: 'test', type: 'realtime' },
       });
 
@@ -454,9 +454,9 @@ describe('FetchApiClient', () => {
       expect(eventSource).toBeInstanceOf(EventSource);
     });
 
-    it('should combine ticket and query parameters for SSE', () => {
+    it('should combine ticket and query parameters for SSE', async () => {
       client.setToken(testToken);
-      const eventSource = client.connectSSE('/events', {
+      const eventSource = await client.connectSSE('/events', {
         params: { channel: 'updates' },
       });
 
@@ -465,10 +465,9 @@ describe('FetchApiClient', () => {
       expect(eventSource).toBeInstanceOf(EventSource);
     });
 
-    it('should handle SSE URL that already has query params', () => {
-      // This tests the separator logic
+    it('should handle SSE URL that already has query params', async () => {
       client.setToken(testToken);
-      const eventSource = client.connectSSE('/events?initial=true');
+      const eventSource = await client.connectSSE('/events?initial=true');
 
       expect(capturedUrl).toMatch(/events\?initial=true&ticket=/);
       expect(eventSource).toBeInstanceOf(EventSource);

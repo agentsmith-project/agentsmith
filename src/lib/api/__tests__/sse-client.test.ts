@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createAuthenticatedSSE } from '../sse-client';
+import { createAuthenticatedSSE, fetchSSETicket } from '../sse-client';
 
 // Mock EventSource class
 class MockEventSource {
@@ -80,5 +80,50 @@ describe('createAuthenticatedSSE', () => {
 
     expect(sseConnection.url).toContain('&ticket=');
     expect(sseConnection.url).not.toContain('??ticket=');
+  });
+});
+
+describe('fetchSSETicket', () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('returns null when token is null', async () => {
+    expect(await fetchSSETicket(null, 'https://api.example.com/api/v1')).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns ticket_id when backend returns 200 with ticket_id', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ticket_id: 'short-lived-ticket-123' }),
+    });
+    const result = await fetchSSETicket('jwt-token', 'https://api.example.com/api/v1');
+    expect(result).toBe('short-lived-ticket-123');
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/v1/sse-ticket',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer jwt-token' },
+      }),
+    );
+  });
+
+  it('returns token when backend returns non-ok', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false });
+    const result = await fetchSSETicket('my-jwt', 'https://api.example.com/api/v1');
+    expect(result).toBe('my-jwt');
+  });
+
+  it('returns token when fetch throws', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
+    const result = await fetchSSETicket('my-jwt', 'https://api.example.com/api/v1');
+    expect(result).toBe('my-jwt');
   });
 });

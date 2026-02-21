@@ -5,10 +5,9 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { TaskAPI } from '@/lib/api';
+import { TaskAPI, API_BASE, getApiClient } from '@/lib/api';
 import type { TaskMessage, Artifact, Task } from '@/lib/types/task';
-import { getApiClient } from '@/lib/api';
-import { createAuthenticatedSSE } from '@/lib/api/sse-client';
+import { createAuthenticatedSSE, fetchSSETicket } from '@/lib/api/sse-client';
 
 export interface TaskSSEEvent {
   type: 'message' | 'artifact' | 'task_update' | 'error';
@@ -98,81 +97,81 @@ export function useTaskSSE(
 
     setConnectionStatus('connecting');
 
-    // Use createAuthenticatedSSE for unified auth (adds ?ticket= param)
     const token = client.getToken();
-    const eventSource = createAuthenticatedSSE(urlWithLastEventId, token);
-
-    eventSource.onopen = () => {
-      setConnectionStatus('connected');
-      reconnectAttemptsRef.current = 0;
-    };
-
-    eventSource.onmessage = (event) => {
+    // Try ticket exchange first (secure); fallback to token in URL when backend has no /sse-ticket
+    void (async () => {
       try {
-        const data = JSON.parse(event.data) as TaskSSEEvent;
+        const ticket = await fetchSSETicket(token, API_BASE);
+        const eventSource = createAuthenticatedSSE(urlWithLastEventId, ticket);
 
-        // Store last event ID for reconnection
-        if (event.lastEventId) {
-          lastEventIdRef.current = event.lastEventId;
-        }
+        eventSource.onopen = () => {
+          setConnectionStatus('connected');
+          reconnectAttemptsRef.current = 0;
+        };
 
-        switch (data.type) {
-          case 'message':
-            callbacksRef.current.onMessage?.(data.data as TaskMessage);
-            break;
-          case 'artifact':
-            callbacksRef.current.onArtifact?.(data.data as Artifact);
-            break;
-          case 'task_update':
-            callbacksRef.current.onTaskUpdate?.(data.data as Task);
-            break;
-          case 'error':
-            const errorData = data.data as { message: string; code?: string };
-            const error = new Error(errorData.message);
-            if (errorData.code) {
-              (error as Error & { code?: string }).code = errorData.code;
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data) as TaskSSEEvent;
+
+            // Store last event ID for reconnection
+            if (event.lastEventId) {
+              lastEventIdRef.current = event.lastEventId;
             }
-            callbacksRef.current.onError?.(error);
-            break;
-        }
+
+            switch (data.type) {
+              case 'message':
+                callbacksRef.current.onMessage?.(data.data as TaskMessage);
+                break;
+              case 'artifact':
+                callbacksRef.current.onArtifact?.(data.data as Artifact);
+                break;
+              case 'task_update':
+                callbacksRef.current.onTaskUpdate?.(data.data as Task);
+                break;
+              case 'error':
+                const errorData = data.data as { message: string; code?: string };
+                const error = new Error(errorData.message);
+                if (errorData.code) {
+                  (error as Error & { code?: string }).code = errorData.code;
+                }
+                callbacksRef.current.onError?.(error);
+                break;
+            }
+          } catch (err) {
+            console.error('Failed to parse SSE event:', err);
+            callbacksRef.current.onError?.(
+              err instanceof Error ? err : new Error('Failed to parse SSE event')
+            );
+          }
+        };
+
+        eventSource.onerror = (_error) => {
+          const readyState = eventSource.readyState;
+          if (readyState === EventSource.CLOSED) {
+            console.warn('SSE connection closed, will attempt reconnect');
+          }
+          eventSource.close();
+          eventSourceRef.current = null;
+          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+            setConnectionStatus('reconnecting');
+            reconnectAttemptsRef.current += 1;
+            reconnectTimeoutRef.current = setTimeout(() => {
+              connect();
+            }, reconnectInterval);
+          } else {
+            setConnectionStatus('error');
+            callbacksRef.current.onError?.(
+              new Error(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`)
+            );
+          }
+        };
+
+        eventSourceRef.current = eventSource;
       } catch (err) {
-        console.error('Failed to parse SSE event:', err);
-        callbacksRef.current.onError?.(
-          err instanceof Error ? err : new Error('Failed to parse SSE event')
-        );
-      }
-    };
-
-    eventSource.onerror = (_error) => {
-      // Check the EventSource readyState to determine the nature of the error
-      // readyState values: 0=CONNECTING, 1=OPEN, 2=CLOSED
-      const readyState = eventSource.readyState;
-
-      // Only log if there's a real error, not just a normal reconnection
-      if (readyState === EventSource.CLOSED) {
-        console.warn('SSE connection closed, will attempt reconnect');
-      }
-
-      // Close the connection to clean up
-      eventSource.close();
-      eventSourceRef.current = null;
-
-      // Attempt to reconnect if we haven't exceeded max attempts
-      if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-        setConnectionStatus('reconnecting');
-        reconnectAttemptsRef.current += 1;
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connect();
-        }, reconnectInterval);
-      } else {
         setConnectionStatus('error');
-        callbacksRef.current.onError?.(
-          new Error(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`)
-        );
+        callbacksRef.current.onError?.(err instanceof Error ? err : new Error('SSE connection failed'));
       }
-    };
-
-    eventSourceRef.current = eventSource;
+    })();
   }, [enabled, workspaceId, projectId, taskId, reconnectInterval, maxReconnectAttempts]);
 
   useEffect(() => {

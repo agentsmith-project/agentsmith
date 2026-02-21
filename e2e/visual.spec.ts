@@ -24,7 +24,7 @@ const test = base.extend<{ authedPage: Page }>({
 
 /** Navigate and wait for page to settle before screenshot */
 async function stableNavigate(page: Page, path: string) {
-  await page.goto(path, { waitUntil: 'networkidle' });
+  await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 20000 });
   await waitForPageReady(page);
   // Ensure dev overlays are removed before capturing screenshots.
   await page.evaluate(() => {

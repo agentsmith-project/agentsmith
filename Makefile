@@ -1,4 +1,4 @@
-.PHONY: help bootstrap deps-up deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
+.PHONY: help bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
 	e2e e2e-local \
 	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
@@ -38,14 +38,15 @@ help:
 	@echo "MBOS Dev Commands"
 	@echo ""
 	@echo "Bootstrap:"
-	@echo "  make bootstrap    # deps-up + deps-smoke + deps-init"
+	@echo "  make bootstrap    # deps-up → wait for ready → deps-init → deps-smoke (ordered)"
 	@echo ""
 	@echo "Dependencies:"
 	@echo "  make deps-up       # start docker deps (postgres+pgvector/mongo/redis/minio/keycloak)"
-	@echo "  make deps-init     # apply postgres schemas + seed/reset keycloak users"
+	@echo "  make deps-ready    # wait for postgres/keycloak to accept connections (after deps-up)"
+	@echo "  make deps-init    # apply postgres schemas + seed/reset keycloak users (requires deps-ready)"
+	@echo "  make deps-smoke   # verify all deps healthy (requires deps-init for pgvector)"
 	@echo "  make deps-init-postgres # apply postgres schemas (projects + pgvector tables)"
 	@echo "  make deps-init-keycloak # ensure/reset keycloak integration users"
-	@echo "  make deps-smoke    # verify deps health"
 	@echo "  make deps-down     # stop deps"
 	@echo "  make deps-reset    # stop deps and remove volumes"
 	@echo "  make deps-logs     # tail deps logs"
@@ -84,7 +85,22 @@ help:
 deps-up:
 	$(NPM) run integration:deps:up
 
-bootstrap: deps-up deps-smoke deps-init
+# Wait for integration services to accept connections (Postgres is fast; Keycloak often needs 20–30s).
+# Override with DEPS_READY_SLEEP=30 if keycloak init still fails.
+DEPS_READY_SLEEP ?= 25
+deps-ready: deps-up
+	@echo "[make] waiting $(DEPS_READY_SLEEP)s for integration services..."
+	@sleep $(DEPS_READY_SLEEP)
+
+# Order: deps-smoke runs last (verifies pgvector, which is created by deps-init).
+deps-init: deps-ready
+	$(NPM) run integration:deps:init:postgres
+	$(NPM) run integration:deps:init:keycloak
+
+deps-smoke: deps-init
+	$(NPM) run integration:deps:smoke
+
+bootstrap: deps-smoke
 
 deps-down:
 	$(NPM) run integration:deps:down
@@ -92,18 +108,11 @@ deps-down:
 deps-reset:
 	$(NPM) run integration:deps:down:volumes
 
-deps-smoke:
-	$(NPM) run integration:deps:smoke
-
 deps-logs:
 	$(NPM) run integration:deps:logs
 
 deps-ps:
 	$(NPM) run integration:deps:ps
-
-deps-init:
-	$(NPM) run integration:deps:init:postgres
-	$(NPM) run integration:deps:init:keycloak
 
 deps-init-postgres:
 	$(NPM) run integration:deps:init:postgres

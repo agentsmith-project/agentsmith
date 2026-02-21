@@ -10,7 +10,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const baseURL = process.env.BASE_URL || 'http://localhost:3001';
 const useManagedDevServer = !process.env.BASE_URL;
-const localWorkers = Number(process.env.PW_WORKERS ?? 8);
+/** Local worker count; override with PW_WORKERS (e.g. PW_WORKERS=12). */
+const localWorkers = Number(process.env.PW_WORKERS ?? 10);
 const isCI = !!process.env.CI;
 
 const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port 3001')].join(
@@ -19,7 +20,7 @@ const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true n
 
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
   workers: isCI ? 2 : localWorkers,
@@ -52,6 +53,7 @@ export default defineConfig({
       name: 'smoke',
       testMatch: /smoke\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
+      fullyParallel: false,
     },
     {
       name: 'chromium',

@@ -78,9 +78,10 @@ export interface ApiClient {
   delete<T>(path: string, options?: ApiRequestOptions): Promise<T>;
 
   /**
-   * SSE connection for streaming events
+   * SSE connection for streaming events.
+   * Returns a Promise so the client can exchange JWT for a short-lived ticket when backend supports it.
    */
-  connectSSE(path: string, options?: ApiRequestOptions): EventSource;
+  connectSSE(path: string, options?: ApiRequestOptions): Promise<EventSource>;
 }
 
 const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';

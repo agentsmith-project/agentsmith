@@ -884,6 +884,8 @@
       "add": "Add subject",
       "empty": "No subject overrides.",
       "duplicate": "Duplicate subject entries are not allowed.",
+      "stale": "Stale (no longer in project)",
+      "remove_stale": "Remove stale subjects",
       "user": "User",
       "group": "Group",
       "select_subject": "Select subject",
@@ -910,6 +912,14 @@
       "default": "Uses project defaults with no explicit resource-level overrides.",
       "overridden": "Has explicit resource-level limits or subject overrides.",
       "allow_list": "Access is restricted to selected users/groups."
+    },
+    "governance_audit": {
+      "title": "Policy change history",
+      "empty": "No policy change events in this period.",
+      "actor": "Actor",
+      "action": "Action",
+      "resource": "Resource",
+      "time": "Time"
     },
     "units": {
       "tokens_per_day": "tokens/day",

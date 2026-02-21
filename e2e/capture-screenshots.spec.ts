@@ -122,7 +122,10 @@ test.describe('Screenshot Capture', () => {
     await page.screenshot({ path: path.join(BASE, '04-chat', 'chat.png'), fullPage: true });
 
     // === 05-notebook ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook`, { waitUntil: 'networkidle' });
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 20000,
+    });
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(BASE, '05-notebook', 'notebook.png'), fullPage: true });
 
@@ -134,7 +137,13 @@ test.describe('Screenshot Capture', () => {
       await page.keyboard.press('Escape');
     }
 
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook/tasks/task_001`, { waitUntil: 'networkidle' });
+    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook/tasks/task_001`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 25000,
+    });
+    await page.waitForSelector('[data-testid="page-state__success"], [data-testid="page-layout"], [data-testid="page-state__loading"]', {
+      timeout: 15000,
+    }).catch(() => {});
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(BASE, '05-notebook', 'task-detail.png'), fullPage: true });
 

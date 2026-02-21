@@ -44,10 +44,8 @@
  * - Token is URL-encoded for basic obfuscation
  * - Full security requires backend /sse-ticket endpoint implementation
  *
- * TODO: [SECURITY] Implement ticket system once backend supports /sse-ticket endpoint
- * TODO: [SECURITY] Create /api/v1/sse-ticket endpoint in backend
- * TODO: [SECURITY] Add Redis-based ticket storage with 5-minute expiration
- * TODO: [SECURITY] Update this function to fetch ticket before SSE connection
+ * When backend implements POST /api/v1/sse-ticket, use fetchSSETicket() before
+ * connecting so the URL contains a short-lived ticket instead of the JWT.
  *
  * Related: https://developer.mozilla.org/en-US/docs/Web/API/EventSource
  *          (EventSource does not support custom headers)
@@ -87,9 +85,7 @@ export function createAuthenticatedSSE(
   let url = path;
 
   if (token) {
-    // NOTE: Using "ticket" parameter name as abstraction layer
-    // Currently contains the JWT token directly (documented security risk)
-    // TODO: Replace with actual ticket ID once backend implements /sse-ticket
+    // NOTE: When using createAuthenticatedSSEAsync + fetchSSETicket, this may be a short-lived ticket.
     const separator = url.includes('?') ? '&' : '?';
     url += `${separator}ticket=${encodeURIComponent(getSSETicket(token))}`;
   }
@@ -118,49 +114,59 @@ export function createAuthenticatedSSE(
 }
 
 /**
- * Get an SSE ticket for the connection
+ * Exchange JWT for a short-lived SSE ticket when backend supports it.
+ * Call this before createAuthenticatedSSE to avoid putting the JWT in the SSE URL.
  *
- * CURRENT IMPLEMENTATION (insecure):
- * Returns the JWT token directly, which is then passed via URL query parameter.
- * This is documented as a security risk (see module-level documentation).
+ * @param token - JWT (Bearer); if null, returns null
+ * @param apiBase - Base URL for the API (e.g. https://api.example.com/api/v1)
+ * @returns Ticket ID to use in SSE URL, or the token as fallback when backend does not support /sse-ticket
+ */
+export async function fetchSSETicket(
+  token: string | null,
+  apiBase: string,
+): Promise<string | null> {
+  if (!token) return null;
+  const url = `${apiBase.replace(/\/+$/, '')}/sse-ticket`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return token;
+    const data = (await res.json()) as { ticket_id?: string };
+    if (typeof data?.ticket_id === 'string' && data.ticket_id.length > 0) {
+      return data.ticket_id;
+    }
+  } catch {
+    // Network or parse error: fall back to token in URL (existing risk)
+  }
+  return token;
+}
+
+/**
+ * Create an authenticated SSE connection, using a short-lived ticket when the backend
+ * provides POST /api/v1/sse-ticket. Otherwise falls back to token in URL (see module docs).
  *
- * PRODUCTION IMPLEMENTATION (secure):
- * Should exchange the JWT for a short-lived ticket via authenticated POST:
- *
- * ```ts
- * async function getSSETicket(token: string): Promise<string> {
- *   const response = await fetch('/api/v1/sse-ticket', {
- *     method: 'POST',
- *     headers: { 'Authorization': `Bearer ${token}` },
- *   });
- *
- *   if (!response.ok) {
- *     throw new Error('Failed to obtain SSE ticket');
- *   }
- *
- *   const { ticket_id } = await response.json();
- *   return ticket_id;
- * }
- * ```
- *
- * @param token - The JWT token to exchange for an SSE ticket
- * @returns A ticket ID (currently the token itself - SECURITY RISK)
- *
- * TODO: [SECURITY] Implement ticket exchange once backend supports /sse-ticket
- * TODO: [BACKEND] Add POST /api/v1/sse-ticket endpoint
- * TODO: [BACKEND] Store tickets in Redis with 5-minute expiration
- * TODO: [BACKEND] Validate tickets on SSE connection
+ * @param path - Full SSE URL
+ * @param token - JWT (or null for unauthenticated)
+ * @param options - Event handlers
+ * @param apiBase - API base URL for ticket exchange
+ * @returns Promise that resolves to the EventSource
+ */
+export async function createAuthenticatedSSEAsync(
+  path: string,
+  token: string | null,
+  options: SSEOptions | undefined,
+  apiBase: string,
+): Promise<EventSource> {
+  const ticket = await fetchSSETicket(token, apiBase);
+  return createAuthenticatedSSE(path, ticket, options);
+}
+
+/**
+ * Get an SSE ticket for the connection (sync path).
+ * Returns the token as-is; use fetchSSETicket + createAuthenticatedSSE for secure ticket flow.
  */
 function getSSETicket(token: string): string {
-  // TEMPORARY: Return token directly (DOCUMENTED SECURITY RISK)
-  // This exposes the JWT in URL, server logs, browser history, and Referer headers
-  //
-  // MIGRATION PATH:
-  // 1. Backend implements /api/v1/sse-ticket endpoint
-  // 2. This function becomes async and fetches ticket from backend
-  // 3. createAuthenticatedSSE awaits the ticket before connecting
-  // 4. Ticket is single-use, short-lived (5 minutes)
-  // 5. No sensitive data exposed in URLs or logs
-
   return token;
 }

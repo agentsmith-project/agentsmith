@@ -17,7 +17,7 @@ Applies to:
 
 - Use explicit route-level permission gates for protected modules.
   - Chat: `project:chat:access`
-  - Studio: `project:notebook:access`
+  - Notebook: `project:notebook:access`
 - Workspace project list route (`/workspaces/[workspace]/projects`) may bootstrap with authenticated workspace context before project context exists.
 - Backend remains the final authorization authority (`401/403`).
 

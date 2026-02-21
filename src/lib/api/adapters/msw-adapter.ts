@@ -164,7 +164,7 @@ export class MSWApiClient implements ApiClient {
    * SSE connection using MockEventSource (for development)
    * Falls back to native EventSource if mock not available
    */
-  connectSSE(path: string, options?: ApiRequestOptions): EventSource {
+  connectSSE(path: string, options?: ApiRequestOptions): Promise<EventSource> {
     let url = `${API_BASE}${path}`;
 
     if (options?.params) {
@@ -178,10 +178,12 @@ export class MSWApiClient implements ApiClient {
       }
     }
 
-    return createAuthenticatedSSE(url, this.token, {
-      onError: (error) => {
-        console.error('[SSE MSW] Connection error:', error);
-      },
-    });
+    return Promise.resolve(
+      createAuthenticatedSSE(url, this.token, {
+        onError: (error) => {
+          console.error('[SSE MSW] Connection error:', error);
+        },
+      }),
+    );
   }
 }

@@ -15,10 +15,7 @@ AgentSmith is the admin interface for the Microservices-Based Agent System (MBOS
 
 ## Design System
 
-See `DESIGN_SYSTEM.md` for the complete design system reference.
-
-**Important**: All UI designs must strictly follow the visual design system document:
-`/home/percy/works/mygithub/mbos-server/文档/UXUI/2026-01-31-视觉设计系统-v1.md`
+See [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) for the design system index. All UI designs must follow the in-repo [视觉设计系统](./docs/UXUI/00-设计系统/视觉设计系统-v1.md).
 
 ## Getting Started
 
@@ -71,6 +68,5 @@ src/
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
 - [Design System](./DESIGN_SYSTEM.md)
 - [Development Guide](./DEVELOPMENT.md)
-- [Component Documentation](./docs/components.md)
-- [Workspace/Project State Management](./docs/workspace-project-state-management.md)
-- [i18n Internal Guide](./docs/I18N_INTERN_GUIDE.md)
+- [Documentation Index](./docs/README.md) — contracts, UXUI, and other docs
+- [i18n Internal Guide](./docs/UXUI/01-通用规范/2026-02-03-i18n-内部指南-v1.md)

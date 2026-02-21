@@ -138,8 +138,18 @@ This document is the product-facing source for UX behavior; API-level details re
 
 ## Remaining MVP Gaps
 
-1. Workspace governance group persistence is frontend-local state; backend persistence contract is required for release freeze.
-2. Project admin assignment UX should be template-first across all member flows.
-3. Shared library first-class CRUD is implemented in Files page, but advanced governance UX (library ownership transfer, archive lifecycle, bulk policy assignment) is not yet implemented.
+1. Workspace governance group persistence: API contract is defined in `workspace-governance-backend-contract.md`. Frontend already calls GET/PATCH; backend must persist `governance_group` and return it in member responses for release freeze.
+2. Template-first member flows: **done** (see checklist below).
+
+**Template-first checklist**
+
+| Flow | Status |
+|------|--------|
+| Batch apply | Done (BatchApplyPermissionDialog) |
+| Member drawer | Done (template selection) |
+| Invite member | Done (default template: user) |
+| Project group create/edit | Done (default template: user) |
+
+3. Files: Out of scope for MVP release. Shared library first-class CRUD is implemented in Files page; advanced governance UX (library ownership transfer, archive lifecycle, bulk policy assignment) may be phased post-MVP.
 4. Unified `Resource Policy` page should be the single resource-centric policy entry for endpoint/library/agent with subject-based overrides.
-5. Policy stale-subject cleanup UX and governance audit timeline are not yet implemented.
+5. Policy stale-subject cleanup UX: **implemented** (stale indicator + one-click remove-stale in Resource Policy page). Governance audit timeline: frontend ready; backend must emit `resource_type: resource_policy` audit events to populate it.

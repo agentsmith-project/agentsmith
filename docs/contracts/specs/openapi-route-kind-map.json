@@ -63,5 +63,14 @@
 
   "credentials": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials", "method": "get" },
   "credentialItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}", "method": "delete" },
-  "credentialRotate": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}/rotate", "method": "post" }
+  "credentialRotate": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}/rotate", "method": "post" },
+  "taskArtifactDownload": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/download", "method": "get" },
+  "taskArtifactSave": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/save", "method": "post" },
+  "taskArtifacts": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts", "method": "get" },
+  "taskEvents": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/events", "method": "get" },
+  "taskItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}", "method": "get" },
+  "taskMessages": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages", "method": "get" },
+  "taskSourceItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources/{sourceId}", "method": "get" },
+  "taskSources": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources", "method": "get" },
+  "tasks": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks", "method": "get" }
 }

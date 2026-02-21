@@ -99,10 +99,7 @@ src/
 
 ## Design System Reference
 
-See `DESIGN_SYSTEM.md` for the complete design system reference.
-
-**Important**: All UI designs must strictly follow the visual design system document:
-`/home/percy/works/mygithub/mbos-server/文档/UXUI/2026-01-31-视觉设计系统-v1.md`
+See [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) for the design system index. All UI designs must follow the in-repo [视觉设计系统](./docs/UXUI/00-设计系统/视觉设计系统-v1.md).
 
 ## API Architecture
 
@@ -163,6 +160,8 @@ Current scope:
 2. `src/app/[locale]/workspaces/[workspace]/projects/page.tsx`
 
 CI runs the same command and fails the pipeline on missing coverage.
+
+Before release: ensure `npm run contracts:check`, `npm run contracts:check-openapi`, and `npm run openapi:check-generated` all pass on main.
 
 ## API 合约与文档入口
 

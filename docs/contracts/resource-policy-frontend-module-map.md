@@ -16,6 +16,11 @@ Target route:
 - Owns draft-to-rule transformation and effective-rule formatting helpers.
 - Must remain pure and reusable (no React or hooks).
 
+## Governance audit timeline
+
+- The page shows a "Policy change history" section using `AuditAPI.list` with `resource_type: 'resource_policy'`. Subject-level stale detection and the "Remove stale" action are implemented in the same page.
+- Frontend already requests audit with `resource_type: 'resource_policy'` and displays the list. Backend must emit audit events for policy create/update/delete with `resource_type` set to `resource_policy` so the timeline is populated.
+
 ## Guardrails
 
 - Keep API calls and mutation orchestration in `page.tsx` or dedicated hooks.

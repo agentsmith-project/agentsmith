@@ -54,7 +54,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   const applyGroupTemplate = useApplyProjectGroupTemplate(workspaceId, projectId);
 
   const [name, setName] = React.useState('');
-  const [templateId, setTemplateId] = React.useState('');
+  const [templateId, setTemplateId] = React.useState<string>('user');
   const [selectedMemberIds, setSelectedMemberIds] = React.useState<string[]>([]);
   const [memberSearch, setMemberSearch] = React.useState('');
   const [memberPage, setMemberPage] = React.useState(1);
@@ -128,7 +128,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
 
   const resetForm = () => {
     setName('');
-    setTemplateId('');
+    setTemplateId('user');
     setSelectedMemberIds([]);
     setMemberSearch('');
     setMemberPage(1);

@@ -17,6 +17,7 @@ export function useWorkspaceGovernance(workspaceId: string) {
         permissions?: string[];
       }
     ) => {
+      // Use API governance_group when present; fallback inferred from permissions until backend returns it (see workspace-governance-backend-contract.md).
       if (member.governance_group) return member.governance_group;
       const permissions = new Set(member.permissions ?? []);
       return permissions.has('workspace:governance:update') ? 'wheel' : 'user';

@@ -11,6 +11,7 @@ This directory contains only current-state documents: functional contracts, arch
 5. `auth-permission-model.md`
 6. `route-gate-test-checklist.md`
 7. `product-terminology.md`
+8. `workspace-governance-backend-contract.md` (workspace governance persistence API for backend)
 
 ## Module Contracts
 
@@ -33,6 +34,9 @@ This directory contains only current-state documents: functional contracts, arch
 
 ## Validation Commands
 
+Before merge / pre-release: run `npm run contracts:check` (permission gates, route tests) and `npm run contracts:check-openapi` (core, route-kind, breaking); ensure OpenAPI-generated types are in sync (`npm run openapi:check-generated`).
+
+- `npm run contracts:check` — permission gates and route test coverage
 - `npm run contracts:check-openapi-core`
 - `npm run contracts:check-openapi-route-kinds`
 - `npm run contracts:check-openapi-breaking`

@@ -134,7 +134,7 @@ docker compose -f infra/integration/docker-compose.yml down -v
 - Redis: `redis://localhost:16379`
 - MinIO API: `http://localhost:19000` (user `mbos`, password `mbos_dev_password`, bucket `mbos-dev`)
 - MinIO Console: `http://localhost:19001`
-- Keycloak: `http://localhost:18080` (admin `admin` / `admin`, realm `mbos`, client `mbos-frontend`)
+- Keycloak: `http://localhost:18080` (admin `admin` / `admin`, realm `mbos`, client `agentsmith`)
 - integration user: `integration-user` / `integration-user-123`
 - dev admin user: `dev-admin` / `dev-admin-123`
 - real completion e2e payload file: `secrets/e2e-openai-compatible.json`

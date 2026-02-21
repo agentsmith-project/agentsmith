@@ -14,13 +14,13 @@ INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-http://localhost:${API_PORT}}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:18080/realms}"
-KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-mbos-frontend}"
+KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
 INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 
-API_LOG="${INTEGRATION_API_LOG:-/tmp/mbos-api-node-integration.log}"
-WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/mbos-web-integration.log}"
+API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-node-integration.log}"
+WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-integration.log}"
 
 run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"

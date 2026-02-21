@@ -5,7 +5,7 @@ export default function HomePage() {
     <main className="min-h-screen bg-background flex items-center justify-center p-6">
       <div className="text-center space-y-6">
         <div className="space-y-4">
-          <h1 className="text-2xl font-semibold text-foreground">MBOS Frontend</h1>
+          <h1 className="text-2xl font-semibold text-foreground">AgentSmith</h1>
           <p className="text-primary">Intelligent Agent Platform</p>
           <p className="text-tertiary">v1.0.0 | Design Phase Complete</p>
         </div>

@@ -622,7 +622,7 @@ packages/
 
 ## 15. 你当前项目的建议起步点
 
-结合 `mbos-frontend-v1` 当前状态（前端已完成、MSW 在用），建议立刻执行：
+结合 AgentSmith 当前状态（前端已完成、MSW 在用），建议立刻执行：
 
 1. 在仓库新增 `packages/contracts`，把现有 mock 涉及接口收敛成 OpenAPI。
 2. 新增 `packages/domain` 与 `packages/application`，先实现 2 个核心用例（例如 project list/create）。

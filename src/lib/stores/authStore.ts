@@ -122,7 +122,7 @@ const createAuthStore = (): AuthStoreWithPersist => {
         },
       }),
       {
-        name: 'mbos-auth',
+        name: 'agentsmith-auth',
         storage: createJSONStorage(() => localStorage),
         partialize: (state) => ({
           user: state.user,

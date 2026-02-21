@@ -7,8 +7,8 @@
   "resetPasswordAllowed": true,
   "clients": [
     {
-      "clientId": "mbos-frontend",
-      "name": "MBOS Frontend",
+      "clientId": "agentsmith",
+      "name": "AgentSmith",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": true,

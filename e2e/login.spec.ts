@@ -17,7 +17,7 @@ import { waitForPageReady } from './utils/navigation';
 /** Clear any persisted auth so the login form is shown instead of a redirect. */
 async function clearAuth(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
-    localStorage.removeItem('mbos-auth');
+    localStorage.removeItem('agentsmith-auth');
   });
 }
 

@@ -249,7 +249,7 @@ function loadOpenAICompatiblePayloadForE2E() {
 
 async function getAuthTokenFromStorage(page: import('@playwright/test').Page): Promise<string> {
   const token = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('mbos-auth');
+    const raw = window.localStorage.getItem('agentsmith-auth');
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw) as { state?: { token?: string | null } };

@@ -1,6 +1,6 @@
 # Components Directory
 
-This directory contains all React components for the MBOS frontend application.
+This directory contains all React components for the AgentSmith application.
 
 ## Directory Structure
 

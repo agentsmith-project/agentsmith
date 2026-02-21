@@ -1,6 +1,6 @@
-# MBOS Frontend
+# AgentSmith
 
-MBOS (Microservices-Based Agent System) Frontend v1
+AgentSmith is the admin interface for the Microservices-Based Agent System (MBOS). It provides workspace/project isolation, intelligent agent management, and multilingual support (English/Chinese).
 
 ## Tech Stack
 
@@ -48,7 +48,7 @@ NEXT_PUBLIC_API_BASE=http://localhost:20000/api/v1
 NEXT_PUBLIC_USE_MSW=false
 NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms
 NEXT_PUBLIC_KEYCLOAK_REALM=mbos
-NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
+NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 ```
 
 ## Project Structure
@@ -68,6 +68,7 @@ src/
 
 ## Documentation
 
+- [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
 - [Design System](./DESIGN_SYSTEM.md)
 - [Development Guide](./DEVELOPMENT.md)
 - [Component Documentation](./docs/components.md)

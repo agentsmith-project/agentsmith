@@ -87,7 +87,7 @@ async function ensureProject(page: Page, locale: string): Promise<string> {
 
 async function getAuthToken(page: Page): Promise<string> {
   const token = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('mbos-auth');
+    const raw = window.localStorage.getItem('agentsmith-auth');
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw) as { state?: { token?: string | null } };

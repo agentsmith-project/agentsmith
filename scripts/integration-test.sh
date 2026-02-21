@@ -1,5 +1,5 @@
 #!/bin/bash
-# Integration Test Script for MBOS Frontend
+# Integration Test Script for AgentSmith
 # Uses curl to verify all pages are accessible
 
 set -e
@@ -47,7 +47,7 @@ test_url() {
 
 # Print header
 echo "=========================================="
-echo "MBOS Frontend Integration Tests"
+echo "AgentSmith Integration Tests"
 echo "=========================================="
 echo "Base URL: $BASE_URL"
 echo ""

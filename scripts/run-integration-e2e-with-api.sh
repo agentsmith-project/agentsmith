@@ -11,7 +11,7 @@ shift
 API_PORT="${INTEGRATION_API_PORT:-20010}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-API_LOG="${INTEGRATION_API_LOG:-/tmp/mbos-api-node-integration.log}"
+API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-node-integration.log}"
 
 # Always clear proxy-related env vars for deterministic local integration testing.
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY

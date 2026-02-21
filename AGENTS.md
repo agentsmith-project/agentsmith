@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MBOS Frontend is the admin interface for the Microservices-Based Agent System. It provides workspace/project isolation, intelligent agent management, and multilingual support (English/Chinese).
+AgentSmith is the admin interface for the Microservices-Based Agent System (MBOS). It provides workspace/project isolation, intelligent agent management, and multilingual support (English/Chinese).
 
 **Tech Stack**: Next.js 15 (App Router), TypeScript 5.9, TailwindCSS, Radix UI, Zustand, React Query, next-intl
 
-**Workspace**: `/home/percy/works/mbos-server-v1/mbos-frontend-v1`
+**Workspace**: `/home/percy/works/mbos-v1/agentsmith`
 
 ## Common Commands
 
@@ -215,7 +215,7 @@ NEXT_PUBLIC_USE_MSW=true
 # For Keycloak auth (production)
 NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms
 NEXT_PUBLIC_KEYCLOAK_REALM=mbos
-NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
+NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 ```
 
 ## Important Files

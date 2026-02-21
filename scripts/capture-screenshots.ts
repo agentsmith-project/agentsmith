@@ -76,7 +76,7 @@ async function mockLogin(page: Page) {
       },
       version: 0,
     };
-    localStorage.setItem('mbos-auth', JSON.stringify(mockAuthState));
+    localStorage.setItem('agentsmith-auth', JSON.stringify(mockAuthState));
   }, { wsId: WS_ID });
 }
 

@@ -1,4 +1,4 @@
-# MBOS Frontend - Development Guide
+# AgentSmith - Development Guide
 
 ## Quick Start
 
@@ -71,7 +71,7 @@ NEXT_PUBLIC_BYPASS_AUTH=false
 # For local development with Keycloak
 NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms
 NEXT_PUBLIC_KEYCLOAK_REALM=mbos
-NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=mbos-frontend
+NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 ```
 
 ## Project Structure

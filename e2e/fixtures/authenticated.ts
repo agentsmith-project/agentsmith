@@ -16,7 +16,7 @@ export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'tes
     const tokenExpiresAt = Date.now() + 60 * 60 * 1000;
 
     try {
-      localStorage.setItem('mbos-auth', JSON.stringify({
+      localStorage.setItem('agentsmith-auth', JSON.stringify({
         state: { user, token, refreshToken, tokenExpiresAt, isAuthenticated: true },
         version: 0,
       }));

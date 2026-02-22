@@ -256,6 +256,11 @@ done
 
 ## 7.3 Execution Details Pagination (Message Trace Panel)
 - Notebook agent message bubbles support expandable execution details (trace timeline).
+- Trace panel supports view modes:
+  - `Timeline` / `时间线` (default)
+  - `Raw` / `原始事件` (high-fidelity event list close to Codex CLI output semantics)
+- Trace panel supports `Copy trace logs` / `复制执行日志`:
+  - copies the currently loaded trace slice for the message as JSON (useful for bug reports / debugging)
 - Traces are lazily loaded per `message_id` when the user clicks `View execution details` / `查看执行详情`.
 - Backend trace list response now includes pagination hints:
   - `has_more`
@@ -268,6 +273,7 @@ done
   - shows `More execution logs are available...` / `还有更多执行日志...`
   - shows `Load earlier logs` / `加载更早日志`
   - merges older traces into the same message timeline (deduplicated by trace `id`)
+  - in `Raw` view, renders event fields directly (`seq/category/phase/status/name/summary/details`) for high-fidelity inspection
 - Troubleshooting:
   - If a message shows `No execution details yet`, check:
     - whether the task ran through the new `trace_event` pipeline

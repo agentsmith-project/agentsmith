@@ -1,0 +1,74 @@
+asyncapi: 3.0.0
+info:
+  title: MBOS External Agent Runtime WS Supplement
+  version: 1.0.0
+  description: |
+    Additive contract supplement for runtime frames currently implemented in code but not yet merged into generated `specs/asyncapi.*`.
+channels:
+  agentRuntime:
+    address: /api/v1/agent-runtime/ws?agent_id={agentId}
+    messages:
+      agentResponseEvent:
+        $ref: '#/components/messages/agentResponseEvent'
+operations:
+  sendToServerSupplement:
+    action: send
+    channel:
+      $ref: '#/channels/agentRuntime'
+    messages:
+      - $ref: '#/channels/agentRuntime/messages/agentResponseEvent'
+components:
+  messages:
+    agentResponseEvent:
+      name: agent.response.event
+      summary: Structured execution telemetry event (notebook/chat diagnostics and expandable trace UI)
+      payload:
+        type: object
+        required:
+          - type
+          - request_id
+          - timestamp
+          - payload
+        properties:
+          type:
+            const: agent.response.event
+          request_id:
+            type: string
+          timestamp:
+            type: string
+            format: date-time
+          payload:
+            $ref: '#/components/schemas/AgentResponseEventPayload'
+  schemas:
+    AgentResponseEventPayload:
+      type: object
+      required:
+        - sequence
+        - at
+        - category
+        - name
+        - summary
+      properties:
+        sequence:
+          type: integer
+          minimum: 0
+        at:
+          type: string
+          format: date-time
+        category:
+          type: string
+          enum: [lifecycle, progress, tool, artifact, warning, error, debug]
+        phase:
+          type: string
+          enum: [start, update, end]
+        status:
+          type: string
+          enum: [running, success, error, cancelled]
+        name:
+          type: string
+        summary:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+          description: Sanitized event metadata (must not contain tokens/secrets).

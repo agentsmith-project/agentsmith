@@ -1,0 +1,233 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AgentSmith Notebook Trace Supplement API",
+    "version": "1.0.0",
+    "description": "Supplemental OpenAPI contract for notebook execution trace routes not yet included in the generated core `openapi.*` specs.\n"
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "paths": {
+    "/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/traces": {
+      "get": {
+        "summary": "List notebook execution trace events",
+        "description": "Returns execution trace events for a notebook task. Results can be scoped to a specific message or run,\nand paged using cursor-style parameters (`after_id` / `before_id`).\n",
+        "tags": [
+          "Notebook"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/TaskId"
+          },
+          {
+            "in": "query",
+            "name": "message_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Limit traces to a specific agent message."
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Limit traces to a specific runtime execution."
+          },
+          {
+            "in": "query",
+            "name": "after_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Return events newer than the given trace event id (gap-fill / tail paging)."
+          },
+          {
+            "in": "query",
+            "name": "before_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Return events older than the given trace event id (load earlier logs)."
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            },
+            "description": "Maximum number of events to return."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trace event list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTraceListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "WorkspaceId": {
+        "in": "path",
+        "name": "workspaceId",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ProjectId": {
+        "in": "path",
+        "name": "projectId",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "TaskId": {
+        "in": "path",
+        "name": "taskId",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "TaskTraceEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "message_id",
+          "run_id",
+          "seq",
+          "at",
+          "category",
+          "name",
+          "summary"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "lifecycle",
+              "progress",
+              "tool",
+              "artifact",
+              "warning",
+              "error",
+              "debug"
+            ]
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "start",
+              "update",
+              "end"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "success",
+              "error",
+              "cancelled"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Sanitized structured detail payload (no secrets/tokens)."
+          }
+        }
+      },
+      "TaskTraceListResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskTraceEvent"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "Indicates older events are available for pagination."
+          },
+          "next_after_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Cursor for loading an earlier slice using `before_id`."
+          }
+        }
+      }
+    }
+  }
+}

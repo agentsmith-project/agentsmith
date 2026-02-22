@@ -72,6 +72,9 @@ All frames are JSON objects:
     - `name: string`
     - `summary: string`
     - `details?: object` (must be sanitized; no secrets/tokens)
+      - recommended for trace fidelity UX:
+        - preserve sanitized provider/codex event metadata (e.g. original event type/source labels)
+        - avoid semantic rewrites; frontend may render `Raw` view directly from `details`
 - `agent.response.done`
   - required: `request_id`
   - payload: `{ "finish_reason": "stop|length|cancelled|...", "usage_tokens": number }`

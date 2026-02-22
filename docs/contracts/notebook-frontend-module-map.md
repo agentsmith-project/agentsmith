@@ -1,6 +1,6 @@
 # Notebook Frontend Module Map
 
-This document defines the current module boundary for the Notebook list page and its immediate growth constraints.
+This document defines the current module boundary for the Notebook list/detail pages and their immediate growth constraints.
 
 Terminology note:
 - Product name: `Notebook`
@@ -10,7 +10,7 @@ Terminology note:
 
 - Route: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/page.tsx`
 - List UI: `src/components/notebook/TaskList.tsx`
-- Detail route is intentionally out of this document.
+- Detail UI: `src/components/notebook/TaskPage.tsx` and notebook conversation components
 - Fixed HTTP contract namespace: `/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/*`
 
 ## Current Structure
@@ -33,10 +33,22 @@ Terminology note:
   - left: Inputs panel
   - center: Conversation panel
   - right: Artifacts panel
+- Center conversation panel supports expandable agent execution details (message-scoped trace panel):
+  - default collapsed (result-first UI)
+  - lazy trace fetch on expand: `GET /tasks/{taskId}/traces?message_id=<messageId>`
+  - supports trace pagination for earlier events via `before_id`
+  - supports timeline view and raw event view (high-fidelity, Codex CLI-oriented)
 - Inputs panel supports three add channels in current prototype:
   - Files library picker (canonical)
   - Local upload (uploads to Files, then attaches)
   - URL input (stored as URL note file, then attaches)
+
+4. Notebook task trace data contract (detail page)
+- Task SSE route (`/tasks/{taskId}/events`) emits `trace_event` for real-time execution telemetry.
+- Trace REST route (`/tasks/{taskId}/traces`) returns persisted/in-memory trace slices with pagination hints:
+  - `has_more`
+  - `next_after_id`
+- Frontend keeps display strategy local (timeline/raw/filtering) and must not depend on backend-generated UI formatting strings.
 
 ## UX Contract
 
@@ -47,9 +59,16 @@ Terminology note:
   - `notebook__task-list`
   - `notebook__create-task-btn`
   - `notebook__task-card`
+- Preserve notebook trace panel test ids used by unit/e2e coverage:
+  - `notebook__message-trace-toggle`
+  - `notebook__message-trace-panel`
+  - `notebook__message-trace-view-timeline`
+  - `notebook__message-trace-view-raw`
+  - `notebook__message-trace-load-more`
 
 ## Growth Guardrails
 
 - If list toolbar grows beyond one row, split into a dedicated toolbar component before adding more logic.
 - Do not add per-page width toggles; keep layout mode global at project shell level.
 - Keep route-level permission and parameter validation in `notebook/page.tsx`; avoid leaking this logic into leaf UI components.
+- Keep execution trace storage/transport structured (`trace_event` + `/traces`) and keep presentation logic in frontend components (`MessageItem`/trace panel) rather than backend-formatted strings.

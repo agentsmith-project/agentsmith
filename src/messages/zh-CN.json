@@ -409,7 +409,22 @@
       "realtime_reconnecting": "实时连接：重连中...",
       "realtime_disconnected": "实时连接：已断开",
       "realtime_error": "实时连接：出错",
-      "sse_debug_title": "SSE 调试（最近 5 条）"
+      "sse_debug_title": "SSE 调试（最近 5 条）",
+      "trace_view": "查看执行详情",
+      "trace_hide": "隐藏执行详情",
+      "trace_status_idle": "就绪",
+      "trace_status_running": "执行中",
+      "trace_status_success": "已完成",
+      "trace_status_error": "失败",
+      "trace_status_cancelled": "已取消",
+      "trace_step_count": "{count, plural, one {# 步} other {# 步}}",
+      "trace_details_loading": "正在加载执行详情...",
+      "trace_no_details": "暂无执行详情",
+      "trace_more_available": "还有更多执行日志（当前显示最近部分）",
+      "trace_load_more": "加载更早日志",
+      "trace_load_more_loading": "加载中...",
+      "trace_step_view_details": "查看步骤明细",
+      "trace_step_hide_details": "隐藏步骤明细"
     },
     "artifacts": {
       "title": "生成物",

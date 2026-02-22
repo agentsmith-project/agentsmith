@@ -6,12 +6,12 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { TaskAPI, API_BASE, getApiClient } from '@/lib/api';
-import type { TaskMessage, Artifact, Task } from '@/lib/types/task';
+import type { TaskMessage, Artifact, Task, TaskTraceEvent } from '@/lib/types/task';
 import { createAuthenticatedSSE, fetchSSETicket } from '@/lib/api/sse-client';
 
 export interface TaskSSEEvent {
-  type: 'message' | 'artifact' | 'task_update' | 'error';
-  data: TaskMessage | Artifact | Task | { message: string; code?: string };
+  type: 'message' | 'artifact' | 'task_update' | 'trace_event' | 'error';
+  data: TaskMessage | Artifact | Task | TaskTraceEvent | { message: string; code?: string };
 }
 
 export interface TaskSSEDebugEvent {
@@ -25,7 +25,10 @@ export interface TaskSSEDebugEvent {
     | 'reconnect_scheduled'
     | 'reconnect_exhausted'
     | 'ticket_error'
-    | 'disconnect';
+    | 'disconnect'
+    | 'trace_gap_fill_start'
+    | 'trace_gap_fill_done'
+    | 'trace_gap_fill_error';
   summary: string;
 }
 
@@ -33,6 +36,7 @@ export interface UseTaskSSEOptions {
   onMessage?: (message: TaskMessage) => void;
   onArtifact?: (artifact: Artifact) => void;
   onTaskUpdate?: (task: Task) => void;
+  onTraceEvent?: (event: TaskTraceEvent) => void;
   onError?: (error: Error) => void;
   onDebug?: (event: TaskSSEDebugEvent) => void;
   enabled?: boolean;
@@ -47,6 +51,7 @@ interface CallbackRefs {
   onMessage?: UseTaskSSEOptions['onMessage'];
   onArtifact?: UseTaskSSEOptions['onArtifact'];
   onTaskUpdate?: UseTaskSSEOptions['onTaskUpdate'];
+  onTraceEvent?: UseTaskSSEOptions['onTraceEvent'];
   onError?: UseTaskSSEOptions['onError'];
   onDebug?: UseTaskSSEOptions['onDebug'];
 }
@@ -61,6 +66,7 @@ export function useTaskSSE(
     onMessage,
     onArtifact,
     onTaskUpdate,
+    onTraceEvent,
     onError,
     onDebug,
     enabled = true,
@@ -81,6 +87,7 @@ export function useTaskSSE(
     onMessage,
     onArtifact,
     onTaskUpdate,
+    onTraceEvent,
     onError,
     onDebug,
   });
@@ -91,6 +98,7 @@ export function useTaskSSE(
       onMessage,
       onArtifact,
       onTaskUpdate,
+      onTraceEvent,
       onError,
       onDebug,
     };
@@ -157,6 +165,9 @@ export function useTaskSSE(
                 break;
               case 'task_update':
                 callbacksRef.current.onTaskUpdate?.(data.data as Task);
+                break;
+              case 'trace_event':
+                callbacksRef.current.onTraceEvent?.(data.data as TaskTraceEvent);
                 break;
               case 'error':
                 const errorData = data.data as { message: string; code?: string };

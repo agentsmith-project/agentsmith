@@ -407,7 +407,22 @@
       "realtime_reconnecting": "Realtime connection: reconnecting...",
       "realtime_disconnected": "Realtime connection: disconnected",
       "realtime_error": "Realtime connection: error",
-      "sse_debug_title": "SSE Debug (latest 5)"
+      "sse_debug_title": "SSE Debug (latest 5)",
+      "trace_view": "View execution details",
+      "trace_hide": "Hide execution details",
+      "trace_status_idle": "Ready",
+      "trace_status_running": "Running",
+      "trace_status_success": "Completed",
+      "trace_status_error": "Failed",
+      "trace_status_cancelled": "Cancelled",
+      "trace_step_count": "{count, plural, one {# step} other {# steps}}",
+      "trace_details_loading": "Loading execution details...",
+      "trace_no_details": "No execution details yet",
+      "trace_more_available": "More execution logs are available (showing latest entries)",
+      "trace_load_more": "Load earlier logs",
+      "trace_load_more_loading": "Loading...",
+      "trace_step_view_details": "View step details",
+      "trace_step_hide_details": "Hide step details"
     },
     "artifacts": {
       "title": "Artifacts",

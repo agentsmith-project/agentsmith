@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { TaskMessage } from '@/lib/types/task';
+import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
@@ -11,8 +11,32 @@ import { Markdown } from '@/components/chat/Markdown';
 export interface MessageItemProps {
   message: TaskMessage;
   streamingContent?: string | null;
+  traceEvents?: TaskTraceEvent[];
+  traceDetailsLoading?: boolean;
+  traceHasMore?: boolean;
+  traceLoadMoreLoading?: boolean;
   disabled?: boolean;
+  onTraceExpand?: (messageId: string) => void;
+  onTraceLoadMore?: (messageId: string) => void;
 }
+
+type TraceSummary = {
+  status: 'running' | 'success' | 'error' | 'cancelled' | 'idle';
+  stepCount: number;
+  currentStep?: string;
+  durationMs?: number;
+};
+
+type TraceStep = {
+  key: string;
+  name: string;
+  title: string;
+  status: 'running' | 'success' | 'error' | 'cancelled' | 'idle';
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: number;
+  events: TaskTraceEvent[];
+};
 
 function splitConcatenatedJsonObjects(input: string): string[] {
   const items: string[] = [];
@@ -120,14 +144,169 @@ function decodeCodexEventText(raw: string): string {
   return '';
 }
 
-export function MessageItem({ message, streamingContent, disabled = false }: MessageItemProps) {
+function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
+  if (traceEvents.length === 0) {
+    return { status: 'idle', stepCount: 0 };
+  }
+  const sorted = [...traceEvents].sort((a, b) => {
+    if (a.seq !== b.seq) return a.seq - b.seq;
+    return a.at.localeCompare(b.at);
+  });
+  const stepEvents = sorted.filter((evt) => evt.category !== 'debug' && evt.category !== 'lifecycle');
+  const terminal = [...sorted].reverse().find((evt) => evt.status && evt.status !== 'running');
+  const running = [...sorted].reverse().find((evt) => evt.status === 'running' || evt.phase === 'start');
+  const startedAt = sorted[0]?.at ? Date.parse(sorted[0].at) : NaN;
+  const endedAtCandidate = terminal?.at ? Date.parse(terminal.at) : (sorted[sorted.length - 1]?.at ? Date.parse(sorted[sorted.length - 1]!.at) : NaN);
+  const durationMs = Number.isFinite(startedAt) && Number.isFinite(endedAtCandidate)
+    ? Math.max(0, endedAtCandidate - startedAt)
+    : undefined;
+  return {
+    status: terminal?.status ?? (running ? 'running' : 'idle'),
+    stepCount: Math.max(1, stepEvents.length || sorted.length),
+    currentStep: (running ?? sorted[sorted.length - 1])?.summary,
+    ...(typeof durationMs === 'number' ? { durationMs } : {}),
+  };
+}
+
+function formatTraceStatusKey(status: TraceSummary['status']): string {
+  switch (status) {
+    case 'running':
+      return 'trace_status_running';
+    case 'success':
+      return 'trace_status_success';
+    case 'error':
+      return 'trace_status_error';
+    case 'cancelled':
+      return 'trace_status_cancelled';
+    default:
+      return 'trace_status_idle';
+  }
+}
+
+function computeDurationMs(startedAt?: string, endedAt?: string): number | undefined {
+  if (!startedAt || !endedAt) return undefined;
+  const start = Date.parse(startedAt);
+  const end = Date.parse(endedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
+  return Math.max(0, end - start);
+}
+
+function aggregateTraceSteps(traceEvents: TaskTraceEvent[]): TraceStep[] {
+  if (traceEvents.length === 0) return [];
+  const sorted = [...traceEvents].sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
+  const steps: TraceStep[] = [];
+  const activeByName = new Map<string, number>();
+
+  for (const evt of sorted) {
+    if (evt.category === 'debug') continue;
+    const stepKey = evt.name;
+    const existingIndex = activeByName.get(stepKey);
+    const shouldStartNewStep = existingIndex == null
+      || evt.phase === 'start'
+      || (steps[existingIndex] && steps[existingIndex].status !== 'running');
+
+    if (shouldStartNewStep) {
+      const step: TraceStep = {
+        key: `${evt.id}:${evt.name}`,
+        name: evt.name,
+        title: evt.summary || evt.name,
+        status: evt.status ?? (evt.phase === 'start' ? 'running' : 'idle'),
+        startedAt: evt.at,
+        endedAt: evt.status && evt.status !== 'running' ? evt.at : undefined,
+        events: [evt],
+      };
+      step.durationMs = computeDurationMs(step.startedAt, step.endedAt);
+      steps.push(step);
+      activeByName.set(stepKey, steps.length - 1);
+      continue;
+    }
+
+    const step = steps[existingIndex]!;
+    step.events.push(evt);
+    step.title = step.title || evt.summary || evt.name;
+    if (!step.startedAt) step.startedAt = evt.at;
+    if (evt.summary) step.title = evt.summary;
+    if (evt.status) {
+      step.status = evt.status;
+      if (evt.status !== 'running') {
+        step.endedAt = evt.at;
+      }
+    } else if (evt.phase === 'end' && step.status === 'running') {
+      step.status = 'success';
+      step.endedAt = evt.at;
+    }
+    step.durationMs = computeDurationMs(step.startedAt, step.endedAt);
+  }
+
+  return steps;
+}
+
+export function MessageItem({
+  message,
+  streamingContent,
+  traceEvents = [],
+  traceDetailsLoading = false,
+  traceHasMore = false,
+  traceLoadMoreLoading = false,
+  disabled = false,
+  onTraceExpand,
+  onTraceLoadMore,
+}: MessageItemProps) {
   const t = useTranslations('common.toast');
   const tCommon = useTranslations('common');
   const tNotebookConversation = useTranslations('notebook.conversation');
   const isUser = message.role === 'user';
+  const [traceExpanded, setTraceExpanded] = React.useState(false);
+  const [expandedStepKeys, setExpandedStepKeys] = React.useState<Record<string, boolean>>({});
 
   const rawDisplayContent = streamingContent ?? message.content;
   const displayContent = isUser ? rawDisplayContent : decodeCodexEventText(rawDisplayContent);
+  const traceSummary = !isUser ? summarizeTraceEvents(traceEvents) : { status: 'idle' as const, stepCount: 0 };
+  const hasTrace = !isUser && traceEvents.length > 0;
+  const canShowTraceToggle = !isUser;
+  const sortedTraceEvents = React.useMemo(
+    () => [...traceEvents].sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at))),
+    [traceEvents],
+  );
+  const traceSteps = React.useMemo(() => aggregateTraceSteps(sortedTraceEvents), [sortedTraceEvents]);
+  const formatDuration = (ms?: number) => {
+    if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
+    if (ms < 1000) return '<1s';
+    const seconds = Math.round(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const rem = seconds % 60;
+    return rem === 0 ? `${minutes}m` : `${minutes}m ${rem}s`;
+  };
+  const traceStatusClass = traceSummary.status === 'success'
+    ? 'text-green-300'
+    : traceSummary.status === 'error'
+      ? 'text-red-300'
+      : traceSummary.status === 'cancelled'
+        ? 'text-amber-300'
+      : 'text-blue-300';
+
+  React.useEffect(() => {
+    // Prune stale step expansion state when trace list changes.
+    setExpandedStepKeys((prev) => {
+      const valid = new Set(traceSteps.map((s) => s.key));
+      let changed = false;
+      const next: Record<string, boolean> = {};
+      for (const [key, value] of Object.entries(prev)) {
+        if (!valid.has(key)) {
+          changed = true;
+          continue;
+        }
+        next[key] = value;
+      }
+      return changed ? next : prev;
+    });
+  }, [traceSteps]);
+
+  React.useEffect(() => {
+    if (!traceExpanded) return;
+    onTraceExpand?.(message.id);
+  }, [message.id, onTraceExpand, traceExpanded]);
 
   const handleCopy = async () => {
     try {
@@ -175,6 +354,36 @@ export function MessageItem({ message, streamingContent, disabled = false }: Mes
         </div>
 
         <div className="mt-2 flex items-center gap-2 justify-end">
+          {canShowTraceToggle && (
+            <button
+              type="button"
+              className="mr-auto text-[11px] text-tertiary hover:text-primary"
+              onClick={() => setTraceExpanded((prev) => !prev)}
+              disabled={disabled}
+              data-testid="notebook__message-trace-toggle"
+              data-trace-message-id={message.id}
+            >
+              {traceDetailsLoading && !hasTrace ? (
+                <span className="text-blue-300">{tNotebookConversation('trace_details_loading')}</span>
+              ) : !hasTrace ? (
+                <span className="text-tertiary">{tNotebookConversation('trace_no_details')}</span>
+              ) : (
+                <>
+                  <span className={traceStatusClass}>
+                    {tNotebookConversation(formatTraceStatusKey(traceSummary.status))}
+                  </span>
+                  {' · '}
+                  {tNotebookConversation('trace_step_count', { count: traceSummary.stepCount })}
+                  {traceSummary.durationMs != null ? ` · ${formatDuration(traceSummary.durationMs)}` : ''}
+                  {traceSummary.currentStep ? ` · ${traceSummary.currentStep}` : ''}
+                </>
+              )}
+              {' · '}
+              {traceExpanded
+                ? tNotebookConversation('trace_hide')
+                : tNotebookConversation('trace_view')}
+            </button>
+          )}
           <span className="text-[11px] text-tertiary">{formatTime(message.created_at)}</span>
           <Button
             type="button"
@@ -189,6 +398,92 @@ export function MessageItem({ message, streamingContent, disabled = false }: Mes
             <Copy className="w-4 h-4" />
           </Button>
         </div>
+        {canShowTraceToggle && traceExpanded && (
+          <div className="mt-3 rounded-md border border-subtle bg-background/40 p-3" data-testid="notebook__message-trace-panel">
+            {traceDetailsLoading && !hasTrace ? (
+              <div className="text-xs text-tertiary" data-testid="notebook__message-trace-loading">
+                {tNotebookConversation('trace_details_loading')}
+              </div>
+            ) : !hasTrace ? (
+              <div className="text-xs text-tertiary" data-testid="notebook__message-trace-empty">
+                {tNotebookConversation('trace_no_details')}
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-72 overflow-y-auto">
+              {traceSteps.map((step) => (
+                <div key={step.key} className="rounded-md border border-subtle/70 bg-background/50 p-2" data-testid="notebook__trace-step">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span
+                      className={cn(
+                        'inline-block h-2 w-2 rounded-full',
+                        step.status === 'success'
+                          ? 'bg-green-400'
+                          : step.status === 'error'
+                            ? 'bg-red-400'
+                            : step.status === 'cancelled'
+                              ? 'bg-amber-400'
+                              : 'bg-blue-400',
+                      )}
+                    />
+                    <span className="text-primary font-medium">{step.title || step.name}</span>
+                    <span className="text-tertiary">{step.status}</span>
+                    {step.durationMs != null ? (
+                      <span className="text-tertiary">{formatDuration(step.durationMs)}</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="ml-auto text-tertiary hover:text-primary"
+                      onClick={() => setExpandedStepKeys((prev) => ({ ...prev, [step.key]: !prev[step.key] }))}
+                      data-testid="notebook__trace-step-toggle"
+                    >
+                      {expandedStepKeys[step.key]
+                        ? tNotebookConversation('trace_step_hide_details')
+                        : tNotebookConversation('trace_step_view_details')}
+                    </button>
+                  </div>
+                  {expandedStepKeys[step.key] && (
+                    <div className="mt-2 space-y-1" data-testid="notebook__trace-step-details">
+                      {step.events.map((evt) => (
+                        <div key={evt.id} className="text-xs border-l border-subtle pl-2">
+                          <div className="flex items-center gap-2 text-tertiary">
+                            <span>{new Date(evt.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                            <span>{evt.category}</span>
+                            {evt.phase ? <span>{evt.phase}</span> : null}
+                          </div>
+                          <div className="mt-0.5 text-primary">{evt.summary || evt.name}</div>
+                          {evt.details && Object.keys(evt.details).length > 0 && (
+                            <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-black/20 p-2 text-[11px] text-tertiary">
+                              {JSON.stringify(evt.details, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {traceHasMore && (
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <div className="text-tertiary" data-testid="notebook__message-trace-truncated">
+                    {tNotebookConversation('trace_more_available')}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-tertiary hover:text-primary underline underline-offset-2 disabled:opacity-50"
+                    onClick={() => onTraceLoadMore?.(message.id)}
+                    disabled={disabled || traceLoadMoreLoading}
+                    data-testid="notebook__message-trace-load-more"
+                  >
+                    {traceLoadMoreLoading
+                      ? tNotebookConversation('trace_load_more_loading')
+                      : tNotebookConversation('trace_load_more')}
+                  </button>
+                </div>
+              )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

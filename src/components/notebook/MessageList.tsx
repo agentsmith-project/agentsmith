@@ -1,6 +1,6 @@
 'use client';
 import * as React from 'react';
-import type { TaskMessage } from '@/lib/types/task';
+import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
 import { MessageItem } from './MessageItem';
 import { EmptyState } from '@/components/ui/loading';
 
@@ -8,14 +8,26 @@ export interface MessageListProps {
   messages: TaskMessage[];
   streamingMessageId?: string | null;
   streamingContent?: string | null;
+  traceEventsByMessageId?: Record<string, TaskTraceEvent[]>;
+  traceHasMoreByMessageId?: Record<string, boolean>;
+  traceLoadingByMessageId?: Record<string, boolean>;
+  traceLoadMoreLoadingByMessageId?: Record<string, boolean>;
   disabled?: boolean;
+  onTraceExpand?: (messageId: string) => void;
+  onTraceLoadMore?: (messageId: string) => void;
 }
 
 export function MessageList({
   messages,
   streamingMessageId,
   streamingContent,
+  traceEventsByMessageId,
+  traceHasMoreByMessageId,
+  traceLoadingByMessageId,
+  traceLoadMoreLoadingByMessageId,
   disabled = false,
+  onTraceExpand,
+  onTraceLoadMore,
 }: MessageListProps) {
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
@@ -63,7 +75,13 @@ export function MessageList({
           streamingContent={
             streamingMessageId === message.id ? streamingContent : null
           }
+          traceEvents={traceEventsByMessageId?.[message.id] ?? []}
+          traceHasMore={traceHasMoreByMessageId?.[message.id] ?? false}
+          traceDetailsLoading={traceLoadingByMessageId?.[message.id] ?? false}
+          traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[message.id] ?? false}
           disabled={disabled}
+          onTraceExpand={onTraceExpand}
+          onTraceLoadMore={onTraceLoadMore}
         />
       ))}
       {streamingMessageId && !messages.find((m) => m.id === streamingMessageId) && (
@@ -76,7 +94,13 @@ export function MessageList({
             created_at: new Date().toISOString(),
           }}
           streamingContent={streamingContent}
+          traceEvents={traceEventsByMessageId?.[streamingMessageId] ?? []}
+          traceHasMore={traceHasMoreByMessageId?.[streamingMessageId] ?? false}
+          traceDetailsLoading={traceLoadingByMessageId?.[streamingMessageId] ?? false}
+          traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[streamingMessageId] ?? false}
           disabled={disabled}
+          onTraceExpand={onTraceExpand}
+          onTraceLoadMore={onTraceLoadMore}
         />
       )}
       <div ref={messagesEndRef} />

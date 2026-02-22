@@ -27,10 +27,11 @@ import type { TaskSSEDebugEvent } from '@/lib/hooks/use-task-sse';
 import { useErrorHandler } from '@/lib/hooks/use-error-handler';
 import { TaskAPI, FilesAPI } from '@/lib/api';
 import { getApiClient } from '@/lib/api';
-import type { Artifact, TaskMessage } from '@/lib/types/task';
+import type { Artifact, TaskMessage, TaskTraceEvent } from '@/lib/types/task';
 import { useRouter, useParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
+import { mapTraceHasMoreByMessageId, pruneTaskTraceMeta, upsertTaskTraceMeta, type TaskTraceMetaByMessageId } from '@/lib/utils/task-trace-meta';
 
 export interface TaskPageProps {
   workspaceId: string;
@@ -66,12 +67,24 @@ export function TaskPage({
   const [selectedArtifact, setSelectedArtifact] = React.useState<Artifact | null>(null);
   const [streamingMessageId, setStreamingMessageId] = React.useState<string | null>(null);
   const [streamingContent, setStreamingContent] = React.useState<string>('');
+  const [isAgentTurnRunning, setIsAgentTurnRunning] = React.useState(false);
+  const [taskUpdateCountForCurrentTurn, setTaskUpdateCountForCurrentTurn] = React.useState(0);
+  const [traceEventsByMessageId, setTraceEventsByMessageId] = React.useState<Record<string, TaskTraceEvent[]>>({});
+  const [traceMetaByMessageId, setTraceMetaByMessageId] = React.useState<TaskTraceMetaByMessageId>({});
+  const [traceLoadingByMessageId, setTraceLoadingByMessageId] = React.useState<Record<string, boolean>>({});
+  const [traceLoadMoreLoadingByMessageId, setTraceLoadMoreLoadingByMessageId] = React.useState<Record<string, boolean>>({});
   const [sseDebugEvents, setSseDebugEvents] = React.useState<TaskSSEDebugEvent[]>([]);
+  const [traceBackfillRefreshNonce, setTraceBackfillRefreshNonce] = React.useState(0);
+  const appendSseDebugEvent = React.useCallback((event: TaskSSEDebugEvent) => {
+    setSseDebugEvents((prev) => [...prev.slice(-4), event]);
+  }, []);
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
   const filesAPI = React.useMemo(() => new FilesAPI(getApiClient()), []);
+  const taskAPI = React.useMemo(() => new TaskAPI(getApiClient()), []);
   const localFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const traceBackfillRequestedMessageIdsRef = React.useRef<Set<string>>(new Set());
   const { data: task, isLoading: taskLoading } = useTask(workspaceId, projectId, taskId);
   const { data: messages } = useTaskMessages(workspaceId, projectId, taskId);
   const { data: artifacts } = useTaskArtifacts(workspaceId, projectId, taskId);
@@ -83,6 +96,116 @@ export function TaskPage({
   const messagesKey = queryKeys.tasks.messages(workspaceId, projectId, taskId);
   const artifactsKey = queryKeys.tasks.artifacts(workspaceId, projectId, taskId);
   const taskDetailKey = queryKeys.tasks.detail(workspaceId, projectId, taskId);
+
+  const resetCurrentRunUiState = React.useCallback(() => {
+    setStreamingMessageId(null);
+    setStreamingContent('');
+    setIsAgentTurnRunning(false);
+  }, []);
+  const lastTraceEventIdRef = React.useRef<string | null>(null);
+
+  const mergeTraceEvents = React.useCallback((items: TaskTraceEvent[]) => {
+    if (items.length === 0) return;
+    setTraceEventsByMessageId((prev) => {
+      let changed = false;
+      const next: Record<string, TaskTraceEvent[]> = { ...prev };
+      for (const evt of items) {
+        const arr = next[evt.message_id] ?? [];
+        if (arr.some((item) => item.id === evt.id)) continue;
+        next[evt.message_id] = [...arr, evt];
+        changed = true;
+      }
+      const latest = items[items.length - 1];
+      if (latest?.id) {
+        lastTraceEventIdRef.current = latest.id;
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
+  const fetchTracesForMessage = React.useCallback(async (messageId: string) => {
+    if (!messageId) return;
+    if (traceBackfillRequestedMessageIdsRef.current.has(messageId)) return;
+    traceBackfillRequestedMessageIdsRef.current.add(messageId);
+    setTraceLoadingByMessageId((prev) => ({ ...prev, [messageId]: true }));
+    try {
+      const resp = await taskAPI.listTraces(workspaceId, projectId, taskId, {
+        message_id: messageId,
+        page_size: 500,
+      });
+      mergeTraceEvents(resp.items);
+      setTraceMetaByMessageId((prev) => upsertTaskTraceMeta(prev, messageId, resp));
+    } catch (err) {
+      traceBackfillRequestedMessageIdsRef.current.delete(messageId);
+      handleError(err, { logContext: 'TaskPage.traceMessageBackfill' });
+    } finally {
+      setTraceLoadingByMessageId((prev) => {
+        if (!prev[messageId]) return prev;
+        const next = { ...prev };
+        delete next[messageId];
+        return next;
+      });
+    }
+  }, [handleError, mergeTraceEvents, projectId, taskAPI, taskId, workspaceId]);
+
+  const loadMoreTracesForMessage = React.useCallback(async (messageId: string) => {
+    const meta = traceMetaByMessageId[messageId];
+    const beforeId = meta?.nextAfterId;
+    if (!messageId || !beforeId) return;
+    if (traceLoadMoreLoadingByMessageId[messageId]) return;
+    setTraceLoadMoreLoadingByMessageId((prev) => ({ ...prev, [messageId]: true }));
+    try {
+      const resp = await taskAPI.listTraces(workspaceId, projectId, taskId, {
+        message_id: messageId,
+        before_id: beforeId,
+        page_size: 500,
+      });
+      mergeTraceEvents(resp.items);
+      setTraceMetaByMessageId((prev) => upsertTaskTraceMeta(prev, messageId, resp));
+    } catch (err) {
+      handleError(err, { logContext: 'TaskPage.traceMessageLoadMore' });
+    } finally {
+      setTraceLoadMoreLoadingByMessageId((prev) => {
+        if (!prev[messageId]) return prev;
+        const next = { ...prev };
+        delete next[messageId];
+        return next;
+      });
+    }
+  }, [handleError, mergeTraceEvents, projectId, taskAPI, taskId, traceLoadMoreLoadingByMessageId, traceMetaByMessageId, workspaceId]);
+
+  React.useEffect(() => {
+    if (!messages || messages.length === 0) return;
+    const messageIds = new Set(messages.map((m) => m.id));
+    traceBackfillRequestedMessageIdsRef.current = new Set(
+      [...traceBackfillRequestedMessageIdsRef.current].filter((id) => messageIds.has(id)),
+    );
+    setTraceMetaByMessageId((prev) => pruneTaskTraceMeta(prev, messageIds));
+    setTraceLoadingByMessageId((prev) => {
+      let changed = false;
+      const next: Record<string, boolean> = {};
+      for (const [id, loading] of Object.entries(prev)) {
+        if (!messageIds.has(id)) {
+          changed = true;
+          continue;
+        }
+        next[id] = loading;
+      }
+      return changed ? next : prev;
+    });
+    setTraceLoadMoreLoadingByMessageId((prev) => {
+      let changed = false;
+      const next: Record<string, boolean> = {};
+      for (const [id, loading] of Object.entries(prev)) {
+        if (!messageIds.has(id)) {
+          changed = true;
+          continue;
+        }
+        next[id] = loading;
+      }
+      return changed ? next : prev;
+    });
+  }, [messages, traceBackfillRefreshNonce]);
 
   // SSE connection for real-time updates
   const isDev = process.env.NODE_ENV === 'development';
@@ -117,25 +240,112 @@ export function TaskPage({
       );
     },
     onTaskUpdate: (updatedTask) => {
-      // Task update signals agent completion — clear streaming state
-      setStreamingMessageId(null);
-      setStreamingContent('');
-
+      if (isAgentTurnRunning && streamingMessageId) {
+        const hasTraceForCurrentTurn = (traceEventsByMessageId[streamingMessageId] ?? []).length > 0;
+        if (!hasTraceForCurrentTurn) {
+          setTaskUpdateCountForCurrentTurn((prev) => {
+            const next = prev + 1;
+            if (next >= 2) {
+              resetCurrentRunUiState();
+              return 0;
+            }
+            return next;
+          });
+        }
+      }
       queryClient.setQueryData(taskDetailKey, updatedTask);
     },
+    onTraceEvent: (traceEvent) => {
+      lastTraceEventIdRef.current = traceEvent.id;
+      setTraceEventsByMessageId((prev) => {
+        const existing = prev[traceEvent.message_id] ?? [];
+        if (existing.some((item) => item.id === traceEvent.id)) return prev;
+        return {
+          ...prev,
+          [traceEvent.message_id]: [...existing, traceEvent],
+        };
+      });
+      if (
+        streamingMessageId === traceEvent.message_id
+        && (traceEvent.status === 'success' || traceEvent.status === 'error' || traceEvent.status === 'cancelled')
+      ) {
+        setTaskUpdateCountForCurrentTurn(0);
+        resetCurrentRunUiState();
+      }
+    },
+    onError: () => {
+      setTaskUpdateCountForCurrentTurn(0);
+      resetCurrentRunUiState();
+    },
     onDebug: isDev
-      ? (event) => {
-          setSseDebugEvents((prev) => [...prev.slice(-4), event]);
-        }
+      ? appendSseDebugEvent
       : undefined,
     enabled: !!taskId && !taskLoading,
   });
+
+  const previousConnectionStatusRef = React.useRef<typeof connectionStatus | null>(null);
+  React.useEffect(() => {
+    const prev = previousConnectionStatusRef.current;
+    previousConnectionStatusRef.current = connectionStatus;
+    if (!connectionStatus) return;
+    if (connectionStatus !== 'connected') return;
+    if (prev === 'reconnecting' || prev === 'error' || prev === 'disconnected') {
+      const afterId = lastTraceEventIdRef.current;
+      if (!afterId) {
+        if (isDev) {
+          appendSseDebugEvent({
+            at: new Date().toISOString(),
+            phase: 'trace_gap_fill_start',
+            summary: 'mode=refetch after_id=none',
+          });
+        }
+        traceBackfillRequestedMessageIdsRef.current.clear();
+        setTraceMetaByMessageId({});
+        setTraceLoadingByMessageId({});
+        setTraceLoadMoreLoadingByMessageId({});
+        setTraceBackfillRefreshNonce((prev) => prev + 1);
+        return;
+      }
+      // Refill only missing trace tail after reconnect to reduce payload size for long tasks.
+      if (isDev) {
+        appendSseDebugEvent({
+          at: new Date().toISOString(),
+          phase: 'trace_gap_fill_start',
+          summary: `mode=after_id after_id=${afterId}`,
+        });
+      }
+      void taskAPI.listTraces(workspaceId, projectId, taskId, {
+        after_id: afterId,
+        page_size: 500,
+      }).then((resp) => {
+        if (isDev) {
+          appendSseDebugEvent({
+            at: new Date().toISOString(),
+            phase: 'trace_gap_fill_done',
+            summary: `items=${resp.items.length}`,
+          });
+        }
+        mergeTraceEvents(resp.items);
+      }).catch((err) => {
+        if (isDev) {
+          appendSseDebugEvent({
+            at: new Date().toISOString(),
+            phase: 'trace_gap_fill_error',
+            summary: 'task_traces_gap_fill_failed',
+          });
+        }
+        handleError(err, { logContext: 'TaskPage.traceGapFill' });
+      });
+    }
+  }, [appendSseDebugEvent, connectionStatus, handleError, isDev, mergeTraceEvents, projectId, taskAPI, taskId, workspaceId]);
 
   const handleSendMessage = async (content: string) => {
     try {
       // Clear previous streaming state
       setStreamingMessageId(null);
       setStreamingContent('');
+      setIsAgentTurnRunning(false);
+      setTaskUpdateCountForCurrentTurn(0);
 
       // Send message and get response
       const response = await sendMessage.mutateAsync({
@@ -153,8 +363,12 @@ export function TaskPage({
       if (response.role === 'agent') {
         setStreamingMessageId(response.id);
         setStreamingContent('');
+        setIsAgentTurnRunning(true);
+        setTaskUpdateCountForCurrentTurn(0);
       }
     } catch (err) {
+      setIsAgentTurnRunning(false);
+      setTaskUpdateCountForCurrentTurn(0);
       handleError(err, { logContext: 'TaskPage.sendMessage' });
     }
   };
@@ -225,7 +439,6 @@ export function TaskPage({
 
   const handleDownloadArtifact = async (artifact: Artifact) => {
     try {
-      const taskAPI = new TaskAPI(getApiClient());
       const blob = await taskAPI.downloadArtifact(workspaceId, projectId, taskId, artifact.id);
       
       const url = window.URL.createObjectURL(blob);
@@ -245,7 +458,6 @@ export function TaskPage({
     if (!selectedArtifact) return;
 
     try {
-      const taskAPI = new TaskAPI(getApiClient());
       await taskAPI.saveArtifact(
         workspaceId,
         projectId,
@@ -323,6 +535,7 @@ export function TaskPage({
   }
 
   const isDisabled = task.status === 'closed' || task.status === 'archived';
+  const isConversationInputDisabled = isDisabled || !canUpdateTask || sendMessage.isPending || isAgentTurnRunning;
 
   return (
     <div className="h-full flex flex-col">
@@ -363,10 +576,16 @@ export function TaskPage({
           <ConversationPanel
             messages={messages || []}
             streamingMessageId={streamingMessageId}
-            streamingContent={streamingContent}
-            connectionStatus={connectionStatus}
-            onSendMessage={handleSendMessage}
-            disabled={isDisabled || !canUpdateTask}
+          streamingContent={streamingContent}
+          connectionStatus={connectionStatus}
+          traceEventsByMessageId={traceEventsByMessageId}
+          traceHasMoreByMessageId={mapTraceHasMoreByMessageId(traceMetaByMessageId)}
+          traceLoadingByMessageId={traceLoadingByMessageId}
+          traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
+          onTraceExpand={fetchTracesForMessage}
+          onTraceLoadMore={loadMoreTracesForMessage}
+          onSendMessage={handleSendMessage}
+            disabled={isConversationInputDisabled}
             sending={sendMessage.isPending}
           />
         </div>

@@ -156,6 +156,8 @@ export const queryKeys = {
       ['task', workspaceId, projectId, taskId] as const,
     messages: (workspaceId: string, projectId: string, taskId: string) =>
       ['task-messages', workspaceId, projectId, taskId] as const,
+    traces: (workspaceId: string, projectId: string, taskId: string, params?: object) =>
+      ['task-traces', workspaceId, projectId, taskId, params] as const,
     artifacts: (workspaceId: string, projectId: string, taskId: string) =>
       ['task-artifacts', workspaceId, projectId, taskId] as const,
   },

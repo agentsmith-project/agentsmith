@@ -425,7 +425,18 @@
       "trace_step_hide_details": "Hide step details",
       "trace_view_mode_timeline": "Timeline",
       "trace_view_mode_raw": "Raw",
-      "trace_copy_logs": "Copy trace logs"
+      "trace_copy_logs": "Copy trace logs",
+      "trace_filter_all": "All",
+      "trace_filter_progress": "Progress",
+      "trace_filter_tool": "Tool",
+      "trace_filter_alerts": "Alerts",
+      "trace_filter_debug": "Debug",
+      "trace_filter_no_results": "No events match this filter",
+      "trace_stats_events": "{count, plural, one {# event} other {# events}}",
+      "trace_stats_duration": "Duration: {value}",
+      "trace_stats_warnings": "{count, plural, one {# warning} other {# warnings}}",
+      "trace_stats_errors": "{count, plural, one {# error} other {# errors}}",
+      "trace_stats_truncated": "Showing latest slice"
     },
     "artifacts": {
       "title": "Artifacts",

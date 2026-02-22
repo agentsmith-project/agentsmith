@@ -427,7 +427,18 @@
       "trace_step_hide_details": "隐藏步骤明细",
       "trace_view_mode_timeline": "时间线",
       "trace_view_mode_raw": "原始事件",
-      "trace_copy_logs": "复制执行日志"
+      "trace_copy_logs": "复制执行日志",
+      "trace_filter_all": "全部",
+      "trace_filter_progress": "进度",
+      "trace_filter_tool": "工具",
+      "trace_filter_alerts": "告警/错误",
+      "trace_filter_debug": "调试",
+      "trace_filter_no_results": "当前筛选条件下没有事件",
+      "trace_stats_events": "{count, plural, one {# 条事件} other {# 条事件}}",
+      "trace_stats_duration": "耗时：{value}",
+      "trace_stats_warnings": "{count, plural, one {# 条告警} other {# 条告警}}",
+      "trace_stats_errors": "{count, plural, one {# 条错误} other {# 条错误}}",
+      "trace_stats_truncated": "当前显示最近一段"
     },
     "artifacts": {
       "title": "生成物",

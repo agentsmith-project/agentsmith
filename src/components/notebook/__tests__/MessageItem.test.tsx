@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MessageItem } from '../MessageItem';
 import type { TaskMessage } from '@/lib/types/task';
@@ -214,6 +215,64 @@ describe('MessageItem', () => {
       expect(copied).toContain('"summary": "Starting Codex execution"');
     });
 
+    it('filters raw trace events by category group', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_p',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:01Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+            {
+              id: 'trace_w',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 2,
+              at: '2024-01-01T14:31:02Z',
+              category: 'warning',
+              phase: 'update',
+              name: 'codex.retry',
+              summary: 'Retrying after upstream error',
+            },
+            {
+              id: 'trace_e',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 3,
+              at: '2024-01-01T14:31:03Z',
+              category: 'error',
+              phase: 'end',
+              status: 'error',
+              name: 'codex.exec',
+              summary: 'Execution failed',
+            },
+          ]}
+        />
+      );
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      await user.click(screen.getByTestId('notebook__message-trace-view-raw'));
+      await user.click(screen.getByTestId('notebook__message-trace-filter-alerts'));
+
+      const rawPanel = screen.getByTestId('notebook__message-trace-raw');
+      expect(within(rawPanel).getByText(/Retrying after upstream error/)).toBeInTheDocument();
+      expect(within(rawPanel).getByText(/Execution failed/)).toBeInTheDocument();
+      expect(within(rawPanel).queryByText(/Starting Codex execution/)).not.toBeInTheDocument();
+    });
+
     it('aggregates related trace events into step cards', async () => {
       const user = userEvent.setup();
       render(
@@ -295,6 +354,50 @@ describe('MessageItem', () => {
       expect(toggle).toHaveTextContent(/trace_status_success/);
       expect(toggle).toHaveTextContent(/trace_step_count/);
       expect(toggle).toHaveTextContent(/3s/);
+    });
+
+    it('shows trace panel stats (events/errors/truncated)', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceHasMore
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+            {
+              id: 'trace_2',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 2,
+              at: '2024-01-01T14:31:02Z',
+              category: 'error',
+              phase: 'end',
+              status: 'error',
+              name: 'codex.exec',
+              summary: 'Execution failed',
+            },
+          ]}
+        />
+      );
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      const stats = screen.getByTestId('notebook__message-trace-stats');
+      expect(stats).toHaveTextContent(/trace_stats_events/);
+      expect(stats).toHaveTextContent(/trace_stats_errors/);
+      expect(stats).toHaveTextContent(/trace_stats_truncated/);
     });
 
     it('shows loading state when execution details are being fetched', async () => {

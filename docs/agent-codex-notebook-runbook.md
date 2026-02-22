@@ -259,8 +259,17 @@ done
 - Trace panel supports view modes:
   - `Timeline` / `时间线` (default)
   - `Raw` / `原始事件` (high-fidelity event list close to Codex CLI output semantics)
+- Trace panel supports local display filters (frontend-only; does not change stored traces):
+  - `All`, `Progress`, `Tool`, `Alerts`, `Debug`
+  - useful for long runs when raw event volume is high
+- Trace panel shows lightweight stats (current filtered slice):
+  - event count
+  - duration
+  - warning/error counts
+  - truncated hint (when `has_more=true`)
 - Trace panel supports `Copy trace logs` / `复制执行日志`:
-  - copies the currently loaded trace slice for the message as JSON (useful for bug reports / debugging)
+  - copies the currently loaded trace slice for the message as JSON (filtered subset if a filter is active)
+  - useful for bug reports / debugging
 - Traces are lazily loaded per `message_id` when the user clicks `View execution details` / `查看执行详情`.
 - Backend trace list response now includes pagination hints:
   - `has_more`

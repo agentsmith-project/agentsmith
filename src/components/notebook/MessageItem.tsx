@@ -39,6 +39,24 @@ type TraceStep = {
 };
 
 type TraceViewMode = 'timeline' | 'raw';
+type TraceFilterMode = 'all' | 'progress' | 'tool' | 'alerts' | 'debug';
+
+function matchesTraceFilter(evt: TaskTraceEvent, mode: TraceFilterMode): boolean {
+  switch (mode) {
+    case 'all':
+      return true;
+    case 'progress':
+      return evt.category === 'progress' || evt.category === 'lifecycle';
+    case 'tool':
+      return evt.category === 'tool' || evt.category === 'artifact';
+    case 'alerts':
+      return evt.category === 'warning' || evt.category === 'error';
+    case 'debug':
+      return evt.category === 'debug';
+    default:
+      return true;
+  }
+}
 
 function splitConcatenatedJsonObjects(input: string): string[] {
   const items: string[] = [];
@@ -261,6 +279,7 @@ export function MessageItem({
   const [traceExpanded, setTraceExpanded] = React.useState(false);
   const [expandedStepKeys, setExpandedStepKeys] = React.useState<Record<string, boolean>>({});
   const [traceViewMode, setTraceViewMode] = React.useState<TraceViewMode>('timeline');
+  const [traceFilterMode, setTraceFilterMode] = React.useState<TraceFilterMode>('all');
 
   const rawDisplayContent = streamingContent ?? message.content;
   const displayContent = isUser ? rawDisplayContent : decodeCodexEventText(rawDisplayContent);
@@ -271,7 +290,19 @@ export function MessageItem({
     () => [...traceEvents].sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at))),
     [traceEvents],
   );
-  const traceSteps = React.useMemo(() => aggregateTraceSteps(sortedTraceEvents), [sortedTraceEvents]);
+  const filteredTraceEvents = React.useMemo(
+    () => sortedTraceEvents.filter((evt) => matchesTraceFilter(evt, traceFilterMode)),
+    [sortedTraceEvents, traceFilterMode],
+  );
+  const traceSteps = React.useMemo(() => aggregateTraceSteps(filteredTraceEvents), [filteredTraceEvents]);
+  const traceErrorCount = React.useMemo(
+    () => filteredTraceEvents.filter((evt) => evt.category === 'error').length,
+    [filteredTraceEvents],
+  );
+  const traceWarningCount = React.useMemo(
+    () => filteredTraceEvents.filter((evt) => evt.category === 'warning').length,
+    [filteredTraceEvents],
+  );
   const formatDuration = (ms?: number) => {
     if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
     if (ms < 1000) return '<1s';
@@ -322,7 +353,7 @@ export function MessageItem({
 
   const handleCopyTraceLogs = async () => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(sortedTraceEvents, null, 2));
+      await navigator.clipboard.writeText(JSON.stringify(filteredTraceEvents, null, 2));
       toast.info(t('copied'));
     } catch {
       toast.error(t('copy_failed'));
@@ -422,8 +453,24 @@ export function MessageItem({
               </div>
             ) : (
               <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-tertiary" data-testid="notebook__message-trace-stats">
+                  <span>{tNotebookConversation('trace_stats_events', { count: filteredTraceEvents.length })}</span>
+                  {traceSummary.durationMs != null ? (
+                    <span>{tNotebookConversation('trace_stats_duration', { value: formatDuration(traceSummary.durationMs) })}</span>
+                  ) : null}
+                  {traceWarningCount > 0 ? (
+                    <span>{tNotebookConversation('trace_stats_warnings', { count: traceWarningCount })}</span>
+                  ) : null}
+                  {traceErrorCount > 0 ? (
+                    <span className="text-red-300">{tNotebookConversation('trace_stats_errors', { count: traceErrorCount })}</span>
+                  ) : null}
+                  {traceHasMore ? (
+                    <span>{tNotebookConversation('trace_stats_truncated')}</span>
+                  ) : null}
+                </div>
                 <div className="flex flex-wrap items-center justify-between gap-2" data-testid="notebook__message-trace-toolbar">
-                  <div className="inline-flex items-center rounded-md border border-subtle bg-background/50 p-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="inline-flex items-center rounded-md border border-subtle bg-background/50 p-0.5">
                     <button
                       type="button"
                       className={cn(
@@ -446,6 +493,23 @@ export function MessageItem({
                     >
                       {tNotebookConversation('trace_view_mode_raw')}
                     </button>
+                    </div>
+                    <div className="inline-flex items-center rounded-md border border-subtle bg-background/50 p-0.5" data-testid="notebook__message-trace-filter-group">
+                      {(['all', 'progress', 'tool', 'alerts', 'debug'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={cn(
+                            'rounded px-2 py-1 text-xs',
+                            traceFilterMode === mode ? 'bg-hover text-primary' : 'text-tertiary hover:text-primary',
+                          )}
+                          onClick={() => setTraceFilterMode(mode)}
+                          data-testid={`notebook__message-trace-filter-${mode}`}
+                        >
+                          {tNotebookConversation(`trace_filter_${mode}`)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -460,6 +524,11 @@ export function MessageItem({
                 <div className="max-h-72 overflow-y-auto" data-testid="notebook__message-trace-body">
                   {traceViewMode === 'timeline' ? (
                     <div className="space-y-3">
+                      {traceSteps.length === 0 ? (
+                        <div className="text-xs text-tertiary" data-testid="notebook__message-trace-filter-empty">
+                          {tNotebookConversation('trace_filter_no_results')}
+                        </div>
+                      ) : null}
                       {traceSteps.map((step) => (
                         <div key={step.key} className="rounded-md border border-subtle/70 bg-background/50 p-2" data-testid="notebook__trace-step">
                           <div className="flex items-center gap-2 text-xs">
@@ -515,7 +584,12 @@ export function MessageItem({
                     </div>
                   ) : (
                     <div className="space-y-2" data-testid="notebook__message-trace-raw">
-                      {sortedTraceEvents.map((evt) => (
+                      {filteredTraceEvents.length === 0 ? (
+                        <div className="text-xs text-tertiary" data-testid="notebook__message-trace-filter-empty">
+                          {tNotebookConversation('trace_filter_no_results')}
+                        </div>
+                      ) : null}
+                      {filteredTraceEvents.map((evt) => (
                         <div key={evt.id} className="rounded border border-subtle/60 bg-background/50 p-2 text-xs">
                           <div className="flex flex-wrap items-center gap-2 text-tertiary">
                             <span>{new Date(evt.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>

@@ -33,7 +33,7 @@ json_get() {
 
 if [[ -z "${MESSAGE_ID}" ]]; then
   messages_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/messages" -H "Authorization: Bearer ${TOKEN}")"
-  MESSAGE_ID="$(printf '%s' "${messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const arr=JSON.parse(s);const m=[...arr].reverse().find(x=>x&&x.role==="agent"); if(!m?.id) process.exit(2); process.stdout.write(m.id);})' || true)"
+  MESSAGE_ID="$(printf '%s' "${messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const parsed=JSON.parse(s); if(!Array.isArray(parsed)) process.exit(3); const m=[...parsed].reverse().find(x=>x&&x.role==="agent"); if(!m?.id) process.exit(2); process.stdout.write(m.id);})' || true)"
 fi
 
 if [[ -z "${MESSAGE_ID}" ]]; then

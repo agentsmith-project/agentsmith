@@ -196,6 +196,25 @@ async function loadTaskTraceEvents(deps: NodeApiDeps, taskId: string): Promise<T
   return sorted;
 }
 
+async function listTaskTraceEventsFiltered(
+  deps: NodeApiDeps,
+  args: {
+    taskId: string;
+    messageId?: string;
+    runId?: string;
+  },
+): Promise<TaskTraceEventRecord[]> {
+  const { taskId, messageId, runId } = args;
+  if (!messageId && !runId) {
+    return loadTaskTraceEvents(deps, taskId);
+  }
+  const filter: Record<string, string> = { task_id: taskId };
+  if (messageId) filter.message_id = messageId;
+  if (runId) filter.run_id = runId;
+  const listed = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, filter);
+  return listed.sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
+}
+
 function findTask(workspaceId: string, projectId: string, taskId: string): TaskRecord | undefined {
   return getTasks(workspaceId, projectId).find((item) => item.id === taskId);
 }
@@ -774,9 +793,11 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const afterId = requestUrl.searchParams.get('after_id')?.trim();
     const beforeId = requestUrl.searchParams.get('before_id')?.trim();
     const pageSize = Math.max(1, Math.min(500, Number(requestUrl.searchParams.get('page_size') ?? '200') || 200));
-    let traces = await loadTaskTraceEvents(deps, route.taskId);
-    if (messageId) traces = traces.filter((item) => item.message_id === messageId);
-    if (runId) traces = traces.filter((item) => item.run_id === runId);
+    let traces = await listTaskTraceEventsFiltered(deps, {
+      taskId: route.taskId,
+      ...(messageId ? { messageId } : {}),
+      ...(runId ? { runId } : {}),
+    });
     if (afterId) {
       const idx = traces.findIndex((item) => item.id === afterId);
       if (idx >= 0) traces = traces.slice(idx + 1);

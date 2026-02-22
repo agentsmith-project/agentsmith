@@ -280,6 +280,15 @@ done
 - Trace retention / payload controls (API env):
   - `NOTEBOOK_TRACE_MAX_EVENTS` (default `1000`) caps in-memory + persisted per-task trace retention
   - `NOTEBOOK_TRACE_DETAILS_MAX_BYTES` (default `16384`) truncates oversized `trace.details` payloads before storage/streaming
+- Mongo (`docStore`) index recommendations for notebook trace workloads (production):
+  - collection: `notebook_task_trace_events`
+    - `{ task_id: 1, seq: 1 }` (task timeline scans)
+    - `{ task_id: 1, message_id: 1, seq: 1 }` (message-scoped trace panel lazy loading)
+    - `{ task_id: 1, run_id: 1, seq: 1 }` (run-scoped diagnostics)
+  - collection: `notebook_task_messages`
+    - `{ task_id: 1, created_at: 1 }`
+  - collection: `notebook_tasks`
+    - `{ workspace_id: 1, project_id: 1, updated_at: -1 }`
 - Semantics:
   - `has_more=true` means the current panel is showing only the most recent trace slice.
   - `next_after_id` is the cursor for loading an earlier slice (older events) with:

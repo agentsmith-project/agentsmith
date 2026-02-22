@@ -260,6 +260,193 @@ make e2e-int-chat-local-api
 make e2e-int-agent-local-api
 ```
 
+## Notebook External Agent + Execution Trace UI Workstream (Process Record, 2026-02)
+
+This section records the recent notebook external-agent workline (Codex runner + trace UI + production hardening), its current state, and the next-stage plan.
+
+### Scope (What this workline covered)
+
+- Notebook task execution via external agent runtime (`agent-codex-runner`, Codex script mode)
+- Endpoint proxy compatibility for OpenAI Responses -> chat/completions fallback and streaming translation
+- Notebook message bubble execution details UI (expandable trace panel)
+- Trace storage/query/replay path (`trace_event` SSE + `/tasks/:taskId/traces`)
+- Production-readiness for notebook runtime:
+  - persistence (docStore-backed)
+  - retention/payload limits
+  - metrics/monitoring
+  - load testing and benchmark tooling
+
+### Delivered (Functional)
+
+#### 1) External Agent Notebook Pipeline
+- End-to-end notebook external-agent flow works with real backend + external Codex runner.
+- Runner creates per-task workdir under `/tmp/<username>/<task_id>`.
+- Runner supports Codex yolo mode and trusted current workdir/no-git project mode.
+- Notebook task no longer auto-closes after a single external-agent turn (multi-turn behavior fixed).
+
+Primary files (implemented across this workline):
+- `packages/agent-codex-runner/src/index.ts`
+- `packages/api-entry-node/src/task-route-handler.ts`
+- `packages/api-entry-node/src/agent-runtime-service.ts`
+
+#### 2) Execution Trace UI (Notebook Message Bubble)
+- Agent message bubbles support expandable execution details (default collapsed).
+- Views:
+  - `Timeline`
+  - `Raw` (Codex CLI-oriented fidelity)
+- Features:
+  - local filter (`All / Progress / Tool / Alerts / Debug`)
+  - stats header (count/duration/warnings/errors/truncated hint)
+  - copy trace logs
+  - lazy-load trace per message (`message_id`)
+  - "Load earlier logs" pagination (`before_id`)
+- Frontend debug support:
+  - notebook SSE debug panel (development only)
+  - reconnect gap-fill debug events
+
+Primary files:
+- `src/components/notebook/TaskPage.tsx`
+- `src/components/notebook/MessageItem.tsx`
+- `src/lib/hooks/use-task-sse.ts`
+- `src/lib/api/endpoints/tasks.ts`
+
+#### 3) Trace Transport / Contracts
+- Runtime protocol extended with `agent.response.event`.
+- Notebook task SSE extended with `trace_event`.
+- `/tasks/:taskId/traces` query endpoint added and evolved:
+  - filters: `message_id`, `run_id`, `after_id`, `before_id`, `page_size`
+  - returns pagination metadata (`has_more`, `next_after_id`)
+- Task SSE replay support:
+  - `last_event_id` replay for task events (buffered history)
+
+### Delivered (Production Hardening / Operability)
+
+#### 4) Persistence
+- Notebook task data (tasks/messages/artifacts/traces) supports docStore-backed persistence in `api-entry-node`.
+- Trace storage is write-through to docStore with in-memory cache/read-through behavior.
+- In memory-only mode, behavior remains process-local and ephemeral (documented).
+
+#### 5) Retention / Payload Limits
+- Trace event count retention limit per task (`NOTEBOOK_TRACE_MAX_EVENTS`)
+- Trace details payload size limit (`NOTEBOOK_TRACE_DETAILS_MAX_BYTES`)
+- Truncation markers and truncation accounting metrics added
+- Retention truncation is consistent with persisted trace records (docStore deletion on trim)
+
+#### 6) Monitoring / Metrics
+- Internal metrics JSON endpoint (auth required):
+  - `/api/v1/internal/notebook-runtime-metrics`
+- Prometheus text export endpoint (auth required):
+  - `/api/v1/internal/notebook-runtime-metrics/prometheus`
+- Metrics include:
+  - task run lifecycle counters
+  - active runs / SSE clients
+  - trace recorded / truncated / details truncated
+  - `/traces` query counters + latency histogram by scope (`task/message/run/message_run`)
+
+#### 7) Load Testing / Benchmarks / Baselines
+Added tooling and Make targets for:
+- smoke: `make notebook-agent-smoke-task`, `make notebook-agent-smoke-full`
+- monitoring: `make notebook-agent-monitor`
+- load test: `make notebook-agent-load-test`
+- load matrix: `make notebook-agent-load-matrix`
+- benchmark baseline: `make notebook-agent-benchmark-baseline`
+- compare baselines: `make notebook-agent-benchmark-compare`
+- message-scoped traces query benchmark: `make notebook-agent-traces-query-bench`
+- page-size sweep for traces query: `make notebook-agent-traces-query-sweep`
+- compare page-size sweeps: `make notebook-agent-traces-query-sweep-compare`
+- benchmark result archive (repo-local artifacts metadata): `make notebook-agent-benchmark-archive`
+
+### Delivered (Docs / Contracts / Specs)
+
+- Runbook (authoritative operational workflow for this workline):
+  - `docs/agent-codex-notebook-runbook.md`
+- Runtime protocol contract:
+  - `docs/contracts/agent-runtime-protocol.md`
+- Notebook module/contract mapping docs updated:
+  - `docs/contracts/notebook-frontend-module-map.md`
+- Main generated specs updated to include notebook traces + runtime event coverage:
+  - `docs/contracts/specs/openapi.yaml`
+  - `docs/contracts/specs/openapi.json`
+  - `docs/contracts/specs/asyncapi.yaml`
+  - `docs/contracts/specs/asyncapi.json`
+- Supplement specs retained as compatibility/reference snapshots where applicable and documented in:
+  - `docs/contracts/README.md`
+
+### Validation Summary (What was actually tested)
+
+#### Real Chain (Repeatedly)
+- API (`:20000`) + Web (`:3001`) + external `agent-codex-runner`
+- real local Keycloak auth
+- real GLM endpoint via endpoint proxy
+- notebook smoke tasks complete successfully and return final responses (`chain ok`)
+
+#### UI / Frontend
+- unit tests for notebook trace panel interactions (expand/filter/raw/copy/stats/pagination)
+- page-level Playwright coverage for notebook trace panel interactions (MSW/mock)
+
+#### Backend / Runtime
+- notebook runtime/API targeted tests:
+  - `trace_event` handling
+  - `/traces` paging and replay paths
+  - retention + details truncation behavior
+  - metrics / Prometheus export
+  - persisted trace retention truncation consistency
+
+#### Performance / Capacity (Initial Baselines)
+- end-to-end load/matrix benchmarks (real Codex + GLM path)
+- message-scoped `/traces?message_id=...` benchmarks (memory vs Mongo/docStore)
+- page-size sweeps (`20/50/200/500`) and compare tooling
+- observed result so far:
+  - message-scoped `/traces` query remains low-ms and is not the current bottleneck
+
+### Known Boundaries / Open Items (Not blockers for current stage)
+
+1. Notebook runtime persistence relies on docStore backend for restart durability
+- Memory mode remains ephemeral by design.
+
+2. Benchmark variance is heavily influenced by upstream model/runtime
+- End-to-end latency should be analyzed with multiple runs and compare tools.
+- `/traces` query-specific benchmarks are the more stable signal for trace panel performance.
+
+3. Prometheus alert thresholds are bootstrap values
+- Should be tightened after collecting more production-like baseline data.
+
+### Next-Stage Plan (High Value, Non-UI-Fine-Tuning)
+
+#### A. Production Baselines / SLO Calibration
+- Run and archive standard memory + Mongo baseline sets per release candidate.
+- Use:
+  - `notebook-agent-benchmark-baseline`
+  - `notebook-agent-benchmark-compare`
+  - `notebook-agent-traces-query-sweep`
+  - `notebook-agent-traces-query-sweep-compare`
+  - `notebook-agent-benchmark-archive`
+- Calibrate Prometheus alert thresholds using observed p95/p99 and success rate.
+
+#### B. Mongo / DocStore Performance Tuning
+- Validate recommended indexes under larger real trace volumes.
+- Re-run message-scoped traces query sweep after index changes and compare.
+
+#### C. CI / Periodic Regression (Ops-Oriented)
+- Add a lightweight scheduled or manual benchmark smoke:
+  - `traces-query-bench` or a small sweep
+- Persist result artifacts and compare against previous baseline.
+
+#### D. Security Hardening (Tracked Risk Follow-up)
+- Replace bearer forwarding to runner with short-lived ticket exchange (planned hardening item).
+- Keep trace event payload sanitization coverage strong (tests + review).
+
+### Where to Continue
+
+If this workline is resumed later, start from:
+1. `docs/agent-codex-notebook-runbook.md` (current operational truth)
+2. benchmark/compare/archive scripts in `scripts/`
+3. notebook trace runtime implementation in:
+   - `packages/api-entry-node/src/task-route-handler.ts`
+   - `packages/agent-codex-runner/src/index.ts`
+   - `src/components/notebook/TaskPage.tsx`
+   - `src/components/notebook/MessageItem.tsx`
+
 ### 4) Distinguish infra failure from app failure
 
 If `page.goto` hangs, first check server health:

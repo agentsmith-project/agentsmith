@@ -125,6 +125,87 @@ make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/
 make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011
 ```
 
+### 5.4.1 Manual Real-Backend Notebook + Agent Test (4 terminals, recommended)
+- Use this flow when manually testing notebook + external codex runner against the real local backend (not MSW).
+- Preconditions:
+  - Keycloak is running at `http://localhost:18080`
+  - GLM API key is available
+
+Terminal 1 (`API :20000`)
+```bash
+cd /home/percy/works/mbos-v1/agentsmith
+
+env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+PORT=20000 \
+KEYCLOAK_BASE_URL=http://localhost:18080 \
+KEYCLOAK_REALM=mbos \
+AGENT_RUNTIME_REQUEST_TIMEOUT_MS=180000 \
+DEBUG_AGENT_RUNTIME=1 \
+DEBUG_ENDPOINT_PROXY=1 \
+DEBUG_NOTEBOOK_RUNTIME=1 \
+npm run dev -w @mbos/api-entry-node
+```
+
+Terminal 2 (`Web :3001`, real backend)
+```bash
+cd /home/percy/works/mbos-v1/agentsmith
+
+env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+NEXT_PUBLIC_API_BASE=http://localhost:20000 \
+NEXT_PUBLIC_USE_MSW=false \
+NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms \
+NEXT_PUBLIC_KEYCLOAK_REALM=mbos \
+NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith \
+npm run dev -- --port 3001
+```
+
+Terminal 3 (bootstrap resources; run once per fresh environment)
+```bash
+cd /home/percy/works/mbos-v1/agentsmith
+
+make notebook-agent-refresh-token
+
+GLM_API_KEY='***' make notebook-agent-init-resources
+```
+
+Optional quick smoke before manual UI testing:
+```bash
+make notebook-agent-smoke-full
+```
+
+Terminal 4 (keep external runner online for manual notebook chat)
+```bash
+cd /home/percy/works/mbos-v1/agentsmith
+
+make notebook-agent-runner
+```
+
+Open browser:
+- Login: `http://localhost:3001/zh-CN/login`
+- Notebook project URL:
+  - project id from `/tmp/agentsmith_project_id.txt`
+  - `http://localhost:3001/zh-CN/workspaces/ws_default/projects/<PROJECT_ID>/notebook`
+
+Expected behavior:
+- send a message -> page shows `Agent 正在执行...` (or localized equivalent)
+- task completes -> final reply appears without page refresh
+- in `next dev`, notebook task page shows `SSE Debug (latest 5)` for frontend stream diagnostics
+
+Helper files written by bootstrap:
+- `/tmp/agentsmith_project_id.txt`
+- `/tmp/agentsmith_agent_id.txt`
+- `/tmp/agentsmith_agent_key.txt`
+- `/tmp/agentsmith_ws_url.txt`
+
+### 5.4.2 Stop Local Test Services (manual)
+- If you started services in separate terminals, stop with `Ctrl+C` in each terminal.
+- If you need a cleanup command (ports used by this workflow):
+```bash
+for p in 20000 3001 3010 3015; do
+  fuser -k "${p}/tcp" 2>/dev/null || true
+done
+```
+
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.
 - Our task workdirs are ephemeral (`/tmp/<username>/<task_id>`) and are not trusted by default.

@@ -395,6 +395,38 @@ REQUESTS=30 CONCURRENCY=5 POLL_MAX=120 POLL_INTERVAL_SEC=2 make notebook-agent-l
   - truncation counters (`trace_events_truncated_records`, `trace_details_truncated`) match expectations for the test profile
   - p95 latency is recorded and tracked over time (regression detection)
 
+### 7.5.4 Load Matrix (Repeatable Baseline)
+- Use the matrix wrapper to run multiple `requests x concurrency` cases and persist results:
+```bash
+make notebook-agent-load-matrix
+```
+
+- Default matrix:
+  - `MATRIX=10x2,10x3,20x3`
+- Custom matrix example:
+```bash
+MATRIX=4x2,6x2,8x3 make notebook-agent-load-matrix
+```
+
+- Optional controls (passed through to each case):
+```bash
+POLL_MAX=120 POLL_INTERVAL_SEC=2 PROMPT='reply exactly: chain ok' make notebook-agent-load-matrix
+```
+
+- Output:
+  - directory under `/tmp/agentsmith-load-matrix-<timestamp>/`
+  - per-case:
+    - `case-*/stdout.log`
+    - `case-*/result.json` (summary + metrics snapshot)
+  - aggregate:
+    - `summary.csv`
+    - `summary.jsonl`
+
+- Recommended usage:
+  - keep `PROMPT` constant across runs
+  - compare `summary.csv` across commits/branches for p95/p99 regressions
+  - run `make notebook-agent-monitor` in another terminal during the matrix run
+
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.

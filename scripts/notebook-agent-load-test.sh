@@ -16,6 +16,8 @@ POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-2}"
 WAIT_AGENT_ONLINE="${WAIT_AGENT_ONLINE:-1}"
 WAIT_AGENT_ONLINE_MAX="${WAIT_AGENT_ONLINE_MAX:-30}"
 WAIT_AGENT_ONLINE_INTERVAL_SEC="${WAIT_AGENT_ONLINE_INTERVAL_SEC:-1}"
+RESULT_JSON_PATH="${RESULT_JSON_PATH:-}"
+RESULT_CSV_PATH="${RESULT_CSV_PATH:-}"
 
 if [[ -z "${PROJECT_ID}" || -z "${AGENT_ID}" ]]; then
   echo "[load] missing PROJECT_ID/AGENT_ID (or /tmp/agentsmith_project_id.txt / /tmp/agentsmith_agent_id.txt)" >&2
@@ -132,11 +134,12 @@ done
 wait || true
 
 echo "[load] results:"
-node - <<'NODE' "${TMP_DIR}" "${REQUESTS}"
+summary_json="$(node - <<'NODE' "${TMP_DIR}" "${REQUESTS}" "${CONCURRENCY}"
 const fs = require('node:fs');
 const path = require('node:path');
 const dir = process.argv[2];
 const expected = Number(process.argv[3] || '0');
+const concurrency = Number(process.argv[4] || '0');
 const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort((a,b)=>Number(a)-Number(b));
 const rows = files.map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
 const success = rows.filter((r) => r.ok);
@@ -148,8 +151,10 @@ const pct = (p) => {
   return latencies[idx];
 };
 const avg = latencies.length ? Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length) : null;
-console.log(JSON.stringify({
+const summary = {
+  ts: new Date().toISOString(),
   expected,
+  concurrency,
   completed: rows.length,
   success: success.length,
   failed: failed.length,
@@ -162,8 +167,11 @@ console.log(JSON.stringify({
     max: latencies.length ? latencies[latencies.length - 1] : null,
   },
   failures: failed.slice(0, 10),
-}, null, 2));
+};
+process.stdout.write(JSON.stringify(summary));
 NODE
+)"
+printf '%s\n' "${summary_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.stringify(JSON.parse(s),null,2)))'
 
 METRICS_URL="${API_BASE%/}/api/v1/internal/notebook-runtime-metrics"
 metrics_code="$(
@@ -176,4 +184,47 @@ if [[ "${metrics_code}" == "200" ]]; then
   echo
 else
   echo "[load] warning: metrics endpoint returned http=${metrics_code}" >&2
+fi
+
+if [[ -n "${RESULT_JSON_PATH}" ]]; then
+  node - <<'NODE' "${RESULT_JSON_PATH}" "${summary_json}" "${TMP_DIR}/metrics.json" "${metrics_code}"
+const fs = require('node:fs');
+const outPath = process.argv[2];
+const summary = JSON.parse(process.argv[3]);
+const metricsPath = process.argv[4];
+const metricsCode = process.argv[5];
+let metrics = null;
+if (metricsCode === '200' && fs.existsSync(metricsPath)) {
+  try { metrics = JSON.parse(fs.readFileSync(metricsPath, 'utf8')); } catch {}
+}
+fs.writeFileSync(outPath, JSON.stringify({ summary, metrics }, null, 2) + '\n');
+NODE
+fi
+
+if [[ -n "${RESULT_CSV_PATH}" ]]; then
+  node - <<'NODE' "${RESULT_CSV_PATH}" "${summary_json}"
+const fs = require('node:fs');
+const outPath = process.argv[2];
+const summary = JSON.parse(process.argv[3]);
+const row = {
+  ts: summary.ts,
+  requests: summary.expected,
+  concurrency: summary.concurrency,
+  completed: summary.completed,
+  success: summary.success,
+  failed: summary.failed,
+  success_rate: summary.success_rate,
+  latency_avg_ms: summary.latency_ms?.avg ?? '',
+  latency_p50_ms: summary.latency_ms?.p50 ?? '',
+  latency_p95_ms: summary.latency_ms?.p95 ?? '',
+  latency_p99_ms: summary.latency_ms?.p99 ?? '',
+  latency_max_ms: summary.latency_ms?.max ?? '',
+};
+const headers = Object.keys(row);
+const values = headers.map((h) => JSON.stringify(String(row[h] ?? '')));
+if (!fs.existsSync(outPath) || fs.statSync(outPath).size === 0) {
+  fs.appendFileSync(outPath, headers.join(',') + '\n');
+}
+fs.appendFileSync(outPath, values.join(',') + '\n');
+NODE
 fi

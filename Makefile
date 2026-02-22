@@ -6,7 +6,7 @@
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
-	notebook-agent-monitor notebook-agent-load-test \
+	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls
 
 NPM ?= npm
@@ -86,6 +86,7 @@ help:
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
 	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
+	@echo "  make notebook-agent-load-matrix   # run a load matrix and save CSV/JSONL summaries under /tmp"
 	@echo "  make openapi-generate   # generate frontend API types from docs/contracts/specs/openapi.yaml"
 	@echo "  make openapi-check-generated # verify generated API types are in sync"
 	@echo "  make openapi-changelog  # generate OpenAPI diff changelog vs origin/main"
@@ -388,6 +389,10 @@ notebook-agent-monitor:
 notebook-agent-load-test:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/notebook-agent-load-test.sh
+
+notebook-agent-load-matrix:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/notebook-agent-load-matrix.sh
 
 openapi-generate:
 	$(NPM) run openapi:generate

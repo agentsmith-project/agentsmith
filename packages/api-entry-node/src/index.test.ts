@@ -1543,14 +1543,7 @@ describe('api-entry-node projects routes', () => {
   });
 
   it('deduplicates notebook task artifacts by task_relative_path across repeated runtime artifact frames', async () => {
-    const { server, baseUrl } = startServer();
-
-    const loginRes = await apiFetch(baseUrl, '/api/v1/auth/dev-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'dev-admin@example.com' }),
-    });
-    const loginBody = (await loginRes.json()) as { token: string };
+    const { baseUrl } = startServer();
 
     const credentialRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/credentials', {
       method: 'POST',

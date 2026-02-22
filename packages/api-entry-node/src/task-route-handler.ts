@@ -16,7 +16,6 @@ import {
   listTaskTraceEventsFiltered,
   loadTaskTraceEvents,
   removeTaskTraceEventsFromMemory,
-  type TaskTraceEventRecord,
 } from './notebook-trace-store.js';
 import {
   clearNotebookTaskEventState,

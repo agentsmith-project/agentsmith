@@ -102,7 +102,7 @@ export function useTaskSSE(
       onError,
       onDebug,
     };
-  }, [onMessage, onArtifact, onTaskUpdate, onError, onDebug]);
+  }, [onMessage, onArtifact, onTaskUpdate, onTraceEvent, onError, onDebug]);
 
   const emitDebug = useCallback((event: Omit<TaskSSEDebugEvent, 'at'>) => {
     callbacksRef.current.onDebug?.({

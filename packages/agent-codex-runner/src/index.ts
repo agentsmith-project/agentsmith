@@ -12,7 +12,6 @@ import {
 import {
   filterNewArtifactsForCwd,
   scanArtifactsDirectory,
-  type ScannedArtifact,
 } from './artifact-scan.js';
 
 type ServerStartPayload = {

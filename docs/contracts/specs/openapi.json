@@ -3049,8 +3049,57 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "task_id",
+                      "type",
+                      "created_at"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "task_id": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "text",
+                          "image",
+                          "file",
+                          "other"
+                        ]
+                      },
+                      "task_relative_path": {
+                        "type": "string",
+                        "description": "Relative path inside the notebook task working directory for runtime-originated artifacts."
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "content": {
+                        "type": "string"
+                      },
+                      "thumbnail_url": {
+                        "type": "string"
+                      },
+                      "file_size": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "mime_type": {
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
                 }
               }
             }

@@ -68,7 +68,7 @@ export function TaskPage({
   const [streamingMessageId, setStreamingMessageId] = React.useState<string | null>(null);
   const [streamingContent, setStreamingContent] = React.useState<string>('');
   const [isAgentTurnRunning, setIsAgentTurnRunning] = React.useState(false);
-  const [taskUpdateCountForCurrentTurn, setTaskUpdateCountForCurrentTurn] = React.useState(0);
+  const [_taskUpdateCountForCurrentTurn, setTaskUpdateCountForCurrentTurn] = React.useState(0);
   const [traceEventsByMessageId, setTraceEventsByMessageId] = React.useState<Record<string, TaskTraceEvent[]>>({});
   const [traceMetaByMessageId, setTraceMetaByMessageId] = React.useState<TaskTraceMetaByMessageId>({});
   const [traceLoadingByMessageId, setTraceLoadingByMessageId] = React.useState<Record<string, boolean>>({});

@@ -189,6 +189,8 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
     setUploadProgress,
     setUploadErrors,
     uploadCloseTimerRef,
+    resolveErrorDetail,
+    t,
   ]);
 
   // Handle delete (single or batch)

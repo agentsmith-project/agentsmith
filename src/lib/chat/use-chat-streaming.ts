@@ -385,6 +385,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     setSessionStreamState,
     setStreamIdForSession,
     streamIdBySession,
+    messages,
   ]);
 
   const stopStreamingSession = async (

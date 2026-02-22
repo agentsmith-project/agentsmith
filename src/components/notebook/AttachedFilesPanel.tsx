@@ -28,7 +28,7 @@ export function AttachedFilesPanel({
   workspaceId,
   projectId,
   taskId,
-  attachedFileIds,
+  attachedFileIds: _attachedFileIds,
   onAddFromFiles,
   onAddFromLocal,
   onAddFromUrl,

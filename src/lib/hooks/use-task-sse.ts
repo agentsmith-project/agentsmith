@@ -14,11 +14,27 @@ export interface TaskSSEEvent {
   data: TaskMessage | Artifact | Task | { message: string; code?: string };
 }
 
+export interface TaskSSEDebugEvent {
+  at: string;
+  phase:
+    | 'connect_start'
+    | 'open'
+    | 'message'
+    | 'parse_error'
+    | 'sse_error'
+    | 'reconnect_scheduled'
+    | 'reconnect_exhausted'
+    | 'ticket_error'
+    | 'disconnect';
+  summary: string;
+}
+
 export interface UseTaskSSEOptions {
   onMessage?: (message: TaskMessage) => void;
   onArtifact?: (artifact: Artifact) => void;
   onTaskUpdate?: (task: Task) => void;
   onError?: (error: Error) => void;
+  onDebug?: (event: TaskSSEDebugEvent) => void;
   enabled?: boolean;
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
@@ -32,6 +48,7 @@ interface CallbackRefs {
   onArtifact?: UseTaskSSEOptions['onArtifact'];
   onTaskUpdate?: UseTaskSSEOptions['onTaskUpdate'];
   onError?: UseTaskSSEOptions['onError'];
+  onDebug?: UseTaskSSEOptions['onDebug'];
 }
 
 export function useTaskSSE(
@@ -45,6 +62,7 @@ export function useTaskSSE(
     onArtifact,
     onTaskUpdate,
     onError,
+    onDebug,
     enabled = true,
     reconnectInterval = 3000,
     maxReconnectAttempts = 5,
@@ -64,6 +82,7 @@ export function useTaskSSE(
     onArtifact,
     onTaskUpdate,
     onError,
+    onDebug,
   });
 
   // Update refs when callbacks change
@@ -73,8 +92,16 @@ export function useTaskSSE(
       onArtifact,
       onTaskUpdate,
       onError,
+      onDebug,
     };
-  }, [onMessage, onArtifact, onTaskUpdate, onError]);
+  }, [onMessage, onArtifact, onTaskUpdate, onError, onDebug]);
+
+  const emitDebug = useCallback((event: Omit<TaskSSEDebugEvent, 'at'>) => {
+    callbacksRef.current.onDebug?.({
+      at: new Date().toISOString(),
+      ...event,
+    });
+  }, []);
 
   const connect = useCallback(() => {
     if (!enabled || !workspaceId || !projectId || !taskId) {
@@ -96,6 +123,7 @@ export function useTaskSSE(
       : sseUrl;
 
     setConnectionStatus('connecting');
+    emitDebug({ phase: 'connect_start', summary: `connecting task=${taskId}` });
 
     const token = client.getToken();
     // Try ticket exchange first (secure); fallback to token in URL when backend has no /sse-ticket
@@ -107,11 +135,13 @@ export function useTaskSSE(
         eventSource.onopen = () => {
           setConnectionStatus('connected');
           reconnectAttemptsRef.current = 0;
+          emitDebug({ phase: 'open', summary: 'sse_open' });
         };
 
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as TaskSSEEvent;
+            emitDebug({ phase: 'message', summary: `type=${data.type}` });
 
             // Store last event ID for reconnection
             if (event.lastEventId) {
@@ -139,6 +169,7 @@ export function useTaskSSE(
             }
           } catch (err) {
             console.error('Failed to parse SSE event:', err);
+            emitDebug({ phase: 'parse_error', summary: 'failed_to_parse_sse_event' });
             callbacksRef.current.onError?.(
               err instanceof Error ? err : new Error('Failed to parse SSE event')
             );
@@ -147,6 +178,7 @@ export function useTaskSSE(
 
         eventSource.onerror = (_error) => {
           const readyState = eventSource.readyState;
+          emitDebug({ phase: 'sse_error', summary: `ready_state=${readyState}` });
           if (readyState === EventSource.CLOSED) {
             console.warn('SSE connection closed, will attempt reconnect');
           }
@@ -155,11 +187,16 @@ export function useTaskSSE(
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
             setConnectionStatus('reconnecting');
             reconnectAttemptsRef.current += 1;
+            emitDebug({
+              phase: 'reconnect_scheduled',
+              summary: `attempt=${reconnectAttemptsRef.current}/${maxReconnectAttempts}`,
+            });
             reconnectTimeoutRef.current = setTimeout(() => {
               connect();
             }, reconnectInterval);
           } else {
             setConnectionStatus('error');
+            emitDebug({ phase: 'reconnect_exhausted', summary: `max=${maxReconnectAttempts}` });
             callbacksRef.current.onError?.(
               new Error(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`)
             );
@@ -169,10 +206,11 @@ export function useTaskSSE(
         eventSourceRef.current = eventSource;
       } catch (err) {
         setConnectionStatus('error');
+        emitDebug({ phase: 'ticket_error', summary: 'sse_ticket_or_connect_failed' });
         callbacksRef.current.onError?.(err instanceof Error ? err : new Error('SSE connection failed'));
       }
     })();
-  }, [enabled, workspaceId, projectId, taskId, reconnectInterval, maxReconnectAttempts]);
+  }, [enabled, workspaceId, projectId, taskId, reconnectInterval, maxReconnectAttempts, emitDebug]);
 
   useEffect(() => {
     if (enabled) {
@@ -202,7 +240,8 @@ export function useTaskSSE(
     }
     setConnectionStatus('disconnected');
     reconnectAttemptsRef.current = 0;
-  }, []);
+    emitDebug({ phase: 'disconnect', summary: 'manual_disconnect' });
+  }, [emitDebug]);
 
   return {
     connectionStatus,

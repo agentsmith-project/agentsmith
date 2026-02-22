@@ -401,7 +401,13 @@
       "empty": "Start a conversation",
       "empty_description": "Send a message to begin",
       "agent_offline": "Agent is offline",
-      "agent_disabled": "Agent is disabled"
+      "agent_disabled": "Agent is disabled",
+      "agent_working": "Agent is working...",
+      "realtime_connecting": "Realtime connection: connecting...",
+      "realtime_reconnecting": "Realtime connection: reconnecting...",
+      "realtime_disconnected": "Realtime connection: disconnected",
+      "realtime_error": "Realtime connection: error",
+      "sse_debug_title": "SSE Debug (latest 5)"
     },
     "artifacts": {
       "title": "Artifacts",
@@ -462,6 +468,8 @@
       "max_concurrent_sessions": "Max Concurrent Sessions",
       "max_concurrent_sessions_placeholder": "Optional override",
       "capabilities_title": "External Runtime Capabilities",
+      "notebook_endpoint_id": "Notebook Endpoint ID",
+      "notebook_endpoint_required": "Notebook endpoint ID is required",
       "multimodal_enabled": "Enable multimodal input",
       "accepted_mime_types": "Accepted MIME types (comma-separated)",
       "max_file_count": "Max files per message",

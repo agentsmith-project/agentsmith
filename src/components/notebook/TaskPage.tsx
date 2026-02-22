@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { TaskHeader } from './TaskHeader';
 import { AttachedFilesPanel } from './AttachedFilesPanel';
 import { ConversationPanel } from './ConversationPanel';
+import { NotebookSseDebugPanel } from './NotebookSseDebugPanel';
 import { ArtifactsPanel } from './ArtifactsPanel';
 import { FileSelectDialog } from './FileSelectDialog';
 import { ArtifactImageViewer } from './ArtifactImageViewer';
@@ -22,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useTask, useTaskMessages, useTaskArtifacts, useSendMessage, useAddFiles, useUpdateTask } from '@/lib/hooks/use-task';
 import { useTaskSSE } from '@/lib/hooks/use-task-sse';
+import type { TaskSSEDebugEvent } from '@/lib/hooks/use-task-sse';
 import { useErrorHandler } from '@/lib/hooks/use-error-handler';
 import { TaskAPI, FilesAPI } from '@/lib/api';
 import { getApiClient } from '@/lib/api';
@@ -64,6 +66,7 @@ export function TaskPage({
   const [selectedArtifact, setSelectedArtifact] = React.useState<Artifact | null>(null);
   const [streamingMessageId, setStreamingMessageId] = React.useState<string | null>(null);
   const [streamingContent, setStreamingContent] = React.useState<string>('');
+  const [sseDebugEvents, setSseDebugEvents] = React.useState<TaskSSEDebugEvent[]>([]);
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
@@ -82,7 +85,8 @@ export function TaskPage({
   const taskDetailKey = queryKeys.tasks.detail(workspaceId, projectId, taskId);
 
   // SSE connection for real-time updates
-  useTaskSSE(workspaceId, projectId, taskId, {
+  const isDev = process.env.NODE_ENV === 'development';
+  const { connectionStatus } = useTaskSSE(workspaceId, projectId, taskId, {
     onMessage: (message: TaskMessage) => {
       // Update streaming content for the active streaming message
       if (streamingMessageId === message.id) {
@@ -119,6 +123,11 @@ export function TaskPage({
 
       queryClient.setQueryData(taskDetailKey, updatedTask);
     },
+    onDebug: isDev
+      ? (event) => {
+          setSseDebugEvents((prev) => [...prev.slice(-4), event]);
+        }
+      : undefined,
     enabled: !!taskId && !taskLoading,
   });
 
@@ -350,10 +359,12 @@ export function TaskPage({
           />
         </div>
         <div className="flex-1 min-w-0">
-      <ConversationPanel
+          {isDev && <NotebookSseDebugPanel events={sseDebugEvents} />}
+          <ConversationPanel
             messages={messages || []}
             streamingMessageId={streamingMessageId}
             streamingContent={streamingContent}
+            connectionStatus={connectionStatus}
             onSendMessage={handleSendMessage}
             disabled={isDisabled || !canUpdateTask}
             sending={sendMessage.isPending}

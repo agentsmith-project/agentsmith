@@ -403,7 +403,13 @@
       "empty": "开始对话",
       "empty_description": "发送消息开始",
       "agent_offline": "Agent 离线",
-      "agent_disabled": "Agent 已禁用"
+      "agent_disabled": "Agent 已禁用",
+      "agent_working": "Agent 正在执行...",
+      "realtime_connecting": "实时连接：连接中...",
+      "realtime_reconnecting": "实时连接：重连中...",
+      "realtime_disconnected": "实时连接：已断开",
+      "realtime_error": "实时连接：出错",
+      "sse_debug_title": "SSE 调试（最近 5 条）"
     },
     "artifacts": {
       "title": "生成物",
@@ -464,6 +470,8 @@
       "max_concurrent_sessions": "最大并发会话数",
       "max_concurrent_sessions_placeholder": "可选覆盖",
       "capabilities_title": "外部运行时能力",
+      "notebook_endpoint_id": "Notebook 端点 ID",
+      "notebook_endpoint_required": "Notebook 端点 ID 为必填项",
       "multimodal_enabled": "启用多模态输入",
       "accepted_mime_types": "允许的 MIME 类型（逗号分隔）",
       "max_file_count": "每条消息最大文件数",

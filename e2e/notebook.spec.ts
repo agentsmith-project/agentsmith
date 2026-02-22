@@ -184,5 +184,21 @@ test.describe('Notebook Page', () => {
 
       await expect(authedPage.getByTestId('notebook__message-trace-body')).toBeVisible();
     });
+
+    test('should allow copying trace logs after filtering', async ({ authedPage, context }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      const traceToggle = authedPage.getByTestId('notebook__message-trace-toggle').first();
+      await expect(traceToggle).toBeVisible({ timeout: 10000 });
+      await traceToggle.click();
+
+      await authedPage.getByTestId('notebook__message-trace-view-raw').click();
+      await authedPage.getByTestId('notebook__message-trace-filter-alerts').click();
+
+      const copyButton = authedPage.getByTestId('notebook__message-trace-copy');
+      await expect(copyButton).toBeVisible();
+      await copyButton.click();
+
+      await expect(authedPage.getByTestId('notebook__message-trace-panel')).toBeVisible();
+    });
   });
 });

@@ -1672,6 +1672,140 @@ describe('api-entry-node projects routes', () => {
     runtime.close();
   });
 
+  it('truncates oversized notebook trace details payloads', async () => {
+    const { baseUrl } = startServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'glm-key', type: 'api_key', value: 'sk-glm-test' }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'glm-coding',
+          type: 'openai_compatible',
+          status: 'active',
+          wire_api: 'responses',
+          base_url: 'https://example.com',
+          openai_model: 'glm-4.7',
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createAgent = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'External notebook agent',
+          mode: 'external',
+          interaction_mode: 'notebook',
+          runtime_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createAgent.status).toBe(201);
+    const agent = (await createAgent.json()) as { id: string };
+
+    const createAgentKeyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
+    expect(createAgentKeyRes.status).toBe(201);
+    const agentKey = (await createAgentKeyRes.json()) as { key: string };
+
+    const runtimeInfoRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+    );
+    expect(runtimeInfoRes.status).toBe(200);
+    const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
+
+    const runtime = new WebSocket(
+      runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
+      { headers: { Authorization: `Bearer ${agentKey.key}` } },
+    );
+
+    const huge = 'x'.repeat(40_000);
+    runtime.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString('utf-8')) as { type: string; request_id?: string };
+      if (msg.type !== 'server.request.start' || !msg.request_id) return;
+      runtime.send(JSON.stringify({
+        type: 'agent.response.event',
+        request_id: msg.request_id,
+        payload: {
+          sequence: 1,
+          at: new Date().toISOString(),
+          category: 'debug',
+          phase: 'update',
+          name: 'runner.debug',
+          summary: 'huge details payload',
+          details: { stderr: huge },
+        },
+      }));
+      runtime.send(JSON.stringify({
+        type: 'agent.response.done',
+        request_id: msg.request_id,
+        payload: { finish_reason: 'stop', usage_tokens: 1 },
+      }));
+    });
+    await new Promise<void>((resolve) => runtime.on('open', () => {
+      runtime.send(JSON.stringify({ type: 'agent.ready', payload: { capabilities: { wire_api: 'responses' } } }));
+      resolve();
+    }));
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Truncate trace details', agent_id: agent.id }) },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const postMessageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'user', content: 'run' }) },
+    );
+    expect(postMessageRes.status).toBe(200);
+
+    let tracesBody: { items: Array<{ details?: Record<string, unknown> }> } | null = null;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const tracesRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`);
+      expect(tracesRes.status).toBe(200);
+      tracesBody = (await tracesRes.json()) as { items: Array<{ details?: Record<string, unknown> }> };
+      if (tracesBody.items.length > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(tracesBody).not.toBeNull();
+    const detailEvent = tracesBody!.items.find((item) => item.details && Object.keys(item.details).length > 0);
+    expect(detailEvent).toBeTruthy();
+    expect(detailEvent!.details?._truncated).toBe(true);
+    expect(detailEvent!.details?._reason).toBe('trace_details_too_large');
+    expect(typeof detailEvent!.details?._preview).toBe('string');
+
+    runtime.close();
+  });
+
   it('sends image attachments to upstream multimodal chat payload', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();

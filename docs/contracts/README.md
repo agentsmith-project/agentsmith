@@ -31,13 +31,12 @@ This directory contains only current-state documents: functional contracts, arch
 
 - `specs/openapi.json` / `specs/openapi.yaml` - HTTP API contract
 - `specs/asyncapi.json` / `specs/asyncapi.yaml` - External agent runtime WS protocol
-- `specs/notebook-traces.openapi.json` / `specs/notebook-traces.openapi.yaml` - notebook execution trace HTTP contract supplement (`/tasks/{taskId}/traces`) until merged into generated OpenAPI set
-- `specs/agent-runtime-ws-supplement.asyncapi.json` / `specs/agent-runtime-ws-supplement.asyncapi.yaml` - additive WS frames supplement (`agent.response.event`) until merged into generated AsyncAPI set
+- `specs/notebook-traces.openapi.json` / `specs/notebook-traces.openapi.yaml` - notebook execution trace route supplement snapshot (reference; now merged into `specs/openapi.*`)
+- `specs/agent-runtime-ws-supplement.asyncapi.json` / `specs/agent-runtime-ws-supplement.asyncapi.yaml` - additive WS frame supplement snapshot (reference; now merged into `specs/asyncapi.*`)
 
 Note:
-- The generated `specs/openapi.*` currently do not include the notebook task/traces routes.
-- The generated `specs/asyncapi.*` may lag additive runtime frames used by notebook trace UX (for example `agent.response.event`).
-- Keep supplement specs synchronized with code and related module contracts/runbook until generation coverage is expanded.
+- `specs/openapi.*` and `specs/asyncapi.*` now include notebook trace API and `agent.response.event` runtime frame coverage.
+- Supplement specs are retained as change-isolated reference snapshots and should not diverge from the canonical main specs.
 
 ## Validation Commands
 

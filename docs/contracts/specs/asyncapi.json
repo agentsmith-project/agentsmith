@@ -23,38 +23,84 @@
         }
       },
       "messages": {
-        "serverHello": { "$ref": "#/components/messages/serverHello" },
-        "serverRequestStart": { "$ref": "#/components/messages/serverRequestStart" },
-        "serverRequestCancel": { "$ref": "#/components/messages/serverRequestCancel" },
-        "serverPing": { "$ref": "#/components/messages/serverPing" },
-        "agentReady": { "$ref": "#/components/messages/agentReady" },
-        "agentPong": { "$ref": "#/components/messages/agentPong" },
-        "agentResponseDelta": { "$ref": "#/components/messages/agentResponseDelta" },
-        "agentResponseDone": { "$ref": "#/components/messages/agentResponseDone" },
-        "agentResponseError": { "$ref": "#/components/messages/agentResponseError" }
+        "serverHello": {
+          "$ref": "#/components/messages/serverHello"
+        },
+        "serverRequestStart": {
+          "$ref": "#/components/messages/serverRequestStart"
+        },
+        "serverRequestCancel": {
+          "$ref": "#/components/messages/serverRequestCancel"
+        },
+        "serverPing": {
+          "$ref": "#/components/messages/serverPing"
+        },
+        "agentReady": {
+          "$ref": "#/components/messages/agentReady"
+        },
+        "agentPong": {
+          "$ref": "#/components/messages/agentPong"
+        },
+        "agentResponseDelta": {
+          "$ref": "#/components/messages/agentResponseDelta"
+        },
+        "agentResponseDone": {
+          "$ref": "#/components/messages/agentResponseDone"
+        },
+        "agentResponseError": {
+          "$ref": "#/components/messages/agentResponseError"
+        },
+        "agentResponseEvent": {
+          "$ref": "#/components/messages/agentResponseEvent"
+        }
       }
     }
   },
   "operations": {
     "receiveFromServer": {
       "action": "receive",
-      "channel": { "$ref": "#/channels/agentRuntime" },
+      "channel": {
+        "$ref": "#/channels/agentRuntime"
+      },
       "messages": [
-        { "$ref": "#/channels/agentRuntime/messages/serverHello" },
-        { "$ref": "#/channels/agentRuntime/messages/serverRequestStart" },
-        { "$ref": "#/channels/agentRuntime/messages/serverRequestCancel" },
-        { "$ref": "#/channels/agentRuntime/messages/serverPing" }
+        {
+          "$ref": "#/channels/agentRuntime/messages/serverHello"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/serverRequestStart"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/serverRequestCancel"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/serverPing"
+        }
       ]
     },
     "sendToServer": {
       "action": "send",
-      "channel": { "$ref": "#/channels/agentRuntime" },
+      "channel": {
+        "$ref": "#/channels/agentRuntime"
+      },
       "messages": [
-        { "$ref": "#/channels/agentRuntime/messages/agentReady" },
-        { "$ref": "#/channels/agentRuntime/messages/agentPong" },
-        { "$ref": "#/channels/agentRuntime/messages/agentResponseDelta" },
-        { "$ref": "#/channels/agentRuntime/messages/agentResponseDone" },
-        { "$ref": "#/channels/agentRuntime/messages/agentResponseError" }
+        {
+          "$ref": "#/channels/agentRuntime/messages/agentReady"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/agentPong"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/agentResponseDelta"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/agentResponseDone"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/agentResponseError"
+        },
+        {
+          "$ref": "#/channels/agentRuntime/messages/agentResponseEvent"
+        }
       ]
     }
   },
@@ -62,13 +108,89 @@
     "schemas": {
       "Envelope": {
         "type": "object",
-        "required": ["type", "timestamp", "payload"],
+        "required": [
+          "type",
+          "timestamp",
+          "payload"
+        ],
         "properties": {
-          "type": { "type": "string" },
-          "request_id": { "type": "string" },
-          "session_id": { "type": "string" },
-          "timestamp": { "type": "string", "format": "date-time" },
-          "payload": { "type": "object", "additionalProperties": true }
+          "type": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "AgentResponseEventPayload": {
+        "type": "object",
+        "required": [
+          "sequence",
+          "at",
+          "category",
+          "name",
+          "summary"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "lifecycle",
+              "progress",
+              "tool",
+              "artifact",
+              "warning",
+              "error",
+              "debug"
+            ]
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "start",
+              "update",
+              "end"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "success",
+              "error",
+              "cancelled"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Sanitized event metadata (must not contain tokens/secrets)."
+          }
         }
       }
     },
@@ -77,16 +199,32 @@
         "name": "server.hello",
         "payload": {
           "type": "object",
-          "required": ["type", "timestamp", "payload"],
+          "required": [
+            "type",
+            "timestamp",
+            "payload"
+          ],
           "properties": {
-            "type": { "const": "server.hello" },
-            "timestamp": { "type": "string", "format": "date-time" },
+            "type": {
+              "const": "server.hello"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
             "payload": {
               "type": "object",
-              "required": ["protocol_version", "heartbeat_interval_sec"],
+              "required": [
+                "protocol_version",
+                "heartbeat_interval_sec"
+              ],
               "properties": {
-                "protocol_version": { "type": "string" },
-                "heartbeat_interval_sec": { "type": "integer" }
+                "protocol_version": {
+                  "type": "string"
+                },
+                "heartbeat_interval_sec": {
+                  "type": "integer"
+                }
               }
             }
           }
@@ -96,32 +234,82 @@
         "name": "server.request.start",
         "payload": {
           "type": "object",
-          "required": ["type", "timestamp", "request_id", "payload"],
+          "required": [
+            "type",
+            "timestamp",
+            "request_id",
+            "payload"
+          ],
           "properties": {
-            "type": { "const": "server.request.start" },
-            "request_id": { "type": "string" },
-            "timestamp": { "type": "string", "format": "date-time" },
+            "type": {
+              "const": "server.request.start"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
             "payload": {
               "type": "object",
-              "required": ["model", "stream", "messages"],
+              "required": [
+                "model",
+                "stream",
+                "messages"
+              ],
               "properties": {
-                "model": { "type": "string" },
-                "stream": { "const": true },
-                "messages": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+                "model": {
+                  "type": "string"
+                },
+                "stream": {
+                  "const": true
+                },
+                "messages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                },
                 "runtime_context": {
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "workspace_id": { "type": "string" },
-                    "project_id": { "type": "string" },
-                    "task_id": { "type": "string" },
-                    "run_id": { "type": "string" },
-                    "username": { "type": "string" },
-                    "endpoint_id": { "type": "string" },
-                    "endpoint_proxy_base": { "type": "string" },
-                    "user_bearer_token": { "type": "string" },
-                    "wire_api": { "type": "string", "enum": ["chat", "responses"] },
-                    "model": { "type": "string" }
+                    "workspace_id": {
+                      "type": "string"
+                    },
+                    "project_id": {
+                      "type": "string"
+                    },
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "run_id": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    },
+                    "endpoint_id": {
+                      "type": "string"
+                    },
+                    "endpoint_proxy_base": {
+                      "type": "string"
+                    },
+                    "user_bearer_token": {
+                      "type": "string"
+                    },
+                    "wire_api": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "responses"
+                      ]
+                    },
+                    "model": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -133,16 +321,32 @@
         "name": "server.request.cancel",
         "payload": {
           "type": "object",
-          "required": ["type", "timestamp", "request_id", "payload"],
+          "required": [
+            "type",
+            "timestamp",
+            "request_id",
+            "payload"
+          ],
           "properties": {
-            "type": { "const": "server.request.cancel" },
-            "request_id": { "type": "string" },
-            "timestamp": { "type": "string", "format": "date-time" },
+            "type": {
+              "const": "server.request.cancel"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
             "payload": {
               "type": "object",
-              "required": ["reason"],
+              "required": [
+                "reason"
+              ],
               "properties": {
-                "reason": { "type": "string" }
+                "reason": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -152,11 +356,22 @@
         "name": "server.ping",
         "payload": {
           "type": "object",
-          "required": ["type", "timestamp", "payload"],
+          "required": [
+            "type",
+            "timestamp",
+            "payload"
+          ],
           "properties": {
-            "type": { "const": "server.ping" },
-            "timestamp": { "type": "string", "format": "date-time" },
-            "payload": { "type": "object" }
+            "type": {
+              "const": "server.ping"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "type": "object"
+            }
           }
         }
       },
@@ -164,11 +379,23 @@
         "name": "agent.ready",
         "payload": {
           "type": "object",
-          "required": ["type", "timestamp", "payload"],
+          "required": [
+            "type",
+            "timestamp",
+            "payload"
+          ],
           "properties": {
-            "type": { "const": "agent.ready" },
-            "timestamp": { "type": "string", "format": "date-time" },
-            "payload": { "type": "object", "additionalProperties": true }
+            "type": {
+              "const": "agent.ready"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "type": "object",
+              "additionalProperties": true
+            }
           }
         }
       },
@@ -176,11 +403,22 @@
         "name": "agent.pong",
         "payload": {
           "type": "object",
-          "required": ["type", "timestamp", "payload"],
+          "required": [
+            "type",
+            "timestamp",
+            "payload"
+          ],
           "properties": {
-            "type": { "const": "agent.pong" },
-            "timestamp": { "type": "string", "format": "date-time" },
-            "payload": { "type": "object" }
+            "type": {
+              "const": "agent.pong"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "type": "object"
+            }
           }
         }
       },
@@ -188,16 +426,32 @@
         "name": "agent.response.delta",
         "payload": {
           "type": "object",
-          "required": ["type", "timestamp", "request_id", "payload"],
+          "required": [
+            "type",
+            "timestamp",
+            "request_id",
+            "payload"
+          ],
           "properties": {
-            "type": { "const": "agent.response.delta" },
-            "request_id": { "type": "string" },
-            "timestamp": { "type": "string", "format": "date-time" },
+            "type": {
+              "const": "agent.response.delta"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
             "payload": {
               "type": "object",
-              "required": ["delta"],
+              "required": [
+                "delta"
+              ],
               "properties": {
-                "delta": { "type": "string" }
+                "delta": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -207,17 +461,36 @@
         "name": "agent.response.done",
         "payload": {
           "type": "object",
-          "required": ["type", "timestamp", "request_id", "payload"],
+          "required": [
+            "type",
+            "timestamp",
+            "request_id",
+            "payload"
+          ],
           "properties": {
-            "type": { "const": "agent.response.done" },
-            "request_id": { "type": "string" },
-            "timestamp": { "type": "string", "format": "date-time" },
+            "type": {
+              "const": "agent.response.done"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
             "payload": {
               "type": "object",
-              "required": ["finish_reason", "usage_tokens"],
+              "required": [
+                "finish_reason",
+                "usage_tokens"
+              ],
               "properties": {
-                "finish_reason": { "type": "string" },
-                "usage_tokens": { "type": "integer" }
+                "finish_reason": {
+                  "type": "string"
+                },
+                "usage_tokens": {
+                  "type": "integer"
+                }
               }
             }
           }
@@ -227,18 +500,65 @@
         "name": "agent.response.error",
         "payload": {
           "type": "object",
-          "required": ["type", "timestamp", "request_id", "payload"],
+          "required": [
+            "type",
+            "timestamp",
+            "request_id",
+            "payload"
+          ],
           "properties": {
-            "type": { "const": "agent.response.error" },
-            "request_id": { "type": "string" },
-            "timestamp": { "type": "string", "format": "date-time" },
+            "type": {
+              "const": "agent.response.error"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
             "payload": {
               "type": "object",
-              "required": ["error_code", "error_message"],
+              "required": [
+                "error_code",
+                "error_message"
+              ],
               "properties": {
-                "error_code": { "type": "string" },
-                "error_message": { "type": "string" }
+                "error_code": {
+                  "type": "string"
+                },
+                "error_message": {
+                  "type": "string"
+                }
               }
+            }
+          }
+        }
+      },
+      "agentResponseEvent": {
+        "name": "agent.response.event",
+        "summary": "Structured execution telemetry event (notebook/chat diagnostics and expandable trace UI)",
+        "payload": {
+          "type": "object",
+          "required": [
+            "type",
+            "request_id",
+            "timestamp",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "agent.response.event"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/components/schemas/AgentResponseEventPayload"
             }
           }
         }

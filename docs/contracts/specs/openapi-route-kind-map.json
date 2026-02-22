@@ -1,76 +1,286 @@
 {
-  "workspacesCollection": { "path": "/api/v1/workspaces", "method": "get" },
-  "workspaceItem": { "path": "/api/v1/workspaces/{workspaceId}", "method": "get" },
-  "workspaceMembers": { "path": "/api/v1/workspaces/{workspaceId}/members", "method": "get" },
-  "collection": { "path": "/api/v1/workspaces/{workspaceId}/projects", "method": "get" },
-  "item": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}", "method": "get" },
-  "sources": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources", "method": "get" },
-  "sourceLibraries": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries", "method": "get" },
-  "sourceLibraryItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}", "method": "get" },
-  "sourceLibraryObjects": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects", "method": "get" },
-  "sourceLibraryFolders": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/folders", "method": "post" },
-  "sourceLibraryObjectsUpload": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/upload", "method": "post" },
-  "sourceLibraryObjectsDownload": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/download", "method": "post" },
-  "sourceLibraryObjectsDelete": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/delete", "method": "post" },
-  "sourceLibraryObjectsMove": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/move", "method": "post" },
-  "sourceLibraryObjectsMeta": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/meta", "method": "post" },
-  "sourceLibraryObjectsShareLink": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/share-link", "method": "post" },
-  "sourceLibraryAIReadyJobs": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs", "method": "get" },
-  "sourceLibraryAIReadyJobItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}", "method": "get" },
-  "sourceLibraryAIReadyJobCancel": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel", "method": "post" },
-  "sourcesQuota": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/quota", "method": "get" },
-  "sourceAIReadyStart": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/start", "method": "post" },
-  "sourceAIReadyCancel": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/cancel", "method": "post" },
-  "sourceAIReadyRetry": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/retry", "method": "post" },
-  "sourceBatchAIReadyStart": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/start", "method": "post" },
-  "sourceBatchAIReadyCancel": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/cancel", "method": "post" },
-  "sourceItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}", "method": "get" },
-  "sourceDownload": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/download", "method": "get" },
-
-  "chatSessions": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions", "method": "get" },
-  "chatSessionItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}", "method": "patch" },
-  "chatMessages": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages", "method": "post" },
-  "chatMessageItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/{messageId}", "method": "patch" },
-  "chatRegenerate": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/regenerate", "method": "post" },
-  "chatMessagesStream": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/stream", "method": "post" },
-  "chatMessagesStreamAttach": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/streams/{streamId}", "method": "post" },
-  "chatMessagesStreamStop": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/streams/{streamId}/stop", "method": "post" },
-  "chatSessionStreams": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams", "method": "get" },
-  "chatSessionStop": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/stop", "method": "post" },
-  "chatAttachments": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments", "method": "post" },
-  "chatAttachmentInit": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/init", "method": "post" },
-  "chatAttachmentItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}", "method": "delete" },
-  "chatAttachmentComplete": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}/complete", "method": "post" },
-  "chatAttachmentRetry": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}/retry", "method": "post" },
-
-  "agents": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents", "method": "get" },
-  "agentItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}", "method": "get" },
-  "agentDiagnostics": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/diagnostics", "method": "get" },
-  "agentRuntimeConfig": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/runtime-config", "method": "get" },
-  "agentConnectionInfo": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/connection-info", "method": "get" },
-  "agentKeys": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys", "method": "get" },
-  "agentKeyItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys/{keyId}", "method": "delete" },
-
-  "endpoints": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints", "method": "get" },
-  "endpointItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}", "method": "get" },
-  "endpointRerank": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/rerank", "method": "post" },
-  "endpointImageGeneration": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/images/generations", "method": "post" },
-  "endpointVideoGenerationCreate": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations", "method": "post" },
-  "endpointVideoGenerationPoll": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations/{jobId}", "method": "get" },
-  "endpointVideoGenerationCancel": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations/{jobId}/cancel", "method": "post" },
-  "endpointProxy": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/proxy/{proxyPath}", "method": "post" },
-  "endpointImportOpenAICompatible": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-openai-compatible", "method": "post" },
-
-  "credentials": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials", "method": "get" },
-  "credentialItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}", "method": "delete" },
-  "credentialRotate": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}/rotate", "method": "post" },
-  "taskArtifactDownload": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/download", "method": "get" },
-  "taskArtifactSave": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/save", "method": "post" },
-  "taskArtifacts": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts", "method": "get" },
-  "taskEvents": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/events", "method": "get" },
-  "taskItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}", "method": "get" },
-  "taskMessages": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages", "method": "get" },
-  "taskSourceItem": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources/{sourceId}", "method": "get" },
-  "taskSources": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources", "method": "get" },
-  "tasks": { "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks", "method": "get" }
+  "workspacesCollection": {
+    "path": "/api/v1/workspaces",
+    "method": "get"
+  },
+  "workspaceItem": {
+    "path": "/api/v1/workspaces/{workspaceId}",
+    "method": "get"
+  },
+  "workspaceMembers": {
+    "path": "/api/v1/workspaces/{workspaceId}/members",
+    "method": "get"
+  },
+  "collection": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects",
+    "method": "get"
+  },
+  "item": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}",
+    "method": "get"
+  },
+  "sources": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources",
+    "method": "get"
+  },
+  "sourceLibraries": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries",
+    "method": "get"
+  },
+  "sourceLibraryItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}",
+    "method": "get"
+  },
+  "sourceLibraryObjects": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects",
+    "method": "get"
+  },
+  "sourceLibraryFolders": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/folders",
+    "method": "post"
+  },
+  "sourceLibraryObjectsUpload": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/upload",
+    "method": "post"
+  },
+  "sourceLibraryObjectsDownload": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/download",
+    "method": "post"
+  },
+  "sourceLibraryObjectsDelete": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/delete",
+    "method": "post"
+  },
+  "sourceLibraryObjectsMove": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/move",
+    "method": "post"
+  },
+  "sourceLibraryObjectsMeta": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/meta",
+    "method": "post"
+  },
+  "sourceLibraryObjectsShareLink": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/share-link",
+    "method": "post"
+  },
+  "sourceLibraryAIReadyJobs": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs",
+    "method": "get"
+  },
+  "sourceLibraryAIReadyJobItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}",
+    "method": "get"
+  },
+  "sourceLibraryAIReadyJobCancel": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel",
+    "method": "post"
+  },
+  "sourcesQuota": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/quota",
+    "method": "get"
+  },
+  "sourceAIReadyStart": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/start",
+    "method": "post"
+  },
+  "sourceAIReadyCancel": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/cancel",
+    "method": "post"
+  },
+  "sourceAIReadyRetry": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/retry",
+    "method": "post"
+  },
+  "sourceBatchAIReadyStart": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/start",
+    "method": "post"
+  },
+  "sourceBatchAIReadyCancel": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/cancel",
+    "method": "post"
+  },
+  "sourceItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}",
+    "method": "get"
+  },
+  "sourceDownload": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/download",
+    "method": "get"
+  },
+  "chatSessions": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions",
+    "method": "get"
+  },
+  "chatSessionItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}",
+    "method": "patch"
+  },
+  "chatMessages": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages",
+    "method": "post"
+  },
+  "chatMessageItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/{messageId}",
+    "method": "patch"
+  },
+  "chatRegenerate": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/regenerate",
+    "method": "post"
+  },
+  "chatMessagesStream": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/stream",
+    "method": "post"
+  },
+  "chatMessagesStreamAttach": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/streams/{streamId}",
+    "method": "post"
+  },
+  "chatMessagesStreamStop": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/streams/{streamId}/stop",
+    "method": "post"
+  },
+  "chatSessionStreams": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams",
+    "method": "get"
+  },
+  "chatSessionStop": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/stop",
+    "method": "post"
+  },
+  "chatAttachments": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments",
+    "method": "post"
+  },
+  "chatAttachmentInit": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/init",
+    "method": "post"
+  },
+  "chatAttachmentItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}",
+    "method": "delete"
+  },
+  "chatAttachmentComplete": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}/complete",
+    "method": "post"
+  },
+  "chatAttachmentRetry": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}/retry",
+    "method": "post"
+  },
+  "agents": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents",
+    "method": "get"
+  },
+  "agentItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}",
+    "method": "get"
+  },
+  "agentDiagnostics": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/diagnostics",
+    "method": "get"
+  },
+  "agentRuntimeConfig": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/runtime-config",
+    "method": "get"
+  },
+  "agentConnectionInfo": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/connection-info",
+    "method": "get"
+  },
+  "agentKeys": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys",
+    "method": "get"
+  },
+  "agentKeyItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys/{keyId}",
+    "method": "delete"
+  },
+  "endpoints": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints",
+    "method": "get"
+  },
+  "endpointItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}",
+    "method": "get"
+  },
+  "endpointRerank": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/rerank",
+    "method": "post"
+  },
+  "endpointImageGeneration": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/images/generations",
+    "method": "post"
+  },
+  "endpointVideoGenerationCreate": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations",
+    "method": "post"
+  },
+  "endpointVideoGenerationPoll": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations/{jobId}",
+    "method": "get"
+  },
+  "endpointVideoGenerationCancel": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations/{jobId}/cancel",
+    "method": "post"
+  },
+  "endpointProxy": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/proxy/{proxyPath}",
+    "method": "post"
+  },
+  "endpointImportOpenAICompatible": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-openai-compatible",
+    "method": "post"
+  },
+  "credentials": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials",
+    "method": "get"
+  },
+  "credentialItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}",
+    "method": "delete"
+  },
+  "credentialRotate": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}/rotate",
+    "method": "post"
+  },
+  "taskArtifactDownload": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/download",
+    "method": "get"
+  },
+  "taskArtifactSave": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/save",
+    "method": "post"
+  },
+  "taskArtifacts": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts",
+    "method": "get"
+  },
+  "taskEvents": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/events",
+    "method": "get"
+  },
+  "taskItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}",
+    "method": "get"
+  },
+  "taskMessages": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages",
+    "method": "get"
+  },
+  "taskSourceItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources/{sourceId}",
+    "method": "get"
+  },
+  "taskSources": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources",
+    "method": "get"
+  },
+  "tasks": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks",
+    "method": "get"
+  },
+  "taskTraces": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/traces",
+    "method": "get"
+  }
 }

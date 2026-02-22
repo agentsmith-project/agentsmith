@@ -307,6 +307,7 @@ done
 ## 7.4 Notebook Runtime Metrics (Internal, Authenticated)
 - API exposes a lightweight process-local metrics snapshot for notebook runtime/task execution:
   - `GET /api/v1/internal/notebook-runtime-metrics`
+  - `GET /api/v1/internal/notebook-runtime-metrics/prometheus` (Prometheus text format)
 - Authentication:
   - requires a valid bearer token (same user token used for notebook APIs).
 - Purpose:
@@ -333,6 +334,7 @@ done
 - Notes:
   - metrics are process-local (reset on API restart)
   - in `docStore` mode, notebook data persists, but this endpoint still reports current process counters/gauges
+  - both endpoints are authenticated (bearer required)
 
 ### 7.4.1 Monitor Script
 - Use the built-in polling script:
@@ -345,6 +347,22 @@ COUNT=30 INTERVAL_SEC=1 make notebook-agent-monitor
 API_BASE=http://localhost:20000 TOKEN_FILE=/tmp/agentsmith_user_token.txt make notebook-agent-monitor
 ```
 - Output is a compact line summary suitable for terminal monitoring during smoke/load runs.
+
+### 7.4.2 Prometheus Scrape (Minimal Example)
+- If auth is handled upstream (e.g. reverse proxy / sidecar), Prometheus can scrape:
+```yaml
+scrape_configs:
+  - job_name: agentsmith_notebook_runtime
+    metrics_path: /api/v1/internal/notebook-runtime-metrics/prometheus
+    static_configs:
+      - targets: ['127.0.0.1:20000']
+```
+- Suggested metrics to watch first:
+  - `notebook_task_runs_failed_total`
+  - `notebook_task_runs_terminal_without_done_total`
+  - `notebook_trace_events_truncated_records_total`
+  - `notebook_trace_details_truncated_total`
+  - `notebook_active_runs`
 
 ## 7.5 Real-Environment Load Test (Notebook + External Agent)
 - Purpose:

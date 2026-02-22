@@ -1702,6 +1702,20 @@ describe('api-entry-node projects routes', () => {
     expect(body.limits.max_trace_details_bytes).toBeGreaterThan(0);
   });
 
+  it('exposes authenticated notebook runtime metrics in prometheus text format', async () => {
+    const { baseUrl } = startServer();
+
+    const res = await apiFetch(baseUrl, '/api/v1/internal/notebook-runtime-metrics/prometheus');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const text = await res.text();
+    expect(text).toContain('# HELP notebook_task_runs_started_total');
+    expect(text).toContain('# TYPE notebook_task_runs_started_total counter');
+    expect(text).toContain('notebook_task_runs_started_total ');
+    expect(text).toContain('notebook_active_runs ');
+    expect(text).toContain('notebook_limit_trace_events_per_task ');
+  });
+
   it('truncates oversized notebook trace details payloads', async () => {
     const { baseUrl } = startServer();
 

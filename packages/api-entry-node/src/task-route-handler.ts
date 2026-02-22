@@ -132,6 +132,95 @@ export function getNotebookRuntimeMetricsSnapshot(): Record<string, unknown> {
   };
 }
 
+export function getNotebookRuntimeMetricsPrometheusText(): string {
+  const snapshot = getNotebookRuntimeMetricsSnapshot() as {
+    task_runs_started: number;
+    task_runs_completed: number;
+    task_runs_failed: number;
+    task_runs_terminal_without_done: number;
+    trace_events_recorded: number;
+    trace_events_truncated_records: number;
+    trace_details_truncated: number;
+    active_runs: number;
+    task_sse_clients: number;
+    in_memory: {
+      tasks: number;
+      messages: number;
+      artifacts: number;
+      traces: number;
+      task_event_history_tasks: number;
+    };
+    limits: {
+      max_trace_events_per_task: number;
+      max_trace_details_bytes: number;
+      max_task_sse_events_per_task: number;
+    };
+  };
+
+  const lines: string[] = [];
+  const appendGauge = (name: string, value: number, help: string): void => {
+    lines.push(`# HELP ${name} ${help}`);
+    lines.push(`# TYPE ${name} gauge`);
+    lines.push(`${name} ${Number.isFinite(value) ? value : 0}`);
+  };
+  const appendCounter = (name: string, value: number, help: string): void => {
+    lines.push(`# HELP ${name} ${help}`);
+    lines.push(`# TYPE ${name} counter`);
+    lines.push(`${name} ${Number.isFinite(value) ? value : 0}`);
+  };
+
+  appendCounter('notebook_task_runs_started_total', snapshot.task_runs_started, 'Notebook task runs started');
+  appendCounter('notebook_task_runs_completed_total', snapshot.task_runs_completed, 'Notebook task runs completed');
+  appendCounter('notebook_task_runs_failed_total', snapshot.task_runs_failed, 'Notebook task runs failed');
+  appendCounter(
+    'notebook_task_runs_terminal_without_done_total',
+    snapshot.task_runs_terminal_without_done,
+    'Notebook task run streams finalized without terminal done/error event',
+  );
+  appendCounter('notebook_trace_events_recorded_total', snapshot.trace_events_recorded, 'Notebook trace events recorded');
+  appendCounter(
+    'notebook_trace_events_truncated_records_total',
+    snapshot.trace_events_truncated_records,
+    'Notebook trace records truncated due to retention limits',
+  );
+  appendCounter(
+    'notebook_trace_details_truncated_total',
+    snapshot.trace_details_truncated,
+    'Notebook trace details payloads truncated due to size limits',
+  );
+
+  appendGauge('notebook_active_runs', snapshot.active_runs, 'Current active notebook task runs');
+  appendGauge('notebook_task_sse_clients', snapshot.task_sse_clients, 'Current notebook task SSE clients');
+
+  appendGauge('notebook_in_memory_tasks', snapshot.in_memory.tasks, 'In-memory notebook task records');
+  appendGauge('notebook_in_memory_messages', snapshot.in_memory.messages, 'In-memory notebook task message records');
+  appendGauge('notebook_in_memory_artifacts', snapshot.in_memory.artifacts, 'In-memory notebook task artifact records');
+  appendGauge('notebook_in_memory_traces', snapshot.in_memory.traces, 'In-memory notebook task trace records');
+  appendGauge(
+    'notebook_in_memory_task_event_history_tasks',
+    snapshot.in_memory.task_event_history_tasks,
+    'Task ids with buffered notebook SSE event history',
+  );
+
+  appendGauge(
+    'notebook_limit_trace_events_per_task',
+    snapshot.limits.max_trace_events_per_task,
+    'Configured max trace events retained per task',
+  );
+  appendGauge(
+    'notebook_limit_trace_details_max_bytes',
+    snapshot.limits.max_trace_details_bytes,
+    'Configured max bytes for trace details payload before truncation',
+  );
+  appendGauge(
+    'notebook_limit_task_sse_events_per_task',
+    snapshot.limits.max_task_sse_events_per_task,
+    'Configured max buffered notebook SSE events per task',
+  );
+
+  return `${lines.join('\n')}\n`;
+}
+
 function projectKey(workspaceId: string, projectId: string): string {
   return `${workspaceId}:${projectId}`;
 }

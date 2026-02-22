@@ -16,7 +16,11 @@ import {
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
-import { getNotebookRuntimeMetricsSnapshot, handleTaskRoute } from './task-route-handler.js';
+import {
+  getNotebookRuntimeMetricsPrometheusText,
+  getNotebookRuntimeMetricsSnapshot,
+  handleTaskRoute,
+} from './task-route-handler.js';
 
 function isChatRoute(route: { kind: string }): route is ChatRoute {
   return route.kind.startsWith('chat');
@@ -145,6 +149,18 @@ export async function handleRequest(
       return;
     }
     json(res, 200, getNotebookRuntimeMetricsSnapshot());
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/v1/internal/notebook-runtime-metrics/prometheus' && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.end(getNotebookRuntimeMetricsPrometheusText());
     return;
   }
 

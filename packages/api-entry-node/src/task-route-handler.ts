@@ -1,7 +1,33 @@
 import type http from 'node:http';
-import type { AgentRuntimeTraceEventPayload } from './agent-runtime-service.js';
+import { randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import {
+  appendNotebookRuntimePrometheusMetrics,
+  getNotebookRuntimeMetricsState,
+  getNotebookTraceQueryLatencyByScopeSnapshot,
+  observeNotebookTraceQueryLatency,
+  type TraceQueryScope,
+} from './notebook-runtime-metrics.js';
+import {
+  countInMemoryTraceRecords,
+  deleteTaskTraceEvents,
+  getNotebookTraceStoreLimits,
+  listTaskTraceEventsFiltered,
+  loadTaskTraceEvents,
+  removeTaskTraceEventsFromMemory,
+  type TaskTraceEventRecord,
+} from './notebook-trace-store.js';
+import {
+  clearNotebookTaskEventState,
+  emitNotebookTaskEvent,
+  getNotebookTaskSseBrokerStats,
+  replayBufferedNotebookTaskEvents,
+  subscribeNotebookTaskEvents,
+  unsubscribeNotebookTaskEvents,
+  writeNotebookTaskSseEvent,
+} from './notebook-task-sse-broker.js';
+import { runNotebookTaskWithExternalAgent } from './notebook-runtime-orchestrator.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 
 interface TaskRecord {
@@ -41,26 +67,6 @@ interface TaskArtifactRecord {
   created_at: string;
 }
 
-interface TaskTraceEventRecord {
-  id: string;
-  task_id: string;
-  message_id: string;
-  run_id: string;
-  seq: number;
-  at: string;
-  category: AgentRuntimeTraceEventPayload['category'];
-  phase?: AgentRuntimeTraceEventPayload['phase'];
-  status?: AgentRuntimeTraceEventPayload['status'];
-  name: string;
-  summary: string;
-  details?: Record<string, unknown>;
-}
-
-interface BufferedTaskSseEvent {
-  id: string;
-  payload: unknown;
-}
-
 interface TaskRouteHandlerArgs {
   route: ProjectsRoute;
   method: string;
@@ -76,44 +82,11 @@ interface TaskRouteHandlerArgs {
 const TASKS_BY_PROJECT = new Map<string, TaskRecord[]>();
 const MESSAGES_BY_TASK = new Map<string, TaskMessageRecord[]>();
 const ARTIFACTS_BY_TASK = new Map<string, TaskArtifactRecord[]>();
-const TRACE_EVENTS_BY_TASK = new Map<string, TaskTraceEventRecord[]>();
-const TASK_EVENT_CLIENTS = new Map<string, Set<http.ServerResponse>>();
-const TASK_EVENT_SEQUENCE_BY_TASK = new Map<string, number>();
-const TASK_EVENT_HISTORY_BY_TASK = new Map<string, BufferedTaskSseEvent[]>();
 const ACTIVE_RUNS_BY_TASK = new Set<string>();
-const NOTEBOOK_RUNTIME_METRICS = {
-  task_runs_started: 0,
-  task_runs_completed: 0,
-  task_runs_failed: 0,
-  task_runs_terminal_without_done: 0,
-  trace_events_recorded: 0,
-  trace_events_truncated_records: 0,
-  trace_details_truncated: 0,
-  task_traces_queries_total: 0,
-  task_traces_queries_message_scoped_total: 0,
-  task_traces_queries_run_scoped_total: 0,
-  task_traces_query_latency_ms_total: 0,
-  task_traces_query_latency_ms_max: 0,
-};
-const TRACE_QUERY_LATENCY_BUCKETS_MS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000] as const;
-type TraceQueryScope = 'task' | 'message' | 'run' | 'message_run';
-type TraceQueryLatencyStats = {
-  count: number;
-  sum_ms: number;
-  max_ms: number;
-  buckets: Record<string, number>;
-};
-const TRACE_QUERY_LATENCY_BY_SCOPE = new Map<TraceQueryScope, TraceQueryLatencyStats>();
-let nextTaskId = 1;
-let nextMessageId = 1;
-let nextTraceEventId = 1;
-const MAX_TRACE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_TRACE_MAX_EVENTS ?? '1000') || 1000);
-const MAX_TASK_SSE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_SSE_HISTORY_MAX_EVENTS ?? '2000') || 2000);
-const MAX_TRACE_DETAILS_BYTES = Math.max(512, Number(process.env.NOTEBOOK_TRACE_DETAILS_MAX_BYTES ?? '16384') || 16384);
+const NOTEBOOK_TRACE_STORE_LIMITS = getNotebookTraceStoreLimits();
 const TASKS_COLLECTION = 'notebook_tasks';
 const TASK_MESSAGES_COLLECTION = 'notebook_task_messages';
 const TASK_ARTIFACTS_COLLECTION = 'notebook_task_artifacts';
-const TASK_TRACE_EVENTS_COLLECTION = 'notebook_task_trace_events';
 
 function debugNotebookRuntime(message: string, extra?: Record<string, unknown>): void {
   if (process.env.DEBUG_NOTEBOOK_RUNTIME !== '1') return;
@@ -121,78 +94,30 @@ function debugNotebookRuntime(message: string, extra?: Record<string, unknown>):
   process.stdout.write(`[notebook-runtime] ${message}${suffix}\n`);
 }
 
-function getTraceQueryLatencyStats(scope: TraceQueryScope): TraceQueryLatencyStats {
-  let stats = TRACE_QUERY_LATENCY_BY_SCOPE.get(scope);
-  if (stats) return stats;
-  const buckets: Record<string, number> = { '+Inf': 0 };
-  for (const upper of TRACE_QUERY_LATENCY_BUCKETS_MS) {
-    buckets[String(upper)] = 0;
-  }
-  stats = { count: 0, sum_ms: 0, max_ms: 0, buckets };
-  TRACE_QUERY_LATENCY_BY_SCOPE.set(scope, stats);
-  return stats;
-}
-
-function observeTraceQueryLatency(scope: TraceQueryScope, latencyMs: number): void {
-  const safeLatency = Math.max(0, Number.isFinite(latencyMs) ? latencyMs : 0);
-  NOTEBOOK_RUNTIME_METRICS.task_traces_queries_total += 1;
-  if (scope === 'message' || scope === 'message_run') {
-    NOTEBOOK_RUNTIME_METRICS.task_traces_queries_message_scoped_total += 1;
-  }
-  if (scope === 'run' || scope === 'message_run') {
-    NOTEBOOK_RUNTIME_METRICS.task_traces_queries_run_scoped_total += 1;
-  }
-  NOTEBOOK_RUNTIME_METRICS.task_traces_query_latency_ms_total += safeLatency;
-  NOTEBOOK_RUNTIME_METRICS.task_traces_query_latency_ms_max = Math.max(
-    NOTEBOOK_RUNTIME_METRICS.task_traces_query_latency_ms_max,
-    safeLatency,
-  );
-
-  const stats = getTraceQueryLatencyStats(scope);
-  stats.count += 1;
-  stats.sum_ms += safeLatency;
-  stats.max_ms = Math.max(stats.max_ms, safeLatency);
-  for (const upper of TRACE_QUERY_LATENCY_BUCKETS_MS) {
-    if (safeLatency <= upper) {
-      stats.buckets[String(upper)] += 1;
-    }
-  }
-  stats.buckets['+Inf'] += 1;
-}
-
 export function getNotebookRuntimeMetricsSnapshot(): Record<string, unknown> {
+  const metrics = getNotebookRuntimeMetricsState();
   const taskCount = [...TASKS_BY_PROJECT.values()].reduce((acc, items) => acc + items.length, 0);
   const messageCount = [...MESSAGES_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
   const artifactCount = [...ARTIFACTS_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
-  const traceCount = [...TRACE_EVENTS_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
-  const sseClients = [...TASK_EVENT_CLIENTS.values()].reduce((acc, set) => acc + set.size, 0);
+  const traceCount = countInMemoryTraceRecords();
+  const sseBrokerStats = getNotebookTaskSseBrokerStats();
   return {
-    ...NOTEBOOK_RUNTIME_METRICS,
+    ...metrics,
     active_runs: ACTIVE_RUNS_BY_TASK.size,
-    task_sse_clients: sseClients,
+    task_sse_clients: sseBrokerStats.client_count,
     in_memory: {
       tasks: taskCount,
       messages: messageCount,
       artifacts: artifactCount,
       traces: traceCount,
-      task_event_history_tasks: TASK_EVENT_HISTORY_BY_TASK.size,
+      task_event_history_tasks: sseBrokerStats.history_task_count,
     },
     limits: {
-      max_trace_events_per_task: MAX_TRACE_EVENTS_PER_TASK,
-      max_trace_details_bytes: MAX_TRACE_DETAILS_BYTES,
-      max_task_sse_events_per_task: MAX_TASK_SSE_EVENTS_PER_TASK,
+      max_trace_events_per_task: NOTEBOOK_TRACE_STORE_LIMITS.maxTraceEventsPerTask,
+      max_trace_details_bytes: NOTEBOOK_TRACE_STORE_LIMITS.maxTraceDetailsBytes,
+      max_task_sse_events_per_task: sseBrokerStats.max_events_per_task,
     },
-    trace_query_latency_by_scope: Object.fromEntries(
-      [...TRACE_QUERY_LATENCY_BY_SCOPE.entries()].map(([scope, stats]) => [
-        scope,
-        {
-          count: stats.count,
-          sum_ms: Math.round(stats.sum_ms * 1000) / 1000,
-          max_ms: stats.max_ms,
-          buckets: stats.buckets,
-        },
-      ]),
-    ),
+    trace_query_latency_by_scope: getNotebookTraceQueryLatencyByScopeSnapshot(),
   };
 }
 
@@ -225,99 +150,7 @@ export function getNotebookRuntimeMetricsPrometheusText(): string {
   };
 
   const lines: string[] = [];
-  const appendGauge = (name: string, value: number, help: string): void => {
-    lines.push(`# HELP ${name} ${help}`);
-    lines.push(`# TYPE ${name} gauge`);
-    lines.push(`${name} ${Number.isFinite(value) ? value : 0}`);
-  };
-  const appendCounter = (name: string, value: number, help: string): void => {
-    lines.push(`# HELP ${name} ${help}`);
-    lines.push(`# TYPE ${name} counter`);
-    lines.push(`${name} ${Number.isFinite(value) ? value : 0}`);
-  };
-
-  appendCounter('notebook_task_runs_started_total', snapshot.task_runs_started, 'Notebook task runs started');
-  appendCounter('notebook_task_runs_completed_total', snapshot.task_runs_completed, 'Notebook task runs completed');
-  appendCounter('notebook_task_runs_failed_total', snapshot.task_runs_failed, 'Notebook task runs failed');
-  appendCounter(
-    'notebook_task_runs_terminal_without_done_total',
-    snapshot.task_runs_terminal_without_done,
-    'Notebook task run streams finalized without terminal done/error event',
-  );
-  appendCounter('notebook_trace_events_recorded_total', snapshot.trace_events_recorded, 'Notebook trace events recorded');
-  appendCounter(
-    'notebook_trace_events_truncated_records_total',
-    snapshot.trace_events_truncated_records,
-    'Notebook trace records truncated due to retention limits',
-  );
-  appendCounter(
-    'notebook_trace_details_truncated_total',
-    snapshot.trace_details_truncated,
-    'Notebook trace details payloads truncated due to size limits',
-  );
-  appendCounter(
-    'notebook_task_traces_queries_total',
-    snapshot.task_traces_queries_total,
-    'Notebook task traces API queries served',
-  );
-  appendCounter(
-    'notebook_task_traces_queries_message_scoped_total',
-    snapshot.task_traces_queries_message_scoped_total,
-    'Notebook task traces API queries scoped by message_id',
-  );
-  appendCounter(
-    'notebook_task_traces_queries_run_scoped_total',
-    snapshot.task_traces_queries_run_scoped_total,
-    'Notebook task traces API queries scoped by run_id',
-  );
-
-  appendGauge('notebook_active_runs', snapshot.active_runs, 'Current active notebook task runs');
-  appendGauge('notebook_task_sse_clients', snapshot.task_sse_clients, 'Current notebook task SSE clients');
-
-  appendGauge('notebook_in_memory_tasks', snapshot.in_memory.tasks, 'In-memory notebook task records');
-  appendGauge('notebook_in_memory_messages', snapshot.in_memory.messages, 'In-memory notebook task message records');
-  appendGauge('notebook_in_memory_artifacts', snapshot.in_memory.artifacts, 'In-memory notebook task artifact records');
-  appendGauge('notebook_in_memory_traces', snapshot.in_memory.traces, 'In-memory notebook task trace records');
-  appendGauge(
-    'notebook_in_memory_task_event_history_tasks',
-    snapshot.in_memory.task_event_history_tasks,
-    'Task ids with buffered notebook SSE event history',
-  );
-
-  appendGauge(
-    'notebook_limit_trace_events_per_task',
-    snapshot.limits.max_trace_events_per_task,
-    'Configured max trace events retained per task',
-  );
-  appendGauge(
-    'notebook_limit_trace_details_max_bytes',
-    snapshot.limits.max_trace_details_bytes,
-    'Configured max bytes for trace details payload before truncation',
-  );
-  appendGauge(
-    'notebook_limit_task_sse_events_per_task',
-    snapshot.limits.max_task_sse_events_per_task,
-    'Configured max buffered notebook SSE events per task',
-  );
-
-  lines.push('# HELP notebook_task_traces_query_duration_ms Traces API query latency in milliseconds by scope');
-  lines.push('# TYPE notebook_task_traces_query_duration_ms histogram');
-  for (const scope of ['task', 'message', 'run', 'message_run'] as const) {
-    const stats = TRACE_QUERY_LATENCY_BY_SCOPE.get(scope) ?? getTraceQueryLatencyStats(scope);
-    let cumulative = 0;
-    for (const upper of TRACE_QUERY_LATENCY_BUCKETS_MS) {
-      cumulative = stats.buckets[String(upper)] ?? cumulative;
-      lines.push(
-        `notebook_task_traces_query_duration_ms_bucket{scope="${scope}",le="${upper}"} ${cumulative}`,
-      );
-    }
-    lines.push(
-      `notebook_task_traces_query_duration_ms_bucket{scope="${scope}",le="+Inf"} ${stats.buckets['+Inf'] ?? stats.count}`,
-    );
-    lines.push(`notebook_task_traces_query_duration_ms_sum{scope="${scope}"} ${stats.sum_ms}`);
-    lines.push(`notebook_task_traces_query_duration_ms_count{scope="${scope}"} ${stats.count}`);
-  }
-
+  appendNotebookRuntimePrometheusMetrics(lines, snapshot);
   return `${lines.join('\n')}\n`;
 }
 
@@ -329,8 +162,8 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function buildId(prefix: string, index: number): string {
-  return `${prefix}_${String(index).padStart(6, '0')}`;
+function buildId(prefix: string): string {
+  return `${prefix}_${randomUUID().replace(/-/g, '')}`;
 }
 
 function asObject(input: unknown): Record<string, unknown> {
@@ -401,148 +234,12 @@ async function loadTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<Tas
   return sorted;
 }
 
-function getTaskTraceEvents(taskId: string): TaskTraceEventRecord[] {
-  let existing = TRACE_EVENTS_BY_TASK.get(taskId);
-  if (!existing) {
-    existing = [];
-    TRACE_EVENTS_BY_TASK.set(taskId, existing);
-  }
-  return existing;
-}
-
-async function loadTaskTraceEvents(deps: NodeApiDeps, taskId: string): Promise<TaskTraceEventRecord[]> {
-  const cached = TRACE_EVENTS_BY_TASK.get(taskId);
-  if (cached && cached.length > 0) return cached;
-  const listed = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, { task_id: taskId });
-  const sorted = listed.sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
-  TRACE_EVENTS_BY_TASK.set(taskId, sorted);
-  return sorted;
-}
-
-async function listTaskTraceEventsFiltered(
-  deps: NodeApiDeps,
-  args: {
-    taskId: string;
-    messageId?: string;
-    runId?: string;
-  },
-): Promise<TaskTraceEventRecord[]> {
-  const { taskId, messageId, runId } = args;
-  if (!messageId && !runId) {
-    return loadTaskTraceEvents(deps, taskId);
-  }
-  const filter: Record<string, string> = { task_id: taskId };
-  if (messageId) filter.message_id = messageId;
-  if (runId) filter.run_id = runId;
-  const listed = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, filter);
-  return listed.sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
-}
-
 function findTask(workspaceId: string, projectId: string, taskId: string): TaskRecord | undefined {
   return getTasks(workspaceId, projectId).find((item) => item.id === taskId);
 }
 
-function writeDefaultSSE(res: http.ServerResponse, payload: unknown, eventId?: string): void {
-  if (eventId) {
-    res.write(`id: ${eventId}\n`);
-  }
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
-}
-
-function getTaskEventHistory(taskId: string): BufferedTaskSseEvent[] {
-  let existing = TASK_EVENT_HISTORY_BY_TASK.get(taskId);
-  if (!existing) {
-    existing = [];
-    TASK_EVENT_HISTORY_BY_TASK.set(taskId, existing);
-  }
-  return existing;
-}
-
-function appendTaskEventHistory(taskId: string, event: BufferedTaskSseEvent): void {
-  const history = getTaskEventHistory(taskId);
-  history.push(event);
-  if (history.length <= MAX_TASK_SSE_EVENTS_PER_TASK) return;
-  history.splice(0, history.length - MAX_TASK_SSE_EVENTS_PER_TASK);
-}
-
-function emitTaskEvent(taskId: string, payload: unknown): void {
-  const seq = (TASK_EVENT_SEQUENCE_BY_TASK.get(taskId) ?? 0) + 1;
-  TASK_EVENT_SEQUENCE_BY_TASK.set(taskId, seq);
-  const sseEventId = `${taskId}:${seq}`;
-  appendTaskEventHistory(taskId, { id: sseEventId, payload });
-  const clients = TASK_EVENT_CLIENTS.get(taskId);
-  if (!clients || clients.size === 0) return;
-  for (const client of clients) {
-    if (client.writableEnded || client.destroyed) {
-      clients.delete(client);
-      continue;
-    }
-    try {
-      writeDefaultSSE(client, payload, sseEventId);
-    } catch {
-      clients.delete(client);
-    }
-  }
-  if (clients.size === 0) {
-    TASK_EVENT_CLIENTS.delete(taskId);
-  }
-}
-
 function sanitizePathPart(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || 'unknown';
-}
-
-function replayBufferedTaskEvents(res: http.ServerResponse, taskId: string, lastEventId: string | null): void {
-  if (!lastEventId) return;
-  const history = TASK_EVENT_HISTORY_BY_TASK.get(taskId);
-  if (!history || history.length === 0) return;
-  const idx = history.findIndex((item) => item.id === lastEventId);
-  const replayItems = idx >= 0 ? history.slice(idx + 1) : history;
-  for (const item of replayItems) {
-    writeDefaultSSE(res, item.payload, item.id);
-  }
-}
-
-async function storeTaskTraceEvent(deps: NodeApiDeps, taskId: string, event: TaskTraceEventRecord): Promise<void> {
-  const items = getTaskTraceEvents(taskId);
-  items.push(event);
-  NOTEBOOK_RUNTIME_METRICS.trace_events_recorded += 1;
-  await deps.docStore.upsert<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, event.id, event);
-  if (items.length <= MAX_TRACE_EVENTS_PER_TASK) return;
-
-  let overflow = items.length - MAX_TRACE_EVENTS_PER_TASK;
-  NOTEBOOK_RUNTIME_METRICS.trace_events_truncated_records += overflow;
-  const removed = items.splice(0, overflow);
-  await Promise.all(removed.map((item) => deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, item.id)));
-  // Reserve one slot for the truncation notice so the in-memory list does not grow beyond the configured max.
-  if (items.length >= MAX_TRACE_EVENTS_PER_TASK) {
-    const evicted = items.shift();
-      if (evicted) {
-        overflow += 1;
-        NOTEBOOK_RUNTIME_METRICS.trace_events_truncated_records += 1;
-        await deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, evicted.id);
-      }
-  }
-  const truncatedNotice: TaskTraceEventRecord = {
-    id: buildId('trace', nextTraceEventId++),
-    task_id: taskId,
-    message_id: event.message_id,
-    run_id: event.run_id,
-    seq: event.seq,
-    at: nowIso(),
-    category: 'warning',
-    name: 'trace.buffer',
-    summary: `trace events truncated (dropped ${overflow})`,
-    status: 'running',
-    phase: 'update',
-  };
-  items.push(truncatedNotice);
-  await deps.docStore.upsert<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, truncatedNotice.id, truncatedNotice);
-}
-
-async function deleteTaskTraceEvents(deps: NodeApiDeps, taskId: string): Promise<void> {
-  const existing = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, { task_id: taskId });
-  await Promise.all(existing.map((item) => deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, item.id)));
 }
 
 async function deleteTaskMessages(deps: NodeApiDeps, taskId: string): Promise<void> {
@@ -553,51 +250,6 @@ async function deleteTaskMessages(deps: NodeApiDeps, taskId: string): Promise<vo
 async function deleteTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<void> {
   const existing = await deps.docStore.list<TaskArtifactRecord>(TASK_ARTIFACTS_COLLECTION, { task_id: taskId });
   await Promise.all(existing.map((item) => deps.docStore.delete(TASK_ARTIFACTS_COLLECTION, item.id)));
-}
-
-function buildTaskTraceEvent(args: {
-  taskId: string;
-  messageId: string;
-  runId: string;
-  payload: AgentRuntimeTraceEventPayload;
-}): TaskTraceEventRecord {
-  const { taskId, messageId, runId, payload } = args;
-  let details: Record<string, unknown> | undefined;
-  if (payload.details) {
-    try {
-      const serialized = JSON.stringify(payload.details);
-      if (serialized && Buffer.byteLength(serialized, 'utf-8') > MAX_TRACE_DETAILS_BYTES) {
-        NOTEBOOK_RUNTIME_METRICS.trace_details_truncated += 1;
-        details = {
-          _truncated: true,
-          _reason: 'trace_details_too_large',
-          _max_bytes: MAX_TRACE_DETAILS_BYTES,
-          _preview: serialized.slice(0, Math.max(64, Math.min(1024, MAX_TRACE_DETAILS_BYTES / 2))),
-        };
-      } else {
-        details = payload.details;
-      }
-    } catch {
-      details = {
-        _truncated: true,
-        _reason: 'trace_details_not_serializable',
-      };
-    }
-  }
-  return {
-    id: buildId('trace', nextTraceEventId++),
-    task_id: taskId,
-    message_id: messageId,
-    run_id: runId,
-    seq: payload.sequence,
-    at: payload.at,
-    category: payload.category,
-    ...(payload.phase ? { phase: payload.phase } : {}),
-    ...(payload.status ? { status: payload.status } : {}),
-    name: payload.name,
-    summary: payload.summary,
-    ...(details ? { details } : {}),
-  };
 }
 
 function mapTaskMessagesForRuntime(taskId: string, assistantMessageId: string): Array<Record<string, unknown>> {
@@ -621,215 +273,6 @@ function readSortValue(task: TaskRecord, sortBy: string): string {
   if (sortBy === 'updated_at') return task.updated_at;
   if (sortBy === 'last_activity_at') return task.last_activity_at;
   return task.last_activity_at;
-}
-
-async function runTaskWithExternalAgent(input: {
-  deps: NodeApiDeps;
-  task: TaskRecord;
-  assistantMessage: TaskMessageRecord;
-  agentId: string;
-  user: AuthenticatedUser;
-  rawBearerToken: string | null;
-  publicBaseUrl: string;
-}): Promise<void> {
-  const { deps, task, assistantMessage, agentId, user, rawBearerToken, publicBaseUrl } = input;
-  const taskId = task.id;
-  const runId = buildId('run', Date.now());
-  let reachedTerminal = false;
-  let endpointIdForLog: string | null = null;
-
-  try {
-    const agent = await deps.agentResourceService.getAgent(task.workspace_id, task.project_id, agentId);
-    if (!agent || agent.status !== 'enabled') {
-      throw Object.assign(new Error('agent_not_available'), { code: 'AGENT_OFFLINE' });
-    }
-
-    const runtimePreferences = asObject(agent.runtime_preferences_json);
-    const notebookPreferences = asObject(runtimePreferences.notebook);
-    const endpointId = typeof notebookPreferences.endpoint_id === 'string'
-      ? notebookPreferences.endpoint_id.trim()
-      : '';
-    endpointIdForLog = endpointId || null;
-    if (!endpointId) {
-      throw Object.assign(new Error('task_agent_endpoint_not_configured'), {
-        code: 'TASK_AGENT_ENDPOINT_NOT_CONFIGURED',
-      });
-    }
-
-    const endpoint = await deps.endpointResourceService.getEndpoint(
-      task.workspace_id,
-      task.project_id,
-      endpointId,
-    );
-    if (!endpoint || endpoint.status !== 'active') {
-      throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
-    }
-    if (!rawBearerToken) {
-      throw Object.assign(new Error('user_token_missing'), { code: 'UNAUTHORIZED' });
-    }
-
-    const explicitModel = typeof notebookPreferences.model === 'string'
-      ? notebookPreferences.model.trim()
-      : '';
-    const model = explicitModel || endpoint.openai_model || 'gpt-5-codex';
-    const wireApi = notebookPreferences.wire_api === 'responses' ? 'responses' : 'chat';
-    const userHandle = sanitizePathPart(user.email || user.name || user.id);
-    const proxyBase = `${publicBaseUrl.replace(/\/+$/, '')}`
-      + `/api/v1/workspaces/${encodeURIComponent(task.workspace_id)}`
-      + `/projects/${encodeURIComponent(task.project_id)}`
-      + `/endpoints/${encodeURIComponent(endpointId)}/proxy`;
-
-    const dispatched = await deps.agentRuntimeService.dispatchStreamingRequest({
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      sessionId: task.id,
-      agentId: agentId,
-      model,
-      messages: mapTaskMessagesForRuntime(taskId, assistantMessage.id),
-      runtimeContext: {
-        workspace_id: task.workspace_id,
-        project_id: task.project_id,
-        task_id: task.id,
-        run_id: runId,
-        username: userHandle,
-        endpoint_id: endpointId,
-        endpoint_proxy_base: proxyBase,
-        user_bearer_token: rawBearerToken,
-        wire_api: wireApi,
-        model,
-      },
-    });
-    debugNotebookRuntime('dispatch_streaming_request', {
-      task_id: task.id,
-      run_id: runId,
-      agent_id: agentId,
-      endpoint_id: endpointId,
-      request_id: dispatched.requestId,
-      model,
-      wire_api: wireApi,
-    });
-    NOTEBOOK_RUNTIME_METRICS.task_runs_started += 1;
-
-    for await (const event of dispatched.stream) {
-      if (event.type === 'event' && event.event) {
-        const traceEvent = buildTaskTraceEvent({
-          taskId: task.id,
-          messageId: assistantMessage.id,
-          runId,
-          payload: event.event,
-        });
-        await storeTaskTraceEvent(deps, task.id, traceEvent);
-        emitTaskEvent(taskId, { type: 'trace_event', data: traceEvent });
-        continue;
-      }
-      if (event.type === 'delta' && event.delta) {
-        assistantMessage.content += event.delta;
-        debugNotebookRuntime('runtime_event_delta', {
-          task_id: task.id,
-          run_id: runId,
-          request_id: dispatched.requestId,
-          delta_chars: event.delta.length,
-          total_agent_chars: assistantMessage.content.length,
-        });
-        emitTaskEvent(taskId, { type: 'message', data: assistantMessage });
-        continue;
-      }
-      if (event.type === 'error') {
-        reachedTerminal = true;
-        NOTEBOOK_RUNTIME_METRICS.task_runs_failed += 1;
-        debugNotebookRuntime('runtime_event_error', {
-          task_id: task.id,
-          run_id: runId,
-          request_id: dispatched.requestId,
-          code: event.error_code ?? 'AGENT_UPSTREAM_ERROR',
-          message: event.error_message ?? 'agent_runtime_error',
-          agent_chars: assistantMessage.content.length,
-        });
-        emitTaskEvent(taskId, {
-          type: 'error',
-          data: {
-            message: event.error_message ?? 'agent_runtime_error',
-            code: event.error_code ?? 'AGENT_UPSTREAM_ERROR',
-          },
-        });
-        break;
-      }
-      if (event.type === 'done') {
-        reachedTerminal = true;
-        NOTEBOOK_RUNTIME_METRICS.task_runs_completed += 1;
-        debugNotebookRuntime('runtime_event_done', {
-          task_id: task.id,
-          run_id: runId,
-          request_id: dispatched.requestId,
-          finish_reason: event.finish_reason ?? 'stop',
-          usage_tokens: event.usage_tokens ?? null,
-          agent_chars: assistantMessage.content.length,
-        });
-        break;
-      }
-    }
-  } catch (error) {
-    reachedTerminal = true;
-    NOTEBOOK_RUNTIME_METRICS.task_runs_failed += 1;
-    const codeCandidate = error instanceof Error
-      ? (error as Error & { code?: unknown }).code
-      : undefined;
-    const code = typeof codeCandidate === 'string'
-      ? codeCandidate
-      : 'AGENT_UPSTREAM_ERROR';
-    debugNotebookRuntime('runtime_dispatch_exception', {
-      task_id: task.id,
-      run_id: runId,
-      agent_id: agentId,
-      endpoint_id: endpointIdForLog,
-      code,
-      message: error instanceof Error ? error.message : 'agent_runtime_error',
-    });
-    emitTaskEvent(taskId, {
-      type: 'error',
-      data: {
-        message: error instanceof Error ? error.message : 'agent_runtime_error',
-        code,
-      },
-    });
-  } finally {
-    if (!reachedTerminal) {
-      NOTEBOOK_RUNTIME_METRICS.task_runs_terminal_without_done += 1;
-      // Defensive: the run ended without a terminal runtime event. Keep the task editable for follow-up turns,
-      // but log it so we can diagnose protocol/runtime issues.
-      debugNotebookRuntime('runtime_stream_finalized_without_terminal', {
-        task_id: task.id,
-        run_id: runId,
-        agent_id: agentId,
-        endpoint_id: endpointIdForLog,
-        agent_chars: assistantMessage.content.length,
-      });
-    }
-    updateTaskActivity(task);
-    debugNotebookRuntime('task_run_finalized', {
-      task_id: task.id,
-      run_id: runId,
-      agent_id: agentId,
-      endpoint_id: endpointIdForLog,
-      status: task.status,
-      agent_chars: assistantMessage.content.length,
-      reached_terminal: reachedTerminal,
-    });
-    emitTaskEvent(taskId, { type: 'message', data: assistantMessage });
-    emitTaskEvent(taskId, { type: 'task_update', data: task });
-    try {
-      await deps.docStore.upsert<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, assistantMessage.id, assistantMessage);
-      await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
-    } catch (error) {
-      debugNotebookRuntime('task_run_persist_failed', {
-        task_id: task.id,
-        run_id: runId,
-        message_id: assistantMessage.id,
-        error: error instanceof Error ? error.message : 'persist_failed',
-      });
-    }
-    ACTIVE_RUNS_BY_TASK.delete(taskId);
-  }
 }
 
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {
@@ -903,7 +346,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
     const createdAt = nowIso();
     const task: TaskRecord = {
-      id: buildId('task', nextTaskId++),
+      id: buildId('task'),
       workspace_id: route.workspaceId,
       project_id: route.projectId,
       owner_user_id: user.id,
@@ -963,11 +406,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     tasks.splice(index, 1);
     ACTIVE_RUNS_BY_TASK.delete(route.taskId);
-    TASK_EVENT_CLIENTS.delete(route.taskId);
+    clearNotebookTaskEventState(route.taskId);
     MESSAGES_BY_TASK.delete(route.taskId);
     ARTIFACTS_BY_TASK.delete(route.taskId);
-    TRACE_EVENTS_BY_TASK.delete(route.taskId);
-    TASK_EVENT_HISTORY_BY_TASK.delete(route.taskId);
+    removeTaskTraceEventsFromMemory(route.taskId);
     await deps.docStore.delete(TASKS_COLLECTION, route.taskId);
     await deleteTaskMessages(deps, route.taskId);
     await deleteTaskArtifacts(deps, route.taskId);
@@ -1047,7 +489,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const items = hasMore ? traces.slice(total - pageSize) : traces;
     const nextAfterId = hasMore && items.length > 0 ? items[0]!.id : null;
     const latencyMs = Date.now() - traceQueryStart;
-    observeTraceQueryLatency(queryScope, latencyMs);
+    observeNotebookTraceQueryLatency(queryScope, latencyMs);
     if (process.env.DEBUG_NOTEBOOK_RUNTIME === '1') {
       debugNotebookRuntime('task_traces_query', {
         task_id: route.taskId,
@@ -1083,7 +525,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     const message: TaskMessageRecord = {
-      id: buildId('msg', nextMessageId++),
+      id: buildId('msg'),
       task_id: route.taskId,
       role,
       content,
@@ -1096,7 +538,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
     if (role === 'user') {
       const assistantMessage: TaskMessageRecord = {
-        id: buildId('msg', nextMessageId++),
+        id: buildId('msg'),
         task_id: route.taskId,
         role: 'agent',
         content: '',
@@ -1108,7 +550,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
       ACTIVE_RUNS_BY_TASK.add(route.taskId);
 
-      void runTaskWithExternalAgent({
+      void runNotebookTaskWithExternalAgent({
         deps,
         task,
         assistantMessage,
@@ -1116,17 +558,30 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         user,
         rawBearerToken,
         publicBaseUrl: resolvePublicBaseUrl(req),
+        buildRunId: () => buildId('run'),
+        buildProxyUsername: (u) => sanitizePathPart(u.email || u.name || u.id),
+        mapTaskMessagesForRuntime,
+        updateTaskActivity,
+        emitTaskEvent: emitNotebookTaskEvent,
+        onFinalize: (taskId) => {
+          ACTIVE_RUNS_BY_TASK.delete(taskId);
+        },
+        debugLog: debugNotebookRuntime,
+        taskCollections: {
+          tasks: TASKS_COLLECTION,
+          messages: TASK_MESSAGES_COLLECTION,
+        },
       });
 
-      emitTaskEvent(route.taskId, { type: 'message', data: message });
-      emitTaskEvent(route.taskId, { type: 'message', data: assistantMessage });
-      emitTaskEvent(route.taskId, { type: 'task_update', data: task });
+      emitNotebookTaskEvent(route.taskId, { type: 'message', data: message });
+      emitNotebookTaskEvent(route.taskId, { type: 'message', data: assistantMessage });
+      emitNotebookTaskEvent(route.taskId, { type: 'task_update', data: task });
       json(res, 200, assistantMessage);
       return true;
     }
 
-    emitTaskEvent(route.taskId, { type: 'message', data: message });
-    emitTaskEvent(route.taskId, { type: 'task_update', data: task });
+    emitNotebookTaskEvent(route.taskId, { type: 'message', data: message });
+    emitNotebookTaskEvent(route.taskId, { type: 'task_update', data: task });
     json(res, 200, message);
     return true;
   }
@@ -1179,18 +634,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     if (typeof res.flushHeaders === 'function') {
       res.flushHeaders();
     }
-    let clients = TASK_EVENT_CLIENTS.get(route.taskId);
-    if (!clients) {
-      clients = new Set<http.ServerResponse>();
-      TASK_EVENT_CLIENTS.set(route.taskId, clients);
-    }
-    clients.add(res);
+    subscribeNotebookTaskEvents(route.taskId, res);
     if (lastEventId) {
-      replayBufferedTaskEvents(res, route.taskId, lastEventId);
+      replayBufferedNotebookTaskEvents(res, route.taskId, lastEventId);
     } else {
-      writeDefaultSSE(res, { type: 'task_update', data: findTask(route.workspaceId, route.projectId, route.taskId) });
+      writeNotebookTaskSseEvent(res, { type: 'task_update', data: findTask(route.workspaceId, route.projectId, route.taskId) });
       for (const traceEvent of await loadTaskTraceEvents(deps, route.taskId)) {
-        writeDefaultSSE(res, { type: 'trace_event', data: traceEvent });
+        writeNotebookTaskSseEvent(res, { type: 'trace_event', data: traceEvent });
       }
     }
     const timer = setInterval(() => {
@@ -1199,11 +649,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }, 15_000);
     req.on('close', () => {
       clearInterval(timer);
-      const subscribedClients = TASK_EVENT_CLIENTS.get(route.taskId);
-      subscribedClients?.delete(res);
-      if (subscribedClients && subscribedClients.size === 0) {
-        TASK_EVENT_CLIENTS.delete(route.taskId);
-      }
+      unsubscribeNotebookTaskEvents(route.taskId, res);
     });
     return true;
   }

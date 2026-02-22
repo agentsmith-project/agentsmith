@@ -556,6 +556,36 @@ make notebook-agent-benchmark-compare
   - if `traces_q_msg_max_ms` / histogram shifts significantly:
     - inspect Mongo indexes and query filters for `notebook_task_trace_events`
 
+### 7.5.7 Message-Scoped Traces Query Benchmark (Execution Details Path)
+- Purpose:
+  - benchmark the notebook execution-details lazy-load query path directly:
+    - `GET /tasks/:taskId/traces?message_id=<messageId>`
+  - isolate `/traces` query latency from upstream model/runtime variability
+- Command:
+```bash
+make notebook-agent-traces-query-bench
+```
+- Defaults:
+  - uses `/tmp/agentsmith_project_id.txt`
+  - uses `/tmp/agentsmith_last_task_id.txt`
+  - resolves the latest agent `message_id` automatically
+  - `REQUESTS=50`, `CONCURRENCY=5`, `WARMUP=5`
+- Useful overrides:
+```bash
+TASK_ID=task_000123 MESSAGE_ID=msg_000456 REQUESTS=200 CONCURRENCY=20 make notebook-agent-traces-query-bench
+PAGE_SIZE=50 make notebook-agent-traces-query-bench
+```
+- Output includes:
+  - request latency stats (`avg/p50/p95/p99/max`)
+  - failure codes
+  - notebook runtime metrics snapshot (JSON)
+  - Prometheus histogram lines for `scope="message"`
+- Recommendation:
+  - run this after a baseline task run in both memory and Mongo modes
+  - compare:
+    - script p95/p99
+    - `notebook_task_traces_query_duration_ms_*{scope="message"}`
+
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.

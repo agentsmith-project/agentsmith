@@ -49,6 +49,26 @@ const timeoutByRequestId = new Map<string, NodeJS.Timeout>();
 const hardKillTimeoutByRequestId = new Map<string, NodeJS.Timeout>();
 const timedOutRequestIds = new Set<string>();
 const traceSeqByRequestId = new Map<string, number>();
+type FilterStats = {
+  stderr_superpowers_skill_missing: number;
+  model_metadata_warning: number;
+  delta_metadata_warning_event: number;
+  delta_empty_error_shell: number;
+};
+const filterStatsByRequestId = new Map<string, FilterStats>();
+
+function getFilterStats(requestId: string): FilterStats {
+  let existing = filterStatsByRequestId.get(requestId);
+  if (existing) return existing;
+  existing = {
+    stderr_superpowers_skill_missing: 0,
+    model_metadata_warning: 0,
+    delta_metadata_warning_event: 0,
+    delta_empty_error_shell: 0,
+  };
+  filterStatsByRequestId.set(requestId, existing);
+  return existing;
+}
 
 function sanitizePathPart(input: string | undefined, fallback: string): string {
   const value = (input ?? '').trim();
@@ -120,7 +140,7 @@ function extractPrompt(messages: Array<{ role?: string; content?: unknown }> | u
 }
 
 function maybeEmitDeltaChunk(requestId: string, chunk: string): void {
-  const trimmed = sanitizeAgentDeltaChunk(chunk).replace(/\r/g, '');
+  const trimmed = sanitizeAgentDeltaChunk(chunk, requestId).replace(/\r/g, '');
   if (!trimmed.trim()) return;
   sendFrame('agent.response.delta', requestId, { delta: trimmed });
 }
@@ -221,16 +241,31 @@ const DELTA_FILTER_PATTERNS: RegExp[] = [
   ...STDERR_FILTER_PATTERNS,
 ];
 
-function sanitizeAgentDeltaChunk(raw: string): string {
+function countMatches(pattern: RegExp, text: string): number {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const re = new RegExp(pattern.source, flags);
+  let count = 0;
+  while (re.exec(text)) count += 1;
+  return count;
+}
+
+function sanitizeAgentDeltaChunk(raw: string, requestId?: string): string {
   let text = raw;
+  if (requestId) {
+    const stats = getFilterStats(requestId);
+    stats.delta_metadata_warning_event += countMatches(DELTA_FILTER_PATTERNS[0]!, text);
+    stats.delta_empty_error_shell += countMatches(DELTA_FILTER_PATTERNS[1]!, text);
+    stats.stderr_superpowers_skill_missing += countMatches(STDERR_FILTER_PATTERNS[0]!, text);
+    stats.model_metadata_warning += countMatches(STDERR_FILTER_PATTERNS[1]!, text);
+  }
   for (const pattern of DELTA_FILTER_PATTERNS) {
     text = text.replace(pattern, '');
   }
   return text;
 }
 
-function sanitizeStderrChunk(raw: string): string {
-  let text = sanitizeAgentDeltaChunk(raw);
+function sanitizeStderrChunk(raw: string, requestId?: string): string {
+  let text = sanitizeAgentDeltaChunk(raw, requestId);
   // Remove excessive blank lines introduced by filtering, but keep JSON chunks untouched.
   text = text.replace(/\n{3,}/g, '\n\n').trim();
   return text;
@@ -466,7 +501,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   });
 
   child.stderr.on('data', (buffer: Buffer) => {
-    const text = sanitizeStderrChunk(buffer.toString('utf-8'));
+    const text = sanitizeStderrChunk(buffer.toString('utf-8'), requestId);
     if (!text) return;
     sendTraceEvent(requestId, {
       category: text.includes('ERROR') ? 'error' : 'warning',
@@ -485,6 +520,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     if (timedOutRequestIds.has(requestId)) {
       timedOutRequestIds.delete(requestId);
       traceSeqByRequestId.delete(requestId);
+      filterStatsByRequestId.delete(requestId);
       return;
     }
     sendTraceEvent(requestId, {
@@ -498,6 +534,11 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       error_code: 'AGENT_UPSTREAM_ERROR',
       error_message: error.message,
     });
+    if (runnerDebug) {
+      const stats = filterStatsByRequestId.get(requestId);
+      if (stats) debugLog('filter stats', { request_id: requestId, ...stats });
+    }
+    filterStatsByRequestId.delete(requestId);
   });
 
   child.on('close', (code, signal) => {
@@ -507,10 +548,15 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       code: code ?? null,
       signal: signal ?? null,
     });
+    if (runnerDebug) {
+      const stats = filterStatsByRequestId.get(requestId);
+      if (stats) debugLog('filter stats', { request_id: requestId, ...stats });
+    }
     runningByRequestId.delete(requestId);
     if (timedOutRequestIds.has(requestId)) {
       timedOutRequestIds.delete(requestId);
       traceSeqByRequestId.delete(requestId);
+      filterStatsByRequestId.delete(requestId);
       return;
     }
     if (code === 0) {
@@ -526,6 +572,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         usage_tokens: Math.max(1, prompt.length),
       });
       traceSeqByRequestId.delete(requestId);
+      filterStatsByRequestId.delete(requestId);
       return;
     }
     sendTraceEvent(requestId, {
@@ -544,6 +591,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       error_message: signal ? `codex_terminated_${signal}` : `codex_exit_code_${String(code ?? 'unknown')}`,
     });
     traceSeqByRequestId.delete(requestId);
+    filterStatsByRequestId.delete(requestId);
   });
 }
 

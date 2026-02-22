@@ -516,6 +516,46 @@ MATRIX=10x2,10x4,20x4 make notebook-agent-benchmark-baseline
 - Team usage suggestion:
   - store selected baseline outputs (CSV/JSONL) as CI artifacts or benchmark snapshots for trend comparison
 
+### 7.5.6 Memory vs Mongo Baseline Comparison (Recommended)
+- Goal:
+  - compare end-to-end task latency and `/traces` query behavior between:
+    - memory `docStore`
+    - Mongo `docStore`
+- Step 1: run baseline in memory mode (default API startup)
+```bash
+OUT_DIR=/tmp/agentsmith-baseline-memory make notebook-agent-benchmark-baseline
+```
+- Step 2: restart API with Mongo/docStore enabled, then re-init resources and runner, run baseline again
+```bash
+# example (adjust MONGO_URL / DB name to your environment)
+MONGO_URL='mongodb://localhost:27017' MONGO_DB_NAME='mbos' \
+PORT=20000 KEYCLOAK_BASE_URL=http://localhost:18080 KEYCLOAK_REALM=mbos \
+npm run dev -w @mbos/api-entry-node
+
+# in another terminal, rebuild test resources (memory-mode ids are not reusable after API restart)
+make notebook-agent-refresh-token
+GLM_API_KEY='***' make notebook-agent-init-resources
+make notebook-agent-runner
+
+OUT_DIR=/tmp/agentsmith-baseline-mongo make notebook-agent-benchmark-baseline
+```
+- Step 3: compare outputs
+```bash
+BASELINE_A_LABEL=memory BASELINE_A_DIR=/tmp/agentsmith-baseline-memory \
+BASELINE_B_LABEL=mongo  BASELINE_B_DIR=/tmp/agentsmith-baseline-mongo \
+make notebook-agent-benchmark-compare
+```
+- What to compare first:
+  - `success_rate`
+  - `latency_ms.p95 / p99`
+  - Prometheus histogram `notebook_task_traces_query_duration_ms_*{scope="message"}`
+  - monitor output `traces_q_msg_max_ms`
+- Interpretation guidance:
+  - if end-to-end latency increases but `traces` query histogram is stable:
+    - bottleneck is likely upstream model/runtime, not notebook traces API
+  - if `traces_q_msg_max_ms` / histogram shifts significantly:
+    - inspect Mongo indexes and query filters for `notebook_task_trace_events`
+
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.

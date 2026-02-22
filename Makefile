@@ -7,7 +7,7 @@
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
-	notebook-agent-benchmark-baseline \
+	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls
 
 NPM ?= npm
@@ -89,6 +89,7 @@ help:
 	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
 	@echo "  make notebook-agent-load-matrix   # run a load matrix and save CSV/JSONL summaries under /tmp"
 	@echo "  make notebook-agent-benchmark-baseline # run the standard baseline matrix profile and print summary preview"
+	@echo "  make notebook-agent-benchmark-compare  # compare two baseline dirs (BASELINE_A_DIR, BASELINE_B_DIR)"
 	@echo "  make openapi-generate   # generate frontend API types from docs/contracts/specs/openapi.yaml"
 	@echo "  make openapi-check-generated # verify generated API types are in sync"
 	@echo "  make openapi-changelog  # generate OpenAPI diff changelog vs origin/main"
@@ -399,6 +400,14 @@ notebook-agent-load-matrix:
 notebook-agent-benchmark-baseline:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/notebook-agent-benchmark-baseline.sh
+
+notebook-agent-benchmark-compare:
+	@if [ -z "$$BASELINE_A_DIR" ] || [ -z "$$BASELINE_B_DIR" ]; then \
+		echo "[make] Usage: BASELINE_A_DIR=/tmp/... BASELINE_B_DIR=/tmp/... make notebook-agent-benchmark-compare"; \
+		exit 1; \
+	fi
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	node ./scripts/notebook-agent-benchmark-compare.js
 
 openapi-generate:
 	$(NPM) run openapi:generate

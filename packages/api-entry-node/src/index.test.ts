@@ -1258,6 +1258,37 @@ describe('api-entry-node projects routes', () => {
     }
 
     expect(messagesBody.some((item) => item.role === 'agent' && item.content.includes('task-output'))).toBe(true);
+
+    const taskAfterRunRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+    );
+    expect(taskAfterRunRes.status).toBe(200);
+    const taskAfterRun = (await taskAfterRunRes.json()) as { status: string };
+    expect(taskAfterRun.status).toBe('active');
+
+    let secondTurnStatus = 0;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const secondTurnRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'follow-up request',
+          }),
+        },
+      );
+      secondTurnStatus = secondTurnRes.status;
+      if (secondTurnStatus === 200) {
+        break;
+      }
+      expect(secondTurnStatus).toBe(409);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(secondTurnStatus).toBe(200);
     runtime.close();
   });
 

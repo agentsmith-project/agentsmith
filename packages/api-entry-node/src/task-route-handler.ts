@@ -269,7 +269,6 @@ async function runTaskWithExternalAgent(input: {
         continue;
       }
       if (event.type === 'error') {
-        task.status = 'closed';
         reachedTerminal = true;
         debugNotebookRuntime('runtime_event_error', {
           task_id: task.id,
@@ -289,7 +288,6 @@ async function runTaskWithExternalAgent(input: {
         break;
       }
       if (event.type === 'done') {
-        task.status = 'closed';
         reachedTerminal = true;
         debugNotebookRuntime('runtime_event_done', {
           task_id: task.id,
@@ -303,7 +301,6 @@ async function runTaskWithExternalAgent(input: {
       }
     }
   } catch (error) {
-    task.status = 'closed';
     reachedTerminal = true;
     const codeCandidate = error instanceof Error
       ? (error as Error & { code?: unknown }).code
@@ -328,8 +325,8 @@ async function runTaskWithExternalAgent(input: {
     });
   } finally {
     if (!reachedTerminal) {
-      // Defensive: if the stream exited without explicit done/error, do not leave notebook task active forever.
-      task.status = 'closed';
+      // Defensive: the run ended without a terminal runtime event. Keep the task editable for follow-up turns,
+      // but log it so we can diagnose protocol/runtime issues.
       debugNotebookRuntime('runtime_stream_finalized_without_terminal', {
         task_id: task.id,
         run_id: runId,

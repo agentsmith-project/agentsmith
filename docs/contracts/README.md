@@ -37,6 +37,7 @@ This directory contains only current-state documents: functional contracts, arch
 Note:
 - `specs/openapi.*` and `specs/asyncapi.*` now include notebook trace API and `agent.response.event` runtime frame coverage.
 - Supplement specs are retained as change-isolated reference snapshots and should not diverge from the canonical main specs.
+- Internal observability endpoints (for example `/api/v1/internal/notebook-runtime-metrics` and `/prometheus`) are auth-protected operational interfaces and are documented in runbooks; they are not currently part of the public OpenAPI contract unless explicitly added.
 
 ## Validation Commands
 

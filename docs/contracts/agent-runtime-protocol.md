@@ -50,6 +50,7 @@ All frames are JSON objects:
   - payload: `{ "reason": "client_cancelled" }`
 - `server.ping`
   - payload: `{}`
+  - note: optional/reserved heartbeat frame; current server implementation may not emit it in all deployments.
 
 ## 4. Agent -> Server Events
 
@@ -75,6 +76,7 @@ All frames are JSON objects:
       - recommended for trace fidelity UX:
         - preserve sanitized provider/codex event metadata (e.g. original event type/source labels)
         - avoid semantic rewrites; frontend may render `Raw` view directly from `details`
+    - `raw?: string` (sanitized raw snippet/source text for fidelity-oriented UI/debug views)
 - `agent.response.done`
   - required: `request_id`
   - payload: `{ "finish_reason": "stop|length|cancelled|...", "usage_tokens": number }`

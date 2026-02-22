@@ -3215,8 +3215,8 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000,
-              "default": 100
+              "maximum": 500,
+              "default": 200
             },
             "description": "Maximum number of events to return."
           }

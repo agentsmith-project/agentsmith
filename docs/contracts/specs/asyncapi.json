@@ -190,6 +190,10 @@
             "type": "object",
             "additionalProperties": true,
             "description": "Sanitized event metadata (must not contain tokens/secrets)."
+          },
+          "raw": {
+            "type": "string",
+            "description": "Sanitized raw snippet/source text for fidelity-oriented UI/debug rendering."
           }
         }
       }

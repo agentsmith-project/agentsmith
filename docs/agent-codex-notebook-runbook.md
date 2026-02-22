@@ -651,6 +651,23 @@ make notebook-agent-benchmark-archive
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.
 
+## 8.1 Deployment Model and Runtime Coordination Limits
+- Current notebook runtime coordination is optimized for a single API instance (or sticky-session routing to one API instance).
+- The following coordination state is in-process memory in `api-entry-node`:
+  - active task run guard (`ACTIVE_RUNS_BY_TASK`)
+  - notebook task SSE client subscriptions
+  - notebook task SSE replay buffer (`last_event_id` replay source)
+- Implications in multi-instance deployments (without sticky routing / shared coordination):
+  - duplicate user POSTs to `/tasks/:id/messages` can bypass per-task active-run guard across instances
+  - `/tasks/:id/events` replay continuity may be incomplete after reconnects that land on another instance
+  - live SSE subscriptions are instance-local (expected)
+- Recommended current deployment pattern:
+  - single API instance for notebook external-agent runtime, or
+  - sticky routing by task/session when using multiple API instances
+- Future hardening path (not implemented in v1):
+  - distributed task-run lock (e.g. Redis)
+  - shared replay/event source for notebook task SSE
+
 ## 9. Next Hardening Items
 1. Replace direct bearer forwarding with short-lived ticket exchange.
 2. Add stronger runtime isolation (container/jail/seccomp profile).

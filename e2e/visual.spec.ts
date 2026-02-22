@@ -26,11 +26,20 @@ const test = base.extend<{ authedPage: Page }>({
 async function stableNavigate(page: Page, path: string) {
   await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 20000 });
   await waitForPageReady(page);
+  // In MSW mode, the app can briefly render a full-page "Starting mocks..." overlay after the route is technically mounted.
+  // Wait for it to disappear to avoid capturing transient bootstrap screens as baselines.
+  const mwsBootMessage = page.getByText('Starting mocks...');
+  if (await mwsBootMessage.isVisible().catch(() => false)) {
+    await mwsBootMessage.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+  }
   // Ensure dev overlays are removed before capturing screenshots.
   await page.evaluate(() => {
     const hideOverlays = () => {
       document.querySelectorAll('nextjs-portal').forEach((portal) => {
         portal.remove();
+      });
+      document.querySelectorAll('[data-testid="notebook__sse-debug-panel"]').forEach((panel) => {
+        (panel as HTMLElement).style.display = 'none';
       });
     };
     hideOverlays();
@@ -99,11 +108,13 @@ test.describe('Visual - Project Pages', () => {
 
   test('notebook', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('notebook'));
+    await expect(authedPage.getByTestId('notebook__task-list')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('notebook.png', { fullPage: true });
   });
 
   test('notebook task detail', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('notebook/tasks/task_001'));
+    await expect(authedPage.getByTestId('notebook__task-header')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('notebook-task-detail.png', { fullPage: true });
   });
 

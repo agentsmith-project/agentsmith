@@ -364,6 +364,48 @@ scrape_configs:
   - `notebook_trace_details_truncated_total`
   - `notebook_active_runs`
 
+### 7.4.3 Prometheus Alert Rules (Starting Point)
+- Example alerts (tune after baseline data is collected):
+```yaml
+groups:
+  - name: agentsmith_notebook_runtime
+    rules:
+      - alert: AgentSmithNotebookRuntimeTerminalWithoutDone
+        expr: increase(notebook_task_runs_terminal_without_done_total[10m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notebook runtime stream finalized without terminal event"
+
+      - alert: AgentSmithNotebookRuntimeFailuresHigh
+        expr: increase(notebook_task_runs_failed_total[15m]) >= 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notebook runtime task failures increased"
+
+      - alert: AgentSmithNotebookTraceDetailsTruncationSpike
+        expr: increase(notebook_trace_details_truncated_total[15m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notebook trace details truncation spike (payloads too large)"
+
+      - alert: AgentSmithNotebookActiveRunsStuck
+        expr: notebook_active_runs > 0 and increase(notebook_task_runs_completed_total[15m]) == 0 and increase(notebook_task_runs_failed_total[15m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Notebook active runs may be stuck"
+```
+- Notes:
+  - Use these as bootstrap rules only; tune thresholds after collecting real baseline data.
+  - If upstream provider instability is expected, set failure thresholds by SLO/error budget rather than raw count.
+
 ## 7.5 Real-Environment Load Test (Notebook + External Agent)
 - Purpose:
   - validate runtime stability under concurrent notebook task submissions
@@ -444,6 +486,23 @@ POLL_MAX=120 POLL_INTERVAL_SEC=2 PROMPT='reply exactly: chain ok' make notebook-
   - keep `PROMPT` constant across runs
   - compare `summary.csv` across commits/branches for p95/p99 regressions
   - run `make notebook-agent-monitor` in another terminal during the matrix run
+
+### 7.5.5 Standard Baseline Command (Team Default)
+- Use the standard baseline profile wrapper (recommended for weekly/regression checks):
+```bash
+make notebook-agent-benchmark-baseline
+```
+- Default baseline matrix (moderate, repeatable):
+  - `6x2,6x3,10x3`
+- Override example:
+```bash
+MATRIX=10x2,10x4,20x4 make notebook-agent-benchmark-baseline
+```
+- Output:
+  - `/tmp/agentsmith-benchmark-baseline-<timestamp>/summary.csv`
+  - `/tmp/agentsmith-benchmark-baseline-<timestamp>/summary.jsonl`
+- Team usage suggestion:
+  - store selected baseline outputs (CSV/JSONL) as CI artifacts or benchmark snapshots for trend comparison
 
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.

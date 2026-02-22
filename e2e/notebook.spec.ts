@@ -163,5 +163,26 @@ test.describe('Notebook Page', () => {
         ),
       ).toBeVisible();
     });
+
+    test('should switch trace views, filter events, and show load earlier logs', async ({ authedPage }) => {
+      const traceToggle = authedPage.getByTestId('notebook__message-trace-toggle').first();
+      await expect(traceToggle).toBeVisible({ timeout: 10000 });
+      await traceToggle.click();
+
+      const panel = authedPage.getByTestId('notebook__message-trace-panel');
+      await expect(panel).toBeVisible();
+
+      await authedPage.getByTestId('notebook__message-trace-view-raw').click();
+      await expect(authedPage.getByTestId('notebook__message-trace-raw')).toBeVisible();
+
+      await authedPage.getByTestId('notebook__message-trace-filter-alerts').click();
+      await expect(authedPage.getByTestId('notebook__message-trace-stats')).toBeVisible();
+
+      const loadMore = authedPage.getByTestId('notebook__message-trace-load-more');
+      await expect(loadMore).toBeVisible();
+      await loadMore.click();
+
+      await expect(authedPage.getByTestId('notebook__message-trace-body')).toBeVisible();
+    });
   });
 });

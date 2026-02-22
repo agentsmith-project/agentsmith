@@ -4,11 +4,13 @@ import {
   taskMessageFixtures,
   artifactFixtures,
   sourceFileFixtures,
+  taskTraceFixtures,
 } from '../fixtures/notebook';
 
 const tasks = [...taskFixtures];
 const taskMessages = [...taskMessageFixtures];
 const artifacts = [...artifactFixtures];
+const taskTraces = [...taskTraceFixtures];
 
 export const taskHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/tasks', ({ request }) => {
@@ -98,6 +100,56 @@ export const taskHandlers = [
     const taskId = params.id as string;
     const items = taskMessages.filter((m) => m.task_id === taskId);
     return HttpResponse.json(items);
+  }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/traces', ({ request, params }) => {
+    const taskId = params.id as string;
+    const url = new URL(request.url);
+    const messageId = url.searchParams.get('message_id');
+    const runId = url.searchParams.get('run_id');
+    const afterId = url.searchParams.get('after_id');
+    const beforeId = url.searchParams.get('before_id');
+    const pageSize = Math.min(1000, Math.max(1, Number(url.searchParams.get('page_size') ?? 100)));
+
+    let items = taskTraces
+      .filter((t) => t.task_id === taskId)
+      .sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
+    if (messageId) items = items.filter((t) => t.message_id === messageId);
+    if (runId) items = items.filter((t) => t.run_id === runId);
+
+    if (afterId) {
+      const idx = items.findIndex((t) => t.id === afterId);
+      if (idx >= 0) items = items.slice(idx + 1);
+      const sliced = items.slice(0, pageSize);
+      return HttpResponse.json({
+        items: sliced,
+        total: sliced.length,
+        has_more: items.length > sliced.length,
+        next_after_id: null,
+      });
+    }
+
+    if (beforeId) {
+      const idx = items.findIndex((t) => t.id === beforeId);
+      const older = idx >= 0 ? items.slice(0, idx) : items;
+      const start = Math.max(0, older.length - pageSize);
+      const sliced = older.slice(start);
+      return HttpResponse.json({
+        items: sliced,
+        total: sliced.length,
+        has_more: start > 0,
+        next_after_id: start > 0 ? sliced[0]?.id ?? null : null,
+      });
+    }
+
+    // Default behavior: return latest page to exercise UI "load earlier logs".
+    const start = Math.max(0, items.length - Math.min(pageSize, 3));
+    const sliced = items.slice(start);
+    return HttpResponse.json({
+      items: sliced,
+      total: sliced.length,
+      has_more: start > 0,
+      next_after_id: start > 0 ? sliced[0]?.id ?? null : null,
+    });
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/messages', async ({ request, params }) => {
     const taskId = params.id as string;

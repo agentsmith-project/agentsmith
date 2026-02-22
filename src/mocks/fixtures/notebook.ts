@@ -5,7 +5,7 @@
  */
 
 import type { AgentThread, Turn, TurnEvent } from '@/lib/api/types';
-import type { Task, TaskMessage, Artifact } from '@/lib/types/task';
+import type { Task, TaskMessage, Artifact, TaskTraceEvent } from '@/lib/types/task';
 
 export interface FileItem {
   id: string;
@@ -363,5 +363,89 @@ export const artifactFixtures: Artifact[] = [
     content: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100"><rect width="100%25" height="100%25" fill="%23e5e7eb"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%236b7280" font-size="12">Diagram</text></svg>',
     thumbnail_url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="50"><rect width="100%25" height="100%25" fill="%23e5e7eb"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%236b7280" font-size="10">Diagram</text></svg>',
     created_at: '2026-01-28T10:20:00Z',
+  },
+];
+
+export const taskTraceFixtures: TaskTraceEvent[] = [
+  {
+    id: 'trace_task_001_001',
+    task_id: 'task_001',
+    message_id: 'msg_task_001_002',
+    run_id: 'run_task_001_001',
+    seq: 1,
+    at: '2026-01-28T10:07:55Z',
+    category: 'progress',
+    phase: 'start',
+    status: 'running',
+    name: 'codex.exec',
+    summary: 'Starting Codex execution',
+    details: { source: 'stdout', type: 'thread.started' },
+  },
+  {
+    id: 'trace_task_001_002',
+    task_id: 'task_001',
+    message_id: 'msg_task_001_002',
+    run_id: 'run_task_001_001',
+    seq: 2,
+    at: '2026-01-28T10:07:56Z',
+    category: 'tool',
+    phase: 'start',
+    status: 'running',
+    name: 'python.run',
+    summary: 'Running Python script',
+    details: { cmd: 'python summarize.py' },
+  },
+  {
+    id: 'trace_task_001_003',
+    task_id: 'task_001',
+    message_id: 'msg_task_001_002',
+    run_id: 'run_task_001_001',
+    seq: 3,
+    at: '2026-01-28T10:07:57Z',
+    category: 'warning',
+    phase: 'update',
+    name: 'codex.retry',
+    summary: 'Retrying after upstream error',
+    details: { retry: 1 },
+  },
+  {
+    id: 'trace_task_001_004',
+    task_id: 'task_001',
+    message_id: 'msg_task_001_002',
+    run_id: 'run_task_001_001',
+    seq: 4,
+    at: '2026-01-28T10:07:58Z',
+    category: 'error',
+    phase: 'update',
+    name: 'provider.response',
+    summary: 'Transient upstream error',
+    details: { code: 'UPSTREAM_429' },
+  },
+  {
+    id: 'trace_task_001_005',
+    task_id: 'task_001',
+    message_id: 'msg_task_001_002',
+    run_id: 'run_task_001_001',
+    seq: 5,
+    at: '2026-01-28T10:08:00Z',
+    category: 'progress',
+    phase: 'end',
+    status: 'success',
+    name: 'codex.exec',
+    summary: 'Codex execution completed',
+    details: { source: 'stdout', type: 'turn.completed' },
+  },
+  {
+    id: 'trace_task_001_006',
+    task_id: 'task_001',
+    message_id: 'msg_task_001_002',
+    run_id: 'run_task_001_001',
+    seq: 6,
+    at: '2026-01-28T10:08:01Z',
+    category: 'debug',
+    phase: 'update',
+    name: 'runner.debug',
+    summary: 'Forwarding final output',
+    details: { source: 'stderr' },
   },
 ];

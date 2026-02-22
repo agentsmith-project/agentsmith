@@ -625,6 +625,28 @@ make notebook-agent-traces-query-sweep-compare
 ```
   - output is JSON keyed by `page_size`, including `avg/p95/p99/max` delta percentages
 
+### 7.5.9 Benchmark Result Archiving (Team Baseline Records)
+- Purpose:
+  - archive benchmark outputs under the repo for future regression comparisons
+  - attach metadata (commit SHA, environment parameters, source dir)
+- Command:
+```bash
+SOURCE_DIR=/tmp/agentsmith-traces-query-sweep-final-long-mongo \
+LABEL=mongo-traces-sweep-final \
+MODE_LABEL=mongo \
+COMMIT_SHA=$(git rev-parse HEAD) \
+make notebook-agent-benchmark-archive
+```
+- Output:
+  - `artifacts/benchmarks/<timestamp>__<kind>__<label>/`
+  - includes:
+    - `summary.csv` / `summary.jsonl` (if present)
+    - nested per-case `result.json` / `stdout.log` / `metrics.json` (if present)
+    - `metadata.json` (archive metadata and key env params)
+- Recommendation:
+  - archive at least one `memory` and one `mongo` baseline set per release candidate
+  - keep the compare output (`benchmark-compare` / `traces-query-sweep-compare`) next to the archived dirs in release notes or CI artifacts
+
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.

@@ -277,6 +277,9 @@ done
 - Trace storage behavior:
   - when `api-entry-node` runs with a `docStore` backend (for example `MONGO_URL` configured), notebook traces are persisted and `/traces` can be recovered after API process restart
   - in pure in-memory local mode, traces remain process-local and are cleared on API restart
+- Trace retention / payload controls (API env):
+  - `NOTEBOOK_TRACE_MAX_EVENTS` (default `1000`) caps in-memory + persisted per-task trace retention
+  - `NOTEBOOK_TRACE_DETAILS_MAX_BYTES` (default `16384`) truncates oversized `trace.details` payloads before storage/streaming
 - Semantics:
   - `has_more=true` means the current panel is showing only the most recent trace slice.
   - `next_after_id` is the cursor for loading an earlier slice (older events) with:

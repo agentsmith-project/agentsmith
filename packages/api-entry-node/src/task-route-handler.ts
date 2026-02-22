@@ -86,6 +86,7 @@ let nextMessageId = 1;
 let nextTraceEventId = 1;
 const MAX_TRACE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_TRACE_MAX_EVENTS ?? '1000') || 1000);
 const MAX_TASK_SSE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_SSE_HISTORY_MAX_EVENTS ?? '2000') || 2000);
+const MAX_TRACE_DETAILS_BYTES = Math.max(512, Number(process.env.NOTEBOOK_TRACE_DETAILS_MAX_BYTES ?? '16384') || 16384);
 const TASK_TRACE_EVENTS_COLLECTION = 'notebook_task_trace_events';
 
 function debugNotebookRuntime(message: string, extra?: Record<string, unknown>): void {
@@ -232,8 +233,17 @@ async function storeTaskTraceEvent(deps: NodeApiDeps, taskId: string, event: Tas
   await deps.docStore.upsert<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, event.id, event);
   if (items.length <= MAX_TRACE_EVENTS_PER_TASK) return;
 
-  const overflow = items.length - MAX_TRACE_EVENTS_PER_TASK;
-  items.splice(0, overflow);
+  let overflow = items.length - MAX_TRACE_EVENTS_PER_TASK;
+  const removed = items.splice(0, overflow);
+  await Promise.all(removed.map((item) => deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, item.id)));
+  // Reserve one slot for the truncation notice so the in-memory list does not grow beyond the configured max.
+  if (items.length >= MAX_TRACE_EVENTS_PER_TASK) {
+    const evicted = items.shift();
+    if (evicted) {
+      overflow += 1;
+      await deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, evicted.id);
+    }
+  }
   const truncatedNotice: TaskTraceEventRecord = {
     id: buildId('trace', nextTraceEventId++),
     task_id: taskId,
@@ -263,6 +273,27 @@ function buildTaskTraceEvent(args: {
   payload: AgentRuntimeTraceEventPayload;
 }): TaskTraceEventRecord {
   const { taskId, messageId, runId, payload } = args;
+  let details: Record<string, unknown> | undefined;
+  if (payload.details) {
+    try {
+      const serialized = JSON.stringify(payload.details);
+      if (serialized && Buffer.byteLength(serialized, 'utf-8') > MAX_TRACE_DETAILS_BYTES) {
+        details = {
+          _truncated: true,
+          _reason: 'trace_details_too_large',
+          _max_bytes: MAX_TRACE_DETAILS_BYTES,
+          _preview: serialized.slice(0, Math.max(64, Math.min(1024, MAX_TRACE_DETAILS_BYTES / 2))),
+        };
+      } else {
+        details = payload.details;
+      }
+    } catch {
+      details = {
+        _truncated: true,
+        _reason: 'trace_details_not_serializable',
+      };
+    }
+  }
   return {
     id: buildId('trace', nextTraceEventId++),
     task_id: taskId,
@@ -275,7 +306,7 @@ function buildTaskTraceEvent(args: {
     ...(payload.status ? { status: payload.status } : {}),
     name: payload.name,
     summary: payload.summary,
-    ...(payload.details ? { details: payload.details } : {}),
+    ...(details ? { details } : {}),
   };
 }
 

@@ -96,6 +96,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
 
   return {
     cache,
+    docStore,
     chatResourceService,
     endpointResourceService,
     agentResourceService,
@@ -249,6 +250,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   return {
     deps: {
       cache,
+      docStore,
       chatResourceService,
       endpointResourceService,
       agentResourceService,

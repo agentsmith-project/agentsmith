@@ -86,6 +86,7 @@ let nextMessageId = 1;
 let nextTraceEventId = 1;
 const MAX_TRACE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_TRACE_MAX_EVENTS ?? '1000') || 1000);
 const MAX_TASK_SSE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_SSE_HISTORY_MAX_EVENTS ?? '2000') || 2000);
+const TASK_TRACE_EVENTS_COLLECTION = 'notebook_task_trace_events';
 
 function debugNotebookRuntime(message: string, extra?: Record<string, unknown>): void {
   if (process.env.DEBUG_NOTEBOOK_RUNTIME !== '1') return;
@@ -149,6 +150,15 @@ function getTaskTraceEvents(taskId: string): TaskTraceEventRecord[] {
     TRACE_EVENTS_BY_TASK.set(taskId, existing);
   }
   return existing;
+}
+
+async function loadTaskTraceEvents(deps: NodeApiDeps, taskId: string): Promise<TaskTraceEventRecord[]> {
+  const cached = TRACE_EVENTS_BY_TASK.get(taskId);
+  if (cached && cached.length > 0) return cached;
+  const listed = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, { task_id: taskId });
+  const sorted = listed.sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
+  TRACE_EVENTS_BY_TASK.set(taskId, sorted);
+  return sorted;
 }
 
 function findTask(workspaceId: string, projectId: string, taskId: string): TaskRecord | undefined {
@@ -216,9 +226,10 @@ function replayBufferedTaskEvents(res: http.ServerResponse, taskId: string, last
   }
 }
 
-function storeTaskTraceEvent(taskId: string, event: TaskTraceEventRecord): void {
+async function storeTaskTraceEvent(deps: NodeApiDeps, taskId: string, event: TaskTraceEventRecord): Promise<void> {
   const items = getTaskTraceEvents(taskId);
   items.push(event);
+  await deps.docStore.upsert<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, event.id, event);
   if (items.length <= MAX_TRACE_EVENTS_PER_TASK) return;
 
   const overflow = items.length - MAX_TRACE_EVENTS_PER_TASK;
@@ -237,6 +248,12 @@ function storeTaskTraceEvent(taskId: string, event: TaskTraceEventRecord): void 
     phase: 'update',
   };
   items.push(truncatedNotice);
+  await deps.docStore.upsert<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, truncatedNotice.id, truncatedNotice);
+}
+
+async function deleteTaskTraceEvents(deps: NodeApiDeps, taskId: string): Promise<void> {
+  const existing = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, { task_id: taskId });
+  await Promise.all(existing.map((item) => deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, item.id)));
 }
 
 function buildTaskTraceEvent(args: {
@@ -379,7 +396,7 @@ async function runTaskWithExternalAgent(input: {
           runId,
           payload: event.event,
         });
-        storeTaskTraceEvent(task.id, traceEvent);
+        await storeTaskTraceEvent(deps, task.id, traceEvent);
         emitTaskEvent(taskId, { type: 'trace_event', data: traceEvent });
         continue;
       }
@@ -607,6 +624,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     ARTIFACTS_BY_TASK.delete(route.taskId);
     TRACE_EVENTS_BY_TASK.delete(route.taskId);
     TASK_EVENT_HISTORY_BY_TASK.delete(route.taskId);
+    await deleteTaskTraceEvents(deps, route.taskId);
     json(res, 200, { success: true });
     return true;
   }
@@ -654,7 +672,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const afterId = requestUrl.searchParams.get('after_id')?.trim();
     const beforeId = requestUrl.searchParams.get('before_id')?.trim();
     const pageSize = Math.max(1, Math.min(500, Number(requestUrl.searchParams.get('page_size') ?? '200') || 200));
-    let traces = getTaskTraceEvents(route.taskId);
+    let traces = await loadTaskTraceEvents(deps, route.taskId);
     if (messageId) traces = traces.filter((item) => item.message_id === messageId);
     if (runId) traces = traces.filter((item) => item.run_id === runId);
     if (afterId) {
@@ -786,7 +804,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       replayBufferedTaskEvents(res, route.taskId, lastEventId);
     } else {
       writeDefaultSSE(res, { type: 'task_update', data: findTask(route.workspaceId, route.projectId, route.taskId) });
-      for (const traceEvent of getTaskTraceEvents(route.taskId)) {
+      for (const traceEvent of await loadTaskTraceEvents(deps, route.taskId)) {
         writeDefaultSSE(res, { type: 'trace_event', data: traceEvent });
       }
     }

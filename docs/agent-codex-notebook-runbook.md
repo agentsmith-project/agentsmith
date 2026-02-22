@@ -274,6 +274,9 @@ done
 - Backend trace list response now includes pagination hints:
   - `has_more`
   - `next_after_id`
+- Trace storage behavior:
+  - when `api-entry-node` runs with a `docStore` backend (for example `MONGO_URL` configured), notebook traces are persisted and `/traces` can be recovered after API process restart
+  - in pure in-memory local mode, traces remain process-local and are cleared on API restart
 - Semantics:
   - `has_more=true` means the current panel is showing only the most recent trace slice.
   - `next_after_id` is the cursor for loading an earlier slice (older events) with:

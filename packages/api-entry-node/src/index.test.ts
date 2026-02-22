@@ -1714,6 +1714,90 @@ describe('api-entry-node projects routes', () => {
     expect(text).toContain('notebook_task_runs_started_total ');
     expect(text).toContain('notebook_active_runs ');
     expect(text).toContain('notebook_limit_trace_events_per_task ');
+    expect(text).toContain('notebook_task_traces_query_duration_ms_bucket{scope="task",le="10"} ');
+  });
+
+  it('records task trace query metrics for message-scoped requests', async () => {
+    const { baseUrl } = startServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'glm-key', type: 'api_key', value: 'sk-glm-test' }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'glm-coding',
+          type: 'openai_compatible',
+          status: 'active',
+          wire_api: 'responses',
+          base_url: 'https://example.com',
+          openai_model: 'glm-4.7',
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Metrics notebook agent',
+          mode: 'external',
+          interaction_mode: 'notebook',
+          runtime_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createAgentRes.status).toBe(201);
+    const agent = (await createAgentRes.json()) as { id: string };
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Trace metrics task', agent_id: agent.id }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const tracesRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces?message_id=msg_missing&page_size=50`,
+    );
+    expect(tracesRes.status).toBe(200);
+
+    const metricsRes = await apiFetch(baseUrl, '/api/v1/internal/notebook-runtime-metrics');
+    expect(metricsRes.status).toBe(200);
+    const metrics = (await metricsRes.json()) as {
+      task_traces_queries_total: number;
+      task_traces_queries_message_scoped_total: number;
+      trace_query_latency_by_scope?: Record<string, { count?: number }>;
+    };
+    expect(metrics.task_traces_queries_total).toBeGreaterThan(0);
+    expect(metrics.task_traces_queries_message_scoped_total).toBeGreaterThan(0);
+    expect(metrics.trace_query_latency_by_scope?.message?.count ?? 0).toBeGreaterThan(0);
   });
 
   it('truncates oversized notebook trace details payloads', async () => {

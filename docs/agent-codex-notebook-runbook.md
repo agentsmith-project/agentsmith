@@ -331,6 +331,13 @@ done
     - `max_trace_events_per_task`
     - `max_trace_details_bytes`
     - `max_task_sse_events_per_task`
+  - trace query metrics:
+    - `task_traces_queries_total`
+    - `task_traces_queries_message_scoped_total`
+    - `task_traces_queries_run_scoped_total`
+    - `task_traces_query_latency_ms_total`
+    - `task_traces_query_latency_ms_max`
+    - `trace_query_latency_by_scope` (`task|message|run|message_run`)
 - Notes:
   - metrics are process-local (reset on API restart)
   - in `docStore` mode, notebook data persists, but this endpoint still reports current process counters/gauges
@@ -347,6 +354,9 @@ COUNT=30 INTERVAL_SEC=1 make notebook-agent-monitor
 API_BASE=http://localhost:20000 TOKEN_FILE=/tmp/agentsmith_user_token.txt make notebook-agent-monitor
 ```
 - Output is a compact line summary suitable for terminal monitoring during smoke/load runs.
+- It also includes `/traces` query indicators:
+  - `traces_q`, `traces_q_msg`, `traces_q_run`
+  - `traces_q_msg_max_ms` (max observed message-scoped traces query latency in current process)
 
 ### 7.4.2 Prometheus Scrape (Minimal Example)
 - If auth is handled upstream (e.g. reverse proxy / sidecar), Prometheus can scrape:
@@ -363,6 +373,7 @@ scrape_configs:
   - `notebook_trace_events_truncated_records_total`
   - `notebook_trace_details_truncated_total`
   - `notebook_active_runs`
+  - `notebook_task_traces_query_duration_ms_*` (histogram; focus on `scope="message"`)
 
 ### 7.4.3 Prometheus Alert Rules (Starting Point)
 - Example alerts (tune after baseline data is collected):
@@ -486,6 +497,7 @@ POLL_MAX=120 POLL_INTERVAL_SEC=2 PROMPT='reply exactly: chain ok' make notebook-
   - keep `PROMPT` constant across runs
   - compare `summary.csv` across commits/branches for p95/p99 regressions
   - run `make notebook-agent-monitor` in another terminal during the matrix run
+  - inspect `notebook_task_traces_query_duration_ms_*` after matrix runs to detect `/traces` query regressions
 
 ### 7.5.5 Standard Baseline Command (Team Default)
 - Use the standard baseline profile wrapper (recommended for weekly/regression checks):

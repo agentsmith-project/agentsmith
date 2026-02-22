@@ -89,7 +89,21 @@ const NOTEBOOK_RUNTIME_METRICS = {
   trace_events_recorded: 0,
   trace_events_truncated_records: 0,
   trace_details_truncated: 0,
+  task_traces_queries_total: 0,
+  task_traces_queries_message_scoped_total: 0,
+  task_traces_queries_run_scoped_total: 0,
+  task_traces_query_latency_ms_total: 0,
+  task_traces_query_latency_ms_max: 0,
 };
+const TRACE_QUERY_LATENCY_BUCKETS_MS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000] as const;
+type TraceQueryScope = 'task' | 'message' | 'run' | 'message_run';
+type TraceQueryLatencyStats = {
+  count: number;
+  sum_ms: number;
+  max_ms: number;
+  buckets: Record<string, number>;
+};
+const TRACE_QUERY_LATENCY_BY_SCOPE = new Map<TraceQueryScope, TraceQueryLatencyStats>();
 let nextTaskId = 1;
 let nextMessageId = 1;
 let nextTraceEventId = 1;
@@ -105,6 +119,45 @@ function debugNotebookRuntime(message: string, extra?: Record<string, unknown>):
   if (process.env.DEBUG_NOTEBOOK_RUNTIME !== '1') return;
   const suffix = extra ? ` ${JSON.stringify(extra)}` : '';
   process.stdout.write(`[notebook-runtime] ${message}${suffix}\n`);
+}
+
+function getTraceQueryLatencyStats(scope: TraceQueryScope): TraceQueryLatencyStats {
+  let stats = TRACE_QUERY_LATENCY_BY_SCOPE.get(scope);
+  if (stats) return stats;
+  const buckets: Record<string, number> = { '+Inf': 0 };
+  for (const upper of TRACE_QUERY_LATENCY_BUCKETS_MS) {
+    buckets[String(upper)] = 0;
+  }
+  stats = { count: 0, sum_ms: 0, max_ms: 0, buckets };
+  TRACE_QUERY_LATENCY_BY_SCOPE.set(scope, stats);
+  return stats;
+}
+
+function observeTraceQueryLatency(scope: TraceQueryScope, latencyMs: number): void {
+  const safeLatency = Math.max(0, Number.isFinite(latencyMs) ? latencyMs : 0);
+  NOTEBOOK_RUNTIME_METRICS.task_traces_queries_total += 1;
+  if (scope === 'message' || scope === 'message_run') {
+    NOTEBOOK_RUNTIME_METRICS.task_traces_queries_message_scoped_total += 1;
+  }
+  if (scope === 'run' || scope === 'message_run') {
+    NOTEBOOK_RUNTIME_METRICS.task_traces_queries_run_scoped_total += 1;
+  }
+  NOTEBOOK_RUNTIME_METRICS.task_traces_query_latency_ms_total += safeLatency;
+  NOTEBOOK_RUNTIME_METRICS.task_traces_query_latency_ms_max = Math.max(
+    NOTEBOOK_RUNTIME_METRICS.task_traces_query_latency_ms_max,
+    safeLatency,
+  );
+
+  const stats = getTraceQueryLatencyStats(scope);
+  stats.count += 1;
+  stats.sum_ms += safeLatency;
+  stats.max_ms = Math.max(stats.max_ms, safeLatency);
+  for (const upper of TRACE_QUERY_LATENCY_BUCKETS_MS) {
+    if (safeLatency <= upper) {
+      stats.buckets[String(upper)] += 1;
+    }
+  }
+  stats.buckets['+Inf'] += 1;
 }
 
 export function getNotebookRuntimeMetricsSnapshot(): Record<string, unknown> {
@@ -129,6 +182,17 @@ export function getNotebookRuntimeMetricsSnapshot(): Record<string, unknown> {
       max_trace_details_bytes: MAX_TRACE_DETAILS_BYTES,
       max_task_sse_events_per_task: MAX_TASK_SSE_EVENTS_PER_TASK,
     },
+    trace_query_latency_by_scope: Object.fromEntries(
+      [...TRACE_QUERY_LATENCY_BY_SCOPE.entries()].map(([scope, stats]) => [
+        scope,
+        {
+          count: stats.count,
+          sum_ms: Math.round(stats.sum_ms * 1000) / 1000,
+          max_ms: stats.max_ms,
+          buckets: stats.buckets,
+        },
+      ]),
+    ),
   };
 }
 
@@ -141,6 +205,9 @@ export function getNotebookRuntimeMetricsPrometheusText(): string {
     trace_events_recorded: number;
     trace_events_truncated_records: number;
     trace_details_truncated: number;
+    task_traces_queries_total: number;
+    task_traces_queries_message_scoped_total: number;
+    task_traces_queries_run_scoped_total: number;
     active_runs: number;
     task_sse_clients: number;
     in_memory: {
@@ -188,6 +255,21 @@ export function getNotebookRuntimeMetricsPrometheusText(): string {
     snapshot.trace_details_truncated,
     'Notebook trace details payloads truncated due to size limits',
   );
+  appendCounter(
+    'notebook_task_traces_queries_total',
+    snapshot.task_traces_queries_total,
+    'Notebook task traces API queries served',
+  );
+  appendCounter(
+    'notebook_task_traces_queries_message_scoped_total',
+    snapshot.task_traces_queries_message_scoped_total,
+    'Notebook task traces API queries scoped by message_id',
+  );
+  appendCounter(
+    'notebook_task_traces_queries_run_scoped_total',
+    snapshot.task_traces_queries_run_scoped_total,
+    'Notebook task traces API queries scoped by run_id',
+  );
 
   appendGauge('notebook_active_runs', snapshot.active_runs, 'Current active notebook task runs');
   appendGauge('notebook_task_sse_clients', snapshot.task_sse_clients, 'Current notebook task SSE clients');
@@ -217,6 +299,24 @@ export function getNotebookRuntimeMetricsPrometheusText(): string {
     snapshot.limits.max_task_sse_events_per_task,
     'Configured max buffered notebook SSE events per task',
   );
+
+  lines.push('# HELP notebook_task_traces_query_duration_ms Traces API query latency in milliseconds by scope');
+  lines.push('# TYPE notebook_task_traces_query_duration_ms histogram');
+  for (const scope of ['task', 'message', 'run', 'message_run'] as const) {
+    const stats = TRACE_QUERY_LATENCY_BY_SCOPE.get(scope) ?? getTraceQueryLatencyStats(scope);
+    let cumulative = 0;
+    for (const upper of TRACE_QUERY_LATENCY_BUCKETS_MS) {
+      cumulative = stats.buckets[String(upper)] ?? cumulative;
+      lines.push(
+        `notebook_task_traces_query_duration_ms_bucket{scope="${scope}",le="${upper}"} ${cumulative}`,
+      );
+    }
+    lines.push(
+      `notebook_task_traces_query_duration_ms_bucket{scope="${scope}",le="+Inf"} ${stats.buckets['+Inf'] ?? stats.count}`,
+    );
+    lines.push(`notebook_task_traces_query_duration_ms_sum{scope="${scope}"} ${stats.sum_ms}`);
+    lines.push(`notebook_task_traces_query_duration_ms_count{scope="${scope}"} ${stats.count}`);
+  }
 
   return `${lines.join('\n')}\n`;
 }
@@ -913,6 +1013,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskTraces' && method === 'GET') {
+    const traceQueryStart = Date.now();
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
@@ -925,6 +1026,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const afterId = requestUrl.searchParams.get('after_id')?.trim();
     const beforeId = requestUrl.searchParams.get('before_id')?.trim();
     const pageSize = Math.max(1, Math.min(500, Number(requestUrl.searchParams.get('page_size') ?? '200') || 200));
+    const queryScope: TraceQueryScope = messageId && runId
+      ? 'message_run'
+      : (messageId ? 'message' : (runId ? 'run' : 'task'));
     let traces = await listTaskTraceEventsFiltered(deps, {
       taskId: route.taskId,
       ...(messageId ? { messageId } : {}),
@@ -942,6 +1046,23 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const hasMore = total > pageSize;
     const items = hasMore ? traces.slice(total - pageSize) : traces;
     const nextAfterId = hasMore && items.length > 0 ? items[0]!.id : null;
+    const latencyMs = Date.now() - traceQueryStart;
+    observeTraceQueryLatency(queryScope, latencyMs);
+    if (process.env.DEBUG_NOTEBOOK_RUNTIME === '1') {
+      debugNotebookRuntime('task_traces_query', {
+        task_id: route.taskId,
+        scope: queryScope,
+        message_id: messageId ?? null,
+        run_id: runId ?? null,
+        after_id: afterId ?? null,
+        before_id: beforeId ?? null,
+        page_size: pageSize,
+        total,
+        returned: items.length,
+        has_more: hasMore,
+        latency_ms: latencyMs,
+      });
+    }
     json(res, 200, { items, total, has_more: hasMore, next_after_id: nextAfterId });
     return true;
   }

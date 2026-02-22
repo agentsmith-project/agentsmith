@@ -24,6 +24,8 @@ json_line() {
         const j = JSON.parse(s);
         const inMem = j.in_memory ?? {};
         const limits = j.limits ?? {};
+        const traceQueryByScope = j.trace_query_latency_by_scope ?? {};
+        const messageScope = traceQueryByScope.message ?? {};
         const fields = [
           `started=${j.task_runs_started ?? 0}`,
           `completed=${j.task_runs_completed ?? 0}`,
@@ -34,6 +36,10 @@ json_line() {
           `trace_recorded=${j.trace_events_recorded ?? 0}`,
           `trace_trunc_records=${j.trace_events_truncated_records ?? 0}`,
           `trace_details_trunc=${j.trace_details_truncated ?? 0}`,
+          `traces_q=${j.task_traces_queries_total ?? 0}`,
+          `traces_q_msg=${j.task_traces_queries_message_scoped_total ?? 0}`,
+          `traces_q_run=${j.task_traces_queries_run_scoped_total ?? 0}`,
+          `traces_q_msg_max_ms=${messageScope.max_ms ?? 0}`,
           `mem_tasks=${inMem.tasks ?? 0}`,
           `mem_msgs=${inMem.messages ?? 0}`,
           `mem_traces=${inMem.traces ?? 0}`,
@@ -52,13 +58,14 @@ i=0
 while :; do
   i=$((i + 1))
   ts="$(date '+%Y-%m-%d %H:%M:%S')"
+  rm -f /tmp/agentsmith_notebook_metrics.json
   http_code="$(
     curl -sS -o /tmp/agentsmith_notebook_metrics.json -w '%{http_code}' \
       "${URL}" -H "Authorization: Bearer ${TOKEN}" || true
   )"
   if [[ "${http_code}" != "200" ]]; then
     echo "[monitor][${ts}] http=${http_code} endpoint=${URL}" >&2
-    cat /tmp/agentsmith_notebook_metrics.json >&2 || true
+    [[ -f /tmp/agentsmith_notebook_metrics.json ]] && cat /tmp/agentsmith_notebook_metrics.json >&2 || true
     echo >&2
   else
     line="$(cat /tmp/agentsmith_notebook_metrics.json | json_line)"
@@ -70,4 +77,3 @@ while :; do
   fi
   sleep "${INTERVAL_SEC}"
 done
-

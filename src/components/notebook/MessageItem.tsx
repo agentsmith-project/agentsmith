@@ -38,6 +38,8 @@ type TraceStep = {
   events: TaskTraceEvent[];
 };
 
+type TraceViewMode = 'timeline' | 'raw';
+
 function splitConcatenatedJsonObjects(input: string): string[] {
   const items: string[] = [];
   let depth = 0;
@@ -258,6 +260,7 @@ export function MessageItem({
   const isUser = message.role === 'user';
   const [traceExpanded, setTraceExpanded] = React.useState(false);
   const [expandedStepKeys, setExpandedStepKeys] = React.useState<Record<string, boolean>>({});
+  const [traceViewMode, setTraceViewMode] = React.useState<TraceViewMode>('timeline');
 
   const rawDisplayContent = streamingContent ?? message.content;
   const displayContent = isUser ? rawDisplayContent : decodeCodexEventText(rawDisplayContent);
@@ -311,6 +314,15 @@ export function MessageItem({
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(displayContent);
+      toast.info(t('copied'));
+    } catch {
+      toast.error(t('copy_failed'));
+    }
+  };
+
+  const handleCopyTraceLogs = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(sortedTraceEvents, null, 2));
       toast.info(t('copied'));
     } catch {
       toast.error(t('copy_failed'));
@@ -409,59 +421,121 @@ export function MessageItem({
                 {tNotebookConversation('trace_no_details')}
               </div>
             ) : (
-              <div className="space-y-3 max-h-72 overflow-y-auto">
-              {traceSteps.map((step) => (
-                <div key={step.key} className="rounded-md border border-subtle/70 bg-background/50 p-2" data-testid="notebook__trace-step">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span
-                      className={cn(
-                        'inline-block h-2 w-2 rounded-full',
-                        step.status === 'success'
-                          ? 'bg-green-400'
-                          : step.status === 'error'
-                            ? 'bg-red-400'
-                            : step.status === 'cancelled'
-                              ? 'bg-amber-400'
-                              : 'bg-blue-400',
-                      )}
-                    />
-                    <span className="text-primary font-medium">{step.title || step.name}</span>
-                    <span className="text-tertiary">{step.status}</span>
-                    {step.durationMs != null ? (
-                      <span className="text-tertiary">{formatDuration(step.durationMs)}</span>
-                    ) : null}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2" data-testid="notebook__message-trace-toolbar">
+                  <div className="inline-flex items-center rounded-md border border-subtle bg-background/50 p-0.5">
                     <button
                       type="button"
-                      className="ml-auto text-tertiary hover:text-primary"
-                      onClick={() => setExpandedStepKeys((prev) => ({ ...prev, [step.key]: !prev[step.key] }))}
-                      data-testid="notebook__trace-step-toggle"
+                      className={cn(
+                        'rounded px-2 py-1 text-xs',
+                        traceViewMode === 'timeline' ? 'bg-hover text-primary' : 'text-tertiary hover:text-primary',
+                      )}
+                      onClick={() => setTraceViewMode('timeline')}
+                      data-testid="notebook__message-trace-view-timeline"
                     >
-                      {expandedStepKeys[step.key]
-                        ? tNotebookConversation('trace_step_hide_details')
-                        : tNotebookConversation('trace_step_view_details')}
+                      {tNotebookConversation('trace_view_mode_timeline')}
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        'rounded px-2 py-1 text-xs',
+                        traceViewMode === 'raw' ? 'bg-hover text-primary' : 'text-tertiary hover:text-primary',
+                      )}
+                      onClick={() => setTraceViewMode('raw')}
+                      data-testid="notebook__message-trace-view-raw"
+                    >
+                      {tNotebookConversation('trace_view_mode_raw')}
                     </button>
                   </div>
-                  {expandedStepKeys[step.key] && (
-                    <div className="mt-2 space-y-1" data-testid="notebook__trace-step-details">
-                      {step.events.map((evt) => (
-                        <div key={evt.id} className="text-xs border-l border-subtle pl-2">
-                          <div className="flex items-center gap-2 text-tertiary">
+                  <button
+                    type="button"
+                    className="text-xs text-tertiary hover:text-primary underline underline-offset-2"
+                    onClick={handleCopyTraceLogs}
+                    disabled={disabled}
+                    data-testid="notebook__message-trace-copy"
+                  >
+                    {tNotebookConversation('trace_copy_logs')}
+                  </button>
+                </div>
+                <div className="max-h-72 overflow-y-auto" data-testid="notebook__message-trace-body">
+                  {traceViewMode === 'timeline' ? (
+                    <div className="space-y-3">
+                      {traceSteps.map((step) => (
+                        <div key={step.key} className="rounded-md border border-subtle/70 bg-background/50 p-2" data-testid="notebook__trace-step">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span
+                              className={cn(
+                                'inline-block h-2 w-2 rounded-full',
+                                step.status === 'success'
+                                  ? 'bg-green-400'
+                                  : step.status === 'error'
+                                    ? 'bg-red-400'
+                                    : step.status === 'cancelled'
+                                      ? 'bg-amber-400'
+                                      : 'bg-blue-400',
+                              )}
+                            />
+                            <span className="text-primary font-medium">{step.title || step.name}</span>
+                            <span className="text-tertiary">{step.status}</span>
+                            {step.durationMs != null ? (
+                              <span className="text-tertiary">{formatDuration(step.durationMs)}</span>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="ml-auto text-tertiary hover:text-primary"
+                              onClick={() => setExpandedStepKeys((prev) => ({ ...prev, [step.key]: !prev[step.key] }))}
+                              data-testid="notebook__trace-step-toggle"
+                            >
+                              {expandedStepKeys[step.key]
+                                ? tNotebookConversation('trace_step_hide_details')
+                                : tNotebookConversation('trace_step_view_details')}
+                            </button>
+                          </div>
+                          {expandedStepKeys[step.key] && (
+                            <div className="mt-2 space-y-1" data-testid="notebook__trace-step-details">
+                              {step.events.map((evt) => (
+                                <div key={evt.id} className="text-xs border-l border-subtle pl-2">
+                                  <div className="flex items-center gap-2 text-tertiary">
+                                    <span>{new Date(evt.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                                    <span>{evt.category}</span>
+                                    {evt.phase ? <span>{evt.phase}</span> : null}
+                                  </div>
+                                  <div className="mt-0.5 text-primary">{evt.summary || evt.name}</div>
+                                  {evt.details && Object.keys(evt.details).length > 0 && (
+                                    <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-black/20 p-2 text-[11px] text-tertiary">
+                                      {JSON.stringify(evt.details, null, 2)}
+                                    </pre>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-2" data-testid="notebook__message-trace-raw">
+                      {sortedTraceEvents.map((evt) => (
+                        <div key={evt.id} className="rounded border border-subtle/60 bg-background/50 p-2 text-xs">
+                          <div className="flex flex-wrap items-center gap-2 text-tertiary">
                             <span>{new Date(evt.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                            <span>#{evt.seq}</span>
                             <span>{evt.category}</span>
                             {evt.phase ? <span>{evt.phase}</span> : null}
+                            {evt.status ? <span>{evt.status}</span> : null}
+                            <span className="text-primary">{evt.name}</span>
                           </div>
-                          <div className="mt-0.5 text-primary">{evt.summary || evt.name}</div>
-                          {evt.details && Object.keys(evt.details).length > 0 && (
+                          <div className="mt-1 text-primary">{evt.summary || evt.name}</div>
+                          {evt.details && Object.keys(evt.details).length > 0 ? (
                             <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-black/20 p-2 text-[11px] text-tertiary">
                               {JSON.stringify(evt.details, null, 2)}
                             </pre>
-                          )}
+                          ) : null}
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-              ))}
               {traceHasMore && (
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <div className="text-tertiary" data-testid="notebook__message-trace-truncated">

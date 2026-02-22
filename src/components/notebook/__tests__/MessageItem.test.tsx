@@ -142,10 +142,76 @@ describe('MessageItem', () => {
       expect(screen.getByTestId('notebook__message-trace-toggle')).toBeInTheDocument();
       await user.click(screen.getByTestId('notebook__message-trace-toggle'));
       expect(screen.getByTestId('notebook__message-trace-panel')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__message-trace-view-timeline')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__message-trace-view-raw')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__message-trace-copy')).toBeInTheDocument();
       expect(screen.queryByTestId('notebook__trace-step-details')).not.toBeInTheDocument();
       await user.click(screen.getByTestId('notebook__trace-step-toggle'));
       expect(screen.getByTestId('notebook__trace-step-details')).toBeInTheDocument();
       expect(screen.getAllByText('Starting Codex execution').length).toBeGreaterThan(0);
+    });
+
+    it('switches to raw trace view and renders raw events', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:01Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+              details: { source: 'stdout', type: 'turn.started' },
+            },
+          ]}
+        />
+      );
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      await user.click(screen.getByTestId('notebook__message-trace-view-raw'));
+      expect(screen.getByTestId('notebook__message-trace-raw')).toBeInTheDocument();
+      expect(screen.getByText(/codex.exec/)).toBeInTheDocument();
+      expect(screen.getByText(/turn.started/)).toBeInTheDocument();
+    });
+
+    it('copies trace logs as JSON from trace panel', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:01Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+          ]}
+        />
+      );
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      await user.click(screen.getByTestId('notebook__message-trace-copy'));
+
+      expect(writeTextMock).toHaveBeenCalled();
+      const copied = String(writeTextMock.mock.calls.at(-1)?.[0] ?? '');
+      expect(copied).toContain('"name": "codex.exec"');
+      expect(copied).toContain('"summary": "Starting Codex execution"');
     });
 
     it('aggregates related trace events into step cards', async () => {

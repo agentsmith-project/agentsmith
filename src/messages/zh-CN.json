@@ -424,7 +424,10 @@
       "trace_load_more": "加载更早日志",
       "trace_load_more_loading": "加载中...",
       "trace_step_view_details": "查看步骤明细",
-      "trace_step_hide_details": "隐藏步骤明细"
+      "trace_step_hide_details": "隐藏步骤明细",
+      "trace_view_mode_timeline": "时间线",
+      "trace_view_mode_raw": "原始事件",
+      "trace_copy_logs": "复制执行日志"
     },
     "artifacts": {
       "title": "生成物",

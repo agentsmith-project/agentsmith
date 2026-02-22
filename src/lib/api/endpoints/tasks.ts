@@ -15,6 +15,7 @@ import type {
   TaskListParams,
   TaskListResponse,
   TaskTraceListResponse,
+  TaskTraceEvent,
 } from '../../types/task';
 import type { FileItem } from '../types';
 import type { ApiClient } from '../client';

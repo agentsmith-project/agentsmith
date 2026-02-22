@@ -422,7 +422,10 @@
       "trace_load_more": "Load earlier logs",
       "trace_load_more_loading": "Loading...",
       "trace_step_view_details": "View step details",
-      "trace_step_hide_details": "Hide step details"
+      "trace_step_hide_details": "Hide step details",
+      "trace_view_mode_timeline": "Timeline",
+      "trace_view_mode_raw": "Raw",
+      "trace_copy_logs": "Copy trace logs"
     },
     "artifacts": {
       "title": "Artifacts",

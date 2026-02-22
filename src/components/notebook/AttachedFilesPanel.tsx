@@ -3,8 +3,7 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Link2, Plus, Upload, X, File as FileIcon } from 'lucide-react';
-import { useRemoveFile } from '@/lib/hooks/use-task';
-import { useFiles } from '@/lib/hooks/use-files';
+import { useRemoveFile, useTaskAttachedFiles } from '@/lib/hooks/use-task';
 import { AIReadyStatusBadge } from '@/components/files/AIReadyStatusBadge';
 import { EmptyState } from '@/components/ui/loading';
 import { formatBytes } from '@/lib/utils/formatters';
@@ -38,16 +37,8 @@ export function AttachedFilesPanel({
   const t = useTranslations('notebook.attached_files');
   const removeFile = useRemoveFile();
 
-  // Fetch all files to get details for attached ones
-  const { data: filesData } = useFiles(workspaceId, projectId, {
-    page_size: 1000, // Get all files
-  });
-
-  // Filter to only attached files
-  const attachedFiles = React.useMemo(() => {
-    if (!filesData?.items) return [];
-    return filesData.items.filter((file) => attachedFileIds.includes(file.id));
-  }, [filesData?.items, attachedFileIds]);
+  const { data: attachedFilesData } = useTaskAttachedFiles(workspaceId, projectId, taskId);
+  const attachedFiles = React.useMemo(() => attachedFilesData ?? [], [attachedFilesData]);
 
   const handleRemove = async (fileId: string) => {
     await removeFile.mutateAsync({

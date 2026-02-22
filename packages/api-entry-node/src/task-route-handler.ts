@@ -467,6 +467,28 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     return true;
   }
 
+  if (route.kind === 'taskSources' && method === 'GET') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    const items = await Promise.all(task.attached_source_ids.map(async (sourceId) => {
+      try {
+        return await deps.getSourceUseCase.execute({
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          sourceId,
+        });
+      } catch {
+        return null;
+      }
+    }));
+    json(res, 200, items.filter((item): item is NonNullable<typeof item> => item !== null));
+    return true;
+  }
+
   if (route.kind === 'taskSourceItem' && method === 'DELETE') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);

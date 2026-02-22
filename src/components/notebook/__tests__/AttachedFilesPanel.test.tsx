@@ -95,12 +95,10 @@ const STABLE_REMOVE_SOURCE_RESULT = {
   mutateAsync: vi.fn().mockResolvedValue({}),
   isPending: false,
 };
+let mockAttachedFilesData: FileItemWithAIReady[] = [mockSources[0]!, mockSources[1]!];
 const STABLE_SOURCES_QUERY_RESULT = {
-  data: {
-    items: mockSources,
-    total: 3,
-    page: 1,
-    page_size: 1000,
+  get data() {
+    return mockAttachedFilesData;
   },
   isLoading: false,
 };
@@ -108,10 +106,7 @@ const STABLE_SOURCES_QUERY_RESULT = {
 // Mock hooks
 vi.mock('@/lib/hooks/use-task', () => ({
   useRemoveFile: () => STABLE_REMOVE_SOURCE_RESULT,
-}));
-
-vi.mock('@/lib/hooks/use-files', () => ({
-  useFiles: () => STABLE_SOURCES_QUERY_RESULT,
+  useTaskAttachedFiles: () => STABLE_SOURCES_QUERY_RESULT,
 }));
 
 // Mock components
@@ -147,6 +142,7 @@ describe('AttachedFilesPanel', () => {
       },
     });
     vi.clearAllMocks();
+    mockAttachedFilesData = [mockSources[0]!, mockSources[1]!];
   });
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -154,6 +150,7 @@ describe('AttachedFilesPanel', () => {
   );
 
   const renderComponent = (attachedFileIds: string[] = ['source-1', 'source-2']) => {
+    mockAttachedFilesData = mockSources.filter((file) => attachedFileIds.includes(file.id));
     return render(
       <AttachedFilesPanel
         workspaceId={mockWorkspaceId}

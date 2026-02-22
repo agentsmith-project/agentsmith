@@ -42,6 +42,7 @@ Terminology note:
   - Files library picker (canonical)
   - Local upload (uploads to Files, then attaches)
   - URL input (stored as URL note file, then attaches)
+ - Attached input details should be fetched via task-scoped route (`GET /tasks/{taskId}/sources`) rather than loading the full Files list and filtering client-side.
 
 4. Notebook task trace data contract (detail page)
 - Task SSE route (`/tasks/{taskId}/events`) emits `trace_event` for real-time execution telemetry.

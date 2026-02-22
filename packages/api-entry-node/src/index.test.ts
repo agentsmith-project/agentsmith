@@ -561,6 +561,111 @@ describe('api-entry-node projects routes', () => {
     expect(listedAfterDelete.items).toHaveLength(1);
   });
 
+  it('lists attached source details for a notebook task', async () => {
+    const { baseUrl } = startServer();
+
+    const createSourceRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'notebook-input.txt',
+          library_id: 'lib_a',
+          content_type: 'text/plain',
+          content_base64: Buffer.from('hello', 'utf-8').toString('base64'),
+        }),
+      },
+    );
+    expect(createSourceRes.status).toBe(201);
+    const createdSource = (await createSourceRes.json()) as { id: string; name: string };
+
+    const createCredentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'attached-sources-test-key',
+          type: 'api_key',
+          value: 'sk-test',
+        }),
+      },
+    );
+    expect(createCredentialRes.status).toBe(201);
+    const credential = (await createCredentialRes.json()) as { id: string };
+
+    const createEndpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'attached-sources-endpoint',
+          openai_model: 'gpt-5-codex',
+          type: 'openai',
+          mode: 'openai',
+          base_url: 'http://upstream.invalid/v1',
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpointRes.status).toBe(201);
+    const endpoint = (await createEndpointRes.json()) as { id: string };
+
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'notebook-agent-for-attached-sources',
+          mode: 'external',
+          interaction_mode: 'notebook',
+          runtime_preferences: {
+            notebook: {
+              endpoint_id: endpoint.id,
+              wire_api: 'chat',
+              model: 'gpt-5-codex',
+            },
+          },
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createAgentRes.status).toBe(201);
+    const agent = (await createAgentRes.json()) as { id: string };
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Task with source',
+          agent_id: agent.id,
+          initial_source_ids: [createdSource.id],
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const attachedDetailsRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/sources`,
+    );
+    expect(attachedDetailsRes.status).toBe(200);
+    const attachedDetails = (await attachedDetailsRes.json()) as Array<{ id: string; name?: string; filename?: string }>;
+    expect(attachedDetails).toHaveLength(1);
+    expect(attachedDetails[0]?.id).toBe(createdSource.id);
+  });
+
   it('supports source libraries CRUD flow', async () => {
     const { baseUrl } = startServer();
 

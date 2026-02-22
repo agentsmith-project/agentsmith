@@ -85,6 +85,15 @@ export const taskHandlers = [
     task.updated_at = new Date().toISOString();
     return HttpResponse.json(task);
   }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/sources', ({ params }) => {
+    const taskId = params.id as string;
+    const task = tasks.find((r) => r.id === taskId);
+    if (!task) {
+      return HttpResponse.json({ error: 'task_not_found' }, { status: 404 });
+    }
+    const items = sourceFileFixtures.filter((f) => (task.attached_source_ids ?? []).includes(f.id));
+    return HttpResponse.json(items);
+  }),
   http.delete('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/sources/:sourceId', ({ params }) => {
     const taskId = params.id as string;
     const sourceId = params.sourceId as string;

@@ -17,7 +17,7 @@ import type {
   TaskTraceListResponse,
   TaskTraceEvent,
 } from '../../types/task';
-import type { FileItem } from '../types';
+import type { FileItem, FileItemWithAIReady } from '../types';
 import type { ApiClient } from '../client';
 import { API_BASE } from '../client';
 
@@ -119,6 +119,19 @@ export class TaskAPI {
   ): Promise<Task> {
     return this.client.delete<Task>(
       `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/sources/${fileId}`,
+    );
+  }
+
+  /**
+   * List attached source file details for a task.
+   */
+  async listAttachedFiles(
+    workspaceId: string,
+    projectId: string,
+    taskId: string,
+  ): Promise<FileItemWithAIReady[]> {
+    return this.client.get<FileItemWithAIReady[]>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/sources`,
     );
   }
 
@@ -257,4 +270,5 @@ export type {
   TaskListParams,
   TaskListResponse,
   TaskTraceEvent,
+  FileItemWithAIReady,
 };

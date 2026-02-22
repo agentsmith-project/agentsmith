@@ -706,6 +706,7 @@ Notes:
 
 - image artifacts may be inlined as data URLs (size-limited) for local notebook preview
 - text artifacts may include truncated preview content (size-limited)
+- notebook Attached Inputs panel fetches attached source details from task-scoped route `GET /tasks/{taskId}/sources` (avoids loading the full Files list for display)
 
 ## 9. Next Hardening Items
 1. Replace direct bearer forwarding with short-lived ticket exchange.

@@ -23,6 +23,7 @@ import type {
   TaskListParams,
   TaskTraceListResponse,
 } from '@/lib/types/task';
+import type { FileItemWithAIReady } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 
 /**
@@ -226,6 +227,24 @@ export function useTaskArtifacts(
 }
 
 /**
+ * Hook to query attached source file details for a task.
+ */
+export function useTaskAttachedFiles(
+  workspaceId: string,
+  projectId: string,
+  taskId: string,
+): UseQueryResult<FileItemWithAIReady[]> {
+  const taskAPI = new TaskAPI(getApiClient());
+
+  return useQuery<FileItemWithAIReady[]>({
+    queryKey: queryKeys.tasks.attachedFiles(workspaceId, projectId, taskId),
+    queryFn: () => taskAPI.listAttachedFiles(workspaceId, projectId, taskId),
+    enabled: !!workspaceId && !!projectId && !!taskId,
+    staleTime: 5000,
+  });
+}
+
+/**
  * Hook to query execution trace events in a task
  */
 export function useTaskTraces(
@@ -267,6 +286,9 @@ export function useAddFiles() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.tasks.detail(variables.workspaceId, variables.projectId, variables.taskId),
       });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.tasks.attachedFiles(variables.workspaceId, variables.projectId, variables.taskId),
+      });
       toast.success(t('files_added_to_task', { count: variables.fileIds.length }));
     },
     onError: (error: unknown) => {
@@ -298,6 +320,9 @@ export function useRemoveFile() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.tasks.detail(variables.workspaceId, variables.projectId, variables.taskId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.tasks.attachedFiles(variables.workspaceId, variables.projectId, variables.taskId),
       });
       toast.success(t('file_removed_from_task'));
     },

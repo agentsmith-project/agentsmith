@@ -38,6 +38,7 @@ export interface Artifact {
   task_id: string;
   turn_id?: string; // Associated turn ID
   type: ArtifactType;
+  task_relative_path?: string; // Relative path in notebook task working directory (if applicable)
   title?: string;
   content?: string; // Text content or file URL
   thumbnail_url?: string; // Image thumbnail URL

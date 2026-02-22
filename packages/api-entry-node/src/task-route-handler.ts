@@ -59,6 +59,7 @@ interface TaskArtifactRecord {
   id: string;
   task_id: string;
   type: 'text' | 'image' | 'file' | 'other';
+  task_relative_path?: string;
   title?: string;
   content?: string;
   thumbnail_url?: string;
@@ -231,6 +232,7 @@ async function createTaskArtifactRecord(
     taskId: string;
     payload: {
       artifact_type: 'text' | 'image' | 'file' | 'other';
+      task_relative_path: string;
       title?: string;
       content?: string;
       thumbnail_url?: string;
@@ -241,18 +243,35 @@ async function createTaskArtifactRecord(
   },
 ): Promise<TaskArtifactRecord> {
   const { taskId, payload } = args;
+  const normalizedTitle = payload.title?.trim() || payload.filename?.trim() || undefined;
+  const normalizedPath = payload.task_relative_path.trim();
+  const items = getTaskArtifacts(taskId);
+  const existing = items.find((item) => {
+    if (item.type !== payload.artifact_type) return false;
+    const samePath = typeof item.task_relative_path === 'string'
+      ? item.task_relative_path === normalizedPath
+      : (item.title?.trim() || '') === (normalizedTitle ?? '');
+    if (!samePath) return false;
+    if ((item.file_size ?? null) !== (typeof payload.file_size === 'number' ? payload.file_size : null)) return false;
+    if ((item.mime_type ?? null) !== (typeof payload.mime_type === 'string' ? payload.mime_type : null)) return false;
+    if ((item.content ?? null) !== (typeof payload.content === 'string' ? payload.content : null)) return false;
+    if ((item.thumbnail_url ?? null) !== (typeof payload.thumbnail_url === 'string' ? payload.thumbnail_url : null)) return false;
+    return true;
+  });
+  if (existing) return existing;
+
   const artifact: TaskArtifactRecord = {
     id: buildId('artifact'),
     task_id: taskId,
     type: payload.artifact_type,
-    ...(payload.title?.trim() ? { title: payload.title.trim() } : payload.filename?.trim() ? { title: payload.filename.trim() } : {}),
+    ...(normalizedPath ? { task_relative_path: normalizedPath } : {}),
+    ...(normalizedTitle ? { title: normalizedTitle } : {}),
     ...(typeof payload.content === 'string' ? { content: payload.content } : {}),
     ...(typeof payload.thumbnail_url === 'string' ? { thumbnail_url: payload.thumbnail_url } : {}),
     ...(typeof payload.file_size === 'number' ? { file_size: payload.file_size } : {}),
     ...(typeof payload.mime_type === 'string' ? { mime_type: payload.mime_type } : {}),
     created_at: nowIso(),
   };
-  const items = getTaskArtifacts(taskId);
   items.push(artifact);
   await deps.docStore.upsert<TaskArtifactRecord>(TASK_ARTIFACTS_COLLECTION, artifact.id, artifact);
   return artifact;

@@ -1542,6 +1542,139 @@ describe('api-entry-node projects routes', () => {
     runtime.close();
   });
 
+  it('deduplicates notebook task artifacts by task_relative_path across repeated runtime artifact frames', async () => {
+    const { server, baseUrl } = startServer();
+
+    const loginRes = await apiFetch(baseUrl, '/api/v1/auth/dev-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'dev-admin@example.com' }),
+    });
+    const loginBody = (await loginRes.json()) as { token: string };
+
+    const credentialRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'task-runner-key', type: 'api_key', value: 'sk-task' }),
+    });
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+    const endpointRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/endpoints', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'task-endpoint',
+        openai_model: 'gpt-5-codex',
+        type: 'openai',
+        mode: 'openai',
+        base_url: 'https://example.com/v1',
+        credential_ref: credential.id,
+      }),
+    });
+    expect(endpointRes.status).toBe(201);
+    const endpoint = (await endpointRes.json()) as { id: string };
+    const agentRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'NotebookAgent',
+        mode: 'external',
+        interaction_mode: 'notebook',
+        runtime_preferences: {
+          notebook: {
+            endpoint_id: endpoint.id,
+            model: 'gpt-5-codex',
+            wire_api: 'responses',
+          },
+        },
+        capabilities: { streaming_completion: true, multimodal_completion: false },
+      }),
+    });
+    expect(agentRes.status).toBe(201);
+    const agent = (await agentRes.json()) as { id: string };
+    const keyRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'runner' }),
+    });
+    const keyResp = (await keyRes.json()) as { key: string };
+    const connInfoRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`);
+    expect(connInfoRes.status).toBe(200);
+    const connInfo = (await connInfoRes.json()) as { ws_url: string };
+    const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
+
+    const wsReady = new Promise<void>((resolve) => {
+      const ws = new WebSocket(wsUrl, {
+        headers: { Authorization: `Bearer ${keyResp.key}` },
+      });
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString('utf-8')) as { type?: string; request_id?: string };
+        if (msg.type !== 'server.request.start' || !msg.request_id) return;
+        ws.send(JSON.stringify({
+          type: 'agent.response.artifact',
+          request_id: msg.request_id,
+          payload: {
+            filename: 'plot.png',
+            task_relative_path: 'artifacts/plot.png',
+            artifact_type: 'image',
+            mime_type: 'image/png',
+            file_size: 1234,
+            title: 'plot.png',
+            content: 'data:image/png;base64,AAAA',
+            thumbnail_url: 'data:image/png;base64,AAAA',
+          },
+        }));
+        ws.send(JSON.stringify({
+          type: 'agent.response.artifact',
+          request_id: msg.request_id,
+          payload: {
+            filename: 'plot.png',
+            task_relative_path: 'artifacts/plot.png',
+            artifact_type: 'image',
+            mime_type: 'image/png',
+            file_size: 1234,
+            title: 'plot.png',
+            content: 'data:image/png;base64,AAAA',
+            thumbnail_url: 'data:image/png;base64,AAAA',
+          },
+        }));
+        ws.send(JSON.stringify({
+          type: 'agent.response.done',
+          request_id: msg.request_id,
+          payload: { finish_reason: 'stop' },
+        }));
+        setTimeout(() => {
+          ws.close();
+          resolve();
+        }, 10);
+      });
+    });
+
+    const createTaskRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'artifact-dedupe', agent_id: agent.id }),
+    });
+    const task = (await createTaskRes.json()) as { id: string };
+
+    await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'user', content: 'run' }),
+    });
+
+    await wsReady;
+
+    const artifactsRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/artifacts`, {
+      headers: {},
+    });
+    expect(artifactsRes.status).toBe(200);
+    const artifacts = (await artifactsRes.json()) as Array<{ title?: string; task_relative_path?: string }>;
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]?.title).toBe('plot.png');
+    expect(artifacts[0]?.task_relative_path).toBe('artifacts/plot.png');
+  });
+
   it('normalizes endpoint base_url when full chat/completions path is provided', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();

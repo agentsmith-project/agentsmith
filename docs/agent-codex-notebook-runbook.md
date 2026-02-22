@@ -701,11 +701,13 @@ Runner artifact reporting behavior:
 - for each discovered output, runner emits:
   - `agent.response.artifact` (structured artifact payload)
   - `agent.response.event` with `category=artifact` (diagnostic trace)
+- backend notebook task artifact storage applies idempotency for repeated runtime artifact frames using the runtime path metadata (for example `task_relative_path`), reducing duplicate artifacts after repeated scans in the same task
 
 Notes:
 
 - image artifacts may be inlined as data URLs (size-limited) for local notebook preview
 - text artifacts may include truncated preview content (size-limited)
+- task artifact records returned by `/tasks/{taskId}/artifacts` may include `task_relative_path` for runtime-originated outputs (relative path inside task cwd)
 - notebook Attached Inputs panel fetches attached source details from task-scoped route `GET /tasks/{taskId}/sources` (avoids loading the full Files list for display)
 
 ## 9. Next Hardening Items

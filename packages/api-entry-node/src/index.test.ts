@@ -1212,7 +1212,10 @@ describe('api-entry-node projects routes', () => {
     const runtimeReceived = new Promise<{
       requestId: string;
       endpointProxyBase: string;
+      apiBase: string;
       userToken: string;
+      notebookMode: boolean | null;
+      taskInputsCount: number | null;
       close: () => void;
     }>((resolve) => {
       const ws = new WebSocket(wsUrl, {
@@ -1227,7 +1230,10 @@ describe('api-entry-node projects routes', () => {
           payload?: {
             runtime_context?: {
               endpoint_proxy_base?: string;
+              api_base?: string;
               user_bearer_token?: string;
+              notebook_mode?: boolean;
+              task_inputs?: unknown[];
             };
           };
         };
@@ -1235,7 +1241,14 @@ describe('api-entry-node projects routes', () => {
         resolve({
           requestId: msg.request_id,
           endpointProxyBase: msg.payload?.runtime_context?.endpoint_proxy_base ?? '',
+          apiBase: msg.payload?.runtime_context?.api_base ?? '',
           userToken: msg.payload?.runtime_context?.user_bearer_token ?? '',
+          notebookMode: typeof msg.payload?.runtime_context?.notebook_mode === 'boolean'
+            ? msg.payload.runtime_context.notebook_mode
+            : null,
+          taskInputsCount: Array.isArray(msg.payload?.runtime_context?.task_inputs)
+            ? msg.payload.runtime_context.task_inputs.length
+            : null,
           close: () => ws.close(),
         });
         ws.send(JSON.stringify({
@@ -1255,6 +1268,20 @@ describe('api-entry-node projects routes', () => {
           type: 'agent.response.delta',
           request_id: msg.request_id,
           payload: { delta: 'task-output' },
+        }));
+        ws.send(JSON.stringify({
+          type: 'agent.response.artifact',
+          request_id: msg.request_id,
+          payload: {
+            filename: 'plot.png',
+            task_relative_path: 'artifacts/plot.png',
+            artifact_type: 'image',
+            mime_type: 'image/png',
+            file_size: 1234,
+            title: 'plot.png',
+            content: 'data:image/png;base64,AAAA',
+            thumbnail_url: 'data:image/png;base64,AAAA',
+          },
         }));
         setTimeout(() => {
           ws.send(JSON.stringify({
@@ -1312,6 +1339,9 @@ describe('api-entry-node projects routes', () => {
     const runtime = await runtimeReceived;
     expect(runtime.requestId).toBeTruthy();
     expect(runtime.userToken).toBe('test-token');
+    expect(runtime.apiBase).toBe(baseUrl);
+    expect(runtime.notebookMode).toBe(true);
+    expect(runtime.taskInputsCount).toBe(0);
     expect(runtime.endpointProxyBase).toBe(
       `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy`,
     );
@@ -1360,6 +1390,19 @@ describe('api-entry-node projects routes', () => {
     if (tracesBody!.has_more) {
       expect(typeof tracesBody!.next_after_id === 'string' || tracesBody!.next_after_id === null).toBe(true);
     }
+
+    let artifactsBody: Array<{ type: string; title?: string }> = [];
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const artifactsRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/artifacts`,
+      );
+      expect(artifactsRes.status).toBe(200);
+      artifactsBody = (await artifactsRes.json()) as Array<{ type: string; title?: string }>;
+      if (artifactsBody.length > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(artifactsBody.some((item) => item.type === 'image' && item.title === 'plot.png')).toBe(true);
 
     const taskAfterRunRes = await apiFetch(
       baseUrl,

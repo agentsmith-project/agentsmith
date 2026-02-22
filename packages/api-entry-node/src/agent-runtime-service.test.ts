@@ -252,4 +252,53 @@ describe('AgentRuntimeService', () => {
       usage_tokens: 1,
     });
   });
+
+  it('forwards agent artifacts to the request stream', async () => {
+    const { runtime, agent, ws } = await setupRuntime();
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString('utf-8')) as { type?: string; request_id?: string };
+      if (msg.type !== 'server.request.start' || !msg.request_id) return;
+      ws.send(JSON.stringify({
+        type: 'agent.response.artifact',
+        request_id: msg.request_id,
+        payload: {
+          filename: 'plot.png',
+          task_relative_path: 'artifacts/plot.png',
+          artifact_type: 'image',
+          mime_type: 'image/png',
+          file_size: 128,
+          title: 'plot.png',
+          content: 'data:image/png;base64,AAAA',
+        },
+      }));
+      ws.send(JSON.stringify({
+        type: 'agent.response.done',
+        request_id: msg.request_id,
+        payload: { finish_reason: 'stop', usage_tokens: 1 },
+      }));
+    });
+
+    const dispatched = await runtime.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'sess_5',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+      timeoutMs: 2000,
+    });
+
+    const iterator = dispatched.stream[Symbol.asyncIterator]();
+    const artifactItem = await iterator.next();
+    expect(artifactItem.done).toBe(false);
+    expect(artifactItem.value).toMatchObject({
+      type: 'artifact',
+      artifact: {
+        filename: 'plot.png',
+        task_relative_path: 'artifacts/plot.png',
+        artifact_type: 'image',
+        mime_type: 'image/png',
+      },
+    });
+  });
 });

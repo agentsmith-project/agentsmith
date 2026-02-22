@@ -6,13 +6,14 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { AgentResourceService } from './agent-resource-service.js';
 
 export interface AgentStreamEvent {
-  type: 'delta' | 'done' | 'error' | 'event';
+  type: 'delta' | 'done' | 'error' | 'event' | 'artifact';
   delta?: string;
   finish_reason?: string | null;
   usage_tokens?: number;
   error_code?: string;
   error_message?: string;
   event?: AgentRuntimeTraceEventPayload;
+  artifact?: AgentRuntimeArtifactPayload;
 }
 
 export interface AgentRuntimeTraceEventPayload {
@@ -25,6 +26,17 @@ export interface AgentRuntimeTraceEventPayload {
   summary: string;
   details?: Record<string, unknown>;
   raw?: string;
+}
+
+export interface AgentRuntimeArtifactPayload {
+  filename: string;
+  task_relative_path: string;
+  artifact_type: 'text' | 'image' | 'file' | 'other';
+  mime_type?: string;
+  file_size?: number;
+  title?: string;
+  content?: string;
+  thumbnail_url?: string;
 }
 
 interface PendingStream {
@@ -176,6 +188,40 @@ function parseTraceEventPayload(input: unknown): AgentRuntimeTraceEventPayload |
     summary,
     ...(details ? { details } : {}),
     ...(typeof raw === 'string' ? { raw } : {}),
+  };
+}
+
+function parseArtifactPayload(input: unknown): AgentRuntimeArtifactPayload | null {
+  if (!isPlainRecord(input)) return null;
+  const filename = input.filename;
+  const taskRelativePath = input.task_relative_path;
+  const artifactType = input.artifact_type;
+  if (typeof filename !== 'string' || filename.trim().length === 0) return null;
+  if (typeof taskRelativePath !== 'string' || taskRelativePath.trim().length === 0) return null;
+  if (artifactType !== 'text' && artifactType !== 'image' && artifactType !== 'file' && artifactType !== 'other') {
+    return null;
+  }
+  const mimeType = input.mime_type;
+  const fileSize = input.file_size;
+  const title = input.title;
+  const content = input.content;
+  const thumbnailUrl = input.thumbnail_url;
+  if (mimeType !== undefined && typeof mimeType !== 'string') return null;
+  if (fileSize !== undefined && (typeof fileSize !== 'number' || !Number.isFinite(fileSize) || fileSize < 0)) {
+    return null;
+  }
+  if (title !== undefined && typeof title !== 'string') return null;
+  if (content !== undefined && typeof content !== 'string') return null;
+  if (thumbnailUrl !== undefined && typeof thumbnailUrl !== 'string') return null;
+  return {
+    filename: filename.trim(),
+    task_relative_path: taskRelativePath.trim(),
+    artifact_type: artifactType,
+    ...(typeof mimeType === 'string' && mimeType.trim() ? { mime_type: mimeType.trim() } : {}),
+    ...(typeof fileSize === 'number' ? { file_size: fileSize } : {}),
+    ...(typeof title === 'string' && title.trim() ? { title: title.trim() } : {}),
+    ...(typeof content === 'string' ? { content } : {}),
+    ...(typeof thumbnailUrl === 'string' ? { thumbnail_url: thumbnailUrl } : {}),
   };
 }
 
@@ -532,6 +578,27 @@ export class AgentRuntimeService {
           typeof payload.payload?.usage_tokens === 'number' ? payload.payload.usage_tokens : undefined,
       });
       pending.close();
+      return;
+    }
+
+    if (payload.type === 'agent.response.artifact') {
+      const artifactPayload = parseArtifactPayload(payload.payload);
+      if (!artifactPayload) {
+        clearTimeout(pending.timer);
+        socket.pendingByRequestId.delete(requestId);
+        pending.push({
+          type: 'error',
+          error_code: 'AGENT_PROTOCOL_ERROR',
+          error_message: 'agent_response_artifact_invalid',
+        });
+        pending.close();
+        return;
+      }
+      pending.push({
+        type: 'artifact',
+        artifact: artifactPayload,
+      });
+      armPendingTimeout(pending, requestId, socket, agentId);
       return;
     }
 

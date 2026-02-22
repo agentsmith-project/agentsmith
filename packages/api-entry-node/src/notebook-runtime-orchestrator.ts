@@ -1,6 +1,6 @@
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
-import type { AgentRuntimeTraceEventPayload } from './agent-runtime-service.js';
+import type { AgentRuntimeArtifactPayload, AgentRuntimeTraceEventPayload } from './agent-runtime-service.js';
 import {
   recordNotebookTaskRunCompleted,
   recordNotebookTaskRunFailed,
@@ -34,11 +34,83 @@ type NotebookTaskMessageRecord = {
   turn_id?: string;
 };
 
+type NotebookTaskArtifactRecord = {
+  id: string;
+  task_id: string;
+  type: 'text' | 'image' | 'file' | 'other';
+  title?: string;
+  content?: string;
+  thumbnail_url?: string;
+  file_size?: number;
+  mime_type?: string;
+  created_at: string;
+};
+
 type RuntimeEventPayload =
   | { type: 'trace_event'; data: unknown }
+  | { type: 'artifact'; data: NotebookTaskArtifactRecord }
   | { type: 'message'; data: NotebookTaskMessageRecord }
   | { type: 'task_update'; data: NotebookTaskRecord }
   | { type: 'error'; data: { message: string; code: string } };
+
+type RuntimeTaskInput = {
+  source_id: string;
+  filename: string;
+  file_type?: string;
+  file_size?: number;
+  ai_ready_status?: string;
+};
+
+function asObject(input: unknown): Record<string, unknown> {
+  return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
+}
+
+function readString(input: unknown): string | undefined {
+  return typeof input === 'string' && input.trim().length > 0 ? input.trim() : undefined;
+}
+
+function readNumber(input: unknown): number | undefined {
+  return typeof input === 'number' && Number.isFinite(input) ? input : undefined;
+}
+
+async function buildRuntimeTaskInputs(
+  deps: NodeApiDeps,
+  task: NotebookTaskRecord,
+  debugLog: (message: string, extra?: Record<string, unknown>) => void,
+): Promise<RuntimeTaskInput[]> {
+  if (task.attached_source_ids.length === 0) return [];
+  const inputs = await Promise.all(task.attached_source_ids.map(async (sourceId) => {
+    try {
+      const source = await deps.getSourceUseCase.execute({
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        sourceId,
+      });
+      const src = asObject(source);
+      const aiReady = asObject(src.ai_ready);
+      return {
+        source_id: sourceId,
+        filename: readString(src.filename) ?? readString(src.name) ?? sourceId,
+        ...(readString(src.file_type) ?? readString(src.content_type)
+          ? { file_type: readString(src.file_type) ?? readString(src.content_type) }
+          : {}),
+        ...(readNumber(src.file_size) !== undefined ? { file_size: readNumber(src.file_size) } : {}),
+        ...(readString(aiReady.status) ? { ai_ready_status: readString(aiReady.status) } : {}),
+      } satisfies RuntimeTaskInput;
+    } catch (error) {
+      debugLog('task_input_source_lookup_failed', {
+        task_id: task.id,
+        source_id: sourceId,
+        error: error instanceof Error ? error.message : 'source_lookup_failed',
+      });
+      return {
+        source_id: sourceId,
+        filename: sourceId,
+      } satisfies RuntimeTaskInput;
+    }
+  }));
+  return inputs;
+}
 
 export async function runNotebookTaskWithExternalAgent(input: {
   deps: NodeApiDeps;
@@ -59,6 +131,11 @@ export async function runNotebookTaskWithExternalAgent(input: {
     tasks: string;
     messages: string;
   };
+  createTaskArtifact: (args: {
+    taskId: string;
+    runId: string;
+    payload: AgentRuntimeArtifactPayload;
+  }) => Promise<NotebookTaskArtifactRecord>;
 }): Promise<void> {
   const {
     deps,
@@ -76,6 +153,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
     onFinalize,
     debugLog,
     taskCollections,
+    createTaskArtifact,
   } = input;
   const taskId = task.id;
   const runId = buildRunId();
@@ -124,6 +202,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
     const model = explicitModel || endpoint.openai_model || 'gpt-5-codex';
     const wireApi = notebookPreferences.wire_api === 'responses' ? 'responses' : 'chat';
     const userHandle = buildProxyUsername(user);
+    const taskInputs = await buildRuntimeTaskInputs(deps, task, debugLog);
     const proxyBase = `${publicBaseUrl.replace(/\/+$/, '')}`
       + `/api/v1/workspaces/${encodeURIComponent(task.workspace_id)}`
       + `/projects/${encodeURIComponent(task.project_id)}`
@@ -144,9 +223,12 @@ export async function runNotebookTaskWithExternalAgent(input: {
         username: userHandle,
         endpoint_id: endpointId,
         endpoint_proxy_base: proxyBase,
+        api_base: publicBaseUrl.replace(/\/+$/, ''),
         user_bearer_token: rawBearerToken,
         wire_api: wireApi,
         model,
+        task_inputs: taskInputs,
+        notebook_mode: true,
       },
     });
     debugLog('dispatch_streaming_request', {
@@ -170,6 +252,15 @@ export async function runNotebookTaskWithExternalAgent(input: {
         });
         await storeTaskTraceEvent(deps, task.id, traceEvent);
         emitTaskEvent(taskId, { type: 'trace_event', data: traceEvent });
+        continue;
+      }
+      if (event.type === 'artifact' && event.artifact) {
+        const artifact = await createTaskArtifact({
+          taskId: task.id,
+          runId,
+          payload: event.artifact as AgentRuntimeArtifactPayload,
+        });
+        emitTaskEvent(taskId, { type: 'artifact', data: artifact });
         continue;
       }
       if (event.type === 'delta' && event.delta) {

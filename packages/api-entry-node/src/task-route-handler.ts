@@ -225,6 +225,39 @@ function getTaskArtifacts(taskId: string): TaskArtifactRecord[] {
   return existing;
 }
 
+async function createTaskArtifactRecord(
+  deps: NodeApiDeps,
+  args: {
+    taskId: string;
+    payload: {
+      artifact_type: 'text' | 'image' | 'file' | 'other';
+      title?: string;
+      content?: string;
+      thumbnail_url?: string;
+      file_size?: number;
+      mime_type?: string;
+      filename?: string;
+    };
+  },
+): Promise<TaskArtifactRecord> {
+  const { taskId, payload } = args;
+  const artifact: TaskArtifactRecord = {
+    id: buildId('artifact'),
+    task_id: taskId,
+    type: payload.artifact_type,
+    ...(payload.title?.trim() ? { title: payload.title.trim() } : payload.filename?.trim() ? { title: payload.filename.trim() } : {}),
+    ...(typeof payload.content === 'string' ? { content: payload.content } : {}),
+    ...(typeof payload.thumbnail_url === 'string' ? { thumbnail_url: payload.thumbnail_url } : {}),
+    ...(typeof payload.file_size === 'number' ? { file_size: payload.file_size } : {}),
+    ...(typeof payload.mime_type === 'string' ? { mime_type: payload.mime_type } : {}),
+    created_at: nowIso(),
+  };
+  const items = getTaskArtifacts(taskId);
+  items.push(artifact);
+  await deps.docStore.upsert<TaskArtifactRecord>(TASK_ARTIFACTS_COLLECTION, artifact.id, artifact);
+  return artifact;
+}
+
 async function loadTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<TaskArtifactRecord[]> {
   const cached = ARTIFACTS_BY_TASK.get(taskId);
   if (cached) return cached;
@@ -571,6 +604,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           tasks: TASKS_COLLECTION,
           messages: TASK_MESSAGES_COLLECTION,
         },
+        createTaskArtifact: async ({ taskId, payload }) => createTaskArtifactRecord(deps, {
+          taskId,
+          payload: {
+            ...payload,
+            filename: payload.filename,
+          },
+        }),
       });
 
       emitNotebookTaskEvent(route.taskId, { type: 'message', data: message });

@@ -19,6 +19,7 @@ interface PendingStream {
   close: () => void;
   fail: (error: Error) => void;
   timer: NodeJS.Timeout;
+  timeoutMs: number;
 }
 
 interface AgentSocketState {
@@ -107,6 +108,58 @@ function inferRemoteIp(req: http.IncomingMessage): string | undefined {
   return req.socket.remoteAddress ?? undefined;
 }
 
+function debugRuntime(message: string): void {
+  if (process.env.DEBUG_AGENT_RUNTIME !== '1') return;
+  process.stdout.write(`[agent-runtime] ${message}\n`);
+}
+
+function getAgentRuntimeRequestTimeoutMs(): number {
+  const raw = process.env.AGENT_RUNTIME_REQUEST_TIMEOUT_MS?.trim();
+  const parsed = raw ? Number(raw) : NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.max(1000, Math.floor(parsed));
+  }
+  return 60_000;
+}
+
+function armPendingTimeout(
+  pending: PendingStream,
+  requestId: string,
+  socket: AgentSocketState,
+  agentId: string,
+): void {
+  clearTimeout(pending.timer);
+  pending.timer = setTimeout(() => {
+    socket.pendingByRequestId.delete(requestId);
+    debugRuntime(`request_timeout agent_id=${agentId} request_id=${requestId}`);
+    pending.push({ type: 'error', error_code: 'AGENT_TIMEOUT', error_message: 'agent_response_timeout' });
+    pending.close();
+  }, pending.timeoutMs);
+}
+
+function isPlainObject(input: unknown): input is Record<string, unknown> {
+  return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+function mergeRuntimePreferences(
+  existing: Record<string, unknown> | undefined,
+  incoming: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!existing) return incoming ?? {};
+  if (!incoming) return existing;
+
+  const merged: Record<string, unknown> = { ...existing };
+  for (const [key, incomingValue] of Object.entries(incoming)) {
+    const existingValue = merged[key];
+    if (isPlainObject(existingValue) && isPlainObject(incomingValue)) {
+      merged[key] = mergeRuntimePreferences(existingValue, incomingValue);
+      continue;
+    }
+    merged[key] = incomingValue;
+  }
+  return merged;
+}
+
 export class AgentRuntimeService {
   private readonly wsServer: WebSocketServer;
   private readonly socketsByAgentId = new Map<string, AgentSocketState>();
@@ -139,12 +192,14 @@ export class AgentRuntimeService {
   handleUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
     const url = new URL(req.url ?? '', 'http://localhost');
     if (url.pathname !== '/api/v1/agent-runtime/ws') {
+      debugRuntime(`reject path=${url.pathname}`);
       socket.destroy();
       return;
     }
 
     const agentId = url.searchParams.get('agent_id') || '';
     if (!agentId) {
+      debugRuntime('reject missing_agent_id');
       socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
       socket.destroy();
       return;
@@ -152,6 +207,7 @@ export class AgentRuntimeService {
 
     const token = parseBearerToken(req);
     if (!token) {
+      debugRuntime(`reject missing_token agent_id=${agentId}`);
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
@@ -159,6 +215,7 @@ export class AgentRuntimeService {
 
     void this.agentResourceService.verifyAgentKey(agentId, token).then(async (keyRecord) => {
       if (!keyRecord) {
+        debugRuntime(`reject invalid_key agent_id=${agentId}`);
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
@@ -169,10 +226,14 @@ export class AgentRuntimeService {
         agentId,
       );
       if (!agent || agent.status !== 'enabled') {
+        debugRuntime(
+          `reject agent_not_enabled_or_missing agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id} has_agent=${agent ? '1' : '0'} status=${agent?.status ?? 'null'}`,
+        );
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;
       }
+      debugRuntime(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
 
       const existing = this.socketsByAgentId.get(agentId);
       if (existing) {
@@ -210,6 +271,7 @@ export class AgentRuntimeService {
         this.wsServer.emit('connection', ws, req);
       });
     }).catch(() => {
+      debugRuntime(`reject internal_error agent_id=${agentId}`);
       socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
       socket.destroy();
     });
@@ -222,6 +284,7 @@ export class AgentRuntimeService {
     agentId: string;
     model: string;
     messages: Array<Record<string, unknown>>;
+    runtimeContext?: Record<string, unknown>;
     timeoutMs?: number;
   }): Promise<{ requestId: string; stream: AsyncIterable<AgentStreamEvent>; cancel: () => void }> {
     const socket = this.socketsByAgentId.get(input.agentId);
@@ -234,17 +297,15 @@ export class AgentRuntimeService {
 
     const requestId = randomUUID();
     const queue = createAsyncQueue<AgentStreamEvent>();
-    const timeoutMs = Math.max(1000, input.timeoutMs ?? 60_000);
+    const timeoutMs = Math.max(1000, input.timeoutMs ?? getAgentRuntimeRequestTimeoutMs());
     const pending: PendingStream = {
       push: queue.push,
       close: queue.close,
       fail: queue.fail,
-      timer: setTimeout(() => {
-        socket.pendingByRequestId.delete(requestId);
-        queue.push({ type: 'error', error_code: 'AGENT_TIMEOUT', error_message: 'agent_response_timeout' });
-        queue.close();
-      }, timeoutMs),
+      timeoutMs,
+      timer: setTimeout(() => undefined, timeoutMs),
     };
+    armPendingTimeout(pending, requestId, socket, input.agentId);
     socket.pendingByRequestId.set(requestId, pending);
 
     socket.ws.send(
@@ -257,6 +318,7 @@ export class AgentRuntimeService {
           model: input.model,
           stream: true,
           messages: input.messages,
+          ...(input.runtimeContext ? { runtime_context: input.runtimeContext } : {}),
         },
       }),
     );
@@ -335,8 +397,14 @@ export class AgentRuntimeService {
     }
 
     if (payload.type === 'agent.ready') {
-      void this.agentResourceService.updateAgent(socket.workspaceId, socket.projectId, agentId, {
-        runtime_preferences_json: payload.payload,
+      void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, agentId).then((current) => {
+        const existing = isPlainObject(current?.runtime_preferences_json)
+          ? current.runtime_preferences_json
+          : {};
+        const incoming = isPlainObject(payload.payload) ? payload.payload : {};
+        return this.agentResourceService.updateAgent(socket.workspaceId, socket.projectId, agentId, {
+          runtime_preferences_json: mergeRuntimePreferences(existing, incoming),
+        });
       });
       return;
     }
@@ -362,6 +430,7 @@ export class AgentRuntimeService {
         type: 'delta',
         delta: payload.payload.delta,
       });
+      armPendingTimeout(pending, requestId, socket, agentId);
       return;
     }
 

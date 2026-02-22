@@ -52,6 +52,7 @@ export function CreateAgentDialog({
   const [externalAcceptedMimeTypes, setExternalAcceptedMimeTypes] = React.useState('image/png,image/jpeg,image/webp,text/plain,application/pdf');
   const [externalMaxFileCount, setExternalMaxFileCount] = React.useState('8');
   const [externalMaxTotalBytes, setExternalMaxTotalBytes] = React.useState(String(60 * 1024 * 1024));
+  const [notebookEndpointId, setNotebookEndpointId] = React.useState('');
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
 
@@ -82,6 +83,7 @@ export function CreateAgentDialog({
     setExternalAcceptedMimeTypes('image/png,image/jpeg,image/webp,text/plain,application/pdf');
     setExternalMaxFileCount('8');
     setExternalMaxTotalBytes(String(60 * 1024 * 1024));
+    setNotebookEndpointId('');
   };
 
   React.useEffect(() => {
@@ -134,6 +136,21 @@ export function CreateAgentDialog({
         max_concurrent_sessions_override: maxConcurrentSessions.trim()
           ? parseInt(maxConcurrentSessions, 10)
           : undefined,
+      };
+    }
+
+    if (mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both')) {
+      if (!notebookEndpointId.trim()) {
+        toast.error(t('create_dialog.notebook_endpoint_required'));
+        return;
+      }
+      data.runtime_preferences = {
+        notebook: {
+          executor: 'codex_cli',
+          endpoint_id: notebookEndpointId.trim(),
+          wire_api: 'chat',
+          model: 'gpt-5-codex',
+        },
       };
     }
 
@@ -242,6 +259,21 @@ export function CreateAgentDialog({
               <option value="both">{t('interaction_both')}</option>
             </select>
           </div>
+
+          {mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both') && (
+            <div className="space-y-2">
+              <label htmlFor="notebook-endpoint-id" className="text-sm font-medium text-foreground">
+                {t('create_dialog.notebook_endpoint_id')}
+              </label>
+              <Input
+                id="notebook-endpoint-id"
+                value={notebookEndpointId}
+                onChange={(event) => setNotebookEndpointId(event.target.value)}
+                placeholder="ep_xxx"
+                disabled={createMutation.isPending}
+              />
+            </div>
+          )}
 
           {mode === 'internal' && (
             <div className="space-y-4 p-4 rounded-sm border border-subtle bg-surface-low">

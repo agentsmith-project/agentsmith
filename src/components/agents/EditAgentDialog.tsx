@@ -49,6 +49,7 @@ export function EditAgentDialog({
   const [externalAcceptedMimeTypes, setExternalAcceptedMimeTypes] = React.useState('');
   const [externalMaxFileCount, setExternalMaxFileCount] = React.useState('');
   const [externalMaxTotalBytes, setExternalMaxTotalBytes] = React.useState('');
+  const [notebookEndpointId, setNotebookEndpointId] = React.useState('');
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
 
@@ -73,6 +74,9 @@ export function EditAgentDialog({
       setDescription(agent.description ?? '');
       setInteractionMode(agent.interaction_mode ?? 'both');
       setRuntimePreferences((agent.runtime_preferences_json as RuntimePreferences) ?? {});
+      const runtimePrefs = (agent.runtime_preferences_json as Record<string, unknown> | undefined) ?? {};
+      const notebook = (runtimePrefs.notebook as Record<string, unknown> | undefined) ?? {};
+      setNotebookEndpointId(typeof notebook.endpoint_id === 'string' ? notebook.endpoint_id : '');
       setExternalMultimodal(agent.capabilities?.multimodal_completion ?? false);
       setExternalAcceptedMimeTypes((agent.capabilities?.accepted_mime_types ?? []).join(','));
       setExternalMaxFileCount(
@@ -96,10 +100,26 @@ export function EditAgentDialog({
       name: name.trim(),
       description: description.trim() || undefined,
       interaction_mode: interactionMode,
-      runtime_preferences:
-        Object.keys(runtimePreferences).length > 0
-          ? (runtimePreferences as Record<string, unknown>)
-          : undefined,
+      runtime_preferences: (() => {
+        const nextPreferences: Record<string, unknown> = {
+          ...(runtimePreferences as Record<string, unknown>),
+        };
+        if (agent.mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both')) {
+          if (!notebookEndpointId.trim()) {
+            return undefined;
+          }
+          nextPreferences.notebook = {
+            ...(typeof nextPreferences.notebook === 'object' && nextPreferences.notebook !== null
+              ? (nextPreferences.notebook as Record<string, unknown>)
+              : {}),
+            endpoint_id: notebookEndpointId.trim(),
+            executor: 'codex_cli',
+            wire_api: 'chat',
+            model: 'gpt-5-codex',
+          };
+        }
+        return Object.keys(nextPreferences).length > 0 ? nextPreferences : undefined;
+      })(),
       capabilities: agent.mode === 'external'
         ? {
           streaming_completion: true,
@@ -117,6 +137,11 @@ export function EditAgentDialog({
         }
         : undefined,
     };
+
+    if (agent.mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both') && !notebookEndpointId.trim()) {
+      toast.error(t('create_dialog.notebook_endpoint_required'));
+      return;
+    }
 
     updateMutation.mutate(data);
   };
@@ -189,6 +214,21 @@ export function EditAgentDialog({
               <option value="both">{t('interaction_both')}</option>
             </select>
           </div>
+
+          {agent.mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both') && (
+            <div className="space-y-2">
+              <label htmlFor="edit-notebook-endpoint-id" className="text-sm font-medium text-foreground">
+                {t('create_dialog.notebook_endpoint_id')}
+              </label>
+              <Input
+                id="edit-notebook-endpoint-id"
+                value={notebookEndpointId}
+                onChange={(event) => setNotebookEndpointId(event.target.value)}
+                placeholder="ep_xxx"
+                disabled={updateMutation.isPending}
+              />
+            </div>
+          )}
 
           {agent.mode === 'external' && (
             <div className="space-y-4 p-4 rounded-sm border border-subtle bg-surface-low">

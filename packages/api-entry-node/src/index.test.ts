@@ -1017,6 +1017,250 @@ describe('api-entry-node projects routes', () => {
     expect(body.message).toBe('agent_offline');
   });
 
+  it('validates notebook endpoint for notebook-capable external agent', async () => {
+    const { baseUrl } = startServer();
+
+    const createWithoutEndpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'nb-agent-invalid',
+          mode: 'external',
+          interaction_mode: 'notebook',
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createWithoutEndpointRes.status).toBe(422);
+
+    const createChatAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'nb-agent-patch',
+          mode: 'external',
+          interaction_mode: 'chat',
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createChatAgentRes.status).toBe(201);
+    const created = (await createChatAgentRes.json()) as { id: string };
+
+    const patchInvalidRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interaction_mode: 'both',
+          runtime_preferences: {
+            notebook: {},
+          },
+        }),
+      },
+    );
+    expect(patchInvalidRes.status).toBe(422);
+  });
+
+  it('runs notebook task message through external runtime and enforces single active run per task', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startUpstreamServer();
+
+    const createCredentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'task-runner-key',
+          type: 'api_key',
+          value: 'sk-task',
+        }),
+      },
+    );
+    expect(createCredentialRes.status).toBe(201);
+    const credential = (await createCredentialRes.json()) as { id: string };
+
+    const createEndpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'task-endpoint',
+          openai_model: 'gpt-5-codex',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpointRes.status).toBe(201);
+    const endpoint = (await createEndpointRes.json()) as { id: string };
+
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'notebook-runner',
+          mode: 'external',
+          interaction_mode: 'notebook',
+          runtime_preferences: {
+            notebook: {
+              endpoint_id: endpoint.id,
+              wire_api: 'chat',
+              model: 'gpt-5-codex',
+            },
+          },
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createAgentRes.status).toBe(201);
+    const agent = (await createAgentRes.json()) as { id: string };
+
+    const keyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
+    expect(keyRes.status).toBe(201);
+    const keyPayload = (await keyRes.json()) as { key: string };
+
+    const connInfoRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+    );
+    expect(connInfoRes.status).toBe(200);
+    const connInfo = (await connInfoRes.json()) as { ws_url: string };
+    const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
+
+    const runtimeReceived = new Promise<{
+      requestId: string;
+      endpointProxyBase: string;
+      userToken: string;
+      close: () => void;
+    }>((resolve) => {
+      const ws = new WebSocket(wsUrl, {
+        headers: { Authorization: `Bearer ${keyPayload.key}` },
+      });
+
+      ws.on('open', () => undefined);
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString('utf-8')) as {
+          type?: string;
+          request_id?: string;
+          payload?: {
+            runtime_context?: {
+              endpoint_proxy_base?: string;
+              user_bearer_token?: string;
+            };
+          };
+        };
+        if (msg.type !== 'server.request.start' || !msg.request_id) return;
+        resolve({
+          requestId: msg.request_id,
+          endpointProxyBase: msg.payload?.runtime_context?.endpoint_proxy_base ?? '',
+          userToken: msg.payload?.runtime_context?.user_bearer_token ?? '',
+          close: () => ws.close(),
+        });
+        ws.send(JSON.stringify({
+          type: 'agent.response.delta',
+          request_id: msg.request_id,
+          payload: { delta: 'task-output' },
+        }));
+        setTimeout(() => {
+          ws.send(JSON.stringify({
+            type: 'agent.response.done',
+            request_id: msg.request_id,
+            payload: { finish_reason: 'stop', usage_tokens: 8 },
+          }));
+        }, 20);
+      });
+    });
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Notebook task',
+          agent_id: agent.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const postMessageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'run this',
+        }),
+      },
+    );
+    expect(postMessageRes.status).toBe(200);
+
+    const conflictRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'second request',
+        }),
+      },
+    );
+    expect(conflictRes.status).toBe(409);
+
+    const runtime = await runtimeReceived;
+    expect(runtime.requestId).toBeTruthy();
+    expect(runtime.userToken).toBe('test-token');
+    expect(runtime.endpointProxyBase).toBe(
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy`,
+    );
+
+    let messagesBody: Array<{ role: string; content: string }> = [];
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const messagesRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+      );
+      expect(messagesRes.status).toBe(200);
+      messagesBody = (await messagesRes.json()) as Array<{ role: string; content: string }>;
+      if (messagesBody.some((item) => item.role === 'agent' && item.content.includes('task-output'))) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(messagesBody.some((item) => item.role === 'agent' && item.content.includes('task-output'))).toBe(true);
+    runtime.close();
+  });
+
   it('normalizes endpoint base_url when full chat/completions path is provided', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();

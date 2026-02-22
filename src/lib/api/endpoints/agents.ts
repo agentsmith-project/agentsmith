@@ -17,6 +17,7 @@ export interface CreateAgentRequest {
     env?: Record<string, string>;
     max_concurrent_sessions_override?: number;
   };
+  runtime_preferences?: Record<string, unknown>;
   capabilities?: {
     streaming_completion?: boolean;
     multimodal_completion?: boolean;

@@ -2905,6 +2905,30 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
         }
+      },
+      "post": {
+        "tags": ["Notebook"],
+        "operationId": "createTaskMessageAndRun",
+        "description": "Creates a notebook message and, for user role, starts external-agent execution with streaming updates via /tasks/{taskId}/events.",
+        "responses": {
+          "200": { "description": "Message accepted", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "description": "TASK_STREAM_CONFLICT" },
+          "422": { "description": "Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED)" },
+          "502": { "description": "External agent runtime error (AGENT_OFFLINE/AGENT_TIMEOUT/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR)" }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts": {
@@ -2944,8 +2968,18 @@
       "get": {
         "tags": ["Notebook"],
         "operationId": "listTaskEvents",
+        "description": "Server-Sent Events stream for notebook task runtime updates (message/task_update/error/ping).",
         "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+          "200": {
+            "description": "SSE stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
         }
@@ -3277,6 +3311,10 @@
           },
           "description": {
             "type": "string"
+          },
+          "runtime_preferences": {
+            "type": "object",
+            "additionalProperties": true
           }
         }
       },
@@ -3288,6 +3326,10 @@
           },
           "description": {
             "type": "string"
+          },
+          "runtime_preferences": {
+            "type": "object",
+            "additionalProperties": true
           }
         }
       },

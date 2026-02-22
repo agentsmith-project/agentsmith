@@ -1948,6 +1948,9 @@ components:
             - external
         description:
           type: string
+        runtime_preferences:
+          type: object
+          additionalProperties: true
     UpdateAgentRequest:
       type: object
       properties:
@@ -1955,6 +1958,9 @@ components:
           type: string
         description:
           type: string
+        runtime_preferences:
+          type: object
+          additionalProperties: true
     AgentKey:
       type: object
       required:

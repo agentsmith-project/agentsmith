@@ -7,6 +7,18 @@ type KeycloakUser = {
   username?: string;
 };
 
+type KeycloakClientSummary = {
+  id: string;
+  clientId?: string;
+};
+
+type KeycloakClientConfig = {
+  id: string;
+  clientId?: string;
+  redirectUris?: string[];
+  webOrigins?: string[];
+};
+
 interface SeedUser {
   username: string;
   password: string;
@@ -19,6 +31,8 @@ const keycloakBaseUrl = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080
 const keycloakRealm = process.env.KEYCLOAK_REALM ?? 'mbos';
 const keycloakAdminUser = process.env.KEYCLOAK_ADMIN ?? 'admin';
 const keycloakAdminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD ?? 'admin';
+const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
+const integrationWebPort = process.env.INTEGRATION_WEB_PORT ?? '3001';
 
 const seedUsers: SeedUser[] = [
   {
@@ -182,8 +196,79 @@ async function ensureUser(token: string, user: SeedUser): Promise<void> {
   process.stdout.write(`[integration-keycloak-init] ensured ${user.username}\n`);
 }
 
+async function findClient(token: string, clientId: string): Promise<KeycloakClientSummary | null> {
+  const res = await adminFetch(
+    token,
+    `/admin/realms/${encodeURIComponent(keycloakRealm)}/clients?clientId=${encodeURIComponent(clientId)}`,
+    { method: 'GET' },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`keycloak_find_client_failed:${clientId}:${res.status}:${text}`);
+  }
+  const items = (await res.json()) as KeycloakClientSummary[];
+  if (!Array.isArray(items) || items.length === 0) return null;
+  return items[0] ?? null;
+}
+
+function toOriginAndRedirect(base: string): { origin: string; redirect: string } {
+  const origin = base.replace(/\/+$/, '');
+  return { origin, redirect: `${origin}/*` };
+}
+
+async function ensureClientRedirects(token: string): Promise<void> {
+  const client = await findClient(token, keycloakClientId);
+  if (!client) {
+    throw new Error(`keycloak_client_not_found:${keycloakClientId}`);
+  }
+
+  const getRes = await adminFetch(
+    token,
+    `/admin/realms/${encodeURIComponent(keycloakRealm)}/clients/${encodeURIComponent(client.id)}`,
+    { method: 'GET' },
+  );
+  if (!getRes.ok) {
+    const text = await getRes.text();
+    throw new Error(`keycloak_get_client_failed:${keycloakClientId}:${getRes.status}:${text}`);
+  }
+
+  const config = (await getRes.json()) as KeycloakClientConfig;
+  const requiredBases = [
+    `http://localhost:${integrationWebPort}`,
+    `http://127.0.0.1:${integrationWebPort}`,
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ];
+
+  const nextRedirects = new Set<string>(Array.isArray(config.redirectUris) ? config.redirectUris : []);
+  const nextOrigins = new Set<string>(Array.isArray(config.webOrigins) ? config.webOrigins : []);
+  for (const base of requiredBases) {
+    const item = toOriginAndRedirect(base);
+    nextOrigins.add(item.origin);
+    nextRedirects.add(item.redirect);
+  }
+
+  config.redirectUris = Array.from(nextRedirects);
+  config.webOrigins = Array.from(nextOrigins);
+
+  const putRes = await adminFetch(
+    token,
+    `/admin/realms/${encodeURIComponent(keycloakRealm)}/clients/${encodeURIComponent(client.id)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    },
+  );
+  if (!(putRes.status === 200 || putRes.status === 204)) {
+    const text = await putRes.text();
+    throw new Error(`keycloak_update_client_failed:${keycloakClientId}:${putRes.status}:${text}`);
+  }
+  process.stdout.write(`[integration-keycloak-init] ensured redirects for ${keycloakClientId}\n`);
+}
+
 async function main(): Promise<void> {
   const token = await getAdminToken();
+  await ensureClientRedirects(token);
   for (const user of seedUsers) {
     await ensureUser(token, user);
   }

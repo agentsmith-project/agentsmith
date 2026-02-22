@@ -58,6 +58,7 @@ async function setupRuntime() {
   });
 
   return {
+    agentResourceService,
     runtime,
     agent,
     ws,
@@ -65,6 +66,49 @@ async function setupRuntime() {
 }
 
 describe('AgentRuntimeService', () => {
+  it('merges agent.ready payload into runtime preferences without dropping notebook config', async () => {
+    const { agentResourceService, agent, ws } = await setupRuntime();
+    await agentResourceService.updateAgent('ws_default', 'proj_1', agent.id, {
+      runtime_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_keep',
+          wire_api: 'chat',
+        },
+      },
+    });
+
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        capabilities: {
+          streaming_completion: true,
+          multimodal_completion: false,
+        },
+        runtime: {
+          executor: 'codex_cli',
+          wire_api: 'chat',
+        },
+      },
+    }));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const updated = await agentResourceService.getAgent('ws_default', 'proj_1', agent.id);
+    expect(updated?.runtime_preferences_json).toEqual({
+      notebook: {
+        endpoint_id: 'ep_keep',
+        wire_api: 'chat',
+      },
+      capabilities: {
+        streaming_completion: true,
+        multimodal_completion: false,
+      },
+      runtime: {
+        executor: 'codex_cli',
+        wire_api: 'chat',
+      },
+    });
+  });
+
   it('emits protocol error when agent delta payload is invalid', async () => {
     const { runtime, agent, ws } = await setupRuntime();
     ws.on('message', (raw) => {

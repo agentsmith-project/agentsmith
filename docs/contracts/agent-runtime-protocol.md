@@ -35,6 +35,17 @@ All frames are JSON objects:
     - `model: string`
     - `stream: true`
     - `messages: OpenAI-compatible message array` (supports multimodal content parts and data URLs)
+    - `runtime_context?: object` (optional notebook runtime metadata)
+      - `workspace_id: string`
+      - `project_id: string`
+      - `task_id: string`
+      - `run_id: string`
+      - `username: string`
+      - `endpoint_id: string`
+      - `endpoint_proxy_base: string`
+      - `user_bearer_token: string`
+      - `wire_api: \"chat\" | \"responses\"`
+      - `model: string`
 - `server.request.cancel`
   - payload: `{ "reason": "client_cancelled" }`
 - `server.ping`
@@ -108,3 +119,15 @@ MBOS_AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx'
 MBOS_AGENT_KEY='ask_xxx' \
 tsx packages/api-entry-node/examples/external-agent-echo.ts
 ```
+
+## 10. Risk Register (Notebook Codex v1)
+
+- `R1` user token forwarding to external runner:
+  - For notebook codex runs, MBOS may forward user bearer token in runtime context for proxy auth/audit.
+  - This token must stay in-memory only and must never be logged/persisted.
+  - Follow-up hardening: replace with short-lived ticket exchange.
+
+- `R3` workspace isolation level:
+  - Current v1 runner isolation is directory-level only (`/tmp/<username>/<task_id>`).
+  - No automatic cleanup and no process/container sandbox in v1.
+  - Ops must enforce periodic cleanup and disk monitoring.

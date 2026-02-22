@@ -1,12 +1,12 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
-import { verifyBearerToken } from './auth.js';
+import { extractBearerToken, verifyBearerToken } from './auth.js';
 import { handleProjectSourceRoute } from './project-source-route-handler.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import { handleChatStreamRoute } from './chat-stream-handler.js';
 import { handleEndpointRoute } from './endpoint-route-handler.js';
 import { handleAgentRoute } from './agent-route-handler.js';
-import { matchProjectsRoute } from './projects-route-match.js';
+import { matchProjectsRoute, type ProjectsRoute } from './projects-route-match.js';
 import type { ChatRoute } from './chat-route-match.js';
 import {
   OWNER_WORKSPACE_PERMISSIONS,
@@ -42,6 +42,59 @@ function isTaskRoute(route: { kind: string }): boolean {
     || route.kind === 'taskArtifactSave'
     || route.kind === 'taskArtifactDownload'
     || route.kind === 'taskEvents';
+}
+
+function routeHasProjectScope(route: ProjectsRoute): route is ProjectsRoute & { workspaceId: string; projectId: string } {
+  return 'workspaceId' in route
+    && typeof route.workspaceId === 'string'
+    && 'projectId' in route
+    && typeof route.projectId === 'string';
+}
+
+function requiredProjectPermissions(route: ProjectsRoute, method: string): string[] {
+  if (isTaskRoute(route)) {
+    if (route.kind === 'taskMessages' && method === 'POST') {
+      return ['project:notebook:access', 'project:agent:use', 'project:endpoint:use'];
+    }
+    return ['project:notebook:access'];
+  }
+
+  if (isAgentRoute(route)) {
+    if (method === 'GET') return ['project:agent:use'];
+    return ['project:agent:manage'];
+  }
+
+  if (route.kind === 'credentials' || route.kind === 'credentialItem' || route.kind === 'credentialRotate') {
+    return ['project:credential:manage'];
+  }
+
+  if (
+    route.kind === 'endpoints'
+    || route.kind === 'endpointItem'
+    || route.kind === 'endpointRerank'
+    || route.kind === 'endpointImageGeneration'
+    || route.kind === 'endpointVideoGenerationCreate'
+    || route.kind === 'endpointVideoGenerationPoll'
+    || route.kind === 'endpointVideoGenerationCancel'
+    || route.kind === 'endpointProxy'
+    || route.kind === 'endpointImportOpenAICompatible'
+  ) {
+    if (
+      route.kind === 'endpointRerank'
+      || route.kind === 'endpointImageGeneration'
+      || route.kind === 'endpointVideoGenerationCreate'
+      || route.kind === 'endpointVideoGenerationPoll'
+      || route.kind === 'endpointVideoGenerationCancel'
+      || route.kind === 'endpointProxy'
+      || (route.kind === 'endpoints' && method === 'GET')
+      || (route.kind === 'endpointItem' && method === 'GET')
+    ) {
+      return ['project:endpoint:use'];
+    }
+    return ['project:endpoint:manage'];
+  }
+
+  return [];
 }
 
 export function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
@@ -96,9 +149,30 @@ export async function handleRequest(
       unauthorized(res);
       return;
     }
+    const rawBearerToken = extractBearerToken(req);
 
     const workspaces = buildWorkspaceRecords();
     const defaultWorkspace = workspaces[0];
+
+    if (routeHasProjectScope(route)) {
+      const required = requiredProjectPermissions(route, method);
+      if (required.length > 0) {
+        try {
+          const project = await deps.getProjectUseCase.execute({
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+          });
+          const granted = new Set(resolveProjectPermissions(project.owner_id, user.id));
+          const missing = required.filter((permission) => !granted.has(permission));
+          if (missing.length > 0) {
+            json(res, 403, { error_code: 'FORBIDDEN', message: 'forbidden', missing_permissions: missing });
+            return;
+          }
+        } catch {
+          // Keep compatibility with in-memory local routes that are not yet tied to project repo records.
+        }
+      }
+    }
 
     const handledProjectSourceRoute = await handleProjectSourceRoute({
       route,
@@ -172,6 +246,8 @@ export async function handleRequest(
         req,
         res,
         deps,
+        user,
+        rawBearerToken,
         json,
         readBody,
       });

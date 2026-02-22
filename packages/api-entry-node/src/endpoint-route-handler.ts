@@ -31,7 +31,13 @@ interface EndpointHandlerArgs {
   proxyJsonRequest: (
     req: http.IncomingMessage,
     res: http.ServerResponse,
-    options: { upstreamUrl: string; apiKey: string; model?: string; timeoutSeconds?: number },
+    options: {
+      upstreamUrl: string;
+      apiKey: string;
+      model?: string;
+      timeoutSeconds?: number;
+      responsesFallbackToChat?: boolean;
+    },
   ) => Promise<void>;
 }
 
@@ -126,6 +132,9 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       apiKey,
       model: resolvedModel,
       timeoutSeconds: endpoint.limits?.timeout_seconds,
+      responsesFallbackToChat:
+        proxyPath.replace(/^\/+/, '') === 'responses'
+        && endpoint.protocol === 'openai_compatible',
     });
     return true;
   };

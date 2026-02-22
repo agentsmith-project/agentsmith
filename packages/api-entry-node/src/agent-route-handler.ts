@@ -12,6 +12,14 @@ interface AgentRouteHandlerArgs {
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
 }
 
+function validateNotebookEndpoint(runtimePreferences: Record<string, unknown> | undefined): boolean {
+  if (!runtimePreferences) return false;
+  const notebook = runtimePreferences.notebook;
+  if (typeof notebook !== 'object' || notebook === null) return false;
+  const endpointId = (notebook as Record<string, unknown>).endpoint_id;
+  return typeof endpointId === 'string' && endpointId.trim().length > 0;
+}
+
 function toPublicKeyRecord(item: {
   id: string;
   agent_id: string;
@@ -48,6 +56,19 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_name_required' });
       return true;
     }
+    const runtimePreferences =
+      typeof raw.runtime_preferences_json === 'object' && raw.runtime_preferences_json !== null
+        ? (raw.runtime_preferences_json as Record<string, unknown>)
+        : (typeof raw.runtime_preferences === 'object' && raw.runtime_preferences !== null
+          ? (raw.runtime_preferences as Record<string, unknown>)
+          : undefined);
+    if (
+      (raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both')
+      && !validateNotebookEndpoint(runtimePreferences)
+    ) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_notebook_endpoint_required' });
+      return true;
+    }
     const created = await deps.agentResourceService.createAgent(route.workspaceId, route.projectId, {
       name,
       description: typeof raw.description === 'string' ? raw.description : undefined,
@@ -58,6 +79,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
           : 'both',
       status: raw.status === 'disabled' ? 'disabled' : 'enabled',
       config: typeof raw.config === 'object' && raw.config !== null ? (raw.config as Record<string, unknown>) as never : undefined,
+      runtime_preferences_json: runtimePreferences,
       capabilities:
         typeof raw.capabilities === 'object' && raw.capabilities !== null
           ? (raw.capabilities as Record<string, unknown>) as never
@@ -79,6 +101,20 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentItem' && method === 'PATCH') {
     const raw = (await readBody(req)) as Record<string, unknown>;
+    const runtimePreferences =
+      typeof raw.runtime_preferences_json === 'object' && raw.runtime_preferences_json !== null
+        ? (raw.runtime_preferences_json as Record<string, unknown>)
+        : (typeof raw.runtime_preferences === 'object' && raw.runtime_preferences !== null
+          ? (raw.runtime_preferences as Record<string, unknown>)
+          : undefined);
+    const requestedInteraction =
+      raw.interaction_mode === 'chat' || raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both'
+        ? raw.interaction_mode
+        : undefined;
+    if ((requestedInteraction === 'notebook' || requestedInteraction === 'both') && !validateNotebookEndpoint(runtimePreferences)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_notebook_endpoint_required' });
+      return true;
+    }
     const updated = await deps.agentResourceService.updateAgent(route.workspaceId, route.projectId, route.agentId, {
       name: typeof raw.name === 'string' ? raw.name : undefined,
       description: typeof raw.description === 'string' ? raw.description : undefined,
@@ -93,10 +129,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
           : undefined,
       status: raw.status === 'enabled' || raw.status === 'disabled' ? raw.status : undefined,
       admin_id: typeof raw.admin_id === 'string' ? raw.admin_id : undefined,
-      runtime_preferences_json:
-        typeof raw.runtime_preferences_json === 'object' && raw.runtime_preferences_json !== null
-          ? (raw.runtime_preferences_json as Record<string, unknown>)
-          : undefined,
+      runtime_preferences_json: runtimePreferences,
       capabilities:
         typeof raw.capabilities === 'object' && raw.capabilities !== null
           ? (raw.capabilities as Record<string, unknown>) as never

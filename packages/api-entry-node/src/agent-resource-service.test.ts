@@ -13,9 +13,10 @@ describe('AgentResourceService', () => {
     expect(created.name).toBe('External Echo');
     expect(created.mode).toBe('external');
     expect(created.presence).toBe('offline');
-    expect(created.capabilities.streaming_completion).toBe(true);
-    expect(created.capabilities.multimodal_completion).toBe(false);
-    expect(created.capabilities.accepted_mime_types).toContain('image/png');
+    expect(created.capabilities).toBeDefined();
+    expect(created.capabilities?.streaming_completion).toBe(true);
+    expect(created.capabilities?.multimodal_completion).toBe(false);
+    expect(created.capabilities?.accepted_mime_types).toContain('image/png');
   });
 
   it('creates, verifies and revokes service key', async () => {

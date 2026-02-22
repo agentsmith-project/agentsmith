@@ -8,6 +8,7 @@
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
+	notebook-agent-traces-query-sweep \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls
 
 NPM ?= npm
@@ -91,6 +92,7 @@ help:
 	@echo "  make notebook-agent-benchmark-baseline # run the standard baseline matrix profile and print summary preview"
 	@echo "  make notebook-agent-benchmark-compare  # compare two baseline dirs (BASELINE_A_DIR, BASELINE_B_DIR)"
 	@echo "  make notebook-agent-traces-query-bench # benchmark /tasks/:id/traces?message_id=... query path"
+	@echo "  make notebook-agent-traces-query-sweep # compare message-scoped traces query latency across page sizes"
 	@echo "  make openapi-generate   # generate frontend API types from docs/contracts/specs/openapi.yaml"
 	@echo "  make openapi-check-generated # verify generated API types are in sync"
 	@echo "  make openapi-changelog  # generate OpenAPI diff changelog vs origin/main"
@@ -413,6 +415,10 @@ notebook-agent-benchmark-compare:
 notebook-agent-traces-query-bench:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/notebook-agent-traces-query-bench.sh
+
+notebook-agent-traces-query-sweep:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/notebook-agent-traces-query-sweep.sh
 
 openapi-generate:
 	$(NPM) run openapi:generate

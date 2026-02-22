@@ -586,6 +586,36 @@ PAGE_SIZE=50 make notebook-agent-traces-query-bench
     - script p95/p99
     - `notebook_task_traces_query_duration_ms_*{scope="message"}`
 
+### 7.5.8 Message-Scoped Traces Query Page-Size Sweep
+- Purpose:
+  - compare the execution-details query path across different `page_size` values
+  - identify whether larger trace slices materially affect p95/p99 in memory vs Mongo modes
+- Command:
+```bash
+make notebook-agent-traces-query-sweep
+```
+- Defaults:
+  - `PAGE_SIZES=20,50,200,500`
+  - `REQUESTS=100`
+  - `CONCURRENCY=10`
+  - `WARMUP=10`
+- Output:
+  - `/tmp/agentsmith-traces-query-sweep-<timestamp>/summary.csv`
+  - `/tmp/agentsmith-traces-query-sweep-<timestamp>/summary.jsonl`
+  - per-page directories with `result.json` and `stdout.log`
+- Usage patterns:
+  - reuse an existing task/message:
+```bash
+TASK_ID=task_000123 MESSAGE_ID=msg_000456 make notebook-agent-traces-query-sweep
+```
+  - auto-generate a multi-turn task to increase trace volume:
+```bash
+PREPARE_TASK=1 TURNS=8 make notebook-agent-traces-query-sweep
+```
+- Compare memory vs Mongo:
+  - run the sweep in each mode with the same `PAGE_SIZES/REQUESTS/CONCURRENCY`
+  - compare `summary.csv` p95/p99 and Prometheus histogram `scope="message"`
+
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.

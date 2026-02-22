@@ -304,6 +304,97 @@ done
     - runner/API versions are up to date
     - `/tasks/:taskId/traces?message_id=<msg>` returns items for that message
 
+## 7.4 Notebook Runtime Metrics (Internal, Authenticated)
+- API exposes a lightweight process-local metrics snapshot for notebook runtime/task execution:
+  - `GET /api/v1/internal/notebook-runtime-metrics`
+- Authentication:
+  - requires a valid bearer token (same user token used for notebook APIs).
+- Purpose:
+  - quick runtime health checks during real-environment validation/load tests
+  - observe run outcomes and trace truncation behavior without scraping logs
+- Example fields:
+  - counters:
+    - `task_runs_started`
+    - `task_runs_completed`
+    - `task_runs_failed`
+    - `task_runs_terminal_without_done`
+    - `trace_events_recorded`
+    - `trace_events_truncated_records`
+    - `trace_details_truncated`
+  - gauges:
+    - `active_runs`
+    - `task_sse_clients`
+  - `in_memory`:
+    - tasks/messages/artifacts/traces counts
+  - `limits`:
+    - `max_trace_events_per_task`
+    - `max_trace_details_bytes`
+    - `max_task_sse_events_per_task`
+- Notes:
+  - metrics are process-local (reset on API restart)
+  - in `docStore` mode, notebook data persists, but this endpoint still reports current process counters/gauges
+
+### 7.4.1 Monitor Script
+- Use the built-in polling script:
+```bash
+make notebook-agent-monitor
+```
+- Common options:
+```bash
+COUNT=30 INTERVAL_SEC=1 make notebook-agent-monitor
+API_BASE=http://localhost:20000 TOKEN_FILE=/tmp/agentsmith_user_token.txt make notebook-agent-monitor
+```
+- Output is a compact line summary suitable for terminal monitoring during smoke/load runs.
+
+## 7.5 Real-Environment Load Test (Notebook + External Agent)
+- Purpose:
+  - validate runtime stability under concurrent notebook task submissions
+  - confirm trace retention/limits behave as expected
+  - capture latency distribution (`avg/p50/p95/p99`) and failure samples
+- Preconditions:
+  - API + Web + external `agent-codex-runner` are running
+  - token refreshed (`make notebook-agent-refresh-token`)
+  - test resources initialized (`make notebook-agent-init-resources`)
+  - runner connected (`make notebook-agent-runner`)
+
+### 7.5.1 Load Test Script
+```bash
+make notebook-agent-load-test
+```
+
+- Recommended starting profile (real GLM/Codex path):
+```bash
+REQUESTS=10 CONCURRENCY=3 POLL_MAX=90 POLL_INTERVAL_SEC=2 make notebook-agent-load-test
+```
+
+- Higher pressure example (increase gradually):
+```bash
+REQUESTS=30 CONCURRENCY=5 POLL_MAX=120 POLL_INTERVAL_SEC=2 make notebook-agent-load-test
+```
+
+- Optional controls:
+  - `WAIT_AGENT_ONLINE=0` to skip runner-online guard (useful for race/failure injection)
+  - `PROMPT='reply exactly: chain ok'` to keep workload stable/reproducible
+
+### 7.5.2 Output Interpretation
+- Script prints:
+  - aggregate result summary (`success/failed/success_rate`)
+  - latency stats (`avg/p50/p95/p99/max`)
+  - sample failures (first 10)
+  - final `notebook-runtime-metrics` snapshot
+- Use together with:
+  - `make notebook-agent-monitor`
+  - API logs (`DEBUG_NOTEBOOK_RUNTIME=1`, `DEBUG_AGENT_RUNTIME=1`, `DEBUG_ENDPOINT_PROXY=1`)
+  - runner logs (`MBOS_AGENT_RUNNER_DEBUG=1`)
+
+### 7.5.3 Minimum Acceptance (Suggested)
+- For a baseline validation run (e.g. `REQUESTS=10`, `CONCURRENCY=3`):
+  - no API crashes / no runner crash
+  - success rate is acceptable for current upstream provider conditions
+  - `task_runs_terminal_without_done` remains `0` (or investigated immediately)
+  - truncation counters (`trace_events_truncated_records`, `trace_details_truncated`) match expectations for the test profile
+  - p95 latency is recorded and tracked over time (regression detection)
+
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.

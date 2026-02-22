@@ -1672,6 +1672,36 @@ describe('api-entry-node projects routes', () => {
     runtime.close();
   });
 
+  it('exposes authenticated notebook runtime metrics snapshot', async () => {
+    const { baseUrl } = startServer();
+
+    const res = await apiFetch(baseUrl, '/api/v1/internal/notebook-runtime-metrics');
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      task_runs_started: number;
+      task_runs_completed: number;
+      task_runs_failed: number;
+      trace_events_recorded: number;
+      active_runs: number;
+      task_sse_clients: number;
+      in_memory: { tasks: number; messages: number; traces: number };
+      limits: { max_trace_events_per_task: number; max_trace_details_bytes: number };
+    };
+
+    expect(typeof body.task_runs_started).toBe('number');
+    expect(typeof body.task_runs_completed).toBe('number');
+    expect(typeof body.task_runs_failed).toBe('number');
+    expect(typeof body.trace_events_recorded).toBe('number');
+    expect(typeof body.active_runs).toBe('number');
+    expect(typeof body.task_sse_clients).toBe('number');
+    expect(typeof body.in_memory.tasks).toBe('number');
+    expect(typeof body.in_memory.messages).toBe('number');
+    expect(typeof body.in_memory.traces).toBe('number');
+    expect(body.limits.max_trace_events_per_task).toBeGreaterThan(0);
+    expect(body.limits.max_trace_details_bytes).toBeGreaterThan(0);
+  });
+
   it('truncates oversized notebook trace details payloads', async () => {
     const { baseUrl } = startServer();
 

@@ -81,6 +81,15 @@ const TASK_EVENT_CLIENTS = new Map<string, Set<http.ServerResponse>>();
 const TASK_EVENT_SEQUENCE_BY_TASK = new Map<string, number>();
 const TASK_EVENT_HISTORY_BY_TASK = new Map<string, BufferedTaskSseEvent[]>();
 const ACTIVE_RUNS_BY_TASK = new Set<string>();
+const NOTEBOOK_RUNTIME_METRICS = {
+  task_runs_started: 0,
+  task_runs_completed: 0,
+  task_runs_failed: 0,
+  task_runs_terminal_without_done: 0,
+  trace_events_recorded: 0,
+  trace_events_truncated_records: 0,
+  trace_details_truncated: 0,
+};
 let nextTaskId = 1;
 let nextMessageId = 1;
 let nextTraceEventId = 1;
@@ -96,6 +105,31 @@ function debugNotebookRuntime(message: string, extra?: Record<string, unknown>):
   if (process.env.DEBUG_NOTEBOOK_RUNTIME !== '1') return;
   const suffix = extra ? ` ${JSON.stringify(extra)}` : '';
   process.stdout.write(`[notebook-runtime] ${message}${suffix}\n`);
+}
+
+export function getNotebookRuntimeMetricsSnapshot(): Record<string, unknown> {
+  const taskCount = [...TASKS_BY_PROJECT.values()].reduce((acc, items) => acc + items.length, 0);
+  const messageCount = [...MESSAGES_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
+  const artifactCount = [...ARTIFACTS_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
+  const traceCount = [...TRACE_EVENTS_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
+  const sseClients = [...TASK_EVENT_CLIENTS.values()].reduce((acc, set) => acc + set.size, 0);
+  return {
+    ...NOTEBOOK_RUNTIME_METRICS,
+    active_runs: ACTIVE_RUNS_BY_TASK.size,
+    task_sse_clients: sseClients,
+    in_memory: {
+      tasks: taskCount,
+      messages: messageCount,
+      artifacts: artifactCount,
+      traces: traceCount,
+      task_event_history_tasks: TASK_EVENT_HISTORY_BY_TASK.size,
+    },
+    limits: {
+      max_trace_events_per_task: MAX_TRACE_EVENTS_PER_TASK,
+      max_trace_details_bytes: MAX_TRACE_DETAILS_BYTES,
+      max_task_sse_events_per_task: MAX_TASK_SSE_EVENTS_PER_TASK,
+    },
+  };
 }
 
 function projectKey(workspaceId: string, projectId: string): string {
@@ -283,19 +317,22 @@ function replayBufferedTaskEvents(res: http.ServerResponse, taskId: string, last
 async function storeTaskTraceEvent(deps: NodeApiDeps, taskId: string, event: TaskTraceEventRecord): Promise<void> {
   const items = getTaskTraceEvents(taskId);
   items.push(event);
+  NOTEBOOK_RUNTIME_METRICS.trace_events_recorded += 1;
   await deps.docStore.upsert<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, event.id, event);
   if (items.length <= MAX_TRACE_EVENTS_PER_TASK) return;
 
   let overflow = items.length - MAX_TRACE_EVENTS_PER_TASK;
+  NOTEBOOK_RUNTIME_METRICS.trace_events_truncated_records += overflow;
   const removed = items.splice(0, overflow);
   await Promise.all(removed.map((item) => deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, item.id)));
   // Reserve one slot for the truncation notice so the in-memory list does not grow beyond the configured max.
   if (items.length >= MAX_TRACE_EVENTS_PER_TASK) {
     const evicted = items.shift();
-    if (evicted) {
-      overflow += 1;
-      await deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, evicted.id);
-    }
+      if (evicted) {
+        overflow += 1;
+        NOTEBOOK_RUNTIME_METRICS.trace_events_truncated_records += 1;
+        await deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, evicted.id);
+      }
   }
   const truncatedNotice: TaskTraceEventRecord = {
     id: buildId('trace', nextTraceEventId++),
@@ -341,6 +378,7 @@ function buildTaskTraceEvent(args: {
     try {
       const serialized = JSON.stringify(payload.details);
       if (serialized && Buffer.byteLength(serialized, 'utf-8') > MAX_TRACE_DETAILS_BYTES) {
+        NOTEBOOK_RUNTIME_METRICS.trace_details_truncated += 1;
         details = {
           _truncated: true,
           _reason: 'trace_details_too_large',
@@ -481,6 +519,7 @@ async function runTaskWithExternalAgent(input: {
       model,
       wire_api: wireApi,
     });
+    NOTEBOOK_RUNTIME_METRICS.task_runs_started += 1;
 
     for await (const event of dispatched.stream) {
       if (event.type === 'event' && event.event) {
@@ -508,6 +547,7 @@ async function runTaskWithExternalAgent(input: {
       }
       if (event.type === 'error') {
         reachedTerminal = true;
+        NOTEBOOK_RUNTIME_METRICS.task_runs_failed += 1;
         debugNotebookRuntime('runtime_event_error', {
           task_id: task.id,
           run_id: runId,
@@ -527,6 +567,7 @@ async function runTaskWithExternalAgent(input: {
       }
       if (event.type === 'done') {
         reachedTerminal = true;
+        NOTEBOOK_RUNTIME_METRICS.task_runs_completed += 1;
         debugNotebookRuntime('runtime_event_done', {
           task_id: task.id,
           run_id: runId,
@@ -540,6 +581,7 @@ async function runTaskWithExternalAgent(input: {
     }
   } catch (error) {
     reachedTerminal = true;
+    NOTEBOOK_RUNTIME_METRICS.task_runs_failed += 1;
     const codeCandidate = error instanceof Error
       ? (error as Error & { code?: unknown }).code
       : undefined;
@@ -563,6 +605,7 @@ async function runTaskWithExternalAgent(input: {
     });
   } finally {
     if (!reachedTerminal) {
+      NOTEBOOK_RUNTIME_METRICS.task_runs_terminal_without_done += 1;
       // Defensive: the run ended without a terminal runtime event. Keep the task editable for follow-up turns,
       // but log it so we can diagnose protocol/runtime issues.
       debugNotebookRuntime('runtime_stream_finalized_without_terminal', {

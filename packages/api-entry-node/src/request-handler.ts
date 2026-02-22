@@ -16,7 +16,7 @@ import {
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
-import { handleTaskRoute } from './task-route-handler.js';
+import { getNotebookRuntimeMetricsSnapshot, handleTaskRoute } from './task-route-handler.js';
 
 function isChatRoute(route: { kind: string }): route is ChatRoute {
   return route.kind.startsWith('chat');
@@ -135,6 +135,16 @@ export async function handleRequest(
 
   const requestUrl = new URL(req.url ?? '', 'http://localhost');
   if (handleApiDocsRoute(req, res, requestUrl, json)) {
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/v1/internal/notebook-runtime-metrics' && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    json(res, 200, getNotebookRuntimeMetricsSnapshot());
     return;
   }
 

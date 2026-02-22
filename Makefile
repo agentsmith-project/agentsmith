@@ -3,8 +3,10 @@
 	e2e e2e-local \
 	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
 	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api \
-	e2e-int-chat-auto e2e-int-agent-auto e2e-int-chat-ux-auto \
-	agent-test-runner openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls
+	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
+	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
+	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
+	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls
 
 NPM ?= npm
 
@@ -72,8 +74,15 @@ help:
 	@echo "  make e2e-int-chat-real-local-api # run real deepseek chat e2e with current node api"
 	@echo "  make e2e-int-chat-auto      # auto start deps+api+web and run integration-chat spec"
 	@echo "  make e2e-int-agent-auto     # auto start deps+api+web and run integration-agent spec"
+	@echo "  make e2e-int-notebook-agent-auto # auto start deps+api+web and run notebook external-agent integration spec"
 	@echo "  make e2e-int-chat-ux-auto   # auto start deps+api+web and run targeted chat UX integration checks"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
+	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY)"
+	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT and write /tmp/agentsmith_user_token.txt"
+	@echo "  make notebook-agent-init-resources # create project/endpoint/agent/key and write /tmp/agentsmith_*.txt"
+	@echo "  make notebook-agent-runner         # start codex runner using /tmp/agentsmith_ws_url.txt + agent_key"
+	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
+	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make openapi-generate   # generate frontend API types from docs/contracts/specs/openapi.yaml"
 	@echo "  make openapi-check-generated # verify generated API types are in sync"
 	@echo "  make openapi-changelog  # generate OpenAPI diff changelog vs origin/main"
@@ -243,6 +252,15 @@ e2e-int-agent-auto:
 	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-agents-external.spec.ts
 
+e2e-int-notebook-agent-auto:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	KEYCLOAK_URL=$(KEYCLOAK_URL) \
+	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	./scripts/run-integration-e2e-full.sh e2e/integration-notebook-external.spec.ts
+
 e2e-int-chat-ux-auto:
 	INTEGRATION_API_PORT=$(PORT_API) \
 	INTEGRATION_WEB_PORT=$(PORT_WEB) \
@@ -264,6 +282,101 @@ agent-test-runner:
 	MBOS_AGENT_KEY="$(AGENT_KEY)" \
 	MBOS_AGENT_MODE="$(AGENT_MODE)" \
 	$(NPM) run agent:test-runner
+
+agent-codex-runner:
+	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
+		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
+		echo "[make] Example:"; \
+		echo "  make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
+		exit 1; \
+	fi
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
+	MBOS_AGENT_KEY="$(AGENT_KEY)" \
+	$(NPM) run agent:codex-runner
+
+notebook-agent-refresh-token:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	node ./scripts/notebook-agent-refresh-token.js
+
+notebook-agent-init-resources:
+	@if [ -z "$(GLM_API_KEY)" ]; then \
+		echo "[make] Missing GLM_API_KEY."; \
+		echo "[make] Example:"; \
+		echo "  GLM_API_KEY='***' make notebook-agent-init-resources"; \
+		exit 1; \
+	fi
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	GLM_API_KEY="$(GLM_API_KEY)" \
+	./scripts/notebook-agent-init-resources.sh
+
+notebook-agent-runner:
+	@set -e; \
+	WS_URL="$${AGENT_WS_URL:-$$(cat /tmp/agentsmith_ws_url.txt 2>/dev/null || true)}"; \
+	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(cat /tmp/agentsmith_agent_key.txt 2>/dev/null || true)}"; \
+	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no /tmp/agentsmith_ws_url.txt or /tmp/agentsmith_agent_key.txt found."; \
+		exit 1; \
+	fi; \
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	MBOS_AGENT_WS_URL="$$WS_URL" \
+	MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
+	MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
+	MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
+	MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
+	$(NPM) run agent:codex-runner
+
+notebook-agent-smoke-task:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/notebook-agent-smoke-task.sh
+
+notebook-agent-smoke-full:
+	@set -e; \
+	WS_URL="$${AGENT_WS_URL:-$$(cat /tmp/agentsmith_ws_url.txt 2>/dev/null || true)}"; \
+	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(cat /tmp/agentsmith_agent_key.txt 2>/dev/null || true)}"; \
+	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no /tmp/agentsmith_ws_url.txt or /tmp/agentsmith_agent_key.txt found."; \
+		exit 1; \
+	fi; \
+	echo "[make] refreshing token..."; \
+	$(MAKE) notebook-agent-refresh-token; \
+	echo "[make] starting agent-codex-runner in background..."; \
+	( env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+		MBOS_AGENT_WS_URL="$$WS_URL" \
+		MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
+		MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
+		MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
+		MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
+		$(NPM) run agent:codex-runner ) > /tmp/agentsmith_runner.log 2>&1 & \
+	RUNNER_PID=$$!; \
+	trap 'kill $$RUNNER_PID >/dev/null 2>&1 || true' EXIT INT TERM; \
+	sleep 3; \
+	if ! kill -0 $$RUNNER_PID >/dev/null 2>&1; then \
+		echo "[make] runner exited early. tail /tmp/agentsmith_runner.log:"; \
+		tail -n 80 /tmp/agentsmith_runner.log || true; \
+		exit 1; \
+	fi; \
+	echo "[make] waiting for agent runner websocket to be ready..."; \
+	for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if rg -q "\\[agent-codex-runner\\] connected|websocket open" /tmp/agentsmith_runner.log 2>/dev/null; then \
+			break; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "[make] running notebook smoke task..."; \
+	set +e; \
+	$(MAKE) notebook-agent-smoke-task; \
+	SMOKE_RC=$$?; \
+	set -e; \
+	if [ "$$SMOKE_RC" -eq 42 ]; then \
+		echo "[make] smoke failed due to expired token; refreshing and retrying once..."; \
+		$(MAKE) notebook-agent-refresh-token; \
+		$(MAKE) notebook-agent-smoke-task; \
+	elif [ "$$SMOKE_RC" -ne 0 ]; then \
+		exit "$$SMOKE_RC"; \
+	fi; \
+	echo "[make] smoke done. recent runner log:"; \
+	tail -n 40 /tmp/agentsmith_runner.log || true
 
 openapi-generate:
 	$(NPM) run openapi:generate

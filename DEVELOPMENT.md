@@ -461,3 +461,15 @@ npm install
 # Regenerate types
 npx tsc --noEmit
 ```
+
+## Notebook Codex v1 Known Risks
+
+- `R1` Token forwarding to external agent runner
+  - Notebook codex runs may forward user bearer token to the external runner so it can call endpoint proxy with user-scoped auth/audit controls.
+  - Do not print token in logs and do not persist token on disk.
+  - Prefer short-lived sessions and rotate identity tokens by standard auth policy.
+
+- `R3` Directory-only workspace isolation
+  - Runner workdir is `/tmp/<username>/<task_id>` in v1.
+  - No auto-cleanup and no sandbox/container isolation in v1.
+  - Add periodic cleanup in ops (example: delete task dirs older than 14 days) and monitor `/tmp` disk usage.

@@ -615,6 +615,15 @@ PREPARE_TASK=1 TURNS=8 make notebook-agent-traces-query-sweep
 - Compare memory vs Mongo:
   - run the sweep in each mode with the same `PAGE_SIZES/REQUESTS/CONCURRENCY`
   - compare `summary.csv` p95/p99 and Prometheus histogram `scope="message"`
+  - or use the helper to compare two sweep output dirs by `page_size`:
+```bash
+SWEEP_A_DIR=/tmp/agentsmith-traces-query-sweep-long-memory \
+SWEEP_B_DIR=/tmp/agentsmith-traces-query-sweep-long-mongo \
+SWEEP_A_LABEL=memory \
+SWEEP_B_LABEL=mongo \
+make notebook-agent-traces-query-sweep-compare
+```
+  - output is JSON keyed by `page_size`, including `avg/p95/p99/max` delta percentages
 
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.

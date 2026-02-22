@@ -254,6 +254,26 @@ done
     - inspect `/tasks/:id/events` response in browser network and backend auth handling (`ticket` / bearer).
 - This panel is intentionally lightweight and non-persistent (latest 5 only).
 
+## 7.3 Execution Details Pagination (Message Trace Panel)
+- Notebook agent message bubbles support expandable execution details (trace timeline).
+- Traces are lazily loaded per `message_id` when the user clicks `View execution details` / `查看执行详情`.
+- Backend trace list response now includes pagination hints:
+  - `has_more`
+  - `next_after_id`
+- Semantics:
+  - `has_more=true` means the current panel is showing only the most recent trace slice.
+  - `next_after_id` is the cursor for loading an earlier slice (older events) with:
+    - `GET /tasks/:taskId/traces?message_id=<msg>&before_id=<next_after_id>&page_size=500`
+- Frontend behavior:
+  - shows `More execution logs are available...` / `还有更多执行日志...`
+  - shows `Load earlier logs` / `加载更早日志`
+  - merges older traces into the same message timeline (deduplicated by trace `id`)
+- Troubleshooting:
+  - If a message shows `No execution details yet`, check:
+    - whether the task ran through the new `trace_event` pipeline
+    - runner/API versions are up to date
+    - `/tasks/:taskId/traces?message_id=<msg>` returns items for that message
+
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.

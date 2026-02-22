@@ -87,6 +87,9 @@ let nextTraceEventId = 1;
 const MAX_TRACE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_TRACE_MAX_EVENTS ?? '1000') || 1000);
 const MAX_TASK_SSE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_SSE_HISTORY_MAX_EVENTS ?? '2000') || 2000);
 const MAX_TRACE_DETAILS_BYTES = Math.max(512, Number(process.env.NOTEBOOK_TRACE_DETAILS_MAX_BYTES ?? '16384') || 16384);
+const TASKS_COLLECTION = 'notebook_tasks';
+const TASK_MESSAGES_COLLECTION = 'notebook_task_messages';
+const TASK_ARTIFACTS_COLLECTION = 'notebook_task_artifacts';
 const TASK_TRACE_EVENTS_COLLECTION = 'notebook_task_trace_events';
 
 function debugNotebookRuntime(message: string, extra?: Record<string, unknown>): void {
@@ -126,6 +129,19 @@ function getTasks(workspaceId: string, projectId: string): TaskRecord[] {
   return existing;
 }
 
+async function loadProjectTasks(deps: NodeApiDeps, workspaceId: string, projectId: string): Promise<TaskRecord[]> {
+  const key = projectKey(workspaceId, projectId);
+  const cached = TASKS_BY_PROJECT.get(key);
+  if (cached) return cached;
+  const listed = await deps.docStore.list<TaskRecord>(TASKS_COLLECTION, {
+    workspace_id: workspaceId,
+    project_id: projectId,
+  });
+  const sorted = listed.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  TASKS_BY_PROJECT.set(key, sorted);
+  return sorted;
+}
+
 function getTaskMessages(taskId: string): TaskMessageRecord[] {
   let existing = MESSAGES_BY_TASK.get(taskId);
   if (!existing) {
@@ -135,6 +151,15 @@ function getTaskMessages(taskId: string): TaskMessageRecord[] {
   return existing;
 }
 
+async function loadTaskMessages(deps: NodeApiDeps, taskId: string): Promise<TaskMessageRecord[]> {
+  const cached = MESSAGES_BY_TASK.get(taskId);
+  if (cached) return cached;
+  const listed = await deps.docStore.list<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, { task_id: taskId });
+  const sorted = listed.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  MESSAGES_BY_TASK.set(taskId, sorted);
+  return sorted;
+}
+
 function getTaskArtifacts(taskId: string): TaskArtifactRecord[] {
   let existing = ARTIFACTS_BY_TASK.get(taskId);
   if (!existing) {
@@ -142,6 +167,15 @@ function getTaskArtifacts(taskId: string): TaskArtifactRecord[] {
     ARTIFACTS_BY_TASK.set(taskId, existing);
   }
   return existing;
+}
+
+async function loadTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<TaskArtifactRecord[]> {
+  const cached = ARTIFACTS_BY_TASK.get(taskId);
+  if (cached) return cached;
+  const listed = await deps.docStore.list<TaskArtifactRecord>(TASK_ARTIFACTS_COLLECTION, { task_id: taskId });
+  const sorted = listed.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  ARTIFACTS_BY_TASK.set(taskId, sorted);
+  return sorted;
 }
 
 function getTaskTraceEvents(taskId: string): TaskTraceEventRecord[] {
@@ -264,6 +298,16 @@ async function storeTaskTraceEvent(deps: NodeApiDeps, taskId: string, event: Tas
 async function deleteTaskTraceEvents(deps: NodeApiDeps, taskId: string): Promise<void> {
   const existing = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, { task_id: taskId });
   await Promise.all(existing.map((item) => deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, item.id)));
+}
+
+async function deleteTaskMessages(deps: NodeApiDeps, taskId: string): Promise<void> {
+  const existing = await deps.docStore.list<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, { task_id: taskId });
+  await Promise.all(existing.map((item) => deps.docStore.delete(TASK_MESSAGES_COLLECTION, item.id)));
+}
+
+async function deleteTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<void> {
+  const existing = await deps.docStore.list<TaskArtifactRecord>(TASK_ARTIFACTS_COLLECTION, { task_id: taskId });
+  await Promise.all(existing.map((item) => deps.docStore.delete(TASK_ARTIFACTS_COLLECTION, item.id)));
 }
 
 function buildTaskTraceEvent(args: {
@@ -522,6 +566,17 @@ async function runTaskWithExternalAgent(input: {
     });
     emitTaskEvent(taskId, { type: 'message', data: assistantMessage });
     emitTaskEvent(taskId, { type: 'task_update', data: task });
+    try {
+      await deps.docStore.upsert<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, assistantMessage.id, assistantMessage);
+      await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+    } catch (error) {
+      debugNotebookRuntime('task_run_persist_failed', {
+        task_id: task.id,
+        run_id: runId,
+        message_id: assistantMessage.id,
+        error: error instanceof Error ? error.message : 'persist_failed',
+      });
+    }
     ACTIVE_RUNS_BY_TASK.delete(taskId);
   }
 }
@@ -547,6 +602,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   const { route, method, req, res, deps, user, rawBearerToken, json, readBody } = args;
 
   if (route.kind === 'tasks' && method === 'GET') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const requestUrl = new URL(req.url ?? '', 'http://localhost');
     const search = requestUrl.searchParams.get('search')?.trim().toLowerCase() ?? '';
     const sortBy = requestUrl.searchParams.get('sort_by') ?? 'last_activity_at';
@@ -575,6 +631,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'tasks' && method === 'POST') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const body = asObject(await readBody(req));
     const title = typeof body.title === 'string' ? body.title.trim() : '';
     const agentId = typeof body.agent_id === 'string' ? body.agent_id.trim() : '';
@@ -609,11 +666,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       last_activity_at: createdAt,
     };
     getTasks(route.workspaceId, route.projectId).unshift(task);
+    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
     json(res, 201, task);
     return true;
   }
 
   if (route.kind === 'taskItem' && method === 'GET') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
@@ -624,6 +683,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskItem' && method === 'PATCH') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
@@ -637,11 +697,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       task.status = body.status;
     }
     task.updated_at = nowIso();
+    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
     json(res, 200, task);
     return true;
   }
 
   if (route.kind === 'taskItem' && method === 'DELETE') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const tasks = getTasks(route.workspaceId, route.projectId);
     const index = tasks.findIndex((item) => item.id === route.taskId);
     if (index < 0) {
@@ -655,12 +717,16 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     ARTIFACTS_BY_TASK.delete(route.taskId);
     TRACE_EVENTS_BY_TASK.delete(route.taskId);
     TASK_EVENT_HISTORY_BY_TASK.delete(route.taskId);
+    await deps.docStore.delete(TASKS_COLLECTION, route.taskId);
+    await deleteTaskMessages(deps, route.taskId);
+    await deleteTaskArtifacts(deps, route.taskId);
     await deleteTaskTraceEvents(deps, route.taskId);
     json(res, 200, { success: true });
     return true;
   }
 
   if (route.kind === 'taskSources' && method === 'POST') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
@@ -670,11 +736,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const sourceIds = readStringArray(body.source_ids);
     task.attached_source_ids = Array.from(new Set([...task.attached_source_ids, ...sourceIds]));
     task.updated_at = nowIso();
+    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
     json(res, 200, task);
     return true;
   }
 
   if (route.kind === 'taskSourceItem' && method === 'DELETE') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
@@ -682,16 +750,19 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     task.attached_source_ids = task.attached_source_ids.filter((item) => item !== route.sourceId);
     task.updated_at = nowIso();
+    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
     json(res, 200, task);
     return true;
   }
 
   if (route.kind === 'taskMessages' && method === 'GET') {
+    await loadTaskMessages(deps, route.taskId);
     json(res, 200, getTaskMessages(route.taskId));
     return true;
   }
 
   if (route.kind === 'taskTraces' && method === 'GET') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
@@ -723,6 +794,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskMessages' && method === 'POST') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    await loadTaskMessages(deps, route.taskId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
@@ -743,7 +816,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       created_at: nowIso(),
     };
     getTaskMessages(route.taskId).push(message);
+    await deps.docStore.upsert<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, message.id, message);
     updateTaskActivity(task);
+    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
 
     if (role === 'user') {
       const assistantMessage: TaskMessageRecord = {
@@ -754,7 +829,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         created_at: nowIso(),
       };
       getTaskMessages(route.taskId).push(assistantMessage);
+      await deps.docStore.upsert<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, assistantMessage.id, assistantMessage);
       updateTaskActivity(task);
+      await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
       ACTIVE_RUNS_BY_TASK.add(route.taskId);
 
       void runTaskWithExternalAgent({
@@ -781,6 +858,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskArtifacts' && method === 'GET') {
+    await loadTaskArtifacts(deps, route.taskId);
     json(res, 200, getTaskArtifacts(route.taskId));
     return true;
   }
@@ -790,6 +868,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskArtifactSave' && method === 'POST') {
+    await loadTaskArtifacts(deps, route.taskId);
     const artifact = getTaskArtifacts(route.taskId).find((item) => item.id === route.artifactId);
     if (!artifact) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'artifact_not_found' });
@@ -816,6 +895,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskEvents' && method === 'GET') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const requestUrl = new URL(req.url ?? '', 'http://localhost');
     const lastEventId = requestUrl.searchParams.get('last_event_id')?.trim() || null;
     res.statusCode = 200;

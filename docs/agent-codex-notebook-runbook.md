@@ -274,9 +274,9 @@ done
 - Backend trace list response now includes pagination hints:
   - `has_more`
   - `next_after_id`
-- Trace storage behavior:
-  - when `api-entry-node` runs with a `docStore` backend (for example `MONGO_URL` configured), notebook traces are persisted and `/traces` can be recovered after API process restart
-  - in pure in-memory local mode, traces remain process-local and are cleared on API restart
+- Notebook local backend storage behavior:
+  - when `api-entry-node` runs with a `docStore` backend (for example `MONGO_URL` configured), notebook `tasks/messages/artifacts/traces` are persisted (write-through + lazy read-through)
+  - in pure in-memory local mode, notebook data remains process-local and is cleared on API restart
 - Trace retention / payload controls (API env):
   - `NOTEBOOK_TRACE_MAX_EVENTS` (default `1000`) caps in-memory + persisted per-task trace retention
   - `NOTEBOOK_TRACE_DETAILS_MAX_BYTES` (default `16384`) truncates oversized `trace.details` payloads before storage/streaming

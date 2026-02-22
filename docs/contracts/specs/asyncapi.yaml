@@ -37,6 +37,8 @@ channels:
         $ref: '#/components/messages/agentResponseError'
       agentResponseEvent:
         $ref: '#/components/messages/agentResponseEvent'
+      agentResponseArtifact:
+        $ref: '#/components/messages/agentResponseArtifact'
 operations:
   receiveFromServer:
     action: receive
@@ -58,6 +60,7 @@ operations:
     - $ref: '#/channels/agentRuntime/messages/agentResponseDone'
     - $ref: '#/channels/agentRuntime/messages/agentResponseError'
     - $ref: '#/channels/agentRuntime/messages/agentResponseEvent'
+    - $ref: '#/channels/agentRuntime/messages/agentResponseArtifact'
 components:
   schemas:
     Envelope:
@@ -128,6 +131,37 @@ components:
         raw:
           type: string
           description: Sanitized raw snippet/source text for fidelity-oriented UI/debug rendering.
+    AgentResponseArtifactPayload:
+      type: object
+      required:
+      - filename
+      - task_relative_path
+      - artifact_type
+      properties:
+        filename:
+          type: string
+        task_relative_path:
+          type: string
+        artifact_type:
+          type: string
+          enum:
+          - text
+          - image
+          - file
+          - other
+        mime_type:
+          type: string
+        file_size:
+          type: integer
+          minimum: 0
+        title:
+          type: string
+        content:
+          type: string
+          description: Text preview or inline data URL (sanitized and size-limited).
+        thumbnail_url:
+          type: string
+          description: Thumbnail URL or inline data URL for image artifacts.
   messages:
     serverHello:
       name: server.hello
@@ -204,6 +238,8 @@ components:
                     type: string
                   endpoint_proxy_base:
                     type: string
+                  api_base:
+                    type: string
                   user_bearer_token:
                     type: string
                   wire_api:
@@ -213,6 +249,25 @@ components:
                     - responses
                   model:
                     type: string
+                  notebook_mode:
+                    type: boolean
+                  task_inputs:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        source_id:
+                          type: string
+                        filename:
+                          type: string
+                        file_type:
+                          type: string
+                        file_size:
+                          type: integer
+                          minimum: 0
+                        ai_ready_status:
+                          type: string
     serverRequestCancel:
       name: server.request.cancel
       payload:
@@ -385,3 +440,24 @@ components:
             format: date-time
           payload:
             $ref: '#/components/schemas/AgentResponseEventPayload'
+    agentResponseArtifact:
+      name: agent.response.artifact
+      summary: Artifact emitted by the runner for notebook task outputs discovered
+        in the task workspace artifacts directory.
+      payload:
+        type: object
+        required:
+        - type
+        - request_id
+        - timestamp
+        - payload
+        properties:
+          type:
+            const: agent.response.artifact
+          request_id:
+            type: string
+          timestamp:
+            type: string
+            format: date-time
+          payload:
+            $ref: '#/components/schemas/AgentResponseArtifactPayload'

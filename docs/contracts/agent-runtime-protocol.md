@@ -43,9 +43,12 @@ All frames are JSON objects:
       - `username: string`
       - `endpoint_id: string`
       - `endpoint_proxy_base: string`
+      - `api_base?: string` (for notebook helper scripts / file download access)
       - `user_bearer_token: string`
       - `wire_api: \"chat\" | \"responses\"`
       - `model: string`
+      - `notebook_mode?: boolean`
+      - `task_inputs?: Array<{ source_id?: string; filename?: string; file_type?: string; file_size?: number; ai_ready_status?: string }>`
 - `server.request.cancel`
   - payload: `{ "reason": "client_cancelled" }`
 - `server.ping`
@@ -77,6 +80,18 @@ All frames are JSON objects:
         - preserve sanitized provider/codex event metadata (e.g. original event type/source labels)
         - avoid semantic rewrites; frontend may render `Raw` view directly from `details`
     - `raw?: string` (sanitized raw snippet/source text for fidelity-oriented UI/debug views)
+- `agent.response.artifact`
+  - required: `request_id`
+  - payload: structured artifact emitted by the runner for notebook task outputs
+  - shape:
+    - `filename: string`
+    - `task_relative_path: string` (for example `artifacts/plot.png`)
+    - `artifact_type: "text" | "image" | "file" | "other"`
+    - `mime_type?: string`
+    - `file_size?: number`
+    - `title?: string`
+    - `content?: string` (text preview or inline data URL; size-limited)
+    - `thumbnail_url?: string` (usually for image artifact previews)
 - `agent.response.done`
   - required: `request_id`
   - payload: `{ "finish_reason": "stop|length|cancelled|...", "usage_tokens": number }`
@@ -103,6 +118,7 @@ The frontend keeps the same chat SSE consumption model used by endpoint streamin
 - Strict protocol validation:
   - `agent.response.delta.payload.delta` must be `string`; otherwise request fails with `AGENT_PROTOCOL_ERROR`.
   - `agent.response.event.payload` must match the structured event schema above; otherwise request fails with `AGENT_PROTOCOL_ERROR`.
+  - `agent.response.artifact.payload` must match the artifact schema above; otherwise request fails with `AGENT_PROTOCOL_ERROR`.
   - Unsupported `agent.response.*` types with a valid `request_id` fail that request with `AGENT_PROTOCOL_ERROR`.
   - Invalid JSON frame closes socket with close code `1003` (`invalid_json`).
 

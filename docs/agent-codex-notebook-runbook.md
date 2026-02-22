@@ -668,6 +668,45 @@ make notebook-agent-benchmark-archive
   - distributed task-run lock (e.g. Redis)
   - shared replay/event source for notebook task SSE
 
+## 8.4 Notebook Headless Execution and Artifact Convention
+
+Notebook tasks executed by `@mbos/agent-codex-runner` use a runner-enforced headless policy:
+
+- treat execution as headless (no visible GUI on the client)
+- avoid interactive display calls (for example `matplotlib.pyplot.show()`)
+- save generated charts/files into the task artifact directory:
+  - `<task_cwd>/artifacts/`
+
+Runner runtime-context/task-input behavior:
+
+- notebook attached inputs are passed in `runtime_context.task_inputs`
+- runner also receives `runtime_context.api_base` for notebook helper tooling (source downloads)
+- runner writes a task input manifest to:
+  - `<task_cwd>/.mbos/task-inputs.json`
+- runner writes a task-local `AGENTS.md` with mandatory notebook rules (headless/artifacts/input helper)
+- runner installs a task-local Codex skill:
+  - `./.codex/skills/notebook-inputs/`
+  - helper command: `node ./.codex/skills/notebook-inputs/fetch_input.mjs ...`
+- Codex is instructed to use the manifest and produce file outputs in `artifacts/`
+
+Session continuity behavior:
+
+- runner reuses the same task cwd (`/tmp/<username>/<task_id>`)
+- first turn runs `codex exec ...`
+- subsequent notebook turns in the same task cwd use `codex exec resume --last ...` (runner-managed)
+
+Runner artifact reporting behavior:
+
+- after Codex process exit, runner scans `<task_cwd>/artifacts/`
+- for each discovered output, runner emits:
+  - `agent.response.artifact` (structured artifact payload)
+  - `agent.response.event` with `category=artifact` (diagnostic trace)
+
+Notes:
+
+- image artifacts may be inlined as data URLs (size-limited) for local notebook preview
+- text artifacts may include truncated preview content (size-limited)
+
 ## 9. Next Hardening Items
 1. Replace direct bearer forwarding with short-lived ticket exchange.
 2. Add stronger runtime isolation (container/jail/seccomp profile).

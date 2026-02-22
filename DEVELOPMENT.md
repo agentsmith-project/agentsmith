@@ -660,3 +660,31 @@ npx tsc --noEmit
   - Runner workdir is `/tmp/<username>/<task_id>` in v1.
   - No auto-cleanup and no sandbox/container isolation in v1.
   - Add periodic cleanup in ops (example: delete task dirs older than 14 days) and monitor `/tmp` disk usage.
+
+## Notebook Codex v1 Follow-up (Inputs / Artifacts / Headless Workflow)
+
+This follow-up extends the external notebook-agent runtime line toward a NotebookLM-like workflow:
+
+- notebook task attached sources are injected to external runtime context as `task_inputs`
+- runner writes task-local manifest: `<task_cwd>/.mbos/task-inputs.json`
+- runner writes task-local `AGENTS.md` (headless rules, artifact dir rules, input helper guidance)
+- runner installs task-local Codex skill:
+  - `./.codex/skills/notebook-inputs/`
+  - helper: `fetch_input.mjs` (downloads attached source files through AgentSmith API)
+- runner uses per-task session continuity:
+  - first turn `codex exec ...`
+  - later turns in same task cwd `codex exec resume --last ...`
+- runner scans `<task_cwd>/artifacts/` after Codex exit and emits:
+  - `agent.response.artifact`
+  - `agent.response.event(category=artifact)` for trace/debug fidelity
+- backend persists notebook task artifacts and surfaces them via task artifact APIs / `Artifacts` panel
+
+Real-chain validation completed:
+- `resume --last` confirmed in runner debug argv
+- task-local skill used by Codex to fetch attached source files into `./inputs/`
+- artifact outputs in `./artifacts/` surfaced in notebook artifacts list
+
+Current known boundary:
+- runner-side artifact dedupe is process-local (in-memory fingerprint cache)
+- after runner restart, the first artifact scan may re-report historical files already present in `artifacts/`
+- functional correctness is preserved, but cross-runner-restart artifact idempotency is not yet enforced

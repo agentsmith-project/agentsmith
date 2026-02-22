@@ -35,7 +35,7 @@ This directory contains only current-state documents: functional contracts, arch
 - `specs/agent-runtime-ws-supplement.asyncapi.json` / `specs/agent-runtime-ws-supplement.asyncapi.yaml` - additive WS frame supplement snapshot (reference; now merged into `specs/asyncapi.*`)
 
 Note:
-- `specs/openapi.*` and `specs/asyncapi.*` now include notebook trace API and `agent.response.event` runtime frame coverage.
+- `specs/openapi.*` and `specs/asyncapi.*` now include notebook trace API and external-agent runtime notebook extensions, including `agent.response.event`, `agent.response.artifact`, and notebook `runtime_context` fields (for example `notebook_mode`, `task_inputs`, `api_base`).
 - Supplement specs are retained as change-isolated reference snapshots and should not diverge from the canonical main specs.
 - Internal observability endpoints (for example `/api/v1/internal/notebook-runtime-metrics` and `/prometheus`) are auth-protected operational interfaces and are documented in runbooks; they are not currently part of the public OpenAPI contract unless explicitly added.
 

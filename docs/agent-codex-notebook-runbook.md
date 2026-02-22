@@ -206,6 +206,28 @@ for p in 20000 3001 3010 3015; do
 done
 ```
 
+### 5.4.3 One-Command Demo Bootstrap (manual showcase)
+- For demos/manual walkthroughs, use:
+```bash
+GLM_API_KEY='***' make notebook-agent-demo-up
+```
+- This script will:
+  - start/reuse API and Web (real backend mode)
+  - refresh token (or reuse a valid existing token)
+  - initialize notebook resources (project/credential/endpoint/agent/key)
+  - start a managed external `agent-codex-runner`
+  - print the notebook URL and log file paths
+- Stop the managed demo processes with:
+```bash
+make notebook-agent-demo-down
+```
+- Important Keycloak redirect constraint:
+  - token refresh currently uses browser PKCE (`scripts/notebook-agent-refresh-token.js`)
+  - if Web falls back to a non-`3001` port (for example `3016`) and the Keycloak client does not allow that redirect URI, refresh will fail
+  - current script behavior:
+    - reuses an existing valid token if present
+    - otherwise fails fast with a clear error and remediation steps (free `3001`, add Keycloak redirect URI, or provide a valid token)
+
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.
 - Our task workdirs are ephemeral (`/tmp/<username>/<task_id>`) and are not trusted by default.

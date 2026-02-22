@@ -13,6 +13,10 @@ function b64url(buf) {
 }
 
 async function main() {
+  const debug = process.env.DEBUG_REFRESH_TOKEN === '1';
+  const dbg = (...args) => {
+    if (debug) console.error('[refresh-token]', ...args);
+  };
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
   const keycloakBase = process.env.KEYCLOAK_BASE_URL || 'http://localhost:18080';
   const realm = process.env.KEYCLOAK_REALM || 'mbos';
@@ -34,6 +38,7 @@ async function main() {
     waitUntil: 'domcontentloaded',
     timeout: 60_000,
   });
+  dbg('opened login page', page.url());
 
   await page.evaluate((ctx) => {
     localStorage.clear();
@@ -50,17 +55,71 @@ async function main() {
   authUrl.searchParams.set('code_challenge_method', 'S256');
 
   await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
-  await page.locator('input#password, input[name="password"]').first().fill(password);
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 120_000 }),
-    page.locator('#kc-login, button[type="submit"]').first().click(),
-  ]);
+  dbg('opened auth url', page.url());
+  const usernameLocator = page.locator('input#username, input[name="username"], input[name="email"]').first();
+  const passwordLocator = page.locator('input#password, input[name="password"]').first();
+  const loginButtonLocator = page.locator('#kc-login, button[type="submit"]').first();
 
-  const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
-  await workspaceCard.waitFor({ state: 'visible', timeout: 30_000 });
-  await workspaceCard.click();
-  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 });
+  let authPageState = 'unknown';
+  const authWaitDeadline = Date.now() + 30_000;
+  while (Date.now() < authWaitDeadline) {
+    if (page.url().includes(`/${locale}/`)) {
+      authPageState = 'app_redirect';
+      break;
+    }
+    if (await usernameLocator.isVisible().catch(() => false)) {
+      authPageState = 'login_form';
+      break;
+    }
+    await page.waitForTimeout(500);
+  }
+
+  if (authPageState === 'login_form') {
+    dbg('manual login required');
+    await usernameLocator.fill(username);
+    await passwordLocator.fill(password);
+    await Promise.all([
+      page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 120_000 }),
+      loginButtonLocator.click(),
+    ]);
+  } else if (authPageState === 'app_redirect') {
+    dbg('login form not visible, waiting for app route redirect', page.url());
+    await page.waitForURL(
+      (url) => {
+        try {
+          return url.pathname.startsWith(`/${locale}/`);
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 120_000 },
+    );
+    dbg('redirected to app route', page.url());
+  } else {
+    if (debug) {
+      let html = '';
+      try {
+        html = (await page.content()).slice(0, 2000);
+      } catch {}
+      dbg('auth unresolved diagnostics', {
+        url: page.url(),
+        title: await page.title().catch(() => ''),
+        html,
+      });
+    }
+    throw new Error(`auth_state_unresolved current_url=${page.url()}`);
+  }
+
+  if (!new RegExp(`/${locale.replace('-', '\\-')}/workspaces/ws_default(?:/.*)?$`).test(page.url())) {
+    dbg('not in ws_default route, selecting workspace card', page.url());
+    const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
+    await workspaceCard.waitFor({ state: 'visible', timeout: 30_000 });
+    await workspaceCard.click();
+    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 });
+    dbg('workspace selected', page.url());
+  } else {
+    dbg('already in ws_default route', page.url());
+  }
 
   const token = await page.evaluate(() => {
     const raw = localStorage.getItem('agentsmith-auth');
@@ -73,6 +132,7 @@ async function main() {
   });
 
   await browser.close();
+  dbg('browser closed');
 
   if (!token) {
     throw new Error('token_not_found');
@@ -85,4 +145,3 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.stack || error.message : String(error));
   process.exit(1);
 });
-

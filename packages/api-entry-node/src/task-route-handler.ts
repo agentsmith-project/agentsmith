@@ -1,4 +1,5 @@
 import type http from 'node:http';
+import type { AgentRuntimeTraceEventPayload } from './agent-runtime-service.js';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { ProjectsRoute } from './projects-route-match.js';
@@ -40,6 +41,26 @@ interface TaskArtifactRecord {
   created_at: string;
 }
 
+interface TaskTraceEventRecord {
+  id: string;
+  task_id: string;
+  message_id: string;
+  run_id: string;
+  seq: number;
+  at: string;
+  category: AgentRuntimeTraceEventPayload['category'];
+  phase?: AgentRuntimeTraceEventPayload['phase'];
+  status?: AgentRuntimeTraceEventPayload['status'];
+  name: string;
+  summary: string;
+  details?: Record<string, unknown>;
+}
+
+interface BufferedTaskSseEvent {
+  id: string;
+  payload: unknown;
+}
+
 interface TaskRouteHandlerArgs {
   route: ProjectsRoute;
   method: string;
@@ -55,10 +76,16 @@ interface TaskRouteHandlerArgs {
 const TASKS_BY_PROJECT = new Map<string, TaskRecord[]>();
 const MESSAGES_BY_TASK = new Map<string, TaskMessageRecord[]>();
 const ARTIFACTS_BY_TASK = new Map<string, TaskArtifactRecord[]>();
+const TRACE_EVENTS_BY_TASK = new Map<string, TaskTraceEventRecord[]>();
 const TASK_EVENT_CLIENTS = new Map<string, Set<http.ServerResponse>>();
+const TASK_EVENT_SEQUENCE_BY_TASK = new Map<string, number>();
+const TASK_EVENT_HISTORY_BY_TASK = new Map<string, BufferedTaskSseEvent[]>();
 const ACTIVE_RUNS_BY_TASK = new Set<string>();
 let nextTaskId = 1;
 let nextMessageId = 1;
+let nextTraceEventId = 1;
+const MAX_TRACE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_TRACE_MAX_EVENTS ?? '1000') || 1000);
+const MAX_TASK_SSE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_SSE_HISTORY_MAX_EVENTS ?? '2000') || 2000);
 
 function debugNotebookRuntime(message: string, extra?: Record<string, unknown>): void {
   if (process.env.DEBUG_NOTEBOOK_RUNTIME !== '1') return;
@@ -115,15 +142,47 @@ function getTaskArtifacts(taskId: string): TaskArtifactRecord[] {
   return existing;
 }
 
+function getTaskTraceEvents(taskId: string): TaskTraceEventRecord[] {
+  let existing = TRACE_EVENTS_BY_TASK.get(taskId);
+  if (!existing) {
+    existing = [];
+    TRACE_EVENTS_BY_TASK.set(taskId, existing);
+  }
+  return existing;
+}
+
 function findTask(workspaceId: string, projectId: string, taskId: string): TaskRecord | undefined {
   return getTasks(workspaceId, projectId).find((item) => item.id === taskId);
 }
 
-function writeDefaultSSE(res: http.ServerResponse, payload: unknown): void {
+function writeDefaultSSE(res: http.ServerResponse, payload: unknown, eventId?: string): void {
+  if (eventId) {
+    res.write(`id: ${eventId}\n`);
+  }
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function getTaskEventHistory(taskId: string): BufferedTaskSseEvent[] {
+  let existing = TASK_EVENT_HISTORY_BY_TASK.get(taskId);
+  if (!existing) {
+    existing = [];
+    TASK_EVENT_HISTORY_BY_TASK.set(taskId, existing);
+  }
+  return existing;
+}
+
+function appendTaskEventHistory(taskId: string, event: BufferedTaskSseEvent): void {
+  const history = getTaskEventHistory(taskId);
+  history.push(event);
+  if (history.length <= MAX_TASK_SSE_EVENTS_PER_TASK) return;
+  history.splice(0, history.length - MAX_TASK_SSE_EVENTS_PER_TASK);
+}
+
 function emitTaskEvent(taskId: string, payload: unknown): void {
+  const seq = (TASK_EVENT_SEQUENCE_BY_TASK.get(taskId) ?? 0) + 1;
+  TASK_EVENT_SEQUENCE_BY_TASK.set(taskId, seq);
+  const sseEventId = `${taskId}:${seq}`;
+  appendTaskEventHistory(taskId, { id: sseEventId, payload });
   const clients = TASK_EVENT_CLIENTS.get(taskId);
   if (!clients || clients.size === 0) return;
   for (const client of clients) {
@@ -132,7 +191,7 @@ function emitTaskEvent(taskId: string, payload: unknown): void {
       continue;
     }
     try {
-      writeDefaultSSE(client, payload);
+      writeDefaultSSE(client, payload, sseEventId);
     } catch {
       clients.delete(client);
     }
@@ -144,6 +203,63 @@ function emitTaskEvent(taskId: string, payload: unknown): void {
 
 function sanitizePathPart(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || 'unknown';
+}
+
+function replayBufferedTaskEvents(res: http.ServerResponse, taskId: string, lastEventId: string | null): void {
+  if (!lastEventId) return;
+  const history = TASK_EVENT_HISTORY_BY_TASK.get(taskId);
+  if (!history || history.length === 0) return;
+  const idx = history.findIndex((item) => item.id === lastEventId);
+  const replayItems = idx >= 0 ? history.slice(idx + 1) : history;
+  for (const item of replayItems) {
+    writeDefaultSSE(res, item.payload, item.id);
+  }
+}
+
+function storeTaskTraceEvent(taskId: string, event: TaskTraceEventRecord): void {
+  const items = getTaskTraceEvents(taskId);
+  items.push(event);
+  if (items.length <= MAX_TRACE_EVENTS_PER_TASK) return;
+
+  const overflow = items.length - MAX_TRACE_EVENTS_PER_TASK;
+  items.splice(0, overflow);
+  const truncatedNotice: TaskTraceEventRecord = {
+    id: buildId('trace', nextTraceEventId++),
+    task_id: taskId,
+    message_id: event.message_id,
+    run_id: event.run_id,
+    seq: event.seq,
+    at: nowIso(),
+    category: 'warning',
+    name: 'trace.buffer',
+    summary: `trace events truncated (dropped ${overflow})`,
+    status: 'running',
+    phase: 'update',
+  };
+  items.push(truncatedNotice);
+}
+
+function buildTaskTraceEvent(args: {
+  taskId: string;
+  messageId: string;
+  runId: string;
+  payload: AgentRuntimeTraceEventPayload;
+}): TaskTraceEventRecord {
+  const { taskId, messageId, runId, payload } = args;
+  return {
+    id: buildId('trace', nextTraceEventId++),
+    task_id: taskId,
+    message_id: messageId,
+    run_id: runId,
+    seq: payload.sequence,
+    at: payload.at,
+    category: payload.category,
+    ...(payload.phase ? { phase: payload.phase } : {}),
+    ...(payload.status ? { status: payload.status } : {}),
+    name: payload.name,
+    summary: payload.summary,
+    ...(payload.details ? { details: payload.details } : {}),
+  };
 }
 
 function mapTaskMessagesForRuntime(taskId: string, assistantMessageId: string): Array<Record<string, unknown>> {
@@ -256,6 +372,17 @@ async function runTaskWithExternalAgent(input: {
     });
 
     for await (const event of dispatched.stream) {
+      if (event.type === 'event' && event.event) {
+        const traceEvent = buildTaskTraceEvent({
+          taskId: task.id,
+          messageId: assistantMessage.id,
+          runId,
+          payload: event.event,
+        });
+        storeTaskTraceEvent(task.id, traceEvent);
+        emitTaskEvent(taskId, { type: 'trace_event', data: traceEvent });
+        continue;
+      }
       if (event.type === 'delta' && event.delta) {
         assistantMessage.content += event.delta;
         debugNotebookRuntime('runtime_event_delta', {
@@ -478,6 +605,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     TASK_EVENT_CLIENTS.delete(route.taskId);
     MESSAGES_BY_TASK.delete(route.taskId);
     ARTIFACTS_BY_TASK.delete(route.taskId);
+    TRACE_EVENTS_BY_TASK.delete(route.taskId);
+    TASK_EVENT_HISTORY_BY_TASK.delete(route.taskId);
     json(res, 200, { success: true });
     return true;
   }
@@ -510,6 +639,37 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskMessages' && method === 'GET') {
     json(res, 200, getTaskMessages(route.taskId));
+    return true;
+  }
+
+  if (route.kind === 'taskTraces' && method === 'GET') {
+    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    const requestUrl = new URL(req.url ?? '', 'http://localhost');
+    const messageId = requestUrl.searchParams.get('message_id')?.trim();
+    const runId = requestUrl.searchParams.get('run_id')?.trim();
+    const afterId = requestUrl.searchParams.get('after_id')?.trim();
+    const beforeId = requestUrl.searchParams.get('before_id')?.trim();
+    const pageSize = Math.max(1, Math.min(500, Number(requestUrl.searchParams.get('page_size') ?? '200') || 200));
+    let traces = getTaskTraceEvents(route.taskId);
+    if (messageId) traces = traces.filter((item) => item.message_id === messageId);
+    if (runId) traces = traces.filter((item) => item.run_id === runId);
+    if (afterId) {
+      const idx = traces.findIndex((item) => item.id === afterId);
+      if (idx >= 0) traces = traces.slice(idx + 1);
+    }
+    if (beforeId) {
+      const idx = traces.findIndex((item) => item.id === beforeId);
+      if (idx >= 0) traces = traces.slice(0, idx);
+    }
+    const total = traces.length;
+    const hasMore = total > pageSize;
+    const items = hasMore ? traces.slice(total - pageSize) : traces;
+    const nextAfterId = hasMore && items.length > 0 ? items[0]!.id : null;
+    json(res, 200, { items, total, has_more: hasMore, next_after_id: nextAfterId });
     return true;
   }
 
@@ -576,6 +736,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     return true;
   }
 
+  if (route.kind === 'taskEvents' && method === 'GET') {
+    // handled below (kept here only to make route ordering explicit)
+  }
+
   if (route.kind === 'taskArtifactSave' && method === 'POST') {
     const artifact = getTaskArtifacts(route.taskId).find((item) => item.id === route.artifactId);
     if (!artifact) {
@@ -603,6 +767,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskEvents' && method === 'GET') {
+    const requestUrl = new URL(req.url ?? '', 'http://localhost');
+    const lastEventId = requestUrl.searchParams.get('last_event_id')?.trim() || null;
     res.statusCode = 200;
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
@@ -616,7 +782,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       TASK_EVENT_CLIENTS.set(route.taskId, clients);
     }
     clients.add(res);
-    writeDefaultSSE(res, { type: 'task_update', data: findTask(route.workspaceId, route.projectId, route.taskId) });
+    if (lastEventId) {
+      replayBufferedTaskEvents(res, route.taskId, lastEventId);
+    } else {
+      writeDefaultSSE(res, { type: 'task_update', data: findTask(route.workspaceId, route.projectId, route.taskId) });
+      for (const traceEvent of getTaskTraceEvents(route.taskId)) {
+        writeDefaultSSE(res, { type: 'trace_event', data: traceEvent });
+      }
+    }
     const timer = setInterval(() => {
       res.write('event: ping\n');
       res.write(`data: ${JSON.stringify({ type: 'ping' })}\n\n`);

@@ -14,6 +14,7 @@ import type {
   SaveArtifactRequest,
   TaskListParams,
   TaskListResponse,
+  TaskTraceListResponse,
 } from '../../types/task';
 import type { FileItem } from '../types';
 import type { ApiClient } from '../client';
@@ -162,6 +163,33 @@ export class TaskAPI {
   }
 
   /**
+   * List execution trace events in a task (optionally scoped to a message/run)
+   */
+  async listTraces(
+    workspaceId: string,
+    projectId: string,
+    taskId: string,
+    params?: {
+      message_id?: string;
+      run_id?: string;
+      after_id?: string;
+      before_id?: string;
+      page_size?: number;
+    },
+  ): Promise<TaskTraceListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.message_id) searchParams.set('message_id', params.message_id);
+    if (params?.run_id) searchParams.set('run_id', params.run_id);
+    if (params?.after_id) searchParams.set('after_id', params.after_id);
+    if (params?.before_id) searchParams.set('before_id', params.before_id);
+    if (params?.page_size) searchParams.set('page_size', String(params.page_size));
+    const query = searchParams.toString();
+    return this.client.get<TaskTraceListResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/traces${query ? `?${query}` : ''}`,
+    );
+  }
+
+  /**
    * Save an artifact to the file library
    */
   async saveArtifact(
@@ -227,4 +255,5 @@ export type {
   SaveArtifactRequest,
   TaskListParams,
   TaskListResponse,
+  TaskTraceEvent,
 };

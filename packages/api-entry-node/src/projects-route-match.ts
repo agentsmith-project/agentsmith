@@ -39,6 +39,7 @@ export type ProjectsRoute =
     sourceId: string;
   }
   | { kind: 'taskMessages'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskTraces'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskArtifacts'; workspaceId: string; projectId: string; taskId: string }
   | {
     kind: 'taskArtifactSave';
@@ -430,6 +431,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(taskMessagesMatched[1]),
       projectId: decodeURIComponent(taskMessagesMatched[2]),
       taskId: decodeURIComponent(taskMessagesMatched[3]),
+    };
+  }
+
+  const taskTracesMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/traces\/?$/,
+  );
+  if (taskTracesMatched) {
+    return {
+      kind: 'taskTraces',
+      workspaceId: decodeURIComponent(taskTracesMatched[1]),
+      projectId: decodeURIComponent(taskTracesMatched[2]),
+      taskId: decodeURIComponent(taskTracesMatched[3]),
     };
   }
 

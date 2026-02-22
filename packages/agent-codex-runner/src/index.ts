@@ -48,6 +48,7 @@ const runningByRequestId = new Map<string, RunningProcess>();
 const timeoutByRequestId = new Map<string, NodeJS.Timeout>();
 const hardKillTimeoutByRequestId = new Map<string, NodeJS.Timeout>();
 const timedOutRequestIds = new Set<string>();
+const traceSeqByRequestId = new Map<string, number>();
 
 function sanitizePathPart(input: string | undefined, fallback: string): string {
   const value = (input ?? '').trim();
@@ -64,6 +65,31 @@ function sendFrame(type: string, requestId: string, payload: Record<string, unkn
       payload,
     }),
   );
+}
+
+function nextTraceSequence(requestId: string): number {
+  const next = (traceSeqByRequestId.get(requestId) ?? 0) + 1;
+  traceSeqByRequestId.set(requestId, next);
+  return next;
+}
+
+function sendTraceEvent(
+  requestId: string,
+  event: {
+    category: 'lifecycle' | 'progress' | 'tool' | 'artifact' | 'warning' | 'error' | 'debug';
+    phase?: 'start' | 'update' | 'end';
+    status?: 'running' | 'success' | 'error' | 'cancelled';
+    name: string;
+    summary: string;
+    details?: Record<string, unknown>;
+    raw?: string;
+  },
+): void {
+  sendFrame('agent.response.event', requestId, {
+    sequence: nextTraceSequence(requestId),
+    at: new Date().toISOString(),
+    ...event,
+  });
 }
 
 function debugLog(message: string, extra?: Record<string, unknown>): void {
@@ -210,6 +236,111 @@ function sanitizeStderrChunk(raw: string): string {
   return text;
 }
 
+function parseCodexJsonLine(line: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(line) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
+  const evt = parseCodexJsonLine(line);
+  if (!evt) return;
+  const type = evt.type;
+  if (type !== 'thread.started'
+    && type !== 'turn.started'
+    && type !== 'turn.completed'
+    && type !== 'turn.failed'
+    && type !== 'error'
+    && type !== 'item.completed') {
+    return;
+  }
+
+  if (type === 'thread.started') {
+    sendTraceEvent(requestId, {
+      category: 'lifecycle',
+      phase: 'start',
+      status: 'running',
+      name: 'codex.thread',
+      summary: 'Codex thread started',
+    });
+    return;
+  }
+  if (type === 'turn.started') {
+    sendTraceEvent(requestId, {
+      category: 'progress',
+      phase: 'start',
+      status: 'running',
+      name: 'codex.turn',
+      summary: 'Agent turn started',
+    });
+    return;
+  }
+  if (type === 'turn.completed') {
+    sendTraceEvent(requestId, {
+      category: 'progress',
+      phase: 'end',
+      status: 'success',
+      name: 'codex.turn',
+      summary: 'Agent turn completed',
+    });
+    return;
+  }
+  if (type === 'turn.failed') {
+    const errObj = typeof evt.error === 'object' && evt.error !== null ? (evt.error as Record<string, unknown>) : {};
+    const message = typeof errObj.message === 'string' ? errObj.message : 'Agent turn failed';
+    sendTraceEvent(requestId, {
+      category: 'error',
+      phase: 'end',
+      status: 'error',
+      name: 'codex.turn',
+      summary: message,
+      details: { message },
+    });
+    return;
+  }
+  if (type === 'error') {
+    const message = typeof evt.message === 'string' ? evt.message : 'Codex error';
+    sendTraceEvent(requestId, {
+      category: 'error',
+      phase: 'update',
+      status: 'error',
+      name: 'codex.error',
+      summary: message,
+      details: { message },
+    });
+    return;
+  }
+  const item = typeof evt.item === 'object' && evt.item !== null ? (evt.item as Record<string, unknown>) : {};
+  if (item.type === 'agent_message') {
+    sendTraceEvent(requestId, {
+      category: 'progress',
+      phase: 'end',
+      status: 'success',
+      name: 'codex.output',
+      summary: 'Final response generated',
+    });
+    return;
+  }
+  if (item.type === 'function_call') {
+    const toolName = typeof item.name === 'string' ? item.name : 'unknown';
+    sendTraceEvent(requestId, {
+      category: 'tool',
+      phase: 'end',
+      status: 'success',
+      name: 'codex.tool',
+      summary: `Tool call: ${toolName}`,
+      details: {
+        tool_name: toolName,
+        ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}),
+      },
+    });
+  }
+}
+
 async function runCodexRequest(requestId: string, payload: ServerStartPayload): Promise<void> {
   const runtimeContext = payload.runtime_context ?? {};
   const taskId = sanitizePathPart(runtimeContext.task_id, `task_${requestId.slice(0, 8)}`);
@@ -277,6 +408,18 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     }),
   });
   runningByRequestId.set(requestId, child);
+  sendTraceEvent(requestId, {
+    category: 'progress',
+    phase: 'start',
+    status: 'running',
+    name: 'codex.exec',
+    summary: 'Starting Codex execution',
+    details: {
+      model,
+      wire_api: wireApi,
+      yolo: codexYolo,
+    },
+  });
 
   const timeoutHandle = setTimeout(() => {
     if (child.exitCode !== null) return;
@@ -288,6 +431,13 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     sendFrame('agent.response.error', requestId, {
       error_code: 'AGENT_TIMEOUT',
       error_message: `codex_task_timeout_${taskTimeoutSec}s`,
+    });
+    sendTraceEvent(requestId, {
+      category: 'error',
+      phase: 'end',
+      status: 'error',
+      name: 'codex.exec',
+      summary: `Execution timeout (${taskTimeoutSec}s)`,
     });
     child.kill('SIGTERM');
     const hardKillHandle = setTimeout(() => {
@@ -308,6 +458,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       const line = stdoutBuffer.slice(0, idx).trim();
       stdoutBuffer = stdoutBuffer.slice(idx + 1);
       if (line.length > 0) {
+        maybeEmitTraceFromStdoutLine(requestId, line);
         maybeEmitDeltaChunk(requestId, line);
       }
       idx = stdoutBuffer.indexOf('\n');
@@ -317,6 +468,14 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   child.stderr.on('data', (buffer: Buffer) => {
     const text = sanitizeStderrChunk(buffer.toString('utf-8'));
     if (!text) return;
+    sendTraceEvent(requestId, {
+      category: text.includes('ERROR') ? 'error' : 'warning',
+      phase: 'update',
+      status: 'running',
+      name: 'codex.stderr',
+      summary: (text.split('\n')[0] ?? 'stderr').slice(0, 200),
+      details: { stderr: text.slice(0, 4000) },
+    });
     maybeEmitDeltaChunk(requestId, `[stderr] ${text}\n`);
   });
 
@@ -325,8 +484,16 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     runningByRequestId.delete(requestId);
     if (timedOutRequestIds.has(requestId)) {
       timedOutRequestIds.delete(requestId);
+      traceSeqByRequestId.delete(requestId);
       return;
     }
+    sendTraceEvent(requestId, {
+      category: 'error',
+      phase: 'end',
+      status: 'error',
+      name: 'codex.exec',
+      summary: error.message,
+    });
     sendFrame('agent.response.error', requestId, {
       error_code: 'AGENT_UPSTREAM_ERROR',
       error_message: error.message,
@@ -343,19 +510,40 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     runningByRequestId.delete(requestId);
     if (timedOutRequestIds.has(requestId)) {
       timedOutRequestIds.delete(requestId);
+      traceSeqByRequestId.delete(requestId);
       return;
     }
     if (code === 0) {
+      sendTraceEvent(requestId, {
+        category: 'progress',
+        phase: 'end',
+        status: 'success',
+        name: 'codex.exec',
+        summary: 'Codex execution completed',
+      });
       sendFrame('agent.response.done', requestId, {
         finish_reason: 'stop',
         usage_tokens: Math.max(1, prompt.length),
       });
+      traceSeqByRequestId.delete(requestId);
       return;
     }
+    sendTraceEvent(requestId, {
+      category: signal ? 'warning' : 'error',
+      phase: 'end',
+      status: signal ? 'cancelled' : 'error',
+      name: 'codex.exec',
+      summary: signal ? `Codex terminated (${signal})` : `Codex exited with code ${String(code ?? 'unknown')}`,
+      details: {
+        ...(signal ? { signal } : {}),
+        ...(code !== null ? { exit_code: code } : {}),
+      },
+    });
     sendFrame('agent.response.error', requestId, {
       error_code: signal ? 'AGENT_CANCELLED' : 'AGENT_UPSTREAM_ERROR',
       error_message: signal ? `codex_terminated_${signal}` : `codex_exit_code_${String(code ?? 'unknown')}`,
     });
+    traceSeqByRequestId.delete(requestId);
   });
 }
 
@@ -403,6 +591,13 @@ ws.on('message', (raw) => {
     debugLog('received cancel', { request_id: message.request_id });
     const child = runningByRequestId.get(message.request_id);
     if (child && child.exitCode === null) {
+      sendTraceEvent(message.request_id, {
+        category: 'warning',
+        phase: 'end',
+        status: 'cancelled',
+        name: 'codex.exec',
+        summary: 'Execution cancelled by server',
+      });
       child.kill('SIGTERM');
       setTimeout(() => {
         if (child.exitCode === null) {
@@ -425,6 +620,13 @@ ws.on('message', (raw) => {
   });
 
   void runCodexRequest(message.request_id, message.payload).catch((error) => {
+    sendTraceEvent(message.request_id!, {
+      category: 'error',
+      phase: 'end',
+      status: 'error',
+      name: 'codex.exec',
+      summary: error instanceof Error ? error.message : 'codex_request_failed',
+    });
     sendFrame('agent.response.error', message.request_id!, {
       error_code: 'AGENT_UPSTREAM_ERROR',
       error_message: error instanceof Error ? error.message : 'codex_request_failed',
@@ -444,6 +646,7 @@ ws.on('close', () => {
     clearRequestTimers(requestId);
   }
   timedOutRequestIds.clear();
+  traceSeqByRequestId.clear();
 });
 
 ws.on('error', (error) => {

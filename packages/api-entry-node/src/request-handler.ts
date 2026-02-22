@@ -38,6 +38,7 @@ function isTaskRoute(route: { kind: string }): boolean {
     || route.kind === 'taskSources'
     || route.kind === 'taskSourceItem'
     || route.kind === 'taskMessages'
+    || route.kind === 'taskTraces'
     || route.kind === 'taskArtifacts'
     || route.kind === 'taskArtifactSave'
     || route.kind === 'taskArtifactDownload'

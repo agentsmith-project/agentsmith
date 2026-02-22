@@ -21,6 +21,7 @@ import type {
   SendMessageRequest,
   SaveArtifactRequest,
   TaskListParams,
+  TaskTraceListResponse,
 } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
 
@@ -221,6 +222,24 @@ export function useTaskArtifacts(
     queryFn: () => taskAPI.listArtifacts(workspaceId, projectId, taskId),
     enabled: !!workspaceId && !!projectId && !!taskId,
     staleTime: 5000, // 5 seconds
+  });
+}
+
+/**
+ * Hook to query execution trace events in a task
+ */
+export function useTaskTraces(
+  workspaceId: string,
+  projectId: string,
+  taskId: string,
+): UseQueryResult<TaskTraceListResponse> {
+  const taskAPI = new TaskAPI(getApiClient());
+
+  return useQuery({
+    queryKey: queryKeys.tasks.traces(workspaceId, projectId, taskId, { page_size: 500 }),
+    queryFn: () => taskAPI.listTraces(workspaceId, projectId, taskId, { page_size: 500 }),
+    enabled: !!workspaceId && !!projectId && !!taskId,
+    staleTime: 5000,
   });
 }
 

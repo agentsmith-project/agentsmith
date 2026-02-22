@@ -1,6 +1,6 @@
 # External Agent Runtime Protocol (WS, v1)
 
-Last updated: 2026-02-13
+Last updated: 2026-02-22
 Owner: Backend + Frontend
 
 ## 1. Scope
@@ -60,6 +60,18 @@ All frames are JSON objects:
 - `agent.response.delta`
   - required: `request_id`
   - payload: `{ "delta": "text token chunk" }`
+- `agent.response.event`
+  - required: `request_id`
+  - payload: structured execution telemetry event for notebook/chat UX diagnostics and expandable trace UI
+  - shape (v1 additive extension):
+    - `sequence: number`
+    - `at: ISO-8601`
+    - `category: "lifecycle" | "progress" | "tool" | "artifact" | "warning" | "error" | "debug"`
+    - `phase?: "start" | "update" | "end"`
+    - `status?: "running" | "success" | "error" | "cancelled"`
+    - `name: string`
+    - `summary: string`
+    - `details?: object` (must be sanitized; no secrets/tokens)
 - `agent.response.done`
   - required: `request_id`
   - payload: `{ "finish_reason": "stop|length|cancelled|...", "usage_tokens": number }`
@@ -85,6 +97,7 @@ The frontend keeps the same chat SSE consumption model used by endpoint streamin
 - Attachments are passed as data URLs in multimodal messages.
 - Strict protocol validation:
   - `agent.response.delta.payload.delta` must be `string`; otherwise request fails with `AGENT_PROTOCOL_ERROR`.
+  - `agent.response.event.payload` must match the structured event schema above; otherwise request fails with `AGENT_PROTOCOL_ERROR`.
   - Unsupported `agent.response.*` types with a valid `request_id` fail that request with `AGENT_PROTOCOL_ERROR`.
   - Invalid JSON frame closes socket with close code `1003` (`invalid_json`).
 

@@ -46,6 +46,32 @@ export interface Artifact {
   created_at: string; // ISO 8601
 }
 
+export type TaskTraceCategory = 'lifecycle' | 'progress' | 'tool' | 'artifact' | 'warning' | 'error' | 'debug';
+export type TaskTracePhase = 'start' | 'update' | 'end';
+export type TaskTraceStatus = 'running' | 'success' | 'error' | 'cancelled';
+
+export interface TaskTraceEvent {
+  id: string;
+  task_id: string;
+  message_id: string;
+  run_id: string;
+  seq: number;
+  at: string; // ISO8601
+  category: TaskTraceCategory;
+  phase?: TaskTracePhase;
+  status?: TaskTraceStatus;
+  name: string;
+  summary: string;
+  details?: Record<string, unknown>;
+}
+
+export interface TaskTraceListResponse {
+  items: TaskTraceEvent[];
+  total: number;
+  has_more?: boolean;
+  next_after_id?: string | null;
+}
+
 export interface CreateTaskRequest {
   title: string;
   agent_id: string;

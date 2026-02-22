@@ -6,12 +6,25 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { AgentResourceService } from './agent-resource-service.js';
 
 export interface AgentStreamEvent {
-  type: 'delta' | 'done' | 'error';
+  type: 'delta' | 'done' | 'error' | 'event';
   delta?: string;
   finish_reason?: string | null;
   usage_tokens?: number;
   error_code?: string;
   error_message?: string;
+  event?: AgentRuntimeTraceEventPayload;
+}
+
+export interface AgentRuntimeTraceEventPayload {
+  sequence: number;
+  at: string;
+  category: 'lifecycle' | 'progress' | 'tool' | 'artifact' | 'warning' | 'error' | 'debug';
+  phase?: 'start' | 'update' | 'end';
+  status?: 'running' | 'success' | 'error' | 'cancelled';
+  name: string;
+  summary: string;
+  details?: Record<string, unknown>;
+  raw?: string;
 }
 
 interface PendingStream {
@@ -111,6 +124,59 @@ function inferRemoteIp(req: http.IncomingMessage): string | undefined {
 function debugRuntime(message: string): void {
   if (process.env.DEBUG_AGENT_RUNTIME !== '1') return;
   process.stdout.write(`[agent-runtime] ${message}\n`);
+}
+
+function isPlainRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+function parseTraceEventPayload(input: unknown): AgentRuntimeTraceEventPayload | null {
+  if (!isPlainRecord(input)) return null;
+  const sequence = input.sequence;
+  const at = input.at;
+  const category = input.category;
+  const name = input.name;
+  const summary = input.summary;
+  if (typeof sequence !== 'number' || !Number.isFinite(sequence)) return null;
+  if (typeof at !== 'string' || at.trim().length === 0) return null;
+  if (
+    category !== 'lifecycle'
+    && category !== 'progress'
+    && category !== 'tool'
+    && category !== 'artifact'
+    && category !== 'warning'
+    && category !== 'error'
+    && category !== 'debug'
+  ) return null;
+  if (typeof name !== 'string' || name.trim().length === 0) return null;
+  if (typeof summary !== 'string') return null;
+
+  const phase = input.phase;
+  const status = input.status;
+  const details = input.details;
+  const raw = input.raw;
+  if (phase !== undefined && phase !== 'start' && phase !== 'update' && phase !== 'end') return null;
+  if (
+    status !== undefined
+    && status !== 'running'
+    && status !== 'success'
+    && status !== 'error'
+    && status !== 'cancelled'
+  ) return null;
+  if (details !== undefined && !isPlainRecord(details)) return null;
+  if (raw !== undefined && typeof raw !== 'string') return null;
+
+  return {
+    sequence,
+    at,
+    category,
+    ...(phase ? { phase } : {}),
+    ...(status ? { status } : {}),
+    name,
+    summary,
+    ...(details ? { details } : {}),
+    ...(typeof raw === 'string' ? { raw } : {}),
+  };
 }
 
 function getAgentRuntimeRequestTimeoutMs(): number {
@@ -429,6 +495,27 @@ export class AgentRuntimeService {
       pending.push({
         type: 'delta',
         delta: payload.payload.delta,
+      });
+      armPendingTimeout(pending, requestId, socket, agentId);
+      return;
+    }
+
+    if (payload.type === 'agent.response.event') {
+      const eventPayload = parseTraceEventPayload(payload.payload);
+      if (!eventPayload) {
+        clearTimeout(pending.timer);
+        socket.pendingByRequestId.delete(requestId);
+        pending.push({
+          type: 'error',
+          error_code: 'AGENT_PROTOCOL_ERROR',
+          error_message: 'agent_response_event_invalid',
+        });
+        pending.close();
+        return;
+      }
+      pending.push({
+        type: 'event',
+        event: eventPayload,
       });
       armPendingTimeout(pending, requestId, socket, agentId);
       return;

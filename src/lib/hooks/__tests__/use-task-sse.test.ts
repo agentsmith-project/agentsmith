@@ -57,11 +57,13 @@ describe('useTaskSSE', () => {
   it('emits debug events for connect/open/message', async () => {
     const onDebug = vi.fn();
     const onMessage = vi.fn();
+    const onTraceEvent = vi.fn();
 
     renderHook(() =>
       useTaskSSE('ws_default', 'proj_1', 'task_1', {
         onDebug,
         onMessage,
+        onTraceEvent,
       }),
     );
 
@@ -93,6 +95,33 @@ describe('useTaskSSE', () => {
     expect(onDebug).toHaveBeenCalledWith(expect.objectContaining({ phase: 'connect_start' }));
     expect(onDebug).toHaveBeenCalledWith(expect.objectContaining({ phase: 'open' }));
     expect(onDebug).toHaveBeenCalledWith(expect.objectContaining({ phase: 'message', summary: 'type=message' }));
+
+    act(() => {
+      currentEventSource?.onmessage?.({
+        data: JSON.stringify({
+          type: 'trace_event',
+          data: {
+            id: 'trace_1',
+            task_id: 'task_1',
+            message_id: 'msg_1',
+            run_id: 'run_1',
+            seq: 1,
+            at: new Date().toISOString(),
+            category: 'progress',
+            phase: 'start',
+            status: 'running',
+            name: 'codex.exec',
+            summary: 'Starting Codex execution',
+          },
+        }),
+      } as unknown as MessageEvent);
+    });
+
+    expect(onTraceEvent).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'trace_1',
+      category: 'progress',
+      name: 'codex.exec',
+    }));
   });
 
   it('emits reconnect debug events on sse error and retries', async () => {

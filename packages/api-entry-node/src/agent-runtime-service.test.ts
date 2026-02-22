@@ -194,4 +194,62 @@ describe('AgentRuntimeService', () => {
       error_message: 'agent_response_type_unsupported',
     });
   });
+
+  it('forwards structured agent response events to the request stream', async () => {
+    const { runtime, agent, ws } = await setupRuntime();
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString('utf-8')) as { type?: string; request_id?: string };
+      if (msg.type !== 'server.request.start' || !msg.request_id) return;
+      ws.send(JSON.stringify({
+        type: 'agent.response.event',
+        request_id: msg.request_id,
+        payload: {
+          sequence: 1,
+          at: new Date().toISOString(),
+          category: 'progress',
+          phase: 'start',
+          status: 'running',
+          name: 'codex.exec',
+          summary: 'Starting Codex execution',
+          details: { model: 'external-test' },
+        },
+      }));
+      ws.send(JSON.stringify({
+        type: 'agent.response.done',
+        request_id: msg.request_id,
+        payload: { finish_reason: 'stop', usage_tokens: 1 },
+      }));
+    });
+
+    const dispatched = await runtime.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'sess_4',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+      timeoutMs: 2000,
+    });
+
+    const iterator = dispatched.stream[Symbol.asyncIterator]();
+    const eventItem = await iterator.next();
+    expect(eventItem.done).toBe(false);
+    expect(eventItem.value.type).toBe('event');
+    expect(eventItem.value.event).toMatchObject({
+      sequence: 1,
+      category: 'progress',
+      phase: 'start',
+      status: 'running',
+      name: 'codex.exec',
+      summary: 'Starting Codex execution',
+    });
+
+    const doneItem = await iterator.next();
+    expect(doneItem.done).toBe(false);
+    expect(doneItem.value).toMatchObject({
+      type: 'done',
+      finish_reason: 'stop',
+      usage_tokens: 1,
+    });
+  });
 });

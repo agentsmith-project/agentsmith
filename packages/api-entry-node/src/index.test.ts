@@ -257,6 +257,66 @@ function parseSseEventPayload(text: string, event: string): Record<string, unkno
   return null;
 }
 
+type ParsedDefaultSseBlock = {
+  id: string | null;
+  payload: Record<string, unknown> | null;
+};
+
+function parseDefaultSseBlocks(text: string): ParsedDefaultSseBlock[] {
+  const blocks = text.split('\n\n').map((item) => item.trim()).filter(Boolean);
+  const parsed: ParsedDefaultSseBlock[] = [];
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    const dataLine = lines.find((line) => line.startsWith('data:'));
+    if (!dataLine) continue;
+    const idLine = lines.find((line) => line.startsWith('id:'));
+    let payload: Record<string, unknown> | null = null;
+    try {
+      payload = JSON.parse(dataLine.slice('data:'.length).trim()) as Record<string, unknown>;
+    } catch {
+      payload = null;
+    }
+    parsed.push({
+      id: idLine ? idLine.slice('id:'.length).trim() : null,
+      payload,
+    });
+  }
+  return parsed;
+}
+
+async function readSseBlocks(
+  response: Response,
+  minBlocks: number,
+  timeoutMs = 1_000,
+): Promise<string> {
+  const reader = response.body?.getReader();
+  expect(reader).toBeTruthy();
+  const decoder = new TextDecoder();
+  let text = '';
+  const deadline = Date.now() + timeoutMs;
+
+  const countBlocks = (): number =>
+    text
+      .split('\n\n')
+      .map((item) => item.trim())
+      .filter(Boolean).length;
+
+  while (countBlocks() < minBlocks) {
+    const remaining = Math.max(1, deadline - Date.now());
+    const result = await Promise.race([
+      reader!.read(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`timed_out_waiting_for_sse_blocks_${minBlocks}`)), remaining),
+      ),
+    ]);
+    if (result.done) break;
+    text += decoder.decode(result.value, { stream: true });
+  }
+
+  await reader!.cancel();
+  return text;
+}
+
 describe('api-entry-node projects routes', () => {
   it('returns authenticated workspace and member payload', async () => {
     const { baseUrl } = startServer();
@@ -1179,6 +1239,19 @@ describe('api-entry-node projects routes', () => {
           close: () => ws.close(),
         });
         ws.send(JSON.stringify({
+          type: 'agent.response.event',
+          request_id: msg.request_id,
+          payload: {
+            sequence: 1,
+            at: new Date().toISOString(),
+            category: 'progress',
+            phase: 'start',
+            status: 'running',
+            name: 'codex.exec',
+            summary: 'Starting Codex execution',
+          },
+        }));
+        ws.send(JSON.stringify({
           type: 'agent.response.delta',
           request_id: msg.request_id,
           payload: { delta: 'task-output' },
@@ -1258,6 +1331,35 @@ describe('api-entry-node projects routes', () => {
     }
 
     expect(messagesBody.some((item) => item.role === 'agent' && item.content.includes('task-output'))).toBe(true);
+
+    let tracesBody: {
+      items: Array<{ message_id: string; category: string; summary: string }>;
+      total: number;
+      has_more?: boolean;
+      next_after_id?: string | null;
+    } | null = null;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const tracesRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`,
+      );
+      expect(tracesRes.status).toBe(200);
+      tracesBody = (await tracesRes.json()) as {
+        items: Array<{ message_id: string; category: string; summary: string }>;
+        total: number;
+        has_more?: boolean;
+        next_after_id?: string | null;
+      };
+      if (tracesBody.items.length > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(tracesBody).not.toBeNull();
+    expect(tracesBody!.items.length).toBeGreaterThan(0);
+    expect(tracesBody!.items.some((item) => item.category === 'progress')).toBe(true);
+    expect(typeof tracesBody!.has_more).toBe('boolean');
+    if (tracesBody!.has_more) {
+      expect(typeof tracesBody!.next_after_id === 'string' || tracesBody!.next_after_id === null).toBe(true);
+    }
 
     const taskAfterRunRes = await apiFetch(
       baseUrl,
@@ -1362,6 +1464,212 @@ describe('api-entry-node projects routes', () => {
     );
     expect(sendRes.status).toBe(200);
     expect(upstream.lastPath()).toBe('/v1/chat/completions');
+  });
+
+  it('replays buffered task events after last_event_id for notebook task SSE', async () => {
+    const { baseUrl } = startServer();
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'glm-key',
+          type: 'api_key',
+          value: 'sk-glm-test',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'glm-coding',
+          type: 'openai_compatible',
+          status: 'active',
+          wire_api: 'responses',
+          base_url: 'https://example.com',
+          openai_model: 'glm-4.7',
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createAgent = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'External notebook agent',
+          mode: 'external',
+          interaction_mode: 'notebook',
+          runtime_preferences: {
+            notebook: {
+              endpoint_id: endpoint.id,
+              wire_api: 'responses',
+              model: 'glm-4.7',
+            },
+          },
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createAgent.status).toBe(201);
+    const agent = (await createAgent.json()) as { id: string };
+
+    const createAgentKeyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
+    expect(createAgentKeyRes.status).toBe(201);
+    const agentKey = (await createAgentKeyRes.json()) as { key: string };
+
+    const runtimeInfoRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+    );
+    expect(runtimeInfoRes.status).toBe(200);
+    const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
+
+    const runtime = new WebSocket(
+      runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
+      { headers: { Authorization: `Bearer ${agentKey.key}` } },
+    );
+
+    const runtimeReady = new Promise<void>((resolve) => {
+      runtime.on('open', () => {
+        runtime.send(
+          JSON.stringify({
+            type: 'agent.ready',
+            payload: {
+              capabilities: { mode: 'external', wire_api: 'responses' },
+            },
+          }),
+        );
+        resolve();
+      });
+    });
+
+    runtime.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString('utf-8')) as { type: string; request_id?: string };
+      if (msg.type !== 'server.request.start' || !msg.request_id) return;
+      runtime.send(
+        JSON.stringify({
+          type: 'agent.response.event',
+          request_id: msg.request_id,
+          payload: {
+            sequence: 1,
+            at: new Date().toISOString(),
+            category: 'progress',
+            phase: 'start',
+            status: 'running',
+            name: 'codex.exec',
+            summary: 'Starting Codex execution',
+          },
+        }),
+      );
+      runtime.send(
+        JSON.stringify({
+          type: 'agent.response.event',
+          request_id: msg.request_id,
+          payload: {
+            sequence: 2,
+            at: new Date().toISOString(),
+            category: 'progress',
+            phase: 'end',
+            status: 'success',
+            name: 'codex.exec',
+            summary: 'Codex execution finished',
+          },
+        }),
+      );
+      runtime.send(
+        JSON.stringify({
+          type: 'agent.response.done',
+          request_id: msg.request_id,
+          payload: { finish_reason: 'stop', usage_tokens: 5 },
+        }),
+      );
+    });
+
+    await runtimeReady;
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Replay task', agent_id: agent.id }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const postMessageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'user', content: 'run' }),
+      },
+    );
+    expect(postMessageRes.status).toBe(200);
+
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const tracesRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`,
+      );
+      expect(tracesRes.status).toBe(200);
+      const tracesBody = (await tracesRes.json()) as { items: Array<{ id: string }> };
+      if (tracesBody.items.length >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    const replayAllRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/events?last_event_id=missing`,
+    );
+    expect(replayAllRes.status).toBe(200);
+    expect(replayAllRes.headers.get('content-type')).toContain('text/event-stream');
+    const replayAllText = await readSseBlocks(replayAllRes, 4);
+    const replayAllBlocks = parseDefaultSseBlocks(replayAllText).filter(
+      (item) => item.payload && item.payload.type !== 'ping',
+    );
+    expect(replayAllBlocks.length).toBeGreaterThan(1);
+    expect(replayAllBlocks.every((item) => typeof item.id === 'string' && item.id?.startsWith(`${task.id}:`))).toBe(true);
+    expect(replayAllBlocks.some((item) => item.payload?.type === 'trace_event')).toBe(true);
+
+    const firstReplayId = replayAllBlocks[0]?.id;
+    expect(firstReplayId).toBeTruthy();
+    const replayAfterFirstRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/events?last_event_id=${encodeURIComponent(firstReplayId!)}`,
+    );
+    expect(replayAfterFirstRes.status).toBe(200);
+    const replayAfterFirstText = await readSseBlocks(replayAfterFirstRes, 1);
+    const replayAfterFirstBlocks = parseDefaultSseBlocks(replayAfterFirstText).filter(
+      (item) => item.payload && item.payload.type !== 'ping',
+    );
+    expect(replayAfterFirstBlocks.length).toBeGreaterThan(0);
+    expect(replayAfterFirstBlocks.some((item) => item.id === firstReplayId)).toBe(false);
+
+    runtime.close();
   });
 
   it('sends image attachments to upstream multimodal chat payload', async () => {

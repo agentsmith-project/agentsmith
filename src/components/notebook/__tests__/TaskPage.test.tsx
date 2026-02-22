@@ -9,6 +9,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskPage } from '../TaskPage';
 import type { Task, TaskMessage, Artifact } from '@/lib/types/task';
 
+const mockTaskApiListTraces = vi.fn();
+
 vi.mock('next-intl', () => ({
   useTranslations: (namespace?: string) => (key: string) => {
     const dict: Record<string, string> = {
@@ -21,6 +23,8 @@ vi.mock('next-intl', () => ({
       'notebook.attached_files.url_dialog.description': 'Notebook will add this URL as a context input note.',
       'notebook.attached_files.url_dialog.placeholder': 'https://example.com/article',
       'notebook.attached_files.url_dialog.confirm': 'Add URL',
+      'notebook.conversation.trace_view': 'View execution details',
+      'notebook.conversation.trace_load_more': 'Load earlier logs',
     };
     const scoped = namespace ? `${namespace}.${key}` : key;
     return dict[scoped] ?? scoped;
@@ -49,6 +53,11 @@ vi.mock('@/lib/hooks/use-task', () => ({
   useTaskArtifacts: () => ({
     data: mockTaskHookState.artifacts,
     isLoading: false,
+  }),
+  useTaskTraces: () => ({
+    data: { items: [], total: 0 },
+    isLoading: false,
+    refetch: vi.fn().mockResolvedValue({ data: { items: [], total: 0 } }),
   }),
   useSendMessage: () => ({
     mutateAsync: vi.fn().mockResolvedValue({
@@ -104,9 +113,15 @@ vi.mock('../AttachedFilesPanel', () => ({
 }));
 
 vi.mock('../ConversationPanel', () => ({
-  ConversationPanel: ({ onSendMessage, disabled, sending }: any) => (
+  ConversationPanel: ({ onSendMessage, onTraceExpand, onTraceLoadMore, disabled, sending, messages }: any) => (
     <div data-testid="conversation-panel">
       <button onClick={() => onSendMessage('Test message')}>Send Message</button>
+      {messages?.some((m: any) => m.role === 'agent') && (
+        <>
+          <button onClick={() => onTraceExpand?.('msg-2')}>Expand Trace</button>
+          <button onClick={() => onTraceLoadMore?.('msg-2')}>Load More Trace</button>
+        </>
+      )}
       {disabled && <div data-disabled>disabled</div>}
       {sending && <div data-sending>sending</div>}
     </div>
@@ -172,6 +187,7 @@ vi.mock('@/lib/api', () => ({
   TaskAPI: vi.fn().mockImplementation(function TaskAPI() {
     return {
       getSSEUrl: vi.fn(() => 'http://test/sse'),
+      listTraces: mockTaskApiListTraces,
       downloadArtifact: vi.fn().mockResolvedValue(new Blob()),
       saveArtifact: vi.fn().mockResolvedValue({}),
     };
@@ -268,6 +284,8 @@ describe('TaskPage', () => {
     global.URL.createObjectURL = vi.fn(() => 'blob:test-url');
     global.URL.revokeObjectURL = vi.fn();
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    mockTaskApiListTraces.mockReset();
+    mockTaskApiListTraces.mockResolvedValue({ items: [], total: 0, has_more: false, next_after_id: null });
   });
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -375,6 +393,55 @@ describe('TaskPage', () => {
 
       // Streaming state is managed internally
       expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
+    });
+
+    it('loads earlier trace page with before_id when requested', async () => {
+      const user = userEvent.setup();
+      mockTaskApiListTraces
+        .mockResolvedValueOnce({
+          items: [
+            {
+              id: 'trace_new',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 10,
+              at: '2024-01-01T00:00:10Z',
+              category: 'progress',
+              phase: 'end',
+              status: 'success',
+              name: 'codex.exec',
+              summary: 'done',
+            },
+          ],
+          total: 800,
+          has_more: true,
+          next_after_id: 'trace_cursor_oldest_loaded',
+        })
+        .mockResolvedValueOnce({
+          items: [],
+          total: 300,
+          has_more: false,
+          next_after_id: null,
+        });
+
+      renderComponent();
+
+      await user.click(screen.getByText('Expand Trace'));
+      expect(mockTaskApiListTraces).toHaveBeenCalledWith(
+        mockWorkspaceId,
+        mockProjectId,
+        mockTaskId,
+        expect.objectContaining({ message_id: 'msg-2', page_size: 500 }),
+      );
+
+      await user.click(screen.getByText('Load More Trace'));
+      expect(mockTaskApiListTraces).toHaveBeenCalledWith(
+        mockWorkspaceId,
+        mockProjectId,
+        mockTaskId,
+        expect.objectContaining({ message_id: 'msg-2', before_id: 'trace_cursor_oldest_loaded', page_size: 500 }),
+      );
     });
   });
 

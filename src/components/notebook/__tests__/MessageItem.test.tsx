@@ -66,6 +66,7 @@ describe('MessageItem', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     writeTextMock.mockResolvedValue(undefined);
+    (navigator.clipboard as any).writeText = writeTextMock;
   });
 
   const renderComponent = (message: TaskMessage, props = {}) => {
@@ -113,6 +114,203 @@ describe('MessageItem', () => {
 
       const messageBubble = container.querySelector('.bg-surface-high');
       expect(messageBubble).toBeInTheDocument();
+    });
+
+    it('renders expandable execution details when trace events are provided', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:01Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+          ]}
+        />
+      );
+
+      expect(screen.getByTestId('notebook__message-trace-toggle')).toBeInTheDocument();
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      expect(screen.getByTestId('notebook__message-trace-panel')).toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__trace-step-details')).not.toBeInTheDocument();
+      await user.click(screen.getByTestId('notebook__trace-step-toggle'));
+      expect(screen.getByTestId('notebook__trace-step-details')).toBeInTheDocument();
+      expect(screen.getAllByText('Starting Codex execution').length).toBeGreaterThan(0);
+    });
+
+    it('aggregates related trace events into step cards', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+            {
+              id: 'trace_2',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 2,
+              at: '2024-01-01T14:31:02Z',
+              category: 'progress',
+              phase: 'end',
+              status: 'success',
+              name: 'codex.exec',
+              summary: 'Codex execution completed',
+            },
+          ]}
+        />
+      );
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      expect(screen.getAllByTestId('notebook__trace-step')).toHaveLength(1);
+      await user.click(screen.getByTestId('notebook__trace-step-toggle'));
+      expect(screen.getAllByText('Codex execution completed').length).toBeGreaterThan(0);
+    });
+
+    it('shows trace summary with status and duration in toggle text', () => {
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+            {
+              id: 'trace_2',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 2,
+              at: '2024-01-01T14:31:03Z',
+              category: 'progress',
+              phase: 'end',
+              status: 'success',
+              name: 'codex.exec',
+              summary: 'Codex execution completed',
+            },
+          ]}
+        />
+      );
+
+      const toggle = screen.getByTestId('notebook__message-trace-toggle');
+      expect(toggle).toHaveTextContent(/trace_status_success/);
+      expect(toggle).toHaveTextContent(/trace_step_count/);
+      expect(toggle).toHaveTextContent(/3s/);
+    });
+
+    it('shows loading state when execution details are being fetched', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceDetailsLoading
+        />
+      );
+
+      const toggle = screen.getByTestId('notebook__message-trace-toggle');
+      expect(toggle).toHaveTextContent(/trace_details_loading/);
+      await user.click(toggle);
+      expect(screen.getByTestId('notebook__message-trace-loading')).toBeInTheDocument();
+    });
+
+    it('shows empty execution details state when no traces are available', async () => {
+      const user = userEvent.setup();
+      render(<MessageItem message={mockAgentMessage} />);
+
+      const toggle = screen.getByTestId('notebook__message-trace-toggle');
+      expect(toggle).toHaveTextContent(/trace_no_details/);
+      await user.click(toggle);
+      expect(screen.getByTestId('notebook__message-trace-empty')).toBeInTheDocument();
+    });
+
+    it('shows truncated hint and load-more action when traceHasMore is true', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceHasMore
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:01Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+          ]}
+        />
+      );
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      expect(screen.getByTestId('notebook__message-trace-truncated')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__message-trace-load-more')).toBeInTheDocument();
+    });
+
+    it('shows load-more loading label when traceLoadMoreLoading is true', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceHasMore
+          traceLoadMoreLoading
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:01Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+          ]}
+        />
+      );
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      expect(screen.getByTestId('notebook__message-trace-load-more')).toHaveTextContent(/trace_load_more_loading/);
     });
   });
 
@@ -171,13 +369,14 @@ describe('MessageItem', () => {
     });
 
     it('copies message content to clipboard', async () => {
+      const user = userEvent.setup();
       renderComponent(mockUserMessage);
 
       const copyButton = screen.getByTitle('Copy');
-      fireEvent.click(copyButton);
+      await user.click(copyButton);
 
       await waitFor(() => {
-        expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Hello, this is a user message');
+        expect(writeTextMock).toHaveBeenCalledWith('Hello, this is a user message');
       });
     });
 

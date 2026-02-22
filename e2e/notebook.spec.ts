@@ -151,5 +151,17 @@ test.describe('Notebook Page', () => {
       await expect(dialog.getByRole('button', { name: /add selected/i })).toBeDisabled();
       await expect(dialog.getByRole('button', { name: /cancel/i })).toBeVisible();
     });
+
+    test('should expand execution details panel for agent messages', async ({ authedPage }) => {
+      const traceToggle = authedPage.getByTestId('notebook__message-trace-toggle').first();
+      await expect(traceToggle).toBeVisible({ timeout: 10000 });
+      await traceToggle.click();
+      await expect(authedPage.getByTestId('notebook__message-trace-panel')).toBeVisible();
+      await expect(
+        authedPage.getByTestId('notebook__message-trace-empty').or(
+          authedPage.getByTestId('notebook__trace-step').first(),
+        ),
+      ).toBeVisible();
+    });
   });
 });

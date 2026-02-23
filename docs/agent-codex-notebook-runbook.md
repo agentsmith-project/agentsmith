@@ -1,5 +1,11 @@
 # AgentSmith Notebook External Agent (Codex) Runbook
 
+## Scope of current internal release
+
+This runbook covers the supported internal release path focused on `Files + Notebook + External Agent + Trace + Artifacts`.
+
+Governance surfaces such as `Audit`, `Usage`, `Members`, and `Resource Policy` currently have frontend UI and MSW demo support, but are not fully implemented in the local `api-entry-node` backend. In real-backend mode, these pages should be treated as preview/mock-only unless a corresponding backend implementation has been added.
+
 ## 1. Scope
 - Target: external agent for Notebook task execution/testing.
 - Executor: OpenAI Codex CLI (`codex exec`, script/non-interactive mode).

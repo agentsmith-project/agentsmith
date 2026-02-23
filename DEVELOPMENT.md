@@ -264,6 +264,13 @@ make e2e-int-agent-local-api
 
 This section records the recent notebook external-agent workline (Codex runner + trace UI + production hardening), its current state, and the next-stage plan.
 
+### Internal Release Scope Clarification (Product Governance Pages)
+
+As of the current internal release candidate, the product-governance surfaces (`Audit`, `Usage`, `Members`, `Resource Policy`) are not fully backed by the local `api-entry-node` backend. They are implemented to a large extent on the frontend and in MSW demo mode, but should be treated as preview/mock-backed in real local-backend mode unless explicitly implemented.
+
+See also:
+- `docs/release/internal-release-capability-matrix.md`
+
 ### Scope (What this workline covered)
 
 - Notebook task execution via external agent runtime (`agent-codex-runner`, Codex script mode)

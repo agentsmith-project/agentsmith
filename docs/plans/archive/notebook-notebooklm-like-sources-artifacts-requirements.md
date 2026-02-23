@@ -1,5 +1,7 @@
 # Notebook「类似 NotebookLM 的资料选择与产物展示」功能需求文档
 
+> Archived (2026-02): This requirements document has been largely implemented and superseded by the active runbook/contracts/runtime docs. Keep for historical product/context reference only.
+
 ## 1. 背景与目标
 
 ### 1.1 背景
@@ -539,4 +541,3 @@ runner 已具备：
 - `docs/agent-codex-notebook-runbook.md`
 - `docs/contracts/*`（如接口行为有调整）
 - `DEVELOPMENT.md`（若引入新的运行策略约束或专项 smoke）
-

@@ -209,6 +209,7 @@ export function TaskPage({
 
   // SSE connection for real-time updates
   const isDev = process.env.NODE_ENV === 'development';
+  const showSseDebugPanel = isDev && process.env.NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL === '1';
   const { connectionStatus } = useTaskSSE(workspaceId, projectId, taskId, {
     onMessage: (message: TaskMessage) => {
       // Update streaming content for the active streaming message
@@ -572,7 +573,7 @@ export function TaskPage({
           />
         </div>
         <div className="flex-1 min-w-0">
-          {isDev && <NotebookSseDebugPanel events={sseDebugEvents} />}
+          {showSseDebugPanel && <NotebookSseDebugPanel events={sseDebugEvents} />}
           <ConversationPanel
             messages={messages || []}
             streamingMessageId={streamingMessageId}

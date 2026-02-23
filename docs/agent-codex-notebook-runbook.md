@@ -101,6 +101,31 @@
 - `DEBUG_ENDPOINT_PROXY=1` (proxy request summaries + SSE translation counters)
 - `DEBUG_NOTEBOOK_RUNTIME=1` (task/run/request_id level dispatch + terminal events)
 
+### 5.3.1 Unified Env Switch Reference (quick lookup)
+- Runner (`agent-codex-runner`)
+  - `MBOS_AGENT_WS_URL`, `MBOS_AGENT_KEY`, `CODEX_BIN`
+  - `MBOS_AGENT_TASK_TIMEOUT_SEC`
+  - `MBOS_AGENT_RUNNER_DEBUG`
+  - `MBOS_AGENT_CODEX_YOLO`
+- API (`@mbos/api-entry-node`)
+  - `DEBUG_AGENT_RUNTIME`, `DEBUG_ENDPOINT_PROXY`, `DEBUG_NOTEBOOK_RUNTIME`
+  - `AGENT_RUNTIME_REQUEST_TIMEOUT_MS`
+  - `NOTEBOOK_TRACE_MAX_EVENTS`, `NOTEBOOK_TRACE_DETAILS_MAX_BYTES`, `NOTEBOOK_SSE_HISTORY_MAX_EVENTS`
+- Web / frontend (`next dev`)
+  - `NEXT_PUBLIC_API_BASE`
+  - `NEXT_PUBLIC_USE_MSW`
+  - `NEXT_PUBLIC_KEYCLOAK_URL`, `NEXT_PUBLIC_KEYCLOAK_REALM`, `NEXT_PUBLIC_KEYCLOAK_CLIENT_ID`
+  - `NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL=1` (development-only; shows `SSE Debug (latest 5)` panel)
+- Demo bootstrap (`make notebook-agent-demo-up`)
+  - `DEMO_START_API`, `DEMO_START_WEB`, `DEMO_START_RUNNER`
+  - `DEMO_REFRESH_TOKEN`, `DEMO_REFRESH_TOKEN_FORCE`, `DEMO_REFRESH_TIMEOUT_SEC`
+  - `DEMO_INIT_RESOURCES`, `DEMO_WEB_PORT_AUTO_FALLBACK`
+  - `PORT_API`, `PORT_WEB`, `WORKSPACE_ID`, `LOCALE`
+  - `GLM_API_KEY`, `GLM_BASE_URL`, `GLM_MODEL`
+- Note:
+  - This runbook is the current **single place** for notebook/external-agent runtime switches.
+  - Repo-wide frontend-only switches outside notebook scope may still be documented in feature-specific docs.
+
 ### 5.4 Local commands
 ```bash
 # Start API with debugging for notebook/runtime/proxy troubleshooting
@@ -263,6 +288,9 @@ make notebook-agent-demo-down
 
 ## 7.2 Frontend Notebook SSE Debug Panel (Development Only)
 - In `next dev` (`NODE_ENV=development`), the notebook task page shows `SSE Debug (latest 5)` above the conversation panel.
+- It is now **disabled by default**, even in development.
+- Enable explicitly when troubleshooting browser SSE behavior:
+  - `NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL=1 npm run dev -- --port 3001`
 - Purpose:
   - quickly verify whether browser SSE is connected and receiving events without opening DevTools Network every time.
   - distinguish UI rendering issues vs backend/runtime event delivery issues.

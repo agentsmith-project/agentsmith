@@ -697,9 +697,41 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskArtifactDownload' && method === 'GET') {
+    await loadTaskArtifacts(deps, route.taskId);
+    const artifact = getTaskArtifacts(route.taskId).find((item) => item.id === route.artifactId);
+    if (!artifact) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'artifact_not_found' });
+      return true;
+    }
+
+    const filename = (artifact.title?.trim() || `${artifact.id}`);
+    const contentType = artifact.mime_type?.trim() || 'application/octet-stream';
     res.statusCode = 200;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+
+    if (typeof artifact.content === 'string' && artifact.content.startsWith('data:')) {
+      const match = artifact.content.match(/^data:([^;,]+)?(?:;base64)?,(.*)$/s);
+      if (match) {
+        const dataMime = match[1]?.trim() || contentType;
+        const payload = match[2] ?? '';
+        const isBase64 = /;base64,/.test(artifact.content.slice(0, artifact.content.indexOf(',') + 1));
+        const body = isBase64
+          ? Buffer.from(payload, 'base64')
+          : Buffer.from(decodeURIComponent(payload), 'utf8');
+        res.setHeader('Content-Type', dataMime);
+        res.end(body);
+        return true;
+      }
+    }
+
+    if (typeof artifact.content === 'string') {
+      res.setHeader('Content-Type', contentType.includes('charset=') ? contentType : `${contentType}; charset=utf-8`);
+      res.end(artifact.content);
+      return true;
+    }
+
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.end('artifact download is not available in local in-memory backend');
+    res.end('artifact binary download is unavailable: no inline content stored');
     return true;
   }
 

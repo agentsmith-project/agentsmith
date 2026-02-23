@@ -33,11 +33,11 @@ export function FileSelectDialog({
   const tCommon = useTranslations('common');
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
-  // Fetch only ready files
+  // Fetch task-selectable files from the file library.
+  // Do not hard-filter to AI Ready only: users should be able to see newly uploaded files
+  // and decide whether to attach them based on visible status badges.
   const { data: filesData, isLoading } = useFiles(workspaceId, projectId, {
-    status: 'ready',
-    ai_ready_only: true,
-    page_size: 1000, // Get all ready files
+    page_size: 1000, // Demo-friendly upper bound for selectable files
   });
 
   // Filter out already attached files

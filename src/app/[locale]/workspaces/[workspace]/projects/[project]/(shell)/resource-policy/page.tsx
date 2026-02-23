@@ -24,6 +24,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
+import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
 import { ResourcePolicyTable, type ResourceRow } from '@/components/resource-policy/ResourcePolicyTable';
 import { Button } from '@/components/ui/button';
 import {
@@ -53,6 +54,7 @@ import {
   formatRuleValue,
   mergeRuleSources,
 } from '@/lib/resource-policy/editor-utils';
+import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 
 interface ResourcePolicyPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -71,6 +73,8 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const tNav = useTranslations('nav');
   const tErrors = useTranslations('errors');
   const tResource = useTranslations('resource_policy');
+  const featureAvailability = getFeatureAvailability('resource_policy');
+  const isFeatureBlocked = isFeatureBlockedInCurrentMode('resource_policy');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
   const [selectedResource, setSelectedResource] = useState<ResourceRow | null>(null);
   const [accessMode, setAccessMode] = useState<'allow_all_members' | 'allow_list'>('allow_all_members');
@@ -365,6 +369,25 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
           <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
           <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
         </div>
+      </PageState>
+    );
+  }
+
+  if (isFeatureBlocked) {
+    return (
+      <PageState state="success">
+        <PageLayout
+          header={(
+            <PageHeader
+              title={tNav('resource_policy')}
+              subtitle={tResource('subtitle')}
+            />
+          )}
+        >
+          <div className="mx-auto w-full max-w-5xl p-4">
+            <FeatureAvailabilityBanner availability={featureAvailability} />
+          </div>
+        </PageLayout>
       </PageState>
     );
   }

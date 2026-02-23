@@ -3,10 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { AuditPage as AuditPageComponent } from '@/components/audit-usage/AuditPage';
+import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 
 interface AuditPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -14,6 +18,7 @@ interface AuditPageProps {
 
 export default function AuditPage({ params }: AuditPageProps) {
   const tErrors = useTranslations('errors');
+  const t = useTranslations('audit');
   const [resolvedParams, setResolvedParams] = useState<{
     workspace?: string;
     project?: string;
@@ -21,6 +26,8 @@ export default function AuditPage({ params }: AuditPageProps) {
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
   const canViewAudit = useHasPermission('project:audit:view');
+  const featureAvailability = getFeatureAvailability('audit');
+  const isFeatureBlocked = isFeatureBlockedInCurrentMode('audit');
 
   useEffect(() => {
     params.then((p) =>
@@ -57,6 +64,18 @@ export default function AuditPage({ params }: AuditPageProps) {
           <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
           <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
         </div>
+      </PageState>
+    );
+  }
+
+  if (isFeatureBlocked) {
+    return (
+      <PageState state="success">
+        <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
+          <div className="mx-auto w-full max-w-4xl p-4">
+            <FeatureAvailabilityBanner availability={featureAvailability} />
+          </div>
+        </PageLayout>
       </PageState>
     );
   }

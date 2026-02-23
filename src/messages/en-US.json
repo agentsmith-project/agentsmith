@@ -57,6 +57,14 @@
     "next": "Next",
     "view": "View",
     "download": "Download",
+    "feature_availability": {
+      "mock_only_title": "Demo / mock-backed feature",
+      "mock_only_description": "This page is available in MSW demo mode, but the local API backend does not implement this feature yet.",
+      "partial_title": "Partially available",
+      "partial_description": "Some functionality on this page is not supported by the current backend.",
+      "coming_soon_title": "Coming soon",
+      "coming_soon_description": "This feature is planned but not available in the current backend."
+    },
     "user_menu": {
       "profile": "Profile",
       "api_keys": "API Keys",

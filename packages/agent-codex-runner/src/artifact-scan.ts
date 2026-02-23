@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
-import { basename, extname, join } from 'node:path';
+import { basename, extname, join, relative } from 'node:path';
 
 export type ScannedArtifact = {
   filename: string;
@@ -27,6 +27,23 @@ const MAX_TEXT_ARTIFACT_PREVIEW_BYTES = Math.max(
   256,
   Number(process.env.MBOS_AGENT_ARTIFACT_TEXT_PREVIEW_MAX_BYTES ?? '65536') || 64 * 1024,
 );
+const MAX_WORKSPACE_FILE_SCAN = Math.max(
+  50,
+  Number(process.env.MBOS_AGENT_WORKSPACE_FILE_SCAN_MAX_FILES ?? '500') || 500,
+);
+const MAX_WORKSPACE_FILE_CHANGE_LIST = Math.max(
+  10,
+  Number(process.env.MBOS_AGENT_WORKSPACE_FILE_CHANGE_LIST_MAX ?? '50') || 50,
+);
+
+export type WorkspaceFileSnapshot = Map<string, { size: number; mtimeMs: number }>;
+export type WorkspaceFileChangeSummary = {
+  scanned_count: number;
+  added: string[];
+  modified: string[];
+  deleted: string[];
+  truncated?: boolean;
+};
 
 function inferArtifactKind(filename: string): {
   artifactType: ScannedArtifact['artifact_type'];
@@ -139,3 +156,100 @@ export function filterNewArtifactsForCwd(
   return next;
 }
 
+function shouldSkipWorkspaceEntry(relPath: string, entry: Dirent): boolean {
+  const normalized = relPath.replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.length === 0) return true;
+  const top = parts[0]!;
+  if (top === '.codex' || top === '.mbos' || top === 'artifacts') return true;
+  if (top === '.git' || top === 'node_modules') return true;
+  if (entry.name.startsWith('.DS_Store')) return true;
+  return false;
+}
+
+async function walkWorkspaceFiles(
+  cwd: string,
+  dir: string,
+  out: WorkspaceFileSnapshot,
+  state: { scanned: number; stop: boolean },
+): Promise<void> {
+  if (state.stop) return;
+  let entries: Dirent[];
+  try {
+    entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (state.stop) return;
+    const abs = join(dir, entry.name);
+    const rel = relative(cwd, abs);
+    if (!rel || rel.startsWith('..')) continue;
+    if (shouldSkipWorkspaceEntry(rel, entry)) continue;
+    if (entry.isDirectory()) {
+      await walkWorkspaceFiles(cwd, abs, out, state);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    let st;
+    try {
+      st = await stat(abs);
+    } catch {
+      continue;
+    }
+    if (!st.isFile()) continue;
+    out.set(rel.replace(/\\/g, '/'), { size: st.size, mtimeMs: Math.floor(st.mtimeMs) });
+    state.scanned += 1;
+    if (state.scanned >= MAX_WORKSPACE_FILE_SCAN) {
+      state.stop = true;
+      return;
+    }
+  }
+}
+
+export async function scanWorkspaceFilesSnapshot(cwd: string): Promise<WorkspaceFileSnapshot> {
+  const snapshot: WorkspaceFileSnapshot = new Map();
+  const state = { scanned: 0, stop: false };
+  await walkWorkspaceFiles(cwd, cwd, snapshot, state);
+  return snapshot;
+}
+
+function limitList(items: string[]): { items: string[]; truncated: boolean } {
+  if (items.length <= MAX_WORKSPACE_FILE_CHANGE_LIST) return { items, truncated: false };
+  return { items: items.slice(0, MAX_WORKSPACE_FILE_CHANGE_LIST), truncated: true };
+}
+
+export function diffWorkspaceFileSnapshots(
+  before: WorkspaceFileSnapshot,
+  after: WorkspaceFileSnapshot,
+): WorkspaceFileChangeSummary {
+  const added: string[] = [];
+  const modified: string[] = [];
+  const deleted: string[] = [];
+  for (const [path, meta] of after.entries()) {
+    const prev = before.get(path);
+    if (!prev) {
+      added.push(path);
+      continue;
+    }
+    if (prev.size !== meta.size || prev.mtimeMs !== meta.mtimeMs) {
+      modified.push(path);
+    }
+  }
+  for (const path of before.keys()) {
+    if (!after.has(path)) deleted.push(path);
+  }
+  added.sort();
+  modified.sort();
+  deleted.sort();
+  const a = limitList(added);
+  const m = limitList(modified);
+  const d = limitList(deleted);
+  return {
+    scanned_count: after.size,
+    added: a.items,
+    modified: m.items,
+    deleted: d.items,
+    ...(a.truncated || m.truncated || d.truncated ? { truncated: true } : {}),
+  };
+}

@@ -10,8 +10,10 @@ import {
   prepareNotebookWorkspaceAssets,
 } from './notebook-assets.js';
 import {
+  diffWorkspaceFileSnapshots,
   filterNewArtifactsForCwd,
   scanArtifactsDirectory,
+  scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
 
 type ServerStartPayload = {
@@ -177,13 +179,30 @@ function parseCodexJsonLine(line: string): Record<string, unknown> | null {
 function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
   const evt = parseCodexJsonLine(line);
   if (!evt) return;
-  const type = evt.type;
+  const type = typeof evt.type === 'string' ? evt.type : 'unknown';
+  const itemObj = typeof evt.item === 'object' && evt.item !== null ? (evt.item as Record<string, unknown>) : null;
+  const itemType = itemObj && typeof itemObj.type === 'string' ? itemObj.type : null;
+  // Always emit a high-fidelity raw/debug event so the UI Raw view can show more of Codex's console semantics.
+  sendTraceEvent(requestId, {
+    category: 'debug',
+    phase: 'update',
+    status: 'running',
+    name: `codex.raw.${type}`,
+    summary: itemType ? `Codex event: ${type} (${itemType})` : `Codex event: ${type}`,
+    details: {
+      event_type: type,
+      ...(itemType ? { item_type: itemType } : {}),
+    },
+    raw: line,
+  });
   if (type !== 'thread.started'
     && type !== 'turn.started'
     && type !== 'turn.completed'
     && type !== 'turn.failed'
     && type !== 'error'
-    && type !== 'item.completed') {
+    && type !== 'item.completed'
+    && type !== 'item.started'
+    && type !== 'item.updated') {
     return;
   }
 
@@ -242,14 +261,31 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
     });
     return;
   }
-  const item = typeof evt.item === 'object' && evt.item !== null ? (evt.item as Record<string, unknown>) : {};
+  const item = itemObj ?? {};
+  if (type === 'item.started' || type === 'item.updated') {
+    if (item.type === 'function_call') {
+      const toolName = typeof item.name === 'string' ? item.name : 'unknown';
+      sendTraceEvent(requestId, {
+        category: 'tool',
+        phase: type === 'item.started' ? 'start' : 'update',
+        status: 'running',
+        name: 'codex.tool',
+        summary: `Tool call ${type === 'item.started' ? 'started' : 'updated'}: ${toolName}`,
+        details: {
+          tool_name: toolName,
+          ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}),
+        },
+      });
+    }
+    return;
+  }
   if (item.type === 'agent_message') {
     sendTraceEvent(requestId, {
       category: 'progress',
       phase: 'end',
       status: 'success',
       name: 'codex.output',
-      summary: 'Final response generated',
+      summary: 'Agent message completed',
     });
     return;
   }
@@ -260,11 +296,22 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
       phase: 'end',
       status: 'success',
       name: 'codex.tool',
-      summary: `Tool call: ${toolName}`,
+      summary: `Tool call completed: ${toolName}`,
       details: {
         tool_name: toolName,
         ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}),
       },
+    });
+    return;
+  }
+  if (type === 'item.completed') {
+    sendTraceEvent(requestId, {
+      category: 'progress',
+      phase: 'end',
+      status: 'success',
+      name: 'codex.item',
+      summary: itemType ? `Item completed: ${itemType}` : 'Item completed',
+      details: itemType ? { item_type: itemType } : undefined,
     });
   }
 }
@@ -428,6 +475,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   timeoutByRequestId.set(requestId, timeoutHandle);
 
   let stdoutBuffer = '';
+  const workspaceBeforeSnapshot = isNotebookMode ? await scanWorkspaceFilesSnapshot(cwd) : null;
   child.stdout.on('data', (buffer: Buffer) => {
     stdoutBuffer += buffer.toString('utf-8');
     let idx = stdoutBuffer.indexOf('\n');
@@ -502,6 +550,30 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       return;
     }
     void (async () => {
+      if (isNotebookMode && workspaceBeforeSnapshot) {
+        try {
+          const workspaceAfterSnapshot = await scanWorkspaceFilesSnapshot(cwd);
+          const changes = diffWorkspaceFileSnapshots(workspaceBeforeSnapshot, workspaceAfterSnapshot);
+          if (changes.added.length > 0 || changes.modified.length > 0 || changes.deleted.length > 0) {
+            sendTraceEvent(requestId, {
+              category: 'tool',
+              phase: 'end',
+              status: code === 0 ? 'success' : 'running',
+              name: 'workspace.files_changed',
+              summary: `Workspace files changed (+${changes.added.length} ~${changes.modified.length} -${changes.deleted.length})`,
+              details: changes as unknown as Record<string, unknown>,
+            });
+          }
+        } catch (error) {
+          sendTraceEvent(requestId, {
+            category: 'warning',
+            phase: 'update',
+            status: 'running',
+            name: 'workspace.scan',
+            summary: error instanceof Error ? error.message : 'workspace_scan_failed',
+          });
+        }
+      }
       const artifacts = isNotebookMode
         ? filterNewArtifactsForCwd(reportedArtifactsByCwd, cwd, await scanArtifactsDirectory(cwd))
         : [];

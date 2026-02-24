@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 
 import type { Attachment } from '@/lib/api/types';
 import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
+import { getChatAttachmentInputRefLabel } from '@/lib/utils/input-ref-display';
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
@@ -157,6 +158,7 @@ export function Composer({
                   typeof a.preview_url === 'string' &&
                   a.preview_url.length > 0 &&
                   (a.file_type.startsWith('image/') || a.preview_url.startsWith('data:image/'));
+                const inputRefLabel = getChatAttachmentInputRefLabel(a);
                 return (
                   <div
                     key={a.id}
@@ -173,7 +175,7 @@ export function Composer({
                     ) : null}
                     <div className="min-w-0">
                       <div className="text-xs text-primary truncate max-w-[260px]">{a.file_name}</div>
-                      {status !== 'ready' && (
+                      {status !== 'ready' ? (
                         <div className={cn('text-[11px]', status === 'failed' ? 'text-error' : 'text-tertiary')}>
                           {status === 'uploading'
                             ? t('composer.attachment_status_uploading')
@@ -181,7 +183,9 @@ export function Composer({
                               ? t('composer.attachment_status_processing')
                               : t('composer.attachment_status_failed')}
                         </div>
-                      )}
+                      ) : inputRefLabel ? (
+                        <div className="text-[11px] text-tertiary">{inputRefLabel}</div>
+                      ) : null}
                     </div>
                     {status === 'failed' ? (
                       <Button type="button" variant="ghost" size="sm" onClick={() => onRetryAttachment(a.id)}>

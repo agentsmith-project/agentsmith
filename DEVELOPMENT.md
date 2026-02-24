@@ -703,4 +703,5 @@ Current known boundary:
 - Chat file attachments started migrating toward object-first flow:
   - local file uploads are first written into a deterministic default upload library (`My Uploads`) as library objects,
   - then converted into chat attachments via the existing chat attachment runtime path.
-- This is an architectural convergence step only; backend-enforced system-managed default personal libraries are not implemented yet.
+- Backend now enforces a system-managed default personal library (`system_managed_kind=default_personal_uploads`) with ensure route semantics and rename/delete protections.
+- Notebook "Add URL" also follows object-first flow (URL note file stored as a default-library object, then attached as `library_object` input ref).

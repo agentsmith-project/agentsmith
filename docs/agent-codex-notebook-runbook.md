@@ -142,6 +142,11 @@ Governance surfaces such as `Audit`, `Usage`, `Members`, and `Resource Policy` c
   - per-user + per-project
   - ensure route is idempotent (create or return existing)
   - default personal library is protected from rename/delete on standard library routes
+  - default personal library is marked with `system_managed_kind=default_personal_uploads`
+
+### 5.3.3 Notebook URL Inputs (object-first)
+- Notebook "Add URL" now stores the generated URL note file in the backend default personal library, then attaches it as a `library_object` input ref to the task.
+- This keeps notebook URL inputs aligned with the object-first input architecture (instead of uploading URL notes as `source` records).
 
 ### 5.4 Local commands
 ```bash

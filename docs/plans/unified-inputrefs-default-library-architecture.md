@@ -125,7 +125,7 @@ The UI only attaches `InputRef`.
 - Backend provides `GET /source-libraries/default-personal` (idempotent ensure route)
 
 ### Phase 3 (next)
-- Replace front-end "default personal library" conventions with backend-enforced system-managed semantics (metadata / non-deletable / non-renamable policy already partially enforced)
+- Replace front-end "default personal library" conventions with backend-enforced system-managed semantics (now implemented with `system_managed_kind=default_personal_uploads` + protected rename/delete semantics)
 - Introduce shared backend/runtime input resolver interfaces for Chat/Notebook/Agents
 
 ### Phase 4 (Derived processing alignment)
@@ -135,7 +135,14 @@ The UI only attaches `InputRef`.
 ## Current Transitional Areas
 
 - Chat still consumes inputs through the existing attachment runtime path (provider-oriented payloads), even though uploads/picks now converge on `library_object` provenance.
-- Backend default personal library is currently identified by deterministic name + user/project ownership; a stronger system-managed marker is a follow-up hardening step.
+- Backend default personal library now carries an explicit system-managed marker (`system_managed_kind=default_personal_uploads`) and is protected on standard library routes.
+- Remaining follow-up hardening (optional): data migration to eliminate any legacy name-based fallback checks.
+
+### Progress update (2026-02)
+- Notebook task inputs use `attached_inputs` and `/tasks/:taskId/inputs` (`source` + `library_object`)
+- Notebook "Add URL" now stores URL notes as default personal library objects, then attaches them as `library_object` input refs (object-first)
+- Chat local uploads and library selections are object-first and use backend `default-personal` ensure route
+- Chat attachments and user message requests now carry `input_ref` provenance (`inputs: InputRef[]` for user messages)
 
 ## Benefits of This Architecture
 

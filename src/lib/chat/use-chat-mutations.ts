@@ -4,7 +4,7 @@ import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { FilesAPI } from '@/lib/api/endpoints/files';
 import type { ChatSession, Endpoint } from '@/lib/api/types';
 import type { ChatMessageInputRef } from '@/lib/types/input-ref';
-import { ensureDefaultUploadLibrary } from '@/lib/chat/default-library';
+import { ensureDefaultUploadLibrary } from '@/lib/files/default-library';
 import { toast } from '@/components/ui/toast';
 import { chatAttachmentsKey, chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
 

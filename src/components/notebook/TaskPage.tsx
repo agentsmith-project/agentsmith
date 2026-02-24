@@ -32,6 +32,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { mapTraceHasMoreByMessageId, pruneTaskTraceMeta, upsertTaskTraceMeta, type TaskTraceMetaByMessageId } from '@/lib/utils/task-trace-meta';
+import { ensureDefaultUploadLibrary } from '@/lib/files/default-library';
 
 export interface TaskPageProps {
   workspaceId: string;
@@ -424,7 +425,35 @@ export function TaskPage({
     const filename = `${fileSafeName || 'url_input'}.url.txt`;
     const content = `URL input\n${normalized}\n`;
     const file = new File([content], filename, { type: 'text/plain' });
-    await uploadAndAttachFiles([file]);
+    setAddingInput(true);
+    try {
+      const library = await ensureDefaultUploadLibrary({
+        sourcesAPI: filesAPI,
+        workspaceId,
+        projectId,
+      });
+      const uploaded = await filesAPI.uploadObject(
+        workspaceId,
+        projectId,
+        library.id,
+        file,
+        `notebook/${taskId}/inputs`,
+        true,
+      );
+      await handleAddFiles([{
+        kind: 'library_object',
+        library_id: library.id,
+        key: uploaded.key,
+        name: uploaded.name,
+        content_type: uploaded.content_type,
+        size_bytes: uploaded.size_bytes,
+      }]);
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.fileLibraries.list(workspaceId, projectId),
+      });
+    } finally {
+      setAddingInput(false);
+    }
     setUrlInput('');
     setAddUrlOpen(false);
   };

@@ -7,6 +7,7 @@ import { useRemoveFile, useTaskAttachedFiles } from '@/lib/hooks/use-task';
 import { AIReadyStatusBadge } from '@/components/files/AIReadyStatusBadge';
 import { EmptyState } from '@/components/ui/loading';
 import { formatBytes } from '@/lib/utils/formatters';
+import { getTaskAttachedInputKindLabel } from '@/lib/utils/input-ref-display';
 // Simple file icon function - can be enhanced later
 function getFileIcon(_fileType: string) {
   return FileIcon;
@@ -123,9 +124,7 @@ function AttachedFileItem({ file, onRemove, removing }: AttachedFileItemProps) {
           {aiReadyStatus && (
             <AIReadyStatusBadge status={aiReadyStatus} />
           )}
-          <span className="text-xs text-tertiary">
-            {file.kind === 'library_object' ? 'Library object' : 'Source'}
-          </span>
+          <span className="text-xs text-tertiary">{getTaskAttachedInputKindLabel(file)}</span>
         </div>
       </div>
       <button

@@ -510,6 +510,351 @@ paths:
       responses:
         "204":
           description: Deleted
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members:
+    get:
+      tags:
+        - Members
+      operationId: get_projectMembers
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                  - total
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests:
+    get:
+      tags:
+        - Members
+      operationId: get_projectJoinRequests
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                  - total
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/permission-templates:
+    get:
+      tags:
+        - Members
+      operationId: get_projectPermissionTemplates
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Members
+      operationId: create_projectPermissionTemplate
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - permissions
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                permissions:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates:
+    get:
+      tags:
+        - Members
+      operationId: get_projectQuotaTemplates
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Members
+      operationId: create_projectQuotaTemplate
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - overrides_json
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                overrides_json:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/groups:
+    get:
+      tags:
+        - Members
+      operationId: get_projectGroups
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Members
+      operationId: create_projectGroup
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - permission_template_id
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                permission_template_id:
+                  type: string
+                member_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/memberships/{userId}:
+    get:
+      tags:
+        - Members
+      operationId: get_projectMembershipItem
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -707,1035 +1052,6 @@ paths:
                   minLength: 1
                   maxLength: 255
               additionalProperties: false
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/audit:
-    get:
-      tags:
-        - Audit
-      operationId: get_audit
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: start_time
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: end_time
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: page
-          in: query
-          schema:
-            type: integer
-        - name: page_size
-          in: query
-          schema:
-            type: integer
-        - name: action
-          in: query
-          schema:
-            type: string
-        - name: actor_type
-          in: query
-          schema:
-            type: string
-        - name: actor_id
-          in: query
-          schema:
-            type: string
-        - name: end_user_id
-          in: query
-          schema:
-            type: string
-        - name: resource_type
-          in: query
-          schema:
-            type: string
-        - name: resource_id
-          in: query
-          schema:
-            type: string
-        - name: result
-          in: query
-          schema:
-            type: string
-        - name: sort_by
-          in: query
-          schema:
-            type: string
-        - name: sort_order
-          in: query
-          schema:
-            type: string
-            enum:
-              - asc
-              - desc
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                  - total
-                  - page
-                  - page_size
-                  - has_more
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: true
-                  total:
-                    type: integer
-                  page:
-                    type: integer
-                  page_size:
-                    type: integer
-                  has_more:
-                    type: boolean
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage:
-    get:
-      tags:
-        - Usage
-      operationId: get_usage
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: start_time
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: end_time
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: page
-          in: query
-          schema:
-            type: integer
-        - name: page_size
-          in: query
-          schema:
-            type: integer
-        - name: resource_type
-          in: query
-          schema:
-            type: string
-        - name: resource_id
-          in: query
-          schema:
-            type: string
-        - name: end_user_id
-          in: query
-          schema:
-            type: string
-        - name: group_by
-          in: query
-          schema:
-            type: string
-            enum:
-              - day
-              - hour
-        - name: sort_by
-          in: query
-          schema:
-            type: string
-        - name: sort_order
-          in: query
-          schema:
-            type: string
-            enum:
-              - asc
-              - desc
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                  - total
-                  - page
-                  - page_size
-                  - has_more
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: true
-                  total:
-                    type: integer
-                  page:
-                    type: integer
-                  page_size:
-                    type: integer
-                  has_more:
-                    type: boolean
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi:
-    get:
-      tags:
-        - Usage
-      operationId: get_usageKpi
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: start_time
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: end_time
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: end_user_id
-          in: query
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - requests_today
-                  - errors_today
-                properties:
-                  requests_today:
-                    type: integer
-                  errors_today:
-                    type: integer
-                  tokens_today:
-                    type: integer
-                  requests_yesterday:
-                    type: integer
-                  errors_yesterday:
-                    type: integer
-                  tokens_yesterday:
-                    type: integer
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members:
-    get:
-      tags:
-        - Members
-      operationId: get_projectMembers
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                  - total
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: true
-                  total:
-                    type: integer
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests:
-    get:
-      tags:
-        - Members
-      operationId: get_projectJoinRequests
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                  - total
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: true
-                  total:
-                    type: integer
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests/{joinId}/approve:
-    post:
-      tags:
-        - Members
-      operationId: approve_projectJoinRequest
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: joinId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests/{joinId}/reject:
-    post:
-      tags:
-        - Members
-      operationId: reject_projectJoinRequest
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: joinId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              properties:
-                reason:
-                  type: string
-      responses:
-        "204":
-          description: No Content
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/permission-templates:
-    get:
-      tags:
-        - Members
-      operationId: get_projectPermissionTemplates
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-    post:
-      tags:
-        - Members
-      operationId: create_projectPermissionTemplate
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - name
-                - permissions
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-                permissions:
-                  type: array
-                  items:
-                    type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/permission-templates/{templateId}:
-    patch:
-      tags:
-        - Members
-      operationId: update_projectPermissionTemplate
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: templateId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-                permissions:
-                  type: array
-                  items:
-                    type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-    delete:
-      tags:
-        - Members
-      operationId: delete_projectPermissionTemplate
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: templateId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates:
-    get:
-      tags:
-        - Members
-      operationId: get_projectQuotaTemplates
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-    post:
-      tags:
-        - Members
-      operationId: create_projectQuotaTemplate
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - name
-                - overrides_json
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-                overrides_json:
-                  type: object
-                  additionalProperties: true
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}:
-    get:
-      tags:
-        - Members
-      operationId: get_projectQuotaTemplateItem
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: templateId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-    patch:
-      tags:
-        - Members
-      operationId: update_projectQuotaTemplate
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: templateId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-                overrides_json:
-                  type: object
-                  additionalProperties: true
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-    delete:
-      tags:
-        - Members
-      operationId: delete_projectQuotaTemplate
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: templateId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}/apply:
-    post:
-      tags:
-        - Members
-      operationId: apply_projectQuotaTemplate
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: templateId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - member_ids
-              properties:
-                member_ids:
-                  type: array
-                  items:
-                    type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - applied_count
-                properties:
-                  applied_count:
-                    type: integer
-                    minimum: 0
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/groups:
-    get:
-      tags:
-        - Members
-      operationId: get_projectGroups
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-    post:
-      tags:
-        - Members
-      operationId: create_projectGroup
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - name
-                - permission_template_id
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-                permission_template_id:
-                  type: string
-                member_ids:
-                  type: array
-                  items:
-                    type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/groups/{groupId}:
-    patch:
-      tags:
-        - Members
-      operationId: update_projectGroup
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: groupId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-                permission_template_id:
-                  type: string
-                member_ids:
-                  type: array
-                  items:
-                    type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-    delete:
-      tags:
-        - Members
-      operationId: delete_projectGroup
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: groupId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/groups/{groupId}/apply-template:
-    post:
-      tags:
-        - Members
-      operationId: applyTemplate_projectGroup
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: groupId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                member_ids:
-                  type: array
-                  items:
-                    type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - applied_count
-                properties:
-                  applied_count:
-                    type: integer
-                  results:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/memberships/{userId}:
-    get:
-      tags:
-        - Members
-      operationId: get_projectMembershipItem
-      parameters:
-        - name: workspaceId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: projectId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}:
     get:
       tags:
@@ -3185,6 +2501,1130 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileLibrary"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage:
+    get:
+      tags:
+        - Usage
+      operationId: get_usage
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+        - name: end_user_id
+          in: query
+          schema:
+            type: string
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum:
+              - day
+              - hour
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        time_bucket:
+                          type: string
+                        workspace_id:
+                          type: string
+                        project_id:
+                          type: string
+                        resource_type:
+                          type: string
+                        resource_id:
+                          type: string
+                        end_user_id:
+                          type: string
+                        requests:
+                          type: integer
+                        duration_p95_ms:
+                          type: integer
+                        bytes_in:
+                          type: integer
+                        bytes_out:
+                          type: integer
+                        tokens:
+                          type: integer
+                      required:
+                        - id
+                        - time_bucket
+                        - workspace_id
+                        - project_id
+                        - resource_type
+                        - requests
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+                  has_more:
+                    type: boolean
+                required:
+                  - items
+                  - total
+                  - page
+                  - page_size
+                  - has_more
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi:
+    get:
+      tags:
+        - Usage
+      operationId: get_usageKpi
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end_user_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests_today:
+                    type: integer
+                  errors_today:
+                    type: integer
+                  tokens_today:
+                    type: integer
+                  requests_yesterday:
+                    type: integer
+                  errors_yesterday:
+                    type: integer
+                  tokens_yesterday:
+                    type: integer
+                required:
+                  - requests_today
+                  - errors_today
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/audit:
+    get:
+      tags:
+        - Audit
+      operationId: get_audit
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: actor_type
+          in: query
+          schema:
+            type: string
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+        - name: end_user_id
+          in: query
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+        - name: result
+          in: query
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        timestamp:
+                          type: string
+                        workspace_id:
+                          type: string
+                        project_id:
+                          type: string
+                        actor_type:
+                          type: string
+                        actor_id:
+                          type: string
+                        action:
+                          type: string
+                        resource_type:
+                          type: string
+                        resource_id:
+                          type: string
+                        end_user_id:
+                          type: string
+                        result:
+                          type: string
+                        error_code:
+                          type: string
+                        error_message:
+                          type: string
+                        request_id:
+                          type: string
+                        metadata_json:
+                          type: object
+                          additionalProperties: true
+                      required:
+                        - id
+                        - timestamp
+                        - workspace_id
+                        - project_id
+                        - actor_type
+                        - actor_id
+                        - action
+                        - result
+                        - request_id
+                        - metadata_json
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+                  has_more:
+                    type: boolean
+                required:
+                  - items
+                  - total
+                  - page
+                  - page_size
+                  - has_more
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests/{joinId}/approve:
+    post:
+      tags:
+        - Members
+      operationId: approve_projectJoinRequest
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: joinId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests/{joinId}/reject:
+    post:
+      tags:
+        - Members
+      operationId: reject_projectJoinRequest
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: joinId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/groups/{groupId}:
+    patch:
+      tags:
+        - Members
+      operationId: update_projectGroup
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                permission_template_id:
+                  type: string
+                member_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags:
+        - Members
+      operationId: delete_projectGroup
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/groups/{groupId}/apply-template:
+    post:
+      tags:
+        - Members
+      operationId: applyTemplate_projectGroup
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                member_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - applied_count
+                properties:
+                  applied_count:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/permission-templates/{templateId}:
+    patch:
+      tags:
+        - Members
+      operationId: update_projectPermissionTemplate
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                permissions:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags:
+        - Members
+      operationId: delete_projectPermissionTemplate
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}:
+    get:
+      tags:
+        - Members
+      operationId: get_projectQuotaTemplateItem
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    patch:
+      tags:
+        - Members
+      operationId: update_projectQuotaTemplate
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                overrides_json:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags:
+        - Members
+      operationId: delete_projectQuotaTemplate
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}/apply:
+    post:
+      tags:
+        - Members
+      operationId: apply_projectQuotaTemplate
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - member_ids
+              properties:
+                member_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - applied_count
+                properties:
+                  applied_count:
+                    type: integer
+                    minimum: 0
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/permissions:
+    get:
+      tags:
+        - Members
+      operationId: get_projectMemberPermissions
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - platform_permissions
+                properties:
+                  platform_permissions:
+                    type: array
+                    items:
+                      type: string
+                  resource_permissions:
+                    type: object
+                    additionalProperties: true
+        "401": &a1
+          $ref: "#/components/responses/Unauthorized"
+        "403": &a2
+          $ref: "#/components/responses/Forbidden"
+    patch:
+      tags:
+        - Members
+      operationId: update_projectMemberPermissions
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - mode
+              properties:
+                mode:
+                  type: string
+                  enum:
+                    - template
+                    - custom
+                template:
+                  type:
+                    - string
+                    - "null"
+                permissions:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "204":
+          description: No Content
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides:
+    get:
+      tags:
+        - Members
+      operationId: get_projectMemberQuotaOverrides
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - overrides
+                properties:
+                  overrides:
+                    type: object
+                    additionalProperties: true
+        "401": *a1
+        "403": *a2
+    patch:
+      tags:
+        - Members
+      operationId: update_projectMemberQuotaOverrides
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - overrides
+              properties:
+                overrides:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - overrides
+                properties:
+                  overrides:
+                    type: object
+                    additionalProperties: true
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides/history:
+    get:
+      tags:
+        - Members
+      operationId: list_projectMemberQuotaOverrideHistory
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                  - total
+                  - page
+                  - page_size
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/change-history:
+    get:
+      tags:
+        - Members
+      operationId: list_projectMemberChangeHistory
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/resources/{resourceType}/{resourceId}/policy:
+    get:
+      tags:
+        - Members
+      operationId: get_projectResourcePolicy
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: resourceType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - endpoint
+              - source_library
+              - agent
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401": *a1
+        "403": *a2
+    patch:
+      tags:
+        - Members
+      operationId: update_projectResourcePolicy
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: resourceType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - endpoint
+              - source_library
+              - agent
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - access_mode
+                - allowed_subjects
+              properties:
+                access_mode:
+                  type: string
+                  enum:
+                    - allow_all_members
+                    - allow_list
+                allowed_subjects:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+                rate_limits:
+                  type: object
+                  additionalProperties: true
+                quota_limits:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "204":
+          description: No Content
+        "401": *a1
+        "403": *a2
 components:
   parameters:
     workspaceId:

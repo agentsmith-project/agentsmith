@@ -83,6 +83,11 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'projectGroupItem'
     || route.kind === 'projectGroupApplyTemplate'
     || route.kind === 'projectMembershipItem'
+    || route.kind === 'projectMemberPermissions'
+    || route.kind === 'projectMemberQuotaOverrides'
+    || route.kind === 'projectMemberQuotaOverridesHistory'
+    || route.kind === 'projectMemberChangeHistory'
+    || route.kind === 'projectResourcePolicy'
   ) {
     if (
       route.kind === 'projectJoinRequestApprove'
@@ -94,6 +99,9 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
       || route.kind === 'projectQuotaTemplateApply'
       || route.kind === 'projectGroupItem'
       || route.kind === 'projectGroupApplyTemplate'
+      || route.kind === 'projectMemberPermissions'
+      || route.kind === 'projectMemberQuotaOverrides'
+      || route.kind === 'projectResourcePolicy'
     ) {
       return method === 'GET' ? ['project:member:view'] : ['project:member:manage'];
     }

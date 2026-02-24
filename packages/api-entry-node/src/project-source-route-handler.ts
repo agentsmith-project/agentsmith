@@ -33,6 +33,8 @@ interface AnyRoute {
   joinId?: string;
   groupId?: string;
   templateId?: string;
+  resourceType?: string;
+  resourceId?: string;
   libraryId?: string;
   jobId?: string;
   sourceId?: string;
@@ -98,9 +100,108 @@ const PROJECT_QUOTA_TEMPLATES_BY_PROJECT = new Map<string, Array<{
   created_at: string;
   updated_at: string;
 }>>();
+const PROJECT_MEMBER_PERMISSIONS_BY_PROJECT = new Map<string, Map<string, {
+  mode: 'template' | 'custom';
+  template?: string | null;
+  permissions: string[];
+}>>();
+const PROJECT_MEMBER_QUOTA_OVERRIDES_BY_PROJECT = new Map<string, Map<string, {
+  overrides: Record<string, unknown>;
+  history: Array<{
+    id: string;
+    created_at: string;
+    created_by_user_id: string;
+    overrides_json: Record<string, unknown>;
+  }>;
+}>>();
+const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Array<{
+  id: string;
+  timestamp: string;
+  actor_id: string;
+  actor_email: string;
+  change_type: 'permissions' | 'quota' | 'resource_policy' | 'role';
+  changes: {
+    added?: string[];
+    removed?: string[];
+    updated?: Record<string, { from: unknown; to: unknown }>;
+  };
+}>>>();
+const PROJECT_RESOURCE_POLICIES_BY_PROJECT = new Map<string, Map<string, {
+  resource_type: 'endpoint' | 'source_library' | 'agent';
+  resource_id: string;
+  access_mode: 'allow_all_members' | 'allow_list';
+  allowed_subjects: Array<{
+    subject_type: 'group' | 'user';
+    subject_id: string;
+    rate_limits?: Record<string, unknown>;
+    quota_limits?: Record<string, unknown>;
+    updated_at?: string;
+  }>;
+  rate_limits?: Record<string, unknown>;
+  quota_limits?: Record<string, unknown>;
+}>>();
 
 function projectScopedKey(workspaceId: string, projectId: string) {
   return `${workspaceId}:${projectId}`;
+}
+
+function getMemberPermissionsState(workspaceId: string, projectId: string) {
+  const key = projectScopedKey(workspaceId, projectId);
+  const existing = PROJECT_MEMBER_PERMISSIONS_BY_PROJECT.get(key);
+  if (existing) return existing;
+  const map = new Map<string, { mode: 'template' | 'custom'; template?: string | null; permissions: string[] }>();
+  PROJECT_MEMBER_PERMISSIONS_BY_PROJECT.set(key, map);
+  return map;
+}
+
+function getMemberQuotaState(workspaceId: string, projectId: string) {
+  const key = projectScopedKey(workspaceId, projectId);
+  const existing = PROJECT_MEMBER_QUOTA_OVERRIDES_BY_PROJECT.get(key);
+  if (existing) return existing;
+  const map = new Map<string, {
+    overrides: Record<string, unknown>;
+    history: Array<{ id: string; created_at: string; created_by_user_id: string; overrides_json: Record<string, unknown> }>;
+  }>();
+  PROJECT_MEMBER_QUOTA_OVERRIDES_BY_PROJECT.set(key, map);
+  return map;
+}
+
+function getMemberChangeHistoryState(workspaceId: string, projectId: string) {
+  const key = projectScopedKey(workspaceId, projectId);
+  const existing = PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT.get(key);
+  if (existing) return existing;
+  const map = new Map<string, Array<{
+    id: string;
+    timestamp: string;
+    actor_id: string;
+    actor_email: string;
+    change_type: 'permissions' | 'quota' | 'resource_policy' | 'role';
+    changes: { added?: string[]; removed?: string[]; updated?: Record<string, { from: unknown; to: unknown }> };
+  }>>();
+  PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT.set(key, map);
+  return map;
+}
+
+function getResourcePolicyState(workspaceId: string, projectId: string) {
+  const key = projectScopedKey(workspaceId, projectId);
+  const existing = PROJECT_RESOURCE_POLICIES_BY_PROJECT.get(key);
+  if (existing) return existing;
+  const map = new Map<string, {
+    resource_type: 'endpoint' | 'source_library' | 'agent';
+    resource_id: string;
+    access_mode: 'allow_all_members' | 'allow_list';
+    allowed_subjects: Array<{
+      subject_type: 'group' | 'user';
+      subject_id: string;
+      rate_limits?: Record<string, unknown>;
+      quota_limits?: Record<string, unknown>;
+      updated_at?: string;
+    }>;
+    rate_limits?: Record<string, unknown>;
+    quota_limits?: Record<string, unknown>;
+  }>();
+  PROJECT_RESOURCE_POLICIES_BY_PROJECT.set(key, map);
+  return map;
 }
 
 function isDefaultPersonalLibraryForUser(
@@ -738,6 +839,197 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       status: 'active',
       joined_at: projectCreatedAt ?? new Date().toISOString(),
     });
+    return true;
+  }
+
+  if (route.kind === 'projectMemberPermissions' && method === 'GET' && route.workspaceId && route.projectId && route.userId) {
+    const state = getMemberPermissionsState(route.workspaceId, route.projectId);
+    const current = state.get(route.userId);
+    json(res, 200, {
+      platform_permissions: current?.permissions ?? [],
+      resource_permissions: undefined,
+    });
+    return true;
+  }
+
+  if (route.kind === 'projectMemberPermissions' && method === 'PATCH' && route.workspaceId && route.projectId && route.userId) {
+    const body = await readBody(req) as {
+      template?: string | null;
+      permissions?: string[];
+      mode?: 'template' | 'custom';
+    };
+    if (!body || (body.mode !== 'template' && body.mode !== 'custom')) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'mode is required' });
+      return true;
+    }
+    const state = getMemberPermissionsState(route.workspaceId, route.projectId);
+    const prev = state.get(route.userId) ?? { mode: 'custom' as const, template: null, permissions: [] };
+    const nextPermissions = Array.isArray(body.permissions)
+      ? body.permissions.filter((v): v is string => typeof v === 'string')
+      : prev.permissions;
+    const nextTemplate = body.mode === 'template'
+      ? (typeof body.template === 'string' || body.template === null ? body.template : prev.template ?? null)
+      : null;
+    state.set(route.userId, {
+      mode: body.mode,
+      template: nextTemplate,
+      permissions: nextPermissions,
+    });
+    const historyState = getMemberChangeHistoryState(route.workspaceId, route.projectId);
+    const items = historyState.get(route.userId) ?? [];
+    items.unshift({
+      id: `chg_${Math.random().toString(36).slice(2, 10)}`,
+      timestamp: new Date().toISOString(),
+      actor_id: user.id,
+      actor_email: user.email,
+      change_type: 'permissions',
+      changes: {
+        updated: {
+          mode: { from: prev.mode, to: body.mode },
+          template: { from: prev.template ?? null, to: nextTemplate },
+        },
+        added: nextPermissions.filter((p) => !prev.permissions.includes(p)),
+        removed: prev.permissions.filter((p) => !nextPermissions.includes(p)),
+      },
+    });
+    historyState.set(route.userId, items);
+    res.statusCode = 204;
+    res.end();
+    return true;
+  }
+
+  if (route.kind === 'projectMemberQuotaOverrides' && method === 'GET' && route.workspaceId && route.projectId && route.userId) {
+    const state = getMemberQuotaState(route.workspaceId, route.projectId);
+    const current = state.get(route.userId);
+    json(res, 200, { overrides: current?.overrides ?? {} });
+    return true;
+  }
+
+  if (route.kind === 'projectMemberQuotaOverrides' && method === 'PATCH' && route.workspaceId && route.projectId && route.userId) {
+    const body = await readBody(req) as { overrides?: Record<string, unknown> };
+    if (!body || !body.overrides || typeof body.overrides !== 'object' || Array.isArray(body.overrides)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'overrides is required' });
+      return true;
+    }
+    const state = getMemberQuotaState(route.workspaceId, route.projectId);
+    const prev = state.get(route.userId) ?? { overrides: {}, history: [] as Array<{ id: string; created_at: string; created_by_user_id: string; overrides_json: Record<string, unknown> }> };
+    const nextOverrides = body.overrides;
+    const now = new Date().toISOString();
+    const historyEntry = {
+      id: `qoh_${Math.random().toString(36).slice(2, 10)}`,
+      created_at: now,
+      created_by_user_id: user.id,
+      overrides_json: nextOverrides,
+    };
+    const history = [historyEntry, ...prev.history];
+    state.set(route.userId, { overrides: nextOverrides, history });
+
+    const historyState = getMemberChangeHistoryState(route.workspaceId, route.projectId);
+    const items = historyState.get(route.userId) ?? [];
+    items.unshift({
+      id: `chg_${Math.random().toString(36).slice(2, 10)}`,
+      timestamp: now,
+      actor_id: user.id,
+      actor_email: user.email,
+      change_type: 'quota',
+      changes: {
+        updated: {
+          overrides: { from: prev.overrides, to: nextOverrides },
+        },
+      },
+    });
+    historyState.set(route.userId, items);
+
+    json(res, 200, { overrides: nextOverrides });
+    return true;
+  }
+
+  if (
+    route.kind === 'projectMemberQuotaOverridesHistory'
+    && method === 'GET'
+    && route.workspaceId
+    && route.projectId
+    && route.userId
+  ) {
+    const page = Math.max(1, Number.parseInt(requestUrl.searchParams.get('page') ?? '1', 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number.parseInt(requestUrl.searchParams.get('page_size') ?? '20', 10) || 20));
+    const state = getMemberQuotaState(route.workspaceId, route.projectId);
+    const history = state.get(route.userId)?.history ?? [];
+    const total = history.length;
+    const start = (page - 1) * pageSize;
+    const items = history.slice(start, start + pageSize);
+    json(res, 200, { items, total, page, page_size: pageSize });
+    return true;
+  }
+
+  if (route.kind === 'projectMemberChangeHistory' && method === 'GET' && route.workspaceId && route.projectId && route.userId) {
+    const state = getMemberChangeHistoryState(route.workspaceId, route.projectId);
+    json(res, 200, { items: state.get(route.userId) ?? [] });
+    return true;
+  }
+
+  if (
+    route.kind === 'projectResourcePolicy'
+    && method === 'GET'
+    && route.workspaceId
+    && route.projectId
+    && route.resourceType
+    && route.resourceId
+  ) {
+    const state = getResourcePolicyState(route.workspaceId, route.projectId);
+    const key = `${route.resourceType}:${route.resourceId}`;
+    const existing = state.get(key);
+    json(res, 200, existing ?? {
+      resource_type: route.resourceType,
+      resource_id: route.resourceId,
+      access_mode: 'allow_all_members',
+      allowed_subjects: [],
+    });
+    return true;
+  }
+
+  if (
+    route.kind === 'projectResourcePolicy'
+    && method === 'PATCH'
+    && route.workspaceId
+    && route.projectId
+    && route.resourceType
+    && route.resourceId
+  ) {
+    const body = await readBody(req) as {
+      access_mode?: 'allow_all_members' | 'allow_list';
+      allowed_subjects?: Array<{
+        subject_type: 'group' | 'user';
+        subject_id: string;
+        rate_limits?: Record<string, unknown>;
+        quota_limits?: Record<string, unknown>;
+      }>;
+      rate_limits?: Record<string, unknown>;
+      quota_limits?: Record<string, unknown>;
+    };
+    if (!body || (body.access_mode !== 'allow_all_members' && body.access_mode !== 'allow_list') || !Array.isArray(body.allowed_subjects)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'access_mode and allowed_subjects are required' });
+      return true;
+    }
+    const state = getResourcePolicyState(route.workspaceId, route.projectId);
+    const key = `${route.resourceType}:${route.resourceId}`;
+    state.set(key, {
+      resource_type: route.resourceType as 'endpoint' | 'source_library' | 'agent',
+      resource_id: route.resourceId,
+      access_mode: body.access_mode,
+      allowed_subjects: body.allowed_subjects
+        .filter((s): s is {
+          subject_type: 'group' | 'user';
+          subject_id: string;
+          rate_limits?: Record<string, unknown>;
+          quota_limits?: Record<string, unknown>;
+        } => !!s && (s.subject_type === 'group' || s.subject_type === 'user') && typeof s.subject_id === 'string')
+        .map((s) => ({ ...s, updated_at: new Date().toISOString() })),
+      rate_limits: body.rate_limits,
+      quota_limits: body.quota_limits,
+    });
+    res.statusCode = 204;
+    res.end();
     return true;
   }
 

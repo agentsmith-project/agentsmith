@@ -21,8 +21,8 @@ This matrix is for internal/controlled releases where the primary supported flow
 
 ## UI available, mock-backed / not implemented in local `api-entry-node`
 
-- Members governance (quota overrides/history and enforcement-related parts remain mock-backed)
-- Resource Policy governance (resource policy read/write + runtime enforcement)
+- Members governance (advanced quota/member history and enforcement-related parts still partial)
+- Resource Policy governance (read/write may be available in local backend; runtime enforcement remains pending)
 
 ## Permission model note (important)
 
@@ -34,5 +34,5 @@ It does **not** yet apply member templates/custom permissions/resource policy co
 - Use these governance pages in **MSW/demo mode** for UI walkthroughs.
 - In real backend mode:
   - Audit/Usage are available for internal governance workflows (first-stage coverage)
-- Members is now partial in real backend mode (read baseline + join request actions + groups CRUD + permission/quota templates minimal CRUD).
-- Resource Policy remains preview/mock-only unless explicitly implemented.
+- Members is now partial in real backend mode (read baseline + join request actions + groups CRUD + permission/quota templates CRUD + member permissions/quota overrides/history).
+- Resource Policy is partial in real backend mode (read/write configuration API baseline available; runtime enforcement still pending).

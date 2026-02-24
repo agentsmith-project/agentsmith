@@ -73,6 +73,17 @@ export type ProjectsRoute =
   | { kind: 'projectGroupItem'; workspaceId: string; projectId: string; groupId: string }
   | { kind: 'projectGroupApplyTemplate'; workspaceId: string; projectId: string; groupId: string }
   | { kind: 'projectMembershipItem'; workspaceId: string; projectId: string; userId: string }
+  | { kind: 'projectMemberPermissions'; workspaceId: string; projectId: string; userId: string }
+  | { kind: 'projectMemberQuotaOverrides'; workspaceId: string; projectId: string; userId: string }
+  | { kind: 'projectMemberQuotaOverridesHistory'; workspaceId: string; projectId: string; userId: string }
+  | { kind: 'projectMemberChangeHistory'; workspaceId: string; projectId: string; userId: string }
+  | {
+    kind: 'projectResourcePolicy';
+    workspaceId: string;
+    projectId: string;
+    resourceType: string;
+    resourceId: string;
+  }
   | ChatRoute
   | { kind: 'agents'; workspaceId: string; projectId: string }
   | { kind: 'agentItem'; workspaceId: string; projectId: string; agentId: string }
@@ -324,6 +335,67 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(projectMembershipItemMatched[1]),
       projectId: decodeURIComponent(projectMembershipItemMatched[2]),
       userId: decodeURIComponent(projectMembershipItemMatched[3]),
+    };
+  }
+
+  const projectMemberQuotaOverridesHistoryMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/members\/([^/]+)\/quota-overrides\/history\/?$/,
+  );
+  if (projectMemberQuotaOverridesHistoryMatched) {
+    return {
+      kind: 'projectMemberQuotaOverridesHistory',
+      workspaceId: decodeURIComponent(projectMemberQuotaOverridesHistoryMatched[1]),
+      projectId: decodeURIComponent(projectMemberQuotaOverridesHistoryMatched[2]),
+      userId: decodeURIComponent(projectMemberQuotaOverridesHistoryMatched[3]),
+    };
+  }
+
+  const projectMemberQuotaOverridesMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/members\/([^/]+)\/quota-overrides\/?$/,
+  );
+  if (projectMemberQuotaOverridesMatched) {
+    return {
+      kind: 'projectMemberQuotaOverrides',
+      workspaceId: decodeURIComponent(projectMemberQuotaOverridesMatched[1]),
+      projectId: decodeURIComponent(projectMemberQuotaOverridesMatched[2]),
+      userId: decodeURIComponent(projectMemberQuotaOverridesMatched[3]),
+    };
+  }
+
+  const projectMemberPermissionsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/members\/([^/]+)\/permissions\/?$/,
+  );
+  if (projectMemberPermissionsMatched) {
+    return {
+      kind: 'projectMemberPermissions',
+      workspaceId: decodeURIComponent(projectMemberPermissionsMatched[1]),
+      projectId: decodeURIComponent(projectMemberPermissionsMatched[2]),
+      userId: decodeURIComponent(projectMemberPermissionsMatched[3]),
+    };
+  }
+
+  const projectMemberChangeHistoryMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/members\/([^/]+)\/change-history\/?$/,
+  );
+  if (projectMemberChangeHistoryMatched) {
+    return {
+      kind: 'projectMemberChangeHistory',
+      workspaceId: decodeURIComponent(projectMemberChangeHistoryMatched[1]),
+      projectId: decodeURIComponent(projectMemberChangeHistoryMatched[2]),
+      userId: decodeURIComponent(projectMemberChangeHistoryMatched[3]),
+    };
+  }
+
+  const projectResourcePolicyMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/resources\/([^/]+)\/([^/]+)\/policy\/?$/,
+  );
+  if (projectResourcePolicyMatched) {
+    return {
+      kind: 'projectResourcePolicy',
+      workspaceId: decodeURIComponent(projectResourcePolicyMatched[1]),
+      projectId: decodeURIComponent(projectResourcePolicyMatched[2]),
+      resourceType: decodeURIComponent(projectResourcePolicyMatched[3]),
+      resourceId: decodeURIComponent(projectResourcePolicyMatched[4]),
     };
   }
 

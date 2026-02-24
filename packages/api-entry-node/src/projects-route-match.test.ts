@@ -291,6 +291,47 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
       userId: 'user_test',
     });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/permissions'),
+    ).toEqual({
+      kind: 'projectMemberPermissions',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      userId: 'user_test',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides'),
+    ).toEqual({
+      kind: 'projectMemberQuotaOverrides',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      userId: 'user_test',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides/history'),
+    ).toEqual({
+      kind: 'projectMemberQuotaOverridesHistory',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      userId: 'user_test',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/change-history'),
+    ).toEqual({
+      kind: 'projectMemberChangeHistory',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      userId: 'user_test',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/ep_1/policy'),
+    ).toEqual({
+      kind: 'projectResourcePolicy',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      resourceType: 'endpoint',
+      resourceId: 'ep_1',
+    });
   });
 
   it('matches project members governance write routes', () => {

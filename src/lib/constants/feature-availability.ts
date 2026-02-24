@@ -6,7 +6,7 @@ export const FEATURE_AVAILABILITY: Record<GovernedFeature, FeatureAvailability> 
   audit: 'available',
   usage: 'available',
   members: 'partial',
-  resource_policy: 'mock_only',
+  resource_policy: 'partial',
 };
 
 export function isRealBackendMode(): boolean {

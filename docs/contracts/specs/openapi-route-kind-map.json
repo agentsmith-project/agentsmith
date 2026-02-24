@@ -350,5 +350,25 @@
   "taskTraces": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/traces",
     "method": "get"
+  },
+  "projectMemberPermissions": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/permissions",
+    "method": "get"
+  },
+  "projectMemberQuotaOverrides": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides",
+    "method": "get"
+  },
+  "projectMemberQuotaOverridesHistory": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides/history",
+    "method": "get"
+  },
+  "projectMemberChangeHistory": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/change-history",
+    "method": "get"
+  },
+  "projectResourcePolicy": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/resources/{resourceType}/{resourceId}/policy",
+    "method": "get"
   }
 }

@@ -414,9 +414,14 @@ governance-policy-effect-smoke:
 	./scripts/governance-policy-effect-smoke.sh
 
 governance-release-smoke:
-	$(MAKE) governance-pages-real-backend-smoke
-	$(MAKE) governance-pages-real-backend-interaction-smoke
-	$(MAKE) governance-policy-effect-smoke
+	@set -e; \
+	$(MAKE) governance-pages-real-backend-smoke; \
+	$(MAKE) governance-pages-real-backend-interaction-smoke; \
+	if ! $(MAKE) governance-policy-effect-smoke; then \
+		echo "[make] governance-policy-effect-smoke failed; attempting token refresh and retry once"; \
+		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
+		$(MAKE) governance-policy-effect-smoke; \
+	fi
 
 notebook-agent-smoke-full:
 	@set -e; \

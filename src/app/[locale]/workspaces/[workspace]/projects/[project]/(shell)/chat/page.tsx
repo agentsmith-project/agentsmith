@@ -42,6 +42,9 @@ import { ChatDeleteDialog } from '@/components/chat/ChatDeleteDialog';
 import { ChatLibraryPickerDialog } from '@/components/chat/ChatLibraryPickerDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { cn } from '@/lib/utils';
@@ -67,6 +70,8 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [composerBySession, setComposerBySession] = useState<Record<string, string>>({});
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
+  const [addUrlOpen, setAddUrlOpen] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -156,6 +161,7 @@ export default function ChatPage({ params }: ChatPageProps) {
     editMessageMutation,
     initAttachmentMutation,
     addLibraryAttachmentMutation,
+    addUrlAttachmentMutation,
     deleteAttachmentMutation,
     retryAttachmentMutation,
   } = useChatMutations({
@@ -352,6 +358,19 @@ export default function ChatPage({ params }: ChatPageProps) {
     setLibraryPickerOpen(true);
   }, [canAttachFiles, currentSessionId, editingMessageId, t]);
 
+  const handlePickUrl = useCallback(() => {
+    if (editingMessageId) {
+      toast.info(t('attachments.disabled_while_editing'));
+      return;
+    }
+    if (!currentSessionId) return;
+    if (!canAttachFiles) {
+      toast.info(t('attachments.multimodal_required'));
+      return;
+    }
+    setAddUrlOpen(true);
+  }, [canAttachFiles, currentSessionId, editingMessageId, t]);
+
   const handleAddLibraryObject = useCallback((input: {
     libraryId: string;
     key: string;
@@ -371,6 +390,21 @@ export default function ChatPage({ params }: ChatPageProps) {
       contentType: input.contentType,
     });
   }, [addLibraryAttachmentMutation, canAttachFiles, currentSessionId, t]);
+
+  const handleAddUrlInput = useCallback(() => {
+    const normalized = urlInput.trim();
+    if (!currentSessionId) return;
+    if (!/^https?:\/\//i.test(normalized)) return;
+    addUrlAttachmentMutation.mutate(
+      { sessionId: currentSessionId, url: normalized },
+      {
+        onSuccess: () => {
+          setUrlInput('');
+          setAddUrlOpen(false);
+        },
+      },
+    );
+  }, [addUrlAttachmentMutation, currentSessionId, urlInput]);
 
   const handleAttachFiles = useCallback(async (files: File[]) => {
     if (editingMessageId) {
@@ -514,6 +548,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             onStop={stopStreaming}
             onPickFiles={handlePickFiles}
             onPickFromLibrary={handlePickFromLibrary}
+            onPickUrl={handlePickUrl}
             onFilePicked={onFilePicked}
             onAttachFiles={handleAttachFiles}
             onRemoveAttachment={handleRemoveAttachment}
@@ -541,6 +576,33 @@ export default function ChatPage({ params }: ChatPageProps) {
           loading={addLibraryAttachmentMutation.isPending}
           onPickObject={handleAddLibraryObject}
         />
+        <Dialog open={addUrlOpen} onOpenChange={setAddUrlOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{t('composer.url_dialog.title')}</DialogTitle>
+              <DialogDescription>{t('composer.url_dialog.description')}</DialogDescription>
+            </DialogHeader>
+            <Input
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder={t('composer.url_dialog.placeholder')}
+              autoFocus
+              data-testid="chat__url-input"
+            />
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setAddUrlOpen(false)}>
+                {t('composer.cancel')}
+              </Button>
+              <Button
+                onClick={handleAddUrlInput}
+                disabled={addUrlAttachmentMutation.isPending || !/^https?:\/\//i.test(urlInput.trim())}
+                data-testid="chat__url-input-confirm"
+              >
+                {t('composer.url_dialog.confirm')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </PageLayout>
     </PageState>
   );

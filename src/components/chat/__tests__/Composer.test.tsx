@@ -13,6 +13,7 @@ describe('Composer', () => {
     onCancelEdit: vi.fn(),
     onPickFiles: vi.fn(),
     onPickFromLibrary: vi.fn(),
+    onPickUrl: vi.fn(),
     attachments: [],
     onRemoveAttachment: vi.fn(),
     onRetryAttachment: vi.fn(),

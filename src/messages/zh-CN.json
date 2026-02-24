@@ -250,8 +250,15 @@
       "retry": "重试",
       "remove": "移除",
       "attach_files": "添加附件",
+      "add_url": "添加链接",
       "placeholder_edit": "编辑消息...",
       "placeholder_compose": "输入消息...",
+      "url_dialog": {
+        "title": "添加链接",
+        "description": "将网页链接添加为聊天输入。系统会先存入默认文件库，再以输入引用形式附加。",
+        "placeholder": "https://example.com/article",
+        "confirm": "添加链接"
+      },
       "stop": "停止",
       "save": "保存",
       "send": "发送",

@@ -248,8 +248,15 @@
       "retry": "Retry",
       "remove": "Remove",
       "attach_files": "Attach files",
+      "add_url": "Add URL",
       "placeholder_edit": "Edit message...",
       "placeholder_compose": "Message...",
+      "url_dialog": {
+        "title": "Add URL",
+        "description": "Add a web URL as a chat input. It will be stored in your default file library and attached as an input reference.",
+        "placeholder": "https://example.com/article",
+        "confirm": "Add URL"
+      },
       "stop": "Stop",
       "save": "Save",
       "send": "Send",

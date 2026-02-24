@@ -84,6 +84,50 @@ export function useChatMutations(args: UseChatMutationsArgs) {
     return { ...attachment, sessionId: input.sessionId };
   };
 
+  const createAttachmentFromUrl = async (input: {
+    sessionId: string;
+    url: string;
+  }) => {
+    const normalized = input.url.trim();
+    const fileSafeName = normalized
+      .replace(/^https?:\/\//i, '')
+      .replace(/[^a-zA-Z0-9._-]+/g, '_')
+      .slice(0, 64);
+    const filename = `${fileSafeName || 'url_input'}.url.txt`;
+    const content = `URL input\n${normalized}\n`;
+    const file = new File([content], filename, { type: 'text/plain' });
+    const library = await ensureDefaultUploadLibrary({
+      sourcesAPI,
+      workspaceId,
+      projectId,
+    });
+    const prefix = `chat/${input.sessionId}/url-inputs/`;
+    const uploadedObject = await sourcesAPI.uploadObject(
+      workspaceId,
+      projectId,
+      library.id,
+      file,
+      prefix,
+      true,
+    );
+    const attachment = await chatAPI.initAttachment(workspaceId, projectId, input.sessionId, {
+      file_name: uploadedObject.name,
+      file_type: uploadedObject.content_type || 'text/plain',
+      file_size: uploadedObject.size_bytes,
+      content_base64: await blobToBase64(file),
+      input_ref: {
+        kind: 'url',
+        url: normalized,
+        imported_library_id: library.id,
+        imported_key: uploadedObject.key,
+        name: uploadedObject.name,
+        content_type: uploadedObject.content_type || 'text/plain',
+        size_bytes: uploadedObject.size_bytes,
+      },
+    });
+    return { ...attachment, sessionId: input.sessionId };
+  };
+
   const createSessionMutation = useMutation({
     mutationFn: async () => {
       const firstActive = endpoints.find((e) => e.status === 'active') || null;
@@ -217,6 +261,17 @@ export function useChatMutations(args: UseChatMutationsArgs) {
     },
   });
 
+  const addUrlAttachmentMutation = useMutation({
+    mutationFn: async (input: { sessionId: string; url: string }) => createAttachmentFromUrl(input),
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, sessionId) });
+      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : uploadFailedMessage);
+    },
+  });
+
   const deleteAttachmentMutation = useMutation({
     mutationFn: async (input: { sessionId: string; attachmentId: string }) =>
       chatAPI.deleteAttachment(workspaceId, projectId, input.sessionId, input.attachmentId),
@@ -239,6 +294,7 @@ export function useChatMutations(args: UseChatMutationsArgs) {
     editMessageMutation,
     initAttachmentMutation,
     addLibraryAttachmentMutation,
+    addUrlAttachmentMutation,
     deleteAttachmentMutation,
     retryAttachmentMutation,
   };

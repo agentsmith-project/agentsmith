@@ -8,7 +8,7 @@
 	notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-release-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
-	notebook-agent-demo-up notebook-agent-demo-down \
+	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-restart-runner \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
@@ -89,6 +89,8 @@ help:
 	@echo "  make notebook-agent-runner         # start codex runner using /tmp/agentsmith_ws_url.txt + agent_key"
 	@echo "  make notebook-agent-demo-up        # one-command demo bootstrap: start api/web, refresh token, init resources, start runner"
 	@echo "  make notebook-agent-demo-down      # stop demo-up managed api/web/runner background processes"
+	@echo "  make notebook-agent-demo-status    # show demo managed process/health/token/agent status"
+	@echo "  make notebook-agent-demo-restart-runner # restart only the managed demo runner"
 	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
 	@echo "  make notebook-agent-inputrefs-loop-smoke # notebook url input -> artifact -> artifact input loop smoke"
 	@echo "  make notebook-agent-release-smoke # run release smoke set (basic + inputrefs loop; optional matplotlib)"
@@ -352,6 +354,15 @@ notebook-agent-demo-up:
 notebook-agent-demo-down:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/notebook-agent-demo-down.sh
+
+notebook-agent-demo-status:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/notebook-agent-demo-status.sh
+
+notebook-agent-demo-restart-runner:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	DEMO_START_API=0 DEMO_START_WEB=0 DEMO_REFRESH_TOKEN=0 DEMO_INIT_RESOURCES=0 DEMO_START_RUNNER=1 \
+	./scripts/notebook-agent-demo-up.sh
 
 notebook-agent-smoke-task:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

@@ -280,6 +280,14 @@ GLM_API_KEY='***' make notebook-agent-demo-up
 ```bash
 make notebook-agent-demo-down
 ```
+- Check current demo status (managed pids + health + token + agent presence):
+```bash
+make notebook-agent-demo-status
+```
+- Restart only the managed runner (keeps API/Web running):
+```bash
+make notebook-agent-demo-restart-runner
+```
 - Important Keycloak redirect constraint:
   - token refresh currently uses browser PKCE (`scripts/notebook-agent-refresh-token.js`)
   - if Web falls back to a non-`3001` port (for example `3016`) and the Keycloak client does not allow that redirect URI, refresh will fail

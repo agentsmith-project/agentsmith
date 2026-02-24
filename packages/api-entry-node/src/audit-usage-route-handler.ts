@@ -1,6 +1,7 @@
 import type http from 'node:http';
 import type { ProjectsRoute } from './projects-route-match.js';
-import { getNotebookRuntimeMetricsState } from './notebook-runtime-metrics.js';
+import type { NodeApiDeps } from './node-api-deps.js';
+import { aggregateUsageRecords, getUsageKpi, listAuditEvents } from './audit-usage-store.js';
 
 type JsonResponder = (res: http.ServerResponse, status: number, payload: unknown) => void;
 
@@ -10,6 +11,7 @@ type HandlerArgs = {
   requestUrl: URL;
   res: http.ServerResponse;
   json: JsonResponder;
+  deps: NodeApiDeps;
 };
 
 function parsePositiveInt(value: string | null, fallback: number, max?: number): number {
@@ -45,37 +47,25 @@ function requireTimeRange(
   return { start, end };
 }
 
-function isDateInRange(now: Date, start: Date, end: Date): boolean {
-  return now.getTime() >= start.getTime() && now.getTime() <= end.getTime();
-}
-
-function formatBucket(date: Date, groupBy: 'day' | 'hour'): string {
-  const iso = date.toISOString();
-  if (groupBy === 'day') return iso.slice(0, 10);
-  return `${iso.slice(0, 10)} ${iso.slice(11, 13)}:00`;
-}
-
 export async function handleAuditUsageRoute({
   route,
   method,
   requestUrl,
   res,
   json,
+  deps,
 }: HandlerArgs): Promise<boolean> {
   if (route.kind === 'usageKpi' && method === 'GET') {
     const range = requireTimeRange(requestUrl, json, res);
     if (range === true) return true;
-    const metrics = getNotebookRuntimeMetricsState();
-    const now = new Date();
-    const inRange = isDateInRange(now, range.start, range.end);
-    json(res, 200, {
-      requests_today: inRange ? metrics.task_runs_started : 0,
-      errors_today: inRange ? metrics.task_runs_failed : 0,
-      tokens_today: undefined,
-      requests_yesterday: 0,
-      errors_yesterday: 0,
-      tokens_yesterday: undefined,
+    const payload = await getUsageKpi(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      startTime: range.start.toISOString(),
+      endTime: range.end.toISOString(),
+      endUserId: requestUrl.searchParams.get('end_user_id'),
     });
+    json(res, 200, payload);
     return true;
   }
 
@@ -85,40 +75,30 @@ export async function handleAuditUsageRoute({
     const page = parsePositiveInt(requestUrl.searchParams.get('page'), 1);
     const pageSize = parsePositiveInt(requestUrl.searchParams.get('page_size'), 25, 200);
     const resourceType = requestUrl.searchParams.get('resource_type');
+    const resourceId = requestUrl.searchParams.get('resource_id');
+    const endUserId = requestUrl.searchParams.get('end_user_id');
     const groupBy = requestUrl.searchParams.get('group_by') === 'hour' ? 'hour' : 'day';
-
-    const metrics = getNotebookRuntimeMetricsState();
-    const now = new Date();
-    const inRange = isDateInRange(now, range.start, range.end);
-    const canEmitSynthetic = !resourceType || resourceType === 'notebook_task';
-    const items =
-      inRange && canEmitSynthetic && metrics.task_runs_started > 0
-        ? [
-            {
-              id: `usage_notebook_runtime_${groupBy}`,
-              time_bucket: formatBucket(now, groupBy),
-              workspace_id: route.workspaceId,
-              project_id: route.projectId,
-              resource_type: 'notebook_task',
-              resource_id: 'notebook_runtime',
-              requests: metrics.task_runs_started,
-              duration_p95_ms: undefined,
-              bytes_in: undefined,
-              bytes_out: undefined,
-              tokens: undefined,
-            },
-          ]
-        : [];
-
-    const startIndex = (page - 1) * pageSize;
-    const paged = items.slice(startIndex, startIndex + pageSize);
-    json(res, 200, {
-      items: paged,
-      total: items.length,
+    const sortByRaw = requestUrl.searchParams.get('sort_by');
+    const sortOrder = requestUrl.searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc';
+    const sortBy =
+      sortByRaw === 'resource_type' || sortByRaw === 'requests' || sortByRaw === 'time_bucket'
+        ? sortByRaw
+        : 'time_bucket';
+    const payload = await aggregateUsageRecords(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      startTime: range.start.toISOString(),
+      endTime: range.end.toISOString(),
+      resourceType,
+      resourceId,
+      endUserId,
+      groupBy,
+      sortBy,
+      sortOrder,
       page,
-      page_size: pageSize,
-      has_more: startIndex + pageSize < items.length,
+      pageSize,
     });
+    json(res, 200, payload);
     return true;
   }
 
@@ -127,16 +107,26 @@ export async function handleAuditUsageRoute({
     if (range === true) return true;
     const page = parsePositiveInt(requestUrl.searchParams.get('page'), 1);
     const pageSize = parsePositiveInt(requestUrl.searchParams.get('page_size'), 25, 200);
-    json(res, 200, {
-      items: [],
-      total: 0,
+    const sortOrder = requestUrl.searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc';
+    const payload = await listAuditEvents(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      startTime: range.start.toISOString(),
+      endTime: range.end.toISOString(),
+      action: requestUrl.searchParams.get('action'),
+      actorType: requestUrl.searchParams.get('actor_type'),
+      actorId: requestUrl.searchParams.get('actor_id'),
+      endUserId: requestUrl.searchParams.get('end_user_id'),
+      resourceType: requestUrl.searchParams.get('resource_type'),
+      resourceId: requestUrl.searchParams.get('resource_id'),
+      result: requestUrl.searchParams.get('result'),
+      sortOrder,
       page,
-      page_size: pageSize,
-      has_more: false,
+      pageSize,
     });
+    json(res, 200, payload);
     return true;
   }
 
   return false;
 }
-

@@ -1,6 +1,9 @@
 import type http from 'node:http';
+import { Readable } from 'node:stream';
 import type { ChatRoute } from './chat-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import type { AuthenticatedUser } from './auth.js';
+import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { resolveImageMimeType, toImageDataUrl } from './chat-image-utils.js';
 import {
   ACTIVE_CHAT_STREAMS,
@@ -32,6 +35,7 @@ interface ChatStreamHandlerArgs {
   req: http.IncomingMessage;
   res: http.ServerResponse;
   deps: NodeApiDeps;
+  user: AuthenticatedUser;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
   buildUpstreamUrl: (baseUrl: string, proxyPath: string) => string;
@@ -75,8 +79,35 @@ function toDataUrl(attachment: ChatAttachmentRecord, mimeType: string | null): s
   return toImageDataUrl(attachment.content_base64, mimeType);
 }
 
+async function toDataUrlFromAttachmentOrSourceObject(
+  deps: ChatStreamHandlerArgs['deps'],
+  route: { workspaceId: string; projectId: string },
+  attachment: ChatAttachmentRecord,
+  mimeType: string | null,
+): Promise<string | null> {
+  const inline = toDataUrl(attachment, mimeType);
+  if (inline) return inline;
+  if (!mimeType || !attachment.source_library_id || !attachment.source_object_key) return null;
+  try {
+    const downloaded = await deps.downloadSourceObjectUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: attachment.source_library_id,
+      key: attachment.source_object_key,
+    });
+    const nodeStream = Readable.fromWeb(downloaded.body as unknown as Parameters<typeof Readable.fromWeb>[0]);
+    const chunks: Buffer[] = [];
+    for await (const chunk of nodeStream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return `data:${mimeType};base64,${Buffer.concat(chunks).toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
 export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promise<boolean> {
-  const { route, method, req, res, deps, json, readBody, buildUpstreamUrl, sseWrite } = args;
+  const { route, method, req, res, deps, user, json, readBody, buildUpstreamUrl, sseWrite } = args;
   const isWritable = (candidate: http.ServerResponse): boolean =>
     !candidate.writableEnded && !candidate.destroyed;
 
@@ -365,7 +396,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     }
   }
 
-  const upstreamMessages = messages.map((item) => {
+  const upstreamMessages = await Promise.all(messages.map(async (item) => {
     if (item.role !== 'user' || !item.attachment_snapshots || item.attachment_snapshots.length === 0) {
       return { role: item.role, content: item.content };
     }
@@ -376,7 +407,14 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     for (const snapshot of item.attachment_snapshots) {
       const attachment = attachmentById.get(snapshot.id);
       const imageMimeType = resolveImageMimeType(snapshot.file_type, snapshot.file_name);
-      const dataUrl = attachment ? toDataUrl(attachment, imageMimeType) : null;
+      const dataUrl = attachment
+        ? await toDataUrlFromAttachmentOrSourceObject(
+            deps,
+            { workspaceId: route.workspaceId, projectId: route.projectId },
+            attachment,
+            imageMimeType,
+          )
+        : null;
       if (dataUrl && imageMimeType) {
         parts.push({
           type: 'image_url',
@@ -393,7 +431,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       return { role: item.role, content: item.content };
     }
     return { role: item.role, content: parts };
-  });
+  }));
 
   const variantMeta = await deps.chatResourceService.buildNextAssistantVariant(
     route.workspaceId,
@@ -418,6 +456,21 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   const streamId = `stream_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const streamStartedAt = new Date().toISOString();
   const streamStartedAtMs = Date.now();
+  const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+  await writeProjectAuditEvent(deps, {
+    workspaceId: route.workspaceId,
+    projectId: route.projectId,
+    actor: { type: 'user', id: user.id },
+    action: 'chat.run.started',
+    resourceType: 'chat',
+    resourceId: route.sessionId,
+    requestId,
+    metadata: {
+      stream_id: streamId,
+      endpoint_id: endpoint?.id ?? null,
+      external_agent_id: session.external_agent_id ?? null,
+    },
+  });
   const streamEndpointId = useExternalAgent ? `agent:${session.external_agent_id}` : (endpoint?.id ?? '');
   const streamModel = useExternalAgent ? (raw.model ?? session.model) : (endpoint?.openai_model ?? session.model);
   ACTIVE_CHAT_STREAMS.set(streamId, {
@@ -1121,6 +1174,36 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         durationMs: Date.now() - streamStartedAtMs,
         stopReason: errorCode === 'STREAM_INACTIVITY_TIMEOUT' ? 'timeout' : 'upstream_error',
       });
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'chat.run.failed',
+        resourceType: 'chat',
+        resourceId: route.sessionId,
+        requestId,
+        result: 'error',
+        errorCode,
+        errorMessage: error instanceof Error ? error.message : 'stream_upstream_error',
+        metadata: {
+          stream_id: streamId,
+          endpoint_id: endpoint.id,
+          duration_ms: Date.now() - streamStartedAtMs,
+        },
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'chat',
+        resourceId: route.sessionId,
+        requestId,
+        requests: 1,
+        durationMs: Date.now() - streamStartedAtMs,
+        tokensTotal: usageTokens ?? undefined,
+        result: 'error',
+        errorCode,
+        metadata: { stream_id: streamId, endpoint_id: endpoint.id },
+      });
       throw error;
     }
   }
@@ -1191,6 +1274,40 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     status: messageStatus === 'stopped' ? 'stopped' : 'completed',
     durationMs,
     stopReason,
+  });
+  await writeProjectAuditEvent(deps, {
+    workspaceId: route.workspaceId,
+    projectId: route.projectId,
+    actor: { type: 'user', id: user.id },
+    action: messageStatus === 'stopped' ? 'chat.run.cancelled' : 'chat.run.completed',
+    resourceType: 'chat',
+    resourceId: route.sessionId,
+    requestId,
+    result: 'ok',
+      metadata: {
+        stream_id: streamId,
+        endpoint_id: endpoint?.id ?? null,
+        duration_ms: durationMs,
+        tokens_total: usageTokens ?? null,
+        stop_reason: stopReason ?? null,
+    },
+  });
+  await writeProjectUsageFact(deps, {
+    workspaceId: route.workspaceId,
+    projectId: route.projectId,
+    resourceType: 'chat',
+    resourceId: route.sessionId,
+    requestId,
+    requests: 1,
+    durationMs,
+    tokensTotal: usageTokens ?? undefined,
+    result: 'ok',
+    metadata: {
+      stream_id: streamId,
+      endpoint_id: endpoint?.id ?? null,
+      message_status: messageStatus,
+      stop_reason: stopReason ?? null,
+    },
   });
 
   return true;

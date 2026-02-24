@@ -7,6 +7,7 @@ import {
   recordNotebookTaskRunStarted,
   recordNotebookTaskRunTerminalWithoutDone,
 } from './notebook-runtime-metrics.js';
+import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { buildNotebookRuntimeTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 
@@ -106,6 +107,11 @@ export async function runNotebookTaskWithExternalAgent(input: {
   const runId = buildRunId();
   let reachedTerminal = false;
   let endpointIdForLog: string | null = null;
+  const startedAtMs = Date.now();
+  let terminalResult: 'ok' | 'error' = 'ok';
+  let terminalErrorCode: string | undefined;
+  let usageTokensTotal: number | undefined;
+  let runtimeRequestId: string | undefined;
 
   try {
     const agent = await deps.agentResourceService.getAgent(task.workspace_id, task.project_id, agentId);
@@ -185,6 +191,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
         notebook_mode: true,
       },
     });
+    runtimeRequestId = dispatched.requestId;
     debugLog('dispatch_streaming_request', {
       task_id: task.id,
       run_id: runId,
@@ -195,6 +202,16 @@ export async function runNotebookTaskWithExternalAgent(input: {
       wire_api: wireApi,
     });
     recordNotebookTaskRunStarted();
+    await writeProjectAuditEvent(deps, {
+      workspaceId: task.workspace_id,
+      projectId: task.project_id,
+      actor: { type: 'agent', id: agentId },
+      action: 'notebook.task.run.started',
+      requestId: dispatched.requestId,
+      resourceType: 'notebook_task',
+      resourceId: task.id,
+      metadata: { run_id: runId, endpoint_id: endpointId, model, wire_api: wireApi },
+    });
 
     for await (const event of dispatched.stream) {
       if (event.type === 'event' && event.event) {
@@ -214,6 +231,22 @@ export async function runNotebookTaskWithExternalAgent(input: {
           runId,
           payload: event.artifact as AgentRuntimeArtifactPayload,
         });
+        await writeProjectAuditEvent(deps, {
+          workspaceId: task.workspace_id,
+          projectId: task.project_id,
+          actor: { type: 'agent', id: agentId },
+          action: 'notebook.task.artifact.created',
+          requestId: dispatched.requestId,
+          resourceType: 'notebook_artifact',
+          resourceId: artifact.id,
+          metadata: {
+            task_id: task.id,
+            run_id: runId,
+            artifact_type: artifact.type,
+            task_relative_path: event.artifact.task_relative_path,
+            title: artifact.title,
+          },
+        });
         emitTaskEvent(taskId, { type: 'artifact', data: artifact });
         continue;
       }
@@ -231,6 +264,8 @@ export async function runNotebookTaskWithExternalAgent(input: {
       }
       if (event.type === 'error') {
         reachedTerminal = true;
+        terminalResult = 'error';
+        terminalErrorCode = event.error_code ?? 'AGENT_UPSTREAM_ERROR';
         recordNotebookTaskRunFailed();
         debugLog('runtime_event_error', {
           task_id: task.id,
@@ -251,6 +286,8 @@ export async function runNotebookTaskWithExternalAgent(input: {
       }
       if (event.type === 'done') {
         reachedTerminal = true;
+        terminalResult = 'ok';
+        usageTokensTotal = event.usage_tokens;
         recordNotebookTaskRunCompleted();
         debugLog('runtime_event_done', {
           task_id: task.id,
@@ -265,6 +302,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
     }
   } catch (error) {
     reachedTerminal = true;
+    terminalResult = 'error';
     recordNotebookTaskRunFailed();
     const codeCandidate = error instanceof Error
       ? (error as Error & { code?: unknown }).code
@@ -272,6 +310,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
     const code = typeof codeCandidate === 'string'
       ? codeCandidate
       : 'AGENT_UPSTREAM_ERROR';
+    terminalErrorCode = code;
     debugLog('runtime_dispatch_exception', {
       task_id: task.id,
       run_id: runId,
@@ -289,6 +328,8 @@ export async function runNotebookTaskWithExternalAgent(input: {
     });
   } finally {
     if (!reachedTerminal) {
+      terminalResult = 'error';
+      terminalErrorCode = terminalErrorCode ?? 'AGENT_STREAM_TERMINAL_MISSING';
       recordNotebookTaskRunTerminalWithoutDone();
       debugLog('runtime_stream_finalized_without_terminal', {
         task_id: task.id,
@@ -298,6 +339,39 @@ export async function runNotebookTaskWithExternalAgent(input: {
         agent_chars: assistantMessage.content.length,
       });
     }
+    const durationMs = Math.max(0, Date.now() - startedAtMs);
+    await writeProjectAuditEvent(deps, {
+      workspaceId: task.workspace_id,
+      projectId: task.project_id,
+      actor: { type: 'agent', id: agentId },
+      action:
+        terminalResult === 'ok'
+          ? 'notebook.task.run.completed'
+          : 'notebook.task.run.failed',
+      result: terminalResult,
+      requestId: runtimeRequestId,
+      resourceType: 'notebook_task',
+      resourceId: task.id,
+      errorCode: terminalErrorCode,
+      metadata: {
+        run_id: runId,
+        endpoint_id: endpointIdForLog,
+        duration_ms: durationMs,
+        usage_tokens: usageTokensTotal,
+      },
+    });
+    await writeProjectUsageFact(deps, {
+      workspaceId: task.workspace_id,
+      projectId: task.project_id,
+      resourceType: 'notebook_task',
+      resourceId: task.id,
+      requestId: runtimeRequestId,
+      durationMs,
+      tokensTotal: usageTokensTotal,
+      result: terminalResult,
+      errorCode: terminalErrorCode,
+      metadata: { run_id: runId, agent_id: agentId, endpoint_id: endpointIdForLog },
+    });
     updateTaskActivity(task);
     debugLog('task_run_finalized', {
       task_id: task.id,

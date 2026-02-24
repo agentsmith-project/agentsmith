@@ -231,6 +231,7 @@ export async function handleRequest(
       requestUrl,
       res,
       json,
+      deps,
     });
     if (handledAuditUsageRoute) {
       return;
@@ -243,6 +244,7 @@ export async function handleRequest(
         req,
         res,
         deps,
+        user,
         requestUrl,
         json,
         readBody,
@@ -257,6 +259,7 @@ export async function handleRequest(
         req,
         res,
         deps,
+        user,
         json,
         readBody,
         buildUpstreamUrl,

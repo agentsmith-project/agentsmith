@@ -718,3 +718,22 @@ Current known boundary:
   - `input-ref-runtime-resolver.ts` (object/url/artifact runtime metadata resolution + fallback rules)
   - runtime-specific adapters build on top (`chat-input-refs.ts`, `notebook-input-refs.ts`)
 - Chat `attachments/init` now normalizes `library_object` / `url` attachment metadata via the shared runtime metadata resolver (avoids handler-local drift in filename/type/size fallback rules).
+
+## Governance Backend (Audit / Usage) — Product-Grade v1 (Internal)
+
+- `api-entry-node` now persists real governance data for:
+  - audit ledger (`project_audit_events`)
+  - usage facts (`project_usage_facts`)
+- `/api/v1/workspaces/:workspaceId/projects/:projectId/audit`
+  - no longer placeholder; returns persisted audit events with paging/filter/sort
+- `/api/v1/workspaces/:workspaceId/projects/:projectId/usage`
+  - no longer synthetic-only placeholder; aggregates persisted usage facts by `day|hour`
+- `/api/v1/workspaces/:workspaceId/projects/:projectId/usage/kpi`
+  - aggregates today/yesterday KPI from usage facts
+- Initial instrumentation coverage includes:
+  - Notebook task lifecycle / task input attach-remove / artifact creation
+  - Notebook task run usage (duration, tokens when available)
+  - Chat message creation / attachment creation
+  - Chat stream run lifecycle + usage
+  - Endpoint proxy request usage (success/error, duration)
+- Feature availability for `audit` / `usage` in real backend mode is now `available` (Members / Resource Policy remain `mock_only` for this release line).

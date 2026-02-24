@@ -10,14 +10,14 @@ This matrix is for internal/controlled releases where the primary supported flow
 - Notebook attached inputs (task-scoped source details)
 - Sources quota (`/sources/quota`)
 
-## Partially available in local `api-entry-node`
+## Available in local `api-entry-node` (real backend)
 
 - Audit page (`/audit`)
-  - Real backend route exists (minimal placeholder paginated response)
-  - Intended for page integration validation, not production audit data
+  - Real backend route with persisted audit events, paging, filtering, sorting
+  - Currently covers core Notebook / Chat governance-relevant actions and runtime outcomes
 - Usage page (`/usage`, `/usage/kpi`)
-  - Real backend routes exist (minimal synthetic runtime-backed metrics)
-  - Intended for page integration validation, not full usage accounting
+  - Real backend routes with persisted usage facts and KPI aggregation
+  - Currently covers Notebook / Chat / Endpoint usage facts (first-stage coverage)
 
 ## UI available, mock-backed / not implemented in local `api-entry-node`
 
@@ -33,5 +33,5 @@ It does **not** yet apply member templates/custom permissions/resource policy co
 
 - Use these governance pages in **MSW/demo mode** for UI walkthroughs.
 - In real backend mode:
-  - Audit/Usage are available as **minimal preview backends**
+  - Audit/Usage are available for internal governance workflows (first-stage coverage)
   - Members/Resource Policy remain preview/mock-only unless explicitly implemented.

@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
+import { recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
 
 const servers: Server[] = [];
 const originalKeycloakIssuer = process.env.KEYCLOAK_ISSUER_URL;
@@ -1116,6 +1117,22 @@ describe('api-entry-node projects routes', () => {
     expect(proxied.ok).toBe(true);
     const echoed = upstream.lastBody() as { model?: string };
     expect(echoed.model).toBe('deepseek-chat');
+
+    const usageStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const usageEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const usageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(usageStart)}&end_time=${encodeURIComponent(usageEnd)}&resource_type=endpoint&page=1&page_size=50`,
+    );
+    expect(usageRes.status).toBe(200);
+    const usageBody = (await usageRes.json()) as {
+      items: Array<{ resource_type: string; resource_id?: string; requests: number }>;
+    };
+    expect(
+      usageBody.items.some(
+        (item) => item.resource_type === 'endpoint' && item.resource_id === endpoint.id && item.requests >= 1,
+      ),
+    ).toBe(true);
   });
 
   it('streams chat via external agent websocket runtime', async () => {
@@ -2738,6 +2755,39 @@ describe('api-entry-node projects routes', () => {
     expect(createSession.status).toBe(201);
     const session = (await createSession.json()) as { id: string };
 
+    const createLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Chat Inputs' }),
+      },
+    );
+    expect(createLibraryRes.status).toBe(201);
+    const library = (await createLibraryRes.json()) as { id: string };
+
+    const imageForm = buildMultipartBody(
+      [{ name: 'prefix', value: 'chat/' }],
+      {
+        fieldName: 'file',
+        filename: 'cat.png',
+        contentType: 'image/png',
+        content: new Uint8Array([1, 2, 3, 4]),
+      },
+    );
+    const uploadImageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
+      {
+        method: 'POST',
+        headers: { 'content-type': imageForm.contentType },
+        body: Buffer.from(imageForm.body),
+      },
+    );
+    expect(uploadImageRes.status).toBe(201);
+    const uploadedImage = (await uploadImageRes.json()) as { key: string };
+
     const initAttachment = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/attachments/init`,
@@ -2748,12 +2798,41 @@ describe('api-entry-node projects routes', () => {
           file_name: 'cat.png',
           file_type: 'image/png',
           file_size: 4,
-          content_base64: 'AQIDBA==',
+          input_ref: {
+            kind: 'library_object',
+            library_id: library.id,
+            key: uploadedImage.key,
+          },
         }),
       },
     );
     expect(initAttachment.status).toBe(200);
-    const attachmentBody = (await initAttachment.json()) as { attachment: { id: string } };
+    const attachmentBody = (await initAttachment.json()) as {
+      attachment: {
+        id: string;
+        source_library_id?: string;
+        source_object_key?: string;
+        input_ref?: { kind?: 'library_object' | 'url'; library_id?: string; key?: string };
+      };
+    };
+    const imageInputRef =
+      attachmentBody.attachment.input_ref &&
+      attachmentBody.attachment.input_ref.kind === 'library_object' &&
+      attachmentBody.attachment.input_ref.library_id &&
+      attachmentBody.attachment.input_ref.key
+        ? {
+            kind: 'library_object' as const,
+            library_id: attachmentBody.attachment.input_ref.library_id,
+            key: attachmentBody.attachment.input_ref.key,
+          }
+        : attachmentBody.attachment.source_library_id && attachmentBody.attachment.source_object_key
+          ? {
+              kind: 'library_object' as const,
+              library_id: attachmentBody.attachment.source_library_id,
+              key: attachmentBody.attachment.source_object_key,
+            }
+          : undefined;
+    expect(imageInputRef).toBeTruthy();
 
     const streamRes = await apiFetch(
       baseUrl,
@@ -2765,7 +2844,7 @@ describe('api-entry-node projects routes', () => {
           input: {
             role: 'user',
             content: 'describe this image',
-            attachments: [attachmentBody.attachment.id],
+            inputs: [imageInputRef],
           },
         }),
       },
@@ -2988,6 +3067,22 @@ describe('api-entry-node projects routes', () => {
     expect(body.attachment.source_type).toBe('library_import');
     expect(body.attachment.source_library_id).toBe('lib_123');
     expect(body.attachment.source_object_key).toBe('chat/s1/uploads/doc.txt');
+
+    const auditStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const auditEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(auditStart)}&end_time=${encodeURIComponent(auditEnd)}&action=chat.attachment.created&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const auditBody = (await auditRes.json()) as {
+      items: Array<{ action: string; resource_type?: string; resource_id?: string }>;
+    };
+    expect(
+      auditBody.items.some(
+        (item) => item.action === 'chat.attachment.created' && item.resource_type === 'chat_attachment',
+      ),
+    ).toBe(true);
   });
 
   it('normalizes chat attachment metadata from library object input refs', async () => {
@@ -4411,8 +4506,34 @@ describe('api-entry-node projects routes', () => {
     expect(page2Body.items.map((item) => item.content)).toEqual(['m3']);
   });
 
-  it('serves minimal usage and usage kpi endpoints', async () => {
-    const { baseUrl } = startServer();
+  it('serves aggregated usage and usage kpi endpoints from persisted usage facts', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await recordUsageFact(deps.docStore, {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      resource_type: 'notebook_task',
+      resource_id: 'task_1',
+      requests: 1,
+      duration_ms: 1200,
+      tokens_total: 42,
+      result: 'ok',
+      request_id: 'req_usage_1',
+      timestamp: new Date().toISOString(),
+    });
+    await recordUsageFact(deps.docStore, {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      resource_type: 'chat',
+      resource_id: 'sess_1',
+      requests: 1,
+      duration_ms: 800,
+      tokens_total: 12,
+      result: 'error',
+      error_code: 'UPSTREAM_ERROR',
+      request_id: 'req_usage_2',
+      timestamp: new Date().toISOString(),
+    });
+    const { baseUrl } = startServerWithDeps(deps);
     const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
@@ -4424,9 +4545,13 @@ describe('api-entry-node projects routes', () => {
     const kpi = (await kpiRes.json()) as {
       requests_today: number;
       errors_today: number;
+      tokens_today: number;
     };
     expect(typeof kpi.requests_today).toBe('number');
     expect(typeof kpi.errors_today).toBe('number');
+    expect(kpi.requests_today).toBeGreaterThanOrEqual(2);
+    expect(kpi.errors_today).toBeGreaterThanOrEqual(1);
+    expect(kpi.tokens_today).toBeGreaterThanOrEqual(54);
 
     const usageRes = await apiFetch(
       baseUrl,
@@ -4443,15 +4568,41 @@ describe('api-entry-node projects routes', () => {
     expect(Array.isArray(usage.items)).toBe(true);
     expect(usage.page).toBe(1);
     expect(usage.page_size).toBe(25);
-    if (usage.items.length > 0) {
-      expect(usage.items[0].workspace_id).toBe('ws_default');
-      expect(usage.items[0].project_id).toBe('proj_1');
-      expect(usage.items[0].resource_type).toBe('notebook_task');
-    }
+    expect(usage.items.some((item) => item.resource_type === 'notebook_task')).toBe(true);
+    expect(usage.items.some((item) => item.resource_type === 'chat')).toBe(true);
   });
 
-  it('serves empty audit endpoint placeholder with paging shape', async () => {
-    const { baseUrl } = startServer();
+  it('serves audit endpoint with persisted events and supports filtering', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await recordAuditEvent(deps.docStore, {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      actor_type: 'user',
+      actor_id: 'user_test',
+      action: 'notebook.task.created',
+      result: 'ok',
+      request_id: 'req_audit_1',
+      resource_type: 'notebook_task',
+      resource_id: 'task_1',
+      metadata_json: { title: 'Task 1' },
+      timestamp: new Date().toISOString(),
+    });
+    await recordAuditEvent(deps.docStore, {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      actor_type: 'agent',
+      actor_id: 'ag_1',
+      action: 'notebook.task.run.failed',
+      result: 'error',
+      error_code: 'AGENT_TIMEOUT',
+      error_message: 'timeout',
+      request_id: 'req_audit_2',
+      resource_type: 'notebook_task',
+      resource_id: 'task_1',
+      metadata_json: { duration_ms: 1000 },
+      timestamp: new Date().toISOString(),
+    });
+    const { baseUrl } = startServerWithDeps(deps);
     const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     const res = await apiFetch(
@@ -4460,16 +4611,26 @@ describe('api-entry-node projects routes', () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      items: unknown[];
+      items: Array<{ action: string; result: string; actor_type: string }>;
       total: number;
       page: number;
       page_size: number;
       has_more: boolean;
     };
-    expect(body.items).toEqual([]);
-    expect(body.total).toBe(0);
+    expect(body.total).toBe(2);
     expect(body.page).toBe(1);
     expect(body.page_size).toBe(10);
     expect(body.has_more).toBe(false);
+    expect(body.items.some((item) => item.action === 'notebook.task.created')).toBe(true);
+
+    const filtered = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&result=error&page=1&page_size=10`,
+    );
+    expect(filtered.status).toBe(200);
+    const filteredBody = (await filtered.json()) as { total: number; items: Array<{ result: string; action: string }> };
+    expect(filteredBody.total).toBe(1);
+    expect(filteredBody.items[0]?.action).toBe('notebook.task.run.failed');
+    expect(filteredBody.items[0]?.result).toBe('error');
   });
 });

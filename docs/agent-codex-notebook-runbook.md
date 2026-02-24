@@ -4,7 +4,20 @@
 
 This runbook covers the supported internal release path focused on `Files + Notebook + External Agent + Trace + Artifacts`.
 
-Governance surfaces such as `Audit`, `Usage`, `Members`, and `Resource Policy` currently have frontend UI and MSW demo support, but are not fully implemented in the local `api-entry-node` backend. In real-backend mode, these pages should be treated as preview/mock-only unless a corresponding backend implementation has been added.
+Governance surfaces such as `Members` and `Resource Policy` currently have frontend UI and MSW demo support, but are not fully implemented in the local `api-entry-node` backend. In real-backend mode, these pages should be treated as preview/mock-only unless a corresponding backend implementation has been added.
+
+`Audit` and `Usage` are now backed by real `api-entry-node` routes with persisted governance data (first-stage coverage) and are available in real-backend mode for internal workflows.
+
+### Governance Coverage (Current internal backend)
+
+- `Audit` (`/audit`)
+  - persisted audit events with paging/filtering/sorting
+  - first-stage coverage: notebook task lifecycle/input changes/artifacts, chat message/attachment/run lifecycle
+- `Usage` (`/usage`, `/usage/kpi`)
+  - persisted usage facts aggregated by `day|hour`
+  - first-stage coverage: notebook task runs, chat runs, endpoint proxy requests
+- `Members` / `Resource Policy`
+  - preview/mock-only in local `api-entry-node` (MSW/demo UI available)
 
 ## 1. Scope
 - Target: external agent for Notebook task execution/testing.

@@ -28,6 +28,7 @@ import {
 } from './notebook-task-sse-broker.js';
 import { resolveNotebookTaskInputDetails, type NotebookTaskInputRefRecord as SharedNotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { runNotebookTaskWithExternalAgent } from './notebook-runtime-orchestrator.js';
+import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 
 interface TaskRecord {
@@ -539,6 +540,16 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     };
     getTasks(route.workspaceId, route.projectId).unshift(task);
     await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'notebook.task.created',
+      resourceType: 'notebook_task',
+      resourceId: task.id,
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+      metadata: { agent_id: task.agent_id, initial_input_count: task.attached_inputs.length },
+    });
     json(res, 201, task);
     return true;
   }
@@ -690,9 +701,22 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
+    const beforeCount = task.attached_inputs.length;
     task.attached_inputs = task.attached_inputs.filter((item) => item.id !== route.inputId);
     task.updated_at = nowIso();
     await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+    if (task.attached_inputs.length !== beforeCount) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'notebook.task.input_removed',
+        resourceType: 'notebook_task',
+        resourceId: task.id,
+        requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+        metadata: { input_id: route.inputId },
+      });
+    }
     json(res, 200, task);
     return true;
   }

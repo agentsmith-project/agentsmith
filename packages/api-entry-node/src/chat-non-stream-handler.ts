@@ -3,6 +3,8 @@ import { Buffer } from 'node:buffer';
 import type { ChatRoute } from './chat-route-match.js';
 import { resolveImageMimeType, toImageDataUrl } from './chat-image-utils.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import type { AuthenticatedUser } from './auth.js';
+import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { parsePagination } from './pagination.js';
 import {
   ACTIVE_CHAT_STREAMS,
@@ -31,6 +33,7 @@ interface ChatNonStreamHandlerArgs {
   req: http.IncomingMessage;
   res: http.ServerResponse;
   deps: NodeApiDeps;
+  user: AuthenticatedUser;
   requestUrl: URL;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
@@ -120,7 +123,7 @@ async function resolveChatInputAttachments(
 }
 
 export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): Promise<boolean> {
-  const { route, method, req, res, deps, requestUrl, json, readBody } = args;
+  const { route, method, req, res, deps, user, requestUrl, json, readBody } = args;
 
   if (route.kind === 'chatMessagesStream') {
     return false;
@@ -441,6 +444,20 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       parentId,
       attachmentSnapshots: attachmentSnapshots.length > 0 ? attachmentSnapshots : undefined,
     });
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'chat.message.created',
+      resourceType: 'chat',
+      resourceId: route.sessionId,
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+      metadata: {
+        message_id: created.id,
+        has_attachments: attachmentSnapshots.length > 0,
+        attachment_count: attachmentSnapshots.length,
+      },
+    });
     json(res, 201, created);
     return true;
   }
@@ -626,6 +643,22 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
           resolvedAttachmentMeta?.fileName ?? raw.file_name!,
         ),
       ) ?? undefined,
+    });
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'chat.attachment.created',
+      resourceType: 'chat_attachment',
+      resourceId: attachment.id,
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+      metadata: {
+        session_id: route.sessionId,
+        file_name: attachment.file_name,
+        file_type: attachment.file_type,
+        file_size: attachment.file_size,
+        input_kind: attachment.input_ref?.kind ?? null,
+      },
     });
     json(res, 200, { attachment });
     return true;

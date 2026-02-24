@@ -1,6 +1,7 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { EndpointImportPayload, EndpointRecord } from './resource-models.js';
+import { writeProjectUsageFact } from './audit-usage-recorders.js';
 import {
   isCapabilitySupportedByProtocol,
   resolveEndpointTaskRoute,
@@ -127,15 +128,54 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       return true;
     }
 
-    await proxyJsonRequest(req, res, {
-      upstreamUrl: buildUpstreamUrl(endpoint.base_url, resolved.proxyPath || proxyPath),
-      apiKey,
-      model: resolvedModel,
-      timeoutSeconds: endpoint.limits?.timeout_seconds,
-      responsesFallbackToChat:
-        proxyPath.replace(/^\/+/, '') === 'responses'
-        && endpoint.protocol === 'openai_compatible',
-    });
+    const startedAtMs = Date.now();
+    const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+    try {
+      await proxyJsonRequest(req, res, {
+        upstreamUrl: buildUpstreamUrl(endpoint.base_url, resolved.proxyPath || proxyPath),
+        apiKey,
+        model: resolvedModel,
+        timeoutSeconds: endpoint.limits?.timeout_seconds,
+        responsesFallbackToChat:
+          proxyPath.replace(/^\/+/, '') === 'responses'
+          && endpoint.protocol === 'openai_compatible',
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        requestId,
+        requests: 1,
+        durationMs: Date.now() - startedAtMs,
+        result: 'ok',
+        metadata: {
+          endpoint_protocol: endpoint.protocol,
+          capability,
+          model: resolvedModel,
+          proxy_path: resolved.proxyPath || proxyPath,
+        },
+      });
+    } catch (error) {
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        requestId,
+        requests: 1,
+        durationMs: Date.now() - startedAtMs,
+        result: 'error',
+        metadata: {
+          endpoint_protocol: endpoint.protocol,
+          capability,
+          model: resolvedModel,
+          proxy_path: resolved.proxyPath || proxyPath,
+          error: error instanceof Error ? error.message : 'proxy_request_error',
+        },
+      });
+      throw error;
+    }
     return true;
   };
 

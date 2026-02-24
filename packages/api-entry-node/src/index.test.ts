@@ -963,6 +963,89 @@ describe('api-entry-node projects routes', () => {
     );
     expect(missingRejectRes.status).toBe(404);
 
+    const createJoinRequestRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests',
+      'alt-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'Need access for support' }),
+      },
+    );
+    expect(createJoinRequestRes.status).toBe(201);
+    const createdJoinRequest = (await createJoinRequestRes.json()) as {
+      id: string;
+      user_id: string;
+      status: string;
+      reason: string;
+    };
+    expect(createdJoinRequest.user_id).toBe('user_alt');
+    expect(createdJoinRequest.status).toBe('pending');
+    expect(createdJoinRequest.reason).toBe('Need access for support');
+
+    const duplicateJoinRequestRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests',
+      'alt-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'duplicate' }),
+      },
+    );
+    expect(duplicateJoinRequestRes.status).toBe(409);
+
+    const approveJoinRequestRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/join-requests/${createdJoinRequest.id}/approve`,
+      { method: 'POST' },
+    );
+    expect(approveJoinRequestRes.status).toBe(204);
+
+    const rejectJoinRequestRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/join-requests/${createdJoinRequest.id}/reject`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'late reject for state change coverage' }),
+      },
+    );
+    expect(rejectJoinRequestRes.status).toBe(204);
+
+    const listJoinRequestsAfterRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests',
+    );
+    expect(listJoinRequestsAfterRes.status).toBe(200);
+    const joinRequestsAfter = (await listJoinRequestsAfterRes.json()) as {
+      items: Array<{ id: string; status: string; reviewed_by?: string; reject_reason?: string }>;
+    };
+    const updatedJoinRequest = joinRequestsAfter.items.find((item) => item.id === createdJoinRequest.id);
+    expect(updatedJoinRequest).toMatchObject({
+      status: 'rejected',
+      reviewed_by: 'user_test',
+      reject_reason: 'late reject for state change coverage',
+    });
+
+    const auditAfterJoinRequestRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=2020-01-01T00:00:00.000Z&end_time=2100-01-01T00:00:00.000Z&page=1&page_size=50',
+    );
+    expect(auditAfterJoinRequestRes.status).toBe(200);
+    const auditAfterJoinRequest = (await auditAfterJoinRequestRes.json()) as {
+      items: Array<{ action: string; resource_id?: string }>;
+    };
+    const actions = auditAfterJoinRequest.items
+      .filter((item) => item.resource_id === createdJoinRequest.id)
+      .map((item) => item.action);
+    expect(actions).toEqual(expect.arrayContaining([
+      'member.join_request.created',
+      'member.join_request.approved',
+      'member.join_request.rejected',
+    ]));
+
     const deleteGroupRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,

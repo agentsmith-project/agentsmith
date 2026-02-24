@@ -19,6 +19,7 @@ import {
 import { drainJobQueue } from '@mbos/application';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import {
   getProjectResourcePolicyOrDefault,
   upsertProjectResourcePolicy,
@@ -406,6 +407,57 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     return true;
   }
 
+  if (route.kind === 'projectJoinRequests' && method === 'POST' && route.workspaceId && route.projectId) {
+    let projectOwnerId: string | null = null;
+    try {
+      const project = await deps.getProjectUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      });
+      projectOwnerId = project.owner_id;
+    } catch {
+      // Keep local governance route usable in partially wired dev setups.
+    }
+    if (projectOwnerId === user.id) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'Project owner cannot create a join request' });
+      return true;
+    }
+    const body = await readBody(req) as { reason?: unknown } | null;
+    const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const items = PROJECT_JOIN_REQUESTS_BY_PROJECT.get(key) ?? [];
+    const existingPending = items.find((item) => item.user_id === user.id && item.status === 'pending');
+    if (existingPending) {
+      json(res, 409, { error_code: 'JOIN_REQUEST_ALREADY_PENDING', message: 'A pending join request already exists' });
+      return true;
+    }
+    const created = {
+      id: `jr_${Math.random().toString(36).slice(2, 10)}`,
+      project_id: route.projectId,
+      user_id: user.id,
+      user_email: user.email,
+      user_name: user.name,
+      reason,
+      status: 'pending' as const,
+      requested_at: new Date().toISOString(),
+    };
+    PROJECT_JOIN_REQUESTS_BY_PROJECT.set(key, [...items, created]);
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'member.join_request.created',
+      resourceType: 'join_request',
+      resourceId: created.id,
+      metadata: {
+        requested_user_id: user.id,
+        reason_present: created.reason.length > 0,
+      },
+    });
+    json(res, 201, created);
+    return true;
+  }
+
   if (route.kind === 'projectJoinRequestApprove' && method === 'POST' && route.workspaceId && route.projectId && route.joinId) {
     const key = projectScopedKey(route.workspaceId, route.projectId);
     const items = PROJECT_JOIN_REQUESTS_BY_PROJECT.get(key) ?? [];
@@ -418,6 +470,17 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     target.reviewed_at = new Date().toISOString();
     target.reviewed_by = user.id;
     target.reject_reason = undefined;
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'member.join_request.approved',
+      resourceType: 'join_request',
+      resourceId: target.id,
+      metadata: {
+        requested_user_id: target.user_id,
+      },
+    });
     res.statusCode = 204;
     res.end();
     return true;
@@ -439,6 +502,18 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     target.reviewed_at = new Date().toISOString();
     target.reviewed_by = user.id;
     target.reject_reason = reason;
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'member.join_request.rejected',
+      resourceType: 'join_request',
+      resourceId: target.id,
+      metadata: {
+        requested_user_id: target.user_id,
+        reject_reason_present: typeof reason === 'string' && reason.trim().length > 0,
+      },
+    });
     res.statusCode = 204;
     res.end();
     return true;

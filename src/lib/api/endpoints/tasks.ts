@@ -16,6 +16,7 @@ import type {
   TaskListResponse,
   TaskTraceListResponse,
   TaskTraceEvent,
+  TaskAttachedInputDetail,
 } from '../../types/task';
 import type { FileItem, FileItemWithAIReady } from '../types';
 import type { ApiClient } from '../client';
@@ -96,42 +97,45 @@ export class TaskAPI {
   /**
    * Add sources to a task
    */
-  async addFiles(
+  async addInputs(
     workspaceId: string,
     projectId: string,
     taskId: string,
-    fileIds: string[],
+    inputs: Array<
+      | { kind: 'source'; source_id: string }
+      | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+    >,
   ): Promise<Task> {
     return this.client.post<Task>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/sources`,
-      { source_ids: fileIds },
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/inputs`,
+      { inputs },
     );
   }
 
   /**
    * Remove a source from a task
    */
-  async removeFile(
+  async removeInput(
     workspaceId: string,
     projectId: string,
     taskId: string,
-    fileId: string,
+    inputId: string,
   ): Promise<Task> {
     return this.client.delete<Task>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/sources/${fileId}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/inputs/${inputId}`,
     );
   }
 
   /**
    * List attached source file details for a task.
    */
-  async listAttachedFiles(
+  async listAttachedInputs(
     workspaceId: string,
     projectId: string,
     taskId: string,
-  ): Promise<FileItemWithAIReady[]> {
-    return this.client.get<FileItemWithAIReady[]>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/sources`,
+  ): Promise<TaskAttachedInputDetail[]> {
+    return this.client.get<TaskAttachedInputDetail[]>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/inputs`,
     );
   }
 

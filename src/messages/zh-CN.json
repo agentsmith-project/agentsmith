@@ -382,12 +382,17 @@
         "title": "添加文件作为输入",
         "description": "从您的文件库中选择文件作为上下文输入",
         "search_placeholder": "搜索您的文件...",
-        "confirm": "添加选中",
-        "no_files": "您的文件库中暂无可用文件",
-        "from_library": "来自您的文件库",
-        "none_selected": "未选择文件",
-        "selected_count": "已选择 {count} 个文件"
-      },
+      "confirm": "添加选中",
+      "no_files": "您的文件库中暂无可用文件",
+      "from_library": "来自您的文件库",
+      "library_objects_title": "文件库对象",
+      "library_objects_empty": "暂无文件库",
+      "library_objects_no_items": "该文件库中暂无文件",
+      "library_objects_add": "添加",
+      "library_objects_hint": "文件库对象会先导入为可挂载文件，再附加到当前任务。",
+      "none_selected": "未选择文件",
+      "selected_count": "已选择 {count} 个文件"
+    },
       "tooltip": {
         "attached_file": "此文件已附加到此笔记本作为上下文输入",
         "remove_file": "从笔记本中移除（文件仍保留在您的文件库中）"

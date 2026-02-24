@@ -39,8 +39,8 @@ function isAgentRoute(route: { kind: string }): boolean {
 function isTaskRoute(route: { kind: string }): boolean {
   return route.kind === 'tasks'
     || route.kind === 'taskItem'
-    || route.kind === 'taskSources'
-    || route.kind === 'taskSourceItem'
+    || route.kind === 'taskInputs'
+    || route.kind === 'taskInputItem'
     || route.kind === 'taskMessages'
     || route.kind === 'taskTraces'
     || route.kind === 'taskArtifacts'

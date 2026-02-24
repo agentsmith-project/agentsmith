@@ -11,13 +11,13 @@ import { formatBytes } from '@/lib/utils/formatters';
 function getFileIcon(_fileType: string) {
   return FileIcon;
 }
-import type { FileItemWithAIReady } from '@/lib/api/types';
+import type { TaskAttachedInputDetail } from '@/lib/types/task';
 
 export interface AttachedFilesPanelProps {
   workspaceId: string;
   projectId: string;
   taskId: string;
-  attachedFileIds: string[];
+  attachedInputIds: string[];
   onAddFromFiles: () => void;
   onAddFromLocal: () => void;
   onAddFromUrl: () => void;
@@ -28,7 +28,7 @@ export function AttachedFilesPanel({
   workspaceId,
   projectId,
   taskId,
-  attachedFileIds: _attachedFileIds,
+  attachedInputIds: _attachedInputIds,
   onAddFromFiles,
   onAddFromLocal,
   onAddFromUrl,
@@ -40,12 +40,12 @@ export function AttachedFilesPanel({
   const { data: attachedFilesData } = useTaskAttachedFiles(workspaceId, projectId, taskId);
   const attachedFiles = React.useMemo(() => attachedFilesData ?? [], [attachedFilesData]);
 
-  const handleRemove = async (fileId: string) => {
+  const handleRemove = async (inputId: string) => {
     await removeFile.mutateAsync({
       workspaceId,
       projectId,
       taskId,
-      fileId,
+      inputId,
     });
   };
 
@@ -101,7 +101,7 @@ export function AttachedFilesPanel({
 }
 
 interface AttachedFileItemProps {
-  file: FileItemWithAIReady;
+  file: TaskAttachedInputDetail;
   onRemove: () => void;
   removing: boolean;
 }
@@ -109,6 +109,7 @@ interface AttachedFileItemProps {
 function AttachedFileItem({ file, onRemove, removing }: AttachedFileItemProps) {
   const t = useTranslations('notebook.attached_files.tooltip');
   const FileIcon = getFileIcon(file.file_type);
+  const aiReadyStatus = file.kind === 'source' ? file.ai_ready?.status : undefined;
 
   return (
     <div className="group flex items-center gap-3 p-3 rounded-sm hover:bg-hover transition-colors">
@@ -119,9 +120,12 @@ function AttachedFileItem({ file, onRemove, removing }: AttachedFileItemProps) {
         <div className="text-sm text-foreground truncate">{file.filename}</div>
         <div className="flex items-center gap-2 mt-1">
           <span className="text-xs text-tertiary">{formatBytes(file.file_size)}</span>
-          {file.ai_ready && (
-            <AIReadyStatusBadge status={file.ai_ready.status} />
+          {aiReadyStatus && (
+            <AIReadyStatusBadge status={aiReadyStatus} />
           )}
+          <span className="text-xs text-tertiary">
+            {file.kind === 'library_object' ? 'Library object' : 'Source'}
+          </span>
         </div>
       </div>
       <button

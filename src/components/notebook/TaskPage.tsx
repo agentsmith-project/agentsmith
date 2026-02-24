@@ -374,12 +374,15 @@ export function TaskPage({
     }
   };
 
-  const handleAddFiles = async (fileIds: string[]) => {
+  const handleAddFiles = async (inputs: Array<
+    | { kind: 'source'; source_id: string }
+    | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+  >) => {
     await addFiles.mutateAsync({
       workspaceId,
       projectId,
       taskId,
-      fileIds,
+      inputs,
     });
   };
 
@@ -393,7 +396,7 @@ export function TaskPage({
         uploadedIds.push(uploaded.id);
       }
       if (uploadedIds.length > 0) {
-        await handleAddFiles(uploadedIds);
+        await handleAddFiles(uploadedIds.map((source_id) => ({ kind: 'source' as const, source_id })));
         await queryClient.invalidateQueries({
           queryKey: queryKeys.files.list(workspaceId, projectId),
         });
@@ -556,7 +559,7 @@ export function TaskPage({
             workspaceId={workspaceId}
             projectId={projectId}
             taskId={taskId}
-            attachedFileIds={task.attached_source_ids}
+            attachedInputIds={task.attached_inputs.map((item) => item.id)}
             addingInput={addingInput}
             onAddFromFiles={() => {
               if (!canUpdateTask) return;
@@ -607,7 +610,7 @@ export function TaskPage({
         workspaceId={workspaceId}
         projectId={projectId}
         onConfirm={handleAddFiles}
-        excludeIds={task.attached_source_ids}
+        excludeIds={task.attached_inputs.filter((item) => item.kind === 'source').map((item) => item.source_id)}
       />
 
       <input

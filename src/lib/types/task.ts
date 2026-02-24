@@ -6,6 +6,44 @@
 
 export type TaskStatus = 'active' | 'closed' | 'archived';
 
+export type TaskInputRef =
+  | {
+      id: string;
+      kind: 'source';
+      source_id: string;
+    }
+  | {
+      id: string;
+      kind: 'library_object';
+      library_id: string;
+      key: string;
+      name?: string;
+      content_type?: string;
+      size_bytes?: number;
+    };
+
+export type TaskAttachedInputDetail =
+  | {
+      id: string;
+      kind: 'source';
+      source_id: string;
+      filename: string;
+      file_type: string;
+      file_size: number;
+      ai_ready?: {
+        status: 'idle' | 'preparing' | 'ready' | 'failed' | 'cancelled';
+      };
+    }
+  | {
+      id: string;
+      kind: 'library_object';
+      library_id: string;
+      key: string;
+      filename: string;
+      file_type: string;
+      file_size: number;
+    };
+
 export interface Task {
   id: string;
   workspace_id: string;
@@ -15,7 +53,7 @@ export interface Task {
   agent_id: string; // Fixed after creation, cannot be changed
   agent_name: string; // Redundant field for display
   status: TaskStatus;
-  attached_source_ids: string[]; // Attached Source file IDs
+  attached_inputs: TaskInputRef[]; // Attached task input references
   created_at: string; // ISO 8601
   updated_at: string; // ISO 8601
   last_activity_at: string; // ISO 8601
@@ -76,7 +114,10 @@ export interface TaskTraceListResponse {
 export interface CreateTaskRequest {
   title: string;
   agent_id: string;
-  initial_source_ids?: string[]; // Optional initial files
+  initial_inputs?: Array<
+    | { kind: 'source'; source_id: string }
+    | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+  >;
 }
 
 export interface UpdateTaskRequest {

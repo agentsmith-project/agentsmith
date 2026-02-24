@@ -17,7 +17,10 @@ type NotebookTaskRecord = {
   title: string;
   agent_name: string;
   status: 'active' | 'closed' | 'archived';
-  attached_source_ids: string[];
+  attached_inputs: Array<
+    | { id: string; kind: 'source'; source_id: string }
+    | { id: string; kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+  >;
   created_at: string;
   updated_at: string;
   last_activity_at: string;
@@ -53,13 +56,23 @@ type RuntimeEventPayload =
   | { type: 'task_update'; data: NotebookTaskRecord }
   | { type: 'error'; data: { message: string; code: string } };
 
-type RuntimeTaskInput = {
-  source_id: string;
-  filename: string;
-  file_type?: string;
-  file_size?: number;
-  ai_ready_status?: string;
-};
+type RuntimeTaskInput =
+  | {
+      kind: 'source';
+      source_id: string;
+      filename: string;
+      file_type?: string;
+      file_size?: number;
+      ai_ready_status?: string;
+    }
+  | {
+      kind: 'library_object';
+      library_id: string;
+      key: string;
+      filename: string;
+      file_type?: string;
+      file_size?: number;
+    };
 
 function asObject(input: unknown): Record<string, unknown> {
   return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
@@ -78,8 +91,42 @@ async function buildRuntimeTaskInputs(
   task: NotebookTaskRecord,
   debugLog: (message: string, extra?: Record<string, unknown>) => void,
 ): Promise<RuntimeTaskInput[]> {
-  if (task.attached_source_ids.length === 0) return [];
-  const inputs = await Promise.all(task.attached_source_ids.map(async (sourceId) => {
+  if (task.attached_inputs.length === 0) return [];
+  const inputs = await Promise.all(task.attached_inputs.map(async (inputRef) => {
+    if (inputRef.kind === 'library_object') {
+      try {
+        const meta = await deps.getSourceObjectMetaUseCase.execute({
+          workspaceId: task.workspace_id,
+          projectId: task.project_id,
+          libraryId: inputRef.library_id,
+          key: inputRef.key,
+        });
+        return {
+          kind: 'library_object',
+          library_id: inputRef.library_id,
+          key: inputRef.key,
+          filename: inputRef.name || meta.key.split('/').pop() || inputRef.key,
+          file_type: meta.content_type,
+          file_size: meta.size_bytes,
+        } satisfies RuntimeTaskInput;
+      } catch (error) {
+        debugLog('task_input_library_object_lookup_failed', {
+          task_id: task.id,
+          library_id: inputRef.library_id,
+          key: inputRef.key,
+          error: error instanceof Error ? error.message : 'object_lookup_failed',
+        });
+        return {
+          kind: 'library_object',
+          library_id: inputRef.library_id,
+          key: inputRef.key,
+          filename: inputRef.name || inputRef.key.split('/').pop() || inputRef.key,
+          ...(inputRef.content_type ? { file_type: inputRef.content_type } : {}),
+          ...(typeof inputRef.size_bytes === 'number' ? { file_size: inputRef.size_bytes } : {}),
+        } satisfies RuntimeTaskInput;
+      }
+    }
+    const sourceId = inputRef.source_id;
     try {
       const source = await deps.getSourceUseCase.execute({
         workspaceId: task.workspace_id,
@@ -89,6 +136,7 @@ async function buildRuntimeTaskInputs(
       const src = asObject(source);
       const aiReady = asObject(src.ai_ready);
       return {
+        kind: 'source',
         source_id: sourceId,
         filename: readString(src.filename) ?? readString(src.name) ?? sourceId,
         ...(readString(src.file_type) ?? readString(src.content_type)
@@ -104,6 +152,7 @@ async function buildRuntimeTaskInputs(
         error: error instanceof Error ? error.message : 'source_lookup_failed',
       });
       return {
+        kind: 'source',
         source_id: sourceId,
         filename: sourceId,
       } satisfies RuntimeTaskInput;

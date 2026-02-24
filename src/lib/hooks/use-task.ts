@@ -22,8 +22,8 @@ import type {
   SaveArtifactRequest,
   TaskListParams,
   TaskTraceListResponse,
+  TaskAttachedInputDetail,
 } from '@/lib/types/task';
-import type { FileItemWithAIReady } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 
 /**
@@ -233,12 +233,12 @@ export function useTaskAttachedFiles(
   workspaceId: string,
   projectId: string,
   taskId: string,
-): UseQueryResult<FileItemWithAIReady[]> {
+): UseQueryResult<TaskAttachedInputDetail[]> {
   const taskAPI = new TaskAPI(getApiClient());
 
-  return useQuery<FileItemWithAIReady[]>({
+  return useQuery<TaskAttachedInputDetail[]>({
     queryKey: queryKeys.tasks.attachedFiles(workspaceId, projectId, taskId),
-    queryFn: () => taskAPI.listAttachedFiles(workspaceId, projectId, taskId),
+    queryFn: () => taskAPI.listAttachedInputs(workspaceId, projectId, taskId),
     enabled: !!workspaceId && !!projectId && !!taskId,
     staleTime: 5000,
   });
@@ -275,13 +275,16 @@ export function useAddFiles() {
       workspaceId,
       projectId,
       taskId,
-      fileIds,
+      inputs,
     }: {
       workspaceId: string;
       projectId: string;
       taskId: string;
-      fileIds: string[];
-    }) => taskAPI.addFiles(workspaceId, projectId, taskId, fileIds),
+      inputs: Array<
+        | { kind: 'source'; source_id: string }
+        | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+      >;
+    }) => taskAPI.addInputs(workspaceId, projectId, taskId, inputs),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.tasks.detail(variables.workspaceId, variables.projectId, variables.taskId),
@@ -289,7 +292,7 @@ export function useAddFiles() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.tasks.attachedFiles(variables.workspaceId, variables.projectId, variables.taskId),
       });
-      toast.success(t('files_added_to_task', { count: variables.fileIds.length }));
+      toast.success(t('files_added_to_task', { count: variables.inputs.length }));
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useAddFiles');
@@ -310,13 +313,13 @@ export function useRemoveFile() {
       workspaceId,
       projectId,
       taskId,
-      fileId,
+      inputId,
     }: {
       workspaceId: string;
       projectId: string;
       taskId: string;
-      fileId: string;
-    }) => taskAPI.removeFile(workspaceId, projectId, taskId, fileId),
+      inputId: string;
+    }) => taskAPI.removeInput(workspaceId, projectId, taskId, inputId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.tasks.detail(variables.workspaceId, variables.projectId, variables.taskId),

@@ -7,7 +7,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AttachedFilesPanel } from '../AttachedFilesPanel';
-import type { FileItemWithAIReady } from '@/lib/api/types';
+import type { TaskAttachedInputDetail } from '@/lib/types/task';
 
 vi.mock('next-intl', () => ({
   useTranslations: (namespace?: string) => (key: string) => {
@@ -26,19 +26,14 @@ vi.mock('next-intl', () => ({
   },
 }));
 
-const mockSources: FileItemWithAIReady[] = [
+const mockSources: TaskAttachedInputDetail[] = [
   {
-    id: 'source-1',
-    workspace_id: 'workspace-1',
-    project_id: 'project-1',
-    owner_user_id: 'user-1',
-    object_ref: { bucket: 'test', key: 'source-1.txt' },
-    version: 1,
+    id: 'in_src_1',
+    kind: 'source',
+    source_id: 'source-1',
     filename: 'document1.txt',
     file_type: 'text/plain',
     file_size: 1024,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
     ai_ready: {
       id: 'job-1',
       source_file_id: 'source-1',
@@ -49,17 +44,12 @@ const mockSources: FileItemWithAIReady[] = [
     },
   },
   {
-    id: 'source-2',
-    workspace_id: 'workspace-1',
-    project_id: 'project-1',
-    owner_user_id: 'user-1',
-    object_ref: { bucket: 'test', key: 'source-2.pdf' },
-    version: 1,
+    id: 'in_src_2',
+    kind: 'source',
+    source_id: 'source-2',
     filename: 'document2.pdf',
     file_type: 'application/pdf',
     file_size: 2048000,
-    created_at: '2024-01-01T01:00:00Z',
-    updated_at: '2024-01-01T01:00:00Z',
     ai_ready: {
       id: 'job-2',
       source_file_id: 'source-2',
@@ -70,17 +60,12 @@ const mockSources: FileItemWithAIReady[] = [
     },
   },
   {
-    id: 'source-3',
-    workspace_id: 'workspace-1',
-    project_id: 'project-1',
-    owner_user_id: 'user-1',
-    object_ref: { bucket: 'test', key: 'source-3.docx' },
-    version: 1,
+    id: 'in_src_3',
+    kind: 'source',
+    source_id: 'source-3',
     filename: 'document3.docx',
     file_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     file_size: 512000,
-    created_at: '2024-01-01T02:00:00Z',
-    updated_at: '2024-01-01T02:00:00Z',
     ai_ready: {
       id: 'job-3',
       source_file_id: 'source-3',
@@ -95,7 +80,7 @@ const STABLE_REMOVE_SOURCE_RESULT = {
   mutateAsync: vi.fn().mockResolvedValue({}),
   isPending: false,
 };
-let mockAttachedFilesData: FileItemWithAIReady[] = [mockSources[0]!, mockSources[1]!];
+let mockAttachedFilesData: TaskAttachedInputDetail[] = [mockSources[0]!, mockSources[1]!];
 const STABLE_SOURCES_QUERY_RESULT = {
   get data() {
     return mockAttachedFilesData;
@@ -149,14 +134,16 @@ describe('AttachedFilesPanel', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
-  const renderComponent = (attachedFileIds: string[] = ['source-1', 'source-2']) => {
-    mockAttachedFilesData = mockSources.filter((file) => attachedFileIds.includes(file.id));
+  const renderComponent = (requestedIds: string[] = ['source-1', 'source-2']) => {
+    mockAttachedFilesData = mockSources.filter((file) =>
+      requestedIds.includes(file.id) || (file.kind === 'source' && requestedIds.includes(file.source_id))
+    );
     return render(
       <AttachedFilesPanel
         workspaceId={mockWorkspaceId}
         projectId={mockProjectId}
         taskId={mockTaskId}
-        attachedFileIds={attachedFileIds}
+        attachedInputIds={mockAttachedFilesData.map((file) => file.id)}
         onAddFromFiles={mockOnAddClick}
         onAddFromLocal={vi.fn()}
         onAddFromUrl={vi.fn()}

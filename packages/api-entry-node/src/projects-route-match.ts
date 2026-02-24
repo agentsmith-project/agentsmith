@@ -30,13 +30,13 @@ export type ProjectsRoute =
   | { kind: 'sourceDownload'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'tasks'; workspaceId: string; projectId: string }
   | { kind: 'taskItem'; workspaceId: string; projectId: string; taskId: string }
-  | { kind: 'taskSources'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskInputs'; workspaceId: string; projectId: string; taskId: string }
   | {
-    kind: 'taskSourceItem';
+    kind: 'taskInputItem';
     workspaceId: string;
     projectId: string;
     taskId: string;
-    sourceId: string;
+    inputId: string;
   }
   | { kind: 'taskMessages'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskTraces'; workspaceId: string; projectId: string; taskId: string }
@@ -446,28 +446,28 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const taskSourceItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/sources\/([^/]+)\/?$/,
+  const taskInputItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/inputs\/([^/]+)\/?$/,
   );
-  if (taskSourceItemMatched) {
+  if (taskInputItemMatched) {
     return {
-      kind: 'taskSourceItem',
-      workspaceId: decodeURIComponent(taskSourceItemMatched[1]),
-      projectId: decodeURIComponent(taskSourceItemMatched[2]),
-      taskId: decodeURIComponent(taskSourceItemMatched[3]),
-      sourceId: decodeURIComponent(taskSourceItemMatched[4]),
+      kind: 'taskInputItem',
+      workspaceId: decodeURIComponent(taskInputItemMatched[1]),
+      projectId: decodeURIComponent(taskInputItemMatched[2]),
+      taskId: decodeURIComponent(taskInputItemMatched[3]),
+      inputId: decodeURIComponent(taskInputItemMatched[4]),
     };
   }
 
-  const taskSourcesMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/sources\/?$/,
+  const taskInputsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/inputs\/?$/,
   );
-  if (taskSourcesMatched) {
+  if (taskInputsMatched) {
     return {
-      kind: 'taskSources',
-      workspaceId: decodeURIComponent(taskSourcesMatched[1]),
-      projectId: decodeURIComponent(taskSourcesMatched[2]),
-      taskId: decodeURIComponent(taskSourcesMatched[3]),
+      kind: 'taskInputs',
+      workspaceId: decodeURIComponent(taskInputsMatched[1]),
+      projectId: decodeURIComponent(taskInputsMatched[2]),
+      taskId: decodeURIComponent(taskInputsMatched[3]),
     };
   }
 

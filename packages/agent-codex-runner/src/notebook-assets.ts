@@ -2,7 +2,10 @@ import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export type NotebookTaskInput = {
+  kind?: 'source' | 'library_object';
   source_id?: string;
+  library_id?: string;
+  key?: string;
   filename?: string;
   file_type?: string;
   file_size?: number;
@@ -29,6 +32,7 @@ export function buildNotebookHeadlessPreamble(args: {
     `- Attached inputs count: ${String(args.taskInputsCount)}`,
     '',
     'Use attached inputs to complete the user request and mention generated artifact filenames in your final response.',
+    '- Inputs may be source-based or library-object-based. Inspect `kind` in the task inputs manifest.',
     '',
   ].join('\n');
 }
@@ -76,8 +80,8 @@ function buildNotebookInputsSkillMd(): string {
     '',
     '- List attached inputs:',
     '  - `node ./.codex/skills/notebook-inputs/fetch_input.mjs list`',
-    '- Fetch one input by `source_id` (writes into `./inputs/`):',
-    '  - `node ./.codex/skills/notebook-inputs/fetch_input.mjs fetch <source_id>`',
+    '- Fetch one input by ID (source or library object ref, writes into `./inputs/`):',
+    '  - `node ./.codex/skills/notebook-inputs/fetch_input.mjs fetch <id>`',
     '',
     '## Notes',
     '',
@@ -106,7 +110,7 @@ async function main() {
   const token = reqEnv('MBOS_NOTEBOOK_USER_BEARER_TOKEN');
   const manifestPath = process.env.MBOS_NOTEBOOK_TASK_INPUTS_MANIFEST || './.mbos/task-inputs.json';
   const cmd = process.argv[2] || 'list';
-  const sourceIdArg = process.argv[3];
+  const inputIdArg = process.argv[3];
 
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const inputs = Array.isArray(manifest.task_inputs) ? manifest.task_inputs : [];
@@ -117,23 +121,33 @@ async function main() {
   }
 
   if (cmd === 'fetch') {
-    if (!sourceIdArg) throw new Error('source_id_required');
-    const item = inputs.find((x) => x && x.source_id === sourceIdArg);
+    if (!inputIdArg) throw new Error('input_id_required');
+    const item = inputs.find((x) => x && (x.source_id === inputIdArg || (x.library_id && x.key && \`\${x.library_id}:\${x.key}\` === inputIdArg)));
     if (!item) throw new Error('source_not_in_task_inputs');
-    const res = await fetch(
-      \`\${apiBase}/api/v1/workspaces/\${encodeURIComponent(workspaceId)}/projects/\${encodeURIComponent(projectId)}/sources/\${encodeURIComponent(sourceIdArg)}/download\`,
-      { headers: { Authorization: \`Bearer \${token}\` } },
-    );
+    let res;
+    if (item.kind === 'library_object' && item.library_id && item.key) {
+      res = await fetch(
+        \`\${apiBase}/api/v1/workspaces/\${encodeURIComponent(workspaceId)}/projects/\${encodeURIComponent(projectId)}/source-libraries/\${encodeURIComponent(item.library_id)}/objects/download?key=\${encodeURIComponent(item.key)}\`,
+        { headers: { Authorization: \`Bearer \${token}\` } },
+      );
+    } else {
+      const sourceId = item.source_id || inputIdArg;
+      res = await fetch(
+        \`\${apiBase}/api/v1/workspaces/\${encodeURIComponent(workspaceId)}/projects/\${encodeURIComponent(projectId)}/sources/\${encodeURIComponent(sourceId)}/download\`,
+        { headers: { Authorization: \`Bearer \${token}\` } },
+      );
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(\`source_download_failed_\${res.status}\${text ? ':' + text.slice(0, 200) : ''}\`);
     }
     const ab = await res.arrayBuffer();
     await mkdir('./inputs', { recursive: true });
-    const filename = (typeof item.filename === 'string' && item.filename.trim()) ? item.filename.trim() : \`\${sourceIdArg}.bin\`;
+    const fallbackName = item.source_id || (item.key ? String(item.key).split('/').pop() : null) || \`\${inputIdArg}.bin\`;
+    const filename = (typeof item.filename === 'string' && item.filename.trim()) ? item.filename.trim() : fallbackName;
     const outPath = join('./inputs', basename(filename));
     await writeFile(outPath, Buffer.from(ab));
-    process.stdout.write(JSON.stringify({ source_id: sourceIdArg, path: outPath, bytes: ab.byteLength }, null, 2) + '\\n');
+    process.stdout.write(JSON.stringify({ input_id: inputIdArg, path: outPath, bytes: ab.byteLength }, null, 2) + '\\n');
     return;
   }
 
@@ -171,7 +185,10 @@ export async function prepareNotebookWorkspaceAssets(args: {
         run_id: runtimeContext.run_id ?? null,
         generated_at: new Date().toISOString(),
         task_inputs: taskInputs.map((item) => ({
+          kind: item?.kind === 'library_object' ? 'library_object' : 'source',
           source_id: typeof item?.source_id === 'string' ? item.source_id : undefined,
+          library_id: typeof item?.library_id === 'string' ? item.library_id : undefined,
+          key: typeof item?.key === 'string' ? item.key : undefined,
           filename: typeof item?.filename === 'string' ? item.filename : undefined,
           file_type: typeof item?.file_type === 'string' ? item.file_type : undefined,
           file_size: typeof item?.file_size === 'number' ? item.file_size : undefined,
@@ -194,4 +211,3 @@ export async function prepareNotebookWorkspaceAssets(args: {
   }
   return { artifactsDir, taskInputsManifestPath };
 }
-

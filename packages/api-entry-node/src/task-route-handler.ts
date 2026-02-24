@@ -38,11 +38,27 @@ interface TaskRecord {
   agent_id: string;
   agent_name: string;
   status: 'active' | 'closed' | 'archived';
-  attached_source_ids: string[];
+  attached_inputs: TaskInputRefRecord[];
   created_at: string;
   updated_at: string;
   last_activity_at: string;
 }
+
+type TaskInputRefRecord =
+  | {
+      id: string;
+      kind: 'source';
+      source_id: string;
+    }
+  | {
+      id: string;
+      kind: 'library_object';
+      library_id: string;
+      key: string;
+      name?: string;
+      content_type?: string;
+      size_bytes?: number;
+    };
 
 interface TaskMessageRecord {
   id: string;
@@ -170,9 +186,52 @@ function asObject(input: unknown): Record<string, unknown> {
   return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
 }
 
-function readStringArray(raw: unknown): string[] {
+function readTaskInputRefs(raw: unknown): TaskInputRefRecord[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter((item): item is string => typeof item === 'string').map((s) => s.trim()).filter(Boolean);
+  const results: TaskInputRefRecord[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const obj = asObject(item);
+    const kind = typeof obj.kind === 'string' ? obj.kind.trim() : '';
+    if (kind === 'source') {
+      const sourceId = typeof obj.source_id === 'string' ? obj.source_id.trim() : '';
+      if (!sourceId) continue;
+      const dedupeKey = `source:${sourceId}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      results.push({ id: buildId('in'), kind: 'source', source_id: sourceId });
+      continue;
+    }
+    if (kind === 'library_object') {
+      const libraryId = typeof obj.library_id === 'string' ? obj.library_id.trim() : '';
+      const key = typeof obj.key === 'string' ? obj.key.trim() : '';
+      if (!libraryId || !key) continue;
+      const dedupeKey = `library_object:${libraryId}:${key}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      results.push({
+        id: buildId('in'),
+        kind: 'library_object',
+        library_id: libraryId,
+        key,
+        ...(typeof obj.name === 'string' && obj.name.trim() ? { name: obj.name.trim() } : {}),
+        ...(typeof obj.content_type === 'string' && obj.content_type.trim() ? { content_type: obj.content_type.trim() } : {}),
+        ...(typeof obj.size_bytes === 'number' && Number.isFinite(obj.size_bytes) && obj.size_bytes >= 0
+          ? { size_bytes: Math.floor(obj.size_bytes) }
+          : {}),
+      });
+    }
+  }
+  return results;
+}
+
+function normalizeTaskRecord(input: TaskRecord): TaskRecord {
+  const raw = asObject(input);
+  const attachedInputs = readTaskInputRefs(raw.attached_inputs);
+  return {
+    ...input,
+    attached_inputs: attachedInputs,
+  };
 }
 
 function getTasks(workspaceId: string, projectId: string): TaskRecord[] {
@@ -193,7 +252,7 @@ async function loadProjectTasks(deps: NodeApiDeps, workspaceId: string, projectI
     workspace_id: workspaceId,
     project_id: projectId,
   });
-  const sorted = listed.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const sorted = listed.map((item) => normalizeTaskRecord(item)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   TASKS_BY_PROJECT.set(key, sorted);
   return sorted;
 }
@@ -405,7 +464,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       agent_id: agent.id,
       agent_name: agent.name,
       status: 'active',
-      attached_source_ids: readStringArray(body.initial_source_ids),
+      attached_inputs: readTaskInputRefs(body.initial_inputs),
       created_at: createdAt,
       updated_at: createdAt,
       last_activity_at: createdAt,
@@ -469,7 +528,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     return true;
   }
 
-  if (route.kind === 'taskSources' && method === 'POST') {
+  if (route.kind === 'taskInputs' && method === 'POST') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
@@ -477,28 +536,73 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     const body = asObject(await readBody(req));
-    const sourceIds = readStringArray(body.source_ids);
-    task.attached_source_ids = Array.from(new Set([...task.attached_source_ids, ...sourceIds]));
+    const inputs = readTaskInputRefs(body.inputs);
+    const existingKeys = new Set(
+      task.attached_inputs.map((item) =>
+        item.kind === 'source'
+          ? `source:${item.source_id}`
+          : `library_object:${item.library_id}:${item.key}`,
+      ),
+    );
+    for (const inputRef of inputs) {
+      const key = inputRef.kind === 'source'
+        ? `source:${inputRef.source_id}`
+        : `library_object:${inputRef.library_id}:${inputRef.key}`;
+      if (existingKeys.has(key)) continue;
+      existingKeys.add(key);
+      task.attached_inputs.push(inputRef);
+    }
     task.updated_at = nowIso();
     await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
     json(res, 200, task);
     return true;
   }
 
-  if (route.kind === 'taskSources' && method === 'GET') {
+  if (route.kind === 'taskInputs' && method === 'GET') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
-    const items = await Promise.all(task.attached_source_ids.map(async (sourceId) => {
+    const items = await Promise.all(task.attached_inputs.map(async (inputRef) => {
+      if (inputRef.kind === 'source') {
+        try {
+          const source = asObject(await deps.getSourceUseCase.execute({
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            sourceId: inputRef.source_id,
+          }));
+          const aiReady = asObject(source.ai_ready);
+          return {
+            id: inputRef.id,
+            kind: 'source',
+            source_id: inputRef.source_id,
+            filename: typeof source.filename === 'string' ? source.filename : (typeof source.name === 'string' ? source.name : inputRef.source_id),
+            file_type: typeof source.file_type === 'string' ? source.file_type : (typeof source.content_type === 'string' ? source.content_type : 'application/octet-stream'),
+            file_size: typeof source.file_size === 'number' ? source.file_size : (typeof source.size_bytes === 'number' ? source.size_bytes : 0),
+            ...(typeof aiReady.status === 'string' ? { ai_ready: { status: aiReady.status } } : {}),
+          };
+        } catch {
+          return null;
+        }
+      }
       try {
-        return await deps.getSourceUseCase.execute({
+        const meta = await deps.getSourceObjectMetaUseCase.execute({
           workspaceId: route.workspaceId,
           projectId: route.projectId,
-          sourceId,
+          libraryId: inputRef.library_id,
+          key: inputRef.key,
         });
+        return {
+          id: inputRef.id,
+          kind: 'library_object',
+          library_id: inputRef.library_id,
+          key: inputRef.key,
+          filename: inputRef.name || meta.key.split('/').pop() || inputRef.key,
+          file_type: meta.content_type,
+          file_size: meta.size_bytes,
+        };
       } catch {
         return null;
       }
@@ -507,14 +611,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     return true;
   }
 
-  if (route.kind === 'taskSourceItem' && method === 'DELETE') {
+  if (route.kind === 'taskInputItem' && method === 'DELETE') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const task = findTask(route.workspaceId, route.projectId, route.taskId);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
-    task.attached_source_ids = task.attached_source_ids.filter((item) => item !== route.sourceId);
+    task.attached_inputs = task.attached_inputs.filter((item) => item.id !== route.inputId);
     task.updated_at = nowIso();
     await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
     json(res, 200, task);

@@ -124,7 +124,7 @@ export function TaskList({
                           <Clock3 className="h-3.5 w-3.5" />
                           {formatTime(task.last_activity_at)}
                         </span>
-                        <span>{task.attached_source_ids.length} file(s)</span>
+                        <span>{task.attached_inputs.length} file(s)</span>
                       </div>
                     </div>
                     <ChevronRight className="h-4 w-4 text-tertiary shrink-0" />

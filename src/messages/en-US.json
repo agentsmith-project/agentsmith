@@ -380,12 +380,17 @@
         "title": "Add Files as Inputs",
         "description": "Choose files from your library to add as context inputs",
         "search_placeholder": "Search your files...",
-        "confirm": "Add Selected",
-        "no_files": "No ready files available in your library",
-        "from_library": "From your Files library",
-        "none_selected": "No files selected",
-        "selected_count": "{count} file(s) selected"
-      },
+      "confirm": "Add Selected",
+      "no_files": "No ready files available in your library",
+      "from_library": "From your Files library",
+      "library_objects_title": "File Library Objects",
+      "library_objects_empty": "No file libraries yet",
+      "library_objects_no_items": "No files in this library yet",
+      "library_objects_add": "Add",
+      "library_objects_hint": "Library objects will be imported as task-selectable files, then attached to this task.",
+      "none_selected": "No files selected",
+      "selected_count": "{count} file(s) selected"
+    },
       "tooltip": {
         "attached_file": "This file is attached to this notebook as context input",
         "remove_file": "Remove from notebook (file remains in your library)"

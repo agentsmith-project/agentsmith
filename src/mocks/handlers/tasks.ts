@@ -47,7 +47,10 @@ export const taskHandlers = [
       agent_id: body?.agent_id ?? 'agent_001',
       agent_name: body?.agent_name ?? 'AgentA',
       status: body?.status ?? 'active',
-      attached_source_ids: body?.source_ids ?? [],
+      attached_inputs: Array.isArray(body?.inputs) ? body.inputs.map((item: any, idx: number) => ({
+        id: item?.id ?? `in_${idx}_${Math.random().toString(36).slice(2, 7)}`,
+        ...item,
+      })) : [],
       created_at: now,
       updated_at: now,
       last_activity_at: now,
@@ -73,35 +76,70 @@ export const taskHandlers = [
     }
     return HttpResponse.json({ ok: true });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/sources', async ({ request, params }) => {
+  http.post('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/inputs', async ({ request, params }) => {
     const taskId = params.id as string;
     const task = tasks.find((r) => r.id === taskId);
     if (!task) {
       return HttpResponse.json({ error: 'task_not_found' }, { status: 404 });
     }
     const body: any = await request.json().catch(() => ({}));
-    const sourceIds = Array.isArray(body?.source_ids) ? body.source_ids : [];
-    task.attached_source_ids = Array.from(new Set([...(task.attached_source_ids ?? []), ...sourceIds]));
+    const inputs = Array.isArray(body?.inputs) ? body.inputs : [];
+    const existing = new Set((task.attached_inputs ?? []).map((item: any) =>
+      item?.kind === 'library_object' ? `library_object:${item.library_id}:${item.key}` : `source:${item.source_id}`));
+    for (const rawInput of inputs) {
+      const item = rawInput ?? {};
+      const dedupeKey = item.kind === 'library_object'
+        ? `library_object:${item.library_id}:${item.key}`
+        : `source:${item.source_id}`;
+      if (existing.has(dedupeKey)) continue;
+      existing.add(dedupeKey);
+      (task.attached_inputs ??= []).push({
+        id: item.id ?? `in_${Math.random().toString(36).slice(2, 8)}`,
+        ...item,
+      });
+    }
     task.updated_at = new Date().toISOString();
     return HttpResponse.json(task);
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/sources', ({ params }) => {
+  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/inputs', ({ params }) => {
     const taskId = params.id as string;
     const task = tasks.find((r) => r.id === taskId);
     if (!task) {
       return HttpResponse.json({ error: 'task_not_found' }, { status: 404 });
     }
-    const items = sourceFileFixtures.filter((f) => (task.attached_source_ids ?? []).includes(f.id));
+    const items = (task.attached_inputs ?? []).map((input: any) => {
+      if (input.kind === 'library_object') {
+        return {
+          id: input.id,
+          kind: 'library_object',
+          library_id: input.library_id,
+          key: input.key,
+          filename: input.name ?? (typeof input.key === 'string' ? input.key.split('/').pop() : 'object.bin'),
+          file_type: input.content_type ?? 'application/octet-stream',
+          file_size: input.size_bytes ?? 0,
+        };
+      }
+      const source = sourceFileFixtures.find((f) => f.id === input.source_id);
+      if (!source) return null;
+      return {
+        id: input.id,
+        kind: 'source',
+        source_id: input.source_id,
+        filename: source.filename,
+        file_type: source.file_type,
+        file_size: source.file_size,
+      };
+    }).filter(Boolean);
     return HttpResponse.json(items);
   }),
-  http.delete('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/sources/:sourceId', ({ params }) => {
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/inputs/:sourceId', ({ params }) => {
     const taskId = params.id as string;
-    const sourceId = params.sourceId as string;
+    const inputId = params.sourceId as string;
     const task = tasks.find((r) => r.id === taskId);
     if (!task) {
       return HttpResponse.json({ error: 'task_not_found' }, { status: 404 });
     }
-    task.attached_source_ids = (task.attached_source_ids ?? []).filter((id) => id !== sourceId);
+    task.attached_inputs = (task.attached_inputs ?? []).filter((item: any) => item.id !== inputId);
     task.updated_at = new Date().toISOString();
     return HttpResponse.json(task);
   }),

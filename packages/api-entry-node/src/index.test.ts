@@ -649,7 +649,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           title: 'Task with source',
           agent_id: agent.id,
-          initial_source_ids: [createdSource.id],
+          initial_inputs: [{ kind: 'source', source_id: createdSource.id }],
         }),
       },
     );
@@ -658,12 +658,12 @@ describe('api-entry-node projects routes', () => {
 
     const attachedDetailsRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/sources`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/inputs`,
     );
     expect(attachedDetailsRes.status).toBe(200);
-    const attachedDetails = (await attachedDetailsRes.json()) as Array<{ id: string; name?: string; filename?: string }>;
+    const attachedDetails = (await attachedDetailsRes.json()) as Array<{ id: string; source_id?: string; filename?: string }>;
     expect(attachedDetails).toHaveLength(1);
-    expect(attachedDetails[0]?.id).toBe(createdSource.id);
+    expect(attachedDetails[0]?.source_id).toBe(createdSource.id);
   });
 
   it('supports source libraries CRUD flow', async () => {

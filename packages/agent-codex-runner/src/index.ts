@@ -32,7 +32,10 @@ type ServerStartPayload = {
     model?: string;
     notebook_mode?: boolean;
     task_inputs?: Array<{
+      kind?: 'source' | 'library_object';
       source_id?: string;
+      library_id?: string;
+      key?: string;
       filename?: string;
       file_type?: string;
       file_size?: number;

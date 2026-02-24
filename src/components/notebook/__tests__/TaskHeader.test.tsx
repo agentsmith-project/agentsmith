@@ -57,7 +57,7 @@ describe('TaskHeader', () => {
     agent_id: 'agent-1',
     agent_name: 'Test Agent',
     status: 'active',
-    attached_source_ids: [],
+    attached_inputs: [],
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-02T00:00:00Z',
     last_activity_at: '2024-01-02T12:00:00Z',

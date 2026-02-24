@@ -89,6 +89,15 @@ Default bundle includes:
 RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
 ```
 
+### Governance pages (real backend) smoke bundle
+```bash
+make governance-release-smoke
+```
+
+Bundle includes:
+- `governance-pages-real-backend-smoke` (open routes)
+- `governance-pages-real-backend-interaction-smoke` (basic interactions)
+
 ## 4. Contract / Quality Gates
 ### Required checks
 ```bash
@@ -116,6 +125,15 @@ npm run test:run -- src/components/chat/__tests__/Composer.test.tsx
   - Generate artifact and download/view/save works (local backend supports text/data-url fallback)
   - Add artifact as input and run next turn successfully
 
+## 5.1 Manual UX Acceptance (Governance Pages, Real Backend)
+- Open `Members`, `Resource Policy`, `Audit`, `Usage` in real backend mode
+- Verify:
+  - Pages load without mock-only banners for `Audit/Usage`
+  - `Members` page lists data and core controls are interactive
+  - `Resource Policy` editor opens and save action is available
+  - `Audit` filters and table render real data
+  - `Usage` KPI and records render real data
+
 ## 6. Deployment Constraints (Internal Release)
 - Notebook runtime coordination is instance-local in current implementation.
 - Deploy with one of:
@@ -137,6 +155,7 @@ Release is **GO** (internal/controlled) when all are true:
 - `demo-up` works and prints healthy status
 - `demo-check` passes
 - `release-smoke-full` passes
+- `governance-release-smoke` passes
 - contract and lint/typecheck gates pass
 - deployment constraint (single instance or sticky) is confirmed
 - SSE risk is explicitly accepted for this release

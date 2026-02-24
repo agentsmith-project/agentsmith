@@ -61,6 +61,16 @@ type TaskInputRefRecord =
     }
   | {
       id: string;
+      kind: 'artifact';
+      task_id: string;
+      artifact_id: string;
+      task_relative_path?: string;
+      name?: string;
+      content_type?: string;
+      size_bytes?: number;
+    }
+  | {
+      id: string;
       kind: 'url';
       url: string;
       name?: string;
@@ -224,6 +234,29 @@ function readTaskInputRefs(raw: unknown): TaskInputRefRecord[] {
         kind: 'library_object',
         library_id: libraryId,
         key,
+        ...(typeof obj.name === 'string' && obj.name.trim() ? { name: obj.name.trim() } : {}),
+        ...(typeof obj.content_type === 'string' && obj.content_type.trim() ? { content_type: obj.content_type.trim() } : {}),
+        ...(typeof obj.size_bytes === 'number' && Number.isFinite(obj.size_bytes) && obj.size_bytes >= 0
+          ? { size_bytes: Math.floor(obj.size_bytes) }
+          : {}),
+      });
+      continue;
+    }
+    if (kind === 'artifact') {
+      const taskId = typeof obj.task_id === 'string' ? obj.task_id.trim() : '';
+      const artifactId = typeof obj.artifact_id === 'string' ? obj.artifact_id.trim() : '';
+      if (!taskId || !artifactId) continue;
+      const dedupeKey = `artifact:${taskId}:${artifactId}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      results.push({
+        id: buildId('in'),
+        kind: 'artifact',
+        task_id: taskId,
+        artifact_id: artifactId,
+        ...(typeof obj.task_relative_path === 'string' && obj.task_relative_path.trim()
+          ? { task_relative_path: obj.task_relative_path.trim() }
+          : {}),
         ...(typeof obj.name === 'string' && obj.name.trim() ? { name: obj.name.trim() } : {}),
         ...(typeof obj.content_type === 'string' && obj.content_type.trim() ? { content_type: obj.content_type.trim() } : {}),
         ...(typeof obj.size_bytes === 'number' && Number.isFinite(obj.size_bytes) && obj.size_bytes >= 0
@@ -571,12 +604,36 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     const body = asObject(await readBody(req));
     const inputs = readTaskInputRefs(body.inputs);
+    for (const inputRef of inputs) {
+      if (inputRef.kind !== 'artifact') continue;
+      const sourceTask = findTask(route.workspaceId, route.projectId, inputRef.task_id);
+      if (!sourceTask) {
+        json(res, 422, {
+          error_code: 'VALIDATION_ERROR',
+          message: 'artifact_input_task_not_found',
+          field: 'inputs',
+        });
+        return true;
+      }
+      await loadTaskArtifacts(deps, inputRef.task_id);
+      const sourceArtifacts = ARTIFACTS_BY_TASK.get(inputRef.task_id) ?? [];
+      if (!sourceArtifacts.some((item) => item.id === inputRef.artifact_id)) {
+        json(res, 422, {
+          error_code: 'VALIDATION_ERROR',
+          message: 'artifact_input_not_found',
+          field: 'inputs',
+        });
+        return true;
+      }
+    }
     const existingKeys = new Set(
       task.attached_inputs.map((item) =>
         item.kind === 'source'
           ? `source:${item.source_id}`
           : item.kind === 'library_object'
             ? `library_object:${item.library_id}:${item.key}`
+            : item.kind === 'artifact'
+              ? `artifact:${item.task_id}:${item.artifact_id}`
             : `url:${item.url}`,
       ),
     );
@@ -585,6 +642,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         ? `source:${inputRef.source_id}`
         : inputRef.kind === 'library_object'
           ? `library_object:${inputRef.library_id}:${inputRef.key}`
+          : inputRef.kind === 'artifact'
+            ? `artifact:${inputRef.task_id}:${inputRef.artifact_id}`
           : `url:${inputRef.url}`;
       if (existingKeys.has(key)) continue;
       existingKeys.add(key);
@@ -645,6 +704,35 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         } catch {
           return null;
         }
+      }
+      if (inputRef.kind === 'artifact') {
+        await loadTaskArtifacts(deps, inputRef.task_id);
+        const sourceArtifacts = ARTIFACTS_BY_TASK.get(inputRef.task_id) ?? [];
+        const artifact = sourceArtifacts.find((item) => item.id === inputRef.artifact_id);
+        if (!artifact) {
+          return {
+            id: inputRef.id,
+            kind: 'artifact',
+            task_id: inputRef.task_id,
+            artifact_id: inputRef.artifact_id,
+            filename: inputRef.name || inputRef.task_relative_path || 'artifact',
+            file_type: inputRef.content_type || 'application/octet-stream',
+            file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : 0,
+            ...(inputRef.task_relative_path ? { task_relative_path: inputRef.task_relative_path } : {}),
+          };
+        }
+        return {
+          id: inputRef.id,
+          kind: 'artifact',
+          task_id: inputRef.task_id,
+          artifact_id: inputRef.artifact_id,
+          filename: inputRef.name || artifact.title || inputRef.task_relative_path || 'artifact',
+          file_type: inputRef.content_type || artifact.mime_type || 'application/octet-stream',
+          file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : (artifact.file_size ?? 0),
+          ...((inputRef.task_relative_path || artifact.task_relative_path)
+            ? { task_relative_path: inputRef.task_relative_path || artifact.task_relative_path }
+            : {}),
+        };
       }
       if (inputRef.kind === 'url') {
         if (inputRef.imported_library_id && inputRef.imported_key) {

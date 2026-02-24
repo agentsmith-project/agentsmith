@@ -2,10 +2,13 @@ import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export type NotebookTaskInput = {
-  kind?: 'source' | 'library_object' | 'url';
+  kind?: 'source' | 'library_object' | 'artifact' | 'url';
   source_id?: string;
   library_id?: string;
   key?: string;
+  task_id?: string;
+  artifact_id?: string;
+  task_relative_path?: string;
   url?: string;
   imported_library_id?: string;
   imported_key?: string;
@@ -35,7 +38,7 @@ export function buildNotebookHeadlessPreamble(args: {
     `- Attached inputs count: ${String(args.taskInputsCount)}`,
     '',
     'Use attached inputs to complete the user request and mention generated artifact filenames in your final response.',
-    '- Inputs may be source-based, library-object-based, or URL-based. Inspect `kind` in the task inputs manifest.',
+    '- Inputs may be source-based, library-object-based, artifact-based, or URL-based. Inspect `kind` in the task inputs manifest.',
     '',
   ].join('\n');
 }
@@ -83,7 +86,7 @@ function buildNotebookInputsSkillMd(): string {
     '',
     '- List attached inputs:',
     '  - `node ./.codex/skills/notebook-inputs/fetch_input.mjs list`',
-    '- Fetch one input by ID (source or library object ref, writes into `./inputs/`):',
+    '- Fetch one input by ID (source, library object, URL-imported object, or artifact ref, writes into `./inputs/`):',
     '  - `node ./.codex/skills/notebook-inputs/fetch_input.mjs fetch <id>`',
     '',
     '## Notes',
@@ -129,6 +132,7 @@ async function main() {
       x && (
         x.source_id === inputIdArg
         || (x.library_id && x.key && \`\${x.library_id}:\${x.key}\` === inputIdArg)
+        || (x.task_id && x.artifact_id && \`\${x.task_id}:\${x.artifact_id}\` === inputIdArg)
         || (x.imported_library_id && x.imported_key && \`\${x.imported_library_id}:\${x.imported_key}\` === inputIdArg)
       ),
     );
@@ -144,6 +148,13 @@ async function main() {
         \`\${apiBase}/api/v1/workspaces/\${encodeURIComponent(workspaceId)}/projects/\${encodeURIComponent(projectId)}/source-libraries/\${encodeURIComponent(item.imported_library_id)}/objects/download?key=\${encodeURIComponent(item.imported_key)}\`,
         { headers: { Authorization: \`Bearer \${token}\` } },
       );
+    } else if (item.kind === 'artifact' && item.task_id && item.artifact_id) {
+      res = await fetch(
+        \`\${apiBase}/api/v1/workspaces/\${encodeURIComponent(workspaceId)}/projects/\${encodeURIComponent(projectId)}/tasks/\${encodeURIComponent(item.task_id)}/artifacts/\${encodeURIComponent(item.artifact_id)}/download\`,
+        { headers: { Authorization: \`Bearer \${token}\` } },
+      );
+    } else if (item.kind === 'artifact') {
+      throw new Error('artifact_input_missing_identifiers');
     } else if (item.kind === 'url') {
       throw new Error('url_input_has_no_imported_object');
     } else {
@@ -162,6 +173,7 @@ async function main() {
     const fallbackName =
       item.source_id
       || (item.key ? String(item.key).split('/').pop() : null)
+      || (item.task_relative_path ? String(item.task_relative_path).split('/').pop() : null)
       || (item.imported_key ? String(item.imported_key).split('/').pop() : null)
       || \`\${inputIdArg}.bin\`;
     const filename = (typeof item.filename === 'string' && item.filename.trim()) ? item.filename.trim() : fallbackName;
@@ -209,6 +221,9 @@ export async function prepareNotebookWorkspaceAssets(args: {
           source_id: typeof item?.source_id === 'string' ? item.source_id : undefined,
           library_id: typeof item?.library_id === 'string' ? item.library_id : undefined,
           key: typeof item?.key === 'string' ? item.key : undefined,
+          task_id: typeof item?.task_id === 'string' ? item.task_id : undefined,
+          artifact_id: typeof item?.artifact_id === 'string' ? item.artifact_id : undefined,
+          task_relative_path: typeof item?.task_relative_path === 'string' ? item.task_relative_path : undefined,
           url: typeof item?.url === 'string' ? item.url : undefined,
           imported_library_id: typeof item?.imported_library_id === 'string' ? item.imported_library_id : undefined,
           imported_key: typeof item?.imported_key === 'string' ? item.imported_key : undefined,

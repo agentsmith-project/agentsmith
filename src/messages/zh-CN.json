@@ -457,6 +457,9 @@
       "title": "生成物",
       "empty": "暂无生成物",
       "empty_description": "开始对话以生成内容",
+      "actions": {
+        "attach_input": "添加为输入"
+      },
       "save_to_library": "保存到文件库",
       "download": "下载",
       "view_full": "查看完整",

@@ -704,4 +704,5 @@ Current known boundary:
   - local file uploads are first written into a deterministic default upload library (`My Uploads`) as library objects,
   - then converted into chat attachments via the existing chat attachment runtime path.
 - Backend now enforces a system-managed default personal library (`system_managed_kind=default_personal_uploads`) with ensure route semantics and rename/delete protections.
-- Notebook "Add URL" also follows object-first flow (URL note file stored as a default-library object, then attached as `library_object` input ref).
+- Notebook "Add URL" follows object-first flow while attaching a first-class `url` input ref (with imported object provenance).
+- Notebook artifacts can now be attached back into task inputs as first-class `artifact` input refs (output-to-input loop).

@@ -378,6 +378,7 @@ export function TaskPage({
   const handleAddFiles = async (inputs: Array<
     | { kind: 'source'; source_id: string }
     | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+    | { kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
     | { kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
   >) => {
     await addFiles.mutateAsync({
@@ -386,6 +387,24 @@ export function TaskPage({
       taskId,
       inputs,
     });
+  };
+
+  const handleAttachArtifactAsInput = async (artifact: Artifact) => {
+    if (addingInput) return;
+    setAddingInput(true);
+    try {
+      await handleAddFiles([{
+        kind: 'artifact',
+        task_id: taskId,
+        artifact_id: artifact.id,
+        ...(artifact.task_relative_path ? { task_relative_path: artifact.task_relative_path } : {}),
+        ...(artifact.title ? { name: artifact.title } : {}),
+        ...(artifact.mime_type ? { content_type: artifact.mime_type } : {}),
+        ...(typeof artifact.file_size === 'number' ? { size_bytes: artifact.file_size } : {}),
+      }]);
+    } finally {
+      setAddingInput(false);
+    }
   };
 
   const uploadAndAttachFiles = async (files: File[]) => {
@@ -630,6 +649,7 @@ export function TaskPage({
             onView={handleViewArtifact}
             onSave={handleSaveArtifact}
             onDownload={handleDownloadArtifact}
+            onAttachAsInput={canUpdateTask && !isDisabled ? handleAttachArtifactAsInput : undefined}
             disabled={isDisabled || !canUpdateTask}
           />
         </div>

@@ -145,8 +145,12 @@ Governance surfaces such as `Audit`, `Usage`, `Members`, and `Resource Policy` c
   - default personal library is marked with `system_managed_kind=default_personal_uploads`
 
 ### 5.3.3 Notebook URL Inputs (object-first)
-- Notebook "Add URL" now stores the generated URL note file in the backend default personal library, then attaches it as a `library_object` input ref to the task.
-- This keeps notebook URL inputs aligned with the object-first input architecture (instead of uploading URL notes as `source` records).
+- Notebook "Add URL" now stores the generated URL note file in the backend default personal library, then attaches it as a first-class `url` input ref (with imported object provenance) to the task.
+- This keeps notebook URL inputs aligned with the object-first input architecture while preserving URL semantics in `attached_inputs`.
+
+### 5.3.4 Notebook Artifact Inputs (output-to-input loop)
+- Notebook artifacts can be attached back into task inputs as first-class `artifact` refs.
+- The runner `notebook-inputs` helper can fetch artifact inputs via the task artifact download route, enabling output-to-input iteration in Codex notebook flows.
 
 ### 5.4 Local commands
 ```bash

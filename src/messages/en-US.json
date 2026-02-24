@@ -455,6 +455,9 @@
       "title": "Artifacts",
       "empty": "No artifacts yet",
       "empty_description": "Start a conversation to generate artifacts",
+      "actions": {
+        "attach_input": "Add as Input"
+      },
       "save_to_library": "Save to Library",
       "download": "Download",
       "view_full": "View Full",

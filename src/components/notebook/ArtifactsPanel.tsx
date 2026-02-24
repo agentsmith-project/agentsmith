@@ -18,6 +18,7 @@ export interface ArtifactsPanelProps {
   onView?: (artifact: Artifact) => void;
   onSave?: (artifact: Artifact) => void;
   onDownload?: (artifact: Artifact) => void;
+  onAttachAsInput?: (artifact: Artifact) => void;
   disabled?: boolean;
 }
 
@@ -26,6 +27,7 @@ export function ArtifactsPanel({
   onView,
   onSave,
   onDownload,
+  onAttachAsInput,
   disabled = false,
 }: ArtifactsPanelProps) {
   const t = useTranslations('notebook.artifacts');
@@ -71,6 +73,7 @@ export function ArtifactsPanel({
               <ArtifactImageGrid
                 artifacts={imageArtifacts}
                 onImageClick={(artifact) => onView?.(artifact)}
+                onAttachAsInput={onAttachAsInput}
               />
             )}
             {nonImageArtifacts.length > 0 && (
@@ -82,6 +85,7 @@ export function ArtifactsPanel({
                     onView={onView ? () => onView(artifact) : undefined}
                     onSave={onSave ? () => onSave(artifact) : undefined}
                     onDownload={onDownload ? () => onDownload(artifact) : undefined}
+                    onAttachAsInput={onAttachAsInput ? () => onAttachAsInput(artifact) : undefined}
                     disabled={disabled}
                   />
                 ))}

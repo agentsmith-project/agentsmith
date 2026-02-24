@@ -20,6 +20,7 @@ type NotebookTaskRecord = {
   attached_inputs: Array<
     | { id: string; kind: 'source'; source_id: string }
     | { id: string; kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+    | { id: string; kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
     | { id: string; kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
   >;
   created_at: string;
@@ -73,6 +74,15 @@ type RuntimeTaskInput =
       filename: string;
       file_type?: string;
       file_size?: number;
+    }
+  | {
+      kind: 'artifact';
+      task_id: string;
+      artifact_id: string;
+      filename: string;
+      file_type?: string;
+      file_size?: number;
+      task_relative_path?: string;
     }
   | {
       kind: 'url';
@@ -145,6 +155,17 @@ async function buildRuntimeTaskInputs(
         ...(typeof inputRef.size_bytes === 'number' ? { file_size: inputRef.size_bytes } : {}),
         ...(inputRef.imported_library_id ? { imported_library_id: inputRef.imported_library_id } : {}),
         ...(inputRef.imported_key ? { imported_key: inputRef.imported_key } : {}),
+      } satisfies RuntimeTaskInput;
+    }
+    if (inputRef.kind === 'artifact') {
+      return {
+        kind: 'artifact',
+        task_id: inputRef.task_id,
+        artifact_id: inputRef.artifact_id,
+        filename: inputRef.name || inputRef.task_relative_path || inputRef.artifact_id,
+        ...(inputRef.content_type ? { file_type: inputRef.content_type } : {}),
+        ...(typeof inputRef.size_bytes === 'number' ? { file_size: inputRef.size_bytes } : {}),
+        ...(inputRef.task_relative_path ? { task_relative_path: inputRef.task_relative_path } : {}),
       } satisfies RuntimeTaskInput;
     }
     const sourceId = inputRef.source_id;

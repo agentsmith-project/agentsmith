@@ -140,7 +140,8 @@ The UI only attaches `InputRef`.
 
 ### Progress update (2026-02)
 - Notebook task inputs use `attached_inputs` and `/tasks/:taskId/inputs` (`source` + `library_object`)
-- Notebook "Add URL" now stores URL notes as default personal library objects, then attaches them as `library_object` input refs (object-first)
+- Notebook "Add URL" now stores URL notes as default personal library objects, then attaches them as first-class `url` input refs (with imported object provenance)
+- Notebook artifacts can be attached as first-class `artifact` input refs (output-to-input loop), while runtime consumption uses task artifact download
 - Chat local uploads and library selections are object-first and use backend `default-personal` ensure route
 - Chat attachments and user message requests now carry `input_ref` provenance (`inputs: InputRef[]` for user messages)
 

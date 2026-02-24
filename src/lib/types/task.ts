@@ -23,6 +23,16 @@ export type TaskInputRef =
     }
   | {
       id: string;
+      kind: 'artifact';
+      task_id: string;
+      artifact_id: string;
+      task_relative_path?: string;
+      name?: string;
+      content_type?: string;
+      size_bytes?: number;
+    }
+  | {
+      id: string;
       kind: 'url';
       url: string;
       name?: string;
@@ -52,6 +62,16 @@ export type TaskAttachedInputDetail =
       filename: string;
       file_type: string;
       file_size: number;
+    }
+  | {
+      id: string;
+      kind: 'artifact';
+      task_id: string;
+      artifact_id: string;
+      filename: string;
+      file_type: string;
+      file_size: number;
+      task_relative_path?: string;
     }
   | {
       id: string;
@@ -137,6 +157,7 @@ export interface CreateTaskRequest {
   initial_inputs?: Array<
     | { kind: 'source'; source_id: string }
     | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+    | { kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
     | { kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
   >;
 }

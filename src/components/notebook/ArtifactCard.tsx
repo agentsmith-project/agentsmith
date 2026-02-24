@@ -12,6 +12,7 @@ export interface ArtifactCardProps {
   onView?: () => void;
   onSave?: () => void;
   onDownload?: () => void;
+  onAttachAsInput?: () => void;
   disabled?: boolean;
 }
 
@@ -20,11 +21,13 @@ export function ArtifactCard({
   onView,
   onSave,
   onDownload,
+  onAttachAsInput,
   disabled = false,
 }: ArtifactCardProps) {
   const t = useTranslations('common.toast');
   const tStudio = useTranslations('notebook');
   const tCommon = useTranslations('common');
+  const tArtifacts = useTranslations('notebook.artifacts');
 
   const handleCopy = async () => {
     if (artifact.type === 'text' && artifact.content) {
@@ -149,6 +152,17 @@ export function ArtifactCard({
           >
             <Download className="h-3 w-3 mr-1" />
             {tCommon('download')}
+          </Button>
+        )}
+        {onAttachAsInput && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAttachAsInput}
+            disabled={disabled}
+            className="h-7 text-xs"
+          >
+            {tArtifacts('actions.attach_input')}
           </Button>
         )}
       </div>

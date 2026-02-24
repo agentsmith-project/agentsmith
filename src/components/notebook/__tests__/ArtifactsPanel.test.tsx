@@ -18,25 +18,27 @@ vi.mock('@/components/ui/loading', () => ({
 }));
 
 vi.mock('../ArtifactCard', () => ({
-  ArtifactCard: ({ artifact, onView, onSave, onDownload, disabled }: any) => (
+  ArtifactCard: ({ artifact, onView, onSave, onDownload, onAttachAsInput, disabled }: any) => (
     <div data-testid={`artifact-card-${artifact.id}`}>
       <div data-artifact-type>{artifact.type}</div>
       <div data-artifact-title>{artifact.title || '(no title)'}</div>
       {onView && <button data-action="view">View</button>}
       {onSave && <button data-action="save">Save</button>}
       {onDownload && <button data-action="download">Download</button>}
+      {onAttachAsInput && <button data-action="attach-input">Attach Input</button>}
       {disabled && <div data-disabled>disabled</div>}
     </div>
   ),
 }));
 
 vi.mock('../ArtifactImageGrid', () => ({
-  ArtifactImageGrid: ({ artifacts, onImageClick }: any) => (
+  ArtifactImageGrid: ({ artifacts, onImageClick, onAttachAsInput }: any) => (
     <div data-testid="image-grid">
       {artifacts.map((artifact: Artifact) => (
         <div key={artifact.id} data-testid={`image-grid-item-${artifact.id}`}>
           <img src={artifact.thumbnail_url || artifact.content} alt={artifact.title} />
           <button onClick={() => onImageClick(artifact)}>View Image</button>
+          {onAttachAsInput && <button onClick={() => onAttachAsInput(artifact)}>Attach Image Input</button>}
         </div>
       ))}
     </div>
@@ -82,6 +84,7 @@ describe('ArtifactsPanel', () => {
   const mockOnView = vi.fn();
   const mockOnSave = vi.fn();
   const mockOnDownload = vi.fn();
+  const mockOnAttachAsInput = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -94,6 +97,7 @@ describe('ArtifactsPanel', () => {
         onView={mockOnView}
         onSave={mockOnSave}
         onDownload={mockOnDownload}
+        onAttachAsInput={mockOnAttachAsInput}
         {...props}
       />
     );
@@ -209,6 +213,13 @@ describe('ArtifactsPanel', () => {
       renderComponent();
 
       expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="download"]')).toBeInTheDocument();
+    });
+
+    it('passes attach-as-input callback to artifacts', () => {
+      renderComponent();
+
+      expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="attach-input"]')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Attach Image Input' })).toBeInTheDocument();
     });
   });
 

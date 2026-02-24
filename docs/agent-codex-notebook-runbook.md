@@ -152,6 +152,14 @@ Governance surfaces such as `Audit`, `Usage`, `Members`, and `Resource Policy` c
 - Notebook artifacts can be attached back into task inputs as first-class `artifact` refs.
 - The runner `notebook-inputs` helper can fetch artifact inputs via the task artifact download route, enabling output-to-input iteration in Codex notebook flows.
 
+### 5.3.5 Notebook Local Upload Inputs (object-first)
+- Notebook local file uploads now follow the same object-first flow as Chat uploads:
+  1. ensure backend default personal library
+  2. upload local files as library objects under `notebook/<task_id>/inputs/`
+  3. attach task inputs as `library_object` refs
+- Notebook local uploads no longer create `source` records directly.
+- `source` inputs remain supported, but are treated as a derived/processed input type (for example AI-ready/indexed content), not the primary raw file ingestion path.
+
 ### 5.4 Local commands
 ```bash
 # Start API with debugging for notebook/runtime/proxy troubleshooting

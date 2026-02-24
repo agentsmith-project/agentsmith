@@ -706,3 +706,4 @@ Current known boundary:
 - Backend now enforces a system-managed default personal library (`system_managed_kind=default_personal_uploads`) with ensure route semantics and rename/delete protections.
 - Notebook "Add URL" follows object-first flow while attaching a first-class `url` input ref (with imported object provenance).
 - Notebook artifacts can now be attached back into task inputs as first-class `artifact` input refs (output-to-input loop).
+- Notebook local file uploads also follow object-first flow (default personal library object + `library_object` input ref), removing the last raw local-upload -> `source` shortcut in notebook task inputs.

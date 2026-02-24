@@ -411,15 +411,41 @@ export function TaskPage({
     if (files.length === 0) return;
     setAddingInput(true);
     try {
-      const uploadedIds: string[] = [];
+      const library = await ensureDefaultUploadLibrary({
+        sourcesAPI: filesAPI,
+        workspaceId,
+        projectId,
+      });
+      const uploadedInputs: Array<{
+        kind: 'library_object';
+        library_id: string;
+        key: string;
+        name?: string;
+        content_type?: string;
+        size_bytes?: number;
+      }> = [];
       for (const file of files) {
-        const uploaded = await filesAPI.upload(workspaceId, projectId, file);
-        uploadedIds.push(uploaded.id);
+        const uploaded = await filesAPI.uploadObject(
+          workspaceId,
+          projectId,
+          library.id,
+          file,
+          `notebook/${taskId}/inputs`,
+          true,
+        );
+        uploadedInputs.push({
+          kind: 'library_object',
+          library_id: library.id,
+          key: uploaded.key,
+          name: uploaded.name,
+          content_type: uploaded.content_type,
+          size_bytes: uploaded.size_bytes,
+        });
       }
-      if (uploadedIds.length > 0) {
-        await handleAddFiles(uploadedIds.map((source_id) => ({ kind: 'source' as const, source_id })));
+      if (uploadedInputs.length > 0) {
+        await handleAddFiles(uploadedInputs);
         await queryClient.invalidateQueries({
-          queryKey: queryKeys.files.list(workspaceId, projectId),
+          queryKey: queryKeys.fileLibraries.list(workspaceId, projectId),
         });
       }
     } finally {

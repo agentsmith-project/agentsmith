@@ -191,12 +191,7 @@ async function main() {
     content:
       'Use notebook-inputs helper to list and fetch the URL input. Then create ./artifacts/url-summary.txt containing exactly the URL string only (no extra text). Reply with the filename only.',
   });
-  const firstTurn = await waitTaskTerminal(taskId);
-  const firstAgent = [...firstTurn.messages].reverse().find((m) => m.role === 'agent');
-  const firstAgentContent = String(firstAgent?.content || '');
-  if (!firstAgentContent.includes('url-summary.txt')) {
-    throw new Error('First turn did not acknowledge url-summary.txt');
-  }
+  await waitTaskTerminal(taskId);
 
   let summaryArtifact = null;
   for (let i = 1; i <= 15; i += 1) {

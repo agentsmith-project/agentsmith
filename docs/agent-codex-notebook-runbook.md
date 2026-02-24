@@ -340,6 +340,10 @@ make notebook-agent-release-smoke-full
 ```bash
 make governance-pages-real-backend-smoke
 ```
+- Governance pages (real backend mode) interaction smoke check (basic filters/editor/table interactions):
+```bash
+make governance-pages-real-backend-interaction-smoke
+```
 - Notes:
   - Uses Playwright + Keycloak login and current `/tmp/agentsmith_project_id.txt`
   - Fails fast with a clear error if the current project URL is stale after local in-memory backend reset

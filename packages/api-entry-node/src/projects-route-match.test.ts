@@ -254,6 +254,14 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/permission-templates/pt_1'),
+    ).toEqual({
+      kind: 'projectPermissionTemplateItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      templateId: 'pt_1',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/quota-templates'),
     ).toEqual({
       kind: 'projectQuotaTemplates',

@@ -956,6 +956,83 @@ describe('api-entry-node projects routes', () => {
     expect(groupsAfterDelete.items.map((g) => g.id)).not.toContain(createdGroup.id);
   });
 
+  it('supports minimal permission template CRUD endpoints', async () => {
+    const { baseUrl } = startServer();
+
+    const listBeforeRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/permission-templates',
+    );
+    expect(listBeforeRes.status).toBe(200);
+    expect(await listBeforeRes.json()).toEqual({ items: [] });
+
+    const createRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/permission-templates',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Analyst',
+          description: 'Read and operate',
+          permissions: ['project:read', 'project:member:view'],
+        }),
+      },
+    );
+    expect(createRes.status).toBe(200);
+    const created = (await createRes.json()) as {
+      id: string;
+      project_id: string;
+      name: string;
+      permissions: string[];
+      built_in?: boolean;
+    };
+    expect(created.project_id).toBe('proj_1');
+    expect(created.name).toBe('Analyst');
+    expect(created.permissions).toContain('project:member:view');
+    expect(created.built_in).toBe(false);
+
+    const patchRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/permission-templates/${created.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Analyst v2',
+          permissions: ['project:read'],
+        }),
+      },
+    );
+    expect(patchRes.status).toBe(200);
+    const patched = (await patchRes.json()) as { name: string; permissions: string[] };
+    expect(patched.name).toBe('Analyst v2');
+    expect(patched.permissions).toEqual(['project:read']);
+
+    const listAfterRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/permission-templates',
+    );
+    expect(listAfterRes.status).toBe(200);
+    const listAfter = (await listAfterRes.json()) as { items: Array<{ id: string }> };
+    expect(listAfter.items.map((i) => i.id)).toContain(created.id);
+
+    const deleteRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/permission-templates/${created.id}`,
+      { method: 'DELETE' },
+    );
+    expect(deleteRes.status).toBe(204);
+
+    const listFinalRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/permission-templates',
+    );
+    expect(listFinalRes.status).toBe(200);
+    const listFinal = (await listFinalRes.json()) as { items: Array<{ id: string }> };
+    expect(listFinal.items.map((i) => i.id)).not.toContain(created.id);
+  });
+
   it('supports source library object browser routes', async () => {
     const { baseUrl } = startServer();
 

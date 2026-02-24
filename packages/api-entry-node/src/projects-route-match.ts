@@ -65,6 +65,7 @@ export type ProjectsRoute =
   | { kind: 'projectJoinRequestApprove'; workspaceId: string; projectId: string; joinId: string }
   | { kind: 'projectJoinRequestReject'; workspaceId: string; projectId: string; joinId: string }
   | { kind: 'projectPermissionTemplates'; workspaceId: string; projectId: string }
+  | { kind: 'projectPermissionTemplateItem'; workspaceId: string; projectId: string; templateId: string }
   | { kind: 'projectQuotaTemplates'; workspaceId: string; projectId: string }
   | { kind: 'projectGroups'; workspaceId: string; projectId: string }
   | { kind: 'projectGroupItem'; workspaceId: string; projectId: string; groupId: string }
@@ -227,6 +228,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'projectPermissionTemplates',
       workspaceId: decodeURIComponent(projectPermissionTemplatesMatched[1]),
       projectId: decodeURIComponent(projectPermissionTemplatesMatched[2]),
+    };
+  }
+
+  const projectPermissionTemplateItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/permission-templates\/([^/]+)\/?$/,
+  );
+  if (projectPermissionTemplateItemMatched) {
+    return {
+      kind: 'projectPermissionTemplateItem',
+      workspaceId: decodeURIComponent(projectPermissionTemplateItemMatched[1]),
+      projectId: decodeURIComponent(projectPermissionTemplateItemMatched[2]),
+      templateId: decodeURIComponent(projectPermissionTemplateItemMatched[3]),
     };
   }
 

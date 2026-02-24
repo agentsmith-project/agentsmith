@@ -32,6 +32,7 @@ interface AnyRoute {
   userId?: string;
   joinId?: string;
   groupId?: string;
+  templateId?: string;
   libraryId?: string;
   jobId?: string;
   sourceId?: string;
@@ -74,6 +75,16 @@ const PROJECT_GROUPS_BY_PROJECT = new Map<string, Array<{
   description?: string;
   permission_template_id: string;
   member_ids: string[];
+  created_at: string;
+  updated_at: string;
+}>>();
+const PROJECT_PERMISSION_TEMPLATES_BY_PROJECT = new Map<string, Array<{
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  permissions: string[];
+  built_in?: boolean;
   created_at: string;
   updated_at: string;
 }>>();
@@ -366,8 +377,96 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     return true;
   }
 
-  if (route.kind === 'projectPermissionTemplates' && method === 'GET') {
-    json(res, 200, { items: [] });
+  if (route.kind === 'projectPermissionTemplates' && method === 'GET' && route.workspaceId && route.projectId) {
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    json(res, 200, { items: PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.get(key) ?? [] });
+    return true;
+  }
+
+  if (route.kind === 'projectPermissionTemplates' && method === 'POST' && route.workspaceId && route.projectId) {
+    const body = await readBody(req) as {
+      name?: string;
+      description?: string;
+      permissions?: string[];
+    };
+    if (!body || typeof body.name !== 'string' || body.name.trim().length === 0 || !Array.isArray(body.permissions)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'name and permissions are required' });
+      return true;
+    }
+    const permissions = body.permissions.filter((v): v is string => typeof v === 'string');
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const items = PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const now = new Date().toISOString();
+    const created = {
+      id: `pt_${Math.random().toString(36).slice(2, 10)}`,
+      project_id: route.projectId,
+      name: body.name.trim(),
+      description: typeof body.description === 'string' ? body.description : undefined,
+      permissions,
+      built_in: false,
+      created_at: now,
+      updated_at: now,
+    };
+    items.push(created);
+    PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.set(key, items);
+    json(res, 200, created);
+    return true;
+  }
+
+  if (
+    route.kind === 'projectPermissionTemplateItem'
+    && method === 'PATCH'
+    && route.workspaceId
+    && route.projectId
+    && route.templateId
+  ) {
+    const body = await readBody(req) as {
+      name?: string;
+      description?: string;
+      permissions?: string[];
+    };
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const items = PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const item = items.find((it) => it.id === route.templateId);
+    if (!item) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'Permission template not found' });
+      return true;
+    }
+    if (item.built_in) {
+      json(res, 409, { error_code: 'CONFLICT', message: 'Built-in templates cannot be modified' });
+      return true;
+    }
+    if (typeof body.name === 'string') item.name = body.name;
+    if (typeof body.description === 'string' || body.description === undefined) item.description = body.description;
+    if (Array.isArray(body.permissions)) {
+      item.permissions = body.permissions.filter((v): v is string => typeof v === 'string');
+    }
+    item.updated_at = new Date().toISOString();
+    json(res, 200, item);
+    return true;
+  }
+
+  if (
+    route.kind === 'projectPermissionTemplateItem'
+    && method === 'DELETE'
+    && route.workspaceId
+    && route.projectId
+    && route.templateId
+  ) {
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const items = PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const target = items.find((it) => it.id === route.templateId);
+    if (!target) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'Permission template not found' });
+      return true;
+    }
+    if (target.built_in) {
+      json(res, 409, { error_code: 'CONFLICT', message: 'Built-in templates cannot be deleted' });
+      return true;
+    }
+    PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.set(key, items.filter((it) => it.id !== route.templateId));
+    res.statusCode = 204;
+    res.end();
     return true;
   }
 

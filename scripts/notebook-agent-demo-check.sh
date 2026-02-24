@@ -59,6 +59,22 @@ main() {
   fi
 
   info "checking endpoint proxy reachability"
+  local endpoint_get_code
+  endpoint_get_code="$(
+    curl -sS -o /dev/null -w '%{http_code}' \
+      "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/endpoints/${endpoint_id}" \
+      -H "Authorization: Bearer ${token}" || true
+  )"
+  if [[ "${endpoint_get_code}" == "404" ]]; then
+    err "endpoint metadata is stale (endpoint ${endpoint_id} not found on current API instance)"
+    err "re-run demo resource initialization: GLM_API_KEY='***' make notebook-agent-init-resources"
+    exit 1
+  fi
+  if [[ "${endpoint_get_code}" != "200" ]]; then
+    err "failed to read endpoint ${endpoint_id} (HTTP ${endpoint_get_code})"
+    exit 1
+  fi
+
   local proxy_code
   proxy_code="$(
     curl -sS -o /dev/null -w '%{http_code}' \
@@ -68,7 +84,7 @@ main() {
       --data '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}]}' || true
   )"
   if [[ "${proxy_code}" != "200" ]]; then
-    err "endpoint proxy check failed (HTTP ${proxy_code}); verify endpoint id, token, and API state"
+    err "endpoint proxy check failed (HTTP ${proxy_code}); verify endpoint configuration/upstream provider and API state"
     exit 1
   fi
   info "endpoint proxy reachable (HTTP 200)"

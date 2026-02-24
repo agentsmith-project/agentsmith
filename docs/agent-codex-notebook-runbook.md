@@ -309,6 +309,10 @@ make notebook-agent-release-smoke
 ```bash
 RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
 ```
+- One-command release readiness check (refreshes token if needed, runs `demo-check`, then runs release smoke bundle):
+```bash
+make notebook-agent-release-smoke-full
+```
 
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.

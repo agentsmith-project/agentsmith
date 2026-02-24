@@ -6,7 +6,7 @@
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
-	notebook-agent-release-smoke \
+	notebook-agent-release-smoke notebook-agent-release-smoke-full \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
@@ -95,6 +95,7 @@ help:
 	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
 	@echo "  make notebook-agent-inputrefs-loop-smoke # notebook url input -> artifact -> artifact input loop smoke"
 	@echo "  make notebook-agent-release-smoke # run release smoke set (basic + inputrefs loop; optional matplotlib)"
+	@echo "  make notebook-agent-release-smoke-full # refresh token (if needed) + demo-check + release-smoke"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
 	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
@@ -380,6 +381,21 @@ notebook-agent-inputrefs-loop-smoke:
 notebook-agent-release-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/notebook-agent-release-smoke.sh
+
+notebook-agent-release-smoke-full:
+	@set -e; \
+	echo "[make] running demo readiness check..."; \
+	set +e; \
+	$(MAKE) notebook-agent-demo-check; \
+	CHECK_RC=$$?; \
+	set -e; \
+	if [ "$$CHECK_RC" -ne 0 ]; then \
+		echo "[make] demo-check failed; attempting token refresh once (common cause: expired token)..."; \
+		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
+		$(MAKE) notebook-agent-demo-check; \
+	fi; \
+	echo "[make] running release smoke bundle..."; \
+	$(MAKE) notebook-agent-release-smoke
 
 notebook-agent-smoke-full:
 	@set -e; \

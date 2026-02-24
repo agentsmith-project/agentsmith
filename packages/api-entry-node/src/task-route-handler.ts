@@ -26,6 +26,7 @@ import {
   unsubscribeNotebookTaskEvents,
   writeNotebookTaskSseEvent,
 } from './notebook-task-sse-broker.js';
+import { resolveNotebookTaskInputDetails, type NotebookTaskInputRefRecord as SharedNotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { runNotebookTaskWithExternalAgent } from './notebook-runtime-orchestrator.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 
@@ -662,114 +663,23 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
-    const items = await Promise.all(task.attached_inputs.map(async (inputRef) => {
-      if (inputRef.kind === 'source') {
-        try {
-          const source = asObject(await deps.getSourceUseCase.execute({
-            workspaceId: route.workspaceId,
-            projectId: route.projectId,
-            sourceId: inputRef.source_id,
-          }));
-          const aiReady = asObject(source.ai_ready);
-          return {
-            id: inputRef.id,
-            kind: 'source',
-            source_id: inputRef.source_id,
-            filename: typeof source.filename === 'string' ? source.filename : (typeof source.name === 'string' ? source.name : inputRef.source_id),
-            file_type: typeof source.file_type === 'string' ? source.file_type : (typeof source.content_type === 'string' ? source.content_type : 'application/octet-stream'),
-            file_size: typeof source.file_size === 'number' ? source.file_size : (typeof source.size_bytes === 'number' ? source.size_bytes : 0),
-            ...(typeof aiReady.status === 'string' ? { ai_ready: { status: aiReady.status } } : {}),
-          };
-        } catch {
-          return null;
-        }
-      }
-      if (inputRef.kind === 'library_object') {
-        try {
-          const meta = await deps.getSourceObjectMetaUseCase.execute({
-            workspaceId: route.workspaceId,
-            projectId: route.projectId,
-            libraryId: inputRef.library_id,
-            key: inputRef.key,
-          });
-          return {
-            id: inputRef.id,
-            kind: 'library_object',
-            library_id: inputRef.library_id,
-            key: inputRef.key,
-            filename: inputRef.name || meta.key.split('/').pop() || inputRef.key,
-            file_type: meta.content_type,
-            file_size: meta.size_bytes,
-          };
-        } catch {
-          return null;
-        }
-      }
-      if (inputRef.kind === 'artifact') {
-        await loadTaskArtifacts(deps, inputRef.task_id);
-        const sourceArtifacts = ARTIFACTS_BY_TASK.get(inputRef.task_id) ?? [];
-        const artifact = sourceArtifacts.find((item) => item.id === inputRef.artifact_id);
-        if (!artifact) {
-          return {
-            id: inputRef.id,
-            kind: 'artifact',
-            task_id: inputRef.task_id,
-            artifact_id: inputRef.artifact_id,
-            filename: inputRef.name || inputRef.task_relative_path || 'artifact',
-            file_type: inputRef.content_type || 'application/octet-stream',
-            file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : 0,
-            ...(inputRef.task_relative_path ? { task_relative_path: inputRef.task_relative_path } : {}),
-          };
-        }
-        return {
-          id: inputRef.id,
-          kind: 'artifact',
-          task_id: inputRef.task_id,
-          artifact_id: inputRef.artifact_id,
-          filename: inputRef.name || artifact.title || inputRef.task_relative_path || 'artifact',
-          file_type: inputRef.content_type || artifact.mime_type || 'application/octet-stream',
-          file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : (artifact.file_size ?? 0),
-          ...((inputRef.task_relative_path || artifact.task_relative_path)
-            ? { task_relative_path: inputRef.task_relative_path || artifact.task_relative_path }
-            : {}),
-        };
-      }
-      if (inputRef.kind === 'url') {
-        if (inputRef.imported_library_id && inputRef.imported_key) {
-          try {
-            const meta = await deps.getSourceObjectMetaUseCase.execute({
-              workspaceId: route.workspaceId,
-              projectId: route.projectId,
-              libraryId: inputRef.imported_library_id,
-              key: inputRef.imported_key,
-            });
-            return {
-              id: inputRef.id,
-              kind: 'url',
-              url: inputRef.url,
-              filename: inputRef.name || meta.key.split('/').pop() || 'url_input.url.txt',
-              file_type: inputRef.content_type || meta.content_type || 'text/plain',
-              file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : meta.size_bytes,
-              imported_library_id: inputRef.imported_library_id,
-              imported_key: inputRef.imported_key,
-            };
-          } catch {
-            // Fall through to synthetic detail
-          }
-        }
-        return {
-          id: inputRef.id,
-          kind: 'url',
-          url: inputRef.url,
-          filename: inputRef.name || 'url_input.url.txt',
-          file_type: inputRef.content_type || 'text/plain',
-          file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : 0,
-          ...(inputRef.imported_library_id ? { imported_library_id: inputRef.imported_library_id } : {}),
-          ...(inputRef.imported_key ? { imported_key: inputRef.imported_key } : {}),
-        };
-      }
-    }));
-    json(res, 200, items.filter((item): item is NonNullable<typeof item> => item !== null));
+    const items = await resolveNotebookTaskInputDetails({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      inputs: task.attached_inputs as SharedNotebookTaskInputRefRecord[],
+      loadArtifactsForTask: async (taskId) => {
+        await loadTaskArtifacts(deps, taskId);
+        return (ARTIFACTS_BY_TASK.get(taskId) ?? []).map((item) => ({
+          id: item.id,
+          title: item.title,
+          mime_type: item.mime_type,
+          file_size: item.file_size,
+          task_relative_path: item.task_relative_path,
+        }));
+      },
+    });
+    json(res, 200, items);
     return true;
   }
 

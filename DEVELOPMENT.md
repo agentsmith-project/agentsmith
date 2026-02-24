@@ -709,3 +709,5 @@ Current known boundary:
 - Notebook local file uploads also follow object-first flow (default personal library object + `library_object` input ref), removing the last raw local-upload -> `source` shortcut in notebook task inputs.
 - Current architectural rule: `source` remains a derived/processed input type (AI-ready/indexed workflows), not the default raw-file ingestion path for Chat or Notebook.
 - Chat message `inputs` and attachment provenance now support first-class `url` input refs (with optional imported object provenance), while runtime consumption still resolves through attachment snapshots.
+- Chat composer now exposes a URL input entry in the UI and imports URLs object-first into the default personal library before attaching a `url` input ref.
+- Backend input-resolution code is partially shared: chat input parsing/attachment resolution is centralized in `chat-input-refs.ts`, and notebook input detail/runtime mapping is centralized in `notebook-input-refs.ts`.

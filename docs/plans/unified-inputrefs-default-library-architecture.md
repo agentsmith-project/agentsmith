@@ -120,7 +120,10 @@ The UI only attaches `InputRef`.
 
 ### Phase 3 (partially completed)
 - Backend-enforced default personal library semantics implemented with `system_managed_kind=default_personal_uploads` + protected rename/delete semantics
-- Shared backend/runtime input resolver interfaces for Chat/Notebook/Agents remain a follow-up
+- Shared backend/runtime input resolver extraction is in progress:
+  - Chat input parsing/attachment resolution is centralized in `chat-input-refs.ts`
+  - Notebook input detail/runtime mapping is centralized in `notebook-input-refs.ts`
+  - Cross-runtime resolver contract (Chat + Notebook + Agents) remains a follow-up
 
 ### Phase 4 (Derived processing alignment)
 - `source` records become explicitly derived from `library_object`
@@ -168,4 +171,4 @@ The UI only attaches `InputRef`.
 
 ## Recommended Next Concrete Step
 
-Continue extracting a shared backend/runtime input resolver interface for Chat/Notebook/Agents (Chat `library_object`/`url` parsing and attachment resolution has been centralized first), then promote `url`/`artifact` handling to the same cross-runtime resolver contract used by `library_object` and `source`.
+Continue extracting a cross-runtime backend input resolver interface for Chat/Notebook/Agents by layering a common resolver contract on top of the now-centralized chat (`chat-input-refs.ts`) and notebook (`notebook-input-refs.ts`) modules, then promote `url`/`artifact` handling to the same contract used by `library_object` and `source`.

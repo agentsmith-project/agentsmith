@@ -7,6 +7,7 @@ import {
   recordNotebookTaskRunStarted,
   recordNotebookTaskRunTerminalWithoutDone,
 } from './notebook-runtime-metrics.js';
+import { buildNotebookRuntimeTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 
 type NotebookTaskRecord = {
@@ -57,151 +58,6 @@ type RuntimeEventPayload =
   | { type: 'message'; data: NotebookTaskMessageRecord }
   | { type: 'task_update'; data: NotebookTaskRecord }
   | { type: 'error'; data: { message: string; code: string } };
-
-type RuntimeTaskInput =
-  | {
-      kind: 'source';
-      source_id: string;
-      filename: string;
-      file_type?: string;
-      file_size?: number;
-      ai_ready_status?: string;
-    }
-  | {
-      kind: 'library_object';
-      library_id: string;
-      key: string;
-      filename: string;
-      file_type?: string;
-      file_size?: number;
-    }
-  | {
-      kind: 'artifact';
-      task_id: string;
-      artifact_id: string;
-      filename: string;
-      file_type?: string;
-      file_size?: number;
-      task_relative_path?: string;
-    }
-  | {
-      kind: 'url';
-      url: string;
-      filename: string;
-      file_type?: string;
-      file_size?: number;
-      imported_library_id?: string;
-      imported_key?: string;
-    };
-
-function asObject(input: unknown): Record<string, unknown> {
-  return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
-}
-
-function readString(input: unknown): string | undefined {
-  return typeof input === 'string' && input.trim().length > 0 ? input.trim() : undefined;
-}
-
-function readNumber(input: unknown): number | undefined {
-  return typeof input === 'number' && Number.isFinite(input) ? input : undefined;
-}
-
-async function buildRuntimeTaskInputs(
-  deps: NodeApiDeps,
-  task: NotebookTaskRecord,
-  debugLog: (message: string, extra?: Record<string, unknown>) => void,
-): Promise<RuntimeTaskInput[]> {
-  if (task.attached_inputs.length === 0) return [];
-  const inputs = await Promise.all(task.attached_inputs.map(async (inputRef) => {
-    if (inputRef.kind === 'library_object') {
-      try {
-        const meta = await deps.getSourceObjectMetaUseCase.execute({
-          workspaceId: task.workspace_id,
-          projectId: task.project_id,
-          libraryId: inputRef.library_id,
-          key: inputRef.key,
-        });
-        return {
-          kind: 'library_object',
-          library_id: inputRef.library_id,
-          key: inputRef.key,
-          filename: inputRef.name || meta.key.split('/').pop() || inputRef.key,
-          file_type: meta.content_type,
-          file_size: meta.size_bytes,
-        } satisfies RuntimeTaskInput;
-      } catch (error) {
-        debugLog('task_input_library_object_lookup_failed', {
-          task_id: task.id,
-          library_id: inputRef.library_id,
-          key: inputRef.key,
-          error: error instanceof Error ? error.message : 'object_lookup_failed',
-        });
-        return {
-          kind: 'library_object',
-          library_id: inputRef.library_id,
-          key: inputRef.key,
-          filename: inputRef.name || inputRef.key.split('/').pop() || inputRef.key,
-          ...(inputRef.content_type ? { file_type: inputRef.content_type } : {}),
-          ...(typeof inputRef.size_bytes === 'number' ? { file_size: inputRef.size_bytes } : {}),
-        } satisfies RuntimeTaskInput;
-      }
-    }
-    if (inputRef.kind === 'url') {
-      return {
-        kind: 'url',
-        url: inputRef.url,
-        filename: inputRef.name || inputRef.url,
-        ...(inputRef.content_type ? { file_type: inputRef.content_type } : {}),
-        ...(typeof inputRef.size_bytes === 'number' ? { file_size: inputRef.size_bytes } : {}),
-        ...(inputRef.imported_library_id ? { imported_library_id: inputRef.imported_library_id } : {}),
-        ...(inputRef.imported_key ? { imported_key: inputRef.imported_key } : {}),
-      } satisfies RuntimeTaskInput;
-    }
-    if (inputRef.kind === 'artifact') {
-      return {
-        kind: 'artifact',
-        task_id: inputRef.task_id,
-        artifact_id: inputRef.artifact_id,
-        filename: inputRef.name || inputRef.task_relative_path || inputRef.artifact_id,
-        ...(inputRef.content_type ? { file_type: inputRef.content_type } : {}),
-        ...(typeof inputRef.size_bytes === 'number' ? { file_size: inputRef.size_bytes } : {}),
-        ...(inputRef.task_relative_path ? { task_relative_path: inputRef.task_relative_path } : {}),
-      } satisfies RuntimeTaskInput;
-    }
-    const sourceId = inputRef.source_id;
-    try {
-      const source = await deps.getSourceUseCase.execute({
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        sourceId,
-      });
-      const src = asObject(source);
-      const aiReady = asObject(src.ai_ready);
-      return {
-        kind: 'source',
-        source_id: sourceId,
-        filename: readString(src.filename) ?? readString(src.name) ?? sourceId,
-        ...(readString(src.file_type) ?? readString(src.content_type)
-          ? { file_type: readString(src.file_type) ?? readString(src.content_type) }
-          : {}),
-        ...(readNumber(src.file_size) !== undefined ? { file_size: readNumber(src.file_size) } : {}),
-        ...(readString(aiReady.status) ? { ai_ready_status: readString(aiReady.status) } : {}),
-      } satisfies RuntimeTaskInput;
-    } catch (error) {
-      debugLog('task_input_source_lookup_failed', {
-        task_id: task.id,
-        source_id: sourceId,
-        error: error instanceof Error ? error.message : 'source_lookup_failed',
-      });
-      return {
-        kind: 'source',
-        source_id: sourceId,
-        filename: sourceId,
-      } satisfies RuntimeTaskInput;
-    }
-  }));
-  return inputs;
-}
 
 export async function runNotebookTaskWithExternalAgent(input: {
   deps: NodeApiDeps;
@@ -293,7 +149,14 @@ export async function runNotebookTaskWithExternalAgent(input: {
     const model = explicitModel || endpoint.openai_model || 'gpt-5-codex';
     const wireApi = notebookPreferences.wire_api === 'responses' ? 'responses' : 'chat';
     const userHandle = buildProxyUsername(user);
-    const taskInputs = await buildRuntimeTaskInputs(deps, task, debugLog);
+    const taskInputs = await buildNotebookRuntimeTaskInputs({
+      deps,
+      workspaceId: task.workspace_id,
+      projectId: task.project_id,
+      taskId: task.id,
+      attachedInputs: task.attached_inputs as NotebookTaskInputRefRecord[],
+      debugLog,
+    });
     const proxyBase = `${publicBaseUrl.replace(/\/+$/, '')}`
       + `/api/v1/workspaces/${encodeURIComponent(task.workspace_id)}`
       + `/projects/${encodeURIComponent(task.project_id)}`

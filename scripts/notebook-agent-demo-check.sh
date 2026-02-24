@@ -78,7 +78,7 @@ main() {
   local proxy_code
   proxy_code="$(
     curl -sS -o /dev/null -w '%{http_code}' \
-      "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/endpoints/${endpoint_id}/proxy" \
+      "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/endpoints/${endpoint_id}/proxy/chat/completions" \
       -H "Authorization: Bearer ${token}" \
       -H 'Content-Type: application/json' \
       --data '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}]}' || true

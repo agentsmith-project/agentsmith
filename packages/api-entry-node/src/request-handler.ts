@@ -69,6 +69,17 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     return route.kind === 'audit' ? ['project:audit:view'] : ['project:usage:view'];
   }
 
+  if (
+    route.kind === 'projectMembers'
+    || route.kind === 'projectJoinRequests'
+    || route.kind === 'projectPermissionTemplates'
+    || route.kind === 'projectQuotaTemplates'
+    || route.kind === 'projectGroups'
+    || route.kind === 'projectMembershipItem'
+  ) {
+    return ['project:member:view'];
+  }
+
   if (isAgentRoute(route)) {
     if (method === 'GET') return ['project:agent:use'];
     return ['project:agent:manage'];

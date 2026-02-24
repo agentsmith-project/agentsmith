@@ -60,6 +60,12 @@ export type ProjectsRoute =
   | { kind: 'audit'; workspaceId: string; projectId: string }
   | { kind: 'usage'; workspaceId: string; projectId: string }
   | { kind: 'usageKpi'; workspaceId: string; projectId: string }
+  | { kind: 'projectMembers'; workspaceId: string; projectId: string }
+  | { kind: 'projectJoinRequests'; workspaceId: string; projectId: string }
+  | { kind: 'projectPermissionTemplates'; workspaceId: string; projectId: string }
+  | { kind: 'projectQuotaTemplates'; workspaceId: string; projectId: string }
+  | { kind: 'projectGroups'; workspaceId: string; projectId: string }
+  | { kind: 'projectMembershipItem'; workspaceId: string; projectId: string; userId: string }
   | ChatRoute
   | { kind: 'agents'; workspaceId: string; projectId: string }
   | { kind: 'agentItem'; workspaceId: string; projectId: string; agentId: string }
@@ -162,6 +168,71 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'usage',
       workspaceId: decodeURIComponent(usageMatched[1]),
       projectId: decodeURIComponent(usageMatched[2]),
+    };
+  }
+
+  const projectMembersMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/members\/?$/);
+  if (projectMembersMatched) {
+    return {
+      kind: 'projectMembers',
+      workspaceId: decodeURIComponent(projectMembersMatched[1]),
+      projectId: decodeURIComponent(projectMembersMatched[2]),
+    };
+  }
+
+  const projectJoinRequestsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/join-requests\/?$/,
+  );
+  if (projectJoinRequestsMatched) {
+    return {
+      kind: 'projectJoinRequests',
+      workspaceId: decodeURIComponent(projectJoinRequestsMatched[1]),
+      projectId: decodeURIComponent(projectJoinRequestsMatched[2]),
+    };
+  }
+
+  const projectPermissionTemplatesMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/permission-templates\/?$/,
+  );
+  if (projectPermissionTemplatesMatched) {
+    return {
+      kind: 'projectPermissionTemplates',
+      workspaceId: decodeURIComponent(projectPermissionTemplatesMatched[1]),
+      projectId: decodeURIComponent(projectPermissionTemplatesMatched[2]),
+    };
+  }
+
+  const projectQuotaTemplatesMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/quota-templates\/?$/,
+  );
+  if (projectQuotaTemplatesMatched) {
+    return {
+      kind: 'projectQuotaTemplates',
+      workspaceId: decodeURIComponent(projectQuotaTemplatesMatched[1]),
+      projectId: decodeURIComponent(projectQuotaTemplatesMatched[2]),
+    };
+  }
+
+  const projectGroupsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/groups\/?$/,
+  );
+  if (projectGroupsMatched) {
+    return {
+      kind: 'projectGroups',
+      workspaceId: decodeURIComponent(projectGroupsMatched[1]),
+      projectId: decodeURIComponent(projectGroupsMatched[2]),
+    };
+  }
+
+  const projectMembershipItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/memberships\/([^/]+)\/?$/,
+  );
+  if (projectMembershipItemMatched) {
+    return {
+      kind: 'projectMembershipItem',
+      workspaceId: decodeURIComponent(projectMembershipItemMatched[1]),
+      projectId: decodeURIComponent(projectMembershipItemMatched[2]),
+      userId: decodeURIComponent(projectMembershipItemMatched[3]),
     };
   }
 

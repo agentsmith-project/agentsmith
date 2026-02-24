@@ -5,7 +5,7 @@ export type GovernedFeature = 'audit' | 'usage' | 'members' | 'resource_policy';
 export const FEATURE_AVAILABILITY: Record<GovernedFeature, FeatureAvailability> = {
   audit: 'available',
   usage: 'available',
-  members: 'mock_only',
+  members: 'partial',
   resource_policy: 'mock_only',
 };
 

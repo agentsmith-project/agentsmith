@@ -804,6 +804,63 @@ describe('api-entry-node projects routes', () => {
     expect(deleteDefaultRes.status).toBe(409);
   });
 
+  it('serves minimal project members governance read endpoints', async () => {
+    const { baseUrl } = startServer();
+
+    const membersRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/members');
+    expect(membersRes.status).toBe(200);
+    const members = (await membersRes.json()) as {
+      items: Array<{
+        id: string;
+        email: string;
+        name: string;
+        role: string;
+        permissions: string[];
+        status: string;
+        joined_at: string;
+      }>;
+      total: number;
+    };
+    expect(members.total).toBe(1);
+    expect(members.items[0]?.id).toBe('user_test');
+    expect(members.items[0]?.permissions).toContain('project:member:view');
+
+    const joinRequestsRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/join-requests');
+    expect(joinRequestsRes.status).toBe(200);
+    const joinRequests = (await joinRequestsRes.json()) as { items: unknown[]; total: number };
+    expect(joinRequests).toEqual({ items: [], total: 0 });
+
+    const permissionTemplatesRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/permission-templates',
+    );
+    expect(permissionTemplatesRes.status).toBe(200);
+    expect(await permissionTemplatesRes.json()).toEqual({ items: [] });
+
+    const quotaTemplatesRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/quota-templates');
+    expect(quotaTemplatesRes.status).toBe(200);
+    expect(await quotaTemplatesRes.json()).toEqual([]);
+
+    const groupsRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/groups');
+    expect(groupsRes.status).toBe(200);
+    expect(await groupsRes.json()).toEqual({ items: [] });
+
+    const membershipRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_test',
+    );
+    expect(membershipRes.status).toBe(200);
+    const membership = (await membershipRes.json()) as {
+      user_id: string;
+      project_id: string;
+      role: string;
+      permissions: string[];
+    };
+    expect(membership.user_id).toBe('user_test');
+    expect(membership.project_id).toBe('proj_1');
+    expect(membership.permissions).toContain('project:member:view');
+  });
+
   it('supports source library object browser routes', async () => {
     const { baseUrl } = startServer();
 

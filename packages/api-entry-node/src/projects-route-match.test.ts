@@ -231,6 +231,52 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches project members governance read routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/members'),
+    ).toEqual({
+      kind: 'projectMembers',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/join-requests'),
+    ).toEqual({
+      kind: 'projectJoinRequests',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/permission-templates'),
+    ).toEqual({
+      kind: 'projectPermissionTemplates',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/quota-templates'),
+    ).toEqual({
+      kind: 'projectQuotaTemplates',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/groups'),
+    ).toEqual({
+      kind: 'projectGroups',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_test'),
+    ).toEqual({
+      kind: 'projectMembershipItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      userId: 'user_test',
+    });
+  });
+
   it('matches audit and usage routes', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/audit'),

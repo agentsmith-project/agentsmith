@@ -35,6 +35,30 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi",
     "method": "get"
   },
+  "projectMembers": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members",
+    "method": "get"
+  },
+  "projectJoinRequests": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests",
+    "method": "get"
+  },
+  "projectPermissionTemplates": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/permission-templates",
+    "method": "get"
+  },
+  "projectQuotaTemplates": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates",
+    "method": "get"
+  },
+  "projectGroups": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/groups",
+    "method": "get"
+  },
+  "projectMembershipItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/memberships/{userId}",
+    "method": "get"
+  },
   "sourceLibraries": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries",
     "method": "get"

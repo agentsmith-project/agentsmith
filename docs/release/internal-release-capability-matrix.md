@@ -34,4 +34,5 @@ It does **not** yet apply member templates/custom permissions/resource policy co
 - Use these governance pages in **MSW/demo mode** for UI walkthroughs.
 - In real backend mode:
   - Audit/Usage are available for internal governance workflows (first-stage coverage)
-  - Members/Resource Policy remain preview/mock-only unless explicitly implemented.
+- Members is now partial in real backend mode (read-only baseline: members list and core tab data endpoints).
+- Resource Policy remains preview/mock-only unless explicitly implemented.

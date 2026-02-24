@@ -347,6 +347,7 @@ export async function handleRequest(
       req,
       res,
       deps,
+      user,
       json,
       readBody,
       buildUpstreamUrl,

@@ -266,7 +266,7 @@ This section records the recent notebook external-agent workline (Codex runner +
 
 ### Internal Release Scope Clarification (Product Governance Pages)
 
-As of the current internal release candidate, the product-governance surfaces (`Audit`, `Usage`, `Members`, `Resource Policy`) are not fully backed by the local `api-entry-node` backend. They are implemented to a large extent on the frontend and in MSW demo mode, but should be treated as preview/mock-backed in real local-backend mode unless explicitly implemented.
+As of the current internal release candidate, `Audit` and `Usage` are backed by real local `api-entry-node` routes (product-usable v1), while `Members` and `Resource Policy` are partially backed with baseline reads/writes. They should be treated as `partial` in real local-backend mode, with scope limits documented in the release capability matrix.
 
 See also:
 - `docs/release/internal-release-capability-matrix.md`
@@ -736,4 +736,4 @@ Current known boundary:
   - Chat message creation / attachment creation
   - Chat stream run lifecycle + usage
   - Endpoint proxy request usage (success/error, duration)
-- Feature availability for `audit` / `usage` in real backend mode is now `available` (Members / Resource Policy remain `mock_only` for this release line).
+- Feature availability for `audit` / `usage` in real backend mode is now `available`; `members` / `resource_policy` are `partial` with baseline backend routes (see release capability matrix for exact coverage and enforcement limits).

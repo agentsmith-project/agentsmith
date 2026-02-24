@@ -19,6 +19,10 @@ import {
 import { drainJobQueue } from '@mbos/application';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import {
+  getProjectResourcePolicyOrDefault,
+  upsertProjectResourcePolicy,
+} from './project-resource-policy-store.js';
 
 interface WorkspaceRecordLike {
   id: string;
@@ -126,20 +130,6 @@ const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Arr
     updated?: Record<string, { from: unknown; to: unknown }>;
   };
 }>>>();
-const PROJECT_RESOURCE_POLICIES_BY_PROJECT = new Map<string, Map<string, {
-  resource_type: 'endpoint' | 'source_library' | 'agent';
-  resource_id: string;
-  access_mode: 'allow_all_members' | 'allow_list';
-  allowed_subjects: Array<{
-    subject_type: 'group' | 'user';
-    subject_id: string;
-    rate_limits?: Record<string, unknown>;
-    quota_limits?: Record<string, unknown>;
-    updated_at?: string;
-  }>;
-  rate_limits?: Record<string, unknown>;
-  quota_limits?: Record<string, unknown>;
-}>>();
 
 function projectScopedKey(workspaceId: string, projectId: string) {
   return `${workspaceId}:${projectId}`;
@@ -179,28 +169,6 @@ function getMemberChangeHistoryState(workspaceId: string, projectId: string) {
     changes: { added?: string[]; removed?: string[]; updated?: Record<string, { from: unknown; to: unknown }> };
   }>>();
   PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT.set(key, map);
-  return map;
-}
-
-function getResourcePolicyState(workspaceId: string, projectId: string) {
-  const key = projectScopedKey(workspaceId, projectId);
-  const existing = PROJECT_RESOURCE_POLICIES_BY_PROJECT.get(key);
-  if (existing) return existing;
-  const map = new Map<string, {
-    resource_type: 'endpoint' | 'source_library' | 'agent';
-    resource_id: string;
-    access_mode: 'allow_all_members' | 'allow_list';
-    allowed_subjects: Array<{
-      subject_type: 'group' | 'user';
-      subject_id: string;
-      rate_limits?: Record<string, unknown>;
-      quota_limits?: Record<string, unknown>;
-      updated_at?: string;
-    }>;
-    rate_limits?: Record<string, unknown>;
-    quota_limits?: Record<string, unknown>;
-  }>();
-  PROJECT_RESOURCE_POLICIES_BY_PROJECT.set(key, map);
   return map;
 }
 
@@ -976,15 +944,16 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.resourceType
     && route.resourceId
   ) {
-    const state = getResourcePolicyState(route.workspaceId, route.projectId);
-    const key = `${route.resourceType}:${route.resourceId}`;
-    const existing = state.get(key);
-    json(res, 200, existing ?? {
-      resource_type: route.resourceType,
-      resource_id: route.resourceId,
-      access_mode: 'allow_all_members',
-      allowed_subjects: [],
-    });
+    json(
+      res,
+      200,
+      getProjectResourcePolicyOrDefault(
+        route.workspaceId,
+        route.projectId,
+        route.resourceType as 'endpoint' | 'source_library' | 'agent',
+        route.resourceId,
+      ),
+    );
     return true;
   }
 
@@ -1011,9 +980,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'access_mode and allowed_subjects are required' });
       return true;
     }
-    const state = getResourcePolicyState(route.workspaceId, route.projectId);
-    const key = `${route.resourceType}:${route.resourceId}`;
-    state.set(key, {
+    upsertProjectResourcePolicy(route.workspaceId, route.projectId, {
       resource_type: route.resourceType as 'endpoint' | 'source_library' | 'agent',
       resource_id: route.resourceId,
       access_mode: body.access_mode,

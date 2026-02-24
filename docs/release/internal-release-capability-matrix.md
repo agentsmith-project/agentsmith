@@ -19,10 +19,18 @@ This matrix is for internal/controlled releases where the primary supported flow
   - Real backend routes with persisted usage facts and KPI aggregation
   - Currently covers Notebook / Chat / Endpoint usage facts (first-stage coverage)
 
-## UI available, mock-backed / not implemented in local `api-entry-node`
+## Partially available in local `api-entry-node` (real backend)
 
-- Members governance (advanced quota/member history and enforcement-related parts still partial)
-- Resource Policy governance (read/write may be available in local backend; runtime enforcement remains pending)
+- Members governance
+  - baseline read APIs
+  - join request approve/reject actions
+  - groups CRUD + apply-template (minimal)
+  - permission/quota template CRUD (minimal)
+  - member permissions / quota overrides / history (minimal)
+- Resource Policy governance
+  - read/write configuration API baseline
+  - minimal runtime enforcement for `endpoint` and notebook/chat `agent` paths via user allow-list / allow-all rules
+  - group-subject enforcement is not implemented yet
 
 ## Permission model note (important)
 
@@ -35,4 +43,4 @@ It does **not** yet apply member templates/custom permissions/resource policy co
 - In real backend mode:
   - Audit/Usage are available for internal governance workflows (first-stage coverage)
 - Members is now partial in real backend mode (read baseline + join request actions + groups CRUD + permission/quota templates CRUD + member permissions/quota overrides/history).
-- Resource Policy is partial in real backend mode (read/write configuration API baseline available; runtime enforcement still pending).
+- Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/agent user allow-list rules).

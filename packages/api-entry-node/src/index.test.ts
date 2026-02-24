@@ -1593,6 +1593,39 @@ describe('api-entry-node projects routes', () => {
         (item) => item.resource_type === 'endpoint' && item.resource_id === endpoint.id && item.requests >= 1,
       ),
     ).toBe(true);
+
+    const denyPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_list',
+          allowed_subjects: [{ subject_type: 'user', subject_id: 'someone_else' }],
+        }),
+      },
+    );
+    expect(denyPolicyRes.status).toBe(204);
+
+    const deniedProxy = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored',
+          messages: [{ role: 'user', content: 'blocked' }],
+        }),
+      },
+    );
+    expect(deniedProxy.status).toBe(403);
+    expect(await deniedProxy.json()).toMatchObject({
+      error_code: 'RESOURCE_POLICY_DENIED',
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+    });
   });
 
   it('streams chat via external agent websocket runtime', async () => {

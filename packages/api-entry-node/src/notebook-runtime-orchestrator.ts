@@ -10,6 +10,7 @@ import {
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { buildNotebookRuntimeTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
+import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
 
 type NotebookTaskRecord = {
   id: string;
@@ -144,6 +145,26 @@ export async function runNotebookTaskWithExternalAgent(input: {
     );
     if (!endpoint || endpoint.status !== 'active') {
       throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
+    }
+    const endpointPolicyCheck = isProjectResourceAccessAllowedForUser({
+      workspaceId: task.workspace_id,
+      projectId: task.project_id,
+      resourceType: 'endpoint',
+      resourceId: endpointId,
+      userId: user.id,
+    });
+    if (!endpointPolicyCheck.allowed) {
+      throw Object.assign(new Error('resource_policy_denied_endpoint'), { code: 'RESOURCE_POLICY_DENIED' });
+    }
+    const agentPolicyCheck = isProjectResourceAccessAllowedForUser({
+      workspaceId: task.workspace_id,
+      projectId: task.project_id,
+      resourceType: 'agent',
+      resourceId: agentId,
+      userId: user.id,
+    });
+    if (!agentPolicyCheck.allowed) {
+      throw Object.assign(new Error('resource_policy_denied_agent'), { code: 'RESOURCE_POLICY_DENIED' });
     }
     if (!rawBearerToken) {
       throw Object.assign(new Error('user_token_missing'), { code: 'UNAUTHORIZED' });

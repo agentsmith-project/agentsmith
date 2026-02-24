@@ -22,6 +22,7 @@ import {
 } from './chat-openai-payload.js';
 import { logChatStreamEvent } from './chat-observability.js';
 import type { ChatAttachmentRecord } from './resource-models.js';
+import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
 import {
   indexChatAttachmentsByLibraryObjectRef,
   readChatMessageInputs,
@@ -214,6 +215,24 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     input?: { role?: 'user'; content?: string; inputs?: unknown };
   };
   const useExternalAgent = typeof session.external_agent_id === 'string' && session.external_agent_id.length > 0;
+  if (useExternalAgent && session.external_agent_id) {
+    const agentPolicyCheck = isProjectResourceAccessAllowedForUser({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceType: 'agent',
+      resourceId: session.external_agent_id,
+      userId: user.id,
+    });
+    if (!agentPolicyCheck.allowed) {
+      json(res, 403, {
+        error_code: 'RESOURCE_POLICY_DENIED',
+        message: 'resource_policy_denied',
+        resource_type: 'agent',
+        resource_id: session.external_agent_id,
+      });
+      return true;
+    }
+  }
   const endpointId = useExternalAgent ? null : (raw.endpoint_id ?? session.endpoint_id);
   const endpoint = endpointId
     ? await deps.endpointResourceService.getEndpoint(route.workspaceId, route.projectId, endpointId)
@@ -221,6 +240,22 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   if (!useExternalAgent) {
     if (!endpoint || endpoint.status !== 'active' || !endpoint.credential_ref) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_unavailable' });
+      return true;
+    }
+    const endpointPolicyCheck = isProjectResourceAccessAllowedForUser({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceType: 'endpoint',
+      resourceId: endpoint.id,
+      userId: user.id,
+    });
+    if (!endpointPolicyCheck.allowed) {
+      json(res, 403, {
+        error_code: 'RESOURCE_POLICY_DENIED',
+        message: 'resource_policy_denied',
+        resource_type: 'endpoint',
+        resource_id: endpoint.id,
+      });
       return true;
     }
   }

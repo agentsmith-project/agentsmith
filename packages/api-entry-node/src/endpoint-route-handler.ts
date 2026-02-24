@@ -1,7 +1,9 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
+import type { AuthenticatedUser } from './auth.js';
 import type { EndpointImportPayload, EndpointRecord } from './resource-models.js';
 import { writeProjectUsageFact } from './audit-usage-recorders.js';
+import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
 import {
   isCapabilitySupportedByProtocol,
   resolveEndpointTaskRoute,
@@ -26,6 +28,7 @@ interface EndpointHandlerArgs {
   req: http.IncomingMessage;
   res: http.ServerResponse;
   deps: NodeApiDeps;
+  user: AuthenticatedUser;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
   buildUpstreamUrl: (baseUrl: string, proxyPath: string) => string;
@@ -43,7 +46,7 @@ interface EndpointHandlerArgs {
 }
 
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
-  const { route, method, req, res, deps, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
+  const { route, method, req, res, deps, user, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
   const inferActionFromProxyPath = (proxyPath: string): EndpointTaskAction => {
     if (proxyPath.startsWith('rerank')) return 'rerank';
     if (proxyPath.startsWith('images/generations')) return 'image_generation';
@@ -66,6 +69,22 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     );
     if (!endpoint) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+      return true;
+    }
+    const policyCheck = isProjectResourceAccessAllowedForUser({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceType: 'endpoint',
+      resourceId: endpoint.id,
+      userId: user.id,
+    });
+    if (!policyCheck.allowed) {
+      json(res, 403, {
+        error_code: 'RESOURCE_POLICY_DENIED',
+        message: 'resource_policy_denied',
+        resource_type: 'endpoint',
+        resource_id: endpoint.id,
+      });
       return true;
     }
     if (endpoint.status !== 'active') {

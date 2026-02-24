@@ -183,6 +183,48 @@ token_file_is_valid() {
   [[ "${code}" == "200" ]]
 }
 
+agent_presence_status() {
+  [[ -f "/tmp/agentsmith_project_id.txt" ]] || return 1
+  [[ -f "/tmp/agentsmith_agent_id.txt" ]] || return 1
+  token_file_is_valid || return 1
+  local token project_id agent_id body
+  token="$(cat "${TOKEN_FILE}" 2>/dev/null || true)"
+  project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"
+  agent_id="$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)"
+  [[ -n "${token}" && -n "${project_id}" && -n "${agent_id}" ]] || return 1
+  body="$(
+    curl -sS "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agents/${agent_id}/diagnostics" \
+      -H "Authorization: Bearer ${token}" || true
+  )"
+  printf '%s\n' "${body}" | sed -nE 's/.*"presence":"([^"]+)".*/\1/p' | head -n1
+}
+
+print_health_summary() {
+  local api_status="down" web_status="down" runner_status="down" token_status="missing" presence="unknown"
+  if curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${PORT_API}/api/v1/openapi.json" | grep -q '^200$'; then
+    api_status="ok"
+  fi
+  if curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${WEB_PORT}/${LOCALE}/login" | grep -q '^200$'; then
+    web_status="ok"
+  fi
+  if pid_is_alive "${RUNNER_PID_FILE}" || rg -q "\\[agent-codex-runner\\] connected|websocket open" "${RUNNER_LOG}" 2>/dev/null; then
+    runner_status="ok"
+  fi
+  if token_file_is_valid; then
+    token_status="valid"
+  elif [[ -f "${TOKEN_FILE}" ]]; then
+    token_status="invalid"
+  fi
+  presence="$(agent_presence_status || true)"
+  [[ -n "${presence}" ]] || presence="unknown"
+  info "Health:"
+  info "  API    ${api_status}"
+  info "  Web    ${web_status}"
+  info "  Runner ${runner_status}"
+  info "  Token  ${token_status}"
+  info "  Agent  ${presence}"
+}
+
 start_api_if_needed() {
   if [[ "${DEMO_START_API}" == "0" ]]; then
     info "skipping API start (DEMO_START_API=0)"
@@ -392,6 +434,7 @@ main() {
   info "  API    ${API_LOG}"
   info "  Web    ${WEB_LOG}"
   info "  Runner ${RUNNER_LOG}"
+  print_health_summary
   info "Stop with: make notebook-agent-demo-down"
 }
 

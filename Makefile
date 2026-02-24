@@ -6,6 +6,7 @@
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
+	notebook-agent-release-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
@@ -90,6 +91,7 @@ help:
 	@echo "  make notebook-agent-demo-down      # stop demo-up managed api/web/runner background processes"
 	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
 	@echo "  make notebook-agent-inputrefs-loop-smoke # notebook url input -> artifact -> artifact input loop smoke"
+	@echo "  make notebook-agent-release-smoke # run release smoke set (basic + inputrefs loop; optional matplotlib)"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
 	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
@@ -358,6 +360,10 @@ notebook-agent-smoke-task:
 notebook-agent-inputrefs-loop-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	node ./scripts/notebook-agent-inputrefs-loop-smoke.js
+
+notebook-agent-release-smoke:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/notebook-agent-release-smoke.sh
 
 notebook-agent-smoke-full:
 	@set -e; \

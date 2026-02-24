@@ -275,7 +275,7 @@ GLM_API_KEY='***' make notebook-agent-demo-up
   - refresh token (or reuse a valid existing token)
   - initialize notebook resources (project/credential/endpoint/agent/key)
   - start a managed external `agent-codex-runner`
-  - print the notebook URL and log file paths
+  - print the notebook URL, log file paths, and a health summary (`API/Web/Runner/Token/Agent`)
 - Stop the managed demo processes with:
 ```bash
 make notebook-agent-demo-down
@@ -286,6 +286,17 @@ make notebook-agent-demo-down
   - current script behavior:
     - reuses an existing valid token if present
     - otherwise fails fast with a clear error and remediation steps (free `3001`, add Keycloak redirect URI, or provide a valid token)
+- Release-quality smoke bundle (recommended before demos and internal release validation):
+```bash
+make notebook-agent-release-smoke
+```
+- Default bundle includes:
+  - `make notebook-agent-smoke-task`
+  - `make notebook-agent-inputrefs-loop-smoke`
+- Optional matplotlib image-artifact smoke:
+```bash
+RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
+```
 
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.

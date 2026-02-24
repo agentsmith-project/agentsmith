@@ -18,6 +18,7 @@ import { resolveProjectPermissionsForRequest } from './project-authz-resolver.js
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
+import { handleMeRoute } from './me-route-handler.js';
 import {
   getNotebookRuntimeMetricsPrometheusText,
   getNotebookRuntimeMetricsSnapshot,
@@ -209,16 +210,18 @@ export async function handleRequest(
     return;
   }
 
-  const route = matchProjectsRoute(req.url ?? '');
-  if (!route) {
-    json(res, 404, { error_code: 'NOT_FOUND', message: 'Route not found' });
-    return;
-  }
-
   try {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
+      return;
+    }
+    if (await handleMeRoute({ req, res, method, requestUrl, user })) {
+      return;
+    }
+    const route = matchProjectsRoute(req.url ?? '');
+    if (!route) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'Route not found' });
       return;
     }
     const rawBearerToken = extractBearerToken(req);

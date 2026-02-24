@@ -339,6 +339,15 @@ async function readSseBlocks(
   return text;
 }
 
+describe('api-entry-node me routes', () => {
+  it('returns unread notification count for authenticated user', async () => {
+    const { baseUrl } = startServer();
+    const response = await apiFetch(baseUrl, '/api/v1/me/notifications/unread-count');
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ unread_count: 0 });
+  });
+});
+
 describe('api-entry-node projects routes', () => {
   it('returns authenticated workspace and member payload', async () => {
     const { baseUrl } = startServer();

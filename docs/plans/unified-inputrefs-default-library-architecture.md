@@ -1,6 +1,6 @@
-# Unified Input References + Default File Library Architecture (Draft)
+# Unified Input References + Default File Library Architecture
 
-Status: active architecture direction (post-release refactor target)
+Status: implemented architecture direction (active reference)
 
 ## Summary
 
@@ -10,10 +10,7 @@ This document defines a cleaner long-term architecture for file inputs across Ch
 - Chat / Notebook / Agents consume inputs through a unified **Input Reference** model
 - `source` becomes a derived/processed capability (AI Ready / indexing), not a parallel primary file entry path
 
-This addresses current inconsistency:
-
-- Chat can select library objects and effectively passes content directly to runtime
-- Notebook currently attaches `sources` and uses a compatibility bridge for library objects
+This architecture replaced the previous split behavior where Chat and Notebook used different primary file input paths.
 
 The goal is to converge to a single mental model and execution model.
 
@@ -67,12 +64,9 @@ type InputRef =
 
 ### Notebook Task / Chat Session attachment direction
 
-Short-term compatibility:
-- Keep `attached_source_ids` for existing Notebook APIs
-- Add a new `attached_inputs` shape in parallel for future migration
-
-Long-term:
-- Replace `attached_source_ids` with `attached_inputs: InputRef[]`
+Current direction:
+- Notebook task inputs use `attached_inputs: InputRef[]`
+- Chat user messages use `inputs: InputRef[]` (provider/runtime transport remains runtime-specific)
 
 ## Default File Library (System-Managed)
 
@@ -116,7 +110,7 @@ The UI only attaches `InputRef`.
 - Runner manifest (`.mbos/task-inputs.json`) includes `kind`
 - `notebook-inputs` skill helper supports fetching `library_object` refs
 
-### Phase 2 (in progress)
+### Phase 2 (completed)
 - Chat local uploads and library picks share a unified object-first attachment path
 - Chat local uploads now:
   - ensure a default personal library
@@ -124,9 +118,9 @@ The UI only attaches `InputRef`.
   - create attachment from the library object
 - Backend provides `GET /source-libraries/default-personal` (idempotent ensure route)
 
-### Phase 3 (next)
-- Replace front-end "default personal library" conventions with backend-enforced system-managed semantics (now implemented with `system_managed_kind=default_personal_uploads` + protected rename/delete semantics)
-- Introduce shared backend/runtime input resolver interfaces for Chat/Notebook/Agents
+### Phase 3 (partially completed)
+- Backend-enforced default personal library semantics implemented with `system_managed_kind=default_personal_uploads` + protected rename/delete semantics
+- Shared backend/runtime input resolver interfaces for Chat/Notebook/Agents remain a follow-up
 
 ### Phase 4 (Derived processing alignment)
 - `source` records become explicitly derived from `library_object`
@@ -134,9 +128,9 @@ The UI only attaches `InputRef`.
 
 ## Current Transitional Areas
 
-- Chat still consumes inputs through the existing attachment runtime path (provider-oriented payloads), even though uploads/picks now converge on `library_object` provenance.
-- Backend default personal library now carries an explicit system-managed marker (`system_managed_kind=default_personal_uploads`) and is protected on standard library routes.
-- Remaining follow-up hardening (optional): data migration to eliminate any legacy name-based fallback checks.
+- Chat still consumes inputs through the existing attachment runtime path (provider-oriented payloads), even though request semantics and provenance are `InputRef`-based.
+- Shared backend/runtime input resolver interfaces are not yet centralized.
+- Optional hardening remains for legacy data cleanup (eliminate any name-based fallback checks in existing data).
 
 ### Progress update (2026-02)
 - Notebook task inputs use `attached_inputs` and `/tasks/:taskId/inputs` (`source` + `library_object`)
@@ -145,6 +139,7 @@ The UI only attaches `InputRef`.
 - Chat local uploads and library selections are object-first and use backend `default-personal` ensure route
 - Notebook local uploads are object-first and attach `library_object` refs (no direct local-upload -> `source` shortcut)
 - Chat attachments and user message requests now carry `input_ref` provenance (`inputs: InputRef[]` for user messages)
+- `source` is treated as a derived/processed input type (AI-ready/indexed workflow), not the primary raw-file ingestion path for Chat/Notebook
 
 ## Benefits of This Architecture
 
@@ -162,18 +157,14 @@ The UI only attaches `InputRef`.
 
 ## Risks / Design Considerations
 
-1. **Backward compatibility**
-- Existing Notebook APIs and data use `attached_source_ids`
-- migration must be incremental
-
-2. **Runtime-specific behavior still differs**
+1. **Runtime-specific behavior still differs**
 - Unified input references do not mean unified transport implementation
 - this is expected and acceptable
 
-3. **Security**
+2. **Security**
 - Tool-based fetchers (Notebook/Codex) still depend on API auth strategy
 - SSE ticket/JWT query and runtime bearer propagation remain separate concerns
 
 ## Recommended Next Concrete Step
 
-Implement backend-enforced system-managed default personal libraries (explicit marker/flags), then migrate Chat/Notebook UI and library management screens to respect those invariants without relying on naming conventions.
+Implement a shared backend/runtime input resolver interface for Chat/Notebook/Agents, then continue promoting `url`/`artifact` input handling to the same resolver contract used by `library_object` and `source`.

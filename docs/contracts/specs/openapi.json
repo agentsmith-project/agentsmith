@@ -3390,6 +3390,34 @@
           }
         }
       }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Sources"
+        ],
+        "operationId": "ensureDefaultPersonalFileLibrary",
+        "responses": {
+          "200": {
+            "description": "Ensured default personal library",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibrary"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

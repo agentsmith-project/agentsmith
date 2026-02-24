@@ -159,6 +159,13 @@ describe('matchProjectsRoute', () => {
 
   it('matches source library object browser routes', () => {
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal'),
+    ).toEqual({
+      kind: 'sourceLibrariesDefaultPersonal',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/objects'),
     ).toEqual({
       kind: 'sourceLibraryObjects',

@@ -50,6 +50,8 @@ interface ProjectSourceHandlerArgs {
   resolveProjectPermissions: (ownerId: string, actorId: string) => readonly string[];
 }
 
+const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
+
 async function parseUploadAndExecute(
   req: http.IncomingMessage,
   execute: (input: {
@@ -272,6 +274,32 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       projectId: route.projectId,
     });
     json(res, 200, listed);
+    return true;
+  }
+
+  if (route.kind === 'sourceLibrariesDefaultPersonal' && method === 'GET' && route.workspaceId && route.projectId) {
+    const listed = await deps.listSourceLibrariesUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    const existing = listed.items.find(
+      (item) => item.created_by_user_id === user.id && item.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
+    );
+    if (existing) {
+      json(res, 200, existing);
+      return true;
+    }
+
+    const created = await deps.createSourceLibraryUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actorId: user.id,
+      input: {
+        name: DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
+        visibility: 'shared',
+      },
+    });
+    json(res, 200, created);
     return true;
   }
 

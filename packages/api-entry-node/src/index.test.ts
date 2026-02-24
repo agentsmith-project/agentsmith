@@ -723,6 +723,40 @@ describe('api-entry-node projects routes', () => {
     expect(deleteRes.status).toBe(204);
   });
 
+  it('ensures a default personal source library idempotently', async () => {
+    const { baseUrl } = startServer();
+
+    const firstRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
+    );
+    expect(firstRes.status).toBe(200);
+    const first = (await firstRes.json()) as {
+      id: string;
+      name: string;
+      created_by_user_id: string;
+      workspace_id: string;
+      project_id: string;
+    };
+    expect(first.name).toBe('My Uploads');
+    expect(first.created_by_user_id).toBeTruthy();
+    expect(first.workspace_id).toBe('ws_default');
+    expect(first.project_id).toBe('proj_1');
+
+    const secondRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
+    );
+    expect(secondRes.status).toBe(200);
+    const second = (await secondRes.json()) as { id: string };
+    expect(second.id).toBe(first.id);
+
+    const listRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
+    expect(listRes.status).toBe(200);
+    const listed = (await listRes.json()) as { items: Array<{ id: string }> };
+    expect(listed.items.filter((item) => item.id === first.id)).toHaveLength(1);
+  });
+
   it('supports source library object browser routes', async () => {
     const { baseUrl } = startServer();
 

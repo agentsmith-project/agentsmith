@@ -27,6 +27,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries",
     "method": "get"
   },
+  "sourceLibrariesDefaultPersonal": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal",
+    "method": "get"
+  },
   "sourceLibraryItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}",
     "method": "get"

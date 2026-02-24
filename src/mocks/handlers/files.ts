@@ -202,6 +202,36 @@ export const fileHandlers = [
       ),
     });
   }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/source-libraries/default-personal', ({ params }) => {
+    const projectId = String(params.prj ?? '');
+    const workspaceId = String(params.ws ?? '');
+    const existing = sourceLibraries.find(
+      (item) =>
+        item.project_id === projectId
+        && item.workspace_id === workspaceId
+        && item.name === 'My Uploads'
+        && item.created_by_user_id === 'user_001',
+    );
+    if (existing) return HttpResponse.json(existing);
+
+    const now = new Date().toISOString();
+    const id = `lib_${Date.now()}`;
+    const created = {
+      id,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: 'My Uploads',
+      description: '',
+      visibility: 'shared' as const,
+      provider: 's3' as const,
+      bucket: `mbos-${projectId}-${id}`,
+      created_by_user_id: 'user_001',
+      created_at: now,
+      updated_at: now,
+    };
+    sourceLibraries.push(created);
+    return HttpResponse.json(created);
+  }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/source-libraries', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as {
       name?: string;

@@ -8,6 +8,7 @@ export type ProjectsRoute =
   | { kind: 'item'; workspaceId: string; projectId: string }
   | { kind: 'sources'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibraries'; workspaceId: string; projectId: string }
+  | { kind: 'sourceLibrariesDefaultPersonal'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryObjects'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryFolders'; workspaceId: string; projectId: string; libraryId: string }
@@ -142,6 +143,17 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'sourceLibraries',
       workspaceId: decodeURIComponent(sourceLibrariesMatched[1]),
       projectId: decodeURIComponent(sourceLibrariesMatched[2]),
+    };
+  }
+
+  const sourceLibrariesDefaultPersonalMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/default-personal\/?$/,
+  );
+  if (sourceLibrariesDefaultPersonalMatched) {
+    return {
+      kind: 'sourceLibrariesDefaultPersonal',
+      workspaceId: decodeURIComponent(sourceLibrariesDefaultPersonalMatched[1]),
+      projectId: decodeURIComponent(sourceLibrariesDefaultPersonalMatched[2]),
     };
   }
 

@@ -395,6 +395,12 @@ export class FilesAPI {
     );
   }
 
+  async ensureDefaultPersonalLibrary(workspaceId: string, projectId: string): Promise<FileLibrary> {
+    return this.client.get<FileLibrary>(
+      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/default-personal`,
+    );
+  }
+
   async updateLibrary(
     workspaceId: string,
     projectId: string,

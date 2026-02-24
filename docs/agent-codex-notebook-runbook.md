@@ -348,10 +348,15 @@ make governance-pages-real-backend-interaction-smoke
 ```bash
 make governance-release-smoke
 ```
+- Governance policy effect smoke (real backend endpoint rate limit -> audit/usage evidence):
+```bash
+make governance-policy-effect-smoke
+```
 - Notes:
   - Uses Playwright + Keycloak login and current `/tmp/agentsmith_project_id.txt`
   - Fails fast with a clear error if the current project URL is stale after local in-memory backend reset
   - Intended for real backend mode page validation (not MSW-only UI smoke)
+  - `governance-policy-effect-smoke` temporarily patches the current endpoint policy (RPM=1), validates a 429 rate-limit hit, checks Audit/Usage evidence, then restores the original policy
 
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.

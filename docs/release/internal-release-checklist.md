@@ -97,6 +97,7 @@ make governance-release-smoke
 Bundle includes:
 - `governance-pages-real-backend-smoke` (open routes)
 - `governance-pages-real-backend-interaction-smoke` (basic interactions)
+- `governance-policy-effect-smoke` (endpoint policy rate-limit effect + audit/usage evidence)
 
 ## 4. Contract / Quality Gates
 ### Required checks

@@ -60,14 +60,15 @@ function startMockKeycloakServer(): { server: Server; issuerUrl: string } {
   return { server, issuerUrl: `http://127.0.0.1:${address.port}` };
 }
 
-function startServer(): { server: Server; baseUrl: string } {
+function startServer(): { server: Server; baseUrl: string; deps: ReturnType<typeof createDefaultNodeApiDeps> } {
   const keycloak = startMockKeycloakServer();
   process.env.KEYCLOAK_ISSUER_URL = keycloak.issuerUrl;
-  const server = createNodeApiServer(0, createDefaultNodeApiDeps());
+  const deps = createDefaultNodeApiDeps();
+  const server = createNodeApiServer(0, deps);
   servers.push(server);
 
   const address = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${address.port}` };
+  return { server, baseUrl: `http://127.0.0.1:${address.port}`, deps };
 }
 
 function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>): { server: Server; baseUrl: string } {
@@ -1696,7 +1697,7 @@ describe('api-entry-node projects routes', () => {
   });
 
   it('supports credentials and endpoints CRUD plus openai-compatible proxy', async () => {
-    const { baseUrl } = startServer();
+    const { baseUrl, deps } = startServer();
     const upstream = startUpstreamServer();
 
     const createCredential = await apiFetch(
@@ -1925,6 +1926,66 @@ describe('api-entry-node projects routes', () => {
     expect(usageKpiRateRes.status).toBe(200);
     const usageKpiRateBody = (await usageKpiRateRes.json()) as { errors_today: number };
     expect(usageKpiRateBody.errors_today).toBeGreaterThanOrEqual(1);
+
+    const resetPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1000 }] },
+          quota_limits: { rules: [] },
+        }),
+      },
+    );
+    expect(resetPolicyRes.status).toBe(204);
+
+    const memberQuotaPatchRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          overrides: {
+            endpoint: { daily_token_limit: 10 },
+          },
+        }),
+      },
+    );
+    expect(memberQuotaPatchRes.status).toBe(200);
+    await recordUsageFact(deps.docStore, {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+      end_user_id: 'user_test',
+      requests: 1,
+      tokens_total: 10,
+      result: 'ok',
+    });
+
+    const quotaLimitedProxy = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored',
+          messages: [{ role: 'user', content: 'blocked by member quota' }],
+        }),
+      },
+    );
+    expect(quotaLimitedProxy.status).toBe(429);
+    expect(await quotaLimitedProxy.json()).toMatchObject({
+      error_code: 'MEMBER_QUOTA_EXCEEDED',
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+    });
   });
 
   it('streams chat via external agent websocket runtime', async () => {

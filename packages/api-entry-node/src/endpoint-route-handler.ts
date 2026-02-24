@@ -4,7 +4,11 @@ import type { AuthenticatedUser } from './auth.js';
 import type { EndpointImportPayload, EndpointRecord } from './resource-models.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
-import { checkAndConsumeProjectResourceRateLimitsForUser } from './project-resource-policy-enforcer.js';
+import {
+  checkAndConsumeProjectResourceRateLimitsForUser,
+  checkProjectResourceQuotaLimitsForUser,
+} from './project-resource-policy-enforcer.js';
+import { checkMemberEndpointDailyTokenQuota } from './project-member-quota-enforcer.js';
 import {
   isCapabilitySupportedByProtocol,
   resolveEndpointTaskRoute,
@@ -174,6 +178,118 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     }
 
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+    const quotaCheck = await checkProjectResourceQuotaLimitsForUser({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceType: 'endpoint',
+      resourceId: endpoint.id,
+      userId: user.id,
+      policy: policyCheck.policy,
+    });
+    if (!quotaCheck.allowed) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'resource_policy.quota_exceeded',
+        result: 'error',
+        requestId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+        errorMessage: 'resource_policy_quota_exceeded',
+        metadata: {
+          retry_after_seconds: quotaCheck.retry_after_seconds,
+          effective_daily_token_limit: quotaCheck.effective_daily_token_limit,
+          current_tokens_today: quotaCheck.current_tokens_today,
+          scope: quotaCheck.scope,
+          quota_key: 'endpoint.daily_token_limit',
+        },
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        endUserId: user.id,
+        requestId,
+        requests: 1,
+        result: 'error',
+        errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+        metadata: {
+          stage: 'preflight',
+          retry_after_seconds: quotaCheck.retry_after_seconds,
+          effective_daily_token_limit: quotaCheck.effective_daily_token_limit,
+          current_tokens_today: quotaCheck.current_tokens_today,
+          scope: quotaCheck.scope,
+          quota_key: 'endpoint.daily_token_limit',
+        },
+      });
+      res.setHeader('Retry-After', String(quotaCheck.retry_after_seconds));
+      json(res, 429, {
+        error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+        message: 'resource_policy_quota_exceeded',
+        resource_type: 'endpoint',
+        resource_id: endpoint.id,
+        retry_after_seconds: quotaCheck.retry_after_seconds,
+      });
+      return true;
+    }
+    const memberQuotaCheck = await checkMemberEndpointDailyTokenQuota({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      endpointId: endpoint.id,
+      userId: user.id,
+    });
+    if (!memberQuotaCheck.allowed) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'member_quota.quota_exceeded',
+        result: 'error',
+        requestId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        errorCode: 'MEMBER_QUOTA_EXCEEDED',
+        errorMessage: 'member_quota_exceeded',
+        metadata: {
+          retry_after_seconds: memberQuotaCheck.retry_after_seconds,
+          effective_daily_token_limit: memberQuotaCheck.effective_daily_token_limit,
+          current_tokens_today: memberQuotaCheck.current_tokens_today,
+          quota_key: 'endpoint.daily_token_limit',
+        },
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        endUserId: user.id,
+        requestId,
+        requests: 1,
+        result: 'error',
+        errorCode: 'MEMBER_QUOTA_EXCEEDED',
+        metadata: {
+          stage: 'preflight',
+          retry_after_seconds: memberQuotaCheck.retry_after_seconds,
+          effective_daily_token_limit: memberQuotaCheck.effective_daily_token_limit,
+          current_tokens_today: memberQuotaCheck.current_tokens_today,
+          quota_key: 'endpoint.daily_token_limit',
+        },
+      });
+      res.setHeader('Retry-After', String(memberQuotaCheck.retry_after_seconds));
+      json(res, 429, {
+        error_code: 'MEMBER_QUOTA_EXCEEDED',
+        message: 'member_quota_exceeded',
+        resource_type: 'endpoint',
+        resource_id: endpoint.id,
+        retry_after_seconds: memberQuotaCheck.retry_after_seconds,
+      });
+      return true;
+    }
     const rateCheck = checkAndConsumeProjectResourceRateLimitsForUser({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -205,6 +321,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         projectId: route.projectId,
         resourceType: 'endpoint',
         resourceId: endpoint.id,
+        endUserId: user.id,
         requestId,
         requests: 1,
         result: 'error',
@@ -242,6 +359,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         projectId: route.projectId,
         resourceType: 'endpoint',
         resourceId: endpoint.id,
+        endUserId: user.id,
         requestId,
         requests: 1,
         durationMs: Date.now() - startedAtMs,
@@ -259,6 +377,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         projectId: route.projectId,
         resourceType: 'endpoint',
         resourceId: endpoint.id,
+        endUserId: user.id,
         requestId,
         requests: 1,
         durationMs: Date.now() - startedAtMs,

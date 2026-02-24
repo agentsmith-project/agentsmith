@@ -32,6 +32,11 @@ import {
   getProjectPermissionTemplatesState,
   setProjectPermissionTemplatesState,
 } from './project-permission-templates-store.js';
+import {
+  getProjectQuotaTemplatesState,
+  setProjectQuotaTemplatesState,
+} from './project-quota-templates-store.js';
+import { getMemberQuotaState } from './project-member-quota-store.js';
 
 interface WorkspaceRecordLike {
   id: string;
@@ -83,29 +88,10 @@ const PROJECT_JOIN_REQUESTS_BY_PROJECT = new Map<string, Array<{
   reviewed_by?: string;
   reject_reason?: string;
 }>>();
-const PROJECT_QUOTA_TEMPLATES_BY_PROJECT = new Map<string, Array<{
-  id: string;
-  project_id: string;
-  name: string;
-  description?: string;
-  overrides_json: Record<string, unknown>;
-  built_in?: boolean;
-  created_at: string;
-  updated_at: string;
-}>>();
 const PROJECT_MEMBER_PERMISSIONS_BY_PROJECT = new Map<string, Map<string, {
   mode: 'template' | 'custom';
   template?: string | null;
   permissions: string[];
-}>>();
-const PROJECT_MEMBER_QUOTA_OVERRIDES_BY_PROJECT = new Map<string, Map<string, {
-  overrides: Record<string, unknown>;
-  history: Array<{
-    id: string;
-    created_at: string;
-    created_by_user_id: string;
-    overrides_json: Record<string, unknown>;
-  }>;
 }>>();
 const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Array<{
   id: string;
@@ -130,18 +116,6 @@ function getMemberPermissionsState(workspaceId: string, projectId: string) {
   if (existing) return existing;
   const map = new Map<string, { mode: 'template' | 'custom'; template?: string | null; permissions: string[] }>();
   PROJECT_MEMBER_PERMISSIONS_BY_PROJECT.set(key, map);
-  return map;
-}
-
-function getMemberQuotaState(workspaceId: string, projectId: string) {
-  const key = projectScopedKey(workspaceId, projectId);
-  const existing = PROJECT_MEMBER_QUOTA_OVERRIDES_BY_PROJECT.get(key);
-  if (existing) return existing;
-  const map = new Map<string, {
-    overrides: Record<string, unknown>;
-    history: Array<{ id: string; created_at: string; created_by_user_id: string; overrides_json: Record<string, unknown> }>;
-  }>();
-  PROJECT_MEMBER_QUOTA_OVERRIDES_BY_PROJECT.set(key, map);
   return map;
 }
 
@@ -617,8 +591,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 200, []);
       return true;
     }
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    json(res, 200, PROJECT_QUOTA_TEMPLATES_BY_PROJECT.get(key) ?? []);
+    json(res, 200, getProjectQuotaTemplatesState(route.workspaceId, route.projectId));
     return true;
   }
 
@@ -639,8 +612,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'name and overrides_json are required' });
       return true;
     }
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    const items = PROJECT_QUOTA_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
     const now = new Date().toISOString();
     const created = {
       id: `qt_${Math.random().toString(36).slice(2, 10)}`,
@@ -653,7 +625,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       updated_at: now,
     };
     items.push(created);
-    PROJECT_QUOTA_TEMPLATES_BY_PROJECT.set(key, items);
+    setProjectQuotaTemplatesState(route.workspaceId, route.projectId, items);
     json(res, 200, created);
     return true;
   }
@@ -665,8 +637,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.projectId
     && route.templateId
   ) {
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    const items = PROJECT_QUOTA_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
     const item = items.find((it) => it.id === route.templateId);
     if (!item) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Quota template not found' });
@@ -688,8 +659,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       description?: string;
       overrides_json?: Record<string, unknown>;
     };
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    const items = PROJECT_QUOTA_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
     const item = items.find((it) => it.id === route.templateId);
     if (!item) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Quota template not found' });
@@ -716,8 +686,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.projectId
     && route.templateId
   ) {
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    const items = PROJECT_QUOTA_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
     const target = items.find((it) => it.id === route.templateId);
     if (!target) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Quota template not found' });
@@ -727,7 +696,11 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 409, { error_code: 'CONFLICT', message: 'Built-in templates cannot be deleted' });
       return true;
     }
-    PROJECT_QUOTA_TEMPLATES_BY_PROJECT.set(key, items.filter((it) => it.id !== route.templateId));
+    setProjectQuotaTemplatesState(
+      route.workspaceId,
+      route.projectId,
+      items.filter((it) => it.id !== route.templateId),
+    );
     res.statusCode = 204;
     res.end();
     return true;
@@ -741,8 +714,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.templateId
   ) {
     const body = await readBody(req) as { member_ids?: string[] };
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    const items = PROJECT_QUOTA_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
     const template = items.find((it) => it.id === route.templateId);
     if (!template) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Quota template not found' });
@@ -751,6 +723,24 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     const memberIds = Array.isArray(body.member_ids)
       ? body.member_ids.filter((v): v is string => typeof v === 'string')
       : [];
+    const quotaState = getMemberQuotaState(route.workspaceId, route.projectId);
+    const now = new Date().toISOString();
+    for (const memberId of memberIds) {
+      const prev = quotaState.get(memberId) ?? { overrides: {}, history: [] };
+      const nextOverrides = template.overrides_json;
+      quotaState.set(memberId, {
+        overrides: nextOverrides,
+        history: [
+          {
+            id: `qoh_${Math.random().toString(36).slice(2, 10)}`,
+            created_at: now,
+            created_by_user_id: user.id,
+            overrides_json: nextOverrides,
+          },
+          ...prev.history,
+        ],
+      });
+    }
     json(res, 200, { applied_count: memberIds.length });
     return true;
   }

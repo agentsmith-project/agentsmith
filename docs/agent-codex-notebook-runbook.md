@@ -4,7 +4,7 @@
 
 This runbook covers the supported internal release path focused on `Files + Notebook + External Agent + Trace + Artifacts`.
 
-Governance surfaces such as `Members` and `Resource Policy` are now partially implemented in the local `api-entry-node` backend (real routes exist for baseline reads/writes), but are not fully closed-loop. In real-backend mode, treat them as `partial` and verify scope/limitations before demos. `Resource Policy` partial now includes endpoint/agent allow-list enforcement (user + group) and endpoint `requests_per_minute` rate limiting.
+Governance surfaces such as `Members` and `Resource Policy` are now partially implemented in the local `api-entry-node` backend (real routes exist for baseline reads/writes), but are not fully closed-loop. In real-backend mode, treat them as `partial` and verify scope/limitations before demos. `Resource Policy` partial now includes endpoint/agent allow-list enforcement (user + group), endpoint `requests_per_minute` rate limiting, and endpoint `daily_token_limit` quota enforcement baseline. Members partial also includes a first-stage endpoint `daily_token_limit` effect via member quota overrides/templates.
 
 `Audit` and `Usage` are now backed by real `api-entry-node` routes with persisted governance data (first-stage coverage) and are available in real-backend mode for internal workflows.
 
@@ -19,11 +19,15 @@ Governance surfaces such as `Members` and `Resource Policy` are now partially im
 - `Members`
   - partial backend coverage (baseline reads + selected writes)
   - advanced governance workflows and enforcement still incomplete
+  - backend route authz now partially reflects groups + permission templates (allow-only union)
+  - member quota overrides/templates now provide baseline endpoint `daily_token_limit` runtime effect
 - `Resource Policy`
   - partial backend coverage (read/write + minimal endpoint/agent enforcement)
   - current enforcement scope covers allow-all / allow-list checks for `endpoint` and notebook/chat `agent` paths
   - allow-list matching supports user and group subjects (baseline)
-  - broader policy enforcement (`rate_limits`, `quota_limits`) remains pending
+  - endpoint `requests_per_minute` rate limiting is enforced
+  - endpoint `daily_token_limit` quota enforcement baseline is supported
+  - broader policy enforcement (`rate_limits`, `quota_limits`) across all resource types remains pending
 
 ## 1. Scope
 - Target: external agent for Notebook task execution/testing.

@@ -737,3 +737,6 @@ Current known boundary:
   - Chat stream run lifecycle + usage
   - Endpoint proxy request usage (success/error, duration)
 - Feature availability for `audit` / `usage` in real backend mode is now `available`; `members` / `resource_policy` are `partial` with baseline backend routes and minimal resource-policy runtime enforcement (endpoint/agent allow-list checks; see release capability matrix for exact coverage and limits).
+- Governance backend continued closure:
+  - Resource Policy runtime enforcement now includes endpoint `requests_per_minute` and endpoint `daily_token_limit` baseline checks.
+  - Members partial backend now includes join-request create flow and first-stage runtime effects via group permission templates (route authz allow-only union) and member quota overrides/templates (endpoint `daily_token_limit`).

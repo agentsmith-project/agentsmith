@@ -27,11 +27,15 @@ This matrix is for internal/controlled releases where the primary supported flow
   - groups CRUD + apply-template (minimal)
   - permission/quota template CRUD (minimal)
   - member permissions / quota overrides / history (minimal)
+  - backend route authz partially influenced by groups + permission templates (allow-only union)
+  - member quota overrides/templates can enforce endpoint `daily_token_limit` (baseline)
 - Resource Policy governance
   - read/write configuration API baseline
   - minimal runtime enforcement for `endpoint` and notebook/chat `agent` paths via allow-all / allow-list rules
   - user-subject and group-subject allow-list matching are supported (baseline)
-  - advanced limits/enforcement (`rate_limits`, `quota_limits`) still not applied
+  - endpoint `requests_per_minute` rate limiting is enforced
+  - endpoint policy quota enforcement baseline supports `endpoint.daily_token_limit`
+  - broader `rate_limits` / `quota_limits` enforcement across all resource types is still pending
 
 ## Permission model note (important)
 
@@ -43,5 +47,5 @@ It does **not** yet apply member templates/custom permissions/resource policy co
 - Use these governance pages in **MSW/demo mode** for UI walkthroughs.
 - In real backend mode:
   - Audit/Usage are available for internal governance workflows (first-stage coverage)
-- Members is now partial in real backend mode (read baseline + join request create/approve/reject actions + groups CRUD + permission/quota templates CRUD + member permissions/quota overrides/history), and group permission templates now affect backend route authorization (allow-only union model).
-- Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/agent allow-list rules, including group subjects, plus endpoint `requests_per_minute` rate limiting).
+- Members is now partial in real backend mode (read baseline + join request create/approve/reject actions + groups CRUD + permission/quota templates CRUD + member permissions/quota overrides/history), and group permission templates now affect backend route authorization (allow-only union model). Member quota overrides/templates also have a first-stage endpoint `daily_token_limit` runtime effect.
+- Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/agent allow-list rules, including group subjects, plus endpoint `requests_per_minute` rate limiting and endpoint `daily_token_limit` quota enforcement baseline).

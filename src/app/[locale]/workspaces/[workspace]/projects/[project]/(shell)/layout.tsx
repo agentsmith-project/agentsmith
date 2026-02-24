@@ -16,6 +16,8 @@ import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { PageLoading } from '@/components/ui/loading';
+import { ErrorState } from '@/components/ui/error-state';
+import { APIError } from '@/lib/api/errors';
 
 export default function AppShellLayout({
   children,
@@ -29,7 +31,14 @@ export default function AppShellLayout({
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const projectId = validateProjectParam(params?.project);
   const isValidProjectRoute = !!workspaceId && !!projectId;
-  const { isLoading: isProjectLoading } = useProject(workspaceId ?? '', projectId ?? '');
+  const {
+    isLoading: isProjectLoading,
+    isError: isProjectError,
+    error: projectError,
+    refetch: refetchProject,
+  } = useProject(workspaceId ?? '', projectId ?? '');
+  const isProjectNotFound =
+    isProjectError && projectError instanceof APIError && projectError.isNotFoundError();
 
   // Sync currentProject from URL so permission checks work on all project pages
   useSyncAuthFromUrl();
@@ -58,6 +67,19 @@ export default function AppShellLayout({
       {isValidProjectRoute && isProjectLoading ? (
         <div data-testid="page-layout" className="h-screen bg-background flex items-center justify-center">
           <PageLoading />
+        </div>
+      ) : isValidProjectRoute && isProjectNotFound ? (
+        <div data-testid="page-layout" className="h-screen bg-background flex items-center justify-center p-6">
+          <div data-testid="project-shell__project-not-found" className="w-full max-w-2xl">
+            <ErrorState
+              title="Project not found"
+              message="This project ID may be stale after restarting the local in-memory backend. Re-initialize resources and reopen the latest project URL from /tmp/agentsmith_project_id.txt."
+              onRetry={() => {
+                void refetchProject();
+              }}
+              retryLabel="Retry Project Lookup"
+            />
+          </div>
         </div>
       ) : (
       <div data-testid="page-layout" className="h-screen bg-background flex flex-col overflow-hidden">

@@ -7,6 +7,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getApiClient } from '@/lib/api/client';
 import { ProjectAPI } from '@/lib/api/endpoints/projects';
+import { APIError } from '@/lib/api/errors';
 
 // Query keys factory
 export const projectKeys = {
@@ -45,5 +46,9 @@ export function useProject(workspaceId: string, projectId: string) {
     },
     enabled: !!workspaceId && !!projectId,
     staleTime: 60_000,
+    retry: (failureCount, error) => {
+      if (error instanceof APIError && error.isNotFoundError()) return false;
+      return failureCount < 2;
+    },
   });
 }

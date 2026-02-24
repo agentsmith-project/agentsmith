@@ -15,7 +15,7 @@ export const RESOURCE_POLICY_RULE_MATRIX: Record<
   }
 > = {
   endpoint: {
-    rate: [],
+    rate: ['endpoint.requests_per_minute'],
     quota: ['endpoint.daily_token_limit'],
   },
   source_library: {
@@ -42,6 +42,14 @@ export interface ResourcePolicyRuleDefinition {
 
 export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, ResourcePolicyRuleDefinition[]> = {
   endpoint: [
+    {
+      key: 'endpoint.requests_per_minute',
+      bucket: 'rate',
+      labelKey: 'rules.endpoint.requests_per_minute',
+      rootInputId: 'resource-policy-endpoint-requests-per-minute',
+      rootTestId: 'resource-policy__endpoint-requests-per-minute',
+      subjectPlaceholderKey: 'subject_placeholders.endpoint.requests_per_minute',
+    },
     {
       key: 'endpoint.daily_token_limit',
       bucket: 'quota',

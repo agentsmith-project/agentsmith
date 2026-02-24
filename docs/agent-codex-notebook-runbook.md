@@ -4,7 +4,7 @@
 
 This runbook covers the supported internal release path focused on `Files + Notebook + External Agent + Trace + Artifacts`.
 
-Governance surfaces such as `Members` and `Resource Policy` are now partially implemented in the local `api-entry-node` backend (real routes exist for baseline reads/writes), but are not fully closed-loop. In real-backend mode, treat them as `partial` and verify scope/limitations before demos.
+Governance surfaces such as `Members` and `Resource Policy` are now partially implemented in the local `api-entry-node` backend (real routes exist for baseline reads/writes), but are not fully closed-loop. In real-backend mode, treat them as `partial` and verify scope/limitations before demos. `Resource Policy` partial now includes endpoint/agent allow-list enforcement (user + group) and endpoint `requests_per_minute` rate limiting.
 
 `Audit` and `Usage` are now backed by real `api-entry-node` routes with persisted governance data (first-stage coverage) and are available in real-backend mode for internal workflows.
 

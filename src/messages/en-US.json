@@ -992,6 +992,7 @@
     },
     "rules": {
       "endpoint": {
+        "requests_per_minute": "Endpoint requests per minute",
         "daily_token_limit": "Endpoint daily token limit"
       },
       "source_library": {
@@ -1004,6 +1005,7 @@
     },
     "subject_placeholders": {
       "endpoint": {
+        "requests_per_minute": "subject requests per minute",
         "daily_token_limit": "subject daily token limit"
       },
       "source_library": {

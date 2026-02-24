@@ -1670,6 +1670,84 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(groupAllowedProxy.status).toBe(200);
+
+    const rateLimitPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1 }] },
+        }),
+      },
+    );
+    expect(rateLimitPolicyRes.status).toBe(204);
+
+    const firstRateLimitedProxy = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored',
+          messages: [{ role: 'user', content: 'allowed first under rpm policy' }],
+        }),
+      },
+    );
+    expect(firstRateLimitedProxy.status).toBe(200);
+
+    const secondRateLimitedProxy = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored',
+          messages: [{ role: 'user', content: 'blocked by rpm policy' }],
+        }),
+      },
+    );
+    expect(secondRateLimitedProxy.status).toBe(429);
+    expect(await secondRateLimitedProxy.json()).toMatchObject({
+      error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+    });
+
+    const auditStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const auditEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const auditRateRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(auditStart)}&end_time=${encodeURIComponent(auditEnd)}&action=resource_policy.rate_limited&page=1&page_size=20`,
+    );
+    expect(auditRateRes.status).toBe(200);
+    const auditRateBody = (await auditRateRes.json()) as { items: Array<{ action: string; resource_type?: string }> };
+    expect(
+      auditRateBody.items.some((item) => item.action === 'resource_policy.rate_limited' && item.resource_type === 'endpoint'),
+    ).toBe(true);
+
+    const usageRateRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(usageStart)}&end_time=${encodeURIComponent(usageEnd)}&resource_type=endpoint&page=1&page_size=100`,
+    );
+    expect(usageRateRes.status).toBe(200);
+    const usageRateBody = (await usageRateRes.json()) as {
+      items: Array<{ resource_type: string; requests: number }>;
+    };
+    expect(usageRateBody.items.some((item) => item.resource_type === 'endpoint' && item.requests >= 1)).toBe(true);
+
+    const usageKpiRateRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/usage/kpi?start_time=${encodeURIComponent(usageStart)}&end_time=${encodeURIComponent(usageEnd)}`,
+    );
+    expect(usageKpiRateRes.status).toBe(200);
+    const usageKpiRateBody = (await usageKpiRateRes.json()) as { errors_today: number };
+    expect(usageKpiRateBody.errors_today).toBeGreaterThanOrEqual(1);
   });
 
   it('streams chat via external agent websocket runtime', async () => {

@@ -2,8 +2,9 @@ import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import type { EndpointImportPayload, EndpointRecord } from './resource-models.js';
-import { writeProjectUsageFact } from './audit-usage-recorders.js';
+import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
+import { checkAndConsumeProjectResourceRateLimitsForUser } from './project-resource-policy-enforcer.js';
 import {
   isCapabilitySupportedByProtocol,
   resolveEndpointTaskRoute,
@@ -79,6 +80,31 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       userId: user.id,
     });
     if (!policyCheck.allowed) {
+      const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'resource_policy.access_denied',
+        result: 'error',
+        requestId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        errorCode: 'RESOURCE_POLICY_DENIED',
+        errorMessage: 'resource_policy_denied',
+        metadata: { reason: policyCheck.reason ?? 'not_allowed' },
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        requestId,
+        requests: 1,
+        result: 'error',
+        errorCode: 'RESOURCE_POLICY_DENIED',
+        metadata: { stage: 'preflight', reason: policyCheck.reason ?? 'not_allowed' },
+      });
       json(res, 403, {
         error_code: 'RESOURCE_POLICY_DENIED',
         message: 'resource_policy_denied',
@@ -147,8 +173,60 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       return true;
     }
 
-    const startedAtMs = Date.now();
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+    const rateCheck = checkAndConsumeProjectResourceRateLimitsForUser({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceType: 'endpoint',
+      resourceId: endpoint.id,
+      userId: user.id,
+      policy: policyCheck.policy,
+    });
+    if (!rateCheck.allowed) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'resource_policy.rate_limited',
+        result: 'error',
+        requestId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+        errorMessage: 'resource_policy_rate_limited',
+        metadata: {
+          retry_after_seconds: rateCheck.retry_after_seconds,
+          effective_limit_per_minute: rateCheck.effective_limit_per_minute,
+          scope: rateCheck.scope,
+        },
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        requestId,
+        requests: 1,
+        result: 'error',
+        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+        metadata: {
+          retry_after_seconds: rateCheck.retry_after_seconds,
+          effective_limit_per_minute: rateCheck.effective_limit_per_minute,
+          scope: rateCheck.scope,
+        },
+      });
+      res.setHeader('Retry-After', String(rateCheck.retry_after_seconds));
+      json(res, 429, {
+        error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+        message: 'resource_policy_rate_limited',
+        resource_type: 'endpoint',
+        resource_id: endpoint.id,
+        retry_after_seconds: rateCheck.retry_after_seconds,
+      });
+      return true;
+    }
+
+    const startedAtMs = Date.now();
     try {
       await proxyJsonRequest(req, res, {
         upstreamUrl: buildUpstreamUrl(endpoint.base_url, resolved.proxyPath || proxyPath),

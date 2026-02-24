@@ -687,7 +687,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroups' && method === 'GET' && route.workspaceId && route.projectId) {
-    const key = projectScopedKey(route.workspaceId, route.projectId);
     json(res, 200, { items: getProjectGroupsState(route.workspaceId, route.projectId) });
     return true;
   }
@@ -703,7 +702,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'name and permission_template_id are required' });
       return true;
     }
-    const key = projectScopedKey(route.workspaceId, route.projectId);
     const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const now = new Date().toISOString();
     const created = {
@@ -729,7 +727,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       permission_template_id?: string;
       member_ids?: string[];
     };
-    const key = projectScopedKey(route.workspaceId, route.projectId);
     const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const group = groups.find((g) => g.id === route.groupId);
     if (!group) {
@@ -748,7 +745,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroupItem' && method === 'DELETE' && route.workspaceId && route.projectId && route.groupId) {
-    const key = projectScopedKey(route.workspaceId, route.projectId);
     const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const next = groups.filter((g) => g.id !== route.groupId);
     setProjectGroupsState(route.workspaceId, route.projectId, next);
@@ -759,7 +755,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'projectGroupApplyTemplate' && method === 'POST' && route.workspaceId && route.projectId && route.groupId) {
     const body = await readBody(req) as { member_ids?: string[] };
-    const key = projectScopedKey(route.workspaceId, route.projectId);
     const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const group = groups.find((g) => g.id === route.groupId);
     if (!group) {

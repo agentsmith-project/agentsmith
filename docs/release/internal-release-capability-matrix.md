@@ -44,4 +44,4 @@ It does **not** yet apply member templates/custom permissions/resource policy co
 - In real backend mode:
   - Audit/Usage are available for internal governance workflows (first-stage coverage)
 - Members is now partial in real backend mode (read baseline + join request actions + groups CRUD + permission/quota templates CRUD + member permissions/quota overrides/history).
-- Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/agent allow-list rules, including group subjects).
+- Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/agent allow-list rules, including group subjects, plus endpoint `requests_per_minute` rate limiting).

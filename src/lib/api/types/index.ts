@@ -694,6 +694,7 @@ export type PolicySubjectType = 'group' | 'user';
 
 export type PolicyRuleKey =
   | 'agent.max_concurrency'
+  | 'endpoint.requests_per_minute'
   | 'endpoint.daily_token_limit'
   | 'source_library.max_total_files'
   | 'source_library.max_file_size_bytes';
@@ -747,6 +748,9 @@ export interface ResourcePolicyUpdateRequest {
 export interface ProjectGovernanceDefaults {
   endpoint: {
     access_mode: 'allow_all_members' | 'allow_list';
+    rate_limits?: {
+      rules: PolicyRule<'endpoint.requests_per_minute'>[];
+    };
     quota_limits?: {
       rules: PolicyRule<'endpoint.daily_token_limit'>[];
     };

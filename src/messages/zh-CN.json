@@ -994,6 +994,7 @@
     },
     "rules": {
       "endpoint": {
+        "requests_per_minute": "端点每分钟请求数上限",
         "daily_token_limit": "端点每日 Token 限额"
       },
       "source_library": {
@@ -1006,6 +1007,7 @@
     },
     "subject_placeholders": {
       "endpoint": {
+        "requests_per_minute": "主体每分钟请求数上限",
         "daily_token_limit": "主体每日 token 限额"
       },
       "source_library": {

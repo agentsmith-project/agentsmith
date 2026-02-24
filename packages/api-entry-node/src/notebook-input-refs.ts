@@ -1,5 +1,8 @@
 import { getImportedLibraryObjectRef } from './input-ref-resolver.js';
 import {
+  buildResolvedArtifactInput,
+  buildResolvedLibraryObjectInput,
+  buildResolvedUrlInput,
   resolveArtifactInputMeta,
   resolveLibraryObjectInputMeta,
   resolveUrlInputMeta,
@@ -170,14 +173,10 @@ export async function buildNotebookRuntimeTaskInputs(args: {
         input: inputRef,
       });
       if (resolved.found_meta) {
-        return {
-          kind: 'library_object',
-          library_id: inputRef.library_id,
-          key: inputRef.key,
-          filename: resolved.filename,
-          file_type: resolved.file_type,
-          file_size: resolved.file_size,
-        } satisfies NotebookRuntimeTaskInput;
+        return buildResolvedLibraryObjectInput({
+          input: inputRef,
+          meta: resolved,
+        }) satisfies NotebookRuntimeTaskInput;
       }
       debugLog?.('task_input_library_object_lookup_failed', {
         task_id: taskId,
@@ -185,37 +184,29 @@ export async function buildNotebookRuntimeTaskInputs(args: {
         key: inputRef.key,
         error: 'object_lookup_failed',
       });
-      return {
-        kind: 'library_object',
-        library_id: inputRef.library_id,
-        key: inputRef.key,
-        filename: resolved.filename,
-        ...(resolved.file_type ? { file_type: resolved.file_type } : {}),
-        ...(typeof resolved.file_size === 'number' ? { file_size: resolved.file_size } : {}),
-      } satisfies NotebookRuntimeTaskInput;
+      return buildResolvedLibraryObjectInput({
+        input: inputRef,
+        meta: resolved,
+      }) satisfies NotebookRuntimeTaskInput;
     }
     if (inputRef.kind === 'url') {
-      return {
-        kind: 'url',
-        url: inputRef.url,
-        filename: inputRef.name || inputRef.url,
-        ...(inputRef.content_type ? { file_type: inputRef.content_type } : {}),
-        ...(typeof inputRef.size_bytes === 'number' ? { file_size: inputRef.size_bytes } : {}),
-        ...(inputRef.imported_library_id ? { imported_library_id: inputRef.imported_library_id } : {}),
-        ...(inputRef.imported_key ? { imported_key: inputRef.imported_key } : {}),
-      } satisfies NotebookRuntimeTaskInput;
+      return buildResolvedUrlInput({
+        input: inputRef,
+        meta: {
+          filename: inputRef.name || inputRef.url,
+          file_type: inputRef.content_type || 'text/plain',
+          file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : 0,
+          imported_library_id: inputRef.imported_library_id,
+          imported_key: inputRef.imported_key,
+        },
+      }) satisfies NotebookRuntimeTaskInput;
     }
     if (inputRef.kind === 'artifact') {
       const resolved = resolveArtifactInputMeta({ input: inputRef });
-      return {
-        kind: 'artifact',
-        task_id: inputRef.task_id,
-        artifact_id: inputRef.artifact_id,
-        filename: resolved.filename,
-        ...(resolved.file_type ? { file_type: resolved.file_type } : {}),
-        ...(typeof resolved.file_size === 'number' ? { file_size: resolved.file_size } : {}),
-        ...(resolved.task_relative_path ? { task_relative_path: resolved.task_relative_path } : {}),
-      } satisfies NotebookRuntimeTaskInput;
+      return buildResolvedArtifactInput({
+        input: inputRef,
+        meta: resolved,
+      }) satisfies NotebookRuntimeTaskInput;
     }
     try {
       const source = await deps.getSourceUseCase.execute({
@@ -284,14 +275,13 @@ export async function resolveNotebookTaskInputDetails(args: {
         input: inputRef,
       });
       if (resolved.found_meta) {
+        const detail = buildResolvedLibraryObjectInput({
+          input: inputRef,
+          meta: resolved,
+        });
         return {
           id: inputRef.id,
-          kind: 'library_object',
-          library_id: inputRef.library_id,
-          key: inputRef.key,
-          filename: resolved.filename,
-          file_type: resolved.file_type,
-          file_size: resolved.file_size,
+          ...detail,
         };
       }
       return null;
@@ -300,15 +290,13 @@ export async function resolveNotebookTaskInputDetails(args: {
       const sourceArtifacts = await loadArtifactsForTask(inputRef.task_id);
       const artifact = sourceArtifacts.find((item) => item.id === inputRef.artifact_id);
       const resolved = resolveArtifactInputMeta({ input: inputRef, artifact });
+      const detail = buildResolvedArtifactInput({
+        input: inputRef,
+        meta: resolved,
+      });
       return {
         id: inputRef.id,
-        kind: 'artifact',
-        task_id: inputRef.task_id,
-        artifact_id: inputRef.artifact_id,
-        filename: resolved.filename,
-        file_type: resolved.file_type,
-        file_size: resolved.file_size,
-        ...(resolved.task_relative_path ? { task_relative_path: resolved.task_relative_path } : {}),
+        ...detail,
       };
     }
     const resolved = await resolveUrlInputMeta({
@@ -317,15 +305,13 @@ export async function resolveNotebookTaskInputDetails(args: {
       projectId,
       input: inputRef,
     });
+    const detail = buildResolvedUrlInput({
+      input: inputRef,
+      meta: resolved,
+    });
     return {
       id: inputRef.id,
-      kind: 'url',
-      url: inputRef.url,
-      filename: resolved.filename,
-      file_type: resolved.file_type,
-      file_size: resolved.file_size,
-      ...(resolved.imported_library_id ? { imported_library_id: resolved.imported_library_id } : {}),
-      ...(resolved.imported_key ? { imported_key: resolved.imported_key } : {}),
+      ...detail,
     };
   }));
   return items.filter((item): item is NotebookTaskInputDetail => item !== null);

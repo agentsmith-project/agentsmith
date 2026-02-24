@@ -711,3 +711,7 @@ Current known boundary:
 - Chat message `inputs` and attachment provenance now support first-class `url` input refs (with optional imported object provenance), while runtime consumption still resolves through attachment snapshots.
 - Chat composer now exposes a URL input entry in the UI and imports URLs object-first into the default personal library before attaching a `url` input ref.
 - Backend input-resolution code is partially shared: chat input parsing/attachment resolution is centralized in `chat-input-refs.ts`, and notebook input detail/runtime mapping is centralized in `notebook-input-refs.ts`.
+- Shared backend resolver layering is now in place:
+  - `input-ref-resolver.ts` (ref keys / imported object extraction / dedupe helpers)
+  - `input-ref-runtime-resolver.ts` (object/url/artifact runtime metadata resolution + fallback rules)
+  - runtime-specific adapters build on top (`chat-input-refs.ts`, `notebook-input-refs.ts`)

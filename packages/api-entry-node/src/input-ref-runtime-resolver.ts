@@ -18,6 +18,50 @@ export type ArtifactLookupRecord = {
   task_relative_path?: string;
 };
 
+export type ResolvedSourceInputRef = {
+  kind: 'source';
+  source_id: string;
+  filename: string;
+  file_type?: string;
+  file_size?: number;
+  ai_ready_status?: string;
+};
+
+export type ResolvedLibraryObjectInputRef = {
+  kind: 'library_object';
+  library_id: string;
+  key: string;
+  filename: string;
+  file_type?: string;
+  file_size?: number;
+};
+
+export type ResolvedUrlInputRef = {
+  kind: 'url';
+  url: string;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  imported_library_id?: string;
+  imported_key?: string;
+};
+
+export type ResolvedArtifactInputRef = {
+  kind: 'artifact';
+  task_id: string;
+  artifact_id: string;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  task_relative_path?: string;
+};
+
+export type ResolvedInputRef =
+  | ResolvedSourceInputRef
+  | ResolvedLibraryObjectInputRef
+  | ResolvedUrlInputRef
+  | ResolvedArtifactInputRef;
+
 export async function resolveLibraryObjectInputMeta(args: {
   deps: SourceObjectMetaDeps;
   workspaceId: string;
@@ -133,5 +177,55 @@ export function resolveArtifactInputMeta(args: {
     file_type,
     file_size,
     ...(taskRelativePath ? { task_relative_path: taskRelativePath } : {}),
+  };
+}
+
+export function buildResolvedLibraryObjectInput(args: {
+  input: { library_id: string; key: string };
+  meta: { filename: string; file_type?: string; file_size?: number };
+}): ResolvedLibraryObjectInputRef {
+  return {
+    kind: 'library_object',
+    library_id: args.input.library_id,
+    key: args.input.key,
+    filename: args.meta.filename,
+    ...(args.meta.file_type ? { file_type: args.meta.file_type } : {}),
+    ...(typeof args.meta.file_size === 'number' ? { file_size: args.meta.file_size } : {}),
+  };
+}
+
+export function buildResolvedUrlInput(args: {
+  input: { url: string };
+  meta: {
+    filename: string;
+    file_type: string;
+    file_size: number;
+    imported_library_id?: string;
+    imported_key?: string;
+  };
+}): ResolvedUrlInputRef {
+  return {
+    kind: 'url',
+    url: args.input.url,
+    filename: args.meta.filename,
+    file_type: args.meta.file_type,
+    file_size: args.meta.file_size,
+    ...(args.meta.imported_library_id ? { imported_library_id: args.meta.imported_library_id } : {}),
+    ...(args.meta.imported_key ? { imported_key: args.meta.imported_key } : {}),
+  };
+}
+
+export function buildResolvedArtifactInput(args: {
+  input: { task_id: string; artifact_id: string };
+  meta: { filename: string; file_type: string; file_size: number; task_relative_path?: string };
+}): ResolvedArtifactInputRef {
+  return {
+    kind: 'artifact',
+    task_id: args.input.task_id,
+    artifact_id: args.input.artifact_id,
+    filename: args.meta.filename,
+    file_type: args.meta.file_type,
+    file_size: args.meta.file_size,
+    ...(args.meta.task_relative_path ? { task_relative_path: args.meta.task_relative_path } : {}),
   };
 }

@@ -47,6 +47,20 @@ DEMO_REFRESH_TOKEN_FORCE="${DEMO_REFRESH_TOKEN_FORCE:-0}"
 info() { echo "[demo-up] $*"; }
 err() { echo "[demo-up] ERROR: $*" >&2; }
 
+launch_detached() {
+  local pid_file="$1"
+  local log_file="$2"
+  local command="$3"
+
+  : >"${log_file}"
+  if command -v setsid >/dev/null 2>&1; then
+    setsid bash -lc "${command}" >>"${log_file}" 2>&1 < /dev/null &
+  else
+    nohup bash -lc "${command}" >>"${log_file}" 2>&1 < /dev/null &
+  fi
+  echo $! > "${pid_file}"
+}
+
 is_port_listening() {
   local port="$1"
   if command -v lsof >/dev/null 2>&1; then
@@ -184,25 +198,24 @@ start_api_if_needed() {
   fi
 
   info "starting API on :${PORT_API} (log: ${API_LOG})"
-  (
-    cd "${ROOT_DIR}"
+  launch_detached "${API_PID_FILE}" "${API_LOG}" "
+    cd '${ROOT_DIR}' && \
     exec env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-      PORT="${PORT_API}" \
-      KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-      KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-      MINIO_ENDPOINT="${MINIO_ENDPOINT}" \
-      MINIO_PORT="${MINIO_PORT}" \
-      MINIO_USE_SSL="${MINIO_USE_SSL}" \
-      MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY}" \
-      MINIO_SECRET_KEY="${MINIO_SECRET_KEY}" \
-      MINIO_BUCKET="${MINIO_BUCKET}" \
-      DEBUG_AGENT_RUNTIME="${DEBUG_AGENT_RUNTIME:-1}" \
-      DEBUG_ENDPOINT_PROXY="${DEBUG_ENDPOINT_PROXY:-0}" \
-      DEBUG_NOTEBOOK_RUNTIME="${DEBUG_NOTEBOOK_RUNTIME:-0}" \
-      AGENT_RUNTIME_REQUEST_TIMEOUT_MS="${AGENT_RUNTIME_REQUEST_TIMEOUT_MS:-180000}" \
+      PORT='${PORT_API}' \
+      KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' \
+      KEYCLOAK_REALM='${KEYCLOAK_REALM}' \
+      MINIO_ENDPOINT='${MINIO_ENDPOINT}' \
+      MINIO_PORT='${MINIO_PORT}' \
+      MINIO_USE_SSL='${MINIO_USE_SSL}' \
+      MINIO_ACCESS_KEY='${MINIO_ACCESS_KEY}' \
+      MINIO_SECRET_KEY='${MINIO_SECRET_KEY}' \
+      MINIO_BUCKET='${MINIO_BUCKET}' \
+      DEBUG_AGENT_RUNTIME='${DEBUG_AGENT_RUNTIME:-1}' \
+      DEBUG_ENDPOINT_PROXY='${DEBUG_ENDPOINT_PROXY:-0}' \
+      DEBUG_NOTEBOOK_RUNTIME='${DEBUG_NOTEBOOK_RUNTIME:-0}' \
+      AGENT_RUNTIME_REQUEST_TIMEOUT_MS='${AGENT_RUNTIME_REQUEST_TIMEOUT_MS:-180000}' \
       npm run api:node:dev
-  ) >"${API_LOG}" 2>&1 &
-  echo $! > "${API_PID_FILE}"
+  "
   post_start_validate_or_reuse_external "${API_PID_FILE}" "${PORT_API}" "API" "${API_LOG}"
 }
 
@@ -229,17 +242,16 @@ start_web_if_needed() {
   fi
 
   info "starting Web on :${target_port} (log: ${WEB_LOG})"
-  (
-    cd "${ROOT_DIR}"
+  launch_detached "${WEB_PID_FILE}" "${WEB_LOG}" "
+    cd '${ROOT_DIR}' && \
     exec env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
       NEXT_PUBLIC_USE_MSW=false \
-      NEXT_PUBLIC_API_BASE="http://localhost:${PORT_API}/api/v1" \
-      NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
-      NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-      npm run dev:test -- --port "${target_port}"
-  ) >"${WEB_LOG}" 2>&1 &
-  echo $! > "${WEB_PID_FILE}"
+      NEXT_PUBLIC_API_BASE='http://localhost:${PORT_API}/api/v1' \
+      NEXT_PUBLIC_KEYCLOAK_URL='${KEYCLOAK_URL}' \
+      NEXT_PUBLIC_KEYCLOAK_REALM='${KEYCLOAK_REALM}' \
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' \
+      npm run dev:test -- --port '${target_port}'
+  "
   if post_start_validate_or_reuse_external "${WEB_PID_FILE}" "${target_port}" "Web" "${WEB_LOG}"; then
     WEB_PORT="${target_port}"
     return 0
@@ -256,17 +268,16 @@ start_web_if_needed() {
   fi
   info "Web port ${target_port} busy; retrying on :${fallback_port}"
   target_port="${fallback_port}"
-  (
-    cd "${ROOT_DIR}"
+  launch_detached "${WEB_PID_FILE}" "${WEB_LOG}" "
+    cd '${ROOT_DIR}' && \
     exec env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
       NEXT_PUBLIC_USE_MSW=false \
-      NEXT_PUBLIC_API_BASE="http://localhost:${PORT_API}/api/v1" \
-      NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
-      NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-      npm run dev:test -- --port "${target_port}"
-  ) >"${WEB_LOG}" 2>&1 &
-  echo $! > "${WEB_PID_FILE}"
+      NEXT_PUBLIC_API_BASE='http://localhost:${PORT_API}/api/v1' \
+      NEXT_PUBLIC_KEYCLOAK_URL='${KEYCLOAK_URL}' \
+      NEXT_PUBLIC_KEYCLOAK_REALM='${KEYCLOAK_REALM}' \
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' \
+      npm run dev:test -- --port '${target_port}'
+  "
   post_start_validate_or_reuse_external "${WEB_PID_FILE}" "${target_port}" "Web" "${WEB_LOG}"
   WEB_PORT="${target_port}"
 }
@@ -284,17 +295,16 @@ restart_demo_runner() {
   fi
 
   info "starting managed notebook agent runner (log: ${RUNNER_LOG})"
-  (
-    cd "${ROOT_DIR}"
+  launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
+    cd '${ROOT_DIR}' && \
     exec env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-      MBOS_AGENT_WS_URL="${ws_url}" \
-      MBOS_AGENT_KEY="${agent_key}" \
-      MBOS_AGENT_RUNNER_DEBUG="${MBOS_AGENT_RUNNER_DEBUG:-1}" \
-      MBOS_AGENT_TASK_TIMEOUT_SEC="${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
-      MBOS_AGENT_CODEX_YOLO="${MBOS_AGENT_CODEX_YOLO:-1}" \
+      MBOS_AGENT_WS_URL='${ws_url}' \
+      MBOS_AGENT_KEY='${agent_key}' \
+      MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
+      MBOS_AGENT_TASK_TIMEOUT_SEC='${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}' \
+      MBOS_AGENT_CODEX_YOLO='${MBOS_AGENT_CODEX_YOLO:-1}' \
       npm run agent:codex-runner
-  ) >"${RUNNER_LOG}" 2>&1 &
-  echo $! > "${RUNNER_PID_FILE}"
+  "
 
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     if rg -q "\\[agent-codex-runner\\] connected|websocket open" "${RUNNER_LOG}" 2>/dev/null; then

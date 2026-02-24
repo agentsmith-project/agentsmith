@@ -10,12 +10,13 @@ import { chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
 import type { SessionStreamState } from '@/lib/chat/stream-state';
 import { useChatRuntimeStore } from '@/lib/chat/runtime-store';
 import { toast } from '@/components/ui/toast';
+import type { ChatMessageInputRef } from '@/lib/types/input-ref';
 
 export interface RunChatStreamArgs {
   sessionId: string;
   model: string;
   endpointId: string;
-  input?: { role: 'user'; content: string; attachments?: string[] };
+  input?: { role: 'user'; content: string; inputs?: ChatMessageInputRef[] };
   fromMessageId?: string;
   branchLeafMessageId?: string;
   mode?: 'append' | 'replace';

@@ -35,6 +35,41 @@ interface ChatStreamHandlerArgs {
 const MAX_ATTACHMENTS_PER_MESSAGE = 8;
 const MAX_ATTACHMENT_TOTAL_SIZE_BYTES = 60 * 1024 * 1024;
 
+type ChatLibraryObjectInputRef = {
+  kind: 'library_object';
+  library_id: string;
+  key: string;
+  name?: string;
+  content_type?: string;
+  size_bytes?: number;
+};
+
+function readChatLibraryObjectInputs(rawInputs: unknown): ChatLibraryObjectInputRef[] | null {
+  if (rawInputs == null) return [];
+  if (!Array.isArray(rawInputs)) return null;
+  const out: ChatLibraryObjectInputRef[] = [];
+  const seen = new Set<string>();
+  for (const item of rawInputs) {
+    if (!item || typeof item !== 'object') return null;
+    const rec = item as Record<string, unknown>;
+    if (rec.kind !== 'library_object') return null;
+    if (typeof rec.library_id !== 'string' || rec.library_id.length === 0) return null;
+    if (typeof rec.key !== 'string' || rec.key.length === 0) return null;
+    const dedupe = `${rec.library_id}:${rec.key}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push({
+      kind: 'library_object',
+      library_id: rec.library_id,
+      key: rec.key,
+      name: typeof rec.name === 'string' ? rec.name : undefined,
+      content_type: typeof rec.content_type === 'string' ? rec.content_type : undefined,
+      size_bytes: typeof rec.size_bytes === 'number' && rec.size_bytes >= 0 ? rec.size_bytes : undefined,
+    });
+  }
+  return out;
+}
+
 class AgentStreamRouteError extends Error {
   code: string;
 
@@ -174,7 +209,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     endpoint_id?: string;
     from_message_id?: string;
     branch_leaf_message_id?: string;
-    input?: { role?: 'user'; content?: string; attachments?: string[] };
+    input?: { role?: 'user'; content?: string; inputs?: unknown };
   };
   const useExternalAgent = typeof session.external_agent_id === 'string' && session.external_agent_id.length > 0;
   const endpointId = useExternalAgent ? null : (raw.endpoint_id ?? session.endpoint_id);
@@ -222,10 +257,12 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   }
 
   if (raw.input?.content?.trim()) {
-    const attachmentIds = Array.isArray(raw.input.attachments)
-      ? raw.input.attachments.filter((item): item is string => typeof item === 'string' && item.length > 0)
-      : [];
-    if (attachmentIds.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+    const inputRefs = readChatLibraryObjectInputs(raw.input.inputs);
+    if (inputRefs === null) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_input_refs_invalid' });
+      return true;
+    }
+    if (inputRefs.length > MAX_ATTACHMENTS_PER_MESSAGE) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_limit_exceeded' });
       return true;
     }
@@ -246,7 +283,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       source_library_id?: string;
       source_object_key?: string;
     }> = [];
-    if (attachmentIds.length > 0) {
+    if (inputRefs.length > 0) {
       if (useExternalAgent) {
         const agent = await deps.agentResourceService.getAgent(
           route.workspaceId,
@@ -261,16 +298,23 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_not_multimodal' });
         return true;
       }
-      const attachments = await deps.chatResourceService.listAttachmentsByIds(
+      const allSessionAttachments = await deps.chatResourceService.listAttachments(
         route.workspaceId,
         route.projectId,
         route.sessionId,
-        attachmentIds,
       );
-      if (attachments.length !== attachmentIds.length) {
+      const byRef = new Map<string, ChatAttachmentRecord>();
+      for (const attachment of allSessionAttachments) {
+        if (attachment.input_ref?.kind === 'library_object') {
+          byRef.set(`${attachment.input_ref.library_id}:${attachment.input_ref.key}`, attachment);
+        }
+      }
+      const resolvedAttachments = inputRefs.map((input) => byRef.get(`${input.library_id}:${input.key}`) ?? null);
+      if (resolvedAttachments.some((item) => !item)) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_not_found' });
         return true;
       }
+      const attachments = resolvedAttachments as ChatAttachmentRecord[];
       const notReady = attachments.find((item) => item.upload_status !== 'ready');
       if (notReady) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_not_ready' });

@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { FilesAPI } from '@/lib/api/endpoints/files';
 import type { ChatSession, Endpoint } from '@/lib/api/types';
+import type { ChatMessageInputRef } from '@/lib/types/input-ref';
 import { ensureDefaultUploadLibrary } from '@/lib/chat/default-library';
 import { toast } from '@/components/ui/toast';
 import { chatAttachmentsKey, chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
@@ -127,13 +128,13 @@ export function useChatMutations(args: UseChatMutationsArgs) {
     mutationFn: async (input: {
       sessionId: string;
       content: string;
-      attachments?: string[];
+      inputs?: ChatMessageInputRef[];
       parent_id?: string | null;
     }) =>
       chatAPI.createMessage(workspaceId, projectId, input.sessionId, {
         role: 'user',
         content: input.content,
-        attachments: input.attachments,
+        inputs: input.inputs,
         parent_id: input.parent_id ?? null,
       }),
     onSuccess: (_data, input) => {

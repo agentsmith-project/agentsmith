@@ -29,4 +29,4 @@ export type ArtifactInputRef = {
 export type InputRef = SourceInputRef | LibraryObjectInputRef | UrlInputRef | ArtifactInputRef;
 
 export type ChatAttachmentInputRef = LibraryObjectInputRef;
-
+export type ChatMessageInputRef = ChatAttachmentInputRef;

@@ -28,12 +28,20 @@ function createAttachment(overrides?: Partial<Attachment>): Attachment {
     file_size: 10,
     upload_status: 'ready',
     created_at: new Date().toISOString(),
+    input_ref: {
+      kind: 'library_object',
+      library_id: 'lib_1',
+      key: 'chat/session_1/uploads/test.txt',
+      name: 'test.txt',
+      content_type: 'text/plain',
+      size_bytes: 10,
+    },
     ...overrides,
   };
 }
 
 describe('useChatComposerActions', () => {
-  it('sends message and forwards ready attachment ids to stream input', async () => {
+  it('sends message and forwards ready input refs to stream input', async () => {
     const createMessage = vi.fn().mockResolvedValue({ id: 'm_user_1' });
     const runStream = vi.fn().mockResolvedValue(undefined);
     const setComposerBySession = vi.fn();
@@ -60,7 +68,14 @@ describe('useChatComposerActions', () => {
     expect(createMessage).toHaveBeenCalledWith({
       sessionId: 'session_1',
       content: 'hello',
-      attachments: ['att_1'],
+      inputs: [{
+        kind: 'library_object',
+        library_id: 'lib_1',
+        key: 'chat/session_1/uploads/test.txt',
+        name: 'test.txt',
+        content_type: 'text/plain',
+        size_bytes: 10,
+      }],
       parent_id: 'parent_1',
     });
     expect(runStream).toHaveBeenCalledWith({
@@ -68,7 +83,18 @@ describe('useChatComposerActions', () => {
       model: 'gpt-4o',
       endpointId: 'ep_1',
       branchLeafMessageId: 'm_user_1',
-      input: { role: 'user', content: 'hello', attachments: ['att_1'] },
+      input: {
+        role: 'user',
+        content: 'hello',
+        inputs: [{
+          kind: 'library_object',
+          library_id: 'lib_1',
+          key: 'chat/session_1/uploads/test.txt',
+          name: 'test.txt',
+          content_type: 'text/plain',
+          size_bytes: 10,
+        }],
+      },
       mode: 'append',
     });
     expect(setComposerBySession).toHaveBeenCalled();
@@ -86,6 +112,33 @@ describe('useChatComposerActions', () => {
         composerBySession: { session_1: 'hello' },
         setComposerBySession: vi.fn(),
         attachments: [createAttachment({ upload_status: 'uploading' })],
+        editingMessageId: null,
+        visibleLeafId: null,
+        createMessage,
+        runStream,
+        initAttachment: vi.fn(),
+        fileInputRef: { current: null },
+      }),
+    );
+
+    await result.current.handleSend();
+
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(runStream).not.toHaveBeenCalled();
+  });
+
+  it('does not send when ready attachments are missing input_ref', async () => {
+    const createMessage = vi.fn();
+    const runStream = vi.fn();
+
+    const { result } = renderHook(() =>
+      useChatComposerActions({
+        canUseChat: true,
+        currentSessionId: 'session_1',
+        activeSession: createSession(),
+        composerBySession: { session_1: 'hello' },
+        setComposerBySession: vi.fn(),
+        attachments: [createAttachment({ input_ref: undefined })],
         editingMessageId: null,
         visibleLeafId: null,
         createMessage,

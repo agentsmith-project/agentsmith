@@ -30,6 +30,15 @@ const MAX_ATTACHMENTS_PER_MESSAGE = 8;
 const MAX_ATTACHMENT_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_ATTACHMENT_TOTAL_SIZE_BYTES = 60 * 1024 * 1024;
 
+type ChatLibraryObjectInputRef = {
+  kind: 'library_object';
+  library_id: string;
+  key: string;
+  name?: string;
+  content_type?: string;
+  size_bytes?: number;
+};
+
 function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: string; enabled: boolean }> }): boolean {
   return (
     endpoint.capabilities?.some(
@@ -82,6 +91,51 @@ function validateAttachmentPayload(raw: {
     }
   }
   return null;
+}
+
+function readChatLibraryObjectInputs(rawInputs: unknown): ChatLibraryObjectInputRef[] | null {
+  if (rawInputs == null) return [];
+  if (!Array.isArray(rawInputs)) return null;
+  const out: ChatLibraryObjectInputRef[] = [];
+  const seen = new Set<string>();
+  for (const item of rawInputs) {
+    if (!item || typeof item !== 'object') return null;
+    const rec = item as Record<string, unknown>;
+    if (rec.kind !== 'library_object') return null;
+    if (typeof rec.library_id !== 'string' || rec.library_id.length === 0) return null;
+    if (typeof rec.key !== 'string' || rec.key.length === 0) return null;
+    const dedupe = `${rec.library_id}:${rec.key}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push({
+      kind: 'library_object',
+      library_id: rec.library_id,
+      key: rec.key,
+      name: typeof rec.name === 'string' ? rec.name : undefined,
+      content_type: typeof rec.content_type === 'string' ? rec.content_type : undefined,
+      size_bytes: typeof rec.size_bytes === 'number' && rec.size_bytes >= 0 ? rec.size_bytes : undefined,
+    });
+  }
+  return out;
+}
+
+async function resolveChatInputAttachments(
+  deps: NodeApiDeps,
+  workspaceId: string,
+  projectId: string,
+  sessionId: string,
+  inputs: ChatLibraryObjectInputRef[],
+) {
+  if (inputs.length === 0) return [];
+  const attachments = await deps.chatResourceService.listAttachments(workspaceId, projectId, sessionId);
+  const byRef = new Map<string, (typeof attachments)[number]>();
+  for (const attachment of attachments) {
+    if (attachment.input_ref?.kind === 'library_object') {
+      byRef.set(`${attachment.input_ref.library_id}:${attachment.input_ref.key}`, attachment);
+    }
+  }
+  const resolved = inputs.map((input) => byRef.get(`${input.library_id}:${input.key}`) ?? null);
+  return resolved;
 }
 
 export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): Promise<boolean> {
@@ -321,7 +375,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       role?: 'user';
       content?: string;
       parent_id?: string | null;
-      attachments?: string[];
+      inputs?: unknown;
     };
     if (raw.role !== 'user' || !raw.content?.trim()) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_message_content_required' });
@@ -340,13 +394,17 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         return true;
       }
     }
-    const attachmentIds = Array.isArray(raw.attachments) ? raw.attachments.filter(Boolean) : [];
-    if (attachmentIds.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+    const inputRefs = readChatLibraryObjectInputs(raw.inputs);
+    if (inputRefs === null) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_input_refs_invalid' });
+      return true;
+    }
+    if (inputRefs.length > MAX_ATTACHMENTS_PER_MESSAGE) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_limit_exceeded' });
       return true;
     }
     const attachmentSnapshots = [];
-    if (attachmentIds.length > 0) {
+    if (inputRefs.length > 0) {
       if (session.external_agent_id) {
         const agent = await deps.agentResourceService.getAgent(
           route.workspaceId,
@@ -368,16 +426,18 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
           return true;
         }
       }
-      const attachments = await deps.chatResourceService.listAttachmentsByIds(
+      const resolved = await resolveChatInputAttachments(
+        deps,
         route.workspaceId,
         route.projectId,
         route.sessionId,
-        attachmentIds,
+        inputRefs,
       );
-      if (attachments.length !== attachmentIds.length) {
+      if (resolved.some((item) => !item)) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_not_found' });
         return true;
       }
+      const attachments = resolved as NonNullable<(typeof resolved)[number]>[];
       const totalSize = attachments.reduce((acc, item) => acc + item.file_size, 0);
       if (totalSize > MAX_ATTACHMENT_TOTAL_SIZE_BYTES) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_limit_exceeded' });

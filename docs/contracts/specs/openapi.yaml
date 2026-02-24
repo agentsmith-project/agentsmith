@@ -2287,10 +2287,29 @@ components:
           oneOf:
           - type: string
           - type: array
-        attachments:
+        inputs:
           type: array
           items:
-            $ref: '#/components/schemas/ChatAttachment'
+            type: object
+            required:
+            - kind
+            - library_id
+            - key
+            properties:
+              kind:
+                type: string
+                enum:
+                - library_object
+              library_id:
+                type: string
+              key:
+                type: string
+              name:
+                type: string
+              content_type:
+                type: string
+              size_bytes:
+                type: integer
     ChatAttachment:
       type: object
       required:

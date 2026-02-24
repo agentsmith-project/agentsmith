@@ -1,6 +1,7 @@
 import { useCallback, type RefObject } from 'react';
 import type React from 'react';
 import type { Attachment, ChatMessage, ChatSession } from '@/lib/api/types';
+import type { ChatMessageInputRef } from '@/lib/types/input-ref';
 import { hasEndpointBinding } from '@/lib/chat/composer-state';
 import type { RunChatStreamArgs } from '@/lib/chat/use-chat-streaming';
 
@@ -16,7 +17,7 @@ interface UseChatComposerActionsArgs {
   createMessage: (args: {
     sessionId: string;
     content: string;
-    attachments?: string[];
+    inputs?: ChatMessageInputRef[];
     parent_id?: string | null;
   }) => Promise<ChatMessage>;
   runStream: (args: RunChatStreamArgs) => Promise<void>;
@@ -57,16 +58,18 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
     const content = composerValue.trim();
     if (!content) return;
 
-    const readyAttachmentIds = attachments.filter((a) => a.upload_status === 'ready').map((a) => a.id);
+    const readyAttachments = attachments.filter((a) => a.upload_status === 'ready');
+    const readyInputRefs = readyAttachments.map((a) => a.input_ref).filter((v): v is ChatMessageInputRef => Boolean(v));
     const hasBlocking = attachments.some((a) => a.upload_status !== 'ready');
     if (hasBlocking) return;
+    if (readyAttachments.length !== readyInputRefs.length) return;
 
     if (editingMessageId) return;
 
     const userMsg = await createMessage({
       sessionId: currentSessionId,
       content,
-      attachments: readyAttachmentIds,
+      inputs: readyInputRefs,
       parent_id: visibleLeafId,
     });
     setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
@@ -75,7 +78,7 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
       model: activeSession.model,
       endpointId: activeSession.endpoint_id,
       branchLeafMessageId: userMsg.id,
-      input: { role: 'user', content, attachments: readyAttachmentIds },
+      input: { role: 'user', content, inputs: readyInputRefs },
       mode: 'append',
     });
   }, [

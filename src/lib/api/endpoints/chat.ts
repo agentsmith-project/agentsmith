@@ -12,7 +12,7 @@ import type {
   PaginatedResponse,
   PaginationParams,
 } from '../types';
-import type { ChatAttachmentInputRef } from '@/lib/types/input-ref';
+import type { ChatAttachmentInputRef, ChatMessageInputRef } from '@/lib/types/input-ref';
 
 export interface CreateSessionRequest {
   title?: string;
@@ -24,7 +24,7 @@ export interface CreateSessionRequest {
 export interface CreateMessageRequest {
   role: 'user';
   content: string;
-  attachments?: string[];
+  inputs?: ChatMessageInputRef[];
   parent_id?: string | null;
 }
 

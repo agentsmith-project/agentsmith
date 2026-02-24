@@ -736,4 +736,4 @@ Current known boundary:
   - Chat message creation / attachment creation
   - Chat stream run lifecycle + usage
   - Endpoint proxy request usage (success/error, duration)
-- Feature availability for `audit` / `usage` in real backend mode is now `available`; `members` / `resource_policy` are `partial` with baseline backend routes (see release capability matrix for exact coverage and enforcement limits).
+- Feature availability for `audit` / `usage` in real backend mode is now `available`; `members` / `resource_policy` are `partial` with baseline backend routes and minimal resource-policy runtime enforcement (endpoint/agent allow-list checks; see release capability matrix for exact coverage and limits).

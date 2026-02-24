@@ -86,6 +86,16 @@ export function isProjectResourceAccessAllowedForUser(args: {
   if (userMatch) {
     return { allowed: true, policy };
   }
+  const userGroupIds = getProjectGroupIdsForUser(args.workspaceId, args.projectId, args.userId);
+  if (
+    userGroupIds.length > 0
+    && policy.allowed_subjects.some(
+      (subject) => subject.subject_type === 'group' && userGroupIds.includes(subject.subject_id),
+    )
+  ) {
+    return { allowed: true, policy };
+  }
   return { allowed: false, policy, reason: 'not_in_allow_list' };
 }
+import { getProjectGroupIdsForUser } from './project-groups-store.js';
 

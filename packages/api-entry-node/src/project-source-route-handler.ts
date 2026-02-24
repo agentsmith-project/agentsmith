@@ -23,6 +23,10 @@ import {
   getProjectResourcePolicyOrDefault,
   upsertProjectResourcePolicy,
 } from './project-resource-policy-store.js';
+import {
+  getProjectGroupsState,
+  setProjectGroupsState,
+} from './project-groups-store.js';
 
 interface WorkspaceRecordLike {
   id: string;
@@ -73,16 +77,6 @@ const PROJECT_JOIN_REQUESTS_BY_PROJECT = new Map<string, Array<{
   reviewed_at?: string;
   reviewed_by?: string;
   reject_reason?: string;
-}>>();
-const PROJECT_GROUPS_BY_PROJECT = new Map<string, Array<{
-  id: string;
-  project_id: string;
-  name: string;
-  description?: string;
-  permission_template_id: string;
-  member_ids: string[];
-  created_at: string;
-  updated_at: string;
 }>>();
 const PROJECT_PERMISSION_TEMPLATES_BY_PROJECT = new Map<string, Array<{
   id: string;
@@ -694,7 +688,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'projectGroups' && method === 'GET' && route.workspaceId && route.projectId) {
     const key = projectScopedKey(route.workspaceId, route.projectId);
-    json(res, 200, { items: PROJECT_GROUPS_BY_PROJECT.get(key) ?? [] });
+    json(res, 200, { items: getProjectGroupsState(route.workspaceId, route.projectId) });
     return true;
   }
 
@@ -710,7 +704,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       return true;
     }
     const key = projectScopedKey(route.workspaceId, route.projectId);
-    const groups = PROJECT_GROUPS_BY_PROJECT.get(key) ?? [];
+    const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const now = new Date().toISOString();
     const created = {
       id: `grp_${Math.random().toString(36).slice(2, 10)}`,
@@ -723,7 +717,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       updated_at: now,
     };
     groups.push(created);
-    PROJECT_GROUPS_BY_PROJECT.set(key, groups);
+    setProjectGroupsState(route.workspaceId, route.projectId, groups);
     json(res, 200, created);
     return true;
   }
@@ -736,7 +730,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       member_ids?: string[];
     };
     const key = projectScopedKey(route.workspaceId, route.projectId);
-    const groups = PROJECT_GROUPS_BY_PROJECT.get(key) ?? [];
+    const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const group = groups.find((g) => g.id === route.groupId);
     if (!group) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Group not found' });
@@ -755,9 +749,9 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'projectGroupItem' && method === 'DELETE' && route.workspaceId && route.projectId && route.groupId) {
     const key = projectScopedKey(route.workspaceId, route.projectId);
-    const groups = PROJECT_GROUPS_BY_PROJECT.get(key) ?? [];
+    const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const next = groups.filter((g) => g.id !== route.groupId);
-    PROJECT_GROUPS_BY_PROJECT.set(key, next);
+    setProjectGroupsState(route.workspaceId, route.projectId, next);
     res.statusCode = 204;
     res.end();
     return true;
@@ -766,7 +760,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'projectGroupApplyTemplate' && method === 'POST' && route.workspaceId && route.projectId && route.groupId) {
     const body = await readBody(req) as { member_ids?: string[] };
     const key = projectScopedKey(route.workspaceId, route.projectId);
-    const groups = PROJECT_GROUPS_BY_PROJECT.get(key) ?? [];
+    const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const group = groups.find((g) => g.id === route.groupId);
     if (!group) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Group not found' });

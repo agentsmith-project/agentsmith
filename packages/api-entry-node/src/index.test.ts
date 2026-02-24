@@ -1626,6 +1626,50 @@ describe('api-entry-node projects routes', () => {
       resource_type: 'endpoint',
       resource_id: endpoint.id,
     });
+
+    const createGroupRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/groups',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'endpoint-operators',
+          permission_template_id: 'perm_tpl_default',
+          member_ids: ['user_test'],
+        }),
+      },
+    );
+    expect(createGroupRes.status).toBe(200);
+    const createdGroup = (await createGroupRes.json()) as { id: string };
+
+    const allowGroupPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_list',
+          allowed_subjects: [{ subject_type: 'group', subject_id: createdGroup.id }],
+        }),
+      },
+    );
+    expect(allowGroupPolicyRes.status).toBe(204);
+
+    const groupAllowedProxy = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored',
+          messages: [{ role: 'user', content: 'allowed via group' }],
+        }),
+      },
+    );
+    expect(groupAllowedProxy.status).toBe(200);
   });
 
   it('streams chat via external agent websocket runtime', async () => {

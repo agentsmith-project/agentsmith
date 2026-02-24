@@ -21,8 +21,9 @@ Governance surfaces such as `Members` and `Resource Policy` are now partially im
   - advanced governance workflows and enforcement still incomplete
 - `Resource Policy`
   - partial backend coverage (read/write + minimal endpoint/agent enforcement)
-  - current enforcement scope is limited to user-subject allow-list / allow-all checks
-  - group-subject enforcement and broader policy enforcement remain pending
+  - current enforcement scope covers allow-all / allow-list checks for `endpoint` and notebook/chat `agent` paths
+  - allow-list matching supports user and group subjects (baseline)
+  - broader policy enforcement (`rate_limits`, `quota_limits`) remains pending
 
 ## 1. Scope
 - Target: external agent for Notebook task execution/testing.

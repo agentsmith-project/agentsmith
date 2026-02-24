@@ -29,8 +29,9 @@ This matrix is for internal/controlled releases where the primary supported flow
   - member permissions / quota overrides / history (minimal)
 - Resource Policy governance
   - read/write configuration API baseline
-  - minimal runtime enforcement for `endpoint` and notebook/chat `agent` paths via user allow-list / allow-all rules
-  - group-subject enforcement is not implemented yet
+  - minimal runtime enforcement for `endpoint` and notebook/chat `agent` paths via allow-all / allow-list rules
+  - user-subject and group-subject allow-list matching are supported (baseline)
+  - advanced limits/enforcement (`rate_limits`, `quota_limits`) still not applied
 
 ## Permission model note (important)
 
@@ -43,4 +44,4 @@ It does **not** yet apply member templates/custom permissions/resource policy co
 - In real backend mode:
   - Audit/Usage are available for internal governance workflows (first-stage coverage)
 - Members is now partial in real backend mode (read baseline + join request actions + groups CRUD + permission/quota templates CRUD + member permissions/quota overrides/history).
-- Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/agent user allow-list rules).
+- Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/agent allow-list rules, including group subjects).

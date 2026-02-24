@@ -1,4 +1,3 @@
-import { getImportedLibraryObjectRef } from './input-ref-resolver.js';
 import {
   buildResolvedArtifactInput,
   buildResolvedLibraryObjectInput,

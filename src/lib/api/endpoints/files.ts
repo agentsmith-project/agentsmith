@@ -184,13 +184,15 @@ export class FilesAPI {
     onProgress?: (progress: number) => void,
   ): Promise<FileItem> {
     if (!useMsw) {
+      const effectiveLibraryId = libraryId
+        ?? (await this.ensureDefaultPersonalLibrary(workspaceId, projectId)).id;
       const response = await this.client.post<BackendSourceItem>(
         `/workspaces/${workspaceId}/projects/${projectId}/sources`,
         {
           name: file.name,
           content_type: file.type || 'application/octet-stream',
           content_base64: await this.fileToBase64(file),
-          library_id: libraryId,
+          library_id: effectiveLibraryId,
         },
       );
       if (onProgress) onProgress(100);

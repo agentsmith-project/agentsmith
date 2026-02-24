@@ -143,6 +143,7 @@ The UI only attaches `InputRef`.
 - Notebook local uploads are object-first and attach `library_object` refs (no direct local-upload -> `source` shortcut)
 - Chat attachments and user message requests now carry `input_ref` provenance (`inputs: InputRef[]` for user messages), including first-class `url` refs with optional imported object provenance
 - `source` is treated as a derived/processed input type (AI-ready/indexed workflow), not the primary raw-file ingestion path for Chat/Notebook
+- Backend source creation (`POST /projects/:projectId/sources`) now requires `library_id`, making source creation explicitly object-backed
 
 ## Benefits of This Architecture
 

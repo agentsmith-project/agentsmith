@@ -70,7 +70,7 @@ export const CreateSourceRequestSchema = z.object({
   name: z.string().min(1).max(255),
   content_type: z.string().min(1).max(255),
   content_base64: z.string().min(1),
-  library_id: z.string().min(1).max(255).optional(),
+  library_id: z.string().min(1).max(255),
 });
 
 export const ListSourcesResponseSchema = z.object({

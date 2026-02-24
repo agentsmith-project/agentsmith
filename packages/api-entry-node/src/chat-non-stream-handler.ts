@@ -21,6 +21,10 @@ import {
   toChatAttachmentSnapshots,
   type ChatMessageInputRef,
 } from './chat-input-refs.js';
+import {
+  resolveLibraryObjectInputMeta,
+  resolveUrlInputMeta,
+} from './input-ref-runtime-resolver.js';
 
 interface ChatNonStreamHandlerArgs {
   route: ChatRoute;
@@ -564,13 +568,41 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
                   : undefined,
             }
           : undefined;
+    let resolvedAttachmentMeta:
+      | { fileName: string; fileType: string; fileSize: number }
+      | undefined;
+    if (inputRef?.kind === 'library_object') {
+      const resolved = await resolveLibraryObjectInputMeta({
+        deps: { getSourceObjectMetaUseCase: deps.getSourceObjectMetaUseCase },
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        input: inputRef,
+      });
+      resolvedAttachmentMeta = {
+        fileName: resolved.filename || raw.file_name!,
+        fileType: resolved.file_type || raw.file_type!,
+        fileSize: typeof resolved.file_size === 'number' ? resolved.file_size : raw.file_size!,
+      };
+    } else if (inputRef?.kind === 'url') {
+      const resolved = await resolveUrlInputMeta({
+        deps: { getSourceObjectMetaUseCase: deps.getSourceObjectMetaUseCase },
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        input: inputRef,
+      });
+      resolvedAttachmentMeta = {
+        fileName: resolved.filename || raw.file_name!,
+        fileType: resolved.file_type || raw.file_type!,
+        fileSize: typeof resolved.file_size === 'number' ? resolved.file_size : raw.file_size!,
+      };
+    }
     const attachment = await deps.chatResourceService.initAttachment({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       sessionId: route.sessionId,
-      fileName: raw.file_name!,
-      fileType: raw.file_type!,
-      fileSize: raw.file_size!,
+      fileName: resolvedAttachmentMeta?.fileName ?? raw.file_name!,
+      fileType: resolvedAttachmentMeta?.fileType ?? raw.file_type!,
+      fileSize: resolvedAttachmentMeta?.fileSize ?? raw.file_size!,
       inputRef,
       sourceType: inputRef ? 'library_import' : raw.source_type,
       sourceLibraryId:
@@ -588,7 +620,10 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       contentBase64: raw.content_base64,
       previewUrl: toImageDataUrl(
         raw.content_base64,
-        resolveImageMimeType(raw.file_type!, raw.file_name!),
+        resolveImageMimeType(
+          resolvedAttachmentMeta?.fileType ?? raw.file_type!,
+          resolvedAttachmentMeta?.fileName ?? raw.file_name!,
+        ),
       ) ?? undefined,
     });
     json(res, 200, { attachment });

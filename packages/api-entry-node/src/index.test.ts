@@ -2990,6 +2990,120 @@ describe('api-entry-node projects routes', () => {
     expect(body.attachment.source_object_key).toBe('chat/s1/uploads/doc.txt');
   });
 
+  it('normalizes chat attachment metadata from library object input refs', async () => {
+    const { baseUrl } = startServer();
+
+    const createLibrary = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'chat-attach-meta-lib' }),
+      },
+    );
+    expect(createLibrary.status).toBe(201);
+    const library = (await createLibrary.json()) as { id: string };
+
+    const form = buildMultipartBody(
+      [{ name: 'prefix', value: 'chat/s1/uploads/' }],
+      {
+        fieldName: 'file',
+        filename: 'real-name.txt',
+        contentType: 'text/plain',
+        content: new TextEncoder().encode('hello'),
+      },
+    );
+    const uploadObject = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
+      {
+        method: 'POST',
+        headers: { 'content-type': form.contentType },
+        body: Buffer.from(form.body),
+      },
+    );
+    expect(uploadObject.status).toBe(201);
+
+    const createCredential = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-inputref-meta-key',
+          type: 'api_key',
+          value: 'sk-chat',
+        }),
+      },
+    );
+    expect(createCredential.status).toBe(201);
+    const credential = (await createCredential.json()) as { id: string };
+
+    const createEndpoint = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-inputref-meta-endpoint',
+          openai_model: 'gpt-4o-mini',
+          type: 'openai',
+          mode: 'openai',
+          base_url: 'https://api.example.com/v1',
+          credential_ref: credential.id,
+          provider_family: 'openai',
+          protocol: 'openai_compatible',
+          capabilities: [{ type: 'text_completion', enabled: true, default_model_id: 'gpt-4o-mini' }],
+          models: [{ capability: 'text_completion', model_id: 'gpt-4o-mini' }],
+          defaults: { text_model_id: 'gpt-4o-mini' },
+        }),
+      },
+    );
+    expect(createEndpoint.status).toBe(201);
+    const endpoint = (await createEndpoint.json()) as { id: string };
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint_id: endpoint.id, model: 'gpt-4o-mini' }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as { id: string };
+
+    const initAttachment = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/attachments/init`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          file_name: 'wrong.txt',
+          file_type: 'application/octet-stream',
+          file_size: 999,
+          input_ref: {
+            kind: 'library_object',
+            library_id: library.id,
+            key: 'chat/s1/uploads/real-name.txt',
+          },
+        }),
+      },
+    );
+    expect(initAttachment.status).toBe(200);
+    const body = (await initAttachment.json()) as {
+      attachment: { file_name: string; file_type: string; file_size: number };
+    };
+    expect(body.attachment.file_name).toBe('real-name.txt');
+    expect(body.attachment.file_type).toBe('text/plain');
+    expect(body.attachment.file_size).toBe(5);
+  });
+
   it('rejects attachment stream when endpoint is not multimodal', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();

@@ -715,3 +715,4 @@ Current known boundary:
   - `input-ref-resolver.ts` (ref keys / imported object extraction / dedupe helpers)
   - `input-ref-runtime-resolver.ts` (object/url/artifact runtime metadata resolution + fallback rules)
   - runtime-specific adapters build on top (`chat-input-refs.ts`, `notebook-input-refs.ts`)
+- Chat `attachments/init` now normalizes `library_object` / `url` attachment metadata via the shared runtime metadata resolver (avoids handler-local drift in filename/type/size fallback rules).

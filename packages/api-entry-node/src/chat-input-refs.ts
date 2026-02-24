@@ -1,4 +1,10 @@
 import type { ChatAttachmentRecord } from './resource-models.js';
+import {
+  appendUniqueByKey,
+  getImportedLibraryObjectRef,
+  libraryObjectRefKey,
+  urlRefKey,
+} from './input-ref-resolver.js';
 
 export type ChatLibraryObjectInputRef = {
   kind: 'library_object';
@@ -32,46 +38,42 @@ export function readChatMessageInputs(rawInputs: unknown): ChatMessageInputRef[]
     if (rec.kind === 'library_object') {
       if (typeof rec.library_id !== 'string' || rec.library_id.length === 0) return null;
       if (typeof rec.key !== 'string' || rec.key.length === 0) return null;
-      const dedupe = `library_object:${rec.library_id}:${rec.key}`;
-      if (seen.has(dedupe)) continue;
-      seen.add(dedupe);
-      out.push({
-        kind: 'library_object',
-        library_id: rec.library_id,
-        key: rec.key,
-        name: typeof rec.name === 'string' ? rec.name : undefined,
-        content_type: typeof rec.content_type === 'string' ? rec.content_type : undefined,
-        size_bytes: typeof rec.size_bytes === 'number' && rec.size_bytes >= 0 ? rec.size_bytes : undefined,
+      appendUniqueByKey({
+        items: out,
+        seen,
+        key: `library_object:${libraryObjectRefKey({ library_id: rec.library_id, key: rec.key })}`,
+        value: {
+          kind: 'library_object',
+          library_id: rec.library_id,
+          key: rec.key,
+          name: typeof rec.name === 'string' ? rec.name : undefined,
+          content_type: typeof rec.content_type === 'string' ? rec.content_type : undefined,
+          size_bytes: typeof rec.size_bytes === 'number' && rec.size_bytes >= 0 ? rec.size_bytes : undefined,
+        },
       });
       continue;
     }
     if (rec.kind === 'url') {
       if (typeof rec.url !== 'string' || rec.url.length === 0) return null;
-      const dedupe = `url:${rec.url}`;
-      if (seen.has(dedupe)) continue;
-      seen.add(dedupe);
-      out.push({
-        kind: 'url',
-        url: rec.url,
-        imported_library_id: typeof rec.imported_library_id === 'string' ? rec.imported_library_id : undefined,
-        imported_key: typeof rec.imported_key === 'string' ? rec.imported_key : undefined,
-        name: typeof rec.name === 'string' ? rec.name : undefined,
-        content_type: typeof rec.content_type === 'string' ? rec.content_type : undefined,
-        size_bytes: typeof rec.size_bytes === 'number' && rec.size_bytes >= 0 ? rec.size_bytes : undefined,
+      appendUniqueByKey({
+        items: out,
+        seen,
+        key: urlRefKey({ url: rec.url }),
+        value: {
+          kind: 'url',
+          url: rec.url,
+          imported_library_id: typeof rec.imported_library_id === 'string' ? rec.imported_library_id : undefined,
+          imported_key: typeof rec.imported_key === 'string' ? rec.imported_key : undefined,
+          name: typeof rec.name === 'string' ? rec.name : undefined,
+          content_type: typeof rec.content_type === 'string' ? rec.content_type : undefined,
+          size_bytes: typeof rec.size_bytes === 'number' && rec.size_bytes >= 0 ? rec.size_bytes : undefined,
+        },
       });
       continue;
     }
     return null;
   }
   return out;
-}
-
-export function libraryObjectInputRefKey(input: Pick<ChatLibraryObjectInputRef, 'library_id' | 'key'>): string {
-  return `${input.library_id}:${input.key}`;
-}
-
-function urlInputRefKey(input: Pick<ChatUrlInputRef, 'url'>): string {
-  return `url:${input.url}`;
 }
 
 export function indexChatAttachmentsByLibraryObjectRef(
@@ -81,23 +83,21 @@ export function indexChatAttachmentsByLibraryObjectRef(
   for (const attachment of attachments) {
     if (attachment.input_ref?.kind === 'library_object') {
       if (attachment.input_ref.library_id && attachment.input_ref.key) {
-        byRef.set(libraryObjectInputRefKey({
+        byRef.set(libraryObjectRefKey({
           library_id: attachment.input_ref.library_id,
           key: attachment.input_ref.key,
         }), attachment);
       }
     } else if (attachment.input_ref?.kind === 'url') {
-      if (attachment.input_ref.imported_library_id && attachment.input_ref.imported_key) {
+      const importedObjectRef = getImportedLibraryObjectRef(attachment.input_ref);
+      if (importedObjectRef) {
         byRef.set(
-          libraryObjectInputRefKey({
-            library_id: attachment.input_ref.imported_library_id,
-            key: attachment.input_ref.imported_key,
-          }),
+          libraryObjectRefKey(importedObjectRef),
           attachment,
         );
       }
       if (attachment.input_ref.url) {
-        byRef.set(urlInputRefKey({ url: attachment.input_ref.url }), attachment);
+        byRef.set(urlRefKey({ url: attachment.input_ref.url }), attachment);
       }
     }
   }
@@ -110,15 +110,13 @@ export function resolveChatInputsFromAttachmentIndex(
 ): Array<ChatAttachmentRecord | null> {
   return inputs.map((input) => {
     if (input.kind === 'library_object') {
-      return byRef.get(libraryObjectInputRefKey(input)) ?? null;
+      return byRef.get(libraryObjectRefKey(input)) ?? null;
     }
-    if (input.imported_library_id && input.imported_key) {
-      return byRef.get(libraryObjectInputRefKey({
-        library_id: input.imported_library_id,
-        key: input.imported_key,
-      })) ?? byRef.get(urlInputRefKey(input)) ?? null;
+    const importedObjectRef = getImportedLibraryObjectRef(input);
+    if (importedObjectRef) {
+      return byRef.get(libraryObjectRefKey(importedObjectRef)) ?? byRef.get(urlRefKey(input)) ?? null;
     }
-    return byRef.get(urlInputRefKey(input)) ?? null;
+    return byRef.get(urlRefKey(input)) ?? null;
   });
 }
 

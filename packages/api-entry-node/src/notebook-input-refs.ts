@@ -1,3 +1,5 @@
+import { getImportedLibraryObjectRef } from './input-ref-resolver.js';
+
 type SourceInputRefRecord = { id: string; kind: 'source'; source_id: string };
 type LibraryObjectInputRefRecord = {
   id: string;
@@ -318,13 +320,14 @@ export async function resolveNotebookTaskInputDetails(args: {
           : {}),
       };
     }
-    if (inputRef.imported_library_id && inputRef.imported_key) {
+    const importedObjectRef = getImportedLibraryObjectRef(inputRef);
+    if (importedObjectRef) {
       try {
         const meta = await deps.getSourceObjectMetaUseCase.execute({
           workspaceId,
           projectId,
-          libraryId: inputRef.imported_library_id,
-          key: inputRef.imported_key,
+          libraryId: importedObjectRef.library_id,
+          key: importedObjectRef.key,
         });
         return {
           id: inputRef.id,
@@ -333,8 +336,8 @@ export async function resolveNotebookTaskInputDetails(args: {
           filename: inputRef.name || meta.key.split('/').pop() || 'url_input.url.txt',
           file_type: inputRef.content_type || meta.content_type || 'text/plain',
           file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : (meta.size_bytes ?? 0),
-          imported_library_id: inputRef.imported_library_id,
-          imported_key: inputRef.imported_key,
+          imported_library_id: importedObjectRef.library_id,
+          imported_key: importedObjectRef.key,
         };
       } catch {
         // fall through
@@ -347,8 +350,8 @@ export async function resolveNotebookTaskInputDetails(args: {
       filename: inputRef.name || 'url_input.url.txt',
       file_type: inputRef.content_type || 'text/plain',
       file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : 0,
-      ...(inputRef.imported_library_id ? { imported_library_id: inputRef.imported_library_id } : {}),
-      ...(inputRef.imported_key ? { imported_key: inputRef.imported_key } : {}),
+      ...(importedObjectRef ? { imported_library_id: importedObjectRef.library_id } : {}),
+      ...(importedObjectRef ? { imported_key: importedObjectRef.key } : {}),
     };
   }));
   return items.filter((item): item is NotebookTaskInputDetail => item !== null);

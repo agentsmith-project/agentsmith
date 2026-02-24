@@ -284,6 +284,10 @@ make notebook-agent-demo-down
 ```bash
 make notebook-agent-demo-status
 ```
+- Run a non-destructive demo readiness check (status + metadata files + endpoint proxy reachability):
+```bash
+make notebook-agent-demo-check
+```
 - Restart only the managed runner (keeps API/Web running):
 ```bash
 make notebook-agent-demo-restart-runner

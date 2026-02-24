@@ -1,6 +1,7 @@
 import { OWNER_PROJECT_PERMISSIONS, resolveProjectPermissions } from './workspace-permissions.js';
 import { getProjectGroupsState } from './project-groups-store.js';
 import { getProjectPermissionTemplatesState } from './project-permission-templates-store.js';
+import { getProjectMemberPermissionsState } from './project-member-permissions-store.js';
 
 export function resolveProjectPermissionsForRequest(args: {
   workspaceId: string;
@@ -15,17 +16,28 @@ export function resolveProjectPermissionsForRequest(args: {
 
   const granted = new Set(resolveProjectPermissions(projectOwnerId, actorUserId));
   const groups = getProjectGroupsState(workspaceId, projectId);
-  if (groups.length === 0) {
-    return [...granted];
-  }
   const templates = getProjectPermissionTemplatesState(workspaceId, projectId);
   const templateMap = new Map(templates.map((t) => [t.id, t]));
-  for (const group of groups) {
-    if (!group.member_ids.includes(actorUserId)) continue;
-    const template = templateMap.get(group.permission_template_id);
-    if (!template) continue;
-    for (const permission of template.permissions) {
-      granted.add(permission);
+  if (groups.length > 0) {
+    for (const group of groups) {
+      if (!group.member_ids.includes(actorUserId)) continue;
+      const template = templateMap.get(group.permission_template_id);
+      if (!template) continue;
+      for (const permission of template.permissions) {
+        granted.add(permission);
+      }
+    }
+  }
+  const memberPermissionsState = getProjectMemberPermissionsState(workspaceId, projectId).get(actorUserId);
+  if (memberPermissionsState) {
+    if (memberPermissionsState.mode === 'template' && memberPermissionsState.template) {
+      const template = templateMap.get(memberPermissionsState.template);
+      if (template) {
+        for (const permission of template.permissions) granted.add(permission);
+      }
+    }
+    if (memberPermissionsState.mode === 'custom') {
+      for (const permission of memberPermissionsState.permissions) granted.add(permission);
     }
   }
   return [...granted];

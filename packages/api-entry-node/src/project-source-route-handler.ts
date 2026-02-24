@@ -37,6 +37,7 @@ import {
   setProjectQuotaTemplatesState,
 } from './project-quota-templates-store.js';
 import { getMemberQuotaState } from './project-member-quota-store.js';
+import { getProjectMemberPermissionsState } from './project-member-permissions-store.js';
 import {
   getProjectMembershipsState,
   upsertProjectMembership,
@@ -92,11 +93,6 @@ const PROJECT_JOIN_REQUESTS_BY_PROJECT = new Map<string, Array<{
   reviewed_by?: string;
   reject_reason?: string;
 }>>();
-const PROJECT_MEMBER_PERMISSIONS_BY_PROJECT = new Map<string, Map<string, {
-  mode: 'template' | 'custom';
-  template?: string | null;
-  permissions: string[];
-}>>();
 const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Array<{
   id: string;
   timestamp: string;
@@ -112,15 +108,6 @@ const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Arr
 
 function projectScopedKey(workspaceId: string, projectId: string) {
   return `${workspaceId}:${projectId}`;
-}
-
-function getMemberPermissionsState(workspaceId: string, projectId: string) {
-  const key = projectScopedKey(workspaceId, projectId);
-  const existing = PROJECT_MEMBER_PERMISSIONS_BY_PROJECT.get(key);
-  if (existing) return existing;
-  const map = new Map<string, { mode: 'template' | 'custom'; template?: string | null; permissions: string[] }>();
-  PROJECT_MEMBER_PERMISSIONS_BY_PROJECT.set(key, map);
-  return map;
 }
 
 function getMemberChangeHistoryState(workspaceId: string, projectId: string) {
@@ -879,7 +866,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectMemberPermissions' && method === 'GET' && route.workspaceId && route.projectId && route.userId) {
-    const state = getMemberPermissionsState(route.workspaceId, route.projectId);
+    const state = getProjectMemberPermissionsState(route.workspaceId, route.projectId);
     const current = state.get(route.userId);
     json(res, 200, {
       platform_permissions: current?.permissions ?? [],
@@ -898,7 +885,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'mode is required' });
       return true;
     }
-    const state = getMemberPermissionsState(route.workspaceId, route.projectId);
+    const state = getProjectMemberPermissionsState(route.workspaceId, route.projectId);
     const prev = state.get(route.userId) ?? { mode: 'custom' as const, template: null, permissions: [] };
     const nextPermissions = Array.isArray(body.permissions)
       ? body.permissions.filter((v): v is string => typeof v === 'string')

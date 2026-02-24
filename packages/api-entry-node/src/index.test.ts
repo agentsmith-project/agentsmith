@@ -1241,6 +1241,63 @@ describe('api-entry-node projects routes', () => {
     expect(allowedRes.status).toBe(200);
   });
 
+  it('applies member custom permissions to backend route authorization', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Member Custom Perms Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const deniedRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Should Fail',
+          permissions: ['project:member:view'],
+        }),
+      },
+    );
+    expect(deniedRes.status).toBe(403);
+
+    const patchMemberPermsRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_test/permissions`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'custom',
+          permissions: ['project:member:manage'],
+        }),
+      },
+    );
+    expect(patchMemberPermsRes.status).toBe(204);
+
+    const allowedRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Allowed via member custom perms',
+          permissions: ['project:member:view'],
+        }),
+      },
+    );
+    expect(allowedRes.status).toBe(200);
+  });
+
   it('supports minimal quota template CRUD endpoints', async () => {
     const { baseUrl } = startServer();
 

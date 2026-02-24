@@ -2,9 +2,7 @@ import {
   buildResolvedArtifactInput,
   buildResolvedLibraryObjectInput,
   buildResolvedUrlInput,
-  resolveArtifactInputMeta,
-  resolveLibraryObjectInputMeta,
-  resolveUrlInputMeta,
+  resolveRuntimeInputRef,
 } from './input-ref-runtime-resolver.js';
 
 type SourceInputRefRecord = { id: string; kind: 'source'; source_id: string };
@@ -165,16 +163,17 @@ export async function buildNotebookRuntimeTaskInputs(args: {
   if (attachedInputs.length === 0) return [];
   return Promise.all(attachedInputs.map(async (inputRef) => {
     if (inputRef.kind === 'library_object') {
-      const resolved = await resolveLibraryObjectInputMeta({
+      const resolved = await resolveRuntimeInputRef({
+        kind: 'library_object',
         deps,
         workspaceId,
         projectId,
         input: inputRef,
       });
-      if (resolved.found_meta) {
+      if (resolved.meta.found_meta) {
         return buildResolvedLibraryObjectInput({
           input: inputRef,
-          meta: resolved,
+          meta: resolved.meta,
         }) satisfies NotebookRuntimeTaskInput;
       }
       debugLog?.('task_input_library_object_lookup_failed', {
@@ -185,26 +184,30 @@ export async function buildNotebookRuntimeTaskInputs(args: {
       });
       return buildResolvedLibraryObjectInput({
         input: inputRef,
-        meta: resolved,
+        meta: resolved.meta,
       }) satisfies NotebookRuntimeTaskInput;
     }
     if (inputRef.kind === 'url') {
+      const resolved = await resolveRuntimeInputRef({
+        kind: 'url',
+        deps,
+        workspaceId,
+        projectId,
+        input: inputRef,
+      });
       return buildResolvedUrlInput({
         input: inputRef,
-        meta: {
-          filename: inputRef.name || inputRef.url,
-          file_type: inputRef.content_type || 'text/plain',
-          file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : 0,
-          imported_library_id: inputRef.imported_library_id,
-          imported_key: inputRef.imported_key,
-        },
+        meta: resolved.meta,
       }) satisfies NotebookRuntimeTaskInput;
     }
     if (inputRef.kind === 'artifact') {
-      const resolved = resolveArtifactInputMeta({ input: inputRef });
+      const resolved = await resolveRuntimeInputRef({
+        kind: 'artifact',
+        input: inputRef,
+      });
       return buildResolvedArtifactInput({
         input: inputRef,
-        meta: resolved,
+        meta: resolved.meta,
       }) satisfies NotebookRuntimeTaskInput;
     }
     try {
@@ -267,16 +270,17 @@ export async function resolveNotebookTaskInputDetails(args: {
       }
     }
     if (inputRef.kind === 'library_object') {
-      const resolved = await resolveLibraryObjectInputMeta({
+      const resolved = await resolveRuntimeInputRef({
+        kind: 'library_object',
         deps,
         workspaceId,
         projectId,
         input: inputRef,
       });
-      if (resolved.found_meta) {
+      if (resolved.meta.found_meta) {
         const detail = buildResolvedLibraryObjectInput({
           input: inputRef,
-          meta: resolved,
+          meta: resolved.meta,
         });
         return {
           id: inputRef.id,
@@ -288,17 +292,22 @@ export async function resolveNotebookTaskInputDetails(args: {
     if (inputRef.kind === 'artifact') {
       const sourceArtifacts = await loadArtifactsForTask(inputRef.task_id);
       const artifact = sourceArtifacts.find((item) => item.id === inputRef.artifact_id);
-      const resolved = resolveArtifactInputMeta({ input: inputRef, artifact });
+      const resolved = await resolveRuntimeInputRef({
+        kind: 'artifact',
+        input: inputRef,
+        artifact,
+      });
       const detail = buildResolvedArtifactInput({
         input: inputRef,
-        meta: resolved,
+        meta: resolved.meta,
       });
       return {
         id: inputRef.id,
         ...detail,
       };
     }
-    const resolved = await resolveUrlInputMeta({
+    const resolved = await resolveRuntimeInputRef({
+      kind: 'url',
       deps,
       workspaceId,
       projectId,
@@ -306,7 +315,7 @@ export async function resolveNotebookTaskInputDetails(args: {
     });
     const detail = buildResolvedUrlInput({
       input: inputRef,
-      meta: resolved,
+      meta: resolved.meta,
     });
     return {
       id: inputRef.id,

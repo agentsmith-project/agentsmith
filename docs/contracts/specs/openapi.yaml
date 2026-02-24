@@ -4,29 +4,29 @@ info:
   version: 1.0.0
   description: Authoritative HTTP API contract for MBOS private-node deployment.
 servers:
-- url: /
-  description: same-origin
+  - url: /
+    description: same-origin
 tags:
-- name: System
-- name: Workspaces
-- name: Projects
-- name: Chat
-- name: Agents
-- name: Endpoints
-- name: Sources
-- name: Contracts
-- name: Credentials
-- name: Notebook
-  description: Notebook tasks and execution trace APIs
+  - name: System
+  - name: Workspaces
+  - name: Projects
+  - name: Chat
+  - name: Agents
+  - name: Endpoints
+  - name: Sources
+  - name: Contracts
+  - name: Credentials
+  - name: Notebook
+    description: Notebook tasks and execution trace APIs
 paths:
   /api/v1/openapi.json:
     get:
       tags:
-      - Contracts
+        - Contracts
       operationId: getOpenApiSpec
       summary: Get OpenAPI spec
       responses:
-        '200':
+        "200":
           description: OpenAPI JSON
           content:
             application/json:
@@ -36,11 +36,11 @@ paths:
   /api/v1/asyncapi.json:
     get:
       tags:
-      - Contracts
+        - Contracts
       operationId: getAsyncApiSpec
       summary: Get AsyncAPI spec
       responses:
-        '200':
+        "200":
           description: AsyncAPI JSON
           content:
             application/json:
@@ -50,171 +50,171 @@ paths:
   /api/v1/workspaces:
     get:
       tags:
-      - Workspaces
+        - Workspaces
       operationId: listWorkspaces
       responses:
-        '200':
+        "200":
           description: Workspace list
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Workspace'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                  $ref: "#/components/schemas/Workspace"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /api/v1/workspaces/{workspaceId}/projects:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
+      - $ref: "#/components/parameters/workspaceId"
     get:
       tags:
-      - Projects
+        - Projects
       operationId: listProjects
       responses:
-        '200':
+        "200":
           description: Project list
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Project'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                  $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
       tags:
-      - Projects
+        - Projects
       operationId: createProject
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateProjectRequest'
+              $ref: "#/components/schemas/CreateProjectRequest"
       responses:
-        '201':
+        "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Project'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
     get:
       tags:
-      - Chat
+        - Chat
       operationId: listChatSessions
       responses:
-        '200':
+        "200":
           description: Session list
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/ChatSession'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                  $ref: "#/components/schemas/ChatSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
       tags:
-      - Chat
+        - Chat
       operationId: createChatSession
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateChatSessionRequest'
+              $ref: "#/components/schemas/CreateChatSessionRequest"
       responses:
-        '201':
+        "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatSession'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/ChatSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/sessionId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/sessionId"
     patch:
       tags:
-      - Chat
+        - Chat
       operationId: updateChatSession
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateChatSessionRequest'
+              $ref: "#/components/schemas/UpdateChatSessionRequest"
       responses:
-        '200':
+        "200":
           description: Updated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatSession'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/ChatSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     delete:
       tags:
-      - Chat
+        - Chat
       operationId: deleteChatSession
       responses:
-        '204':
+        "204":
           description: Deleted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/sessionId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/sessionId"
     post:
       tags:
-      - Chat
+        - Chat
       operationId: createChatMessage
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateChatMessageRequest'
+              $ref: "#/components/schemas/CreateChatMessageRequest"
       responses:
-        '200':
+        "200":
           description: Message created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatMessage'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/ChatMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/stream:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/sessionId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/sessionId"
     post:
       tags:
-      - Chat
+        - Chat
       operationId: streamChatMessage
       summary: Create message and stream assistant response via SSE
       requestBody:
@@ -222,26 +222,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateChatMessageRequest'
+              $ref: "#/components/schemas/CreateChatMessageRequest"
       responses:
-        '200':
+        "200":
           description: SSE stream
           content:
             text/event-stream:
               schema:
                 type: string
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/sessionId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/sessionId"
     post:
       tags:
-      - Chat
+        - Chat
       operationId: uploadChatAttachment
       requestBody:
         required: true
@@ -250,326 +250,311 @@ paths:
             schema:
               type: object
               required:
-              - file
+                - file
               properties:
                 file:
                   type: string
                   format: binary
       responses:
-        '201':
+        "201":
           description: Attachment created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatAttachment'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/ChatAttachment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams/{streamId}:stop:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/sessionId'
-    - $ref: '#/components/parameters/streamId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/sessionId"
+      - $ref: "#/components/parameters/streamId"
     post:
       tags:
-      - Chat
+        - Chat
       operationId: stopChatStreamByStreamId
       responses:
-        '202':
+        "202":
           description: Stop accepted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/stop:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/sessionId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/sessionId"
     post:
       tags:
-      - Chat
+        - Chat
       operationId: stopChatStreamBySession
       responses:
-        '202':
+        "202":
           description: Stop accepted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
     get:
       tags:
-      - Agents
+        - Agents
       operationId: listAgents
       responses:
-        '200':
+        "200":
           description: Agent list
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Agent'
+                  $ref: "#/components/schemas/Agent"
     post:
       tags:
-      - Agents
+        - Agents
       operationId: createAgent
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateAgentRequest'
+              $ref: "#/components/schemas/CreateAgentRequest"
       responses:
-        '201':
+        "201":
           description: Agent created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Agent'
+                $ref: "#/components/schemas/Agent"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/agentId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/agentId"
     get:
       tags:
-      - Agents
+        - Agents
       operationId: getAgent
       responses:
-        '200':
+        "200":
           description: Agent
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Agent'
+                $ref: "#/components/schemas/Agent"
     patch:
       tags:
-      - Agents
+        - Agents
       operationId: updateAgent
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateAgentRequest'
+              $ref: "#/components/schemas/UpdateAgentRequest"
       responses:
-        '200':
+        "200":
           description: Updated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Agent'
+                $ref: "#/components/schemas/Agent"
     delete:
       tags:
-      - Agents
+        - Agents
       operationId: deleteAgent
       responses:
-        '204':
+        "204":
           description: Deleted
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/connection-info:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/agentId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/agentId"
     get:
       tags:
-      - Agents
+        - Agents
       operationId: getAgentConnectionInfo
       responses:
-        '200':
+        "200":
           description: Connection info
           content:
             application/json:
               schema:
                 type: object
                 required:
-                - ws_url
+                  - ws_url
                 properties:
                   ws_url:
                     type: string
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/agentId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/agentId"
     get:
       tags:
-      - Agents
+        - Agents
       operationId: listAgentKeys
       responses:
-        '200':
+        "200":
           description: Key list
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/AgentKey'
+                  $ref: "#/components/schemas/AgentKey"
     post:
       tags:
-      - Agents
+        - Agents
       operationId: createAgentKey
       responses:
-        '201':
+        "201":
           description: Key created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateAgentKeyResponse'
+                $ref: "#/components/schemas/CreateAgentKeyResponse"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/keys/{keyId}:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/agentId'
-    - $ref: '#/components/parameters/keyId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/agentId"
+      - $ref: "#/components/parameters/keyId"
     delete:
       tags:
-      - Agents
+        - Agents
       operationId: deleteAgentKey
       responses:
-        '204':
+        "204":
           description: Deleted
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
     get:
       tags:
-      - Endpoints
+        - Endpoints
       operationId: listEndpoints
       responses:
-        '200':
+        "200":
           description: Endpoint list
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Endpoint'
+                  $ref: "#/components/schemas/Endpoint"
     post:
       tags:
-      - Endpoints
+        - Endpoints
       operationId: createEndpoint
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateEndpointRequest'
+              $ref: "#/components/schemas/CreateEndpointRequest"
       responses:
-        '201':
+        "201":
           description: Endpoint created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Endpoint'
+                $ref: "#/components/schemas/Endpoint"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/endpointId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/endpointId"
     get:
       tags:
-      - Endpoints
+        - Endpoints
       operationId: getEndpoint
       responses:
-        '200':
+        "200":
           description: Endpoint
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Endpoint'
+                $ref: "#/components/schemas/Endpoint"
     put:
       tags:
-      - Endpoints
+        - Endpoints
       operationId: updateEndpoint
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateEndpointRequest'
+              $ref: "#/components/schemas/UpdateEndpointRequest"
       responses:
-        '200':
+        "200":
           description: Updated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Endpoint'
+                $ref: "#/components/schemas/Endpoint"
     delete:
       tags:
-      - Endpoints
+        - Endpoints
       operationId: deleteEndpoint
       responses:
-        '204':
+        "204":
           description: Deleted
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
     get:
       tags:
-      - Sources
+        - Sources
       operationId: listSourceLibraries
       responses:
-        '200':
+        "200":
           description: Library list
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/FileLibrary'
+                  $ref: "#/components/schemas/FileLibrary"
     post:
       tags:
-      - Sources
+        - Sources
       operationId: createFileLibrary
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateFileLibraryRequest'
+              $ref: "#/components/schemas/CreateFileLibraryRequest"
       responses:
-        '201':
+        "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FileLibrary'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal:
-    parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    get:
-      tags:
-      - Sources
-      operationId: ensureDefaultPersonalFileLibrary
-      responses:
-        '200':
-          description: Ensured default personal library
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FileLibrary'
+                $ref: "#/components/schemas/FileLibrary"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/libraryId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/libraryId"
     get:
       tags:
-      - Sources
+        - Sources
       operationId: listLibraryObjects
       responses:
-        '200':
+        "200":
           description: Object list
           content:
             application/json:
@@ -579,15 +564,15 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: '#/components/schemas/SourceObject'
+                      $ref: "#/components/schemas/SourceObject"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/upload:
     parameters:
-    - $ref: '#/components/parameters/workspaceId'
-    - $ref: '#/components/parameters/projectId'
-    - $ref: '#/components/parameters/libraryId'
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - $ref: "#/components/parameters/libraryId"
     post:
       tags:
-      - Sources
+        - Sources
       operationId: uploadLibraryObject
       requestBody:
         required: true
@@ -596,7 +581,7 @@ paths:
             schema:
               type: object
               required:
-              - file
+                - file
               properties:
                 file:
                   type: string
@@ -604,19 +589,1283 @@ paths:
                 key:
                   type: string
       responses:
-        '201':
+        "201":
           description: Uploaded
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SourceObject'
+                $ref: "#/components/schemas/SourceObject"
   /api/v1/workspaces/{workspaceId}:
     get:
       tags:
-      - Workspaces
+        - Workspaces
       operationId: get_workspaceItem
       responses:
-        '200':
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/members:
+    get:
+      tags:
+        - Workspaces
+      operationId: get_workspaceMembers
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}:
+    get:
+      tags:
+        - Projects
+      operationId: get_item
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources:
+    get:
+      tags:
+        - Sources
+      operationId: get_sources
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Sources
+      operationId: post_sources
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - content_type
+                - content_base64
+                - library_id
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                content_type:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                content_base64:
+                  type: string
+                  minLength: 1
+                library_id:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+              additionalProperties: false
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}:
+    get:
+      tags:
+        - Sources
+      operationId: get_sourceLibraryItem
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/folders:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceLibraryFolders
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/download:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceLibraryObjectsDownload
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/delete:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceLibraryObjectsDelete
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/move:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceLibraryObjectsMove
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/meta:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceLibraryObjectsMeta
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/share-link:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceLibraryObjectsShareLink
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs:
+    get:
+      tags:
+        - Sources
+      operationId: get_sourceLibraryAIReadyJobs
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:
+    get:
+      tags:
+        - Sources
+      operationId: get_sourceLibraryAIReadyJobItem
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceLibraryAIReadyJobCancel
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/quota:
+    get:
+      tags:
+        - Sources
+      operationId: get_sourcesQuota
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/start:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceAIReadyStart
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/cancel:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceAIReadyCancel
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/retry:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceAIReadyRetry
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/ai-ready/batch/start:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceBatchAIReadyStart
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/ai-ready/batch/cancel:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceBatchAIReadyCancel
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}:
+    get:
+      tags:
+        - Sources
+      operationId: get_sourceItem
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/download:
+    get:
+      tags:
+        - Sources
+      operationId: get_sourceDownload
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/{messageId}:
+    patch:
+      tags:
+        - Chat
+      operationId: patch_chatMessageItem
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/{messageId}:regenerate:
+    post:
+      tags:
+        - Chat
+      operationId: post_chatRegenerate
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/stream/attachments:
+    post:
+      tags:
+        - Chat
+      operationId: post_chatMessagesStreamAttach
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams:
+    get:
+      tags:
+        - Chat
+      operationId: get_chatSessionStreams
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/init:
+    post:
+      tags:
+        - Chat
+      operationId: post_chatAttachmentInit
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}:
+    delete:
+      tags:
+        - Chat
+      operationId: delete_chatAttachmentItem
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}/complete:
+    post:
+      tags:
+        - Chat
+      operationId: post_chatAttachmentComplete
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}/retry:
+    post:
+      tags:
+        - Chat
+      operationId: post_chatAttachmentRetry
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/diagnostics:
+    get:
+      tags:
+        - Agents
+      operationId: get_agentDiagnostics
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/runtime-config:
+    get:
+      tags:
+        - Agents
+      operationId: get_agentRuntimeConfig
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/rerank:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointRerank
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/image-generations:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointImageGeneration
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/video-generations:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointVideoGenerationCreate
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/video-generations/{jobId}:
+    get:
+      tags:
+        - Endpoints
+      operationId: get_endpointVideoGenerationPoll
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/video-generations/{jobId}:cancel:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointVideoGenerationCancel
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/proxy/{proxyPath}:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointProxy
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints:import-openai-compatible:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointImportOpenAICompatible
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials:
+    get:
+      tags:
+        - Credentials
+      operationId: get_credentials
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}:
+    delete:
+      tags:
+        - Credentials
+      operationId: delete_credentialItem
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}:rotate:
+    post:
+      tags:
+        - Credentials
+      operationId: post_credentialRotate
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/start:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceBatchAIReadyStart_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/cancel:
+    post:
+      tags:
+        - Sources
+      operationId: post_sourceBatchAIReadyCancel_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/regenerate:
+    post:
+      tags:
+        - Chat
+      operationId: post_chatRegenerate_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/streams/{streamId}:
+    post:
+      tags:
+        - Chat
+      operationId: post_chatMessagesStreamAttach_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/streams/{streamId}/stop:
+    post:
+      tags:
+        - Chat
+      operationId: post_chatMessagesStreamStop
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/images/generations:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointImageGeneration_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointVideoGenerationCreate_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations/{jobId}:
+    get:
+      tags:
+        - Endpoints
+      operationId: get_endpointVideoGenerationPoll_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations/{jobId}/cancel:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointVideoGenerationCancel_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-openai-compatible:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_endpointImportOpenAICompatible_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}/rotate:
+    post:
+      tags:
+        - Credentials
+      operationId: post_credentialRotate_2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks:
+    get:
+      tags:
+        - Notebook
+      operationId: listTasks
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}:
+    get:
+      tags:
+        - Notebook
+      operationId: getTask
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages:
+    get:
+      tags:
+        - Notebook
+      operationId: listTaskMessages
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Notebook
+      operationId: createTaskMessageAndRun
+      description: Creates a notebook message and, for user role, starts
+        external-agent execution with streaming updates via
+        /tasks/{taskId}/events.
+      responses:
+        "200":
+          description: Message accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: TASK_STREAM_CONFLICT
+        "422":
+          description: Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED)
+        "502":
+          description: External agent runtime error
+            (AGENT_OFFLINE/AGENT_TIMEOUT/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts:
+    get:
+      tags:
+        - Notebook
+      operationId: listTaskArtifacts
+      responses:
+        "200":
           description: OK
           content:
             application/json:
@@ -625,10 +1874,10 @@ paths:
                 items:
                   type: object
                   required:
-                  - id
-                  - task_id
-                  - type
-                  - created_at
+                    - id
+                    - task_id
+                    - type
+                    - created_at
                   properties:
                     id:
                       type: string
@@ -637,13 +1886,14 @@ paths:
                     type:
                       type: string
                       enum:
-                      - text
-                      - image
-                      - file
-                      - other
+                        - text
+                        - image
+                        - file
+                        - other
                     task_relative_path:
                       type: string
-                      description: Relative path inside the notebook task working directory for runtime-originated artifacts.
+                      description: Relative path inside the notebook task working directory for
+                        runtime-originated artifacts.
                     title:
                       type: string
                     content:
@@ -658,1395 +1908,143 @@ paths:
                     created_at:
                       type: string
                       format: date-time
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/members:
-    get:
-      tags:
-      - Workspaces
-      operationId: get_workspaceMembers
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}:
-    get:
-      tags:
-      - Projects
-      operationId: get_item
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources:
-    get:
-      tags:
-      - Sources
-      operationId: get_sources
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}:
-    get:
-      tags:
-      - Sources
-      operationId: get_sourceLibraryItem
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/folders:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceLibraryFolders
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/download:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceLibraryObjectsDownload
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/delete:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceLibraryObjectsDelete
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/move:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceLibraryObjectsMove
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/meta:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceLibraryObjectsMeta
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/share-link:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceLibraryObjectsShareLink
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs:
-    get:
-      tags:
-      - Sources
-      operationId: get_sourceLibraryAIReadyJobs
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:
-    get:
-      tags:
-      - Sources
-      operationId: get_sourceLibraryAIReadyJobItem
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceLibraryAIReadyJobCancel
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/quota:
-    get:
-      tags:
-      - Sources
-      operationId: get_sourcesQuota
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/start:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceAIReadyStart
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/cancel:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceAIReadyCancel
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/retry:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceAIReadyRetry
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/ai-ready/batch/start:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceBatchAIReadyStart
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/ai-ready/batch/cancel:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceBatchAIReadyCancel
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}:
-    get:
-      tags:
-      - Sources
-      operationId: get_sourceItem
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/download:
-    get:
-      tags:
-      - Sources
-      operationId: get_sourceDownload
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/{messageId}:
-    patch:
-      tags:
-      - Chat
-      operationId: patch_chatMessageItem
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/{messageId}:regenerate:
-    post:
-      tags:
-      - Chat
-      operationId: post_chatRegenerate
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/stream/attachments:
-    post:
-      tags:
-      - Chat
-      operationId: post_chatMessagesStreamAttach
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams:
-    get:
-      tags:
-      - Chat
-      operationId: get_chatSessionStreams
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/init:
-    post:
-      tags:
-      - Chat
-      operationId: post_chatAttachmentInit
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}:
-    delete:
-      tags:
-      - Chat
-      operationId: delete_chatAttachmentItem
-      responses:
-        '204':
-          description: Deleted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}/complete:
-    post:
-      tags:
-      - Chat
-      operationId: post_chatAttachmentComplete
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/attachments/{attachmentId}/retry:
-    post:
-      tags:
-      - Chat
-      operationId: post_chatAttachmentRetry
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/diagnostics:
-    get:
-      tags:
-      - Agents
-      operationId: get_agentDiagnostics
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/runtime-config:
-    get:
-      tags:
-      - Agents
-      operationId: get_agentRuntimeConfig
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/rerank:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointRerank
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/image-generations:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointImageGeneration
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/video-generations:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointVideoGenerationCreate
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/video-generations/{jobId}:
-    get:
-      tags:
-      - Endpoints
-      operationId: get_endpointVideoGenerationPoll
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/video-generations/{jobId}:cancel:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointVideoGenerationCancel
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/proxy/{proxyPath}:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointProxy
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints:import-openai-compatible:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointImportOpenAICompatible
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials:
-    get:
-      tags:
-      - Credentials
-      operationId: get_credentials
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}:
-    delete:
-      tags:
-      - Credentials
-      operationId: delete_credentialItem
-      responses:
-        '204':
-          description: Deleted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}:rotate:
-    post:
-      tags:
-      - Credentials
-      operationId: post_credentialRotate
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/start:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceBatchAIReadyStart_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/cancel:
-    post:
-      tags:
-      - Sources
-      operationId: post_sourceBatchAIReadyCancel_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/regenerate:
-    post:
-      tags:
-      - Chat
-      operationId: post_chatRegenerate_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/streams/{streamId}:
-    post:
-      tags:
-      - Chat
-      operationId: post_chatMessagesStreamAttach_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/streams/{streamId}/stop:
-    post:
-      tags:
-      - Chat
-      operationId: post_chatMessagesStreamStop
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/images/generations:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointImageGeneration_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointVideoGenerationCreate_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations/{jobId}:
-    get:
-      tags:
-      - Endpoints
-      operationId: get_endpointVideoGenerationPoll_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/videos/generations/{jobId}/cancel:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointVideoGenerationCancel_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-openai-compatible:
-    post:
-      tags:
-      - Endpoints
-      operationId: post_endpointImportOpenAICompatible_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}/rotate:
-    post:
-      tags:
-      - Credentials
-      operationId: post_credentialRotate_2
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks:
-    get:
-      tags:
-      - Notebook
-      operationId: listTasks
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}:
-    get:
-      tags:
-      - Notebook
-      operationId: getTask
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs:
-    get:
-      tags:
-      - Notebook
-      operationId: listTaskInputs
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs/{inputId}:
-    get:
-      tags:
-      - Notebook
-      operationId: getTaskInputItem
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages:
-    get:
-      tags:
-      - Notebook
-      operationId: listTaskMessages
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags:
-      - Notebook
-      operationId: createTaskMessageAndRun
-      description: Creates a notebook message and, for user role, starts external-agent
-        execution with streaming updates via /tasks/{taskId}/events.
-      responses:
-        '200':
-          description: Message accepted
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          description: TASK_STREAM_CONFLICT
-        '422':
-          description: Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED)
-        '502':
-          description: External agent runtime error (AGENT_OFFLINE/AGENT_TIMEOUT/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts:
-    get:
-      tags:
-      - Notebook
-      operationId: listTaskArtifacts
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/save:
     post:
       tags:
-      - Notebook
+        - Notebook
       operationId: saveTaskArtifact
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/download:
     get:
       tags:
-      - Notebook
+        - Notebook
       operationId: downloadTaskArtifact
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/events:
     get:
       tags:
-      - Notebook
+        - Notebook
       operationId: listTaskEvents
-      description: Server-Sent Events stream for notebook task runtime updates (message/task_update/error/ping).
+      description: Server-Sent Events stream for notebook task runtime updates
+        (message/task_update/error/ping).
       responses:
-        '200':
+        "200":
           description: SSE stream
           content:
             text/event-stream:
               schema:
                 type: string
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/traces:
     get:
       summary: List notebook execution trace events
-      description: 'Returns execution trace events for a notebook task. Results can
-        be scoped to a specific message or run,
+      description: >
+        Returns execution trace events for a notebook task. Results can be
+        scoped to a specific message or run,
 
         and paged using cursor-style parameters (`after_id` / `before_id`).
-
-        '
       tags:
-      - Notebook
+        - Notebook
       parameters:
-      - in: path
-        name: workspaceId
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: projectId
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: taskId
-        required: true
-        schema:
-          type: string
-      - in: query
-        name: message_id
-        schema:
-          type: string
-        description: Limit traces to a specific agent message.
-      - in: query
-        name: run_id
-        schema:
-          type: string
-        description: Limit traces to a specific runtime execution.
-      - in: query
-        name: after_id
-        schema:
-          type: string
-        description: Return events newer than the given trace event id (gap-fill /
-          tail paging).
-      - in: query
-        name: before_id
-        schema:
-          type: string
-        description: Return events older than the given trace event id (load earlier
-          logs).
-      - in: query
-        name: page_size
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 500
-          default: 200
-        description: Maximum number of events to return.
+        - in: path
+          name: workspaceId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: projectId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: message_id
+          schema:
+            type: string
+          description: Limit traces to a specific agent message.
+        - in: query
+          name: run_id
+          schema:
+            type: string
+          description: Limit traces to a specific runtime execution.
+        - in: query
+          name: after_id
+          schema:
+            type: string
+          description: Return events newer than the given trace event id (gap-fill / tail
+            paging).
+        - in: query
+          name: before_id
+          schema:
+            type: string
+          description: Return events older than the given trace event id (load earlier
+            logs).
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+          description: Maximum number of events to return.
       responses:
-        '200':
+        "200":
           description: Trace event list
           content:
             application/json:
               schema:
                 type: object
                 required:
-                - items
-                - total
+                  - items
+                  - total
                 properties:
                   items:
                     type: array
                     items:
                       type: object
                       required:
-                      - id
-                      - task_id
-                      - message_id
-                      - run_id
-                      - seq
-                      - at
-                      - category
-                      - name
-                      - summary
+                        - id
+                        - task_id
+                        - message_id
+                        - run_id
+                        - seq
+                        - at
+                        - category
+                        - name
+                        - summary
                       properties:
                         id:
                           type: string
@@ -2065,26 +2063,26 @@ paths:
                         category:
                           type: string
                           enum:
-                          - lifecycle
-                          - progress
-                          - tool
-                          - artifact
-                          - warning
-                          - error
-                          - debug
+                            - lifecycle
+                            - progress
+                            - tool
+                            - artifact
+                            - warning
+                            - error
+                            - debug
                         phase:
                           type: string
                           enum:
-                          - start
-                          - update
-                          - end
+                            - start
+                            - update
+                            - end
                         status:
                           type: string
                           enum:
-                          - running
-                          - success
-                          - error
-                          - cancelled
+                            - running
+                            - success
+                            - error
+                            - cancelled
                         name:
                           type: string
                         summary:
@@ -2103,12 +2101,61 @@ paths:
                     type: string
                     nullable: true
                     description: Cursor for loading an earlier slice using `before_id`.
-        '401':
+        "401":
           description: Unauthorized
-        '403':
+        "403":
           description: Forbidden
-        '404':
+        "404":
           description: Task not found
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs:
+    get:
+      tags:
+        - Notebook
+      operationId: listTaskInputs
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs/{inputId}:
+    get:
+      tags:
+        - Notebook
+      operationId: getTaskInputItem
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - Sources
+      operationId: ensureDefaultPersonalFileLibrary
+      responses:
+        "200":
+          description: Ensured default personal library
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileLibrary"
 components:
   parameters:
     workspaceId:
@@ -2165,19 +2212,19 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ApiError'
+            $ref: "#/components/schemas/ApiError"
     Forbidden:
       description: Forbidden
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ApiError'
+            $ref: "#/components/schemas/ApiError"
   schemas:
     Workspace:
       type: object
       required:
-      - id
-      - name
+        - id
+        - name
       properties:
         id:
           type: string
@@ -2186,13 +2233,13 @@ components:
         system_managed_kind:
           type: string
           enum:
-          - default_personal_uploads
+            - default_personal_uploads
     Project:
       type: object
       required:
-      - id
-      - workspace_id
-      - name
+        - id
+        - workspace_id
+        - name
       properties:
         id:
           type: string
@@ -2203,16 +2250,16 @@ components:
     CreateProjectRequest:
       type: object
       required:
-      - name
+        - name
       properties:
         name:
           type: string
     ChatSession:
       type: object
       required:
-      - id
-      - title
-      - model
+        - id
+        - title
+        - model
       properties:
         id:
           type: string
@@ -2227,8 +2274,8 @@ components:
     CreateChatSessionRequest:
       type: object
       required:
-      - title
-      - model
+        - title
+        - model
       properties:
         title:
           type: string
@@ -2256,58 +2303,52 @@ components:
     ChatMessage:
       type: object
       required:
-      - id
-      - role
+        - id
+        - role
       properties:
         id:
           type: string
         role:
           type: string
           enum:
-          - user
-          - assistant
-          - system
+            - user
+            - assistant
+            - system
         content:
           oneOf:
-          - type: string
-          - type: array
+            - type: string
+            - type: array
     CreateChatMessageRequest:
       type: object
       required:
-      - role
-      - content
+        - role
+        - content
       properties:
         role:
           type: string
           enum:
-          - user
-          - assistant
-          - system
+            - user
+            - assistant
+            - system
         content:
           oneOf:
-          - type: string
-          - type: array
+            - type: string
+            - type: array
         inputs:
           type: array
           items:
             type: object
             required:
-            - kind
+              - kind
             properties:
               kind:
                 type: string
                 enum:
-                - library_object
-                - url
+                  - library_object
+                  - url
               library_id:
                 type: string
               key:
-                type: string
-              url:
-                type: string
-              imported_library_id:
-                type: string
-              imported_key:
                 type: string
               name:
                 type: string
@@ -2315,11 +2356,17 @@ components:
                 type: string
               size_bytes:
                 type: integer
+              url:
+                type: string
+              imported_library_id:
+                type: string
+              imported_key:
+                type: string
     ChatAttachment:
       type: object
       required:
-      - id
-      - name
+        - id
+        - name
       properties:
         id:
           type: string
@@ -2332,22 +2379,16 @@ components:
         input_ref:
           type: object
           required:
-          - kind
+            - kind
           properties:
             kind:
               type: string
               enum:
-              - library_object
-              - url
+                - library_object
+                - url
             library_id:
               type: string
             key:
-              type: string
-            url:
-              type: string
-            imported_library_id:
-              type: string
-            imported_key:
               type: string
             name:
               type: string
@@ -2355,12 +2396,18 @@ components:
               type: string
             size_bytes:
               type: integer
+            url:
+              type: string
+            imported_library_id:
+              type: string
+            imported_key:
+              type: string
     Agent:
       type: object
       required:
-      - id
-      - name
-      - status
+        - id
+        - name
+        - status
       properties:
         id:
           type: string
@@ -2371,15 +2418,15 @@ components:
     CreateAgentRequest:
       type: object
       required:
-      - name
-      - type
+        - name
+        - type
       properties:
         name:
           type: string
         type:
           type: string
           enum:
-          - external
+            - external
         description:
           type: string
         runtime_preferences:
@@ -2398,9 +2445,9 @@ components:
     AgentKey:
       type: object
       required:
-      - id
-      - key_prefix
-      - status
+        - id
+        - key_prefix
+        - status
       properties:
         id:
           type: string
@@ -2409,16 +2456,16 @@ components:
         status:
           type: string
           enum:
-          - active
-          - revoked
+            - active
+            - revoked
         created_at:
           type: string
           format: date-time
     CreateAgentKeyResponse:
       type: object
       required:
-      - id
-      - key_prefix
+        - id
+        - key_prefix
       properties:
         id:
           type: string
@@ -2430,12 +2477,12 @@ components:
     Endpoint:
       type: object
       required:
-      - id
-      - name
-      - capability
-      - provider
-      - base_url
-      - openai_model
+        - id
+        - name
+        - capability
+        - provider
+        - base_url
+        - openai_model
       properties:
         id:
           type: string
@@ -2452,12 +2499,12 @@ components:
     CreateEndpointRequest:
       type: object
       required:
-      - name
-      - capability
-      - provider
-      - base_url
-      - openai_model
-      - credential_id
+        - name
+        - capability
+        - provider
+        - base_url
+        - openai_model
+        - credential_id
       properties:
         name:
           type: string
@@ -2475,12 +2522,12 @@ components:
           type: string
     UpdateEndpointRequest:
       allOf:
-      - $ref: '#/components/schemas/CreateEndpointRequest'
+        - $ref: "#/components/schemas/CreateEndpointRequest"
     FileLibrary:
       type: object
       required:
-      - id
-      - name
+        - id
+        - name
       properties:
         id:
           type: string
@@ -2489,15 +2536,15 @@ components:
     CreateFileLibraryRequest:
       type: object
       required:
-      - name
+        - name
       properties:
         name:
           type: string
     SourceObject:
       type: object
       required:
-      - key
-      - name
+        - key
+        - name
       properties:
         key:
           type: string
@@ -2510,8 +2557,8 @@ components:
     ApiError:
       type: object
       required:
-      - error_code
-      - message
+        - error_code
+        - message
       properties:
         error_code:
           type: string
@@ -2520,15 +2567,15 @@ components:
     TaskTraceEvent:
       type: object
       required:
-      - id
-      - task_id
-      - message_id
-      - run_id
-      - seq
-      - at
-      - category
-      - name
-      - summary
+        - id
+        - task_id
+        - message_id
+        - run_id
+        - seq
+        - at
+        - category
+        - name
+        - summary
       properties:
         id:
           type: string
@@ -2547,26 +2594,26 @@ components:
         category:
           type: string
           enum:
-          - lifecycle
-          - progress
-          - tool
-          - artifact
-          - warning
-          - error
-          - debug
+            - lifecycle
+            - progress
+            - tool
+            - artifact
+            - warning
+            - error
+            - debug
         phase:
           type: string
           enum:
-          - start
-          - update
-          - end
+            - start
+            - update
+            - end
         status:
           type: string
           enum:
-          - running
-          - success
-          - error
-          - cancelled
+            - running
+            - success
+            - error
+            - cancelled
         name:
           type: string
         summary:
@@ -2578,13 +2625,13 @@ components:
     TaskTraceListResponse:
       type: object
       required:
-      - items
-      - total
+        - items
+        - total
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/TaskTraceEvent'
+            $ref: "#/components/schemas/TaskTraceEvent"
         total:
           type: integer
           minimum: 0

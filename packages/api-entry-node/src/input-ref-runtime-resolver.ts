@@ -62,6 +62,75 @@ export type ResolvedInputRef =
   | ResolvedUrlInputRef
   | ResolvedArtifactInputRef;
 
+type ResolveRuntimeLibraryObjectArgs = {
+  kind: 'library_object';
+  deps: SourceObjectMetaDeps;
+  workspaceId: string;
+  projectId: string;
+  input: {
+    library_id: string;
+    key: string;
+    name?: string;
+    content_type?: string;
+    size_bytes?: number;
+  };
+};
+type ResolveRuntimeUrlArgs = {
+  kind: 'url';
+  deps: SourceObjectMetaDeps;
+  workspaceId: string;
+  projectId: string;
+  input: {
+    url: string;
+    name?: string;
+    content_type?: string;
+    size_bytes?: number;
+    imported_library_id?: string;
+    imported_key?: string;
+  };
+};
+type ResolveRuntimeArtifactArgs = {
+  kind: 'artifact';
+  input: {
+    artifact_id: string;
+    task_relative_path?: string;
+    name?: string;
+    content_type?: string;
+    size_bytes?: number;
+  };
+  artifact?: ArtifactLookupRecord;
+};
+type ResolveRuntimeArgs =
+  | ResolveRuntimeLibraryObjectArgs
+  | ResolveRuntimeUrlArgs
+  | ResolveRuntimeArtifactArgs;
+type ResolveRuntimeResult =
+  | { kind: 'library_object'; meta: Awaited<ReturnType<typeof resolveLibraryObjectInputMeta>> }
+  | { kind: 'url'; meta: Awaited<ReturnType<typeof resolveUrlInputMeta>> }
+  | { kind: 'artifact'; meta: ReturnType<typeof resolveArtifactInputMeta> };
+
+export async function resolveRuntimeInputRef(args: ResolveRuntimeLibraryObjectArgs): Promise<{ kind: 'library_object'; meta: Awaited<ReturnType<typeof resolveLibraryObjectInputMeta>> }>;
+export async function resolveRuntimeInputRef(args: ResolveRuntimeUrlArgs): Promise<{ kind: 'url'; meta: Awaited<ReturnType<typeof resolveUrlInputMeta>> }>;
+export async function resolveRuntimeInputRef(args: ResolveRuntimeArtifactArgs): Promise<{ kind: 'artifact'; meta: ReturnType<typeof resolveArtifactInputMeta> }>;
+export async function resolveRuntimeInputRef(args: ResolveRuntimeArgs): Promise<ResolveRuntimeResult> {
+  if (args.kind === 'library_object') {
+    return {
+      kind: 'library_object',
+      meta: await resolveLibraryObjectInputMeta(args),
+    };
+  }
+  if (args.kind === 'url') {
+    return {
+      kind: 'url',
+      meta: await resolveUrlInputMeta(args),
+    };
+  }
+  return {
+    kind: 'artifact',
+    meta: resolveArtifactInputMeta(args),
+  };
+}
+
 export async function resolveLibraryObjectInputMeta(args: {
   deps: SourceObjectMetaDeps;
   workspaceId: string;

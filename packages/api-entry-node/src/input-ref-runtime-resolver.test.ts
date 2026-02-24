@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  resolveRuntimeInputRef,
   resolveArtifactInputMeta,
   resolveLibraryObjectInputMeta,
   resolveUrlInputMeta,
@@ -92,5 +93,39 @@ describe('input-ref-runtime-resolver', () => {
       file_type: 'text/plain',
       file_size: 9,
     });
+  });
+
+  it('provides a unified resolveRuntimeInputRef entry point', async () => {
+    const deps = {
+      getSourceObjectMetaUseCase: {
+        execute: vi.fn().mockResolvedValue({ key: 'k/doc.txt', content_type: 'text/plain', size_bytes: 12 }),
+      },
+    };
+    const lib = await resolveRuntimeInputRef({
+      kind: 'library_object',
+      deps,
+      workspaceId: 'ws',
+      projectId: 'prj',
+      input: { library_id: 'lib_1', key: 'k/doc.txt' },
+    });
+    expect(lib.kind).toBe('library_object');
+    expect(lib.meta.filename).toBe('doc.txt');
+
+    const url = await resolveRuntimeInputRef({
+      kind: 'url',
+      deps,
+      workspaceId: 'ws',
+      projectId: 'prj',
+      input: { url: 'https://example.com', imported_library_id: 'lib_1', imported_key: 'k/doc.txt' },
+    });
+    expect(url.kind).toBe('url');
+    expect(url.meta.imported_key).toBe('k/doc.txt');
+
+    const art = await resolveRuntimeInputRef({
+      kind: 'artifact',
+      input: { artifact_id: 'art_1' },
+    });
+    expect(art.kind).toBe('artifact');
+    expect(art.meta.filename).toBe('art_1');
   });
 });

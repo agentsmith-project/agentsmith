@@ -2910,60 +2910,6 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources": {
-      "get": {
-        "tags": [
-          "Notebook"
-        ],
-        "operationId": "listTaskSources",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources/{sourceId}": {
-      "get": {
-        "tags": [
-          "Notebook"
-        ],
-        "operationId": "getTaskSourceItem",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages": {
       "get": {
         "tags": [
@@ -3387,6 +3333,60 @@
           },
           "404": {
             "description": "Task not found"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs": {
+      "get": {
+        "tags": [
+          "Notebook"
+        ],
+        "operationId": "listTaskInputs",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs/{inputId}": {
+      "get": {
+        "tags": [
+          "Notebook"
+        ],
+        "operationId": "getTaskInputItem",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }

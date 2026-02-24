@@ -267,12 +267,12 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages",
     "method": "get"
   },
-  "taskSourceItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources/{sourceId}",
+  "taskInputItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs/{inputId}",
     "method": "get"
   },
-  "taskSources": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources",
+  "taskInputs": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs",
     "method": "get"
   },
   "tasks": {

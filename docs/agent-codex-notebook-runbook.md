@@ -764,7 +764,7 @@ Notes:
 - image artifacts may be inlined as data URLs (size-limited) for local notebook preview
 - text artifacts may include truncated preview content (size-limited)
 - task artifact records returned by `/tasks/{taskId}/artifacts` may include `task_relative_path` for runtime-originated outputs (relative path inside task cwd)
-- notebook Attached Inputs panel fetches attached source details from task-scoped route `GET /tasks/{taskId}/sources` (avoids loading the full Files list for display)
+- notebook Attached Inputs panel fetches attached input details from task-scoped route `GET /tasks/{taskId}/inputs` (avoids loading the full Files list for display)
 
 ## 9. Next Hardening Items
 1. Replace direct bearer forwarding with short-lived ticket exchange.

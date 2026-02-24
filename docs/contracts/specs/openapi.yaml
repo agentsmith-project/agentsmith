@@ -1800,11 +1800,11 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs:
     get:
       tags:
       - Notebook
-      operationId: listTaskSources
+      operationId: listTaskInputs
       responses:
         '200':
           description: OK
@@ -1817,11 +1817,11 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/sources/{sourceId}:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs/{inputId}:
     get:
       tags:
       - Notebook
-      operationId: getTaskSourceItem
+      operationId: getTaskInputItem
       responses:
         '200':
           description: OK

@@ -14,6 +14,7 @@ import {
   buildWorkspaceRecords,
   resolveProjectPermissions,
 } from './workspace-permissions.js';
+import { resolveProjectPermissionsForRequest } from './project-authz-resolver.js';
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
@@ -233,7 +234,12 @@ export async function handleRequest(
             workspaceId: route.workspaceId,
             projectId: route.projectId,
           });
-          const granted = new Set(resolveProjectPermissions(project.owner_id, user.id));
+          const granted = new Set(resolveProjectPermissionsForRequest({
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            projectOwnerId: project.owner_id,
+            actorUserId: user.id,
+          }));
           const missing = required.filter((permission) => !granted.has(permission));
           if (missing.length > 0) {
             json(res, 403, { error_code: 'FORBIDDEN', message: 'forbidden', missing_permissions: missing });

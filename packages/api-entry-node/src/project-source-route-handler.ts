@@ -27,6 +27,10 @@ import {
   getProjectGroupsState,
   setProjectGroupsState,
 } from './project-groups-store.js';
+import {
+  getProjectPermissionTemplatesState,
+  setProjectPermissionTemplatesState,
+} from './project-permission-templates-store.js';
 
 interface WorkspaceRecordLike {
   id: string;
@@ -77,16 +81,6 @@ const PROJECT_JOIN_REQUESTS_BY_PROJECT = new Map<string, Array<{
   reviewed_at?: string;
   reviewed_by?: string;
   reject_reason?: string;
-}>>();
-const PROJECT_PERMISSION_TEMPLATES_BY_PROJECT = new Map<string, Array<{
-  id: string;
-  project_id: string;
-  name: string;
-  description?: string;
-  permissions: string[];
-  built_in?: boolean;
-  created_at: string;
-  updated_at: string;
 }>>();
 const PROJECT_QUOTA_TEMPLATES_BY_PROJECT = new Map<string, Array<{
   id: string;
@@ -451,8 +445,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectPermissionTemplates' && method === 'GET' && route.workspaceId && route.projectId) {
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    json(res, 200, { items: PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.get(key) ?? [] });
+    json(res, 200, { items: getProjectPermissionTemplatesState(route.workspaceId, route.projectId) });
     return true;
   }
 
@@ -467,8 +460,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       return true;
     }
     const permissions = body.permissions.filter((v): v is string => typeof v === 'string');
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    const items = PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const items = getProjectPermissionTemplatesState(route.workspaceId, route.projectId);
     const now = new Date().toISOString();
     const created = {
       id: `pt_${Math.random().toString(36).slice(2, 10)}`,
@@ -481,7 +473,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       updated_at: now,
     };
     items.push(created);
-    PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.set(key, items);
+    setProjectPermissionTemplatesState(route.workspaceId, route.projectId, items);
     json(res, 200, created);
     return true;
   }
@@ -498,8 +490,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       description?: string;
       permissions?: string[];
     };
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    const items = PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const items = getProjectPermissionTemplatesState(route.workspaceId, route.projectId);
     const item = items.find((it) => it.id === route.templateId);
     if (!item) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Permission template not found' });
@@ -526,8 +517,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.projectId
     && route.templateId
   ) {
-    const key = projectScopedKey(route.workspaceId, route.projectId);
-    const items = PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.get(key) ?? [];
+    const items = getProjectPermissionTemplatesState(route.workspaceId, route.projectId);
     const target = items.find((it) => it.id === route.templateId);
     if (!target) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Permission template not found' });
@@ -537,7 +527,11 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 409, { error_code: 'CONFLICT', message: 'Built-in templates cannot be deleted' });
       return true;
     }
-    PROJECT_PERMISSION_TEMPLATES_BY_PROJECT.set(key, items.filter((it) => it.id !== route.templateId));
+    setProjectPermissionTemplatesState(
+      route.workspaceId,
+      route.projectId,
+      items.filter((it) => it.id !== route.templateId),
+    );
     res.statusCode = 204;
     res.end();
     return true;

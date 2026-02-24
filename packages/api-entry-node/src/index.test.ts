@@ -26,15 +26,31 @@ afterEach(async () => {
 });
 
 function startMockKeycloakServer(): { server: Server; issuerUrl: string } {
-  const server = http.createServer((_req, res) => {
+  const server = http.createServer((req, res) => {
+    const auth = req.headers.authorization ?? '';
+    let sub = 'user_test';
+    let email = 'test@example.com';
+    let username = 'test-user';
+    let name = 'Test User';
+    if (auth === 'Bearer owner-token') {
+      sub = 'user_owner';
+      email = 'owner@example.com';
+      username = 'owner-user';
+      name = 'Owner User';
+    } else if (auth === 'Bearer alt-token') {
+      sub = 'user_alt';
+      email = 'alt@example.com';
+      username = 'alt-user';
+      name = 'Alt User';
+    }
     res.statusCode = 200;
     res.setHeader('content-type', 'application/json');
     res.end(
       JSON.stringify({
-        sub: 'user_test',
-        email: 'test@example.com',
-        preferred_username: 'test-user',
-        name: 'Test User',
+        sub,
+        email,
+        preferred_username: username,
+        name,
       }),
     );
   });
@@ -65,8 +81,12 @@ function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>):
 }
 
 function apiFetch(baseUrl: string, path: string, init?: RequestInit): Promise<Response> {
+  return apiFetchWithToken(baseUrl, path, 'test-token', init);
+}
+
+function apiFetchWithToken(baseUrl: string, path: string, token: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
-  headers.set('Authorization', 'Bearer test-token');
+  headers.set('Authorization', `Bearer ${token}`);
   return fetch(`${baseUrl}${path}`, {
     ...init,
     headers,
@@ -1031,6 +1051,80 @@ describe('api-entry-node projects routes', () => {
     expect(listFinalRes.status).toBe(200);
     const listFinal = (await listFinalRes.json()) as { items: Array<{ id: string }> };
     expect(listFinal.items.map((i) => i.id)).not.toContain(created.id);
+  });
+
+  it('applies group permission templates to backend route authorization', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Governed Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const deniedRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Should Fail',
+          permissions: ['project:member:manage'],
+        }),
+      },
+    );
+    expect(deniedRes.status).toBe(403);
+
+    const createTemplateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Managers',
+          permissions: ['project:member:manage'],
+        }),
+      },
+    );
+    expect(createTemplateRes.status).toBe(200);
+    const createdTemplate = (await createTemplateRes.json()) as { id: string };
+
+    const createGroupRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/groups`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Managers',
+          permission_template_id: createdTemplate.id,
+          member_ids: ['user_test'],
+        }),
+      },
+    );
+    expect(createGroupRes.status).toBe(200);
+
+    const allowedRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Allowed after template',
+          permissions: ['project:member:view'],
+        }),
+      },
+    );
+    expect(allowedRes.status).toBe(200);
   });
 
   it('supports minimal quota template CRUD endpoints', async () => {

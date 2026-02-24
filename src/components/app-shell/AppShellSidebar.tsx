@@ -76,6 +76,7 @@ export function AppShellSidebar({
 
   const workspaceId = params?.workspace as string | undefined;
   const projectId = params?.project as string | undefined;
+  const locale = params?.locale as string | undefined;
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
 
   const projectMenuItems = currentProject
@@ -98,6 +99,28 @@ export function AppShellSidebar({
       })
     : [];
   const menuItems = currentProject ? projectMenuItems : WORKSPACE_MENU_ITEMS;
+
+  const baseProjectPath =
+    locale && workspaceId && projectId
+      ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}`
+      : null;
+  const baseWorkspacePath =
+    locale && workspaceId
+      ? `/${locale}/workspaces/${workspaceId}`
+      : null;
+
+  const resolveItemHref = React.useCallback(
+    (href: string) => {
+      if (href.startsWith('/')) return href;
+      if (currentProject && baseProjectPath) return `${baseProjectPath}/${href}`;
+      if (!currentProject && baseWorkspacePath) {
+        if (href === '../projects') return `${baseWorkspacePath}/projects`;
+        if (href === '../../settings') return `${baseWorkspacePath}/settings`;
+      }
+      return href;
+    },
+    [baseProjectPath, baseWorkspacePath, currentProject],
+  );
 
   React.useEffect(() => {
     try {
@@ -136,7 +159,7 @@ export function AppShellSidebar({
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={resolveItemHref(item.href)}
               data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
               title={collapsed ? label : undefined}
               className={cn(

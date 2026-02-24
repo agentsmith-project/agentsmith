@@ -52,6 +52,88 @@ interface EndpointHandlerArgs {
 
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
+  type GovernancePreflightFailureSpec = {
+    action: string;
+    errorCode: string;
+    message: string;
+    statusCode: 403 | 429;
+    metadata: Record<string, unknown>;
+    endUserId?: string;
+    retryAfterSeconds?: number;
+  };
+  const governanceMetadata = (
+    kind: 'access_denied' | 'policy_quota' | 'member_quota' | 'policy_rate',
+    extra: Record<string, unknown> = {},
+  ): Record<string, unknown> => {
+    switch (kind) {
+      case 'access_denied':
+        return { governance_kind: 'resource_policy', enforcement_kind: 'allow_list', ...extra };
+      case 'policy_quota':
+        return { governance_kind: 'resource_policy', enforcement_kind: 'quota_limit', ...extra };
+      case 'member_quota':
+        return { governance_kind: 'member_quota', enforcement_kind: 'quota_limit', ...extra };
+      case 'policy_rate':
+        return { governance_kind: 'resource_policy', enforcement_kind: 'rate_limit', ...extra };
+    }
+  };
+  const policyAccessDeniedFailure = (reason: string): GovernancePreflightFailureSpec => ({
+    action: 'resource_policy.access_denied',
+    errorCode: 'RESOURCE_POLICY_DENIED',
+    message: 'resource_policy_denied',
+    statusCode: 403,
+    metadata: governanceMetadata('access_denied', { reason }),
+  });
+  const policyQuotaFailure = (params: {
+    retryAfterSeconds: number;
+    effectiveDailyTokenLimit: number;
+    currentTokensToday: number;
+    scope?: string;
+  }): GovernancePreflightFailureSpec => ({
+    action: 'resource_policy.quota_exceeded',
+    errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+    message: 'resource_policy_quota_exceeded',
+    statusCode: 429,
+    retryAfterSeconds: params.retryAfterSeconds,
+    metadata: governanceMetadata('policy_quota', {
+      effective_daily_token_limit: params.effectiveDailyTokenLimit,
+      current_tokens_today: params.currentTokensToday,
+      scope: params.scope,
+      quota_key: 'endpoint.daily_token_limit',
+    }),
+  });
+  const memberQuotaFailure = (params: {
+    retryAfterSeconds: number;
+    effectiveDailyTokenLimit: number;
+    currentTokensToday: number;
+  }): GovernancePreflightFailureSpec => ({
+    action: 'member_quota.quota_exceeded',
+    errorCode: 'MEMBER_QUOTA_EXCEEDED',
+    message: 'member_quota_exceeded',
+    statusCode: 429,
+    retryAfterSeconds: params.retryAfterSeconds,
+    endUserId: user.id,
+    metadata: governanceMetadata('member_quota', {
+      effective_daily_token_limit: params.effectiveDailyTokenLimit,
+      current_tokens_today: params.currentTokensToday,
+      quota_key: 'endpoint.daily_token_limit',
+    }),
+  });
+  const policyRateFailure = (params: {
+    retryAfterSeconds: number;
+    effectiveLimitPerMinute: number;
+    scope?: string;
+  }): GovernancePreflightFailureSpec => ({
+    action: 'resource_policy.rate_limited',
+    errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+    message: 'resource_policy_rate_limited',
+    statusCode: 429,
+    retryAfterSeconds: params.retryAfterSeconds,
+    endUserId: user.id,
+    metadata: governanceMetadata('policy_rate', {
+      effective_limit_per_minute: params.effectiveLimitPerMinute,
+      scope: params.scope,
+    }),
+  });
   const writeGovernancePreflightFailure = async (params: {
     workspaceId: string;
     projectId: string;
@@ -137,16 +219,13 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     });
     if (!policyCheck.allowed) {
       const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+      const failure = policyAccessDeniedFailure(policyCheck.reason ?? 'not_allowed');
       await writeGovernancePreflightFailure({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         endpointId: endpoint.id,
         requestId,
-        action: 'resource_policy.access_denied',
-        errorCode: 'RESOURCE_POLICY_DENIED',
-        message: 'resource_policy_denied',
-        statusCode: 403,
-        metadata: { reason: policyCheck.reason ?? 'not_allowed' },
+        ...failure,
       });
       return true;
     }
@@ -221,23 +300,19 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       policy: policyCheck.policy,
     });
     if (!quotaCheck.allowed) {
+      const failure = policyQuotaFailure({
+        retryAfterSeconds: quotaCheck.retry_after_seconds,
+        effectiveDailyTokenLimit: quotaCheck.effective_daily_token_limit,
+        currentTokensToday: quotaCheck.current_tokens_today,
+        scope: quotaCheck.scope,
+      });
       await writeGovernancePreflightFailure({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         endpointId: endpoint.id,
         requestId,
         endUserId: user.id,
-        action: 'resource_policy.quota_exceeded',
-        errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-        message: 'resource_policy_quota_exceeded',
-        statusCode: 429,
-        retryAfterSeconds: quotaCheck.retry_after_seconds,
-        metadata: {
-          effective_daily_token_limit: quotaCheck.effective_daily_token_limit,
-          current_tokens_today: quotaCheck.current_tokens_today,
-          scope: quotaCheck.scope,
-          quota_key: 'endpoint.daily_token_limit',
-        },
+        ...failure,
       });
       return true;
     }
@@ -249,22 +324,17 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       userId: user.id,
     });
     if (!memberQuotaCheck.allowed) {
+      const failure = memberQuotaFailure({
+        retryAfterSeconds: memberQuotaCheck.retry_after_seconds,
+        effectiveDailyTokenLimit: memberQuotaCheck.effective_daily_token_limit,
+        currentTokensToday: memberQuotaCheck.current_tokens_today,
+      });
       await writeGovernancePreflightFailure({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         endpointId: endpoint.id,
         requestId,
-        endUserId: user.id,
-        action: 'member_quota.quota_exceeded',
-        errorCode: 'MEMBER_QUOTA_EXCEEDED',
-        message: 'member_quota_exceeded',
-        statusCode: 429,
-        retryAfterSeconds: memberQuotaCheck.retry_after_seconds,
-        metadata: {
-          effective_daily_token_limit: memberQuotaCheck.effective_daily_token_limit,
-          current_tokens_today: memberQuotaCheck.current_tokens_today,
-          quota_key: 'endpoint.daily_token_limit',
-        },
+        ...failure,
       });
       return true;
     }
@@ -277,21 +347,17 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       policy: policyCheck.policy,
     });
     if (!rateCheck.allowed) {
+      const failure = policyRateFailure({
+        retryAfterSeconds: rateCheck.retry_after_seconds,
+        effectiveLimitPerMinute: rateCheck.effective_limit_per_minute,
+        scope: rateCheck.scope,
+      });
       await writeGovernancePreflightFailure({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         endpointId: endpoint.id,
         requestId,
-        endUserId: user.id,
-        action: 'resource_policy.rate_limited',
-        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
-        message: 'resource_policy_rate_limited',
-        statusCode: 429,
-        retryAfterSeconds: rateCheck.retry_after_seconds,
-        metadata: {
-          effective_limit_per_minute: rateCheck.effective_limit_per_minute,
-          scope: rateCheck.scope,
-        },
+        ...failure,
       });
       return true;
     }

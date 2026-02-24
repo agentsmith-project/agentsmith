@@ -325,6 +325,86 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
   }
 }
 
+function extractJsonObjectsFromBuffer(buffer: string): { objects: string[]; rest: string } {
+  const objects: string[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < buffer.length; i += 1) {
+    const ch = buffer[i];
+    if (start < 0) {
+      if (ch === '{') {
+        start = i;
+        depth = 1;
+        inString = false;
+        escaped = false;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        objects.push(buffer.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  if (start >= 0) {
+    return { objects, rest: buffer.slice(start) };
+  }
+  return { objects, rest: '' };
+}
+
+function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
+  let remaining = buffer;
+
+  const newlineParts = remaining.split('\n');
+  const tail = newlineParts.pop() ?? '';
+  for (const rawPart of newlineParts) {
+    const line = rawPart.trim();
+    if (!line) continue;
+    maybeEmitTraceFromStdoutLine(requestId, line);
+    maybeEmitDeltaChunk(requestId, line);
+  }
+  remaining = tail;
+
+  const parsed = extractJsonObjectsFromBuffer(remaining);
+  for (const jsonObject of parsed.objects) {
+    const line = jsonObject.trim();
+    if (!line) continue;
+    maybeEmitTraceFromStdoutLine(requestId, line);
+    maybeEmitDeltaChunk(requestId, line);
+  }
+  return parsed.rest;
+}
+
 async function runCodexRequest(requestId: string, payload: ServerStartPayload): Promise<void> {
   const runtimeContext = payload.runtime_context ?? {};
   const taskId = sanitizePathPart(runtimeContext.task_id, `task_${requestId.slice(0, 8)}`);
@@ -487,16 +567,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const workspaceBeforeSnapshot = isNotebookMode ? await scanWorkspaceFilesSnapshot(cwd) : null;
   child.stdout.on('data', (buffer: Buffer) => {
     stdoutBuffer += buffer.toString('utf-8');
-    let idx = stdoutBuffer.indexOf('\n');
-    while (idx >= 0) {
-      const line = stdoutBuffer.slice(0, idx).trim();
-      stdoutBuffer = stdoutBuffer.slice(idx + 1);
-      if (line.length > 0) {
-        maybeEmitTraceFromStdoutLine(requestId, line);
-        maybeEmitDeltaChunk(requestId, line);
-      }
-      idx = stdoutBuffer.indexOf('\n');
-    }
+    stdoutBuffer = flushCodexStdoutBuffer(requestId, stdoutBuffer);
   });
 
   child.stderr.on('data', (buffer: Buffer) => {
@@ -542,6 +613,14 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
 
   child.on('close', (code, signal) => {
     clearRequestTimers(requestId);
+    stdoutBuffer = flushCodexStdoutBuffer(requestId, stdoutBuffer);
+    const trailingLine = stdoutBuffer.trim();
+    if (trailingLine.length > 0) {
+      // Final fallback for residual non-JSON text without trailing newline.
+      maybeEmitTraceFromStdoutLine(requestId, trailingLine);
+      maybeEmitDeltaChunk(requestId, trailingLine);
+      stdoutBuffer = '';
+    }
     debugLog('codex process closed', {
       request_id: requestId,
       code: code ?? null,

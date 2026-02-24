@@ -15,6 +15,8 @@ AGENT_ID="${AGENT_ID:-$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)}"
 PROMPT="${PROMPT:-reply exactly: chain ok}"
 POLL_MAX="${POLL_MAX:-40}"
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-2}"
+FINAL_MESSAGE_SETTLE_MAX_SEC="${FINAL_MESSAGE_SETTLE_MAX_SEC:-15}"
+FINAL_MESSAGE_SETTLE_INTERVAL_SEC="${FINAL_MESSAGE_SETTLE_INTERVAL_SEC:-1}"
 WAIT_AGENT_ONLINE_MAX="${WAIT_AGENT_ONLINE_MAX:-20}"
 WAIT_AGENT_ONLINE_INTERVAL_SEC="${WAIT_AGENT_ONLINE_INTERVAL_SEC:-1}"
 WAIT_AGENT_ONLINE="${WAIT_AGENT_ONLINE:-1}"
@@ -105,12 +107,33 @@ done
 echo "[smoke] final task:"
 curl -sS "${BASE}/tasks/${TASK_ID}" -H "Authorization: Bearer ${TOKEN}"
 echo
+settle_attempt=0
+settle_deadline=$((SECONDS + FINAL_MESSAGE_SETTLE_MAX_SEC))
+while true; do
+  settle_attempt=$((settle_attempt + 1))
+  final_messages_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/messages" -H "Authorization: Bearer ${TOKEN}")"
+  final_agent_tail="$(printf '%s' "${final_messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const a=JSON.parse(s);const m=[...a].reverse().find(x=>x.role==="agent");process.stdout.write((m?.content||"").trim());}catch{process.exit(2)}})')"
+  if [[ -z "${trace_terminal_status:-}" ]]; then
+    break
+  fi
+  if [[ "${trace_terminal_status}" != "success" ]]; then
+    break
+  fi
+  if [[ "${final_agent_tail}" == *'"turn.completed"'* ]]; then
+    break
+  fi
+  if (( SECONDS >= settle_deadline )); then
+    break
+  fi
+  echo "[smoke] waiting for final agent message settle... [${settle_attempt}] " \
+    "elapsed=$((FINAL_MESSAGE_SETTLE_MAX_SEC - (settle_deadline - SECONDS)))s/${FINAL_MESSAGE_SETTLE_MAX_SEC}s" >&2
+  sleep "${FINAL_MESSAGE_SETTLE_INTERVAL_SEC}"
+done
+
 echo "[smoke] final messages:"
-final_messages_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/messages" -H "Authorization: Bearer ${TOKEN}")"
 printf '%s' "${final_messages_json}"
 echo
 
-final_agent_tail="$(printf '%s' "${final_messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const a=JSON.parse(s);const m=[...a].reverse().find(x=>x.role==="agent");process.stdout.write((m?.content||"").trim());}catch{process.exit(2)}})')"
 if [[ -z "${final_agent_tail}" ]]; then
   echo "[smoke] ERROR: final agent message is empty" >&2
   exit 2

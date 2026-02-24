@@ -19,6 +19,12 @@ import {
 } from './chat-openai-payload.js';
 import { logChatStreamEvent } from './chat-observability.js';
 import type { ChatAttachmentRecord } from './resource-models.js';
+import {
+  indexChatAttachmentsByLibraryObjectRef,
+  readChatLibraryObjectInputs,
+  resolveChatInputsFromAttachmentIndex,
+  toChatAttachmentSnapshots,
+} from './chat-input-refs.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -34,41 +40,6 @@ interface ChatStreamHandlerArgs {
 
 const MAX_ATTACHMENTS_PER_MESSAGE = 8;
 const MAX_ATTACHMENT_TOTAL_SIZE_BYTES = 60 * 1024 * 1024;
-
-type ChatLibraryObjectInputRef = {
-  kind: 'library_object';
-  library_id: string;
-  key: string;
-  name?: string;
-  content_type?: string;
-  size_bytes?: number;
-};
-
-function readChatLibraryObjectInputs(rawInputs: unknown): ChatLibraryObjectInputRef[] | null {
-  if (rawInputs == null) return [];
-  if (!Array.isArray(rawInputs)) return null;
-  const out: ChatLibraryObjectInputRef[] = [];
-  const seen = new Set<string>();
-  for (const item of rawInputs) {
-    if (!item || typeof item !== 'object') return null;
-    const rec = item as Record<string, unknown>;
-    if (rec.kind !== 'library_object') return null;
-    if (typeof rec.library_id !== 'string' || rec.library_id.length === 0) return null;
-    if (typeof rec.key !== 'string' || rec.key.length === 0) return null;
-    const dedupe = `${rec.library_id}:${rec.key}`;
-    if (seen.has(dedupe)) continue;
-    seen.add(dedupe);
-    out.push({
-      kind: 'library_object',
-      library_id: rec.library_id,
-      key: rec.key,
-      name: typeof rec.name === 'string' ? rec.name : undefined,
-      content_type: typeof rec.content_type === 'string' ? rec.content_type : undefined,
-      size_bytes: typeof rec.size_bytes === 'number' && rec.size_bytes >= 0 ? rec.size_bytes : undefined,
-    });
-  }
-  return out;
-}
 
 class AgentStreamRouteError extends Error {
   code: string;
@@ -303,13 +274,8 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         route.projectId,
         route.sessionId,
       );
-      const byRef = new Map<string, ChatAttachmentRecord>();
-      for (const attachment of allSessionAttachments) {
-        if (attachment.input_ref?.kind === 'library_object') {
-          byRef.set(`${attachment.input_ref.library_id}:${attachment.input_ref.key}`, attachment);
-        }
-      }
-      const resolvedAttachments = inputRefs.map((input) => byRef.get(`${input.library_id}:${input.key}`) ?? null);
+      const byRef = indexChatAttachmentsByLibraryObjectRef(allSessionAttachments);
+      const resolvedAttachments = resolveChatInputsFromAttachmentIndex(inputRefs, byRef);
       if (resolvedAttachments.some((item) => !item)) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_not_found' });
         return true;
@@ -325,16 +291,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_limit_exceeded' });
         return true;
       }
-      attachmentSnapshots = attachments.map((attachment) => ({
-        id: attachment.id,
-        file_name: attachment.file_name,
-        file_type: attachment.file_type,
-        file_size: attachment.file_size,
-        input_ref: attachment.input_ref,
-        source_type: attachment.source_type,
-        source_library_id: attachment.source_library_id,
-        source_object_key: attachment.source_object_key,
-      }));
+      attachmentSnapshots = toChatAttachmentSnapshots(attachments);
     }
     let branchLeaf: {
       id: string;

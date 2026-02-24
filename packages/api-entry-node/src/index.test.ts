@@ -861,6 +861,101 @@ describe('api-entry-node projects routes', () => {
     expect(membership.permissions).toContain('project:member:view');
   });
 
+  it('supports minimal project members governance write endpoints', async () => {
+    const { baseUrl } = startServer();
+
+    const createGroupRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/groups', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Core Team',
+        description: 'Core project members',
+        permission_template_id: 'pt_custom_1',
+        member_ids: ['user_test'],
+      }),
+    });
+    expect(createGroupRes.status).toBe(200);
+    const createdGroup = (await createGroupRes.json()) as {
+      id: string;
+      project_id: string;
+      name: string;
+      permission_template_id: string;
+      member_ids: string[];
+    };
+    expect(createdGroup.project_id).toBe('proj_1');
+    expect(createdGroup.name).toBe('Core Team');
+    expect(createdGroup.member_ids).toEqual(['user_test']);
+
+    const listGroupsAfterCreateRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/groups');
+    expect(listGroupsAfterCreateRes.status).toBe(200);
+    const groupsAfterCreate = (await listGroupsAfterCreateRes.json()) as { items: Array<{ id: string; name: string }> };
+    expect(groupsAfterCreate.items.map((g) => g.id)).toContain(createdGroup.id);
+
+    const patchGroupRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Core Team Updated',
+          member_ids: ['user_test', 'user_other'],
+        }),
+      },
+    );
+    expect(patchGroupRes.status).toBe(200);
+    const patchedGroup = (await patchGroupRes.json()) as { name: string; member_ids: string[] };
+    expect(patchedGroup.name).toBe('Core Team Updated');
+    expect(patchedGroup.member_ids).toEqual(['user_test', 'user_other']);
+
+    const applyTemplateRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}/apply-template`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ member_ids: ['user_test'] }),
+      },
+    );
+    expect(applyTemplateRes.status).toBe(200);
+    const applyTemplate = (await applyTemplateRes.json()) as {
+      applied_count: number;
+      results: Array<{ member_id: string; status: string }>;
+    };
+    expect(applyTemplate.applied_count).toBe(1);
+    expect(applyTemplate.results[0]).toMatchObject({ member_id: 'user_test', status: 'applied' });
+
+    const missingApproveRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests/jr_missing/approve',
+      { method: 'POST' },
+    );
+    expect(missingApproveRes.status).toBe(404);
+
+    const missingRejectRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests/jr_missing/reject',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'nope' }),
+      },
+    );
+    expect(missingRejectRes.status).toBe(404);
+
+    const deleteGroupRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,
+      { method: 'DELETE' },
+    );
+    expect(deleteGroupRes.status).toBe(204);
+
+    const listGroupsAfterDeleteRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/groups');
+    expect(listGroupsAfterDeleteRes.status).toBe(200);
+    const groupsAfterDelete = (await listGroupsAfterDeleteRes.json()) as { items: Array<{ id: string }> };
+    expect(groupsAfterDelete.items.map((g) => g.id)).not.toContain(createdGroup.id);
+  });
+
   it('supports source library object browser routes', async () => {
     const { baseUrl } = startServer();
 

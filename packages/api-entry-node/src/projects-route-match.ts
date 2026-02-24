@@ -62,9 +62,13 @@ export type ProjectsRoute =
   | { kind: 'usageKpi'; workspaceId: string; projectId: string }
   | { kind: 'projectMembers'; workspaceId: string; projectId: string }
   | { kind: 'projectJoinRequests'; workspaceId: string; projectId: string }
+  | { kind: 'projectJoinRequestApprove'; workspaceId: string; projectId: string; joinId: string }
+  | { kind: 'projectJoinRequestReject'; workspaceId: string; projectId: string; joinId: string }
   | { kind: 'projectPermissionTemplates'; workspaceId: string; projectId: string }
   | { kind: 'projectQuotaTemplates'; workspaceId: string; projectId: string }
   | { kind: 'projectGroups'; workspaceId: string; projectId: string }
+  | { kind: 'projectGroupItem'; workspaceId: string; projectId: string; groupId: string }
+  | { kind: 'projectGroupApplyTemplate'; workspaceId: string; projectId: string; groupId: string }
   | { kind: 'projectMembershipItem'; workspaceId: string; projectId: string; userId: string }
   | ChatRoute
   | { kind: 'agents'; workspaceId: string; projectId: string }
@@ -191,6 +195,30 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
+  const projectJoinRequestApproveMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/join-requests\/([^/]+)\/approve\/?$/,
+  );
+  if (projectJoinRequestApproveMatched) {
+    return {
+      kind: 'projectJoinRequestApprove',
+      workspaceId: decodeURIComponent(projectJoinRequestApproveMatched[1]),
+      projectId: decodeURIComponent(projectJoinRequestApproveMatched[2]),
+      joinId: decodeURIComponent(projectJoinRequestApproveMatched[3]),
+    };
+  }
+
+  const projectJoinRequestRejectMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/join-requests\/([^/]+)\/reject\/?$/,
+  );
+  if (projectJoinRequestRejectMatched) {
+    return {
+      kind: 'projectJoinRequestReject',
+      workspaceId: decodeURIComponent(projectJoinRequestRejectMatched[1]),
+      projectId: decodeURIComponent(projectJoinRequestRejectMatched[2]),
+      joinId: decodeURIComponent(projectJoinRequestRejectMatched[3]),
+    };
+  }
+
   const projectPermissionTemplatesMatched = pathname.match(
     /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/permission-templates\/?$/,
   );
@@ -221,6 +249,30 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'projectGroups',
       workspaceId: decodeURIComponent(projectGroupsMatched[1]),
       projectId: decodeURIComponent(projectGroupsMatched[2]),
+    };
+  }
+
+  const projectGroupApplyTemplateMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/groups\/([^/]+)\/apply-template\/?$/,
+  );
+  if (projectGroupApplyTemplateMatched) {
+    return {
+      kind: 'projectGroupApplyTemplate',
+      workspaceId: decodeURIComponent(projectGroupApplyTemplateMatched[1]),
+      projectId: decodeURIComponent(projectGroupApplyTemplateMatched[2]),
+      groupId: decodeURIComponent(projectGroupApplyTemplateMatched[3]),
+    };
+  }
+
+  const projectGroupItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/groups\/([^/]+)\/?$/,
+  );
+  if (projectGroupItemMatched) {
+    return {
+      kind: 'projectGroupItem',
+      workspaceId: decodeURIComponent(projectGroupItemMatched[1]),
+      projectId: decodeURIComponent(projectGroupItemMatched[2]),
+      groupId: decodeURIComponent(projectGroupItemMatched[3]),
     };
   }
 

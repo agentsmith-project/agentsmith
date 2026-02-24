@@ -30,6 +30,8 @@ interface AnyRoute {
   workspaceId?: string;
   projectId?: string;
   userId?: string;
+  joinId?: string;
+  groupId?: string;
   libraryId?: string;
   jobId?: string;
   sourceId?: string;
@@ -52,6 +54,33 @@ interface ProjectSourceHandlerArgs {
 }
 
 const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
+const PROJECT_JOIN_REQUESTS_BY_PROJECT = new Map<string, Array<{
+  id: string;
+  project_id: string;
+  user_id: string;
+  user_email: string;
+  user_name: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requested_at: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  reject_reason?: string;
+}>>();
+const PROJECT_GROUPS_BY_PROJECT = new Map<string, Array<{
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  permission_template_id: string;
+  member_ids: string[];
+  created_at: string;
+  updated_at: string;
+}>>();
+
+function projectScopedKey(workspaceId: string, projectId: string) {
+  return `${workspaceId}:${projectId}`;
+}
 
 function isDefaultPersonalLibraryForUser(
   library: { name: string; created_by_user_id: string; system_managed_kind?: string },
@@ -292,8 +321,48 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     return true;
   }
 
-  if (route.kind === 'projectJoinRequests' && method === 'GET') {
-    json(res, 200, { items: [], total: 0 });
+  if (route.kind === 'projectJoinRequests' && method === 'GET' && route.workspaceId && route.projectId) {
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const items = PROJECT_JOIN_REQUESTS_BY_PROJECT.get(key) ?? [];
+    json(res, 200, { items, total: items.length });
+    return true;
+  }
+
+  if (route.kind === 'projectJoinRequestApprove' && method === 'POST' && route.workspaceId && route.projectId && route.joinId) {
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const items = PROJECT_JOIN_REQUESTS_BY_PROJECT.get(key) ?? [];
+    const target = items.find((item) => item.id === route.joinId);
+    if (!target) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'Join request not found' });
+      return true;
+    }
+    target.status = 'approved';
+    target.reviewed_at = new Date().toISOString();
+    target.reviewed_by = user.id;
+    target.reject_reason = undefined;
+    res.statusCode = 204;
+    res.end();
+    return true;
+  }
+
+  if (route.kind === 'projectJoinRequestReject' && method === 'POST' && route.workspaceId && route.projectId && route.joinId) {
+    const body = await readBody(req);
+    const reason = typeof (body as { reason?: unknown } | null)?.reason === 'string'
+      ? (body as { reason?: string }).reason
+      : undefined;
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const items = PROJECT_JOIN_REQUESTS_BY_PROJECT.get(key) ?? [];
+    const target = items.find((item) => item.id === route.joinId);
+    if (!target) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'Join request not found' });
+      return true;
+    }
+    target.status = 'rejected';
+    target.reviewed_at = new Date().toISOString();
+    target.reviewed_by = user.id;
+    target.reject_reason = reason;
+    res.statusCode = 204;
+    res.end();
     return true;
   }
 
@@ -307,8 +376,91 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     return true;
   }
 
-  if (route.kind === 'projectGroups' && method === 'GET') {
-    json(res, 200, { items: [] });
+  if (route.kind === 'projectGroups' && method === 'GET' && route.workspaceId && route.projectId) {
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    json(res, 200, { items: PROJECT_GROUPS_BY_PROJECT.get(key) ?? [] });
+    return true;
+  }
+
+  if (route.kind === 'projectGroups' && method === 'POST' && route.workspaceId && route.projectId) {
+    const body = await readBody(req) as {
+      name?: string;
+      description?: string;
+      permission_template_id?: string;
+      member_ids?: string[];
+    };
+    if (!body || typeof body.name !== 'string' || body.name.trim().length === 0 || typeof body.permission_template_id !== 'string') {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'name and permission_template_id are required' });
+      return true;
+    }
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const groups = PROJECT_GROUPS_BY_PROJECT.get(key) ?? [];
+    const now = new Date().toISOString();
+    const created = {
+      id: `grp_${Math.random().toString(36).slice(2, 10)}`,
+      project_id: route.projectId,
+      name: body.name.trim(),
+      description: typeof body.description === 'string' ? body.description : undefined,
+      permission_template_id: body.permission_template_id,
+      member_ids: Array.isArray(body.member_ids) ? body.member_ids.filter((v): v is string => typeof v === 'string') : [],
+      created_at: now,
+      updated_at: now,
+    };
+    groups.push(created);
+    PROJECT_GROUPS_BY_PROJECT.set(key, groups);
+    json(res, 200, created);
+    return true;
+  }
+
+  if (route.kind === 'projectGroupItem' && method === 'PATCH' && route.workspaceId && route.projectId && route.groupId) {
+    const body = await readBody(req) as {
+      name?: string;
+      description?: string;
+      permission_template_id?: string;
+      member_ids?: string[];
+    };
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const groups = PROJECT_GROUPS_BY_PROJECT.get(key) ?? [];
+    const group = groups.find((g) => g.id === route.groupId);
+    if (!group) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'Group not found' });
+      return true;
+    }
+    if (typeof body.name === 'string') group.name = body.name;
+    if (typeof body.description === 'string' || body.description === undefined) group.description = body.description;
+    if (typeof body.permission_template_id === 'string') group.permission_template_id = body.permission_template_id;
+    if (Array.isArray(body.member_ids)) {
+      group.member_ids = body.member_ids.filter((v): v is string => typeof v === 'string');
+    }
+    group.updated_at = new Date().toISOString();
+    json(res, 200, group);
+    return true;
+  }
+
+  if (route.kind === 'projectGroupItem' && method === 'DELETE' && route.workspaceId && route.projectId && route.groupId) {
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const groups = PROJECT_GROUPS_BY_PROJECT.get(key) ?? [];
+    const next = groups.filter((g) => g.id !== route.groupId);
+    PROJECT_GROUPS_BY_PROJECT.set(key, next);
+    res.statusCode = 204;
+    res.end();
+    return true;
+  }
+
+  if (route.kind === 'projectGroupApplyTemplate' && method === 'POST' && route.workspaceId && route.projectId && route.groupId) {
+    const body = await readBody(req) as { member_ids?: string[] };
+    const key = projectScopedKey(route.workspaceId, route.projectId);
+    const groups = PROJECT_GROUPS_BY_PROJECT.get(key) ?? [];
+    const group = groups.find((g) => g.id === route.groupId);
+    if (!group) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'Group not found' });
+      return true;
+    }
+    const memberIds = Array.isArray(body.member_ids) ? body.member_ids.filter((v): v is string => typeof v === 'string') : group.member_ids;
+    json(res, 200, {
+      applied_count: memberIds.length,
+      results: memberIds.map((memberId) => ({ member_id: memberId, status: 'applied' })),
+    });
     return true;
   }
 

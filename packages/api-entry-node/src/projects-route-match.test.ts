@@ -277,6 +277,41 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches project members governance write routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/join-requests/jr_1/approve'),
+    ).toEqual({
+      kind: 'projectJoinRequestApprove',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      joinId: 'jr_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/join-requests/jr_1/reject'),
+    ).toEqual({
+      kind: 'projectJoinRequestReject',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      joinId: 'jr_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/groups/grp_1'),
+    ).toEqual({
+      kind: 'projectGroupItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      groupId: 'grp_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/groups/grp_1/apply-template'),
+    ).toEqual({
+      kind: 'projectGroupApplyTemplate',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      groupId: 'grp_1',
+    });
+  });
+
   it('matches audit and usage routes', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/audit'),

@@ -72,11 +72,23 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
   if (
     route.kind === 'projectMembers'
     || route.kind === 'projectJoinRequests'
+    || route.kind === 'projectJoinRequestApprove'
+    || route.kind === 'projectJoinRequestReject'
     || route.kind === 'projectPermissionTemplates'
     || route.kind === 'projectQuotaTemplates'
     || route.kind === 'projectGroups'
+    || route.kind === 'projectGroupItem'
+    || route.kind === 'projectGroupApplyTemplate'
     || route.kind === 'projectMembershipItem'
   ) {
+    if (
+      route.kind === 'projectJoinRequestApprove'
+      || route.kind === 'projectJoinRequestReject'
+      || route.kind === 'projectGroupItem'
+      || route.kind === 'projectGroupApplyTemplate'
+    ) {
+      return method === 'GET' ? ['project:member:view'] : ['project:member:manage'];
+    }
     return ['project:member:view'];
   }
 

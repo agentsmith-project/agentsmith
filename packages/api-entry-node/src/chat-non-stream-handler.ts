@@ -43,6 +43,14 @@ function validateAttachmentPayload(raw: {
   file_type?: string;
   file_size?: number;
   content_base64?: string;
+  input_ref?: {
+    kind?: string;
+    library_id?: string;
+    key?: string;
+    name?: string;
+    content_type?: string;
+    size_bytes?: number;
+  };
 }): string | null {
   if (!raw.file_name || !raw.file_type || typeof raw.file_size !== 'number' || raw.file_size < 0) {
     return 'attachment_fields_required';
@@ -58,6 +66,19 @@ function validateAttachmentPayload(raw: {
       }
     } catch {
       return 'attachment_content_base64_invalid';
+    }
+  }
+  if (raw.input_ref !== undefined) {
+    if (
+      typeof raw.input_ref !== 'object'
+      || raw.input_ref === null
+      || raw.input_ref.kind !== 'library_object'
+      || typeof raw.input_ref.library_id !== 'string'
+      || raw.input_ref.library_id.length === 0
+      || typeof raw.input_ref.key !== 'string'
+      || raw.input_ref.key.length === 0
+    ) {
+      return 'attachment_input_ref_invalid';
     }
   }
   return null;
@@ -373,6 +394,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
           file_name: attachment.file_name,
           file_type: attachment.file_type,
           file_size: attachment.file_size,
+          input_ref: attachment.input_ref,
           source_type: attachment.source_type,
           source_library_id: attachment.source_library_id,
           source_object_key: attachment.source_object_key,
@@ -453,6 +475,14 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       file_type?: string;
       file_size?: number;
       content_base64?: string;
+      input_ref?: {
+        kind?: string;
+        library_id?: string;
+        key?: string;
+        name?: string;
+        content_type?: string;
+        size_bytes?: number;
+      };
       source_type?: 'local_upload' | 'library_import';
       source_library_id?: string;
       source_object_key?: string;
@@ -476,6 +506,20 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_limit_exceeded' });
       return true;
     }
+    const inputRef =
+      raw.input_ref && raw.input_ref.kind === 'library_object'
+        ? {
+            kind: 'library_object' as const,
+            library_id: raw.input_ref.library_id!,
+            key: raw.input_ref.key!,
+            name: typeof raw.input_ref.name === 'string' ? raw.input_ref.name : undefined,
+            content_type: typeof raw.input_ref.content_type === 'string' ? raw.input_ref.content_type : undefined,
+            size_bytes:
+              typeof raw.input_ref.size_bytes === 'number' && raw.input_ref.size_bytes >= 0
+                ? raw.input_ref.size_bytes
+                : undefined,
+          }
+        : undefined;
     const attachment = await deps.chatResourceService.initAttachment({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -483,9 +527,10 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       fileName: raw.file_name!,
       fileType: raw.file_type!,
       fileSize: raw.file_size!,
-      sourceType: raw.source_type,
-      sourceLibraryId: raw.source_library_id,
-      sourceObjectKey: raw.source_object_key,
+      inputRef,
+      sourceType: inputRef ? 'library_import' : raw.source_type,
+      sourceLibraryId: inputRef ? inputRef.library_id : raw.source_library_id,
+      sourceObjectKey: inputRef ? inputRef.key : raw.source_object_key,
       contentBase64: raw.content_base64,
       previewUrl: toImageDataUrl(
         raw.content_base64,

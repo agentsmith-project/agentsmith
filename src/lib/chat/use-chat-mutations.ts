@@ -70,9 +70,14 @@ export function useChatMutations(args: UseChatMutationsArgs) {
       file_type: fileType,
       file_size: blob.size,
       content_base64: contentBase64,
-      source_type: 'library_import',
-      source_library_id: input.libraryId,
-      source_object_key: input.key,
+      input_ref: {
+        kind: 'library_object',
+        library_id: input.libraryId,
+        key: input.key,
+        name: input.name,
+        content_type: fileType,
+        size_bytes: blob.size,
+      },
     });
 
     return { ...attachment, sessionId: input.sessionId };

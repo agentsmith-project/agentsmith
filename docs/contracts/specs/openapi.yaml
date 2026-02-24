@@ -2305,6 +2305,27 @@ components:
           type: string
         size_bytes:
           type: integer
+        input_ref:
+          type: object
+          required:
+          - kind
+          - library_id
+          - key
+          properties:
+            kind:
+              type: string
+              enum:
+              - library_object
+            library_id:
+              type: string
+            key:
+              type: string
+            name:
+              type: string
+            content_type:
+              type: string
+            size_bytes:
+              type: integer
     Agent:
       type: object
       required:

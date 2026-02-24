@@ -234,6 +234,14 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       file_name: string;
       file_type: string;
       file_size: number;
+      input_ref?: {
+        kind: 'library_object';
+        library_id: string;
+        key: string;
+        name?: string;
+        content_type?: string;
+        size_bytes?: number;
+      };
       source_type?: 'local_upload' | 'library_import';
       source_library_id?: string;
       source_object_key?: string;
@@ -278,6 +286,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         file_name: attachment.file_name,
         file_type: attachment.file_type,
         file_size: attachment.file_size,
+        input_ref: attachment.input_ref,
         source_type: attachment.source_type,
         source_library_id: attachment.source_library_id,
         source_object_key: attachment.source_object_key,

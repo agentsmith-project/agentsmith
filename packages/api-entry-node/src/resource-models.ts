@@ -206,6 +206,14 @@ export interface ChatAttachmentSnapshotRecord {
   file_name: string;
   file_type: string;
   file_size: number;
+  input_ref?: {
+    kind: 'library_object';
+    library_id: string;
+    key: string;
+    name?: string;
+    content_type?: string;
+    size_bytes?: number;
+  };
   source_type?: 'local_upload' | 'library_import';
   source_library_id?: string;
   source_object_key?: string;
@@ -222,6 +230,14 @@ export interface ChatAttachmentRecord {
   upload_status: 'uploading' | 'processing' | 'ready' | 'failed';
   created_at: string;
   error_message?: string;
+  input_ref?: {
+    kind: 'library_object';
+    library_id: string;
+    key: string;
+    name?: string;
+    content_type?: string;
+    size_bytes?: number;
+  };
   source_type?: 'local_upload' | 'library_import';
   source_library_id?: string;
   source_object_key?: string;

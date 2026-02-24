@@ -12,6 +12,7 @@ import type {
   PaginatedResponse,
   PaginationParams,
 } from '../types';
+import type { ChatAttachmentInputRef } from '@/lib/types/input-ref';
 
 export interface CreateSessionRequest {
   title?: string;
@@ -51,9 +52,7 @@ export interface InitAttachmentRequest {
   file_type: string;
   file_size: number;
   content_base64?: string;
-  source_type?: 'local_upload' | 'library_import';
-  source_library_id?: string;
-  source_object_key?: string;
+  input_ref?: ChatAttachmentInputRef;
 }
 
 export interface InitAttachmentResponse {

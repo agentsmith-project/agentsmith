@@ -323,6 +323,7 @@ export interface ChatAttachmentSnapshot {
   file_name: string;
   file_type: string;
   file_size: number;
+  input_ref?: ChatAttachmentInputRef;
   source_type?: 'local_upload' | 'library_import';
   source_library_id?: string;
   source_object_key?: string;
@@ -360,6 +361,7 @@ export interface Attachment {
   upload_status: 'uploading' | 'processing' | 'ready' | 'failed';
   created_at: string;
   error_message?: string;
+  input_ref?: ChatAttachmentInputRef;
   source_type?: 'local_upload' | 'library_import';
   source_library_id?: string;
   source_object_key?: string;
@@ -800,3 +802,4 @@ export interface QuotaTemplate {
   description?: string;
   overrides_json: QuotaOverride;
 }
+import type { ChatAttachmentInputRef } from '@/lib/types/input-ref';

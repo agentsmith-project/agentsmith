@@ -335,6 +335,14 @@ export class ChatResourceService {
     sourceType?: 'local_upload' | 'library_import';
     sourceLibraryId?: string;
     sourceObjectKey?: string;
+    inputRef?: {
+      kind: 'library_object';
+      library_id: string;
+      key: string;
+      name?: string;
+      content_type?: string;
+      size_bytes?: number;
+    };
     contentBase64?: string;
     previewUrl?: string;
   }): Promise<ChatAttachmentRecord> {
@@ -349,6 +357,7 @@ export class ChatResourceService {
       file_size: input.fileSize,
       upload_status: 'ready',
       created_at: now,
+      input_ref: input.inputRef,
       source_type: input.sourceType,
       source_library_id: input.sourceLibraryId,
       source_object_key: input.sourceObjectKey,

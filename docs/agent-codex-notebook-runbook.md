@@ -336,6 +336,14 @@ RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
 ```bash
 make notebook-agent-release-smoke-full
 ```
+- Governance pages (real backend mode) smoke check (Audit / Usage / Members / Resource Policy):
+```bash
+make governance-pages-real-backend-smoke
+```
+- Notes:
+  - Uses Playwright + Keycloak login and current `/tmp/agentsmith_project_id.txt`
+  - Fails fast with a clear error if the current project URL is stale after local in-memory backend reset
+  - Intended for real backend mode page validation (not MSW-only UI smoke)
 
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.

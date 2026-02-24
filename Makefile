@@ -6,7 +6,7 @@
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
-	notebook-agent-release-smoke notebook-agent-release-smoke-full \
+	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-pages-real-backend-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
@@ -96,6 +96,7 @@ help:
 	@echo "  make notebook-agent-inputrefs-loop-smoke # notebook url input -> artifact -> artifact input loop smoke"
 	@echo "  make notebook-agent-release-smoke # run release smoke set (basic + inputrefs loop; optional matplotlib)"
 	@echo "  make notebook-agent-release-smoke-full # refresh token (if needed) + demo-check + release-smoke"
+	@echo "  make governance-pages-real-backend-smoke # playwright smoke for audit/usage/members/resource-policy using real backend"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
 	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
@@ -396,6 +397,10 @@ notebook-agent-release-smoke-full:
 	fi; \
 	echo "[make] running release smoke bundle..."; \
 	$(MAKE) notebook-agent-release-smoke
+
+governance-pages-real-backend-smoke:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	node ./scripts/governance-pages-real-backend-smoke.js
 
 notebook-agent-smoke-full:
 	@set -e; \

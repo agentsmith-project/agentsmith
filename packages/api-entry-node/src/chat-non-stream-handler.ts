@@ -22,8 +22,7 @@ import {
   type ChatMessageInputRef,
 } from './chat-input-refs.js';
 import {
-  resolveLibraryObjectInputMeta,
-  resolveUrlInputMeta,
+  resolveRuntimeInputRef,
 } from './input-ref-runtime-resolver.js';
 
 interface ChatNonStreamHandlerArgs {
@@ -572,28 +571,30 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       | { fileName: string; fileType: string; fileSize: number }
       | undefined;
     if (inputRef?.kind === 'library_object') {
-      const resolved = await resolveLibraryObjectInputMeta({
+      const resolved = await resolveRuntimeInputRef({
+        kind: 'library_object',
         deps: { getSourceObjectMetaUseCase: deps.getSourceObjectMetaUseCase },
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         input: inputRef,
       });
       resolvedAttachmentMeta = {
-        fileName: resolved.filename || raw.file_name!,
-        fileType: resolved.file_type || raw.file_type!,
-        fileSize: typeof resolved.file_size === 'number' ? resolved.file_size : raw.file_size!,
+        fileName: resolved.meta.filename || raw.file_name!,
+        fileType: resolved.meta.file_type || raw.file_type!,
+        fileSize: typeof resolved.meta.file_size === 'number' ? resolved.meta.file_size : raw.file_size!,
       };
     } else if (inputRef?.kind === 'url') {
-      const resolved = await resolveUrlInputMeta({
+      const resolved = await resolveRuntimeInputRef({
+        kind: 'url',
         deps: { getSourceObjectMetaUseCase: deps.getSourceObjectMetaUseCase },
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         input: inputRef,
       });
       resolvedAttachmentMeta = {
-        fileName: resolved.filename || raw.file_name!,
-        fileType: resolved.file_type || raw.file_type!,
-        fileSize: typeof resolved.file_size === 'number' ? resolved.file_size : raw.file_size!,
+        fileName: resolved.meta.filename || raw.file_name!,
+        fileType: resolved.meta.file_type || raw.file_type!,
+        fileSize: typeof resolved.meta.file_size === 'number' ? resolved.meta.file_size : raw.file_size!,
       };
     }
     const attachment = await deps.chatResourceService.initAttachment({

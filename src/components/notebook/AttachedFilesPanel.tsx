@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Link2, Plus, Upload, X, File as FileIcon } from 'lucide-react';
 import { useRemoveFile, useTaskAttachedFiles } from '@/lib/hooks/use-task';
 import { AIReadyStatusBadge } from '@/components/files/AIReadyStatusBadge';
+import { InputRefBadge } from '@/components/inputs/InputRefBadge';
 import { EmptyState } from '@/components/ui/loading';
 import { formatBytes } from '@/lib/utils/formatters';
 import { getTaskAttachedInputKindLabel } from '@/lib/utils/input-ref-display';
@@ -124,7 +125,7 @@ function AttachedFileItem({ file, onRemove, removing }: AttachedFileItemProps) {
           {aiReadyStatus && (
             <AIReadyStatusBadge status={aiReadyStatus} />
           )}
-          <span className="text-xs text-tertiary">{getTaskAttachedInputKindLabel(file)}</span>
+          <InputRefBadge label={getTaskAttachedInputKindLabel(file)} />
         </div>
       </div>
       <button

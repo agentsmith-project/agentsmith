@@ -10,6 +10,7 @@ import { getChatAttachmentInputRefLabel } from '@/lib/utils/input-ref-display';
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
+import { InputRefBadge } from '@/components/inputs/InputRefBadge';
 
 function hasBlockingAttachment(attachments: Attachment[]) {
   return attachments.some((a) => a.upload_status === 'uploading' || a.upload_status === 'processing' || a.upload_status === 'failed');
@@ -184,7 +185,9 @@ export function Composer({
                               : t('composer.attachment_status_failed')}
                         </div>
                       ) : inputRefLabel ? (
-                        <div className="text-[11px] text-tertiary">{inputRefLabel}</div>
+                        <div className="mt-0.5">
+                          <InputRefBadge label={inputRefLabel} />
+                        </div>
                       ) : null}
                     </div>
                     {status === 'failed' ? (

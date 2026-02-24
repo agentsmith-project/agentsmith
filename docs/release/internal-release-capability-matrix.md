@@ -23,7 +23,7 @@ This matrix is for internal/controlled releases where the primary supported flow
 
 - Members governance
   - baseline read APIs
-  - join request create / approve / reject actions
+  - join request create / approve / reject actions (approve creates active membership baseline)
   - groups CRUD + apply-template (minimal)
   - permission/quota template CRUD (minimal)
   - member permissions / quota overrides / history (minimal)
@@ -47,5 +47,5 @@ It does **not** yet apply member templates/custom permissions/resource policy co
 - Use these governance pages in **MSW/demo mode** for UI walkthroughs.
 - In real backend mode:
   - Audit/Usage are available for internal governance workflows (first-stage coverage)
-- Members is now partial in real backend mode (read baseline + join request create/approve/reject actions + groups CRUD + permission/quota templates CRUD + member permissions/quota overrides/history), and group permission templates now affect backend route authorization (allow-only union model). Member quota overrides/templates also have a first-stage endpoint `daily_token_limit` runtime effect.
+- Members is now partial in real backend mode (read baseline + join request create/approve/reject actions with minimal membership activation on approve + groups CRUD + permission/quota templates CRUD + member permissions/quota overrides/history), and group permission templates now affect backend route authorization (allow-only union model). Member quota overrides/templates also have a first-stage endpoint `daily_token_limit` runtime effect.
 - Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/agent allow-list rules, including group subjects, plus endpoint `requests_per_minute` rate limiting and endpoint `daily_token_limit` quota enforcement baseline).

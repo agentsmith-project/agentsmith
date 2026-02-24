@@ -1004,6 +1004,36 @@ describe('api-entry-node projects routes', () => {
     );
     expect(approveJoinRequestRes.status).toBe(204);
 
+    const membersAfterApproveRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/members',
+    );
+    expect(membersAfterApproveRes.status).toBe(200);
+    const membersAfterApprove = (await membersAfterApproveRes.json()) as {
+      items: Array<{ id: string; role: string; status: string }>;
+    };
+    expect(membersAfterApprove.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'user_alt', role: 'developer', status: 'active' }),
+      ]),
+    );
+
+    const approvedMembershipRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
+    );
+    expect(approvedMembershipRes.status).toBe(200);
+    const approvedMembership = (await approvedMembershipRes.json()) as {
+      user_id: string;
+      role: string;
+      status: string;
+    };
+    expect(approvedMembership).toMatchObject({
+      user_id: 'user_alt',
+      role: 'developer',
+      status: 'active',
+    });
+
     const rejectJoinRequestRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/join-requests/${createdJoinRequest.id}/reject`,

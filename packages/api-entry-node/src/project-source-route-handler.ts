@@ -37,6 +37,10 @@ import {
   setProjectQuotaTemplatesState,
 } from './project-quota-templates-store.js';
 import { getMemberQuotaState } from './project-member-quota-store.js';
+import {
+  getProjectMembershipsState,
+  upsertProjectMembership,
+} from './project-memberships-store.js';
 
 interface WorkspaceRecordLike {
   id: string;
@@ -355,22 +359,29 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       // Keep minimal members read endpoint usable in local/dev environments even
       // when membership/governance backend is not fully wired to project repo fixtures.
     }
-    const role = projectOwnerId === user.id ? 'owner' : 'developer';
-    const permissions = [...resolveProjectPermissions(projectOwnerId ?? user.id, user.id)];
-    json(res, 200, {
-      items: [
-        {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role,
-          permissions,
-          status: 'active',
-          joined_at: projectCreatedAt ?? new Date().toISOString(),
-        },
-      ],
-      total: 1,
-    });
+    const memberships = Array.from(getProjectMembershipsState(route.workspaceId, route.projectId).values());
+    const items = memberships.map((m) => ({
+      id: m.user_id,
+      email: m.user_id === user.id ? user.email : `${m.user_id}@example.com`,
+      name: m.user_id === user.id ? user.name : m.user_id,
+      role: m.role,
+      permissions: m.user_id === user.id ? [...resolveProjectPermissions(projectOwnerId ?? user.id, user.id)] : [],
+      status: m.status,
+      joined_at: m.joined_at,
+    }));
+    if (!items.some((item) => item.id === (projectOwnerId ?? user.id))) {
+      const ownerId = projectOwnerId ?? user.id;
+      items.unshift({
+        id: ownerId,
+        email: ownerId === user.id ? user.email : `${ownerId}@example.com`,
+        name: ownerId === user.id ? user.name : ownerId,
+        role: 'owner',
+        permissions: ownerId === user.id ? [...resolveProjectPermissions(ownerId, user.id)] : [],
+        status: 'active',
+        joined_at: projectCreatedAt ?? new Date().toISOString(),
+      });
+    }
+    json(res, 200, { items, total: items.length });
     return true;
   }
 
@@ -444,6 +455,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     target.reviewed_at = new Date().toISOString();
     target.reviewed_by = user.id;
     target.reject_reason = undefined;
+    upsertProjectMembership(route.workspaceId, route.projectId, {
+      project_id: route.projectId,
+      user_id: target.user_id,
+      role: 'developer',
+      status: 'active',
+      joined_at: target.reviewed_at,
+      approved_via_join_request_id: target.id,
+    });
     await writeProjectAuditEvent(deps, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -845,15 +864,16 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     } catch {
       // Keep minimal membership read endpoint usable in local/dev fixtures.
     }
+    const membership = getProjectMembershipsState(membershipRoute.workspaceId, membershipRoute.projectId).get(membershipRoute.userId);
     const isCurrentUser = membershipRoute.userId === user.id;
-    const role = projectOwnerId === membershipRoute.userId ? 'owner' : 'developer';
+    const role = membership?.role ?? (projectOwnerId === membershipRoute.userId ? 'owner' : 'developer');
     json(res, 200, {
       project_id: membershipRoute.projectId,
       user_id: membershipRoute.userId,
       role,
       permissions: isCurrentUser ? [...resolveProjectPermissions(projectOwnerId ?? user.id, user.id)] : [],
-      status: 'active',
-      joined_at: projectCreatedAt ?? new Date().toISOString(),
+      status: membership?.status ?? 'active',
+      joined_at: membership?.joined_at ?? projectCreatedAt ?? new Date().toISOString(),
     });
     return true;
   }

@@ -2,6 +2,7 @@ import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { extractBearerToken, verifyBearerToken } from './auth.js';
 import { handleProjectSourceRoute } from './project-source-route-handler.js';
+import { handleAuditUsageRoute } from './audit-usage-route-handler.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import { handleChatStreamRoute } from './chat-stream-handler.js';
 import { handleEndpointRoute } from './endpoint-route-handler.js';
@@ -62,6 +63,10 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
       return ['project:notebook:access', 'project:agent:use', 'project:endpoint:use'];
     }
     return ['project:notebook:access'];
+  }
+
+  if (route.kind === 'audit' || route.kind === 'usage' || route.kind === 'usageKpi') {
+    return route.kind === 'audit' ? ['project:audit:view'] : ['project:usage:view'];
   }
 
   if (isAgentRoute(route)) {
@@ -217,6 +222,17 @@ export async function handleRequest(
       resolveProjectPermissions,
     });
     if (handledProjectSourceRoute) {
+      return;
+    }
+
+    const handledAuditUsageRoute = await handleAuditUsageRoute({
+      route,
+      method,
+      requestUrl,
+      res,
+      json,
+    });
+    if (handledAuditUsageRoute) {
       return;
     }
 

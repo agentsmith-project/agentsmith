@@ -3481,6 +3481,522 @@
           }
         }
       }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage": {
+      "get": {
+        "tags": [
+          "Usage"
+        ],
+        "operationId": "get_usage",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_user_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "hour"
+              ]
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "time_bucket": {
+                            "type": "string"
+                          },
+                          "workspace_id": {
+                            "type": "string"
+                          },
+                          "project_id": {
+                            "type": "string"
+                          },
+                          "resource_type": {
+                            "type": "string"
+                          },
+                          "resource_id": {
+                            "type": "string"
+                          },
+                          "end_user_id": {
+                            "type": "string"
+                          },
+                          "requests": {
+                            "type": "integer"
+                          },
+                          "duration_p95_ms": {
+                            "type": "integer"
+                          },
+                          "bytes_in": {
+                            "type": "integer"
+                          },
+                          "bytes_out": {
+                            "type": "integer"
+                          },
+                          "tokens": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "time_bucket",
+                          "workspace_id",
+                          "project_id",
+                          "resource_type",
+                          "requests"
+                        ]
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "page_size": {
+                      "type": "integer"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "page_size",
+                    "has_more"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi": {
+      "get": {
+        "tags": [
+          "Usage"
+        ],
+        "operationId": "get_usageKpi",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_user_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests_today": {
+                      "type": "integer"
+                    },
+                    "errors_today": {
+                      "type": "integer"
+                    },
+                    "tokens_today": {
+                      "type": "integer"
+                    },
+                    "requests_yesterday": {
+                      "type": "integer"
+                    },
+                    "errors_yesterday": {
+                      "type": "integer"
+                    },
+                    "tokens_yesterday": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "requests_today",
+                    "errors_today"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "operationId": "get_audit",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_user_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "result",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "timestamp": {
+                            "type": "string"
+                          },
+                          "workspace_id": {
+                            "type": "string"
+                          },
+                          "project_id": {
+                            "type": "string"
+                          },
+                          "actor_type": {
+                            "type": "string"
+                          },
+                          "actor_id": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "resource_type": {
+                            "type": "string"
+                          },
+                          "resource_id": {
+                            "type": "string"
+                          },
+                          "end_user_id": {
+                            "type": "string"
+                          },
+                          "result": {
+                            "type": "string"
+                          },
+                          "error_code": {
+                            "type": "string"
+                          },
+                          "error_message": {
+                            "type": "string"
+                          },
+                          "request_id": {
+                            "type": "string"
+                          },
+                          "metadata_json": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "timestamp",
+                          "workspace_id",
+                          "project_id",
+                          "actor_type",
+                          "actor_id",
+                          "action",
+                          "result",
+                          "request_id",
+                          "metadata_json"
+                        ]
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "page_size": {
+                      "type": "integer"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "page_size",
+                    "has_more"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {

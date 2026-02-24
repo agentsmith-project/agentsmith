@@ -231,6 +231,30 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches audit and usage routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/audit'),
+    ).toEqual({
+      kind: 'audit',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage'),
+    ).toEqual({
+      kind: 'usage',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/kpi'),
+    ).toEqual({
+      kind: 'usageKpi',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+  });
+
   it('returns null for unknown route', () => {
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/unknown')).toBeNull();
   });

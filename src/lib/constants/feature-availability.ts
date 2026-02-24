@@ -3,8 +3,8 @@ export type FeatureAvailability = 'available' | 'partial' | 'mock_only' | 'comin
 export type GovernedFeature = 'audit' | 'usage' | 'members' | 'resource_policy';
 
 export const FEATURE_AVAILABILITY: Record<GovernedFeature, FeatureAvailability> = {
-  audit: 'mock_only',
-  usage: 'mock_only',
+  audit: 'partial',
+  usage: 'partial',
   members: 'mock_only',
   resource_policy: 'mock_only',
 };

@@ -23,6 +23,18 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources",
     "method": "get"
   },
+  "audit": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit",
+    "method": "get"
+  },
+  "usage": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage",
+    "method": "get"
+  },
+  "usageKpi": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi",
+    "method": "get"
+  },
   "sourceLibraries": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries",
     "method": "get"

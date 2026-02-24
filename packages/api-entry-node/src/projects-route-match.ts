@@ -57,6 +57,9 @@ export type ProjectsRoute =
     artifactId: string;
   }
   | { kind: 'taskEvents'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'audit'; workspaceId: string; projectId: string }
+  | { kind: 'usage'; workspaceId: string; projectId: string }
+  | { kind: 'usageKpi'; workspaceId: string; projectId: string }
   | ChatRoute
   | { kind: 'agents'; workspaceId: string; projectId: string }
   | { kind: 'agentItem'; workspaceId: string; projectId: string; agentId: string }
@@ -132,6 +135,33 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'sources',
       workspaceId: decodeURIComponent(sourcesMatched[1]),
       projectId: decodeURIComponent(sourcesMatched[2]),
+    };
+  }
+
+  const auditMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/audit\/?$/);
+  if (auditMatched) {
+    return {
+      kind: 'audit',
+      workspaceId: decodeURIComponent(auditMatched[1]),
+      projectId: decodeURIComponent(auditMatched[2]),
+    };
+  }
+
+  const usageKpiMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/kpi\/?$/);
+  if (usageKpiMatched) {
+    return {
+      kind: 'usageKpi',
+      workspaceId: decodeURIComponent(usageKpiMatched[1]),
+      projectId: decodeURIComponent(usageKpiMatched[2]),
+    };
+  }
+
+  const usageMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/?$/);
+  if (usageMatched) {
+    return {
+      kind: 'usage',
+      workspaceId: decodeURIComponent(usageMatched[1]),
+      projectId: decodeURIComponent(usageMatched[2]),
     };
   }
 

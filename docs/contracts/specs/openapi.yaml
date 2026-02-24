@@ -707,6 +707,262 @@ paths:
                   minLength: 1
                   maxLength: 255
               additionalProperties: false
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/audit:
+    get:
+      tags:
+        - Audit
+      operationId: get_audit
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: actor_type
+          in: query
+          schema:
+            type: string
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+        - name: end_user_id
+          in: query
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+        - name: result
+          in: query
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                  - total
+                  - page
+                  - page_size
+                  - has_more
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+                  has_more:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage:
+    get:
+      tags:
+        - Usage
+      operationId: get_usage
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+        - name: end_user_id
+          in: query
+          schema:
+            type: string
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum:
+              - day
+              - hour
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                  - total
+                  - page
+                  - page_size
+                  - has_more
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+                  has_more:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi:
+    get:
+      tags:
+        - Usage
+      operationId: get_usageKpi
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end_time
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: end_user_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - requests_today
+                  - errors_today
+                properties:
+                  requests_today:
+                    type: integer
+                  errors_today:
+                    type: integer
+                  tokens_today:
+                    type: integer
+                  requests_yesterday:
+                    type: integer
+                  errors_yesterday:
+                    type: integer
+                  tokens_yesterday:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}:
     get:
       tags:

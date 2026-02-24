@@ -4410,4 +4410,66 @@ describe('api-entry-node projects routes', () => {
     expect(page2Body.has_more).toBe(false);
     expect(page2Body.items.map((item) => item.content)).toEqual(['m3']);
   });
+
+  it('serves minimal usage and usage kpi endpoints', async () => {
+    const { baseUrl } = startServer();
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    const kpiRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/usage/kpi?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}`,
+    );
+    expect(kpiRes.status).toBe(200);
+    const kpi = (await kpiRes.json()) as {
+      requests_today: number;
+      errors_today: number;
+    };
+    expect(typeof kpi.requests_today).toBe('number');
+    expect(typeof kpi.errors_today).toBe('number');
+
+    const usageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&page=1&page_size=25`,
+    );
+    expect(usageRes.status).toBe(200);
+    const usage = (await usageRes.json()) as {
+      items: Array<{ workspace_id: string; project_id: string; resource_type: string }>;
+      total: number;
+      page: number;
+      page_size: number;
+      has_more: boolean;
+    };
+    expect(Array.isArray(usage.items)).toBe(true);
+    expect(usage.page).toBe(1);
+    expect(usage.page_size).toBe(25);
+    if (usage.items.length > 0) {
+      expect(usage.items[0].workspace_id).toBe('ws_default');
+      expect(usage.items[0].project_id).toBe('proj_1');
+      expect(usage.items[0].resource_type).toBe('notebook_task');
+    }
+  });
+
+  it('serves empty audit endpoint placeholder with paging shape', async () => {
+    const { baseUrl } = startServer();
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const res = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&page=1&page_size=10`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: unknown[];
+      total: number;
+      page: number;
+      page_size: number;
+      has_more: boolean;
+    };
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
+    expect(body.page).toBe(1);
+    expect(body.page_size).toBe(10);
+    expect(body.has_more).toBe(false);
+  });
 });

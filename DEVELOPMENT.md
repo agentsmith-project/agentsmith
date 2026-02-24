@@ -270,6 +270,7 @@ As of the current internal release candidate, the product-governance surfaces (`
 
 See also:
 - `docs/release/internal-release-capability-matrix.md`
+- `docs/release/internal-release-checklist.md`
 
 ### Scope (What this workline covered)
 

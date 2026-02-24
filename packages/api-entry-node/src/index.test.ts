@@ -1033,6 +1033,95 @@ describe('api-entry-node projects routes', () => {
     expect(listFinal.items.map((i) => i.id)).not.toContain(created.id);
   });
 
+  it('supports minimal quota template CRUD endpoints', async () => {
+    const { baseUrl } = startServer();
+
+    const listBeforeRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/quota-templates',
+    );
+    expect(listBeforeRes.status).toBe(200);
+    expect(await listBeforeRes.json()).toEqual([]);
+
+    const createRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/quota-templates',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Starter quota',
+          description: 'Base limits',
+          overrides_json: {
+            endpoint: { max_qpm: 20 },
+            chat: { daily_tokens: 10000 },
+          },
+        }),
+      },
+    );
+    expect(createRes.status).toBe(200);
+    const created = (await createRes.json()) as {
+      id: string;
+      project_id: string;
+      name: string;
+      overrides_json: Record<string, unknown>;
+    };
+    expect(created.project_id).toBe('proj_1');
+    expect(created.name).toBe('Starter quota');
+
+    const getRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/${created.id}`,
+    );
+    expect(getRes.status).toBe(200);
+    const fetched = (await getRes.json()) as { id: string };
+    expect(fetched.id).toBe(created.id);
+
+    const patchRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/${created.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Starter quota v2',
+          overrides_json: { notebook: { max_runs_per_hour: 5 } },
+        }),
+      },
+    );
+    expect(patchRes.status).toBe(200);
+    const patched = (await patchRes.json()) as { name: string; overrides_json: Record<string, unknown> };
+    expect(patched.name).toBe('Starter quota v2');
+    expect(patched.overrides_json).toEqual({ notebook: { max_runs_per_hour: 5 } });
+
+    const applyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/${created.id}/apply`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ member_ids: ['u1', 'u2'] }),
+      },
+    );
+    expect(applyRes.status).toBe(200);
+    expect(await applyRes.json()).toEqual({ applied_count: 2 });
+
+    const deleteRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/${created.id}`,
+      { method: 'DELETE' },
+    );
+    expect(deleteRes.status).toBe(204);
+
+    const listFinalRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/quota-templates',
+    );
+    expect(listFinalRes.status).toBe(200);
+    const listFinal = (await listFinalRes.json()) as Array<{ id: string }>;
+    expect(listFinal.map((i) => i.id)).not.toContain(created.id);
+  });
+
   it('supports source library object browser routes', async () => {
     const { baseUrl } = startServer();
 

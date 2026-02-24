@@ -269,6 +269,14 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/qt_1'),
+    ).toEqual({
+      kind: 'projectQuotaTemplateItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      templateId: 'qt_1',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/groups'),
     ).toEqual({
       kind: 'projectGroups',
@@ -317,6 +325,14 @@ describe('matchProjectsRoute', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       groupId: 'grp_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/qt_1/apply'),
+    ).toEqual({
+      kind: 'projectQuotaTemplateApply',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      templateId: 'qt_1',
     });
   });
 

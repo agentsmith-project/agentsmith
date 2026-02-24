@@ -77,6 +77,8 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'projectPermissionTemplates'
     || route.kind === 'projectPermissionTemplateItem'
     || route.kind === 'projectQuotaTemplates'
+    || route.kind === 'projectQuotaTemplateItem'
+    || route.kind === 'projectQuotaTemplateApply'
     || route.kind === 'projectGroups'
     || route.kind === 'projectGroupItem'
     || route.kind === 'projectGroupApplyTemplate'
@@ -87,6 +89,9 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
       || route.kind === 'projectJoinRequestReject'
       || route.kind === 'projectPermissionTemplates'
       || route.kind === 'projectPermissionTemplateItem'
+      || route.kind === 'projectQuotaTemplates'
+      || route.kind === 'projectQuotaTemplateItem'
+      || route.kind === 'projectQuotaTemplateApply'
       || route.kind === 'projectGroupItem'
       || route.kind === 'projectGroupApplyTemplate'
     ) {

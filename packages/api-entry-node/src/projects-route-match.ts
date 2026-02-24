@@ -67,6 +67,8 @@ export type ProjectsRoute =
   | { kind: 'projectPermissionTemplates'; workspaceId: string; projectId: string }
   | { kind: 'projectPermissionTemplateItem'; workspaceId: string; projectId: string; templateId: string }
   | { kind: 'projectQuotaTemplates'; workspaceId: string; projectId: string }
+  | { kind: 'projectQuotaTemplateItem'; workspaceId: string; projectId: string; templateId: string }
+  | { kind: 'projectQuotaTemplateApply'; workspaceId: string; projectId: string; templateId: string }
   | { kind: 'projectGroups'; workspaceId: string; projectId: string }
   | { kind: 'projectGroupItem'; workspaceId: string; projectId: string; groupId: string }
   | { kind: 'projectGroupApplyTemplate'; workspaceId: string; projectId: string; groupId: string }
@@ -251,6 +253,30 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'projectQuotaTemplates',
       workspaceId: decodeURIComponent(projectQuotaTemplatesMatched[1]),
       projectId: decodeURIComponent(projectQuotaTemplatesMatched[2]),
+    };
+  }
+
+  const projectQuotaTemplateApplyMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/quota-templates\/([^/]+)\/apply\/?$/,
+  );
+  if (projectQuotaTemplateApplyMatched) {
+    return {
+      kind: 'projectQuotaTemplateApply',
+      workspaceId: decodeURIComponent(projectQuotaTemplateApplyMatched[1]),
+      projectId: decodeURIComponent(projectQuotaTemplateApplyMatched[2]),
+      templateId: decodeURIComponent(projectQuotaTemplateApplyMatched[3]),
+    };
+  }
+
+  const projectQuotaTemplateItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/quota-templates\/([^/]+)\/?$/,
+  );
+  if (projectQuotaTemplateItemMatched) {
+    return {
+      kind: 'projectQuotaTemplateItem',
+      workspaceId: decodeURIComponent(projectQuotaTemplateItemMatched[1]),
+      projectId: decodeURIComponent(projectQuotaTemplateItemMatched[2]),
+      templateId: decodeURIComponent(projectQuotaTemplateItemMatched[3]),
     };
   }
 

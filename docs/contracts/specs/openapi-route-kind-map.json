@@ -63,6 +63,14 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates",
     "method": "get"
   },
+  "projectQuotaTemplateItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}",
+    "method": "patch"
+  },
+  "projectQuotaTemplateApply": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}/apply",
+    "method": "post"
+  },
   "projectGroups": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/groups",
     "method": "get"

@@ -726,6 +726,7 @@
       "title": "No audit events found",
       "description": "Try adjusting your filters or select a different time range"
     },
+    "load_failed_with_reason": "Failed to load audit events: {reason}",
     "permission_denied": "You don't have permission to view audit logs."
   },
   "usage": {
@@ -761,6 +762,7 @@
       "filtered_title": "No matching usage records",
       "filtered_description": "No records match the current filter conditions."
     },
+    "load_failed_with_reason": "Failed to load usage data: {reason}",
     "permission_denied": "You don't have permission to view usage statistics.",
     "scope_my_usage": "My Usage",
     "scope_project_usage": "Project Usage"

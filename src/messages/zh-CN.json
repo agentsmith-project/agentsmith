@@ -728,6 +728,7 @@
       "title": "未找到审计事件",
       "description": "尝试调整筛选条件或选择不同的时间范围"
     },
+    "load_failed_with_reason": "加载审计事件失败：{reason}",
     "permission_denied": "您没有权限查看审计日志。"
   },
   "usage": {
@@ -763,6 +764,7 @@
       "filtered_title": "没有匹配的用量记录",
       "filtered_description": "当前筛选条件下没有符合的数据。"
     },
+    "load_failed_with_reason": "加载用量数据失败：{reason}",
     "permission_denied": "您没有权限查看用量统计。",
     "scope_my_usage": "我的用量",
     "scope_project_usage": "项目用量"

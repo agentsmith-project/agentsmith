@@ -12,6 +12,7 @@ import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageToolbar } from '@/components/layout/PageToolbar';
+import { ErrorState } from '@/components/ui/error-state';
 import type { AuditEvent, AuditListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -94,11 +95,14 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
   if (error) {
     return (
       <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
-        <div className="bg-error/10 border border-error/30 rounded-md p-4">
-          <p className="text-error">
-            Failed to load audit events: {error instanceof Error ? error.message : 'Unknown error'}
-          </p>
-        </div>
+        <ErrorState
+          title={commonT('something_went_wrong')}
+          message={t('load_failed_with_reason', {
+            reason: error instanceof Error ? error.message : commonT('unknown_error'),
+          })}
+          onRetry={handleRefresh}
+          retryLabel={commonT('retry')}
+        />
       </PageLayout>
     );
   }

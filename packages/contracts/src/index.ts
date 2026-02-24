@@ -86,6 +86,7 @@ export const SourceLibrarySchema = z.object({
   visibility: z.literal('shared'),
   provider: z.literal('s3').optional(),
   bucket: z.string().min(1).optional(),
+  system_managed_kind: z.enum(['default_personal_uploads']).optional(),
   object_prefix: z.string().min(1).optional(),
   doc_namespace: z.string().min(1).optional(),
   vector_namespace: z.string().min(1).optional(),
@@ -102,6 +103,7 @@ export const CreateSourceLibraryRequestSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(1000).optional(),
   visibility: z.literal('shared').default('shared'),
+  system_managed_kind: z.enum(['default_personal_uploads']).optional(),
 });
 
 export const UpdateSourceLibraryRequestSchema = z

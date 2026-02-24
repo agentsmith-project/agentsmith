@@ -608,6 +608,7 @@ export class CreateSourceLibraryUseCase {
       name: input.name.trim(),
       description: input.description?.trim() || undefined,
       visibility: 'shared',
+      system_managed_kind: input.system_managed_kind,
       object_prefix: tuple.objectPrefix,
       doc_namespace: tuple.docNamespace,
       vector_namespace: tuple.vectorNamespace,

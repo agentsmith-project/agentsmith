@@ -2183,6 +2183,10 @@ components:
           type: string
         name:
           type: string
+        system_managed_kind:
+          type: string
+          enum:
+          - default_personal_uploads
     Project:
       type: object
       required:

@@ -53,10 +53,16 @@ interface ProjectSourceHandlerArgs {
 const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
 
 function isDefaultPersonalLibraryForUser(
-  library: { name: string; created_by_user_id: string },
+  library: { name: string; created_by_user_id: string; system_managed_kind?: string },
   userId: string,
 ) {
-  return library.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME && library.created_by_user_id === userId;
+  return (
+    library.created_by_user_id === userId
+    && (
+      library.system_managed_kind === 'default_personal_uploads'
+      || library.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME
+    )
+  );
 }
 
 async function parseUploadAndExecute(
@@ -304,6 +310,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       input: {
         name: DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
         visibility: 'shared',
+        system_managed_kind: 'default_personal_uploads',
       },
     });
     json(res, 200, created);
@@ -312,6 +319,18 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'sourceLibraries' && method === 'POST' && route.workspaceId && route.projectId) {
     const raw = await readBody(req);
+    if (
+      raw
+      && typeof raw === 'object'
+      && 'system_managed_kind' in (raw as Record<string, unknown>)
+      && (raw as Record<string, unknown>).system_managed_kind !== undefined
+    ) {
+      json(res, 422, {
+        error_code: 'VALIDATION_ERROR',
+        message: 'system_managed_kind_not_allowed',
+      });
+      return true;
+    }
     const input = CreateSourceLibraryRequestSchema.parse(raw);
     if (input.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME) {
       const listed = await deps.listSourceLibrariesUseCase.execute({

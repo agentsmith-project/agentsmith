@@ -737,11 +737,13 @@ describe('api-entry-node projects routes', () => {
       created_by_user_id: string;
       workspace_id: string;
       project_id: string;
+      system_managed_kind?: string;
     };
     expect(first.name).toBe('My Uploads');
     expect(first.created_by_user_id).toBeTruthy();
     expect(first.workspace_id).toBe('ws_default');
     expect(first.project_id).toBe('proj_1');
+    expect(first.system_managed_kind).toBe('default_personal_uploads');
 
     const secondRes = await apiFetch(
       baseUrl,
@@ -766,6 +768,21 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(createReservedRes.status).toBe(409);
+
+    const createManagedMarkerRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Anything',
+          visibility: 'shared',
+          system_managed_kind: 'default_personal_uploads',
+        }),
+      },
+    );
+    expect(createManagedMarkerRes.status).toBe(422);
 
     const patchDefaultRes = await apiFetch(
       baseUrl,

@@ -3522,6 +3522,12 @@
           },
           "name": {
             "type": "string"
+          },
+          "system_managed_kind": {
+            "type": "string",
+            "enum": [
+              "default_personal_uploads"
+            ]
           }
         }
       },

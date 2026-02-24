@@ -589,6 +589,8 @@ export interface FileLibrary {
   provider?: 's3';
   /** Backend bucket name for ops/debug; not user-facing. */
   bucket?: string;
+  /** System-managed library semantic marker (non-user-editable). */
+  system_managed_kind?: 'default_personal_uploads';
   created_by_user_id: string;
   created_at: string;
   updated_at: string;

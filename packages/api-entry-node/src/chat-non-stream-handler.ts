@@ -16,10 +16,10 @@ import {
 } from './chat-stream-runtime.js';
 import {
   indexChatAttachmentsByLibraryObjectRef,
-  readChatLibraryObjectInputs,
+  readChatMessageInputs,
   resolveChatInputsFromAttachmentIndex,
   toChatAttachmentSnapshots,
-  type ChatLibraryObjectInputRef,
+  type ChatMessageInputRef,
 } from './chat-input-refs.js';
 
 interface ChatNonStreamHandlerArgs {
@@ -54,6 +54,9 @@ function validateAttachmentPayload(raw: {
     kind?: string;
     library_id?: string;
     key?: string;
+    url?: string;
+    imported_library_id?: string;
+    imported_key?: string;
     name?: string;
     content_type?: string;
     size_bytes?: number;
@@ -76,15 +79,23 @@ function validateAttachmentPayload(raw: {
     }
   }
   if (raw.input_ref !== undefined) {
-    if (
-      typeof raw.input_ref !== 'object'
-      || raw.input_ref === null
-      || raw.input_ref.kind !== 'library_object'
-      || typeof raw.input_ref.library_id !== 'string'
-      || raw.input_ref.library_id.length === 0
-      || typeof raw.input_ref.key !== 'string'
-      || raw.input_ref.key.length === 0
-    ) {
+    if (typeof raw.input_ref !== 'object' || raw.input_ref === null) {
+      return 'attachment_input_ref_invalid';
+    }
+    if (raw.input_ref.kind === 'library_object') {
+      if (
+        typeof raw.input_ref.library_id !== 'string'
+        || raw.input_ref.library_id.length === 0
+        || typeof raw.input_ref.key !== 'string'
+        || raw.input_ref.key.length === 0
+      ) {
+        return 'attachment_input_ref_invalid';
+      }
+    } else if (raw.input_ref.kind === 'url') {
+      if (typeof raw.input_ref.url !== 'string' || raw.input_ref.url.length === 0) {
+        return 'attachment_input_ref_invalid';
+      }
+    } else {
       return 'attachment_input_ref_invalid';
     }
   }
@@ -96,7 +107,7 @@ async function resolveChatInputAttachments(
   workspaceId: string,
   projectId: string,
   sessionId: string,
-  inputs: ChatLibraryObjectInputRef[],
+  inputs: ChatMessageInputRef[],
 ) {
   if (inputs.length === 0) return [];
   const attachments = await deps.chatResourceService.listAttachments(workspaceId, projectId, sessionId);
@@ -361,7 +372,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         return true;
       }
     }
-    const inputRefs = readChatLibraryObjectInputs(raw.inputs);
+    const inputRefs = readChatMessageInputs(raw.inputs);
     if (inputRefs === null) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_input_refs_invalid' });
       return true;
@@ -495,6 +506,9 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         kind?: string;
         library_id?: string;
         key?: string;
+        url?: string;
+        imported_library_id?: string;
+        imported_key?: string;
         name?: string;
         content_type?: string;
         size_bytes?: number;
@@ -523,7 +537,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       return true;
     }
     const inputRef =
-      raw.input_ref && raw.input_ref.kind === 'library_object'
+      raw.input_ref?.kind === 'library_object'
         ? {
             kind: 'library_object' as const,
             library_id: raw.input_ref.library_id!,
@@ -535,7 +549,21 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
                 ? raw.input_ref.size_bytes
                 : undefined,
           }
-        : undefined;
+        : raw.input_ref?.kind === 'url'
+          ? {
+              kind: 'url' as const,
+              url: raw.input_ref.url!,
+              imported_library_id:
+                typeof raw.input_ref.imported_library_id === 'string' ? raw.input_ref.imported_library_id : undefined,
+              imported_key: typeof raw.input_ref.imported_key === 'string' ? raw.input_ref.imported_key : undefined,
+              name: typeof raw.input_ref.name === 'string' ? raw.input_ref.name : undefined,
+              content_type: typeof raw.input_ref.content_type === 'string' ? raw.input_ref.content_type : undefined,
+              size_bytes:
+                typeof raw.input_ref.size_bytes === 'number' && raw.input_ref.size_bytes >= 0
+                  ? raw.input_ref.size_bytes
+                  : undefined,
+            }
+          : undefined;
     const attachment = await deps.chatResourceService.initAttachment({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -545,8 +573,18 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       fileSize: raw.file_size!,
       inputRef,
       sourceType: inputRef ? 'library_import' : raw.source_type,
-      sourceLibraryId: inputRef ? inputRef.library_id : raw.source_library_id,
-      sourceObjectKey: inputRef ? inputRef.key : raw.source_object_key,
+      sourceLibraryId:
+        inputRef?.kind === 'library_object'
+          ? inputRef.library_id
+          : inputRef?.kind === 'url'
+            ? (inputRef.imported_library_id ?? raw.source_library_id)
+            : raw.source_library_id,
+      sourceObjectKey:
+        inputRef?.kind === 'library_object'
+          ? inputRef.key
+          : inputRef?.kind === 'url'
+            ? (inputRef.imported_key ?? raw.source_object_key)
+            : raw.source_object_key,
       contentBase64: raw.content_base64,
       previewUrl: toImageDataUrl(
         raw.content_base64,

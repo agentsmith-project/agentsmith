@@ -138,7 +138,7 @@ The UI only attaches `InputRef`.
 - Notebook artifacts can be attached as first-class `artifact` input refs (output-to-input loop), while runtime consumption uses task artifact download
 - Chat local uploads and library selections are object-first and use backend `default-personal` ensure route
 - Notebook local uploads are object-first and attach `library_object` refs (no direct local-upload -> `source` shortcut)
-- Chat attachments and user message requests now carry `input_ref` provenance (`inputs: InputRef[]` for user messages)
+- Chat attachments and user message requests now carry `input_ref` provenance (`inputs: InputRef[]` for user messages), including first-class `url` refs with optional imported object provenance
 - `source` is treated as a derived/processed input type (AI-ready/indexed workflow), not the primary raw-file ingestion path for Chat/Notebook
 
 ## Benefits of This Architecture
@@ -160,6 +160,7 @@ The UI only attaches `InputRef`.
 1. **Runtime-specific behavior still differs**
 - Unified input references do not mean unified transport implementation
 - this is expected and acceptable
+- Chat currently resolves `InputRef` through attachment snapshots (provider-oriented path), while Notebook/Codex resolves through manifest + skill/tool fetch
 
 2. **Security**
 - Tool-based fetchers (Notebook/Codex) still depend on API auth strategy
@@ -167,4 +168,4 @@ The UI only attaches `InputRef`.
 
 ## Recommended Next Concrete Step
 
-Implement a shared backend/runtime input resolver interface for Chat/Notebook/Agents, then continue promoting `url`/`artifact` input handling to the same resolver contract used by `library_object` and `source`.
+Continue extracting a shared backend/runtime input resolver interface for Chat/Notebook/Agents (Chat `library_object`/`url` parsing and attachment resolution has been centralized first), then promote `url`/`artifact` handling to the same cross-runtime resolver contract used by `library_object` and `source`.

@@ -17,6 +17,11 @@ export type LibraryObjectInputRef = {
 export type UrlInputRef = {
   kind: 'url';
   url: string;
+  imported_library_id?: string;
+  imported_key?: string;
+  name?: string;
+  content_type?: string;
+  size_bytes?: number;
 };
 
 export type ArtifactInputRef = {
@@ -28,5 +33,5 @@ export type ArtifactInputRef = {
 
 export type InputRef = SourceInputRef | LibraryObjectInputRef | UrlInputRef | ArtifactInputRef;
 
-export type ChatAttachmentInputRef = LibraryObjectInputRef;
+export type ChatAttachmentInputRef = LibraryObjectInputRef | UrlInputRef;
 export type ChatMessageInputRef = ChatAttachmentInputRef;

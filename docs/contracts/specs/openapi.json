@@ -3690,15 +3690,14 @@
             "items": {
               "type": "object",
               "required": [
-                "kind",
-                "library_id",
-                "key"
+                "kind"
               ],
               "properties": {
                 "kind": {
                   "type": "string",
                   "enum": [
-                    "library_object"
+                    "library_object",
+                    "url"
                   ]
                 },
                 "library_id": {
@@ -3715,6 +3714,15 @@
                 },
                 "size_bytes": {
                   "type": "integer"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "imported_library_id": {
+                  "type": "string"
+                },
+                "imported_key": {
+                  "type": "string"
                 }
               }
             }
@@ -3743,15 +3751,14 @@
           "input_ref": {
             "type": "object",
             "required": [
-              "kind",
-              "library_id",
-              "key"
+              "kind"
             ],
             "properties": {
               "kind": {
                 "type": "string",
                 "enum": [
-                  "library_object"
+                  "library_object",
+                  "url"
                 ]
               },
               "library_id": {
@@ -3768,6 +3775,15 @@
               },
               "size_bytes": {
                 "type": "integer"
+              },
+              "url": {
+                "type": "string"
+              },
+              "imported_library_id": {
+                "type": "string"
+              },
+              "imported_key": {
+                "type": "string"
               }
             }
           }

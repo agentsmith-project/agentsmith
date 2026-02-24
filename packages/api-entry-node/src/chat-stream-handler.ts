@@ -21,7 +21,7 @@ import { logChatStreamEvent } from './chat-observability.js';
 import type { ChatAttachmentRecord } from './resource-models.js';
 import {
   indexChatAttachmentsByLibraryObjectRef,
-  readChatLibraryObjectInputs,
+  readChatMessageInputs,
   resolveChatInputsFromAttachmentIndex,
   toChatAttachmentSnapshots,
 } from './chat-input-refs.js';
@@ -228,7 +228,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   }
 
   if (raw.input?.content?.trim()) {
-    const inputRefs = readChatLibraryObjectInputs(raw.input.inputs);
+    const inputRefs = readChatMessageInputs(raw.input.inputs);
     if (inputRefs === null) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_input_refs_invalid' });
       return true;
@@ -242,14 +242,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       file_name: string;
       file_type: string;
       file_size: number;
-      input_ref?: {
-        kind: 'library_object';
-        library_id: string;
-        key: string;
-        name?: string;
-        content_type?: string;
-        size_bytes?: number;
-      };
+      input_ref?: ChatAttachmentRecord['input_ref'];
       source_type?: 'local_upload' | 'library_import';
       source_library_id?: string;
       source_object_key?: string;

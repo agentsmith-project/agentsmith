@@ -1,22 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import {
   indexChatAttachmentsByLibraryObjectRef,
-  readChatLibraryObjectInputs,
+  readChatMessageInputs,
   resolveChatInputsFromAttachmentIndex,
   toChatAttachmentSnapshots,
 } from './chat-input-refs.js';
 import type { ChatAttachmentRecord } from './resource-models.js';
 
 describe('chat-input-refs', () => {
-  it('parses and deduplicates library_object input refs', () => {
-    const parsed = readChatLibraryObjectInputs([
+  it('parses and deduplicates chat input refs (library_object + url)', () => {
+    const parsed = readChatMessageInputs([
       { kind: 'library_object', library_id: 'lib_1', key: 'a.txt', name: 'A' },
       { kind: 'library_object', library_id: 'lib_1', key: 'a.txt', name: 'A duplicate' },
       { kind: 'library_object', library_id: 'lib_1', key: 'b.txt' },
+      { kind: 'url', url: 'https://example.com/a' },
+      { kind: 'url', url: 'https://example.com/a', name: 'dup' },
     ]);
     expect(parsed).toEqual([
       { kind: 'library_object', library_id: 'lib_1', key: 'a.txt', name: 'A' },
       { kind: 'library_object', library_id: 'lib_1', key: 'b.txt' },
+      { kind: 'url', url: 'https://example.com/a' },
     ]);
   });
 
@@ -46,17 +49,35 @@ describe('chat-input-refs', () => {
         created_at: '2026-01-01T00:00:00.000Z',
         input_ref: { kind: 'library_object', library_id: 'lib', key: 'b.txt' },
       },
+      {
+        id: 'att_3',
+        workspace_id: 'ws',
+        project_id: 'prj',
+        session_id: 'sess',
+        file_name: 'url.txt',
+        file_type: 'text/plain',
+        file_size: 3,
+        upload_status: 'ready',
+        created_at: '2026-01-01T00:00:00.000Z',
+        input_ref: {
+          kind: 'url',
+          url: 'https://example.com/a',
+          imported_library_id: 'lib',
+          imported_key: 'url.txt',
+        },
+      },
     ];
     const byRef = indexChatAttachmentsByLibraryObjectRef(attachments);
     const resolved = resolveChatInputsFromAttachmentIndex(
       [
         { kind: 'library_object', library_id: 'lib', key: 'b.txt' },
-        { kind: 'library_object', library_id: 'lib', key: 'missing.txt' },
+        { kind: 'url', url: 'https://example.com/a', imported_library_id: 'lib', imported_key: 'url.txt' },
         { kind: 'library_object', library_id: 'lib', key: 'a.txt' },
+        { kind: 'url', url: 'https://example.com/unknown' },
       ],
       byRef,
     );
-    expect(resolved.map((item) => item?.id ?? null)).toEqual(['att_2', null, 'att_1']);
+    expect(resolved.map((item) => item?.id ?? null)).toEqual(['att_2', 'att_3', 'att_1', null]);
   });
 
   it('maps attachments to message attachment snapshots', () => {
@@ -91,4 +112,3 @@ describe('chat-input-refs', () => {
     ]);
   });
 });
-

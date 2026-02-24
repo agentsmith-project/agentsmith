@@ -2293,16 +2293,21 @@ components:
             type: object
             required:
             - kind
-            - library_id
-            - key
             properties:
               kind:
                 type: string
                 enum:
                 - library_object
+                - url
               library_id:
                 type: string
               key:
+                type: string
+              url:
+                type: string
+              imported_library_id:
+                type: string
+              imported_key:
                 type: string
               name:
                 type: string
@@ -2328,16 +2333,21 @@ components:
           type: object
           required:
           - kind
-          - library_id
-          - key
           properties:
             kind:
               type: string
               enum:
               - library_object
+              - url
             library_id:
               type: string
             key:
+              type: string
+            url:
+              type: string
+            imported_library_id:
+              type: string
+            imported_key:
               type: string
             name:
               type: string

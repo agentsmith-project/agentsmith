@@ -336,9 +336,12 @@ export class ChatResourceService {
     sourceLibraryId?: string;
     sourceObjectKey?: string;
     inputRef?: {
-      kind: 'library_object';
-      library_id: string;
-      key: string;
+      kind: 'library_object' | 'url';
+      library_id?: string;
+      key?: string;
+      url?: string;
+      imported_library_id?: string;
+      imported_key?: string;
       name?: string;
       content_type?: string;
       size_bytes?: number;

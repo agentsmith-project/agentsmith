@@ -695,3 +695,12 @@ Current known boundary:
 - runner-side artifact dedupe is process-local (in-memory fingerprint cache)
 - after runner restart, the first artifact scan may re-report historical files already present in `artifacts/`
 - functional correctness is preserved, but cross-runner-restart artifact idempotency is not yet enforced
+
+## Unified InputRefs / Default Library Migration Notes (Chat + Notebook)
+
+- Notebook task inputs have been migrated to `attached_inputs` and `/tasks/:taskId/inputs` with `InputRef`-style records (`source`, `library_object`).
+- Notebook file picker now supports direct `library_object` refs (no source-only model requirement).
+- Chat file attachments started migrating toward object-first flow:
+  - local file uploads are first written into a deterministic default upload library (`My Uploads`) as library objects,
+  - then converted into chat attachments via the existing chat attachment runtime path.
+- This is an architectural convergence step only; backend-enforced system-managed default personal libraries are not implemented yet.

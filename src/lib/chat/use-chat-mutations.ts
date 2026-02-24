@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { FilesAPI } from '@/lib/api/endpoints/files';
 import type { ChatSession, Endpoint } from '@/lib/api/types';
+import { ensureDefaultUploadLibrary } from '@/lib/chat/default-library';
 import { toast } from '@/components/ui/toast';
 import { chatAttachmentsKey, chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
 
@@ -45,6 +46,36 @@ export function useChatMutations(args: UseChatMutationsArgs) {
       binary += String.fromCharCode(...chunk);
     }
     return btoa(binary);
+  };
+
+  const createAttachmentFromLibraryObject = async (input: {
+    sessionId: string;
+    libraryId: string;
+    key: string;
+    name: string;
+    contentType?: string;
+    blob?: Blob;
+  }) => {
+    const blob = input.blob ?? await sourcesAPI.downloadObject(
+      workspaceId,
+      projectId,
+      input.libraryId,
+      input.key,
+    );
+    const contentBase64 = await blobToBase64(blob);
+    const fileType = input.contentType || blob.type || 'application/octet-stream';
+
+    const attachment = await chatAPI.initAttachment(workspaceId, projectId, input.sessionId, {
+      file_name: input.name,
+      file_type: fileType,
+      file_size: blob.size,
+      content_base64: contentBase64,
+      source_type: 'library_import',
+      source_library_id: input.libraryId,
+      source_object_key: input.key,
+    });
+
+    return { ...attachment, sessionId: input.sessionId };
   };
 
   const createSessionMutation = useMutation({
@@ -117,15 +148,29 @@ export function useChatMutations(args: UseChatMutationsArgs) {
 
   const initAttachmentMutation = useMutation({
     mutationFn: async (input: { sessionId: string; file: File }) => {
-      const contentBase64 = await blobToBase64(input.file);
-      const res = await chatAPI.initAttachment(workspaceId, projectId, input.sessionId, {
-        file_name: input.file.name,
-        file_type: input.file.type || 'application/octet-stream',
-        file_size: input.file.size,
-        content_base64: contentBase64,
-        source_type: 'local_upload',
+      const library = await ensureDefaultUploadLibrary({
+        sourcesAPI,
+        workspaceId,
+        projectId,
       });
-      return { ...res, sessionId: input.sessionId, file: input.file };
+      const prefix = `chat/${input.sessionId}/uploads/`;
+      const uploadedObject = await sourcesAPI.uploadObject(
+        workspaceId,
+        projectId,
+        library.id,
+        input.file,
+        prefix,
+        true,
+      );
+      const result = await createAttachmentFromLibraryObject({
+        sessionId: input.sessionId,
+        libraryId: library.id,
+        key: uploadedObject.key,
+        name: uploadedObject.name,
+        contentType: uploadedObject.content_type || input.file.type || undefined,
+        blob: input.file,
+      });
+      return { ...result, file: input.file };
     },
     onSuccess: async ({ attachment, upload_url, sessionId, file }) => {
       queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, sessionId) });
@@ -156,24 +201,7 @@ export function useChatMutations(args: UseChatMutationsArgs) {
       name: string;
       contentType?: string;
     }) => {
-      const blob = await sourcesAPI.downloadObject(
-        workspaceId,
-        projectId,
-        input.libraryId,
-        input.key,
-      );
-      const contentBase64 = await blobToBase64(blob);
-      const fileType = input.contentType || blob.type || 'application/octet-stream';
-      const attachment = await chatAPI.initAttachment(workspaceId, projectId, input.sessionId, {
-        file_name: input.name,
-        file_type: fileType,
-        file_size: blob.size,
-        content_base64: contentBase64,
-        source_type: 'library_import',
-        source_library_id: input.libraryId,
-        source_object_key: input.key,
-      });
-      return { ...attachment, sessionId: input.sessionId };
+      return createAttachmentFromLibraryObject(input);
     },
     onSuccess: ({ sessionId }) => {
       queryClient.invalidateQueries({ queryKey: chatAttachmentsKey(workspaceId, projectId, sessionId) });

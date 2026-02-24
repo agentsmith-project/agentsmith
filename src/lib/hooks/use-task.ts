@@ -283,6 +283,7 @@ export function useAddFiles() {
       inputs: Array<
         | { kind: 'source'; source_id: string }
         | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+        | { kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
       >;
     }) => taskAPI.addInputs(workspaceId, projectId, taskId, inputs),
     onSuccess: (_, variables) => {

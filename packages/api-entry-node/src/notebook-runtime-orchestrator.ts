@@ -20,6 +20,7 @@ type NotebookTaskRecord = {
   attached_inputs: Array<
     | { id: string; kind: 'source'; source_id: string }
     | { id: string; kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+    | { id: string; kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
   >;
   created_at: string;
   updated_at: string;
@@ -72,6 +73,15 @@ type RuntimeTaskInput =
       filename: string;
       file_type?: string;
       file_size?: number;
+    }
+  | {
+      kind: 'url';
+      url: string;
+      filename: string;
+      file_type?: string;
+      file_size?: number;
+      imported_library_id?: string;
+      imported_key?: string;
     };
 
 function asObject(input: unknown): Record<string, unknown> {
@@ -125,6 +135,17 @@ async function buildRuntimeTaskInputs(
           ...(typeof inputRef.size_bytes === 'number' ? { file_size: inputRef.size_bytes } : {}),
         } satisfies RuntimeTaskInput;
       }
+    }
+    if (inputRef.kind === 'url') {
+      return {
+        kind: 'url',
+        url: inputRef.url,
+        filename: inputRef.name || inputRef.url,
+        ...(inputRef.content_type ? { file_type: inputRef.content_type } : {}),
+        ...(typeof inputRef.size_bytes === 'number' ? { file_size: inputRef.size_bytes } : {}),
+        ...(inputRef.imported_library_id ? { imported_library_id: inputRef.imported_library_id } : {}),
+        ...(inputRef.imported_key ? { imported_key: inputRef.imported_key } : {}),
+      } satisfies RuntimeTaskInput;
     }
     const sourceId = inputRef.source_id;
     try {

@@ -33,4 +33,3 @@ export function getChatAttachmentInputRefLabel(attachment: Attachment): string |
   }
   return null;
 }
-

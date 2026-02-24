@@ -58,6 +58,16 @@ type TaskInputRefRecord =
       name?: string;
       content_type?: string;
       size_bytes?: number;
+    }
+  | {
+      id: string;
+      kind: 'url';
+      url: string;
+      name?: string;
+      imported_library_id?: string;
+      imported_key?: string;
+      content_type?: string;
+      size_bytes?: number;
     };
 
 interface TaskMessageRecord {
@@ -215,6 +225,30 @@ function readTaskInputRefs(raw: unknown): TaskInputRefRecord[] {
         library_id: libraryId,
         key,
         ...(typeof obj.name === 'string' && obj.name.trim() ? { name: obj.name.trim() } : {}),
+        ...(typeof obj.content_type === 'string' && obj.content_type.trim() ? { content_type: obj.content_type.trim() } : {}),
+        ...(typeof obj.size_bytes === 'number' && Number.isFinite(obj.size_bytes) && obj.size_bytes >= 0
+          ? { size_bytes: Math.floor(obj.size_bytes) }
+          : {}),
+      });
+      continue;
+    }
+    if (kind === 'url') {
+      const url = typeof obj.url === 'string' ? obj.url.trim() : '';
+      if (!/^https?:\/\//i.test(url)) continue;
+      const dedupeKey = `url:${url}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      results.push({
+        id: buildId('in'),
+        kind: 'url',
+        url,
+        ...(typeof obj.name === 'string' && obj.name.trim() ? { name: obj.name.trim() } : {}),
+        ...(typeof obj.imported_library_id === 'string' && obj.imported_library_id.trim()
+          ? { imported_library_id: obj.imported_library_id.trim() }
+          : {}),
+        ...(typeof obj.imported_key === 'string' && obj.imported_key.trim()
+          ? { imported_key: obj.imported_key.trim() }
+          : {}),
         ...(typeof obj.content_type === 'string' && obj.content_type.trim() ? { content_type: obj.content_type.trim() } : {}),
         ...(typeof obj.size_bytes === 'number' && Number.isFinite(obj.size_bytes) && obj.size_bytes >= 0
           ? { size_bytes: Math.floor(obj.size_bytes) }
@@ -541,13 +575,17 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       task.attached_inputs.map((item) =>
         item.kind === 'source'
           ? `source:${item.source_id}`
-          : `library_object:${item.library_id}:${item.key}`,
+          : item.kind === 'library_object'
+            ? `library_object:${item.library_id}:${item.key}`
+            : `url:${item.url}`,
       ),
     );
     for (const inputRef of inputs) {
       const key = inputRef.kind === 'source'
         ? `source:${inputRef.source_id}`
-        : `library_object:${inputRef.library_id}:${inputRef.key}`;
+        : inputRef.kind === 'library_object'
+          ? `library_object:${inputRef.library_id}:${inputRef.key}`
+          : `url:${inputRef.url}`;
       if (existingKeys.has(key)) continue;
       existingKeys.add(key);
       task.attached_inputs.push(inputRef);
@@ -587,24 +625,60 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           return null;
         }
       }
-      try {
-        const meta = await deps.getSourceObjectMetaUseCase.execute({
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          libraryId: inputRef.library_id,
-          key: inputRef.key,
-        });
+      if (inputRef.kind === 'library_object') {
+        try {
+          const meta = await deps.getSourceObjectMetaUseCase.execute({
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            libraryId: inputRef.library_id,
+            key: inputRef.key,
+          });
+          return {
+            id: inputRef.id,
+            kind: 'library_object',
+            library_id: inputRef.library_id,
+            key: inputRef.key,
+            filename: inputRef.name || meta.key.split('/').pop() || inputRef.key,
+            file_type: meta.content_type,
+            file_size: meta.size_bytes,
+          };
+        } catch {
+          return null;
+        }
+      }
+      if (inputRef.kind === 'url') {
+        if (inputRef.imported_library_id && inputRef.imported_key) {
+          try {
+            const meta = await deps.getSourceObjectMetaUseCase.execute({
+              workspaceId: route.workspaceId,
+              projectId: route.projectId,
+              libraryId: inputRef.imported_library_id,
+              key: inputRef.imported_key,
+            });
+            return {
+              id: inputRef.id,
+              kind: 'url',
+              url: inputRef.url,
+              filename: inputRef.name || meta.key.split('/').pop() || 'url_input.url.txt',
+              file_type: inputRef.content_type || meta.content_type || 'text/plain',
+              file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : meta.size_bytes,
+              imported_library_id: inputRef.imported_library_id,
+              imported_key: inputRef.imported_key,
+            };
+          } catch {
+            // Fall through to synthetic detail
+          }
+        }
         return {
           id: inputRef.id,
-          kind: 'library_object',
-          library_id: inputRef.library_id,
-          key: inputRef.key,
-          filename: inputRef.name || meta.key.split('/').pop() || inputRef.key,
-          file_type: meta.content_type,
-          file_size: meta.size_bytes,
+          kind: 'url',
+          url: inputRef.url,
+          filename: inputRef.name || 'url_input.url.txt',
+          file_type: inputRef.content_type || 'text/plain',
+          file_size: typeof inputRef.size_bytes === 'number' ? inputRef.size_bytes : 0,
+          ...(inputRef.imported_library_id ? { imported_library_id: inputRef.imported_library_id } : {}),
+          ...(inputRef.imported_key ? { imported_key: inputRef.imported_key } : {}),
         };
-      } catch {
-        return null;
       }
     }));
     json(res, 200, items.filter((item): item is NonNullable<typeof item> => item !== null));

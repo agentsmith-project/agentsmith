@@ -378,6 +378,7 @@ export function TaskPage({
   const handleAddFiles = async (inputs: Array<
     | { kind: 'source'; source_id: string }
     | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
+    | { kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
   >) => {
     await addFiles.mutateAsync({
       workspaceId,
@@ -441,10 +442,11 @@ export function TaskPage({
         true,
       );
       await handleAddFiles([{
-        kind: 'library_object',
-        library_id: library.id,
-        key: uploaded.key,
+        kind: 'url',
+        url: normalized,
         name: uploaded.name,
+        imported_library_id: library.id,
+        imported_key: uploaded.key,
         content_type: uploaded.content_type,
         size_bytes: uploaded.size_bytes,
       }]);

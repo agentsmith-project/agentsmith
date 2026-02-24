@@ -2,10 +2,13 @@ import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export type NotebookTaskInput = {
-  kind?: 'source' | 'library_object';
+  kind?: 'source' | 'library_object' | 'url';
   source_id?: string;
   library_id?: string;
   key?: string;
+  url?: string;
+  imported_library_id?: string;
+  imported_key?: string;
   filename?: string;
   file_type?: string;
   file_size?: number;
@@ -32,7 +35,7 @@ export function buildNotebookHeadlessPreamble(args: {
     `- Attached inputs count: ${String(args.taskInputsCount)}`,
     '',
     'Use attached inputs to complete the user request and mention generated artifact filenames in your final response.',
-    '- Inputs may be source-based or library-object-based. Inspect `kind` in the task inputs manifest.',
+    '- Inputs may be source-based, library-object-based, or URL-based. Inspect `kind` in the task inputs manifest.',
     '',
   ].join('\n');
 }
@@ -48,7 +51,7 @@ function buildNotebookAgentsMd(): string {
     '3. Save generated files/charts/images into `./artifacts/`.',
     '4. Put final conclusions in the response message, and mention generated artifact filenames.',
     '5. Attached notebook inputs are described in `./.mbos/task-inputs.json`.',
-    '6. Use the local notebook-inputs skill helper to fetch attached source files when needed.',
+    '6. Use the local notebook-inputs skill helper to fetch attached source/library-object files when needed.',
     '',
     '## Notebook Inputs Helper',
     '',
@@ -122,7 +125,13 @@ async function main() {
 
   if (cmd === 'fetch') {
     if (!inputIdArg) throw new Error('input_id_required');
-    const item = inputs.find((x) => x && (x.source_id === inputIdArg || (x.library_id && x.key && \`\${x.library_id}:\${x.key}\` === inputIdArg)));
+    const item = inputs.find((x) =>
+      x && (
+        x.source_id === inputIdArg
+        || (x.library_id && x.key && \`\${x.library_id}:\${x.key}\` === inputIdArg)
+        || (x.imported_library_id && x.imported_key && \`\${x.imported_library_id}:\${x.imported_key}\` === inputIdArg)
+      ),
+    );
     if (!item) throw new Error('source_not_in_task_inputs');
     let res;
     if (item.kind === 'library_object' && item.library_id && item.key) {
@@ -130,6 +139,13 @@ async function main() {
         \`\${apiBase}/api/v1/workspaces/\${encodeURIComponent(workspaceId)}/projects/\${encodeURIComponent(projectId)}/source-libraries/\${encodeURIComponent(item.library_id)}/objects/download?key=\${encodeURIComponent(item.key)}\`,
         { headers: { Authorization: \`Bearer \${token}\` } },
       );
+    } else if (item.kind === 'url' && item.imported_library_id && item.imported_key) {
+      res = await fetch(
+        \`\${apiBase}/api/v1/workspaces/\${encodeURIComponent(workspaceId)}/projects/\${encodeURIComponent(projectId)}/source-libraries/\${encodeURIComponent(item.imported_library_id)}/objects/download?key=\${encodeURIComponent(item.imported_key)}\`,
+        { headers: { Authorization: \`Bearer \${token}\` } },
+      );
+    } else if (item.kind === 'url') {
+      throw new Error('url_input_has_no_imported_object');
     } else {
       const sourceId = item.source_id || inputIdArg;
       res = await fetch(
@@ -143,7 +159,11 @@ async function main() {
     }
     const ab = await res.arrayBuffer();
     await mkdir('./inputs', { recursive: true });
-    const fallbackName = item.source_id || (item.key ? String(item.key).split('/').pop() : null) || \`\${inputIdArg}.bin\`;
+    const fallbackName =
+      item.source_id
+      || (item.key ? String(item.key).split('/').pop() : null)
+      || (item.imported_key ? String(item.imported_key).split('/').pop() : null)
+      || \`\${inputIdArg}.bin\`;
     const filename = (typeof item.filename === 'string' && item.filename.trim()) ? item.filename.trim() : fallbackName;
     const outPath = join('./inputs', basename(filename));
     await writeFile(outPath, Buffer.from(ab));
@@ -185,10 +205,13 @@ export async function prepareNotebookWorkspaceAssets(args: {
         run_id: runtimeContext.run_id ?? null,
         generated_at: new Date().toISOString(),
         task_inputs: taskInputs.map((item) => ({
-          kind: item?.kind === 'library_object' ? 'library_object' : 'source',
+          kind: item?.kind === 'library_object' ? 'library_object' : item?.kind === 'url' ? 'url' : 'source',
           source_id: typeof item?.source_id === 'string' ? item.source_id : undefined,
           library_id: typeof item?.library_id === 'string' ? item.library_id : undefined,
           key: typeof item?.key === 'string' ? item.key : undefined,
+          url: typeof item?.url === 'string' ? item.url : undefined,
+          imported_library_id: typeof item?.imported_library_id === 'string' ? item.imported_library_id : undefined,
+          imported_key: typeof item?.imported_key === 'string' ? item.imported_key : undefined,
           filename: typeof item?.filename === 'string' ? item.filename : undefined,
           file_type: typeof item?.file_type === 'string' ? item.file_type : undefined,
           file_size: typeof item?.file_size === 'number' ? item.file_size : undefined,

@@ -52,6 +52,58 @@ interface EndpointHandlerArgs {
 
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
+  const writeGovernancePreflightFailure = async (params: {
+    workspaceId: string;
+    projectId: string;
+    endpointId: string;
+    requestId: string | null;
+    action: string;
+    errorCode: string;
+    message: string;
+    statusCode: 403 | 429;
+    metadata?: Record<string, unknown>;
+    endUserId?: string;
+    retryAfterSeconds?: number;
+  }): Promise<void> => {
+    await writeProjectAuditEvent(deps, {
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      actor: { type: 'user', id: user.id },
+      action: params.action,
+      result: 'error',
+      requestId: params.requestId,
+      resourceType: 'endpoint',
+      resourceId: params.endpointId,
+      errorCode: params.errorCode,
+      errorMessage: params.message,
+      metadata: params.metadata ?? {},
+    });
+    await writeProjectUsageFact(deps, {
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      resourceType: 'endpoint',
+      resourceId: params.endpointId,
+      endUserId: params.endUserId,
+      requestId: params.requestId,
+      requests: 1,
+      result: 'error',
+      errorCode: params.errorCode,
+      metadata: {
+        stage: 'preflight',
+        ...(params.metadata ?? {}),
+      },
+    });
+    if (params.retryAfterSeconds) {
+      res.setHeader('Retry-After', String(params.retryAfterSeconds));
+    }
+    json(res, params.statusCode, {
+      error_code: params.errorCode,
+      message: params.message,
+      resource_type: 'endpoint',
+      resource_id: params.endpointId,
+      ...(params.retryAfterSeconds ? { retry_after_seconds: params.retryAfterSeconds } : {}),
+    });
+  };
   const inferActionFromProxyPath = (proxyPath: string): EndpointTaskAction => {
     if (proxyPath.startsWith('rerank')) return 'rerank';
     if (proxyPath.startsWith('images/generations')) return 'image_generation';
@@ -85,35 +137,16 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     });
     if (!policyCheck.allowed) {
       const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
-      await writeProjectAuditEvent(deps, {
+      await writeGovernancePreflightFailure({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
-        actor: { type: 'user', id: user.id },
+        endpointId: endpoint.id,
+        requestId,
         action: 'resource_policy.access_denied',
-        result: 'error',
-        requestId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
         errorCode: 'RESOURCE_POLICY_DENIED',
-        errorMessage: 'resource_policy_denied',
-        metadata: { reason: policyCheck.reason ?? 'not_allowed' },
-      });
-      await writeProjectUsageFact(deps, {
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
-        requestId,
-        requests: 1,
-        result: 'error',
-        errorCode: 'RESOURCE_POLICY_DENIED',
-        metadata: { stage: 'preflight', reason: policyCheck.reason ?? 'not_allowed' },
-      });
-      json(res, 403, {
-        error_code: 'RESOURCE_POLICY_DENIED',
         message: 'resource_policy_denied',
-        resource_type: 'endpoint',
-        resource_id: endpoint.id,
+        statusCode: 403,
+        metadata: { reason: policyCheck.reason ?? 'not_allowed' },
       });
       return true;
     }
@@ -188,51 +221,23 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       policy: policyCheck.policy,
     });
     if (!quotaCheck.allowed) {
-      await writeProjectAuditEvent(deps, {
+      await writeGovernancePreflightFailure({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
-        actor: { type: 'user', id: user.id },
-        action: 'resource_policy.quota_exceeded',
-        result: 'error',
+        endpointId: endpoint.id,
         requestId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
-        errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-        errorMessage: 'resource_policy_quota_exceeded',
-        metadata: {
-          retry_after_seconds: quotaCheck.retry_after_seconds,
-          effective_daily_token_limit: quotaCheck.effective_daily_token_limit,
-          current_tokens_today: quotaCheck.current_tokens_today,
-          scope: quotaCheck.scope,
-          quota_key: 'endpoint.daily_token_limit',
-        },
-      });
-      await writeProjectUsageFact(deps, {
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
         endUserId: user.id,
-        requestId,
-        requests: 1,
-        result: 'error',
+        action: 'resource_policy.quota_exceeded',
         errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+        message: 'resource_policy_quota_exceeded',
+        statusCode: 429,
+        retryAfterSeconds: quotaCheck.retry_after_seconds,
         metadata: {
-          stage: 'preflight',
-          retry_after_seconds: quotaCheck.retry_after_seconds,
           effective_daily_token_limit: quotaCheck.effective_daily_token_limit,
           current_tokens_today: quotaCheck.current_tokens_today,
           scope: quotaCheck.scope,
           quota_key: 'endpoint.daily_token_limit',
         },
-      });
-      res.setHeader('Retry-After', String(quotaCheck.retry_after_seconds));
-      json(res, 429, {
-        error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-        message: 'resource_policy_quota_exceeded',
-        resource_type: 'endpoint',
-        resource_id: endpoint.id,
-        retry_after_seconds: quotaCheck.retry_after_seconds,
       });
       return true;
     }
@@ -244,49 +249,22 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       userId: user.id,
     });
     if (!memberQuotaCheck.allowed) {
-      await writeProjectAuditEvent(deps, {
+      await writeGovernancePreflightFailure({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
-        actor: { type: 'user', id: user.id },
-        action: 'member_quota.quota_exceeded',
-        result: 'error',
+        endpointId: endpoint.id,
         requestId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
-        errorCode: 'MEMBER_QUOTA_EXCEEDED',
-        errorMessage: 'member_quota_exceeded',
-        metadata: {
-          retry_after_seconds: memberQuotaCheck.retry_after_seconds,
-          effective_daily_token_limit: memberQuotaCheck.effective_daily_token_limit,
-          current_tokens_today: memberQuotaCheck.current_tokens_today,
-          quota_key: 'endpoint.daily_token_limit',
-        },
-      });
-      await writeProjectUsageFact(deps, {
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
         endUserId: user.id,
-        requestId,
-        requests: 1,
-        result: 'error',
+        action: 'member_quota.quota_exceeded',
         errorCode: 'MEMBER_QUOTA_EXCEEDED',
+        message: 'member_quota_exceeded',
+        statusCode: 429,
+        retryAfterSeconds: memberQuotaCheck.retry_after_seconds,
         metadata: {
-          stage: 'preflight',
-          retry_after_seconds: memberQuotaCheck.retry_after_seconds,
           effective_daily_token_limit: memberQuotaCheck.effective_daily_token_limit,
           current_tokens_today: memberQuotaCheck.current_tokens_today,
           quota_key: 'endpoint.daily_token_limit',
         },
-      });
-      res.setHeader('Retry-After', String(memberQuotaCheck.retry_after_seconds));
-      json(res, 429, {
-        error_code: 'MEMBER_QUOTA_EXCEEDED',
-        message: 'member_quota_exceeded',
-        resource_type: 'endpoint',
-        resource_id: endpoint.id,
-        retry_after_seconds: memberQuotaCheck.retry_after_seconds,
       });
       return true;
     }
@@ -299,46 +277,21 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       policy: policyCheck.policy,
     });
     if (!rateCheck.allowed) {
-      await writeProjectAuditEvent(deps, {
+      await writeGovernancePreflightFailure({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
-        actor: { type: 'user', id: user.id },
-        action: 'resource_policy.rate_limited',
-        result: 'error',
+        endpointId: endpoint.id,
         requestId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
-        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
-        errorMessage: 'resource_policy_rate_limited',
-        metadata: {
-          retry_after_seconds: rateCheck.retry_after_seconds,
-          effective_limit_per_minute: rateCheck.effective_limit_per_minute,
-          scope: rateCheck.scope,
-        },
-      });
-      await writeProjectUsageFact(deps, {
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
         endUserId: user.id,
-        requestId,
-        requests: 1,
-        result: 'error',
+        action: 'resource_policy.rate_limited',
         errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+        message: 'resource_policy_rate_limited',
+        statusCode: 429,
+        retryAfterSeconds: rateCheck.retry_after_seconds,
         metadata: {
-          retry_after_seconds: rateCheck.retry_after_seconds,
           effective_limit_per_minute: rateCheck.effective_limit_per_minute,
           scope: rateCheck.scope,
         },
-      });
-      res.setHeader('Retry-After', String(rateCheck.retry_after_seconds));
-      json(res, 429, {
-        error_code: 'RESOURCE_POLICY_RATE_LIMITED',
-        message: 'resource_policy_rate_limited',
-        resource_type: 'endpoint',
-        resource_id: endpoint.id,
-        retry_after_seconds: rateCheck.retry_after_seconds,
       });
       return true;
     }

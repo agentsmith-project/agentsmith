@@ -755,6 +755,35 @@ describe('api-entry-node projects routes', () => {
     expect(listRes.status).toBe(200);
     const listed = (await listRes.json()) as { items: Array<{ id: string }> };
     expect(listed.items.filter((item) => item.id === first.id)).toHaveLength(1);
+
+    const createReservedRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'My Uploads', visibility: 'shared' }),
+      },
+    );
+    expect(createReservedRes.status).toBe(409);
+
+    const patchDefaultRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${first.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ description: 'should fail' }),
+      },
+    );
+    expect(patchDefaultRes.status).toBe(409);
+
+    const deleteDefaultRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${first.id}`,
+      { method: 'DELETE' },
+    );
+    expect(deleteDefaultRes.status).toBe(409);
   });
 
   it('supports source library object browser routes', async () => {

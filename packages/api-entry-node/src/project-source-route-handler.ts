@@ -52,6 +52,13 @@ interface ProjectSourceHandlerArgs {
 
 const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
 
+function isDefaultPersonalLibraryForUser(
+  library: { name: string; created_by_user_id: string },
+  userId: string,
+) {
+  return library.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME && library.created_by_user_id === userId;
+}
+
 async function parseUploadAndExecute(
   req: http.IncomingMessage,
   execute: (input: {
@@ -306,6 +313,21 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'sourceLibraries' && method === 'POST' && route.workspaceId && route.projectId) {
     const raw = await readBody(req);
     const input = CreateSourceLibraryRequestSchema.parse(raw);
+    if (input.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME) {
+      const listed = await deps.listSourceLibrariesUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      });
+      const existingDefault = listed.items.find((item) => isDefaultPersonalLibraryForUser(item, user.id));
+      if (existingDefault) {
+        json(res, 409, {
+          error_code: 'RESOURCE_CONFLICT',
+          message: 'default_personal_library_reserved',
+          details: { library_id: existingDefault.id },
+        });
+        return true;
+      }
+    }
     const created = await deps.createSourceLibraryUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -467,6 +489,18 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryItem' && method === 'PATCH' && route.workspaceId && route.projectId && route.libraryId) {
+    const listed = await deps.listSourceLibrariesUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    const target = listed.items.find((item) => item.id === route.libraryId) ?? null;
+    if (target && isDefaultPersonalLibraryForUser(target, user.id)) {
+      json(res, 409, {
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'default_personal_library_protected',
+      });
+      return true;
+    }
     const raw = await readBody(req);
     const input = UpdateSourceLibraryRequestSchema.parse(raw);
     const updated = await deps.updateSourceLibraryUseCase.execute({
@@ -480,6 +514,18 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryItem' && method === 'DELETE' && route.workspaceId && route.projectId && route.libraryId) {
+    const listed = await deps.listSourceLibrariesUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    const target = listed.items.find((item) => item.id === route.libraryId) ?? null;
+    if (target && isDefaultPersonalLibraryForUser(target, user.id)) {
+      json(res, 409, {
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'default_personal_library_protected',
+      });
+      return true;
+    }
     await deps.deleteSourceLibraryUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,

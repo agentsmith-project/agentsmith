@@ -132,6 +132,17 @@ Governance surfaces such as `Audit`, `Usage`, `Members`, and `Resource Policy` c
   - This runbook is the current **single place** for notebook/external-agent runtime switches.
   - Repo-wide frontend-only switches outside notebook scope may still be documented in feature-specific docs.
 
+### 5.3.2 Default Personal Upload Library (Chat object-first attachments)
+- Chat local uploads now use an object-first flow:
+  1. ensure backend default personal library (`GET /source-libraries/default-personal`)
+  2. upload object under `chat/<session_id>/uploads/`
+  3. create chat attachment from the library object
+- Current local backend policy:
+  - deterministic library name: `My Uploads`
+  - per-user + per-project
+  - ensure route is idempotent (create or return existing)
+  - default personal library is protected from rename/delete on standard library routes
+
 ### 5.4 Local commands
 ```bash
 # Start API with debugging for notebook/runtime/proxy troubleshooting

@@ -20,15 +20,5 @@ export async function ensureDefaultUploadLibrary({
   workspaceId,
   projectId,
 }: EnsureDefaultLibraryArgs) {
-  try {
-    return await sourcesAPI.ensureDefaultPersonalLibrary(workspaceId, projectId);
-  } catch {
-    // Fallback keeps local/dev compatibility when backend route is unavailable.
-    const listed = await sourcesAPI.listLibraries(workspaceId, projectId);
-    const existing = listed.items.find((item) => item.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME);
-    if (existing) return existing;
-    return sourcesAPI.createLibrary(workspaceId, projectId, {
-      name: DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
-    });
-  }
+  return sourcesAPI.ensureDefaultPersonalLibrary(workspaceId, projectId);
 }

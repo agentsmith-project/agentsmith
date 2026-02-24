@@ -110,34 +110,32 @@ The UI only attaches `InputRef`.
 
 ## Migration Path (Phased)
 
-### Phase 1 (compatibility, no product break)
-- Keep current Notebook `attached_source_ids`
-- Keep Chat current behavior
-- Introduce `InputRef` internal types and resolver interfaces
-- Add runtime support for `task_inputs[].kind = 'source'` explicitly
+### Phase 1 (completed)
+- Notebook migrated from `attached_source_ids` to unified `attached_inputs` (`/tasks/:taskId/inputs`)
+- Notebook supports direct `library_object` refs
+- Runner manifest (`.mbos/task-inputs.json`) includes `kind`
+- `notebook-inputs` skill helper supports fetching `library_object` refs
 
-### Phase 2 (Notebook direct library objects)
-- Add Notebook API to attach `library_object` refs directly (or a unified `/inputs` endpoint)
-- Extend runner manifest (`.mbos/task-inputs.json`) to support `kind: 'library_object'`
-- Extend `notebook-inputs` skill helper to fetch by `{library_id,key}`
-- Remove frontend "library object -> source import" bridge in Notebook dialog
+### Phase 2 (in progress)
+- Chat local uploads and library picks share a unified object-first attachment path
+- Chat local uploads now:
+  - ensure a default personal library
+  - upload object to `chat/<session_id>/uploads/`
+  - create attachment from the library object
+- Backend provides `GET /source-libraries/default-personal` (idempotent ensure route)
 
-### Phase 3 (Chat alignment)
-- Chat picker emits `InputRef` instead of directly choosing transport behavior
-- Chat runtime resolves refs (inline/tool/file upload) behind a resolver layer
+### Phase 3 (next)
+- Replace front-end "default personal library" conventions with backend-enforced system-managed semantics (metadata / non-deletable / non-renamable policy already partially enforced)
+- Introduce shared backend/runtime input resolver interfaces for Chat/Notebook/Agents
 
 ### Phase 4 (Derived processing alignment)
 - `source` records become explicitly derived from `library_object`
 - AI Ready state and indexing become part of derived processing pipeline, not file identity
 
-## Current Known Compatibility Bridge (to remove later)
+## Current Transitional Areas
 
-Notebook `FileSelectDialog` currently includes a bridge:
-- selecting a library object downloads it client-side
-- re-uploads it as a `source`
-- then attaches the new `source` to the task
-
-This is intentionally temporary and should be removed in Phase 2.
+- Chat still consumes inputs through the existing attachment runtime path (provider-oriented payloads), even though uploads/picks now converge on `library_object` provenance.
+- Backend default personal library is currently identified by deterministic name + user/project ownership; a stronger system-managed marker is a follow-up hardening step.
 
 ## Benefits of This Architecture
 
@@ -169,10 +167,4 @@ This is intentionally temporary and should be removed in Phase 2.
 
 ## Recommended Next Concrete Step
 
-Implement a minimal internal abstraction:
-- Define `InputRef` types in frontend/backend internal models
-- Extend notebook runtime `task_inputs` entries with `kind: 'source'` now
-- Create a shared input resolver interface for runtimes (no behavior change yet)
-
-This sets up Phase 2 (Notebook direct `library_object` refs) without disrupting current behavior.
-
+Implement backend-enforced system-managed default personal libraries (explicit marker/flags), then migrate Chat/Notebook UI and library management screens to respect those invariants without relying on naming conventions.

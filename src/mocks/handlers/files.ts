@@ -244,6 +244,19 @@ export const fileHandlers = [
         { status: 400 },
       );
     }
+    const hasDefaultForUser = sourceLibraries.some(
+      (item) =>
+        item.workspace_id === String(params.ws ?? '')
+        && item.project_id === String(params.prj ?? '')
+        && item.created_by_user_id === 'user_001'
+        && item.name === 'My Uploads',
+    );
+    if (body.name === 'My Uploads' && hasDefaultForUser) {
+      return HttpResponse.json(
+        { error_code: 'RESOURCE_CONFLICT', message: 'default_personal_library_reserved' },
+        { status: 409 },
+      );
+    }
     const now = new Date().toISOString();
     const id = `lib_${Date.now()}`;
     const created = {
@@ -271,6 +284,15 @@ export const fileHandlers = [
     if (index === -1) {
       return HttpResponse.json({ error_code: 'library_not_found', message: 'library_not_found' }, { status: 404 });
     }
+    if (
+      sourceLibraries[index].name === 'My Uploads'
+      && sourceLibraries[index].created_by_user_id === 'user_001'
+    ) {
+      return HttpResponse.json(
+        { error_code: 'RESOURCE_CONFLICT', message: 'default_personal_library_protected' },
+        { status: 409 },
+      );
+    }
     sourceLibraries[index] = {
       ...sourceLibraries[index],
       ...body,
@@ -282,6 +304,15 @@ export const fileHandlers = [
     const index = sourceLibraries.findIndex((item) => item.id === params.id);
     if (index === -1) {
       return HttpResponse.json({ error_code: 'library_not_found', message: 'library_not_found' }, { status: 404 });
+    }
+    if (
+      sourceLibraries[index].name === 'My Uploads'
+      && sourceLibraries[index].created_by_user_id === 'user_001'
+    ) {
+      return HttpResponse.json(
+        { error_code: 'RESOURCE_CONFLICT', message: 'default_personal_library_protected' },
+        { status: 409 },
+      );
     }
     sourceLibraries.splice(index, 1);
     return HttpResponse.json(null, { status: 204 });

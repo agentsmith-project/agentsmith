@@ -133,6 +133,7 @@ async function main() {
         x.source_id === inputIdArg
         || (x.library_id && x.key && \`\${x.library_id}:\${x.key}\` === inputIdArg)
         || (x.task_id && x.artifact_id && \`\${x.task_id}:\${x.artifact_id}\` === inputIdArg)
+        || (x.kind === 'artifact' && x.artifact_id === inputIdArg)
         || (x.imported_library_id && x.imported_key && \`\${x.imported_library_id}:\${x.imported_key}\` === inputIdArg)
       ),
     );
@@ -217,7 +218,14 @@ export async function prepareNotebookWorkspaceAssets(args: {
         run_id: runtimeContext.run_id ?? null,
         generated_at: new Date().toISOString(),
         task_inputs: taskInputs.map((item) => ({
-          kind: item?.kind === 'library_object' ? 'library_object' : item?.kind === 'url' ? 'url' : 'source',
+          kind:
+            item?.kind === 'library_object'
+              ? 'library_object'
+              : item?.kind === 'url'
+                ? 'url'
+                : item?.kind === 'artifact'
+                  ? 'artifact'
+                  : 'source',
           source_id: typeof item?.source_id === 'string' ? item.source_id : undefined,
           library_id: typeof item?.library_id === 'string' ? item.library_id : undefined,
           key: typeof item?.key === 'string' ? item.key : undefined,

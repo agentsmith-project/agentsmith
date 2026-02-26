@@ -941,7 +941,7 @@
     "editor_hint": {
       "endpoint": "配置该模型端点的访问范围与 token 配额。",
       "source_library": "配置该文件库的可访问主体与文件配额限制。",
-      "agent": "配置该智能体的可访问主体与并发限制。"
+      "agent": "配置该智能体的可访问主体与每分钟请求限制。"
     },
     "subjects": {
       "title": "允许访问主体与主体覆盖规则",
@@ -997,27 +997,31 @@
     "rules": {
       "endpoint": {
         "requests_per_minute": "端点每分钟请求数上限",
-        "daily_token_limit": "端点每日 Token 限额"
+        "daily_token_limit": "端点每日 Token 限额",
+        "requests_per_day": "端点每日请求数上限"
       },
       "source_library": {
+        "requests_per_minute": "文件库每分钟请求数上限",
         "max_total_files": "文件库最大文件总数",
         "max_file_size_bytes": "文件库单文件最大大小（字节）"
       },
       "agent": {
-        "max_concurrency": "智能体最大并发数"
+        "requests_per_minute": "智能体每分钟请求数上限"
       }
     },
     "subject_placeholders": {
       "endpoint": {
         "requests_per_minute": "主体每分钟请求数上限",
-        "daily_token_limit": "主体每日 token 限额"
+        "daily_token_limit": "主体每日 token 限额",
+        "requests_per_day": "主体每日请求数上限"
       },
       "source_library": {
+        "requests_per_minute": "主体每分钟请求数上限",
         "max_total_files": "主体最大文件总数",
         "max_file_size_bytes": "主体单文件最大大小（字节）"
       },
       "agent": {
-        "max_concurrency": "主体最大并发数"
+        "requests_per_minute": "主体每分钟请求数上限"
       }
     }
   },

@@ -16,14 +16,14 @@ export const RESOURCE_POLICY_RULE_MATRIX: Record<
 > = {
   endpoint: {
     rate: ['endpoint.requests_per_minute'],
-    quota: ['endpoint.daily_token_limit'],
+    quota: ['endpoint.daily_token_limit', 'endpoint.requests_per_day'],
   },
   source_library: {
-    rate: [],
+    rate: ['source_library.requests_per_minute'],
     quota: ['source_library.max_total_files', 'source_library.max_file_size_bytes'],
   },
   agent: {
-    rate: ['agent.max_concurrency'],
+    rate: ['agent.requests_per_minute'],
     quota: [],
   },
 };
@@ -59,8 +59,25 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       rootTestId: 'resource-policy__endpoint-daily-token-limit',
       subjectPlaceholderKey: 'subject_placeholders.endpoint.daily_token_limit',
     },
+    {
+      key: 'endpoint.requests_per_day',
+      bucket: 'quota',
+      labelKey: 'rules.endpoint.requests_per_day',
+      window: 'day',
+      rootInputId: 'resource-policy-endpoint-requests-per-day',
+      rootTestId: 'resource-policy__endpoint-requests-per-day',
+      subjectPlaceholderKey: 'subject_placeholders.endpoint.requests_per_day',
+    },
   ],
   source_library: [
+    {
+      key: 'source_library.requests_per_minute',
+      bucket: 'rate',
+      labelKey: 'rules.source_library.requests_per_minute',
+      rootInputId: 'resource-policy-library-requests-per-minute',
+      rootTestId: 'resource-policy__library-requests-per-minute',
+      subjectPlaceholderKey: 'subject_placeholders.source_library.requests_per_minute',
+    },
     {
       key: 'source_library.max_total_files',
       bucket: 'quota',
@@ -80,12 +97,12 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
   ],
   agent: [
     {
-      key: 'agent.max_concurrency',
+      key: 'agent.requests_per_minute',
       bucket: 'rate',
-      labelKey: 'rules.agent.max_concurrency',
-      rootInputId: 'resource-policy-agent-concurrency',
-      rootTestId: 'resource-policy__agent-max-concurrency',
-      subjectPlaceholderKey: 'subject_placeholders.agent.max_concurrency',
+      labelKey: 'rules.agent.requests_per_minute',
+      rootInputId: 'resource-policy-agent-requests-per-minute',
+      rootTestId: 'resource-policy__agent-requests-per-minute',
+      subjectPlaceholderKey: 'subject_placeholders.agent.requests_per_minute',
     },
   ],
 };

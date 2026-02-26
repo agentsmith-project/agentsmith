@@ -693,9 +693,11 @@ export type PolicyResourceType = 'endpoint' | 'source_library' | 'agent';
 export type PolicySubjectType = 'group' | 'user';
 
 export type PolicyRuleKey =
-  | 'agent.max_concurrency'
+  | 'agent.requests_per_minute'
   | 'endpoint.requests_per_minute'
+  | 'endpoint.requests_per_day'
   | 'endpoint.daily_token_limit'
+  | 'source_library.requests_per_minute'
   | 'source_library.max_total_files'
   | 'source_library.max_file_size_bytes';
 
@@ -752,11 +754,14 @@ export interface ProjectGovernanceDefaults {
       rules: PolicyRule<'endpoint.requests_per_minute'>[];
     };
     quota_limits?: {
-      rules: PolicyRule<'endpoint.daily_token_limit'>[];
+      rules: Array<PolicyRule<'endpoint.daily_token_limit'> | PolicyRule<'endpoint.requests_per_day'>>;
     };
   };
   source_library: {
     access_mode: 'allow_all_members' | 'allow_list';
+    rate_limits?: {
+      rules: PolicyRule<'source_library.requests_per_minute'>[];
+    };
     quota_limits?: {
       rules: Array<
         PolicyRule<'source_library.max_total_files'> | PolicyRule<'source_library.max_file_size_bytes'>
@@ -766,7 +771,7 @@ export interface ProjectGovernanceDefaults {
   agent: {
     access_mode: 'allow_all_members' | 'allow_list';
     rate_limits?: {
-      rules: PolicyRule<'agent.max_concurrency'>[];
+      rules: PolicyRule<'agent.requests_per_minute'>[];
     };
   };
 }

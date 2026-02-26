@@ -3613,12 +3613,121 @@ paths:
                   type: array
                   items:
                     type: object
+                    required:
+                      - subject_type
+                      - subject_id
+                    properties:
+                      subject_type:
+                        type: string
+                        enum:
+                          - group
+                          - user
+                      subject_id:
+                        type: string
+                      rate_limits:
+                        type: object
+                        properties:
+                          rules:
+                            type: array
+                            items:
+                              type: object
+                              required:
+                                - key
+                                - value
+                              properties:
+                                key:
+                                  type: string
+                                  enum:
+                                    - endpoint.requests_per_minute
+                                    - endpoint.requests_per_day
+                                    - endpoint.daily_token_limit
+                                    - source_library.requests_per_minute
+                                    - source_library.max_total_files
+                                    - source_library.max_file_size_bytes
+                                    - agent.requests_per_minute
+                                value:
+                                  type: number
+                                  exclusiveMinimum: 0
+                              additionalProperties: true
+                        additionalProperties: true
+                      quota_limits:
+                        type: object
+                        properties:
+                          rules:
+                            type: array
+                            items:
+                              type: object
+                              required:
+                                - key
+                                - value
+                              properties:
+                                key:
+                                  type: string
+                                  enum:
+                                    - endpoint.requests_per_minute
+                                    - endpoint.requests_per_day
+                                    - endpoint.daily_token_limit
+                                    - source_library.requests_per_minute
+                                    - source_library.max_total_files
+                                    - source_library.max_file_size_bytes
+                                    - agent.requests_per_minute
+                                value:
+                                  type: number
+                                  exclusiveMinimum: 0
+                              additionalProperties: true
+                        additionalProperties: true
                     additionalProperties: true
                 rate_limits:
                   type: object
+                  properties:
+                    rules:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - key
+                          - value
+                        properties:
+                          key:
+                            type: string
+                            enum:
+                              - endpoint.requests_per_minute
+                              - endpoint.requests_per_day
+                              - endpoint.daily_token_limit
+                              - source_library.requests_per_minute
+                              - source_library.max_total_files
+                              - source_library.max_file_size_bytes
+                              - agent.requests_per_minute
+                          value:
+                            type: number
+                            exclusiveMinimum: 0
+                        additionalProperties: true
                   additionalProperties: true
                 quota_limits:
                   type: object
+                  properties:
+                    rules:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - key
+                          - value
+                        properties:
+                          key:
+                            type: string
+                            enum:
+                              - endpoint.requests_per_minute
+                              - endpoint.requests_per_day
+                              - endpoint.daily_token_limit
+                              - source_library.requests_per_minute
+                              - source_library.max_total_files
+                              - source_library.max_file_size_bytes
+                              - agent.requests_per_minute
+                          value:
+                            type: number
+                            exclusiveMinimum: 0
+                        additionalProperties: true
                   additionalProperties: true
       responses:
         "204":

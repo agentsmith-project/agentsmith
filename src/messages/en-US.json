@@ -939,7 +939,7 @@
     "editor_hint": {
       "endpoint": "Configure endpoint access and token quota for this model endpoint.",
       "source_library": "Configure who can access this library and file-related quota limits.",
-      "agent": "Configure agent access and per-subject concurrency limits."
+      "agent": "Configure agent access and requests-per-minute limits."
     },
     "subjects": {
       "title": "Allowed subjects and subject overrides",
@@ -995,27 +995,31 @@
     "rules": {
       "endpoint": {
         "requests_per_minute": "Endpoint requests per minute",
-        "daily_token_limit": "Endpoint daily token limit"
+        "daily_token_limit": "Endpoint daily token limit",
+        "requests_per_day": "Endpoint requests per day"
       },
       "source_library": {
+        "requests_per_minute": "Source library requests per minute",
         "max_total_files": "Source library max total files",
         "max_file_size_bytes": "Source library max file size (bytes)"
       },
       "agent": {
-        "max_concurrency": "Agent max concurrency"
+        "requests_per_minute": "Agent requests per minute"
       }
     },
     "subject_placeholders": {
       "endpoint": {
         "requests_per_minute": "subject requests per minute",
-        "daily_token_limit": "subject daily token limit"
+        "daily_token_limit": "subject daily token limit",
+        "requests_per_day": "subject requests per day"
       },
       "source_library": {
+        "requests_per_minute": "subject requests per minute",
         "max_total_files": "subject max total files",
         "max_file_size_bytes": "subject max file size bytes"
       },
       "agent": {
-        "max_concurrency": "subject max concurrency"
+        "requests_per_minute": "subject requests per minute"
       }
     }
   },

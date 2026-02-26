@@ -75,7 +75,7 @@ const mockGetResourcePolicy = vi.fn().mockImplementation(
     if (resourceType === 'agent') {
       return {
         ...defaultPolicy,
-        rate_limits: { rules: [{ key: 'agent.max_concurrency', value: 4 }] },
+        rate_limits: { rules: [{ key: 'agent.requests_per_minute', value: 4 }] },
       };
     }
     return defaultPolicy;
@@ -459,14 +459,14 @@ describe('ResourcePolicyPage', () => {
     });
 
     await user.click(screen.getByTestId('resource-policy__row--agent--agent_1'));
-    await user.clear(screen.getByTestId('resource-policy__agent-max-concurrency'));
-    await user.type(screen.getByTestId('resource-policy__agent-max-concurrency'), '6');
+    await user.clear(screen.getByTestId('resource-policy__agent-requests-per-minute'));
+    await user.type(screen.getByTestId('resource-policy__agent-requests-per-minute'), '6');
 
     await user.click(screen.getByTestId('resource-policy__add-subject'));
     const subjectSelects = screen.getAllByTestId('resource-policy__subject-id-select');
     await user.selectOptions(subjectSelects[0], 'user_123');
     await user.type(
-      screen.getByPlaceholderText('subject_placeholders.agent.max_concurrency'),
+      screen.getByPlaceholderText('subject_placeholders.agent.requests_per_minute'),
       '2'
     );
 
@@ -475,13 +475,13 @@ describe('ResourcePolicyPage', () => {
     expect(mockMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         rate_limits: {
-          rules: [{ key: 'agent.max_concurrency', value: 6 }],
+          rules: [{ key: 'agent.requests_per_minute', value: 6 }],
         },
         allowed_subjects: [
           expect.objectContaining({
             subject_id: 'user_123',
             rate_limits: {
-              rules: [{ key: 'agent.max_concurrency', value: 2 }],
+              rules: [{ key: 'agent.requests_per_minute', value: 2 }],
             },
           }),
         ],

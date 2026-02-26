@@ -6,24 +6,24 @@ import {
 } from '@/lib/constants/resource-policy';
 
 describe('validatePolicyRulesForResource', () => {
-  it('accepts agent concurrency rule', () => {
+  it('accepts agent requests-per-minute rule', () => {
     const result = validatePolicyRulesForResource(
       'agent',
-      { rules: [{ key: 'agent.max_concurrency', value: 3 }] },
+      { rules: [{ key: 'agent.requests_per_minute', value: 3 }] },
       undefined
     );
     expect(result.valid).toBe(true);
   });
 
-  it('rejects endpoint concurrency rule', () => {
+  it('rejects endpoint agent-rate rule', () => {
     const result = validatePolicyRulesForResource(
       'endpoint',
-      { rules: [{ key: 'agent.max_concurrency', value: 3 }] },
+      { rules: [{ key: 'agent.requests_per_minute', value: 3 }] },
       undefined
     );
     expect(result.valid).toBe(false);
     if (!result.valid) {
-      expect(result.invalidKeys).toContain('agent.max_concurrency');
+      expect(result.invalidKeys).toContain('agent.requests_per_minute');
     }
   });
 

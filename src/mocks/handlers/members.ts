@@ -81,7 +81,7 @@ function getDefaultPolicy(resourceType: 'endpoint' | 'source_library' | 'agent',
       access_mode: 'allow_all_members',
       allowed_subjects: [],
       rate_limits: {
-        rules: [{ key: 'agent.max_concurrency', value: 2 }],
+        rules: [{ key: 'agent.requests_per_minute', value: 60 }],
       },
     };
   }
@@ -92,6 +92,9 @@ function getDefaultPolicy(resourceType: 'endpoint' | 'source_library' | 'agent',
       resource_id: resourceId,
       access_mode: 'allow_all_members',
       allowed_subjects: [],
+      rate_limits: {
+        rules: [{ key: 'source_library.requests_per_minute', value: 120 }],
+      },
       quota_limits: {
         rules: [
           { key: 'source_library.max_total_files', value: 2000 },

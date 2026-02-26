@@ -16,6 +16,7 @@ Current status:
   - `Resource Policy` endpoint quota (`daily_token_limit`)
   - `Members` endpoint quota
   - `Members` route authorization (deny -> grant -> allow)
+  - `Members` lifecycle baseline (active -> suspended -> removed -> restore)
 
 ## Validation (Real Environment)
 
@@ -36,6 +37,7 @@ Included checks:
 - `governance-policy-quota-effect-smoke`
 - `governance-member-quota-effect-smoke`
 - `governance-member-permission-effect-smoke`
+- `governance-member-lifecycle-effect-smoke`
 
 ## Important Fix Included
 

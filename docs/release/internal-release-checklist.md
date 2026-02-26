@@ -103,6 +103,7 @@ Bundle includes:
 - `governance-policy-quota-effect-smoke` (endpoint policy quota effect + audit/usage evidence)
 - `governance-member-quota-effect-smoke` (member endpoint quota effect + audit/usage evidence)
 - `governance-member-permission-effect-smoke` (member permission route authz deny -> allow effect)
+- `governance-member-lifecycle-effect-smoke` (member lifecycle active -> suspended -> removed -> restore effect)
 
 ## 4. Contract / Quality Gates
 ### Required checks

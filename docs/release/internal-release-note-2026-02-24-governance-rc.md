@@ -12,6 +12,7 @@ Outcome:
 - `governance-release-smoke` now validates `Members` real-backend effect paths:
   - member endpoint quota enforcement (`deny + audit/usage evidence`)
   - member route authorization enforcement (`deny -> grant -> allow`)
+  - member lifecycle effect (`active -> suspended -> removed -> restore`)
 - `governance-release-smoke` now validates `Resource Policy` quota enforcement (`endpoint.daily_token_limit`) in addition to rate limiting.
 - `governance-release-smoke` now validates `Resource Policy` allow-list access control (`deny -> allow`) with audit/usage evidence.
 - `governance-release-smoke` now validates `Resource Policy` group-subject allow-list matching effect (`deny -> group-allow`).
@@ -90,10 +91,14 @@ Impact:
   - verifies member route authorization deny (`403`) before grant
   - grants `project:member:manage` and verifies allow (`200`)
   - restores original member permissions
+- Added `governance-member-lifecycle-effect-smoke`
+  - verifies member lifecycle transitions via real backend:
+    `active -> suspended -> removed -> restore`
+  - verifies removed member is absent from members list
 - Bundled all governance effect smokes into `governance-release-smoke`
 
 Impact:
-- Governance release smoke now covers `Resource Policy` user-access + group-access + rate + quota and `Members` quota + permission runtime effects
+- Governance release smoke now covers `Resource Policy` user-access + group-access + rate + quota and `Members` quota + permission + lifecycle runtime effects
 - Real backend `Members` functionality has stronger regression protection
 - `Resource Policy` quota path has real-environment regression protection
 
@@ -113,6 +118,16 @@ Impact:
 Impact:
 - `Usage` evidence for policy access denies can be queried consistently by user
 - Enables stable real-backend smoke assertions for policy allow-list deny paths
+
+### 6. Member lifecycle write-path baseline
+
+- Added membership write-path handling on real backend governance route:
+  - `PATCH /memberships/:user_id` (status update, with active-bootstrap support)
+  - `DELETE /memberships/:user_id` (membership removal, owner protected)
+
+Impact:
+- Enables real backend lifecycle operations and lifecycle smoke coverage
+- Provides baseline for later `Members` lifecycle product hardening
 
 ## Validation Record (Real Environment)
 
@@ -139,6 +154,9 @@ Result:
   - Includes member quota deny (`MEMBER_QUOTA_EXCEEDED`) + `Audit/Usage` evidence + restore
 - `governance-member-permission-effect-smoke` ✅
   - Includes member route authz deny (`403`) -> grant -> allow (`200`) + restore
+- `governance-member-lifecycle-effect-smoke` ✅
+  - Includes member lifecycle transition effect:
+    `active -> suspended -> removed -> restore`
 
 ## Current Release Readiness (Internal)
 

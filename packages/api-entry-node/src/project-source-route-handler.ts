@@ -98,7 +98,7 @@ const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Arr
   timestamp: string;
   actor_id: string;
   actor_email: string;
-  change_type: 'permissions' | 'quota' | 'resource_policy' | 'role';
+  change_type: 'permissions' | 'quota' | 'resource_policy' | 'role' | 'membership';
   changes: {
     added?: string[];
     removed?: string[];
@@ -119,7 +119,7 @@ function getMemberChangeHistoryState(workspaceId: string, projectId: string) {
     timestamp: string;
     actor_id: string;
     actor_email: string;
-    change_type: 'permissions' | 'quota' | 'resource_policy' | 'role';
+    change_type: 'permissions' | 'quota' | 'resource_policy' | 'role' | 'membership';
     changes: { added?: string[]; removed?: string[]; updated?: Record<string, { from: unknown; to: unknown }> };
   }>>();
   PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT.set(key, map);
@@ -862,6 +862,138 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       status: membership?.status ?? 'active',
       joined_at: membership?.joined_at ?? projectCreatedAt ?? new Date().toISOString(),
     });
+    return true;
+  }
+
+  if (route.kind === 'projectMembershipItem' && method === 'PATCH' && route.workspaceId && route.projectId && route.userId) {
+    const body = await readBody(req) as { status?: 'active' | 'suspended' };
+    if (!body || (body.status !== 'active' && body.status !== 'suspended')) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'status must be active or suspended' });
+      return true;
+    }
+    let projectOwnerId: string | null = null;
+    try {
+      const project = await deps.getProjectUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      });
+      projectOwnerId = project.owner_id;
+    } catch {
+      // keep behavior minimal in local/dev fallback mode
+    }
+    if (projectOwnerId && route.userId === projectOwnerId) {
+      json(res, 409, { error_code: 'CONFLICT', message: 'project_owner_membership_cannot_be_modified' });
+      return true;
+    }
+    const memberships = getProjectMembershipsState(route.workspaceId, route.projectId);
+    const existing = memberships.get(route.userId);
+    let prevStatus: 'active' | 'pending' | 'suspended' | null = null;
+    if (!existing) {
+      if (body.status !== 'active') {
+        json(res, 404, { error_code: 'NOT_FOUND', message: 'membership_not_found' });
+        return true;
+      }
+      const created = {
+        project_id: route.projectId,
+        user_id: route.userId,
+        role: 'developer',
+        status: 'active' as const,
+        joined_at: new Date().toISOString(),
+      };
+      memberships.set(route.userId, created);
+    } else {
+      prevStatus = existing.status;
+      existing.status = body.status;
+      memberships.set(route.userId, existing);
+    }
+
+    const historyState = getMemberChangeHistoryState(route.workspaceId, route.projectId);
+    const items = historyState.get(route.userId) ?? [];
+    items.unshift({
+      id: `chg_${Math.random().toString(36).slice(2, 10)}`,
+      timestamp: new Date().toISOString(),
+      actor_id: user.id,
+      actor_email: user.email,
+      change_type: 'membership',
+      changes: {
+        updated: {
+          status: { from: prevStatus ?? 'missing', to: body.status },
+        },
+      },
+    });
+    historyState.set(route.userId, items);
+
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: body.status === 'suspended' ? 'member.membership.suspended' : 'member.membership.activated',
+      resourceType: 'membership',
+      resourceId: route.userId,
+      metadata: {
+        target_user_id: route.userId,
+        previous_status: prevStatus ?? 'missing',
+        next_status: body.status,
+      },
+    });
+    res.statusCode = 204;
+    res.end();
+    return true;
+  }
+
+  if (route.kind === 'projectMembershipItem' && method === 'DELETE' && route.workspaceId && route.projectId && route.userId) {
+    let projectOwnerId: string | null = null;
+    try {
+      const project = await deps.getProjectUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      });
+      projectOwnerId = project.owner_id;
+    } catch {
+      // keep behavior minimal in local/dev fallback mode
+    }
+    if (projectOwnerId && route.userId === projectOwnerId) {
+      json(res, 409, { error_code: 'CONFLICT', message: 'project_owner_membership_cannot_be_removed' });
+      return true;
+    }
+    const memberships = getProjectMembershipsState(route.workspaceId, route.projectId);
+    const existing = memberships.get(route.userId);
+    if (!existing) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'membership_not_found' });
+      return true;
+    }
+    memberships.delete(route.userId);
+
+    const historyState = getMemberChangeHistoryState(route.workspaceId, route.projectId);
+    const items = historyState.get(route.userId) ?? [];
+    items.unshift({
+      id: `chg_${Math.random().toString(36).slice(2, 10)}`,
+      timestamp: new Date().toISOString(),
+      actor_id: user.id,
+      actor_email: user.email,
+      change_type: 'membership',
+      changes: {
+        updated: {
+          status: { from: existing.status, to: 'removed' },
+        },
+      },
+    });
+    historyState.set(route.userId, items);
+
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'member.membership.removed',
+      resourceType: 'membership',
+      resourceId: route.userId,
+      metadata: {
+        target_user_id: route.userId,
+        previous_status: existing.status,
+      },
+    });
+    res.statusCode = 204;
+    res.end();
     return true;
   }
 

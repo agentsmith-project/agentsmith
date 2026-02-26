@@ -7,7 +7,7 @@
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-interaction-smoke governance-policy-effect-smoke \
-	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-quota-effect-smoke governance-member-quota-effect-smoke governance-member-permission-effect-smoke \
+	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-quota-effect-smoke governance-member-quota-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
@@ -106,6 +106,7 @@ help:
 	@echo "  make governance-policy-quota-effect-smoke # real-backend endpoint policy quota effect smoke (quota block -> audit/usage evidence)"
 	@echo "  make governance-member-quota-effect-smoke # real-backend member quota effect smoke (quota block -> audit/usage evidence)"
 	@echo "  make governance-member-permission-effect-smoke # real-backend member permission effect smoke (route authz deny->allow)"
+	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
 	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
@@ -439,6 +440,10 @@ governance-member-permission-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-member-permission-effect-smoke.sh
 
+governance-member-lifecycle-effect-smoke:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/governance-member-lifecycle-effect-smoke.sh
+
 governance-release-smoke:
 	@set -e; \
 	$(MAKE) governance-pages-real-backend-smoke; \
@@ -452,7 +457,8 @@ governance-release-smoke:
 	fi; \
 	$(MAKE) governance-policy-quota-effect-smoke; \
 	$(MAKE) governance-member-quota-effect-smoke; \
-	$(MAKE) governance-member-permission-effect-smoke
+	$(MAKE) governance-member-permission-effect-smoke; \
+	$(MAKE) governance-member-lifecycle-effect-smoke
 
 notebook-agent-smoke-full:
 	@set -e; \

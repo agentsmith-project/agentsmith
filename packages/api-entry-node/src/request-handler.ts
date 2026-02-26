@@ -101,6 +101,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
       || route.kind === 'projectQuotaTemplateApply'
       || route.kind === 'projectGroupItem'
       || route.kind === 'projectGroupApplyTemplate'
+      || route.kind === 'projectMembershipItem'
       || route.kind === 'projectMemberPermissions'
       || route.kind === 'projectMemberQuotaOverrides'
       || route.kind === 'projectResourcePolicy'

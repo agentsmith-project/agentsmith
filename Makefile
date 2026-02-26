@@ -449,7 +449,11 @@ governance-release-smoke:
 	$(MAKE) governance-pages-real-backend-smoke; \
 	$(MAKE) governance-pages-real-backend-interaction-smoke; \
 	$(MAKE) governance-policy-access-effect-smoke; \
-	$(MAKE) governance-policy-group-access-effect-smoke; \
+	if ! $(MAKE) governance-policy-group-access-effect-smoke; then \
+		echo "[make] governance-policy-group-access-effect-smoke failed; attempting token refresh and retry once"; \
+		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
+		$(MAKE) governance-policy-group-access-effect-smoke; \
+	fi; \
 	if ! $(MAKE) governance-policy-effect-smoke; then \
 		echo "[make] governance-policy-effect-smoke failed; attempting token refresh and retry once"; \
 		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \

@@ -1521,6 +1521,28 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(patchPolicyRes.status).toBe(204);
+    const policyAuditStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const policyAuditEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const policyAuditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(policyAuditStart)}&end_time=${encodeURIComponent(policyAuditEnd)}&action=resource_policy.updated&page=1&page_size=20`,
+    );
+    expect(policyAuditRes.status).toBe(200);
+    const policyAuditBody = (await policyAuditRes.json()) as {
+      items: Array<{
+        action: string;
+        resource_type?: string;
+        resource_id?: string;
+        metadata_json?: Record<string, unknown>;
+      }>;
+    };
+    expect(
+      policyAuditBody.items.some(
+        (item) => item.action === 'resource_policy.updated'
+          && item.resource_type === 'resource_policy'
+          && item.resource_id === 'endpoint:ep_test',
+      ),
+    ).toBe(true);
 
     const getPolicyAfterRes = await apiFetch(
       baseUrl,

@@ -1167,20 +1167,47 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'access_mode and allowed_subjects are required' });
       return true;
     }
+    const previousPolicy = getProjectResourcePolicyOrDefault(
+      route.workspaceId,
+      route.projectId,
+      route.resourceType as 'endpoint' | 'source_library' | 'agent',
+      route.resourceId,
+    );
+    const normalizedAllowedSubjects = body.allowed_subjects
+      .filter((s): s is {
+        subject_type: 'group' | 'user';
+        subject_id: string;
+        rate_limits?: Record<string, unknown>;
+        quota_limits?: Record<string, unknown>;
+      } => !!s && (s.subject_type === 'group' || s.subject_type === 'user') && typeof s.subject_id === 'string')
+      .map((s) => ({ ...s, updated_at: new Date().toISOString() }));
     upsertProjectResourcePolicy(route.workspaceId, route.projectId, {
       resource_type: route.resourceType as 'endpoint' | 'source_library' | 'agent',
       resource_id: route.resourceId,
       access_mode: body.access_mode,
-      allowed_subjects: body.allowed_subjects
-        .filter((s): s is {
-          subject_type: 'group' | 'user';
-          subject_id: string;
-          rate_limits?: Record<string, unknown>;
-          quota_limits?: Record<string, unknown>;
-        } => !!s && (s.subject_type === 'group' || s.subject_type === 'user') && typeof s.subject_id === 'string')
-        .map((s) => ({ ...s, updated_at: new Date().toISOString() })),
+      allowed_subjects: normalizedAllowedSubjects,
       rate_limits: body.rate_limits,
       quota_limits: body.quota_limits,
+    });
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'resource_policy.updated',
+      resourceType: 'resource_policy',
+      resourceId: `${route.resourceType}:${route.resourceId}`,
+      metadata: {
+        governed_resource_type: route.resourceType,
+        governed_resource_id: route.resourceId,
+        access_mode: {
+          from: previousPolicy.access_mode,
+          to: body.access_mode,
+        },
+        allowed_subjects_count: {
+          from: Array.isArray(previousPolicy.allowed_subjects) ? previousPolicy.allowed_subjects.length : 0,
+          to: normalizedAllowedSubjects.length,
+        },
+      },
     });
     res.statusCode = 204;
     res.end();

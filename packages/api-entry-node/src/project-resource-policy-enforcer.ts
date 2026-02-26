@@ -94,6 +94,7 @@ function mergeQuotaRules(base: PolicyRule[], overrides: PolicyRule[]): PolicyRul
 
 function getRequestsPerMinuteRuleKey(resourceType: ResourceType): string | null {
   if (resourceType === 'endpoint') return 'endpoint.requests_per_minute';
+  if (resourceType === 'source_library') return 'source_library.requests_per_minute';
   if (resourceType === 'agent') return 'agent.requests_per_minute';
   return null;
 }

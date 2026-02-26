@@ -25,6 +25,7 @@ import {
   isProjectResourceAccessAllowedForUser,
   upsertProjectResourcePolicy,
 } from './project-resource-policy-store.js';
+import { checkAndConsumeProjectResourceRateLimitsForUser } from './project-resource-policy-enforcer.js';
 import {
   getProjectGroupsState,
   setProjectGroupsState,
@@ -291,6 +292,87 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     return false;
   };
 
+  const enforceSourceLibraryRateLimit = async (params: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    routeKind: string;
+  }): Promise<boolean> => {
+    const policy = getProjectResourcePolicyOrDefault(
+      params.workspaceId,
+      params.projectId,
+      'source_library',
+      params.libraryId,
+    );
+    const rateCheck = checkAndConsumeProjectResourceRateLimitsForUser({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      resourceType: 'source_library',
+      resourceId: params.libraryId,
+      userId: user.id,
+      policy,
+    });
+    if (rateCheck.allowed) return true;
+    await writeProjectAuditEvent(deps, {
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'resource_policy.rate_limited',
+      result: 'error',
+      requestId,
+      resourceType: 'source_library',
+      resourceId: params.libraryId,
+      errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+      errorMessage: 'resource_policy_rate_limited',
+      metadata: {
+        governance_kind: 'resource_policy',
+        enforcement_kind: 'rate_limit',
+        route_kind: params.routeKind,
+        effective_limit_per_minute: rateCheck.effective_limit_per_minute,
+        scope: rateCheck.scope,
+        retry_after_seconds: rateCheck.retry_after_seconds,
+      },
+    });
+    await writeProjectUsageFact(deps, {
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      resourceType: 'source_library',
+      resourceId: params.libraryId,
+      endUserId: user.id,
+      requestId,
+      requests: 1,
+      result: 'error',
+      errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+      metadata: {
+        stage: 'preflight',
+        governance_kind: 'resource_policy',
+        enforcement_kind: 'rate_limit',
+        route_kind: params.routeKind,
+        effective_limit_per_minute: rateCheck.effective_limit_per_minute,
+        scope: rateCheck.scope,
+      },
+    });
+    res.setHeader('Retry-After', String(rateCheck.retry_after_seconds));
+    json(res, 429, {
+      error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+      message: 'resource_policy_rate_limited',
+      resource_type: 'source_library',
+      resource_id: params.libraryId,
+      retry_after_seconds: rateCheck.retry_after_seconds,
+    });
+    return false;
+  };
+
+  const enforceSourceLibraryPreflight = async (params: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    routeKind: string;
+  }): Promise<boolean> => {
+    if (!(await enforceSourceLibraryAccess(params))) return false;
+    return enforceSourceLibraryRateLimit(params);
+  };
+
   const enforceSourceLibraryAccessBySourceId = async (params: {
     workspaceId: string;
     projectId: string;
@@ -306,7 +388,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     if (!libraryId) {
       return true;
     }
-    return enforceSourceLibraryAccess({
+    return enforceSourceLibraryPreflight({
       workspaceId: params.workspaceId,
       projectId: params.projectId,
       libraryId,
@@ -1396,7 +1478,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjects' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1430,7 +1512,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryFolders' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1452,7 +1534,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsUpload' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1488,7 +1570,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsDownload' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1526,7 +1608,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsDelete' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1547,7 +1629,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsMove' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1569,7 +1651,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsMeta' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1589,7 +1671,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsShareLink' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1658,7 +1740,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryAIReadyJobs' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1681,7 +1763,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryAIReadyJobItem' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId && route.jobId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
@@ -1708,7 +1790,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryAIReadyJobCancel' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId && route.jobId) {
-    if (!(await enforceSourceLibraryAccess({
+    if (!(await enforceSourceLibraryPreflight({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,

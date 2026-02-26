@@ -119,7 +119,7 @@ subject_overrides:
 - allowed quota keys: `endpoint.daily_token_limit`, `endpoint.requests_per_day`
 
 3. `source_library`
-- allowed rate keys: none
+- allowed rate keys: `source_library.requests_per_minute`
 - allowed quota keys:
   - `source_library.max_total_files`
   - `source_library.max_file_size_bytes`

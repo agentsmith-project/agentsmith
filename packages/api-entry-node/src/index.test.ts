@@ -2067,6 +2067,99 @@ describe('api-entry-node projects routes', () => {
     expect(groupAllowedListRes.status).toBe(200);
   });
 
+  it('enforces source_library resource policy rate limit and records governance evidence', async () => {
+    const { baseUrl } = startServer();
+
+    const createLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Source Library Rate Limited', visibility: 'shared' }),
+      },
+    );
+    expect(createLibraryRes.status).toBe(201);
+    const library = (await createLibraryRes.json()) as { id: string };
+
+    const patchRatePolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'source_library.requests_per_minute', value: 1 }] },
+        }),
+      },
+    );
+    expect(patchRatePolicyRes.status).toBe(204);
+
+    const firstListRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=&delimiter=/`,
+    );
+    expect(firstListRes.status).toBe(200);
+
+    const secondListRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=&delimiter=/`,
+    );
+    expect(secondListRes.status).toBe(429);
+    const secondBody = (await secondListRes.json()) as {
+      error_code?: string;
+      message?: string;
+      resource_type?: string;
+      resource_id?: string;
+      retry_after_seconds?: number;
+    };
+    expect(secondBody).toMatchObject({
+      error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+      resource_type: 'source_library',
+      resource_id: library.id,
+    });
+    expect(typeof secondBody.retry_after_seconds).toBe('number');
+
+    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.rate_limited&resource_type=source_library&resource_id=${library.id}&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const auditBody = (await auditRes.json()) as {
+      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
+    };
+    expect(
+      auditBody.items.some(
+        (item) => item.action === 'resource_policy.rate_limited'
+          && item.resource_type === 'source_library'
+          && item.resource_id === library.id
+          && item.error_code === 'RESOURCE_POLICY_RATE_LIMITED',
+      ),
+    ).toBe(true);
+
+    const usageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&resource_type=source_library&resource_id=${library.id}&end_user_id=user_test&group_by=hour&page=1&page_size=50`,
+    );
+    expect(usageRes.status).toBe(200);
+    const usageBody = (await usageRes.json()) as {
+      items: Array<{ resource_type: string; resource_id?: string; end_user_id?: string; requests: number }>;
+    };
+    expect(
+      usageBody.items.some(
+        (item) =>
+          item.resource_type === 'source_library'
+          && item.resource_id === library.id
+          && item.end_user_id === 'user_test'
+          && item.requests >= 1,
+      ),
+    ).toBe(true);
+  });
+
   it('supports credentials and endpoints CRUD plus openai-compatible proxy', async () => {
     const { baseUrl, deps } = startServer();
     const upstream = startUpstreamServer();

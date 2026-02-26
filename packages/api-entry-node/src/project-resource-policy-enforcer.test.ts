@@ -84,6 +84,44 @@ describe('project-resource-policy-enforcer', () => {
     expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });
   });
 
+  it('enforces source_library requests_per_minute at policy root', () => {
+    __resetProjectResourcePolicyRateCountersForTests();
+    const policy: ProjectResourcePolicyRecord = {
+      resource_type: 'source_library',
+      resource_id: 'lib_1',
+      access_mode: 'allow_all_members',
+      allowed_subjects: [],
+      rate_limits: {
+        rules: [{ key: 'source_library.requests_per_minute', value: 1 }],
+      },
+    };
+    const first = checkAndConsumeProjectResourceRateLimitsForUser({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      resourceType: 'source_library',
+      resourceId: 'lib_1',
+      userId: 'user_1',
+      policy,
+      nowMs: 1_700_000_120_000,
+    });
+    const second = checkAndConsumeProjectResourceRateLimitsForUser({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      resourceType: 'source_library',
+      resourceId: 'lib_1',
+      userId: 'user_1',
+      policy,
+      nowMs: 1_700_000_120_100,
+    });
+    expect(first.allowed).toBe(true);
+    expect(second).toMatchObject({
+      allowed: false,
+      reason: 'rate_limited',
+      effective_limit_per_minute: 1,
+      scope: 'policy',
+    });
+  });
+
   it('enforces endpoint requests_per_day quota using request counts', async () => {
     const docStore = new InMemoryJsonDocStore();
     const policy: ProjectResourcePolicyRecord = {

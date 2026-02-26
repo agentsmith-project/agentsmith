@@ -73,6 +73,12 @@ function mergeQuotaRules(base: PolicyRule[], overrides: PolicyRule[]): PolicyRul
   return Array.from(map.values());
 }
 
+function getRequestsPerMinuteRuleKey(resourceType: ResourceType): string | null {
+  if (resourceType === 'endpoint') return 'endpoint.requests_per_minute';
+  if (resourceType === 'agent') return 'agent.requests_per_minute';
+  return null;
+}
+
 function getMatchingSubjectRateRules(args: {
   workspaceId: string;
   projectId: string;
@@ -94,12 +100,15 @@ function getEffectiveRequestsPerMinuteRule(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
+  resourceType: ResourceType;
   policy: ProjectResourcePolicyRecord;
 }): { value?: number; scope?: 'policy' | 'subject' } {
+  const rpmRuleKey = getRequestsPerMinuteRuleKey(args.resourceType);
+  if (!rpmRuleKey) return {};
   const baseRules = readPolicyRules(args.policy.rate_limits);
   const subject = getMatchingSubjectRateRules(args);
   const effective = subject.matched ? mergeRateRules(baseRules, subject.rules) : baseRules;
-  const rpmRule = effective.find((r) => r.key === 'endpoint.requests_per_minute');
+  const rpmRule = effective.find((r) => r.key === rpmRuleKey);
   if (!rpmRule) return {};
   return { value: rpmRule.value, scope: subject.matched ? 'subject' : 'policy' };
 }
@@ -144,13 +153,14 @@ export function checkAndConsumeProjectResourceRateLimitsForUser(args: {
   policy: ProjectResourcePolicyRecord | null;
   nowMs?: number;
 }): RateLimitDecision {
-  if (!args.policy || args.resourceType !== 'endpoint') {
+  if (!args.policy) {
     return { allowed: true };
   }
   const effective = getEffectiveRequestsPerMinuteRule({
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
+    resourceType: args.resourceType,
     policy: args.policy,
   });
   if (!effective.value || effective.value <= 0) {

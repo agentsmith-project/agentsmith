@@ -2610,6 +2610,220 @@ describe('api-entry-node projects routes', () => {
     runtime.close();
   });
 
+  it('enforces agent resource policy rate limit for notebook external runtime and records governance evidence', async () => {
+    const { baseUrl } = startServer();
+
+    const createCredentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'task-runner-key-rate',
+          type: 'api_key',
+          value: 'sk-task-rate',
+        }),
+      },
+    );
+    expect(createCredentialRes.status).toBe(201);
+    const credential = (await createCredentialRes.json()) as { id: string };
+
+    const createEndpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'task-endpoint-rate',
+          openai_model: 'gpt-5-codex',
+          type: 'openai',
+          mode: 'openai',
+          base_url: 'https://example.com/v1',
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpointRes.status).toBe(201);
+    const endpoint = (await createEndpointRes.json()) as { id: string };
+
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'notebook-runner-rate',
+          mode: 'external',
+          interaction_mode: 'notebook',
+          runtime_preferences: {
+            notebook: {
+              endpoint_id: endpoint.id,
+              wire_api: 'chat',
+              model: 'gpt-5-codex',
+            },
+          },
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createAgentRes.status).toBe(201);
+    const agent = (await createAgentRes.json()) as { id: string };
+
+    const patchPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/agent/${agent.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'agent.requests_per_minute', value: 1 }] },
+        }),
+      },
+    );
+    expect(patchPolicyRes.status).toBe(204);
+
+    const keyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
+    expect(keyRes.status).toBe(201);
+    const keyPayload = (await keyRes.json()) as { key: string };
+
+    const connInfoRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+    );
+    expect(connInfoRes.status).toBe(200);
+    const connInfo = (await connInfoRes.json()) as { ws_url: string };
+    const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
+
+    let dispatchCount = 0;
+    let wsClient: WebSocket | null = null;
+    const wsReady = new Promise<void>((resolve) => {
+      const ws = new WebSocket(wsUrl, {
+        headers: { Authorization: `Bearer ${keyPayload.key}` },
+      });
+      wsClient = ws;
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString('utf-8')) as { type?: string; request_id?: string };
+        if (msg.type !== 'server.request.start' || !msg.request_id) return;
+        dispatchCount += 1;
+        ws.send(JSON.stringify({
+          type: 'agent.response.done',
+          request_id: msg.request_id,
+          payload: { finish_reason: 'stop', usage_tokens: 3 },
+        }));
+      });
+      ws.on('open', () => resolve());
+    });
+    await wsReady;
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Notebook task agent rate',
+          agent_id: agent.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const firstRunRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'user', content: 'run once' }),
+      },
+    );
+    expect(firstRunRes.status).toBe(200);
+
+    const firstRunStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const firstRunEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    let firstCompleted = false;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const auditRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(firstRunStart)}&end_time=${encodeURIComponent(firstRunEnd)}&action=notebook.task.run.completed&resource_type=notebook_task&resource_id=${task.id}&page=1&page_size=20`,
+      );
+      expect(auditRes.status).toBe(200);
+      const auditBody = (await auditRes.json()) as { items: Array<{ action: string }> };
+      if (auditBody.items.some((item) => item.action === 'notebook.task.run.completed')) {
+        firstCompleted = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(firstCompleted).toBe(true);
+    expect(dispatchCount).toBe(1);
+
+    const secondRunRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'user', content: 'run twice quickly' }),
+      },
+    );
+    expect(secondRunRes.status).toBe(200);
+
+    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    let rateLimitedAuditSeen = false;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const auditRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.rate_limited&resource_type=agent&resource_id=${agent.id}&page=1&page_size=20`,
+      );
+      expect(auditRes.status).toBe(200);
+      const auditBody = (await auditRes.json()) as {
+        items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
+      };
+      if (
+        auditBody.items.some(
+          (item) => item.action === 'resource_policy.rate_limited'
+            && item.resource_type === 'agent'
+            && item.resource_id === agent.id
+            && item.error_code === 'RESOURCE_POLICY_RATE_LIMITED',
+        )
+      ) {
+        rateLimitedAuditSeen = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(rateLimitedAuditSeen).toBe(true);
+    expect(dispatchCount).toBe(1);
+
+    const usageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&resource_type=agent&resource_id=${agent.id}&page=1&page_size=50`,
+    );
+    expect(usageRes.status).toBe(200);
+    const usageBody = (await usageRes.json()) as {
+      items: Array<{ resource_type: string; resource_id?: string; requests: number }>;
+    };
+    expect(
+      usageBody.items.some(
+        (item) => item.resource_type === 'agent' && item.resource_id === agent.id && item.requests >= 1,
+      ),
+    ).toBe(true);
+    wsClient?.close();
+  });
+
   it('deduplicates notebook task artifacts by task_relative_path across repeated runtime artifact frames', async () => {
     const { baseUrl } = startServer();
 

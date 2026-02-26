@@ -213,15 +213,15 @@ test.describe('Resource Policy Page', () => {
     await expect(authedPage.getByTestId('resource-policy__editor')).toContainText(/Source Library/i);
   });
 
-  test('saves agent resource policy payload with concurrency override', async ({ authedPage }) => {
+  test('saves agent resource policy payload with requests-per-minute override', async ({ authedPage }) => {
     const agentRow = authedPage.locator('[data-testid^="resource-policy__row--agent--"]').first();
     await expect(agentRow).toBeVisible();
     await agentRow.click();
 
-    await authedPage.getByTestId('resource-policy__agent-max-concurrency').fill('6');
+    await authedPage.getByTestId('resource-policy__agent-requests-per-minute').fill('6');
     await authedPage.getByTestId('resource-policy__add-subject').click();
     await authedPage.getByTestId('resource-policy__subject-id-select').selectOption({ index: 1 });
-    await authedPage.getByPlaceholder(/subject.*concurrency/i).fill('2');
+    await authedPage.getByPlaceholder(/subject.*requests per minute/i).fill('2');
 
     const requestPromise = authedPage.waitForRequest((req) =>
       req.method() === 'PATCH' && req.url().includes('/resources/agent/')
@@ -235,8 +235,8 @@ test.describe('Resource Policy Page', () => {
         rate_limits?: { rules: Array<{ key: string; value: number }> };
       }>;
     };
-    expect(payload.rate_limits?.rules).toEqual([{ key: 'agent.max_concurrency', value: 6 }]);
-    expect(payload.allowed_subjects[0]?.rate_limits?.rules).toEqual([{ key: 'agent.max_concurrency', value: 2 }]);
+    expect(payload.rate_limits?.rules).toEqual([{ key: 'agent.requests_per_minute', value: 6 }]);
+    expect(payload.allowed_subjects[0]?.rate_limits?.rules).toEqual([{ key: 'agent.requests_per_minute', value: 2 }]);
     await expect(authedPage.getByTestId('resource-policy__editor')).toContainText(/Agent/i);
   });
 

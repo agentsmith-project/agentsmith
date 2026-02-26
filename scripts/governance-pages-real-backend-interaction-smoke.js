@@ -119,7 +119,7 @@ async function main() {
     await page.getByTestId('members__invite-dialog').waitFor({ state: 'visible', timeout: 10_000 });
     await page.keyboard.press('Escape');
 
-    // Resource policy: open an endpoint row editor and check save button is present.
+    // Resource policy: open rows and check key governance inputs are present.
     const rpPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`;
     console.log(`[gov-interact] resource-policy ${rpPath}`);
     await gotoProjectPage(page, baseUrl, rpPath);
@@ -128,6 +128,21 @@ async function main() {
     await endpointRow.click();
     await page.getByTestId('resource-policy__editor').waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByTestId('resource-policy__save').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByTestId('resource-policy__endpoint-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByTestId('resource-policy__endpoint-requests-per-day').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByTestId('resource-policy__endpoint-daily-token-limit').waitFor({ state: 'visible', timeout: 10_000 });
+
+    const sourceLibraryRow = page.locator('[data-testid^="resource-policy__row--source_library--"]').first();
+    await sourceLibraryRow.waitFor({ state: 'visible', timeout: 10_000 });
+    await sourceLibraryRow.click();
+    await page.getByTestId('resource-policy__library-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByTestId('resource-policy__library-max-total-files').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByTestId('resource-policy__library-max-file-size-bytes').waitFor({ state: 'visible', timeout: 10_000 });
+
+    const agentRow = page.locator('[data-testid^="resource-policy__row--agent--"]').first();
+    await agentRow.waitFor({ state: 'visible', timeout: 10_000 });
+    await agentRow.click();
+    await page.getByTestId('resource-policy__agent-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
 
     // Audit: filters and table visible.
     const auditPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit`;

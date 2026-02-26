@@ -2360,6 +2360,106 @@ describe('api-entry-node projects routes', () => {
     ws.close();
   });
 
+  it('enforces agent resource policy token quota for external chat stream and records governance evidence', async () => {
+    const { baseUrl, deps } = startServer();
+
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'echo-agent-quota',
+          mode: 'external',
+          interaction_mode: 'chat',
+          capabilities: { streaming_completion: true, multimodal_completion: true },
+        }),
+      },
+    );
+    expect(createAgentRes.status).toBe(201);
+    const agent = (await createAgentRes.json()) as { id: string };
+
+    const patchPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/agent/${agent.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          quota_limits: { rules: [{ key: 'agent.daily_token_limit', value: 10 }] },
+        }),
+      },
+    );
+    expect(patchPolicyRes.status).toBe(204);
+
+    await recordUsageFact(deps.docStore, {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      resource_type: 'agent',
+      resource_id: agent.id,
+      end_user_id: 'user_test',
+      requests: 1,
+      tokens_total: 10,
+      result: 'ok',
+    });
+
+    const createSessionRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ external_agent_id: agent.id, model: 'external-echo' }),
+      },
+    );
+    expect(createSessionRes.status).toBe(201);
+    const session = (await createSessionRes.json()) as { id: string };
+
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: { role: 'user', content: 'quota check' } }),
+      },
+    );
+    expect(streamRes.status).toBe(429);
+    const body = (await streamRes.json()) as {
+      error_code?: string;
+      message?: string;
+      resource_type?: string;
+      resource_id?: string;
+    };
+    expect(body).toMatchObject({
+      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      resource_type: 'agent',
+      resource_id: agent.id,
+    });
+
+    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.quota_exceeded&resource_type=agent&resource_id=${agent.id}&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const auditBody = (await auditRes.json()) as {
+      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
+    };
+    expect(
+      auditBody.items.some(
+        (item) => item.action === 'resource_policy.quota_exceeded'
+          && item.resource_type === 'agent'
+          && item.resource_id === agent.id
+          && item.error_code === 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      ),
+    ).toBe(true);
+  });
+
   it('returns AGENT_OFFLINE when external agent session streams without active runtime socket', async () => {
     const { baseUrl } = startServer();
 

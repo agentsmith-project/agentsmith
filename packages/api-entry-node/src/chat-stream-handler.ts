@@ -23,7 +23,10 @@ import {
 import { logChatStreamEvent } from './chat-observability.js';
 import type { ChatAttachmentRecord } from './resource-models.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
-import { checkAndConsumeProjectResourceRateLimitsForUser } from './project-resource-policy-enforcer.js';
+import {
+  checkAndConsumeProjectResourceRateLimitsForUser,
+  checkProjectResourceQuotaLimitsForUser,
+} from './project-resource-policy-enforcer.js';
 import {
   indexChatAttachmentsByLibraryObjectRef,
   readChatMessageInputs,
@@ -291,6 +294,70 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         resource_type: 'agent',
         resource_id: session.external_agent_id,
         retry_after_seconds: agentRateCheck.retry_after_seconds,
+      });
+      return true;
+    }
+    const agentQuotaCheck = await checkProjectResourceQuotaLimitsForUser({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceType: 'agent',
+      resourceId: session.external_agent_id,
+      userId: user.id,
+      policy: agentPolicyCheck.policy,
+    });
+    if (!agentQuotaCheck.allowed) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'resource_policy.quota_exceeded',
+        result: 'error',
+        resourceType: 'agent',
+        resourceId: session.external_agent_id,
+        errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+        errorMessage: 'resource_policy_quota_exceeded',
+        metadata: {
+          governance_kind: 'resource_policy',
+          enforcement_kind: 'quota_limit',
+          effective_daily_token_limit: agentQuotaCheck.effective_daily_token_limit,
+          current_tokens_today: agentQuotaCheck.current_tokens_today,
+          retry_after_seconds: agentQuotaCheck.retry_after_seconds,
+          scope: agentQuotaCheck.scope,
+          quota_key: 'agent.daily_token_limit',
+          source: 'chat_stream_preflight',
+          session_id: route.sessionId,
+        },
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'agent',
+        resourceId: session.external_agent_id,
+        endUserId: user.id,
+        requests: 1,
+        result: 'error',
+        errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+        metadata: {
+          stage: 'preflight',
+          governance_kind: 'resource_policy',
+          enforcement_kind: 'quota_limit',
+          effective_daily_token_limit: agentQuotaCheck.effective_daily_token_limit,
+          current_tokens_today: agentQuotaCheck.current_tokens_today,
+          retry_after_seconds: agentQuotaCheck.retry_after_seconds,
+          scope: agentQuotaCheck.scope,
+          quota_key: 'agent.daily_token_limit',
+          source: 'chat_stream_preflight',
+          session_id: route.sessionId,
+        },
+      });
+      res.setHeader('Retry-After', String(agentQuotaCheck.retry_after_seconds));
+      json(res, 429, {
+        error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+        message: 'resource_policy_quota_exceeded',
+        resource_type: 'agent',
+        resource_id: session.external_agent_id,
+        retry_after_seconds: agentQuotaCheck.retry_after_seconds,
       });
       return true;
     }
@@ -1301,6 +1368,22 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         errorCode,
         metadata: { stream_id: streamId, endpoint_id: endpoint.id },
       });
+      if (useExternalAgent && session.external_agent_id) {
+        await writeProjectUsageFact(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          resourceType: 'agent',
+          resourceId: session.external_agent_id,
+          endUserId: user.id,
+          requestId,
+          requests: 1,
+          durationMs: Date.now() - streamStartedAtMs,
+          tokensTotal: usageTokens ?? undefined,
+          result: 'error',
+          errorCode,
+          metadata: { stream_id: streamId, source: 'chat_stream', session_id: route.sessionId },
+        });
+      }
       throw error;
     }
   }
@@ -1406,6 +1489,27 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       stop_reason: stopReason ?? null,
     },
   });
+  if (useExternalAgent && session.external_agent_id) {
+    await writeProjectUsageFact(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceType: 'agent',
+      resourceId: session.external_agent_id,
+      endUserId: user.id,
+      requestId,
+      requests: 1,
+      durationMs,
+      tokensTotal: usageTokens ?? undefined,
+      result: 'ok',
+      metadata: {
+        stream_id: streamId,
+        source: 'chat_stream',
+        session_id: route.sessionId,
+        message_status: messageStatus,
+        stop_reason: stopReason ?? null,
+      },
+    });
+  }
 
   return true;
 }

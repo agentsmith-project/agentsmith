@@ -79,6 +79,12 @@ function getRequestsPerMinuteRuleKey(resourceType: ResourceType): string | null 
   return null;
 }
 
+function getDailyTokenLimitRuleKey(resourceType: ResourceType): string | null {
+  if (resourceType === 'endpoint') return 'endpoint.daily_token_limit';
+  if (resourceType === 'agent') return 'agent.daily_token_limit';
+  return null;
+}
+
 function getMatchingSubjectRateRules(args: {
   workspaceId: string;
   projectId: string;
@@ -134,12 +140,15 @@ function getEffectiveDailyTokenLimitRule(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
+  resourceType: ResourceType;
   policy: ProjectResourcePolicyRecord;
 }): { value?: number; scope?: 'policy' | 'subject' } {
+  const quotaRuleKey = getDailyTokenLimitRuleKey(args.resourceType);
+  if (!quotaRuleKey) return {};
   const baseRules = readPolicyRules(args.policy.quota_limits);
   const subject = getMatchingSubjectQuotaRules(args);
   const effective = subject.matched ? mergeQuotaRules(baseRules, subject.rules) : baseRules;
-  const quotaRule = effective.find((r) => r.key === 'endpoint.daily_token_limit');
+  const quotaRule = effective.find((r) => r.key === quotaRuleKey);
   if (!quotaRule) return {};
   return { value: quotaRule.value, scope: subject.matched ? 'subject' : 'policy' };
 }
@@ -212,13 +221,14 @@ export async function checkProjectResourceQuotaLimitsForUser(args: {
   policy: ProjectResourcePolicyRecord | null;
   nowMs?: number;
 }): Promise<QuotaLimitDecision> {
-  if (!args.policy || args.resourceType !== 'endpoint') {
+  if (!args.policy) {
     return { allowed: true };
   }
   const effective = getEffectiveDailyTokenLimitRule({
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
+    resourceType: args.resourceType,
     policy: args.policy,
   });
   if (!effective.value || effective.value <= 0) {
@@ -230,7 +240,7 @@ export async function checkProjectResourceQuotaLimitsForUser(args: {
     projectId: args.projectId,
     startTime: startOfUtcDayIso(nowMs),
     endTime: endOfUtcDayIso(nowMs),
-    resourceType: 'endpoint',
+    resourceType: args.resourceType,
     resourceId: args.resourceId,
     endUserId: args.userId,
   });

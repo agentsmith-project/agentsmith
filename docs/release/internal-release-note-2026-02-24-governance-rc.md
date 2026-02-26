@@ -4,11 +4,15 @@ Date: 2026-02-24
 
 ## Release Summary
 
-This RC closes the real-backend governance page UX gap for `Audit` / `Usage` and improves release smoke resilience for token-expiry scenarios.
+This RC closes the real-backend governance page UX gap for `Audit` / `Usage`, improves release smoke resilience for token-expiry scenarios, and expands governance real-backend effect coverage for `Members`.
 
 Outcome:
 - Governance pages (`Audit` / `Usage`) have product-grade error states in real backend mode (unified `ErrorState` + i18n + retry).
 - `governance-release-smoke` can auto-refresh token and retry policy effect smoke once when token expiry causes failure.
+- `governance-release-smoke` now validates `Members` real-backend effect paths:
+  - member endpoint quota enforcement (`deny + audit/usage evidence`)
+  - member route authorization enforcement (`deny -> grant -> allow`)
+- Endpoint success usage recording now persists `tokens_total`, enabling real member quota enforcement on endpoint traffic.
 - Real-environment validation for the governance smoke bundle passed end-to-end.
 
 ## Version / Baseline
@@ -16,7 +20,7 @@ Outcome:
 - App version baseline: `0.1.0` (`package.json`)
 - Branch: `main`
 - RC record date: `2026-02-24`
-- RC commit (HEAD at validation record time): `21bd82c`
+- RC commit (current HEAD at validation record time): `1f96992`
 
 ## Commit Range (This RC Increment)
 
@@ -30,9 +34,14 @@ Governance release hardening sequence captured in this RC:
 - `a5bd051` `refactor(governance): normalize endpoint preflight failure specs`
 - `daeffaa` `fix(governance): use product error states for audit and usage pages`
 - `21bd82c` `fix(release): retry governance smoke after token refresh`
+- `9e155d3` `test(governance): add member quota effect smoke`
+- `cf5dcc1` `fix(governance): fail fast on member quota smoke endpoint timeout`
+- `53aa0ae` `test(governance): auto-detect member quota smoke user`
+- `da59eec` `fix(governance): record endpoint tokens for member quota enforcement`
+- `1f96992` `test(governance): add member permission effect smoke`
 
 Suggested range notation for release notes / changelog references:
-- `fbef5f2..21bd82c`
+- `fbef5f2..1f96992`
 
 ## What Changed
 
@@ -54,6 +63,30 @@ Impact:
 - Improves release smoke reliability in long-running local/demo sessions
 - Reduces false negatives during RC verification and internal release checks
 
+### 3. Members governance real-backend effect smoke coverage
+
+- Added `governance-member-quota-effect-smoke`
+  - verifies member endpoint quota enforcement returns `MEMBER_QUOTA_EXCEEDED`
+  - verifies `Audit` / `Usage` evidence and restores original member quota overrides
+- Added `governance-member-permission-effect-smoke`
+  - verifies member route authorization deny (`403`) before grant
+  - grants `project:member:manage` and verifies allow (`200`)
+  - restores original member permissions
+- Bundled both into `governance-release-smoke`
+
+Impact:
+- Governance release smoke now covers both `Resource Policy` and `Members` runtime effects
+- Real backend `Members` functionality has stronger regression protection
+
+### 4. Endpoint token usage recording fix (enables member quota enforcement)
+
+- Fixed endpoint success-path usage recording to persist `tokens_total` from upstream model responses
+- Added unit coverage for token extraction in `proxyJsonRequest`
+
+Impact:
+- `endpoint.daily_token_limit` member quota enforcement now works in real backend runtime
+- `Usage` data better reflects actual endpoint token consumption
+
 ## Validation Record (Real Environment)
 
 Executed command:
@@ -69,6 +102,10 @@ Result:
   - Includes verified expired-token scenario: auto refresh + one retry succeeds
   - Includes policy rate-limit effect / audit evidence / usage evidence checks
   - Includes policy restore path
+- `governance-member-quota-effect-smoke` ✅
+  - Includes member quota deny (`MEMBER_QUOTA_EXCEEDED`) + `Audit/Usage` evidence + restore
+- `governance-member-permission-effect-smoke` ✅
+  - Includes member route authz deny (`403`) -> grant -> allow (`200`) + restore
 
 ## Current Release Readiness (Internal)
 
@@ -79,7 +116,7 @@ Result:
 ### Governance (real backend)
 
 - `Audit` / `Usage`: product-usable v1 ✅
-- `Members` / `Resource Policy`: partial, but real backend routes + real effect path + page-level real-backend smoke available ✅
+- `Members` / `Resource Policy`: partial, but real backend routes + real effect paths + page-level real-backend smoke available ✅
 
 ### Release toolchain
 
@@ -104,4 +141,4 @@ Result:
 - Release owner: `TODO`
 - Validation operator: `TODO`
 - Validation environment: `TODO` (host / API base / web base)
-- Commit range finalized: `fbef5f2..21bd82c` (or replace with tagged range)
+- Commit range finalized: `fbef5f2..1f96992` (or replace with tagged range)

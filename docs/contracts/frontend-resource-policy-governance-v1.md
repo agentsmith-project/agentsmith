@@ -110,7 +110,7 @@ subject_overrides:
 ## Resource Type Rule Matrix (MVP)
 
 1. `agent`
-- allowed rate keys: `agent.max_concurrency`
+- allowed rate keys: `agent.requests_per_minute`
 - allowed quota keys: none
 - usage semantics: only request count is meaningful for agent usage; token metrics are not used for agent governance decisions
 

@@ -82,6 +82,16 @@ interface ProjectSourceHandlerArgs {
 }
 
 const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
+const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
+  endpoint: ['endpoint.requests_per_minute'],
+  source_library: ['source_library.requests_per_minute'],
+  agent: ['agent.requests_per_minute'],
+};
+const RESOURCE_POLICY_ALLOWED_QUOTA_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
+  endpoint: ['endpoint.daily_token_limit', 'endpoint.requests_per_day'],
+  source_library: ['source_library.max_total_files', 'source_library.max_file_size_bytes'],
+  agent: [],
+};
 const PROJECT_JOIN_REQUESTS_BY_PROJECT = new Map<string, Array<{
   id: string;
   project_id: string;
@@ -110,6 +120,38 @@ const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Arr
 
 function projectScopedKey(workspaceId: string, projectId: string) {
   return `${workspaceId}:${projectId}`;
+}
+
+function validatePolicyRuleKeys(args: {
+  resourceType: 'endpoint' | 'source_library' | 'agent';
+  kind: 'rate_limits' | 'quota_limits';
+  payload: unknown;
+}): { ok: true } | { ok: false; message: string } {
+  if (args.payload === undefined) return { ok: true };
+  if (!args.payload || typeof args.payload !== 'object' || Array.isArray(args.payload)) {
+    return { ok: false, message: `${args.kind}_invalid` };
+  }
+  const rules = (args.payload as { rules?: unknown }).rules;
+  if (!Array.isArray(rules)) {
+    return { ok: false, message: `${args.kind}_rules_invalid` };
+  }
+  const allowed = args.kind === 'rate_limits'
+    ? RESOURCE_POLICY_ALLOWED_RATE_KEYS[args.resourceType]
+    : RESOURCE_POLICY_ALLOWED_QUOTA_KEYS[args.resourceType];
+  for (const rule of rules) {
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
+      return { ok: false, message: `${args.kind}_rule_invalid` };
+    }
+    const key = (rule as { key?: unknown }).key;
+    const value = (rule as { value?: unknown }).value;
+    if (typeof key !== 'string' || !allowed.includes(key)) {
+      return { ok: false, message: `${args.kind}_rule_key_invalid` };
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      return { ok: false, message: `${args.kind}_rule_value_invalid` };
+    }
+  }
+  return { ok: true };
 }
 
 function getMemberChangeHistoryState(workspaceId: string, projectId: string) {
@@ -1331,22 +1373,76 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'access_mode and allowed_subjects are required' });
       return true;
     }
+    const resourceType = route.resourceType as 'endpoint' | 'source_library' | 'agent';
+    const rateValidation = validatePolicyRuleKeys({
+      resourceType,
+      kind: 'rate_limits',
+      payload: body.rate_limits,
+    });
+    if (!rateValidation.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: rateValidation.message });
+      return true;
+    }
+    const quotaValidation = validatePolicyRuleKeys({
+      resourceType,
+      kind: 'quota_limits',
+      payload: body.quota_limits,
+    });
+    if (!quotaValidation.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: quotaValidation.message });
+      return true;
+    }
     const previousPolicy = getProjectResourcePolicyOrDefault(
       route.workspaceId,
       route.projectId,
-      route.resourceType as 'endpoint' | 'source_library' | 'agent',
+      resourceType,
       route.resourceId,
     );
-    const normalizedAllowedSubjects = body.allowed_subjects
-      .filter((s): s is {
+    const validatedSubjects: Array<{
+      subject_type: 'group' | 'user';
+      subject_id: string;
+      rate_limits?: Record<string, unknown>;
+      quota_limits?: Record<string, unknown>;
+    }> = [];
+    for (const subject of body.allowed_subjects) {
+      if (
+        !subject
+        || typeof subject !== 'object'
+        || ((subject as { subject_type?: unknown }).subject_type !== 'group'
+          && (subject as { subject_type?: unknown }).subject_type !== 'user')
+        || typeof (subject as { subject_id?: unknown }).subject_id !== 'string'
+      ) {
+        continue;
+      }
+      const typedSubject = subject as {
         subject_type: 'group' | 'user';
         subject_id: string;
         rate_limits?: Record<string, unknown>;
         quota_limits?: Record<string, unknown>;
-      } => !!s && (s.subject_type === 'group' || s.subject_type === 'user') && typeof s.subject_id === 'string')
-      .map((s) => ({ ...s, updated_at: new Date().toISOString() }));
+      };
+      const subjectRateValidation = validatePolicyRuleKeys({
+        resourceType,
+        kind: 'rate_limits',
+        payload: typedSubject.rate_limits,
+      });
+      if (!subjectRateValidation.ok) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: subjectRateValidation.message });
+        return true;
+      }
+      const subjectQuotaValidation = validatePolicyRuleKeys({
+        resourceType,
+        kind: 'quota_limits',
+        payload: typedSubject.quota_limits,
+      });
+      if (!subjectQuotaValidation.ok) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: subjectQuotaValidation.message });
+        return true;
+      }
+      validatedSubjects.push(typedSubject);
+    }
+    const normalizedAllowedSubjects = validatedSubjects.map((s) => ({ ...s, updated_at: new Date().toISOString() }));
     upsertProjectResourcePolicy(route.workspaceId, route.projectId, {
-      resource_type: route.resourceType as 'endpoint' | 'source_library' | 'agent',
+      resource_type: resourceType,
       resource_id: route.resourceId,
       access_mode: body.access_mode,
       allowed_subjects: normalizedAllowedSubjects,

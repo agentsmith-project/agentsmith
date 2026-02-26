@@ -1676,6 +1676,49 @@ describe('api-entry-node projects routes', () => {
     expect(policy.allowed_subjects[0]).toMatchObject({ subject_id: 'grp_1' });
     expect(policy.allowed_subjects[0]?.updated_at).toBeTruthy();
     expect(policy.quota_limits).toEqual({ rules: [{ key: 'endpoint.daily_token_limit', value: 9999 }] });
+
+    const patchInvalidRootRateKeyRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/ep_test/policy',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'source_library.requests_per_minute', value: 1 }] },
+        }),
+      },
+    );
+    expect(patchInvalidRootRateKeyRes.status).toBe(422);
+    expect(await patchInvalidRootRateKeyRes.json()).toMatchObject({
+      error_code: 'VALIDATION_ERROR',
+      message: 'rate_limits_rule_key_invalid',
+    });
+
+    const patchInvalidSubjectRateKeyRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/ep_test/policy',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_list',
+          allowed_subjects: [
+            {
+              subject_type: 'user',
+              subject_id: 'user_test',
+              rate_limits: { rules: [{ key: 'agent.requests_per_minute', value: 1 }] },
+            },
+          ],
+        }),
+      },
+    );
+    expect(patchInvalidSubjectRateKeyRes.status).toBe(422);
+    expect(await patchInvalidSubjectRateKeyRes.json()).toMatchObject({
+      error_code: 'VALIDATION_ERROR',
+      message: 'rate_limits_rule_key_invalid',
+    });
   });
 
   it('supports source library object browser routes', async () => {

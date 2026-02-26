@@ -5877,6 +5877,17 @@ describe('api-entry-node projects routes', () => {
       request_id: 'req_usage_2',
       timestamp: new Date().toISOString(),
     });
+    await recordUsageFact(deps.docStore, {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      resource_type: 'agent',
+      resource_id: 'agent_1',
+      requests: 1,
+      tokens_total: 999,
+      result: 'ok',
+      request_id: 'req_usage_3',
+      timestamp: new Date().toISOString(),
+    });
     const { baseUrl } = startServerWithDeps(deps);
     const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -5893,9 +5904,9 @@ describe('api-entry-node projects routes', () => {
     };
     expect(typeof kpi.requests_today).toBe('number');
     expect(typeof kpi.errors_today).toBe('number');
-    expect(kpi.requests_today).toBeGreaterThanOrEqual(2);
-    expect(kpi.errors_today).toBeGreaterThanOrEqual(1);
-    expect(kpi.tokens_today).toBeGreaterThanOrEqual(54);
+    expect(kpi.requests_today).toBe(3);
+    expect(kpi.errors_today).toBe(1);
+    expect(kpi.tokens_today).toBe(54);
 
     const usageRes = await apiFetch(
       baseUrl,
@@ -5903,7 +5914,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(usageRes.status).toBe(200);
     const usage = (await usageRes.json()) as {
-      items: Array<{ workspace_id: string; project_id: string; resource_type: string }>;
+      items: Array<{ workspace_id: string; project_id: string; resource_type: string; resource_id?: string; tokens?: number }>;
       total: number;
       page: number;
       page_size: number;
@@ -5914,6 +5925,9 @@ describe('api-entry-node projects routes', () => {
     expect(usage.page_size).toBe(25);
     expect(usage.items.some((item) => item.resource_type === 'notebook_task')).toBe(true);
     expect(usage.items.some((item) => item.resource_type === 'chat')).toBe(true);
+    const agentUsage = usage.items.find((item) => item.resource_type === 'agent' && item.resource_id === 'agent_1');
+    expect(agentUsage).toBeTruthy();
+    expect(agentUsage?.tokens).toBeUndefined();
   });
 
   it('serves audit endpoint with persisted events and supports filtering', async () => {

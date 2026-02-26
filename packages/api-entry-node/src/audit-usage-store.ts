@@ -108,6 +108,10 @@ export type UsageKpi = {
 export const AUDIT_EVENTS_COLLECTION = 'project_audit_events';
 export const USAGE_FACTS_COLLECTION = 'project_usage_facts';
 
+function isRequestsOnlyUsageResourceType(resourceType: string): boolean {
+  return resourceType === 'agent';
+}
+
 function parseIsoMillis(iso: string): number {
   const ms = Date.parse(iso);
   return Number.isFinite(ms) ? ms : Number.NaN;
@@ -287,7 +291,9 @@ export async function aggregateUsageRecords(
     existing.requests += fact.requests ?? 1;
     existing.bytes_in += fact.bytes_in ?? 0;
     existing.bytes_out += fact.bytes_out ?? 0;
-    existing.tokens += fact.tokens_total ?? 0;
+    if (!isRequestsOnlyUsageResourceType(fact.resource_type)) {
+      existing.tokens += fact.tokens_total ?? 0;
+    }
     if (typeof fact.duration_ms === 'number') existing.durations.push(fact.duration_ms);
     buckets.set(bucketKey, existing);
   }
@@ -304,7 +310,7 @@ export async function aggregateUsageRecords(
     duration_p95_ms: percentile95(item.durations),
     bytes_in: item.bytes_in || undefined,
     bytes_out: item.bytes_out || undefined,
-    tokens: item.tokens || undefined,
+    tokens: isRequestsOnlyUsageResourceType(item.resource_type) ? undefined : (item.tokens || undefined),
   }));
 
   rows.sort((a, b) => {
@@ -352,7 +358,7 @@ export async function getUsageKpi(
     const ms = parseIsoMillis(fact.timestamp);
     if (!Number.isFinite(ms)) continue;
     const reqs = fact.requests ?? 1;
-    const tokens = fact.tokens_total ?? 0;
+    const tokens = isRequestsOnlyUsageResourceType(fact.resource_type) ? 0 : (fact.tokens_total ?? 0);
     if (ms >= todayStart.getTime() && ms < tomorrowStart.getTime()) {
       requestsToday += reqs;
       if (fact.result === 'error') errorsToday += reqs;

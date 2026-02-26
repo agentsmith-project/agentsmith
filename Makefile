@@ -1,4 +1,4 @@
-.PHONY: help bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
+.PHONY: help quick-help bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
 	e2e e2e-local \
 	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
@@ -13,7 +13,8 @@
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
-	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls
+	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
+	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release
 
 NPM ?= npm
 
@@ -45,6 +46,15 @@ BASE_URL ?= http://localhost:$(PORT_WEB)
 
 help:
 	@echo "MBOS Dev Commands"
+	@echo ""
+	@echo "Recommended (Low Cognitive Load):"
+	@echo "  make quick-help     # show only the recommended day-to-day commands"
+	@echo "  make dev-up         # start/recover demo API+Web+Runner and refresh/init if needed"
+	@echo "  make dev-down       # stop demo API+Web+Runner"
+	@echo "  make smoke-main     # mainline release smoke (auto demo-check + token fallback)"
+	@echo "  make smoke-governance # governance release smoke (strict page gate + effects)"
+	@echo "  make smoke-all      # run mainline + governance release smokes"
+	@echo "  make verify-release # contracts/typecheck + smoke-all"
 	@echo ""
 	@echo "Bootstrap:"
 	@echo "  make bootstrap    # deps-up → wait for ready → deps-init → deps-smoke (ordered)"
@@ -135,6 +145,57 @@ help:
 	@echo ""
 	@echo "Utility:"
 	@echo "  make urls          # print local URLs and test users"
+
+quick-help:
+	@echo "MBOS Recommended Commands"
+	@echo ""
+	@echo "  make dev-up"
+	@echo "    Start/recover demo environment (API/Web/Runner + token/resource init)."
+	@echo ""
+	@echo "  make smoke-main"
+	@echo "    Run notebook mainline release smoke."
+	@echo ""
+	@echo "  make smoke-governance"
+	@echo "    Run governance release smoke with strict page gate."
+	@echo ""
+	@echo "  make smoke-all"
+	@echo "    Run mainline + governance release smokes."
+	@echo ""
+	@echo "  make verify-contracts"
+	@echo "    Run typecheck + OpenAPI generated check + OpenAPI contract checks."
+	@echo ""
+	@echo "  make verify-release"
+	@echo "    Run verify-contracts + smoke-all."
+	@echo ""
+	@echo "  make dev-down"
+	@echo "    Stop managed demo processes."
+
+dev-up:
+	$(MAKE) notebook-agent-demo-up
+
+dev-down:
+	$(MAKE) notebook-agent-demo-down
+
+smoke-main:
+	$(MAKE) notebook-agent-release-smoke-full
+
+smoke-governance:
+	$(MAKE) governance-release-smoke
+
+smoke-all:
+	@set -e; \
+	$(MAKE) smoke-main; \
+	$(MAKE) smoke-governance
+
+verify-contracts:
+	$(NPM) run ws:typecheck
+	$(NPM) run openapi:check-generated
+	$(NPM) run contracts:check-openapi
+
+verify-release:
+	@set -e; \
+	$(MAKE) verify-contracts; \
+	$(MAKE) smoke-all
 
 deps-up:
 	$(NPM) run integration:deps:up

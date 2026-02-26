@@ -134,6 +134,8 @@ async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, 
 }
 
 async function main() {
+  const smokeMode = process.env.GOVERNANCE_SMOKE_MODE === 'strict' ? 'strict' : 'tolerant';
+  const strictMode = smokeMode === 'strict';
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
   const locale = process.env.LOCALE || 'zh-CN';
   const workspaceId = process.env.WORKSPACE_ID || 'ws_default';
@@ -157,30 +159,31 @@ async function main() {
       name: 'members',
       pathSuffix: 'members',
       testids: [],
-      testidsAny: ['members__search-input', 'members__table', 'members__groups-section', 'page-state__error'],
+      testidsAny: ['members__search-input', 'members__table', 'members__groups-section'],
     },
     {
       name: 'resource-policy',
       pathSuffix: 'resource-policy',
       testids: [],
-      testidsAny: ['resource-policy__table', 'resource-policy__editor', 'page-state__error'],
+      testidsAny: ['resource-policy__table', 'resource-policy__editor'],
     },
     {
       name: 'audit',
       pathSuffix: 'audit',
       testids: [],
-      testidsAny: ['audit__filters', 'page-state__error'],
+      testidsAny: ['audit__filters'],
     },
     {
       name: 'usage',
       pathSuffix: 'usage',
       testids: [],
-      testidsAny: ['usage__filters', 'page-state__error'],
+      testidsAny: ['usage__filters'],
     },
   ];
 
   try {
     console.log('[gov-smoke] login via keycloak...');
+    console.log(`[gov-smoke] mode=${smokeMode}`);
     await loginWithKeycloak({
       page, baseUrl, locale, keycloakBase, realm, clientId, username, password,
     });
@@ -203,6 +206,11 @@ async function main() {
       const staleProject = await page.getByTestId('project-shell__stale-project').isVisible().catch(() => false);
       if (staleProject) {
         failures.push(`${check.name}: stale project (local in-memory backend reset)`);
+        continue;
+      }
+
+      if (!strictMode && await page.getByTestId('page-state__error').isVisible().catch(() => false)) {
+        console.log(`[gov-smoke] ${check.name} in product error state (tolerant mode)`);
         continue;
       }
 

@@ -190,8 +190,8 @@ Result:
 
 ## Fill-in Template (If You Need a Distribution Header)
 
-- Internal release ID/tag: `TODO`
-- Release owner: `TODO`
-- Validation operator: `TODO`
-- Validation environment: `TODO` (host / API base / web base)
+- Internal release ID/tag: `governance-rc-2026-02-24-r2`
+- Release owner: `AgentSmith Frontend/Governance`
+- Validation operator: `Codex + Percy`
+- Validation environment: `local-dev` (`host=localhost`, `API=http://localhost:20000`, `WEB=http://localhost:3001`)
 - Commit range finalized: `fbef5f2..d9a02ad` (or replace with tagged range)

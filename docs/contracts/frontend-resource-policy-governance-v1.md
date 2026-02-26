@@ -81,7 +81,7 @@ project_policy:
       access: allow_all_members
       rate_limits:
         rules:
-          - key: agent.max_concurrency
+          - key: agent.requests_per_minute
             value: number | null
 
 resource_overrides:

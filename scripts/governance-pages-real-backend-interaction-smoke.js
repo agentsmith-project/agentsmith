@@ -158,6 +158,8 @@ async function waitForAny(page, testIds, timeoutMs) {
 }
 
 async function main() {
+  const smokeMode = process.env.GOVERNANCE_SMOKE_MODE === 'strict' ? 'strict' : 'tolerant';
+  const strictMode = smokeMode === 'strict';
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
   const locale = process.env.LOCALE || 'zh-CN';
   const workspaceId = process.env.WORKSPACE_ID || 'ws_default';
@@ -175,6 +177,7 @@ async function main() {
   const page = await browser.newPage();
   try {
     console.log('[gov-interact] login via keycloak...');
+    console.log(`[gov-interact] mode=${smokeMode}`);
     await loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, clientId, username, password });
     const projectId = await resolveAccessibleProjectId({
       page,
@@ -193,7 +196,7 @@ async function main() {
       'members__search-input',
       'members__table',
       'members__groups-section',
-      'page-state__error',
+      ...(strictMode ? [] : ['page-state__error']),
     ], 30_000);
     if (membersReady === 'page-state__error') {
       console.log('[gov-interact] members page in product error state; continue');
@@ -220,6 +223,9 @@ async function main() {
     await gotoProjectPage(page, baseUrl, rpPath);
     const rpError = await isVisible(page.getByTestId('page-state__error'), 3_000);
     if (rpError) {
+      if (strictMode) {
+        throw new Error('resource-policy_error_state');
+      }
       console.log('[gov-interact] resource-policy page in product error state; skip policy interactions');
     } else {
       const endpointRow = page.locator('[data-testid^="resource-policy__row--endpoint--"]').first();
@@ -249,6 +255,9 @@ async function main() {
           console.log('[gov-interact] no agent row found; skip agent rule checks');
         }
       } else {
+        if (strictMode) {
+          throw new Error('resource-policy_missing_endpoint_row');
+        }
         console.log('[gov-interact] no endpoint row found; skip resource-policy rule checks');
       }
     }
@@ -258,6 +267,9 @@ async function main() {
     console.log(`[gov-interact] audit ${auditPath}`);
     await gotoProjectPage(page, baseUrl, auditPath);
     if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
+      if (strictMode) {
+        throw new Error('audit_error_state');
+      }
       console.log('[gov-interact] audit page in product error state; skip audit interactions');
     } else {
       await page.getByTestId('audit__filters').waitFor({ state: 'visible', timeout: 10_000 });
@@ -269,6 +281,9 @@ async function main() {
     console.log(`[gov-interact] usage ${usagePath}`);
     await gotoProjectPage(page, baseUrl, usagePath);
     if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
+      if (strictMode) {
+        throw new Error('usage_error_state');
+      }
       console.log('[gov-interact] usage page in product error state; skip usage interactions');
     } else {
       await page.getByTestId('usage__filters').waitFor({ state: 'visible', timeout: 10_000 });

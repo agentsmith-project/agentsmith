@@ -6,7 +6,7 @@
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
-	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-interaction-smoke governance-policy-effect-smoke \
+	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-quota-effect-smoke governance-policy-requests-quota-effect-smoke governance-source-library-policy-access-effect-smoke governance-source-library-policy-group-access-effect-smoke governance-source-library-policy-rate-effect-smoke governance-source-ai-ready-policy-effect-smoke governance-agent-policy-rate-effect-smoke governance-member-quota-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
@@ -98,8 +98,12 @@ help:
 	@echo "  make notebook-agent-release-smoke # run release smoke set (basic + inputrefs loop; optional matplotlib)"
 	@echo "  make notebook-agent-release-smoke-full # refresh token (if needed) + demo-check + release-smoke"
 	@echo "  make governance-release-smoke # run governance real-backend page open + interaction smoke set"
-	@echo "  make governance-pages-real-backend-smoke # playwright smoke for audit/usage/members/resource-policy using real backend"
-	@echo "  make governance-pages-real-backend-interaction-smoke # playwright interaction smoke for governance pages using real backend"
+	@echo "  make governance-pages-real-backend-smoke # alias of tolerant mode for governance page-open smoke"
+	@echo "  make governance-pages-real-backend-smoke-strict # strict gate: governance page-open smoke fails on product error states"
+	@echo "  make governance-pages-real-backend-smoke-tolerant # tolerant triage mode for governance page-open smoke"
+	@echo "  make governance-pages-real-backend-interaction-smoke # alias of tolerant mode for governance interaction smoke"
+	@echo "  make governance-pages-real-backend-interaction-smoke-strict # strict gate: governance interaction smoke fails on product error states"
+	@echo "  make governance-pages-real-backend-interaction-smoke-tolerant # tolerant triage mode for governance interaction smoke"
 	@echo "  make governance-policy-effect-smoke # real-backend endpoint policy effect smoke (rate limit -> audit/usage evidence)"
 	@echo "  make governance-policy-access-effect-smoke # real-backend endpoint policy allow-list effect smoke (deny->allow + audit/usage evidence)"
 	@echo "  make governance-policy-group-access-effect-smoke # real-backend endpoint policy group allow-list effect smoke (deny->group-allow)"
@@ -416,11 +420,29 @@ notebook-agent-release-smoke-full:
 	$(MAKE) notebook-agent-release-smoke
 
 governance-pages-real-backend-smoke:
+	$(MAKE) governance-pages-real-backend-smoke-tolerant
+
+governance-pages-real-backend-smoke-strict:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	GOVERNANCE_SMOKE_MODE=strict \
+	node ./scripts/governance-pages-real-backend-smoke.js
+
+governance-pages-real-backend-smoke-tolerant:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	GOVERNANCE_SMOKE_MODE=tolerant \
 	node ./scripts/governance-pages-real-backend-smoke.js
 
 governance-pages-real-backend-interaction-smoke:
+	$(MAKE) governance-pages-real-backend-interaction-smoke-tolerant
+
+governance-pages-real-backend-interaction-smoke-strict:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	GOVERNANCE_SMOKE_MODE=strict \
+	node ./scripts/governance-pages-real-backend-interaction-smoke.js
+
+governance-pages-real-backend-interaction-smoke-tolerant:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	GOVERNANCE_SMOKE_MODE=tolerant \
 	node ./scripts/governance-pages-real-backend-interaction-smoke.js
 
 governance-policy-effect-smoke:
@@ -481,8 +503,8 @@ governance-member-lifecycle-effect-smoke:
 
 governance-release-smoke:
 	@set -e; \
-	$(MAKE) governance-pages-real-backend-smoke; \
-	$(MAKE) governance-pages-real-backend-interaction-smoke; \
+	$(MAKE) governance-pages-real-backend-smoke-strict; \
+	$(MAKE) governance-pages-real-backend-interaction-smoke-strict; \
 	if ! $(MAKE) governance-policy-access-effect-smoke; then \
 		echo "[make] governance-policy-access-effect-smoke failed; attempting token refresh and retry once"; \
 		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \

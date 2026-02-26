@@ -1911,6 +1911,42 @@ describe('api-entry-node projects routes', () => {
       `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=&delimiter=/`,
     );
     expect(allowedListRes.status).toBe(200);
+
+    const createGroupRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/groups',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'source-library-operators',
+          permission_template_id: 'perm_tpl_default',
+          member_ids: ['user_test'],
+        }),
+      },
+    );
+    expect(createGroupRes.status).toBe(200);
+    const createdGroup = (await createGroupRes.json()) as { id: string };
+
+    const patchGroupAllowRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_list',
+          allowed_subjects: [{ subject_type: 'group', subject_id: createdGroup.id }],
+        }),
+      },
+    );
+    expect(patchGroupAllowRes.status).toBe(204);
+
+    const groupAllowedListRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=&delimiter=/`,
+    );
+    expect(groupAllowedListRes.status).toBe(200);
   });
 
   it('supports credentials and endpoints CRUD plus openai-compatible proxy', async () => {

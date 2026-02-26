@@ -1,4 +1,4 @@
-.PHONY: help quick-help bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
+.PHONY: help quick-help help-glossary bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
 	e2e e2e-local \
 	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
@@ -49,6 +49,7 @@ help:
 	@echo ""
 	@echo "Recommended (Low Cognitive Load):"
 	@echo "  make quick-help     # show only the recommended day-to-day commands"
+	@echo "  make help-glossary  # explain common testing/release terms in plain language"
 	@echo "  make dev-up         # start/recover demo API+Web+Runner and refresh/init if needed"
 	@echo "  make dev-down       # stop demo API+Web+Runner"
 	@echo "  make smoke-main     # mainline release smoke (auto demo-check + token fallback)"
@@ -169,6 +170,33 @@ quick-help:
 	@echo ""
 	@echo "  make dev-down"
 	@echo "    Stop managed demo processes."
+
+help-glossary:
+	@echo "MBOS Terms (Plain Language)"
+	@echo ""
+	@echo "  governance"
+	@echo "    Rules that control who can access resources and how much they can use."
+	@echo "    In this repo it mainly covers members + resource policy + audit + usage."
+	@echo ""
+	@echo "  contracts"
+	@echo "    The agreed API/schema/rules between frontend and backend."
+	@echo "    We validate them with OpenAPI checks to prevent accidental breaking changes."
+	@echo ""
+	@echo "  smoke test"
+	@echo "    A fast end-to-end sanity check to prove the main path still works."
+	@echo ""
+	@echo "  strict vs tolerant smoke"
+	@echo "    strict: fail on product error states (release gate)."
+	@echo "    tolerant: allow temporary error states for troubleshooting only."
+	@echo ""
+	@echo "  demo-check"
+	@echo "    Non-destructive readiness check: process status, token validity, endpoint reachability."
+	@echo ""
+	@echo "  mainline"
+	@echo "    Core notebook/agent/files/inputrefs business path."
+	@echo ""
+	@echo "  release gate"
+	@echo "    The must-pass checks before saying a build is releasable."
 
 dev-up:
 	$(MAKE) notebook-agent-demo-up

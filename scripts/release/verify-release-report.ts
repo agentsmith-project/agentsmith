@@ -1,0 +1,766 @@
+#!/usr/bin/env node
+/**
+ * verify-release-report.ts
+ *
+ * Release Report Automation (Epic D1)
+ *
+ * Generates structured reports (JSON + Markdown) for release verification.
+ * Captures commit range, environment, execution results, and failure summary.
+ *
+ * Usage:
+ *   node scripts/release/verify-release-report.ts [options]
+ *
+ * Options:
+ *   --output <dir>      Output directory (default: ./artifacts/release-reports)
+ *   --name <name>       Report name (default: report-<timestamp>)
+ *   --commit-range <range>  Commit range (e.g., abc123..def456)
+ *   --archive           Create timestamped archive
+ *   --dry-run           Don't actually run checks
+ *   --mock-failure <type>  Mock a failure type for testing
+ *   --verbose           Verbose output
+ *   --help              Show help
+ */
+
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { execSync } from 'node:child_process';
+import type {
+  ReleaseReport,
+  ReportMetadata,
+  ExecutionResults,
+  ReportSummary,
+  CheckResult,
+  CheckCategory,
+  FailureType,
+  FailurePattern,
+  VerifyReleaseOptions,
+} from './types';
+import {
+  classifyFailure,
+  getFailurePattern,
+  type ClassifiedFailure,
+} from './failure-classifier';
+
+// Default configuration
+const DEFAULT_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-reports');
+
+// Failure classification patterns (Epic D2 preview)
+const FAILURE_PATTERNS: FailurePattern[] = [
+  {
+    category: 'token',
+    patterns: [
+      /401|unauthorized|authentication|auth failed/i,
+      /403|forbidden|permission denied/i,
+      /token.*expir|jwt.*invalid|refresh.*token/i,
+      /keycloak.*auth|oauth/i,
+    ],
+    recommendation: 'Token issue: Run `make notebook-agent-refresh-token` and retry.',
+  },
+  {
+    category: 'network',
+    patterns: [
+      /ECONNREFUSED|connection refused|connect ECONNREFUSED/i,
+      /timeout|timed out|ETIMEDOUT/i,
+      /ENOTFOUND|DNS|getaddrinfo/i,
+      /network.*error|socket.*hang/i,
+    ],
+    recommendation: 'Network issue: Check services are running (`make notebook-agent-demo-status`).',
+  },
+  {
+    category: 'backend',
+    patterns: [
+      /500|internal server error|5\d\d/i,
+      /backend.*error|api.*error|server.*error/i,
+      /database.*error|postgres.*error|redis.*error/i,
+    ],
+    recommendation: 'Backend error: Check API logs at /tmp/agentsmith_demo_api.log',
+  },
+  {
+    category: 'assertion',
+    patterns: [
+      /assertion.*fail|expected.*actual|assert/i,
+      /test.*fail|spec.*fail/i,
+      /expect.*to.*equal|should.*equal/i,
+    ],
+    recommendation: 'Assertion failure: Check test output for specific expectation mismatch.',
+  },
+];
+
+// Check definitions - map to existing make targets
+const CHECK_DEFINITIONS: Array<{
+  id: string;
+  name: string;
+  category: CheckCategory;
+  command: string;
+  timeout: number;
+}> = [
+  {
+    id: 'typecheck',
+    name: 'TypeScript typecheck',
+    category: 'typecheck',
+    command: 'npm run ws:typecheck',
+    timeout: 60000,
+  },
+  {
+    id: 'openapi-check',
+    name: 'OpenAPI generated check',
+    category: 'contract',
+    command: 'npm run openapi:check-generated',
+    timeout: 30000,
+  },
+  {
+    id: 'contracts-check',
+    name: 'OpenAPI contract checks',
+    category: 'contract',
+    command: 'npm run contracts:check-openapi',
+    timeout: 30000,
+  },
+  {
+    id: 'smoke-main',
+    name: 'Mainline release smoke',
+    category: 'smoke-main',
+    command: 'make notebook-agent-release-smoke-full',
+    timeout: 300000, // 5 minutes
+  },
+  {
+    id: 'smoke-governance',
+    name: 'Governance release smoke',
+    category: 'smoke-governance',
+    command: 'make governance-release-smoke',
+    timeout: 300000, // 5 minutes
+  },
+];
+
+/**
+ * Main entry point
+ */
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (args.help) {
+    showHelp();
+    process.exit(0);
+  }
+
+  // Ensure output directory exists
+  if (!existsSync(args.output ?? DEFAULT_OUTPUT_DIR)) {
+    mkdirSync(args.output ?? DEFAULT_OUTPUT_DIR, { recursive: true });
+  }
+
+  const outputDir = args.output ?? DEFAULT_OUTPUT_DIR;
+  const reportName = args.name ?? `report-${getTimestamp()}`;
+
+  console.log(`[verify-release-report] Generating release report...`);
+  console.log(`[verify-release-report] Output: ${join(outputDir, reportName)}`);
+
+  // Generate report
+  const report = await generateReleaseReport(args);
+
+  // Write JSON report
+  const jsonPath = join(outputDir, `${reportName}.json`);
+  writeFileSync(jsonPath, JSON.stringify(report, null, 2), 'utf-8');
+  console.log(`[verify-release-report] JSON: ${jsonPath}`);
+
+  // Write Markdown report
+  const mdPath = join(outputDir, `${reportName}.md`);
+  writeFileSync(mdPath, generateMarkdown(report), 'utf-8');
+  console.log(`[verify-release-report] Markdown: ${mdPath}`);
+
+  // Archive if requested
+  let archivePath: string | undefined;
+  if (args.archive) {
+    const archiveName = `report-${getTimestamp()}`;
+    const archiveJsonPath = join(outputDir, `${archiveName}.json`);
+    const archiveMdPath = join(outputDir, `${archiveName}.md`);
+    writeFileSync(archiveJsonPath, JSON.stringify(report, null, 2), 'utf-8');
+    writeFileSync(archiveMdPath, generateMarkdown(report), 'utf-8');
+    archivePath = archiveJsonPath;
+    console.log(`[verify-release-report] Archive: ${archivePath}`);
+  }
+
+  // Exit with appropriate code
+  const exitCode = report.summary.status === 'pass' ? 0 : 1;
+  console.log(`[verify-release-report] Status: ${report.summary.status.toUpperCase()}`);
+
+  process.exit(exitCode);
+}
+
+/**
+ * Parse command line arguments
+ */
+function parseArgs(argv: string[]): VerifyReleaseOptions {
+  const options: VerifyReleaseOptions = {};
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+
+    switch (arg) {
+      case '--output':
+        options.output = argv[++i];
+        break;
+      case '--name':
+        options.name = argv[++i];
+        break;
+      case '--commit-range':
+        options.commitRange = argv[++i];
+        break;
+      case '--archive':
+        options.archive = true;
+        break;
+      case '--dry-run':
+        options.dryRun = true;
+        break;
+      case '--mock-failure':
+        options.mockFailure = argv[++i] as FailureType;
+        break;
+      case '--verbose':
+        options.verbose = true;
+        break;
+      case '--help':
+      case '-h':
+        options.help = true;
+        break;
+      default:
+        // Unknown flag - ignore or could error
+        break;
+    }
+  }
+
+  return options;
+}
+
+/**
+ * Show help message
+ */
+function showHelp() {
+  console.log(`
+verify-release-report - Release Verification Report Generator
+
+USAGE:
+  node scripts/release/verify-release-report.ts [options]
+
+OPTIONS:
+  --output <dir>       Output directory (default: ./artifacts/release-reports)
+  --name <name>        Report name (default: report-<timestamp>)
+  --commit-range <r>   Commit range (e.g., abc123..def456)
+  --archive            Create timestamped archive copy
+  --dry-run            Skip actual check execution (for testing)
+  --mock-failure <t>   Mock a failure type: token|network|backend|assertion
+  --verbose            Show detailed output
+  --help, -h           Show this help
+
+EXAMPLES:
+  # Generate report after verify-release
+  make verify-release
+  node scripts/release/verify-release-report.ts --archive
+
+  # Generate with custom name and commit range
+  node scripts/release/verify-release-report.ts \\
+    --name v1.2.3 \\
+    --commit-range v1.2.2..v1.2.3 \\
+    --archive
+
+  # Dry run to test report generation
+  node scripts/release/verify-release-report.ts --dry-run
+`);
+}
+
+/**
+ * Generate the complete release report
+ */
+async function generateReleaseReport(options: VerifyReleaseOptions): Promise<ReleaseReport> {
+  const startTime = Date.now();
+
+  // Gather metadata
+  const metadata = await gatherMetadata(options);
+
+  // Run checks (or mock them)
+  const execution = await runChecks(options);
+
+  // Generate summary
+  const summary = generateSummary(execution);
+
+  const duration = Date.now() - startTime;
+
+  return {
+    metadata: { ...metadata, duration_ms: duration },
+    execution,
+    summary,
+  };
+}
+
+/**
+ * Gather report metadata
+ */
+async function gatherMetadata(options: VerifyReleaseOptions): Promise<ReportMetadata> {
+  const timestamp = new Date().toISOString();
+
+  // Environment info
+  const environment = {
+    node_version: process.version,
+    npm_version: getNpmVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    cwd: process.cwd(),
+  };
+
+  // Git info
+  const git = getGitInfo(options.commitRange);
+
+  return {
+    timestamp,
+    duration_ms: 0, // Will be updated by caller
+    environment,
+    git,
+  };
+}
+
+/**
+ * Get npm version
+ */
+function getNpmVersion(): string | undefined {
+  try {
+    return execSync('npm --version', { encoding: 'utf-8' }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Get git information
+ */
+function getGitInfo(commitRange?: string): ReportMetadata['git'] {
+  try {
+    const hash = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+    const short = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+    const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+    const message = execSync('git log -1 --pretty=%B', { encoding: 'utf-8' }).trim();
+    const author = execSync('git log -1 --pretty=%an', { encoding: 'utf-8' }).trim();
+    const date = execSync('git log -1 --pretty=%cI', { encoding: 'utf-8' }).trim();
+
+    // Check if we're on a tag
+    let tag: string | undefined;
+    try {
+      tag = execSync('git describe --exact-match --tags 2>/dev/null', { encoding: 'utf-8' }).trim() || undefined;
+    } catch {
+      tag = undefined;
+    }
+
+    return {
+      commit_hash: hash,
+      commit_short: short,
+      branch,
+      commit_range: commitRange,
+      commit_message: message,
+      author,
+      date,
+      tag,
+    };
+  } catch (error) {
+    // Fallback if git commands fail
+    return {
+      commit_hash: 'unknown',
+      commit_short: 'unknown',
+      branch: 'unknown',
+      commit_message: 'Could not retrieve git info',
+      author: 'unknown',
+      date: new Date().toISOString(),
+    };
+  }
+}
+
+/**
+ * Run all verification checks
+ */
+async function runChecks(options: VerifyReleaseOptions): Promise<ExecutionResults> {
+  const checks: CheckResult[] = [];
+
+  // Reset failure flag for deterministic mock behavior
+  if (options.mockFailure || options.dryRun) {
+    hasGeneratedFailure = false;
+  }
+
+  for (const def of CHECK_DEFINITIONS) {
+    // Skip if in skip list
+    if (options.skip?.includes(def.category)) {
+      checks.push({
+        name: def.name,
+        category: def.category,
+        status: 'skip',
+        duration_ms: 0,
+      });
+      continue;
+    }
+
+    // Dry run or mock mode
+    if (options.dryRun || options.mockFailure) {
+      const mockResult = mockCheckResult(def, options.mockFailure);
+      checks.push(mockResult);
+      continue;
+    }
+
+    // Real execution
+    const result = runCheck(def);
+    checks.push(result);
+  }
+
+  // Calculate totals
+  const total = checks.length;
+  const passed = checks.filter((c) => c.status === 'pass').length;
+  const failed = checks.filter((c) => c.status === 'fail').length;
+  const skipped = checks.filter((c) => c.status === 'skip').length;
+
+  return {
+    total_checks: total,
+    passed,
+    failed,
+    skipped,
+    checks,
+  };
+}
+
+/**
+ * Run a single check
+ */
+function runCheck(def: { id: string; name: string; category: CheckCategory; command: string; timeout: number }): CheckResult {
+  const startTime = Date.now();
+
+  try {
+    execSync(def.command, {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: def.timeout,
+    });
+
+    return {
+      name: def.name,
+      category: def.category,
+      status: 'pass',
+      duration_ms: Date.now() - startTime,
+      command: def.command,
+    };
+  } catch (error: unknown) {
+    const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    return {
+      name: def.name,
+      category: def.category,
+      status: 'fail',
+      duration_ms: Date.now() - startTime,
+      command: def.command,
+      output: err.stdout?.toString(),
+      error: err.stderr?.toString() || err.message,
+      exit_code: err.status || 1,
+    };
+  }
+}
+
+/**
+ * Mock error messages for testing failure classification
+ */
+const MOCK_ERROR_MESSAGES: Record<FailureType, string[]> = {
+  token: [
+    'Authentication failed: invalid token',
+    '401 Unauthorized - JWT expired',
+    'Keycloak auth error: access denied',
+  ],
+  network: [
+    'ECONNREFUSED: Connection refused',
+    'ETIMEDOUT: Request timeout after 30000ms',
+    'getaddrinfo ENOTFOUND api.example.com',
+  ],
+  backend: [
+    '500 Internal Server Error',
+    'Database connection error: PostgreSQL',
+    'API backend error: unhandled exception',
+  ],
+  assertion: [
+    'AssertionError: expected true to be false',
+    'Test failed: expected status 200 but got 500',
+    'expect(received).toBe(expected) // Object types mismatch',
+  ],
+  unknown: [
+    'Unknown error occurred',
+  ],
+};
+
+/**
+ * Track if we've generated at least one failure for deterministic testing
+ */
+let hasGeneratedFailure = false;
+
+/**
+ * Generate mock check result for testing/dry-run
+ */
+function mockCheckResult(
+  def: { id: string; name: string; category: CheckCategory },
+  mockFailure?: FailureType
+): CheckResult {
+  const duration = Math.floor(Math.random() * 5000) + 1000;
+
+  // If mocking a failure, determine if this check should fail
+  if (mockFailure) {
+    // Ensure first check always fails for deterministic testing
+    // Then randomly fail about 40% of remaining checks
+    const shouldFail = !hasGeneratedFailure || Math.random() > 0.6;
+
+    if (shouldFail) {
+      hasGeneratedFailure = true;
+      // Get a realistic error message for the category
+      const errorMessages = MOCK_ERROR_MESSAGES[mockFailure] || MOCK_ERROR_MESSAGES.unknown;
+      const errorMessage = errorMessages[Math.floor(Math.random() * errorMessages.length)];
+
+      return {
+        name: def.name,
+        category: def.category,
+        status: 'fail',
+        duration_ms: duration,
+        command: def.command || `mock ${def.id}`,
+        error: errorMessage,
+      };
+    }
+  }
+
+  return {
+    name: def.name,
+    category: def.category,
+    status: 'pass',
+    duration_ms: duration,
+    command: def.command || `mock ${def.id}`,
+  };
+}
+
+/**
+ * Generate report summary
+ */
+function generateSummary(execution: ExecutionResults): ReportSummary {
+  const status = execution.failed === 0 ? 'pass' : 'fail';
+
+  const summary: ReportSummary = {
+    status,
+    stats: calculateStats(execution),
+  };
+
+  // Add failure categories if there are failures
+  if (execution.failed > 0) {
+    summary.failure_categories = classifyFailures(execution);
+    summary.recommendations = generateRecommendations(summary.failure_categories);
+  }
+
+  return summary;
+}
+
+/**
+ * Calculate statistics from execution results
+ */
+function calculateStats(execution: ExecutionResults) {
+  const completedChecks = execution.checks.filter((c) => c.status !== 'skip');
+  const byCategory: Record<string, { total: number; passed: number; failed: number }> = {};
+
+  for (const check of execution.checks) {
+    if (!byCategory[check.category]) {
+      byCategory[check.category] = { total: 0, passed: 0, failed: 0 };
+    }
+    byCategory[check.category].total++;
+    if (check.status === 'pass') byCategory[check.category].passed++;
+    if (check.status === 'fail') byCategory[check.category].failed++;
+  }
+
+  const sortedByDuration = [...completedChecks].sort((a, b) => a.duration_ms - b.duration_ms);
+
+  return {
+    total_duration_ms: execution.checks.reduce((sum, c) => sum + c.duration_ms, 0),
+    fastest_check: sortedByDuration[0]
+      ? { name: sortedByDuration[0].name, duration_ms: sortedByDuration[0].duration_ms }
+      : { name: 'N/A', duration_ms: 0 },
+    slowest_check: sortedByDuration[sortedByDuration.length - 1]
+      ? { name: sortedByDuration[sortedByDuration.length - 1].name, duration_ms: sortedByDuration[sortedByDuration.length - 1].duration_ms }
+      : { name: 'N/A', duration_ms: 0 },
+    by_category: byCategory as Record<
+      'contract' | 'smoke-main' | 'smoke-governance' | 'typecheck' | 'unit' | 'e2e',
+      { total: number; passed: number; failed: number }
+    >,
+  };
+}
+
+/**
+ * Classify failures by type (Epic D2)
+ * Now uses the expanded failure classifier from failure-classifier.ts
+ */
+function classifyFailures(execution: ExecutionResults) {
+  const categories: Map<FailureType, { count: number; checks: string[] }> = new Map();
+
+  for (const check of execution.checks) {
+    if (check.status === 'fail') {
+      const category = classifyLocalFailure(check);
+      if (!categories.has(category)) {
+        categories.set(category, { count: 0, checks: [] });
+      }
+      const cat = categories.get(category)!;
+      cat.count++;
+      cat.checks.push(check.name);
+    }
+  }
+
+  return Array.from(categories.entries()).map(([category, { count, checks }]) => ({
+    category,
+    count,
+    checks,
+  }));
+}
+
+/**
+ * Classify a single failure
+ * Now uses the expanded failure classifier from failure-classifier.ts
+ */
+function classifyLocalFailure(check: CheckResult): FailureType {
+  const errorText = `${check.output || ''} ${check.error || ''}`;
+  const result = classifyFailure(errorText);
+  return result.category;
+}
+
+/**
+ * Generate recommendations based on failure categories
+ * Now uses the expanded failure classifier from failure-classifier.ts
+ */
+function generateRecommendations(categories: Array<{ category: FailureType; count: number; checks: string[] }>): string[] {
+  const recommendations: string[] = [];
+
+  for (const cat of categories) {
+    // Use getQuickRecommendation from failure-classifier
+    const { getQuickRecommendation } = require('./failure-classifier');
+    const recommendation = getQuickRecommendation(cat.category);
+    recommendations.push(recommendation);
+  }
+
+  return recommendations;
+}
+
+/**
+ * Generate Markdown report
+ */
+function generateMarkdown(report: ReleaseReport): string {
+  const { metadata, execution, summary } = report;
+  const statusEmoji = summary.status === 'pass' ? '✅' : '❌';
+  const statusText = summary.status === 'pass' ? 'PASSED' : 'FAILED';
+
+  let md = `# Release Verification Report\n\n`;
+  md += `${statusEmoji} **Status: ${statusText}**\n\n`;
+  md += `**Generated:** ${new Date(metadata.timestamp).toLocaleString()}\n\n`;
+  md += `---\n\n`;
+
+  // Summary section
+  md += `## Summary\n\n`;
+  md += `| Metric | Value |\n`;
+  md += `|--------|-------|\n`;
+  md += `| Total Checks | ${execution.total_checks} |\n`;
+  md += `| ✅ Passed | ${execution.passed} |\n`;
+  md += `| ❌ Failed | ${execution.failed} |\n`;
+  md += `| ⏭️ Skipped | ${execution.skipped} |\n`;
+  md += `| Duration | ${(metadata.duration_ms / 1000).toFixed(2)}s |\n\n`;
+
+  // Git info
+  md += `### Git Information\n\n`;
+  md += `- **Commit:** \`${metadata.git.commit_short}\` (${metadata.git.commit_hash})\n`;
+  md += `- **Branch:** ${metadata.git.branch}\n`;
+  md += `- **Message:** ${metadata.git.commit_message.split('\n')[0]}\n`;
+  md += `- **Author:** ${metadata.git.author}\n`;
+  if (metadata.git.commit_range) {
+    md += `- **Range:** ${metadata.git.commit_range}\n`;
+  }
+  if (metadata.git.tag) {
+    md += `- **Tag:** ${metadata.git.tag}\n`;
+  }
+  md += `\n`;
+
+  // Environment
+  md += `### Environment\n\n`;
+  md += `- **Node:** ${metadata.environment.node_version}\n`;
+  md += `- **Platform:** ${metadata.environment.platform} (${metadata.environment.arch})\n`;
+  md += `\n`;
+
+  // Recommendations if failed
+  if (summary.recommendations && summary.recommendations.length > 0) {
+    md += `### 📋 Recommendations\n\n`;
+    for (const rec of summary.recommendations) {
+      md += `- ${rec}\n`;
+    }
+    md += `\n`;
+  }
+
+  // Failure categories
+  if (summary.failure_categories && summary.failure_categories.length > 0) {
+    md += `### Failure Breakdown\n\n`;
+    md += `| Category | Count | Checks |\n`;
+    md += `|----------|-------|--------|\n`;
+    for (const cat of summary.failure_categories) {
+      md += `| ${cat.category} | ${cat.count} | ${cat.checks.join(', ')} |\n`;
+    }
+    md += `\n`;
+  }
+
+  // Execution details
+  md += `## Execution Results\n\n`;
+  md += `| Check | Category | Status | Duration |\n`;
+  md += `|-------|----------|--------|----------|\n`;
+
+  for (const check of execution.checks) {
+    const statusEmoji = check.status === 'pass' ? '✅' : check.status === 'fail' ? '❌' : '⏭️';
+    md += `| ${check.name} | ${check.category} | ${statusEmoji} ${check.status} | ${check.duration_ms}ms |\n`;
+  }
+  md += `\n`;
+
+  // Error details for failed checks
+  const failedChecks = execution.checks.filter((c) => c.status === 'fail');
+  if (failedChecks.length > 0) {
+    md += `### Failed Check Details\n\n`;
+    for (const check of failedChecks) {
+      md += `#### ${check.name}\n\n`;
+      md += `**Category:** ${check.category}\n`;
+      md += `**Duration:** ${check.duration_ms}ms\n`;
+      if (check.command) {
+        md += `**Command:** \`${check.command}\`\n`;
+      }
+      md += `\n`;
+      if (check.error) {
+        md += `**Error:**\n`;
+        md += `\`\`\`\n${truncate(check.error, 500)}\n\`\`\`\n\n`;
+      }
+    }
+  }
+
+  // Metadata section
+  md += `## Metadata\n\n`;
+  md += `This report was generated by \`verify-release-report.ts\` as part of Epic D1: Release Report Automation.\n\n`;
+  md += `**Full JSON report available** alongside this file.\n`;
+
+  return md;
+}
+
+/**
+ * Get timestamp for file naming
+ */
+function getTimestamp(): string {
+  const now = new Date();
+  const date = now.toISOString().split('T')[0].replace(/-/g, '');
+  const time = now.toTimeString().split(' ')[0].replace(/:/g, '');
+  return `${date}-${time}`;
+}
+
+/**
+ * Truncate string to max length
+ */
+function truncate(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen) + '...';
+}
+
+// Run main if executed directly
+const isMainModule = import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`;
+if (isMainModule) {
+  main().catch((err) => {
+    console.error('[verify-release-report] Fatal error:', err);
+    process.exit(1);
+  });
+}
+
+export { generateReleaseReport, generateMarkdown, classifyFailure };

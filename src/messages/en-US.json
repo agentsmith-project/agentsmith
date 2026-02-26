@@ -113,6 +113,7 @@
     "chat": "Chat",
     "agents": "Agents",
     "endpoints": "Endpoints",
+    "alerts": "Alerts",
     "resource_policy": "Resource Policy",
     "access_control": "Access Control",
     "credentials": "Credentials",
@@ -1742,5 +1743,41 @@
     "empty_cta": "Upload your first file",
     "error_upload_failed": "Upload failed",
     "error_process_failed": "Processing failed"
+  },
+  "alerts": {
+    "title": "Alert Center",
+    "subtitle": "Manage alert rules and view notifications",
+    "rules": "Rules",
+    "notifications": "Notifications",
+    "create_rule": "Create Rule",
+    "no_rules": "No alert rules",
+    "no_rules_description": "Create your first alert rule to get notified about important events",
+    "no_alerts": "No notifications",
+    "no_alerts_description": "You're all caught up! No new alerts to display",
+    "dismiss": "Dismiss",
+    "form": {
+      "title": {
+        "create": "Create Alert Rule",
+        "edit": "Edit Alert Rule"
+      },
+      "description": "Configure when and how you want to be notified",
+      "name": "Name",
+      "name_placeholder": "Enter rule name",
+      "description_label": "Description",
+      "description_placeholder": "Optional description",
+      "enabled": "Enable this rule",
+      "trigger": "Trigger Conditions",
+      "metric": "Metric",
+      "operator": "Operator",
+      "threshold": "Threshold",
+      "window": "Time Window",
+      "channels": "Notification Channels",
+      "in_app": "Show in-app notifications",
+      "webhook_url": "Webhook URL",
+      "webhook_url_placeholder": "https://example.com/webhook",
+      "behavior": "Behavior",
+      "debounce": "Debounce (minutes)",
+      "notify_recovery": "Notify on recovery"
+    }
   }
 }

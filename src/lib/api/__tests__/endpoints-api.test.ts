@@ -14,7 +14,7 @@ describe('EndpointAPI', () => {
       put: vi.fn(),
       patch: vi.fn(),
       delete: vi.fn(),
-      connectSSE: () => new EventSource('http://localhost'),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
     };
 
     const api = new EndpointAPI(client);
@@ -56,7 +56,7 @@ describe('EndpointAPI', () => {
       put: vi.fn(),
       patch: vi.fn(),
       delete: vi.fn(),
-      connectSSE: () => new EventSource('http://localhost'),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
     };
     const api = new EndpointAPI(client);
 

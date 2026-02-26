@@ -7,6 +7,20 @@ afterEach(() => {
   cleanup();
 });
 
+// ResizeObserver polyfill for Radix UI components
+if (typeof window !== 'undefined' && !window.ResizeObserver) {
+  class ResizeObserverMock {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
+  Object.defineProperty(window, 'ResizeObserver', {
+    writable: true,
+    configurable: true,
+    value: ResizeObserverMock,
+  });
+}
+
 if (typeof window !== 'undefined' && !window.matchMedia) {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

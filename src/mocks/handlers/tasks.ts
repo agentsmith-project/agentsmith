@@ -125,7 +125,7 @@ export const taskHandlers = [
         id: input.id,
         kind: 'source',
         source_id: input.source_id,
-        filename: source.filename,
+        filename: source.file_name,
         file_type: source.file_type,
         file_size: source.file_size,
       };

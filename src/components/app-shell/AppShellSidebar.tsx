@@ -24,6 +24,7 @@ import {
   Shield,
   BarChart3,
   SlidersHorizontal,
+  Bell,
 } from 'lucide-react';
 
 interface AppShellSidebarProps {
@@ -39,6 +40,7 @@ const PROJECT_MENU_ITEMS = [
   { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:source:use' as const },
   { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use' as const },
   { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use' as const },
+  { icon: Bell, labelKey: 'alerts', href: 'alerts', permission: 'project:alert:view' as const },
   { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:resource_policy:manage' as const },
   { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:credential:manage' as const },
   { icon: Users, labelKey: 'members', href: 'members', permission: 'project:member:view' as const },
@@ -66,6 +68,7 @@ export function AppShellSidebar({
   const canAccessNotebook = useHasPermission('project:notebook:access');
   const canUseSources = useHasPermission('project:source:use');
   const canUseEndpoints = useHasPermission('project:endpoint:use');
+  const canViewAlerts = useHasPermission('project:alert:view');
   const canReadAudit = useHasPermission('project:audit:view');
   const canReadUsage = useHasPermission('project:usage:view');
   const canReadAgents = useHasPermission('project:agent:use');
@@ -87,6 +90,7 @@ export function AppShellSidebar({
           if (item.permission === 'project:notebook:access') return canAccessNotebook;
           if (item.permission === 'project:source:use') return canUseSources;
           if (item.permission === 'project:endpoint:use') return canUseEndpoints;
+          if (item.permission === 'project:alert:view') return canViewAlerts;
           if (item.permission === 'project:audit:view') return canReadAudit;
           if (item.permission === 'project:usage:view') return canReadUsage;
           if (item.permission === 'project:resource_policy:manage') return canManageResourcePolicy;

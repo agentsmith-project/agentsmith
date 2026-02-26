@@ -1,0 +1,101 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-26T18:30:31.233Z",
+    "duration_ms": 111,
+    "environment": {
+      "node_version": "v25.4.0",
+      "npm_version": "11.7.0",
+      "platform": "linux",
+      "arch": "x64",
+      "cwd": "/home/percy/works/mbos-v1/agentsmith"
+    },
+    "git": {
+      "commit_hash": "78569f58af4bc86af2cd1d07d826050e1261ef5a",
+      "commit_short": "78569f5",
+      "branch": "main",
+      "commit_message": "docs(plan): finalize roadmap decisions and SSE ticket rollout strategy",
+      "author": "lizhijian",
+      "date": "2026-02-27T02:02:08+08:00",
+      "tag": "v0.1.0"
+    }
+  },
+  "execution": {
+    "total_checks": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "checks": [
+      {
+        "name": "TypeScript typecheck",
+        "category": "typecheck",
+        "status": "pass",
+        "duration_ms": 4713,
+        "command": "npm run ws:typecheck"
+      },
+      {
+        "name": "OpenAPI generated check",
+        "category": "contract",
+        "status": "pass",
+        "duration_ms": 5587,
+        "command": "npm run openapi:check-generated"
+      },
+      {
+        "name": "OpenAPI contract checks",
+        "category": "contract",
+        "status": "pass",
+        "duration_ms": 1142,
+        "command": "npm run contracts:check-openapi"
+      },
+      {
+        "name": "Mainline release smoke",
+        "category": "smoke-main",
+        "status": "pass",
+        "duration_ms": 1832,
+        "command": "make notebook-agent-release-smoke-full"
+      },
+      {
+        "name": "Governance release smoke",
+        "category": "smoke-governance",
+        "status": "pass",
+        "duration_ms": 1995,
+        "command": "make governance-release-smoke"
+      }
+    ]
+  },
+  "summary": {
+    "status": "pass",
+    "stats": {
+      "total_duration_ms": 15269,
+      "fastest_check": {
+        "name": "OpenAPI contract checks",
+        "duration_ms": 1142
+      },
+      "slowest_check": {
+        "name": "OpenAPI generated check",
+        "duration_ms": 5587
+      },
+      "by_category": {
+        "typecheck": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        },
+        "contract": {
+          "total": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        "smoke-main": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        },
+        "smoke-governance": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        }
+      }
+    }
+  }
+}

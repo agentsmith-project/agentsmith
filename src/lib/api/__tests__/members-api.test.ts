@@ -12,7 +12,7 @@ function createClient(mockGet: ReturnType<typeof vi.fn>): ApiClient {
     put: vi.fn() as ApiClient['put'],
     patch: vi.fn() as ApiClient['patch'],
     delete: vi.fn() as ApiClient['delete'],
-    connectSSE: () => new EventSource('http://localhost'),
+    connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
   };
 }
 

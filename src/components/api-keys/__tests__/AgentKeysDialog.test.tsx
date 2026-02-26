@@ -128,6 +128,9 @@ describe('AgentKeysDialog', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Set fixed date to make relative time tests deterministic
+    // Mock dates are from Jan 10-20, 2026, so we set system time to Jan 21, 2026
+    vi.setSystemTime(new Date('2026-01-21T12:00:00Z'));
     mockListKeys.mockResolvedValue(mockKeys);
     mockCreateKey.mockResolvedValue({
       key: 'ask-new-full-key-12345',
@@ -138,6 +141,7 @@ describe('AgentKeysDialog', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   describe('Rendering and Display', () => {
@@ -220,8 +224,9 @@ describe('AgentKeysDialog', () => {
       render(<AgentKeysDialog {...defaultProps} />, { wrapper });
 
       await waitFor(() => {
-        // Should show relative time
-        const timeElements = screen.getAllByText(/\d+\s+(min|hours|days)/i);
+        // Should show relative time like "6 days ago", "1 days ago", etc.
+        // Component returns "X min ago", "X hours ago", "X days ago"
+        const timeElements = screen.getAllByText(/\d+\s+(min|hours|days)\s+ago/i);
         expect(timeElements.length).toBeGreaterThan(0);
       });
     });

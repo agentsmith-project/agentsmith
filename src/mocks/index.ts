@@ -13,6 +13,7 @@ import { notebookHandlers } from './handlers/notebook';
 import { taskHandlers } from './handlers/tasks';
 import { meHandlers } from './handlers/me';
 import { userKeyHandlers } from './handlers/user-keys';
+import { alertsHandlers } from './handlers/alerts';
 
 export const handlers = [
   ...authHandlers,
@@ -30,4 +31,5 @@ export const handlers = [
   ...notebookHandlers,
   ...taskHandlers,
   ...userKeyHandlers,
+  ...alertsHandlers,
 ];

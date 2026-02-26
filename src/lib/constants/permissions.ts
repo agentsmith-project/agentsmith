@@ -28,6 +28,8 @@ export const PLATFORM_PERMISSIONS = {
   MEMBER: ['project:member:view', 'project:member:manage'] as const,
 
   OBSERVABILITY: ['project:audit:view', 'project:usage:view'] as const,
+
+  ALERT: ['project:alert:view', 'project:alert:manage', 'project:alert:notify'] as const,
 } as const;
 
 export const ALL_PLATFORM_PERMISSIONS = [
@@ -42,6 +44,7 @@ export const ALL_PLATFORM_PERMISSIONS = [
   ...PLATFORM_PERMISSIONS.SETTINGS,
   ...PLATFORM_PERMISSIONS.MEMBER,
   ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+  ...PLATFORM_PERMISSIONS.ALERT,
 ] as const;
 
 export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
@@ -64,6 +67,9 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'project:member:manage': 'Manage members and templates',
   'project:audit:view': 'View audit logs',
   'project:usage:view': 'View usage data',
+  'project:alert:view': 'View alert center and notifications',
+  'project:alert:manage': 'Create, edit, and delete alert rules',
+  'project:alert:notify': 'Receive alert notifications',
 };
 
 export const PLATFORM_PERMISSIONS_GROUPED = [
@@ -102,6 +108,11 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
     name: 'Audit / Usage',
     permissions: PLATFORM_PERMISSIONS.OBSERVABILITY,
   },
+  {
+    id: 'alerts',
+    name: 'Alerts',
+    permissions: PLATFORM_PERMISSIONS.ALERT,
+  },
 ] as const;
 
 export const GROUP_TEMPLATES = {
@@ -117,6 +128,7 @@ export const GROUP_TEMPLATES = {
     ...PLATFORM_PERMISSIONS.SETTINGS,
     ...PLATFORM_PERMISSIONS.MEMBER,
     ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+    ...PLATFORM_PERMISSIONS.ALERT,
   ],
   admin: [
     ...PLATFORM_PERMISSIONS.WORKSPACE,
@@ -130,6 +142,7 @@ export const GROUP_TEMPLATES = {
     ...PLATFORM_PERMISSIONS.SETTINGS,
     ...PLATFORM_PERMISSIONS.MEMBER,
     ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+    ...PLATFORM_PERMISSIONS.ALERT,
   ],
   developer: [
     'workspace:read',
@@ -139,6 +152,8 @@ export const GROUP_TEMPLATES = {
     'project:endpoint:use',
     'project:agent:use',
     ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+    'project:alert:view',
+    'project:alert:notify',
   ],
   user: [
     'workspace:read',
@@ -148,6 +163,7 @@ export const GROUP_TEMPLATES = {
     'project:endpoint:use',
     'project:agent:use',
     ...PLATFORM_PERMISSIONS.OBSERVABILITY,
+    'project:alert:notify',
   ],
 } as const;
 
@@ -173,6 +189,7 @@ export const HIGH_RISK_PERMISSIONS = [
   'project:agent:manage',
   'project:endpoint:manage',
   'project:source:manage',
+  'project:alert:manage',
 ] as const;
 
 export type PlatformPermission = (typeof ALL_PLATFORM_PERMISSIONS)[number];

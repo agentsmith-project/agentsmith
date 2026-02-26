@@ -14,7 +14,7 @@ describe('AgentAPI.getDiagnostics', () => {
       put: vi.fn(),
       patch: vi.fn(),
       delete: vi.fn(),
-      connectSSE: () => new EventSource('http://localhost'),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
     };
 
     const api = new AgentAPI(client);

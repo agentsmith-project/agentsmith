@@ -12,7 +12,7 @@ describe('refreshAuth', () => {
       put: async <T>() => ({} as T),
       patch: async <T>() => ({} as T),
       delete: async <T>() => ({} as T),
-      connectSSE: () => new EventSource('http://localhost'),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
     };
 
     const res = await refreshAuth('rtk_mock', mockClient);

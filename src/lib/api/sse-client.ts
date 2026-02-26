@@ -38,18 +38,81 @@
  *    - Ticket can only be used once (optional)
  *    - No sensitive data in URL or logs
  *
- * CURRENT STATUS:
+ * MIGRATION STATUS:
  * --------------------------------------------------------------------
- * - Using "ticket" parameter name (abstraction layer, but still contains JWT)
- * - Token is URL-encoded for basic obfuscation
- * - Full security requires backend /sse-ticket endpoint implementation
- *
- * When backend implements POST /api/v1/sse-ticket, use fetchSSETicket() before
- * connecting so the URL contains a short-lived ticket instead of the JWT.
+ * - Ticket mode is controlled by NEXT_PUBLIC_SSE_TICKET_ENABLED env var
+ * - Grayscale rollout controlled by NEXT_PUBLIC_SSE_TICKET_PERCENTAGE (0-100)
+ * - When ticket mode is enabled, NO JWT fallback occurs (returns null on failure)
+ * - Use shouldUseTicket(userId) for grayscale rollout decision
  *
  * Related: https://developer.mozilla.org/en-US/docs/Web/API/EventSource
  *          (EventSource does not support custom headers)
  */
+
+// Environment variables for SSE ticket migration
+const SSE_TICKET_ENABLED =
+  typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SSE_TICKET_ENABLED === 'true';
+const SSE_TICKET_PERCENTAGE = Number(
+  typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE || '0',
+);
+
+/**
+ * Configuration for SSE ticket migration
+ */
+export interface SSETicketConfig {
+  /** Whether ticket mode is enabled via runtime switch */
+  enabled: boolean;
+  /** Grayscale rollout percentage (0-100) */
+  percentage: number;
+}
+
+/**
+ * Get the current SSE ticket configuration from environment variables
+ */
+export function getSSETicketConfig(): SSETicketConfig {
+  return {
+    enabled: SSE_TICKET_ENABLED,
+    percentage: SSE_TICKET_PERCENTAGE,
+  };
+}
+
+/**
+ * Determine if a given user should use ticket-based authentication based on grayscale rollout
+ *
+ * Uses a deterministic hash-based approach to ensure consistent behavior for each user.
+ *
+ * @param userId - User identifier for consistent rollout decision
+ * @returns true if user should use ticket, false otherwise
+ */
+export function shouldUseTicket(userId: string): boolean {
+  const config = getSSETicketConfig();
+
+  // If ticket mode is not enabled, never use ticket
+  if (!config.enabled) {
+    return false;
+  }
+
+  // If percentage is 100%, all users use ticket
+  if (config.percentage >= 100) {
+    return true;
+  }
+
+  // If percentage is 0%, no users use ticket
+  if (config.percentage <= 0) {
+    return false;
+  }
+
+  // Simple hash-based rollout: hash userId to number 0-99, compare with percentage
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    const char = userId.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  const bucket = Math.abs(hash) % 100;
+
+  return bucket < config.percentage;
+}
 
 export interface SSEOptions {
   /** Callback invoked when the token expires (EventSource closes) */
@@ -117,9 +180,13 @@ export function createAuthenticatedSSE(
  * Exchange JWT for a short-lived SSE ticket when backend supports it.
  * Call this before createAuthenticatedSSE to avoid putting the JWT in the SSE URL.
  *
+ * When ticket mode is enabled (NEXT_PUBLIC_SSE_TICKET_ENABLED=true), this function
+ * will NOT fall back to JWT on failure - it returns null instead. This is the
+ * secure behavior for production.
+ *
  * @param token - JWT (Bearer); if null, returns null
  * @param apiBase - Base URL for the API (e.g. https://api.example.com/api/v1)
- * @returns Ticket ID to use in SSE URL, or the token as fallback when backend does not support /sse-ticket
+ * @returns Ticket ID to use in SSE URL, null if no ticket available, or the token as fallback (legacy mode only)
  */
 export async function fetchSSETicket(
   token: string | null,
@@ -132,15 +199,30 @@ export async function fetchSSETicket(
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return token;
+    if (!res.ok) {
+      // When ticket mode is enabled, do NOT fall back to JWT
+      if (SSE_TICKET_ENABLED) {
+        return null;
+      }
+      return token; // Legacy mode: fall back to JWT
+    }
     const data = (await res.json()) as { ticket_id?: string };
     if (typeof data?.ticket_id === 'string' && data.ticket_id.length > 0) {
       return data.ticket_id;
     }
   } catch {
-    // Network or parse error: fall back to token in URL (existing risk)
+    // Network or parse error
+    // When ticket mode is enabled, do NOT fall back to JWT
+    if (SSE_TICKET_ENABLED) {
+      return null;
+    }
+    // Legacy mode: fall back to token in URL (existing risk)
   }
-  return token;
+  // Legacy fallback (only when ticket mode is disabled)
+  if (!SSE_TICKET_ENABLED) {
+    return token;
+  }
+  return null;
 }
 
 /**

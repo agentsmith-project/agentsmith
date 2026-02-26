@@ -35,12 +35,7 @@ const mockSources: TaskAttachedInputDetail[] = [
     file_type: 'text/plain',
     file_size: 1024,
     ai_ready: {
-      id: 'job-1',
-      source_file_id: 'source-1',
       status: 'ready',
-      progress: 100,
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
     },
   },
   {
@@ -51,12 +46,7 @@ const mockSources: TaskAttachedInputDetail[] = [
     file_type: 'application/pdf',
     file_size: 2048000,
     ai_ready: {
-      id: 'job-2',
-      source_file_id: 'source-2',
       status: 'preparing',
-      progress: 30,
-      created_at: '2024-01-01T01:00:00Z',
-      updated_at: '2024-01-01T01:00:00Z',
     },
   },
   {
@@ -67,12 +57,7 @@ const mockSources: TaskAttachedInputDetail[] = [
     file_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     file_size: 512000,
     ai_ready: {
-      id: 'job-3',
-      source_file_id: 'source-3',
       status: 'failed',
-      error_message: 'Processing failed',
-      created_at: '2024-01-01T02:00:00Z',
-      updated_at: '2024-01-01T02:00:00Z',
     },
   },
 ];

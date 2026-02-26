@@ -1,0 +1,116 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-26T18:31:09.764Z",
+    "duration_ms": 116,
+    "environment": {
+      "node_version": "v25.4.0",
+      "npm_version": "11.7.0",
+      "platform": "linux",
+      "arch": "x64",
+      "cwd": "/home/percy/works/mbos-v1/agentsmith"
+    },
+    "git": {
+      "commit_hash": "78569f58af4bc86af2cd1d07d826050e1261ef5a",
+      "commit_short": "78569f5",
+      "branch": "main",
+      "commit_message": "docs(plan): finalize roadmap decisions and SSE ticket rollout strategy",
+      "author": "lizhijian",
+      "date": "2026-02-27T02:02:08+08:00",
+      "tag": "v0.1.0"
+    }
+  },
+  "execution": {
+    "total_checks": 5,
+    "passed": 3,
+    "failed": 2,
+    "skipped": 0,
+    "checks": [
+      {
+        "name": "TypeScript typecheck",
+        "category": "typecheck",
+        "status": "fail",
+        "duration_ms": 2665,
+        "command": "npm run ws:typecheck",
+        "error": "ECONNREFUSED: Connection refused"
+      },
+      {
+        "name": "OpenAPI generated check",
+        "category": "contract",
+        "status": "fail",
+        "duration_ms": 3345,
+        "command": "npm run openapi:check-generated",
+        "error": "ECONNREFUSED: Connection refused"
+      },
+      {
+        "name": "OpenAPI contract checks",
+        "category": "contract",
+        "status": "pass",
+        "duration_ms": 2637,
+        "command": "npm run contracts:check-openapi"
+      },
+      {
+        "name": "Mainline release smoke",
+        "category": "smoke-main",
+        "status": "pass",
+        "duration_ms": 4621,
+        "command": "make notebook-agent-release-smoke-full"
+      },
+      {
+        "name": "Governance release smoke",
+        "category": "smoke-governance",
+        "status": "pass",
+        "duration_ms": 4106,
+        "command": "make governance-release-smoke"
+      }
+    ]
+  },
+  "summary": {
+    "status": "fail",
+    "stats": {
+      "total_duration_ms": 17374,
+      "fastest_check": {
+        "name": "OpenAPI contract checks",
+        "duration_ms": 2637
+      },
+      "slowest_check": {
+        "name": "Mainline release smoke",
+        "duration_ms": 4621
+      },
+      "by_category": {
+        "typecheck": {
+          "total": 1,
+          "passed": 0,
+          "failed": 1
+        },
+        "contract": {
+          "total": 2,
+          "passed": 1,
+          "failed": 1
+        },
+        "smoke-main": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        },
+        "smoke-governance": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        }
+      }
+    },
+    "failure_categories": [
+      {
+        "category": "network",
+        "count": 2,
+        "checks": [
+          "TypeScript typecheck",
+          "OpenAPI generated check"
+        ]
+      }
+    ],
+    "recommendations": [
+      "Network issue: Check services are running (`make notebook-agent-demo-status`)."
+    ]
+  }
+}

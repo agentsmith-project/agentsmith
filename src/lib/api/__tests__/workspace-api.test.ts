@@ -14,7 +14,7 @@ describe('WorkspaceAPI', () => {
       put: vi.fn(),
       patch: vi.fn(),
       delete: vi.fn(),
-      connectSSE: () => new EventSource('http://localhost'),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
     };
 
     const api = new WorkspaceAPI(client);
@@ -39,7 +39,7 @@ describe('WorkspaceAPI', () => {
       put: vi.fn(),
       patch: mockPatch,
       delete: vi.fn(),
-      connectSSE: () => new EventSource('http://localhost'),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
     };
 
     const api = new WorkspaceAPI(client);

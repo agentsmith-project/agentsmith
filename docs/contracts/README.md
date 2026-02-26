@@ -2,6 +2,14 @@
 
 This directory contains only current-state documents: functional contracts, architecture boundaries, and governance rules.
 
+## API Documentation
+
+1. **[API_GUIDE.md](API_GUIDE.md)** - Developer guide for MBOS REST API
+   - Authentication & authorization
+   - API endpoints by module
+   - Error codes & response formats
+   - Rate limiting & SSE events
+
 ## Core Architecture and Governance
 
 1. `cf-private-hybrid-architecture-guide-v1.md`

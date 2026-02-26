@@ -115,6 +115,7 @@
     "chat": "聊天",
     "agents": "智能体",
     "endpoints": "端点",
+    "alerts": "告警",
     "resource_policy": "资源策略",
     "access_control": "访问控制",
     "credentials": "凭据",
@@ -1744,5 +1745,41 @@
     "empty_cta": "上传第一个文件",
     "error_upload_failed": "上传失败",
     "error_process_failed": "处理失败"
+  },
+  "alerts": {
+    "title": "告警中心",
+    "subtitle": "管理告警规则并查看通知",
+    "rules": "规则",
+    "notifications": "通知",
+    "create_rule": "创建规则",
+    "no_rules": "暂无告警规则",
+    "no_rules_description": "创建第一条告警规则，在重要事件发生时收到通知",
+    "no_alerts": "暂无通知",
+    "no_alerts_description": "已全部处理完毕！没有新告警",
+    "dismiss": "忽略",
+    "form": {
+      "title": {
+        "create": "创建告警规则",
+        "edit": "编辑告警规则"
+      },
+      "description": "配置何时以及如何接收通知",
+      "name": "名称",
+      "name_placeholder": "输入规则名称",
+      "description_label": "描述",
+      "description_placeholder": "可选描述",
+      "enabled": "启用此规则",
+      "trigger": "触发条件",
+      "metric": "指标",
+      "operator": "操作符",
+      "threshold": "阈值",
+      "window": "时间窗口",
+      "channels": "通知渠道",
+      "in_app": "显示应用内通知",
+      "webhook_url": "Webhook URL",
+      "webhook_url_placeholder": "https://example.com/webhook",
+      "behavior": "行为设置",
+      "debounce": "防抖（分钟）",
+      "notify_recovery": "恢复时通知"
+    }
   }
 }

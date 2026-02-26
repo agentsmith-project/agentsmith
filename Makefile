@@ -168,6 +168,12 @@ quick-help:
 	@echo "  make verify-release"
 	@echo "    Run verify-contracts + smoke-all."
 	@echo ""
+	@echo "  make release-report"
+	@echo "    Generate release verification report (JSON + Markdown)."
+	@echo ""
+	@echo "  make verify-release-with-report"
+	@echo "    Run verify-release and generate report with archive."
+	@echo ""
 	@echo "  make dev-down"
 	@echo "    Stop managed demo processes."
 
@@ -224,6 +230,28 @@ verify-release:
 	@set -e; \
 	$(MAKE) verify-contracts; \
 	$(MAKE) smoke-all
+
+# Generate release report (JSON + Markdown) after verify-release
+# Use REPORT_NAME=name to customize, REPORT_COMMIT_RANGE=range to specify commits
+# Use REPORT_ARCHIVE=1 to create timestamped archive
+release-report:
+	@set -e; \
+	NAME=$${REPORT_NAME:-}; \
+	RANGE=$${REPORT_COMMIT_RANGE:-}; \
+	ARCHIVE=$${REPORT_ARCHIVE:-}; \
+	EXTRA_ARGS=""; \
+	[ -n "$$NAME" ] && EXTRA_ARGS="$$EXTRA_ARGS --name $$NAME"; \
+	[ -n "$$RANGE" ] && EXTRA_ARGS="$$EXTRA_ARGS --commit-range $$RANGE"; \
+	[ "$$ARCHIVE" = "1" ] && EXTRA_ARGS="$$EXTRA_ARGS --archive"; \
+	$(NPM) run release:report $$EXTRA_ARGS
+
+# Run verify-release and generate report in one command
+verify-release-with-report:
+	@set -e; \
+	echo "[make] Running verify-release..."; \
+	$(MAKE) verify-release; \
+	echo "[make] Generating release report..."; \
+	$(MAKE) release-report REPORT_ARCHIVE=1
 
 deps-up:
 	$(NPM) run integration:deps:up

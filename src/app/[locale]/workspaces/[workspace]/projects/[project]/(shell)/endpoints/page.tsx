@@ -21,8 +21,8 @@ export default function EndpointsPage({ params }: EndpointsRouteProps) {
   useEffect(() => {
     params.then((p) => {
       setResolved({
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
+        workspace: validateWorkspaceParam(p.workspace) ?? null,
+        project: validateProjectParam(p.project) ?? null,
         locale: p.locale ?? 'en-US',
       });
     });

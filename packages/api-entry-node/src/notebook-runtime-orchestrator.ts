@@ -13,7 +13,6 @@ import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
 import {
   checkAndConsumeProjectResourceRateLimitsForUser,
-  checkProjectResourceQuotaLimitsForUser,
 } from './project-resource-policy-enforcer.js';
 
 type NotebookTaskRecord = {
@@ -220,60 +219,6 @@ export async function runNotebookTaskWithExternalAgent(input: {
         },
       });
       throw Object.assign(new Error('resource_policy_rate_limited_agent'), { code: 'RESOURCE_POLICY_RATE_LIMITED' });
-    }
-    const agentQuotaCheck = await checkProjectResourceQuotaLimitsForUser({
-      docStore: deps.docStore,
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      resourceType: 'agent',
-      resourceId: agentId,
-      userId: user.id,
-      policy: agentPolicyCheck.policy,
-    });
-    if (!agentQuotaCheck.allowed) {
-      await writeProjectAuditEvent(deps, {
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        actor: { type: 'user', id: user.id },
-        action: 'resource_policy.quota_exceeded',
-        result: 'error',
-        resourceType: 'agent',
-        resourceId: agentId,
-        errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-        errorMessage: 'resource_policy_quota_exceeded',
-        metadata: {
-          governance_kind: 'resource_policy',
-          enforcement_kind: 'quota_limit',
-          effective_daily_token_limit: agentQuotaCheck.effective_daily_token_limit,
-          current_tokens_today: agentQuotaCheck.current_tokens_today,
-          retry_after_seconds: agentQuotaCheck.retry_after_seconds,
-          scope: agentQuotaCheck.scope,
-          quota_key: 'agent.daily_token_limit',
-          task_id: task.id,
-        },
-      });
-      await writeProjectUsageFact(deps, {
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        resourceType: 'agent',
-        resourceId: agentId,
-        endUserId: user.id,
-        requests: 1,
-        result: 'error',
-        errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-        metadata: {
-          stage: 'preflight',
-          governance_kind: 'resource_policy',
-          enforcement_kind: 'quota_limit',
-          effective_daily_token_limit: agentQuotaCheck.effective_daily_token_limit,
-          current_tokens_today: agentQuotaCheck.current_tokens_today,
-          retry_after_seconds: agentQuotaCheck.retry_after_seconds,
-          scope: agentQuotaCheck.scope,
-          quota_key: 'agent.daily_token_limit',
-          task_id: task.id,
-        },
-      });
-      throw Object.assign(new Error('resource_policy_quota_exceeded_agent'), { code: 'RESOURCE_POLICY_QUOTA_EXCEEDED' });
     }
     if (!rawBearerToken) {
       throw Object.assign(new Error('user_token_missing'), { code: 'UNAUTHORIZED' });
@@ -510,7 +455,6 @@ export async function runNotebookTaskWithExternalAgent(input: {
       endUserId: user.id,
       requestId: runtimeRequestId,
       durationMs,
-      tokensTotal: usageTokensTotal,
       result: terminalResult,
       errorCode: terminalErrorCode,
       metadata: { run_id: runId, task_id: task.id, endpoint_id: endpointIdForLog },

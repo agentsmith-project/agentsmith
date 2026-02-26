@@ -81,7 +81,6 @@ function getRequestsPerMinuteRuleKey(resourceType: ResourceType): string | null 
 
 function getDailyTokenLimitRuleKey(resourceType: ResourceType): string | null {
   if (resourceType === 'endpoint') return 'endpoint.daily_token_limit';
-  if (resourceType === 'agent') return 'agent.daily_token_limit';
   return null;
 }
 

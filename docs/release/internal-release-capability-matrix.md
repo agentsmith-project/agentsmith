@@ -17,7 +17,8 @@ This matrix is for internal/controlled releases where the primary supported flow
   - Currently covers core Notebook / Chat governance-relevant actions and runtime outcomes
 - Usage page (`/usage`, `/usage/kpi`)
   - Real backend routes with persisted usage facts and KPI aggregation
-  - Currently covers Notebook / Chat / Endpoint usage facts (first-stage coverage)
+  - Currently covers Notebook / Chat / Endpoint usage facts plus Agent request-level usage
+  - Agent usage is requests-only; token totals are not part of agent governance semantics
 
 ## Partially available in local `api-entry-node` (real backend)
 

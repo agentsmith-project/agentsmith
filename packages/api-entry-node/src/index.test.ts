@@ -2350,114 +2350,14 @@ describe('api-entry-node projects routes', () => {
     );
     expect(usageRes.status).toBe(200);
     const usageBody = (await usageRes.json()) as {
-      items: Array<{ resource_type: string; resource_id?: string; requests: number }>;
+      items: Array<{ resource_type: string; resource_id?: string; requests: number; tokens?: number }>;
     };
-    expect(
-      usageBody.items.some(
-        (item) => item.resource_type === 'agent' && item.resource_id === agent.id && item.requests >= 1,
-      ),
-    ).toBe(true);
+    const agentUsage = usageBody.items.find(
+      (item) => item.resource_type === 'agent' && item.resource_id === agent.id,
+    );
+    expect(agentUsage?.requests).toBeGreaterThanOrEqual(1);
+    expect(agentUsage?.tokens).toBeUndefined();
     ws.close();
-  });
-
-  it('enforces agent resource policy token quota for external chat stream and records governance evidence', async () => {
-    const { baseUrl, deps } = startServer();
-
-    const createAgentRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'echo-agent-quota',
-          mode: 'external',
-          interaction_mode: 'chat',
-          capabilities: { streaming_completion: true, multimodal_completion: true },
-        }),
-      },
-    );
-    expect(createAgentRes.status).toBe(201);
-    const agent = (await createAgentRes.json()) as { id: string };
-
-    const patchPolicyRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/agent/${agent.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_all_members',
-          allowed_subjects: [],
-          quota_limits: { rules: [{ key: 'agent.daily_token_limit', value: 10 }] },
-        }),
-      },
-    );
-    expect(patchPolicyRes.status).toBe(204);
-
-    await recordUsageFact(deps.docStore, {
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-      resource_type: 'agent',
-      resource_id: agent.id,
-      end_user_id: 'user_test',
-      requests: 1,
-      tokens_total: 10,
-      result: 'ok',
-    });
-
-    const createSessionRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ external_agent_id: agent.id, model: 'external-echo' }),
-      },
-    );
-    expect(createSessionRes.status).toBe(201);
-    const session = (await createSessionRes.json()) as { id: string };
-
-    const streamRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: { role: 'user', content: 'quota check' } }),
-      },
-    );
-    expect(streamRes.status).toBe(429);
-    const body = (await streamRes.json()) as {
-      error_code?: string;
-      message?: string;
-      resource_type?: string;
-      resource_id?: string;
-    };
-    expect(body).toMatchObject({
-      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-      resource_type: 'agent',
-      resource_id: agent.id,
-    });
-
-    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const auditRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.quota_exceeded&resource_type=agent&resource_id=${agent.id}&page=1&page_size=20`,
-    );
-    expect(auditRes.status).toBe(200);
-    const auditBody = (await auditRes.json()) as {
-      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
-    };
-    expect(
-      auditBody.items.some(
-        (item) => item.action === 'resource_policy.quota_exceeded'
-          && item.resource_type === 'agent'
-          && item.resource_id === agent.id
-          && item.error_code === 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-      ),
-    ).toBe(true);
   });
 
   it('returns AGENT_OFFLINE when external agent session streams without active runtime socket', async () => {
@@ -3073,156 +2973,14 @@ describe('api-entry-node projects routes', () => {
     );
     expect(usageRes.status).toBe(200);
     const usageBody = (await usageRes.json()) as {
-      items: Array<{ resource_type: string; resource_id?: string; requests: number }>;
+      items: Array<{ resource_type: string; resource_id?: string; requests: number; tokens?: number }>;
     };
-    expect(
-      usageBody.items.some(
-        (item) => item.resource_type === 'agent' && item.resource_id === agent.id && item.requests >= 1,
-      ),
-    ).toBe(true);
+    const agentUsage = usageBody.items.find(
+      (item) => item.resource_type === 'agent' && item.resource_id === agent.id,
+    );
+    expect(agentUsage?.requests).toBeGreaterThanOrEqual(1);
+    expect(agentUsage?.tokens).toBeUndefined();
     wsClient?.close();
-  });
-
-  it('enforces agent resource policy token quota for notebook external runtime and records governance evidence', async () => {
-    const { baseUrl, deps } = startServer();
-
-    const createCredentialRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'task-runner-key-quota',
-          type: 'api_key',
-          value: 'sk-task-quota',
-        }),
-      },
-    );
-    expect(createCredentialRes.status).toBe(201);
-    const credential = (await createCredentialRes.json()) as { id: string };
-
-    const createEndpointRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'task-endpoint-quota',
-          openai_model: 'gpt-5-codex',
-          type: 'openai',
-          mode: 'openai',
-          base_url: 'https://example.com/v1',
-          credential_ref: credential.id,
-        }),
-      },
-    );
-    expect(createEndpointRes.status).toBe(201);
-    const endpoint = (await createEndpointRes.json()) as { id: string };
-
-    const createAgentRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'notebook-runner-quota',
-          mode: 'external',
-          interaction_mode: 'notebook',
-          runtime_preferences: {
-            notebook: {
-              endpoint_id: endpoint.id,
-              wire_api: 'chat',
-              model: 'gpt-5-codex',
-            },
-          },
-          capabilities: { streaming_completion: true, multimodal_completion: false },
-        }),
-      },
-    );
-    expect(createAgentRes.status).toBe(201);
-    const agent = (await createAgentRes.json()) as { id: string };
-
-    const patchPolicyRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/agent/${agent.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_all_members',
-          allowed_subjects: [],
-          quota_limits: { rules: [{ key: 'agent.daily_token_limit', value: 10 }] },
-        }),
-      },
-    );
-    expect(patchPolicyRes.status).toBe(204);
-
-    await recordUsageFact(deps.docStore, {
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-      resource_type: 'agent',
-      resource_id: agent.id,
-      end_user_id: 'user_test',
-      requests: 1,
-      tokens_total: 10,
-      result: 'ok',
-    });
-
-    const createTaskRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Notebook task agent quota',
-          agent_id: agent.id,
-        }),
-      },
-    );
-    expect(createTaskRes.status).toBe(201);
-    const task = (await createTaskRes.json()) as { id: string };
-
-    const runRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'user', content: 'quota blocked run' }),
-      },
-    );
-    expect(runRes.status).toBe(200);
-
-    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    let quotaAuditSeen = false;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const auditRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.quota_exceeded&resource_type=agent&resource_id=${agent.id}&page=1&page_size=20`,
-      );
-      expect(auditRes.status).toBe(200);
-      const auditBody = (await auditRes.json()) as {
-        items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
-      };
-      if (
-        auditBody.items.some(
-          (item) => item.action === 'resource_policy.quota_exceeded'
-            && item.resource_type === 'agent'
-            && item.resource_id === agent.id
-            && item.error_code === 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-        )
-      ) {
-        quotaAuditSeen = true;
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    expect(quotaAuditSeen).toBe(true);
   });
 
   it('deduplicates notebook task artifacts by task_relative_path across repeated runtime artifact frames', async () => {

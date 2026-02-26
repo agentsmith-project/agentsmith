@@ -112,6 +112,7 @@ subject_overrides:
 1. `agent`
 - allowed rate keys: `agent.max_concurrency`
 - allowed quota keys: none
+- usage semantics: only request count is meaningful for agent usage; token metrics are not used for agent governance decisions
 
 2. `endpoint`
 - allowed rate keys: none

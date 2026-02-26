@@ -20,6 +20,7 @@ Conclusion:
 
 - `Resource Policy` enforcement is still partial
   - only baseline allow-list and selected endpoint limits are enforced
+  - agent governance currently focuses on access + request rate; token quota is endpoint-only
   - broader `rate_limits` / `quota_limits` across resource types are pending
 - `Members` lifecycle / permission closure is still partial
   - backend authz integration is partial

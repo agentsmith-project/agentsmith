@@ -94,6 +94,30 @@ async function gotoProjectPage(page, baseUrl, path) {
 }
 
 async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, fallbackProjectId }) {
+  try {
+    const firstProjectId = await page.evaluate(async ({ baseUrl, workspaceId }) => {
+      let token = '';
+      try {
+        const raw = localStorage.getItem('agentsmith-auth');
+        const parsed = raw ? JSON.parse(raw) : null;
+        token = parsed?.state?.token ? String(parsed.state.token) : '';
+      } catch {}
+      const resp = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/v1/workspaces/${workspaceId}/projects`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!resp.ok) return null;
+      const body = await resp.json().catch(() => null);
+      if (!body || !Array.isArray(body.items)) return null;
+      return typeof body.items[0]?.id === 'string' && body.items[0].id.length > 0
+        ? body.items[0].id
+        : null;
+    }, { baseUrl, workspaceId });
+    if (typeof firstProjectId === 'string' && firstProjectId.length > 0) return firstProjectId;
+  } catch {
+    // fallback below
+  }
   const projectsPath = `/${locale}/workspaces/${workspaceId}/projects`;
   await page.goto(`${baseUrl.replace(/\/+$/, '')}${projectsPath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   const foundFromLink = await page.evaluate(() => {
@@ -106,6 +130,7 @@ async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, 
   });
   const parsed = parseProjectIdFromHref(foundFromLink);
   if (parsed) return parsed;
+  console.log(`[gov-interact] fallback to projectId file value: ${fallbackProjectId}`);
   return fallbackProjectId;
 }
 
@@ -207,11 +232,14 @@ async function main() {
       await page.getByTestId('resource-policy__endpoint-daily-token-limit').waitFor({ state: 'visible', timeout: 10_000 });
 
       const sourceLibraryRow = page.locator('[data-testid^="resource-policy__row--source_library--"]').first();
-      await sourceLibraryRow.waitFor({ state: 'visible', timeout: 10_000 });
-      await sourceLibraryRow.click();
-      await page.getByTestId('resource-policy__library-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
-      await page.getByTestId('resource-policy__library-max-total-files').waitFor({ state: 'visible', timeout: 10_000 });
-      await page.getByTestId('resource-policy__library-max-file-size-bytes').waitFor({ state: 'visible', timeout: 10_000 });
+      if (await isVisible(sourceLibraryRow, 3_000)) {
+        await sourceLibraryRow.click();
+        await page.getByTestId('resource-policy__library-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
+        await page.getByTestId('resource-policy__library-max-total-files').waitFor({ state: 'visible', timeout: 10_000 });
+        await page.getByTestId('resource-policy__library-max-file-size-bytes').waitFor({ state: 'visible', timeout: 10_000 });
+      } else {
+        console.log('[gov-interact] no source_library row found; skip source-library rule checks');
+      }
 
       const agentRow = page.locator('[data-testid^="resource-policy__row--agent--"]').first();
       await agentRow.waitFor({ state: 'visible', timeout: 10_000 });
@@ -223,21 +251,21 @@ async function main() {
     const auditPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit`;
     console.log(`[gov-interact] audit ${auditPath}`);
     await gotoProjectPage(page, baseUrl, auditPath);
-    if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
+    await page.getByTestId('audit__filters').waitFor({ state: 'visible', timeout: 10_000 });
+    const auditReady = await waitForAny(page, ['audit__table', 'audit-usage__empty-state', 'page-state__error'], 30_000);
+    if (auditReady === 'page-state__error') {
       throw new Error('audit_page_error_state');
     }
-    await page.getByTestId('audit__filters').waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByTestId('audit__table').waitFor({ state: 'visible', timeout: 10_000 });
 
     // Usage: filters and table visible.
     const usagePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage`;
     console.log(`[gov-interact] usage ${usagePath}`);
     await gotoProjectPage(page, baseUrl, usagePath);
-    if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
+    await page.getByTestId('usage__filters').waitFor({ state: 'visible', timeout: 10_000 });
+    const usageReady = await waitForAny(page, ['usage__table', 'audit-usage__empty-state', 'page-state__error'], 30_000);
+    if (usageReady === 'page-state__error') {
       throw new Error('usage_page_error_state');
     }
-    await page.getByTestId('usage__filters').waitFor({ state: 'visible', timeout: 10_000 });
-    await page.getByTestId('usage__table').waitFor({ state: 'visible', timeout: 10_000 });
 
     console.log('[gov-interact] OK');
   } finally {

@@ -93,6 +93,30 @@ async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, c
 }
 
 async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, fallbackProjectId }) {
+  try {
+    const firstProjectId = await page.evaluate(async ({ baseUrl, workspaceId }) => {
+      let token = '';
+      try {
+        const raw = localStorage.getItem('agentsmith-auth');
+        const parsed = raw ? JSON.parse(raw) : null;
+        token = parsed?.state?.token ? String(parsed.state.token) : '';
+      } catch {}
+      const resp = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/v1/workspaces/${workspaceId}/projects`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!resp.ok) return null;
+      const body = await resp.json().catch(() => null);
+      if (!body || !Array.isArray(body.items)) return null;
+      return typeof body.items[0]?.id === 'string' && body.items[0].id.length > 0
+        ? body.items[0].id
+        : null;
+    }, { baseUrl, workspaceId });
+    if (typeof firstProjectId === 'string' && firstProjectId.length > 0) return firstProjectId;
+  } catch {
+    // fallback below
+  }
   const projectsPath = `/${locale}/workspaces/${workspaceId}/projects`;
   await page.goto(`${baseUrl.replace(/\/+$/, '')}${projectsPath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   const foundFromLink = await page.evaluate(() => {
@@ -105,6 +129,7 @@ async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, 
   });
   const parsed = parseProjectIdFromHref(foundFromLink);
   if (parsed) return parsed;
+  console.log(`[gov-smoke] fallback to projectId file value: ${fallbackProjectId}`);
   return fallbackProjectId;
 }
 

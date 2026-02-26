@@ -15,7 +15,7 @@ export interface EmptyStateProps {
 export function EmptyState({ title, description, onClearFilters, className }: EmptyStateProps) {
   const commonT = useTranslations('common');
   return (
-    <div className={cn('flex flex-col items-center justify-center py-12 px-4', className)}>
+    <div className={cn('flex flex-col items-center justify-center py-12 px-4', className)} data-testid="audit-usage__empty-state">
       <FileX className="h-12 w-12 text-tertiary mb-4" />
       <h3 className="text-lg font-semibold text-foreground mb-2">{title}</h3>
       <p className="text-sm text-tertiary text-center mb-6 max-w-md">{description}</p>

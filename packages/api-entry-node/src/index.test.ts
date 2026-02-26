@@ -592,6 +592,124 @@ describe('api-entry-node projects routes', () => {
     expect(listedAfterDelete.items).toHaveLength(1);
   });
 
+  it('enforces source_library policy on source ai-ready routes', async () => {
+    const { baseUrl } = startServer();
+
+    const createLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'AIReady Policy Library', visibility: 'shared' }),
+      },
+    );
+    expect(createLibraryRes.status).toBe(201);
+    const library = (await createLibraryRes.json()) as { id: string };
+
+    const createSourceRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'ai-ready-policy.txt',
+          library_id: library.id,
+          content_type: 'text/plain',
+          content_base64: Buffer.from('policy', 'utf-8').toString('base64'),
+        }),
+      },
+    );
+    expect(createSourceRes.status).toBe(201);
+    const source = (await createSourceRes.json()) as { id: string };
+
+    const patchDenyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_list',
+          allowed_subjects: [{ subject_type: 'user', subject_id: 'someone_else' }],
+        }),
+      },
+    );
+    expect(patchDenyRes.status).toBe(204);
+
+    const deniedStartRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/sources/${source.id}/ai-ready/start`,
+      { method: 'POST' },
+    );
+    expect(deniedStartRes.status).toBe(403);
+    expect(await deniedStartRes.json()).toMatchObject({
+      error_code: 'RESOURCE_POLICY_DENIED',
+      resource_type: 'source_library',
+      resource_id: library.id,
+    });
+
+    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.access_denied&resource_type=source_library&resource_id=${library.id}&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const auditBody = (await auditRes.json()) as {
+      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
+    };
+    expect(
+      auditBody.items.some(
+        (item) =>
+          item.action === 'resource_policy.access_denied'
+          && item.resource_type === 'source_library'
+          && item.resource_id === library.id
+          && item.error_code === 'RESOURCE_POLICY_DENIED',
+      ),
+    ).toBe(true);
+
+    const usageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&resource_type=source_library&resource_id=${library.id}&end_user_id=user_test&group_by=hour&page=1&page_size=50`,
+    );
+    expect(usageRes.status).toBe(200);
+    const usageBody = (await usageRes.json()) as {
+      items: Array<{ resource_type: string; resource_id?: string; end_user_id?: string; requests: number }>;
+    };
+    expect(
+      usageBody.items.some(
+        (item) =>
+          item.resource_type === 'source_library'
+          && item.resource_id === library.id
+          && item.end_user_id === 'user_test'
+          && item.requests >= 1,
+      ),
+    ).toBe(true);
+
+    const patchAllowRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_list',
+          allowed_subjects: [{ subject_type: 'user', subject_id: 'user_test' }],
+        }),
+      },
+    );
+    expect(patchAllowRes.status).toBe(204);
+
+    const allowedStartRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/sources/${source.id}/ai-ready/start`,
+      { method: 'POST' },
+    );
+    expect(allowedStartRes.status).toBe(200);
+  });
+
   it('lists attached source details for a notebook task', async () => {
     const { baseUrl } = startServer();
 

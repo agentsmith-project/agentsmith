@@ -291,6 +291,29 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     return false;
   };
 
+  const enforceSourceLibraryAccessBySourceId = async (params: {
+    workspaceId: string;
+    projectId: string;
+    sourceId: string;
+    routeKind: string;
+  }): Promise<boolean> => {
+    const source = await deps.getSourceUseCase.execute({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      sourceId: params.sourceId,
+    }) as { id: string; library_id?: string };
+    const libraryId = typeof source.library_id === 'string' ? source.library_id : '';
+    if (!libraryId) {
+      return true;
+    }
+    return enforceSourceLibraryAccess({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      libraryId,
+      routeKind: params.routeKind,
+    });
+  };
+
   if (route.kind === 'workspacesCollection' && method === 'GET') {
     json(res, 200, { items: workspaces, total: workspaces.length });
     return true;
@@ -1715,6 +1738,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceAIReadyStart' && method === 'POST' && route.workspaceId && route.projectId && route.sourceId) {
+    if (!(await enforceSourceLibraryAccessBySourceId({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sourceId: route.sourceId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const job = await deps.startSourceAIReadyUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -1725,6 +1756,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceAIReadyCancel' && method === 'POST' && route.workspaceId && route.projectId && route.sourceId) {
+    if (!(await enforceSourceLibraryAccessBySourceId({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sourceId: route.sourceId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const job = await deps.cancelSourceAIReadyUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -1735,6 +1774,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceAIReadyRetry' && method === 'POST' && route.workspaceId && route.projectId && route.sourceId) {
+    if (!(await enforceSourceLibraryAccessBySourceId({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sourceId: route.sourceId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const job = await deps.retrySourceAIReadyUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -1747,6 +1794,16 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'sourceBatchAIReadyStart' && method === 'POST' && route.workspaceId && route.projectId) {
     const raw = (await readBody(req)) as { file_ids?: string[] };
     const sourceIds = Array.isArray(raw.file_ids) ? raw.file_ids : [];
+    for (const sourceId of sourceIds) {
+      if (!(await enforceSourceLibraryAccessBySourceId({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sourceId,
+        routeKind: route.kind,
+      }))) {
+        return true;
+      }
+    }
     const jobs = await deps.batchStartSourceAIReadyUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -1759,6 +1816,16 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'sourceBatchAIReadyCancel' && method === 'POST' && route.workspaceId && route.projectId) {
     const raw = (await readBody(req)) as { file_ids?: string[] };
     const sourceIds = Array.isArray(raw.file_ids) ? raw.file_ids : [];
+    for (const sourceId of sourceIds) {
+      if (!(await enforceSourceLibraryAccessBySourceId({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sourceId,
+        routeKind: route.kind,
+      }))) {
+        return true;
+      }
+    }
     const jobs = await deps.batchCancelSourceAIReadyUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,

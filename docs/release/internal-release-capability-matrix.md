@@ -33,6 +33,7 @@ This matrix is for internal/controlled releases where the primary supported flow
 - Resource Policy governance
   - read/write configuration API baseline
   - minimal runtime enforcement for `endpoint`, `source_library`, and notebook/chat `agent` paths via allow-all / allow-list rules
+  - source AI-ready routes now follow source_library allow-list enforcement baseline
   - user-subject and group-subject allow-list matching are supported (baseline)
   - endpoint `requests_per_minute` rate limiting is enforced
   - endpoint policy quota enforcement baseline supports `endpoint.daily_token_limit` and `endpoint.requests_per_day`

@@ -9,6 +9,7 @@ TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 MEMBER_USER_ID="${MEMBER_USER_ID:-dev-admin}"
+CURL_MAX_TIME="${CURL_MAX_TIME:-45}"
 
 info() { echo "[gov-member-quota-smoke] $*"; }
 err() { echo "[gov-member-quota-smoke] ERROR: $*" >&2; }
@@ -136,6 +137,7 @@ main() {
     local warmup_code
     warmup_code="$(
       curl -sS -o "${warmup_file}" -w '%{http_code}' \
+        --max-time "${CURL_MAX_TIME}" \
         "${proxy_url}" \
         -H "Authorization: Bearer ${token}" \
         -H "Content-Type: application/json" \
@@ -143,6 +145,11 @@ main() {
     )"
     if [[ "${warmup_code}" == "429" ]]; then
       err "warm-up request returned 429; existing policy/member quota may already block endpoint"
+      cat "${warmup_file}" >&2 || true
+      exit 1
+    fi
+    if [[ ! "${warmup_code}" =~ ^2[0-9][0-9]$ ]]; then
+      err "warm-up request failed (HTTP ${warmup_code}); endpoint upstream may be unavailable"
       cat "${warmup_file}" >&2 || true
       exit 1
     fi
@@ -180,6 +187,7 @@ main() {
   info "sending endpoint request (should hit member quota)"
   req_code="$(
     curl -sS -D /tmp/gov_member_quota_smoke_headers.$$ -o "${block_file}" -w '%{http_code}' \
+      --max-time "${CURL_MAX_TIME}" \
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \

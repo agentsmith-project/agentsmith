@@ -1,6 +1,7 @@
 # Internal Release Note (Governance UX + Smoke Stabilization RC)
 
 Date: 2026-02-24
+Updated: 2026-02-26
 
 ## Release Summary
 
@@ -18,6 +19,8 @@ Outcome:
 - `governance-release-smoke` now validates `Resource Policy` group-subject allow-list matching effect (`deny -> group-allow`).
 - Endpoint success usage recording now persists `tokens_total`, enabling real member quota enforcement on endpoint traffic.
 - Real-environment validation for the governance smoke bundle passed end-to-end.
+- Governance page smoke now supports strict/tolerant modes; release gate uses strict mode.
+- Mainline notebook release smoke now auto-refreshes token and retries once on token-expiry failures.
 
 ## Version / Baseline
 
@@ -49,9 +52,11 @@ Governance release hardening sequence captured in this RC:
   - includes `resource_policy.access_denied` usage evidence consistency fix (`end_user_id`)
 - `f95a7d1` `test(governance): add policy group access effect smoke`
 - `d9a02ad` `feat(governance): add member lifecycle write path and smoke`
+- `fe3adcf` `chore(governance): split page smokes strict/tolerant and close RC docs`
+- `58081f5` `fix(release): retry notebook release smokes after token refresh`
 
 Suggested range notation for release notes / changelog references:
-- `fbef5f2..d9a02ad`
+- `fbef5f2..58081f5`
 
 ## What Changed
 
@@ -131,6 +136,29 @@ Impact:
 - Enables real backend lifecycle operations and lifecycle smoke coverage
 - Provides baseline for later `Members` lifecycle product hardening
 
+### 7. Governance smoke strict/tolerant layering
+
+- Added strict/tolerant split for governance page-open and interaction smokes:
+  - `governance-pages-real-backend-smoke-strict|tolerant`
+  - `governance-pages-real-backend-interaction-smoke-strict|tolerant`
+- Kept old targets as tolerant aliases for triage workflows.
+- Switched `governance-release-smoke` to strict page gate.
+
+Impact:
+- Release gate now fails fast on product error states.
+- Triage remains available without weakening release gate criteria.
+
+### 8. Notebook release smoke token-expiry resilience
+
+- `scripts/notebook-agent-release-smoke.sh` now retries:
+  - `notebook-agent-smoke-task`
+  - `notebook-agent-inputrefs-loop-smoke`
+- Retry path performs `notebook-agent-refresh-token` once before rerun.
+
+Impact:
+- Removes flakiness where token expires between demo-check and smoke execution.
+- Improves cold-start release verification stability.
+
 ## Validation Record (Real Environment)
 
 Executed command:
@@ -160,6 +188,21 @@ Result:
   - Includes member lifecycle transition effect:
     `active -> suspended -> removed -> restore`
 
+Additional final validation (2026-02-26):
+
+```bash
+make notebook-agent-demo-down
+OPENAI_URL_CODING_PLAN=https://open.bigmodel.cn/api/coding/paas/ GLM_API_KEY=*** make notebook-agent-demo-up
+make notebook-agent-release-smoke-full
+```
+
+Result:
+- cold-start down/up cycle ✅
+- `notebook-agent-release-smoke-full` ✅
+  - `demo-check` auto-refresh fallback verified
+  - `notebook-agent-smoke-task` ✅
+  - `notebook-agent-inputrefs-loop-smoke` ✅
+
 ## Current Release Readiness (Internal)
 
 ### Mainline (Notebook / Agent / Files / InputRefs)
@@ -175,6 +218,7 @@ Result:
 
 - Mainline smoke / governance smoke / demo ops commands available ✅
 - Token-expiry tolerance improved ✅
+- Strict release gating for governance pages enabled ✅
 
 ## Known Scope Boundaries
 
@@ -194,4 +238,4 @@ Result:
 - Release owner: `AgentSmith Frontend/Governance`
 - Validation operator: `Codex + Percy`
 - Validation environment: `local-dev` (`host=localhost`, `API=http://localhost:20000`, `WEB=http://localhost:3001`)
-- Commit range finalized: `fbef5f2..d9a02ad` (or replace with tagged range)
+- Commit range finalized: `fbef5f2..58081f5` (or replace with tagged range)

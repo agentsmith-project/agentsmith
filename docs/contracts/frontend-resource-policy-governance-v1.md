@@ -115,8 +115,8 @@ subject_overrides:
 - usage semantics: only request count is meaningful for agent usage; token metrics are not used for agent governance decisions
 
 2. `endpoint`
-- allowed rate keys: none
-- allowed quota keys: `endpoint.daily_token_limit`
+- allowed rate keys: `endpoint.requests_per_minute`
+- allowed quota keys: `endpoint.daily_token_limit`, `endpoint.requests_per_day`
 
 3. `source_library`
 - allowed rate keys: none

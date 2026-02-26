@@ -14,14 +14,33 @@ type RateLimitDecision =
   | { allowed: true; effective_limit_per_minute?: number; scope?: 'policy' | 'subject' }
   | { allowed: false; reason: 'rate_limited'; retry_after_seconds: number; effective_limit_per_minute: number; scope: 'policy' | 'subject' };
 
+type QuotaRuleKey = 'endpoint.daily_token_limit' | 'endpoint.requests_per_day';
+
 type QuotaLimitDecision =
-  | { allowed: true; effective_daily_token_limit?: number; current_tokens_today?: number; scope?: 'policy' | 'subject' }
+  | {
+    allowed: true;
+    quota_key?: QuotaRuleKey;
+    effective_limit?: number;
+    current_usage?: number;
+    usage_unit?: 'tokens' | 'requests';
+    effective_daily_token_limit?: number;
+    current_tokens_today?: number;
+    effective_requests_per_day?: number;
+    current_requests_today?: number;
+    scope?: 'policy' | 'subject';
+  }
   | {
     allowed: false;
     reason: 'quota_exceeded';
+    quota_key: QuotaRuleKey;
+    effective_limit: number;
+    current_usage: number;
+    usage_unit: 'tokens' | 'requests';
     retry_after_seconds: number;
-    effective_daily_token_limit: number;
-    current_tokens_today: number;
+    effective_daily_token_limit?: number;
+    current_tokens_today?: number;
+    effective_requests_per_day?: number;
+    current_requests_today?: number;
     scope: 'policy' | 'subject';
   };
 
@@ -79,9 +98,9 @@ function getRequestsPerMinuteRuleKey(resourceType: ResourceType): string | null 
   return null;
 }
 
-function getDailyTokenLimitRuleKey(resourceType: ResourceType): string | null {
-  if (resourceType === 'endpoint') return 'endpoint.daily_token_limit';
-  return null;
+function getQuotaRuleKeys(resourceType: ResourceType): QuotaRuleKey[] {
+  if (resourceType === 'endpoint') return ['endpoint.requests_per_day', 'endpoint.daily_token_limit'];
+  return [];
 }
 
 function getMatchingSubjectRateRules(args: {
@@ -135,21 +154,23 @@ function getMatchingSubjectQuotaRules(args: {
   return { rules: merged, matched: merged.length > 0 };
 }
 
-function getEffectiveDailyTokenLimitRule(args: {
+function getEffectiveQuotaRule(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
   resourceType: ResourceType;
   policy: ProjectResourcePolicyRecord;
-}): { value?: number; scope?: 'policy' | 'subject' } {
-  const quotaRuleKey = getDailyTokenLimitRuleKey(args.resourceType);
-  if (!quotaRuleKey) return {};
+}): { key?: QuotaRuleKey; value?: number; scope?: 'policy' | 'subject' } {
+  const quotaRuleKeys = getQuotaRuleKeys(args.resourceType);
+  if (quotaRuleKeys.length === 0) return {};
   const baseRules = readPolicyRules(args.policy.quota_limits);
   const subject = getMatchingSubjectQuotaRules(args);
   const effective = subject.matched ? mergeQuotaRules(baseRules, subject.rules) : baseRules;
-  const quotaRule = effective.find((r) => r.key === quotaRuleKey);
+  const quotaRule = quotaRuleKeys
+    .map((key) => ({ key, rule: effective.find((r) => r.key === key) }))
+    .find((item): item is { key: QuotaRuleKey; rule: PolicyRule } => !!item.rule);
   if (!quotaRule) return {};
-  return { value: quotaRule.value, scope: subject.matched ? 'subject' : 'policy' };
+  return { key: quotaRule.key, value: quotaRule.rule.value, scope: subject.matched ? 'subject' : 'policy' };
 }
 
 export function checkAndConsumeProjectResourceRateLimitsForUser(args: {
@@ -223,14 +244,14 @@ export async function checkProjectResourceQuotaLimitsForUser(args: {
   if (!args.policy) {
     return { allowed: true };
   }
-  const effective = getEffectiveDailyTokenLimitRule({
+  const effective = getEffectiveQuotaRule({
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
     resourceType: args.resourceType,
     policy: args.policy,
   });
-  if (!effective.value || effective.value <= 0) {
+  if (!effective.key || !effective.value || effective.value <= 0) {
     return { allowed: true };
   }
   const nowMs = args.nowMs ?? Date.now();
@@ -243,24 +264,51 @@ export async function checkProjectResourceQuotaLimitsForUser(args: {
     resourceId: args.resourceId,
     endUserId: args.userId,
   });
-  const currentTokensToday = facts.reduce((sum, fact) => sum + (Number.isFinite(fact.tokens_total) ? (fact.tokens_total ?? 0) : 0), 0);
-  if (currentTokensToday >= effective.value) {
+  const currentUsage = facts.reduce((sum, fact) => {
+    if (effective.key === 'endpoint.requests_per_day') {
+      return sum + (Number.isFinite(fact.requests) ? (fact.requests ?? 0) : 0);
+    }
+    return sum + (Number.isFinite(fact.tokens_total) ? (fact.tokens_total ?? 0) : 0);
+  }, 0);
+  if (currentUsage >= effective.value) {
     const now = new Date(nowMs);
     const nextUtcMidnightMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0);
     const retryAfterSeconds = Math.max(1, Math.ceil((nextUtcMidnightMs - nowMs) / 1000));
     return {
       allowed: false,
       reason: 'quota_exceeded',
+      quota_key: effective.key,
+      effective_limit: effective.value,
+      current_usage: currentUsage,
+      usage_unit: effective.key === 'endpoint.requests_per_day' ? 'requests' : 'tokens',
       retry_after_seconds: retryAfterSeconds,
-      effective_daily_token_limit: effective.value,
-      current_tokens_today: currentTokensToday,
+      ...(effective.key === 'endpoint.requests_per_day'
+        ? {
+            effective_requests_per_day: effective.value,
+            current_requests_today: currentUsage,
+          }
+        : {
+            effective_daily_token_limit: effective.value,
+            current_tokens_today: currentUsage,
+          }),
       scope: effective.scope ?? 'policy',
     };
   }
   return {
     allowed: true,
-    effective_daily_token_limit: effective.value,
-    current_tokens_today: currentTokensToday,
+    quota_key: effective.key,
+    effective_limit: effective.value,
+    current_usage: currentUsage,
+    usage_unit: effective.key === 'endpoint.requests_per_day' ? 'requests' : 'tokens',
+    ...(effective.key === 'endpoint.requests_per_day'
+      ? {
+          effective_requests_per_day: effective.value,
+          current_requests_today: currentUsage,
+        }
+      : {
+          effective_daily_token_limit: effective.value,
+          current_tokens_today: currentUsage,
+        }),
     scope: effective.scope,
   };
 }

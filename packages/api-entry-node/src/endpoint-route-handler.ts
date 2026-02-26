@@ -85,8 +85,10 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
   });
   const policyQuotaFailure = (params: {
     retryAfterSeconds: number;
-    effectiveDailyTokenLimit: number;
-    currentTokensToday: number;
+    quotaKey: string;
+    effectiveLimit: number;
+    currentUsage: number;
+    usageUnit: 'tokens' | 'requests';
     scope?: string;
   }): GovernancePreflightFailureSpec => ({
     action: 'resource_policy.quota_exceeded',
@@ -95,10 +97,23 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     statusCode: 429,
     retryAfterSeconds: params.retryAfterSeconds,
     metadata: governanceMetadata('policy_quota', {
-      effective_daily_token_limit: params.effectiveDailyTokenLimit,
-      current_tokens_today: params.currentTokensToday,
+      quota_key: params.quotaKey,
+      effective_limit: params.effectiveLimit,
+      current_usage: params.currentUsage,
+      usage_unit: params.usageUnit,
       scope: params.scope,
-      quota_key: 'endpoint.daily_token_limit',
+      ...(params.quotaKey === 'endpoint.daily_token_limit'
+        ? {
+            effective_daily_token_limit: params.effectiveLimit,
+            current_tokens_today: params.currentUsage,
+          }
+        : {}),
+      ...(params.quotaKey === 'endpoint.requests_per_day'
+        ? {
+            effective_requests_per_day: params.effectiveLimit,
+            current_requests_today: params.currentUsage,
+          }
+        : {}),
     }),
   });
   const memberQuotaFailure = (params: {
@@ -303,8 +318,10 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     if (!quotaCheck.allowed) {
       const failure = policyQuotaFailure({
         retryAfterSeconds: quotaCheck.retry_after_seconds,
-        effectiveDailyTokenLimit: quotaCheck.effective_daily_token_limit,
-        currentTokensToday: quotaCheck.current_tokens_today,
+        quotaKey: quotaCheck.quota_key,
+        effectiveLimit: quotaCheck.effective_limit,
+        currentUsage: quotaCheck.current_usage,
+        usageUnit: quotaCheck.usage_unit,
         scope: quotaCheck.scope,
       });
       await writeGovernancePreflightFailure({

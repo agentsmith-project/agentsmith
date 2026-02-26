@@ -2061,6 +2061,84 @@ describe('api-entry-node projects routes', () => {
     );
     expect(resetPolicyRes.status).toBe(204);
 
+    await recordUsageFact(deps.docStore, {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+      end_user_id: 'user_test',
+      requests: 3,
+      result: 'ok',
+    });
+    const requestsQuotaPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1000 }] },
+          quota_limits: { rules: [{ key: 'endpoint.requests_per_day', value: 3 }] },
+        }),
+      },
+    );
+    expect(requestsQuotaPolicyRes.status).toBe(204);
+
+    const requestQuotaLimitedProxy = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored',
+          messages: [{ role: 'user', content: 'blocked by endpoint requests/day quota' }],
+        }),
+      },
+    );
+    expect(requestQuotaLimitedProxy.status).toBe(429);
+    expect(await requestQuotaLimitedProxy.json()).toMatchObject({
+      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+    });
+
+    const requestQuotaAuditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(auditStart)}&end_time=${encodeURIComponent(auditEnd)}&action=resource_policy.quota_exceeded&resource_type=endpoint&resource_id=${endpoint.id}&page=1&page_size=20`,
+    );
+    expect(requestQuotaAuditRes.status).toBe(200);
+    const requestQuotaAuditBody = (await requestQuotaAuditRes.json()) as {
+      items: Array<{ action: string; resource_type?: string; resource_id?: string; metadata_json?: Record<string, unknown> }>;
+    };
+    expect(
+      requestQuotaAuditBody.items.some(
+        (item) =>
+          item.action === 'resource_policy.quota_exceeded'
+          && item.resource_type === 'endpoint'
+          && item.resource_id === endpoint.id
+          && item.metadata_json?.quota_key === 'endpoint.requests_per_day',
+      ),
+    ).toBe(true);
+
+    const clearRequestsQuotaPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1000 }] },
+          quota_limits: { rules: [] },
+        }),
+      },
+    );
+    expect(clearRequestsQuotaPolicyRes.status).toBe(204);
+
     const memberQuotaPatchRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides',

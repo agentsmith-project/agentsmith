@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { __resetProjectResourcePolicyRateCountersForTests, checkAndConsumeProjectResourceRateLimitsForUser } from './project-resource-policy-enforcer.js';
+import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import {
+  __resetProjectResourcePolicyRateCountersForTests,
+  checkAndConsumeProjectResourceRateLimitsForUser,
+  checkProjectResourceQuotaLimitsForUser,
+} from './project-resource-policy-enforcer.js';
 import { getProjectGroupsState } from './project-groups-store.js';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
+import { recordUsageFact } from './audit-usage-store.js';
 
 describe('project-resource-policy-enforcer', () => {
   it('enforces endpoint requests_per_minute at policy root', () => {
@@ -77,5 +83,47 @@ describe('project-resource-policy-enforcer', () => {
     expect(two.allowed).toBe(true);
     expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });
   });
-});
 
+  it('enforces endpoint requests_per_day quota using request counts', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const policy: ProjectResourcePolicyRecord = {
+      resource_type: 'endpoint',
+      resource_id: 'ep_quota_day',
+      access_mode: 'allow_all_members',
+      allowed_subjects: [],
+      quota_limits: {
+        rules: [{ key: 'endpoint.requests_per_day', value: 2 }],
+      },
+    };
+
+    await recordUsageFact(docStore, {
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      resource_type: 'endpoint',
+      resource_id: 'ep_quota_day',
+      end_user_id: 'user_1',
+      requests: 2,
+      result: 'ok',
+    });
+
+    const decision = await checkProjectResourceQuotaLimitsForUser({
+      docStore,
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      resourceType: 'endpoint',
+      resourceId: 'ep_quota_day',
+      userId: 'user_1',
+      policy,
+      nowMs: Date.UTC(2026, 1, 26, 12, 0, 0, 0),
+    });
+
+    expect(decision).toMatchObject({
+      allowed: false,
+      reason: 'quota_exceeded',
+      quota_key: 'endpoint.requests_per_day',
+      effective_requests_per_day: 2,
+      current_requests_today: 2,
+      usage_unit: 'requests',
+    });
+  });
+});

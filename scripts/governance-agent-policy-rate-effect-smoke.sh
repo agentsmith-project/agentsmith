@@ -195,6 +195,7 @@ main() {
 
   info "checking usage evidence for agent rate limit"
   local usage_has="0"
+  local usage_tokens_absent="0"
   for _ in $(seq 1 10); do
     local usage_code
     usage_code="$(
@@ -207,14 +208,20 @@ main() {
       cat "${usage_file}" >&2 || true
       exit 1
     fi
-    usage_has="$(cat "${usage_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>String(i.resource_type||'')==='agent'&&String(i.resource_id||'')==='${agent_id}'&&String(i.end_user_id||'')==='${user_id}'&&Number(i.requests||0)>=1); process.stdout.write(ok?'1':'0');")"
-    if [[ "${usage_has}" == "1" ]]; then
+    usage_has="$(cat "${usage_file}" | json_get "const row=Array.isArray(data.items)?data.items.find(i=>String(i.resource_type||'')==='agent'&&String(i.resource_id||'')==='${agent_id}'&&String(i.end_user_id||'')==='${user_id}'&&Number(i.requests||0)>=1):null; process.stdout.write(row?'1':'0');")"
+    usage_tokens_absent="$(cat "${usage_file}" | json_get "const row=Array.isArray(data.items)?data.items.find(i=>String(i.resource_type||'')==='agent'&&String(i.resource_id||'')==='${agent_id}'&&String(i.end_user_id||'')==='${user_id}'&&Number(i.requests||0)>=1):null; const ok=!!row&&!Object.prototype.hasOwnProperty.call(row,'tokens'); process.stdout.write(ok?'1':'0');")"
+    if [[ "${usage_has}" == "1" && "${usage_tokens_absent}" == "1" ]]; then
       break
     fi
     sleep 1
   done
   if [[ "${usage_has}" != "1" ]]; then
     err "usage missing agent row for rate limit evidence agent ${agent_id} user ${user_id}"
+    cat "${usage_file}" >&2 || true
+    exit 1
+  fi
+  if [[ "${usage_tokens_absent}" != "1" ]]; then
+    err "usage row unexpectedly contains tokens field for agent ${agent_id} user ${user_id}"
     cat "${usage_file}" >&2 || true
     exit 1
   fi

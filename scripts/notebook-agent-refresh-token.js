@@ -113,9 +113,17 @@ async function main() {
   if (!new RegExp(`/${locale.replace('-', '\\-')}/workspaces/ws_default(?:/.*)?$`).test(page.url())) {
     dbg('not in ws_default route, selecting workspace card', page.url());
     const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
-    await workspaceCard.waitFor({ state: 'visible', timeout: 30_000 });
-    await workspaceCard.click();
-    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 });
+    const cardVisible = await workspaceCard.isVisible().catch(() => false);
+    if (cardVisible) {
+      await workspaceCard.click();
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 });
+    } else {
+      await page.goto(`${baseUrl.replace(/\/+$/, '')}/${locale}/workspaces/ws_default/projects`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+      });
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 });
+    }
     dbg('workspace selected', page.url());
   } else {
     dbg('already in ws_default route', page.url());

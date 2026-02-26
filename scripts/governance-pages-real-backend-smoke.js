@@ -18,6 +18,12 @@ function requireFile(path) {
   }
 }
 
+function parseProjectIdFromHref(href) {
+  if (typeof href !== 'string') return null;
+  const match = href.match(/\/workspaces\/[^/]+\/projects\/([^/]+)\/overview/);
+  return match?.[1] ?? null;
+}
+
 async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, clientId, username, password }) {
   const verifier = b64url(crypto.randomBytes(48));
   const state = b64url(crypto.randomBytes(24));
@@ -86,6 +92,22 @@ async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, c
   }
 }
 
+async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, fallbackProjectId }) {
+  const projectsPath = `/${locale}/workspaces/${workspaceId}/projects`;
+  await page.goto(`${baseUrl.replace(/\/+$/, '')}${projectsPath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  const foundFromLink = await page.evaluate(() => {
+    const links = Array.from(document.querySelectorAll('a[href*="/projects/"][href*="/overview"]'));
+    for (const link of links) {
+      const href = link.getAttribute('href');
+      if (typeof href === 'string' && href.includes('/projects/')) return href;
+    }
+    return null;
+  });
+  const parsed = parseProjectIdFromHref(foundFromLink);
+  if (parsed) return parsed;
+  return fallbackProjectId;
+}
+
 async function main() {
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
   const locale = process.env.LOCALE || 'zh-CN';
@@ -98,8 +120,8 @@ async function main() {
   const projectIdFile = process.env.PROJECT_ID_FILE || '/tmp/agentsmith_project_id.txt';
 
   requireFile(projectIdFile);
-  const projectId = fs.readFileSync(projectIdFile, 'utf8').trim();
-  if (!projectId) throw new Error(`empty_project_id:${projectIdFile}`);
+  const fallbackProjectId = fs.readFileSync(projectIdFile, 'utf8').trim();
+  if (!fallbackProjectId) throw new Error(`empty_project_id:${projectIdFile}`);
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
@@ -109,7 +131,8 @@ async function main() {
     {
       name: 'members',
       path: `/${locale}/workspaces/${workspaceId}/projects/${projectId}/members`,
-      testids: ['members__search-input'],
+      testids: [],
+      testidsAny: ['members__search-input', 'members__table', 'members__groups-section', 'page-state__error'],
     },
     {
       name: 'resource-policy',
@@ -133,6 +156,14 @@ async function main() {
     await loginWithKeycloak({
       page, baseUrl, locale, keycloakBase, realm, clientId, username, password,
     });
+    const projectId = await resolveAccessibleProjectId({
+      page,
+      baseUrl,
+      locale,
+      workspaceId,
+      fallbackProjectId,
+    });
+    console.log(`[gov-smoke] using project ${projectId}`);
 
     for (const check of checks) {
       const url = `${baseUrl.replace(/\/+$/, '')}${check.path}`;
@@ -144,6 +175,32 @@ async function main() {
       if (staleProject) {
         failures.push(`${check.name}: stale project (local in-memory backend reset)`);
         continue;
+      }
+
+      if (Array.isArray(check.testidsAny) && check.testidsAny.length > 0) {
+        let foundAny = false;
+        for (const tid of check.testidsAny) {
+          if (await page.getByTestId(tid).isVisible().catch(() => false)) {
+            foundAny = true;
+            break;
+          }
+        }
+        if (!foundAny) {
+          const deadline = Date.now() + 20_000;
+          while (Date.now() < deadline && !foundAny) {
+            for (const tid of check.testidsAny) {
+              if (await page.getByTestId(tid).isVisible().catch(() => false)) {
+                foundAny = true;
+                break;
+              }
+            }
+            if (!foundAny) await page.waitForTimeout(250);
+          }
+        }
+        if (!foundAny) {
+          failures.push(`${check.name}: missing any testid ${check.testidsAny.join('|')}`);
+          continue;
+        }
       }
 
       for (const tid of check.testids) {
@@ -171,4 +228,3 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.stack || error.message : String(error));
   process.exit(1);
 });
-

@@ -7,7 +7,7 @@
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-interaction-smoke governance-policy-effect-smoke \
-	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-quota-effect-smoke governance-member-quota-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
+	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-quota-effect-smoke governance-member-quota-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
@@ -103,6 +103,7 @@ help:
 	@echo "  make governance-policy-effect-smoke # real-backend endpoint policy effect smoke (rate limit -> audit/usage evidence)"
 	@echo "  make governance-policy-access-effect-smoke # real-backend endpoint policy allow-list effect smoke (deny->allow + audit/usage evidence)"
 	@echo "  make governance-policy-group-access-effect-smoke # real-backend endpoint policy group allow-list effect smoke (deny->group-allow)"
+	@echo "  make governance-policy-update-audit-smoke # real-backend endpoint policy update -> audit event smoke"
 	@echo "  make governance-policy-quota-effect-smoke # real-backend endpoint policy quota effect smoke (quota block -> audit/usage evidence)"
 	@echo "  make governance-member-quota-effect-smoke # real-backend member quota effect smoke (quota block -> audit/usage evidence)"
 	@echo "  make governance-member-permission-effect-smoke # real-backend member permission effect smoke (route authz deny->allow)"
@@ -428,6 +429,10 @@ governance-policy-group-access-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-policy-group-access-effect-smoke.sh
 
+governance-policy-update-audit-smoke:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/governance-policy-update-audit-smoke.sh
+
 governance-policy-quota-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-policy-quota-effect-smoke.sh
@@ -454,6 +459,7 @@ governance-release-smoke:
 		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
 		$(MAKE) governance-policy-group-access-effect-smoke; \
 	fi; \
+	$(MAKE) governance-policy-update-audit-smoke; \
 	if ! $(MAKE) governance-policy-effect-smoke; then \
 		echo "[make] governance-policy-effect-smoke failed; attempting token refresh and retry once"; \
 		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \

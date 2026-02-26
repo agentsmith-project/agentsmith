@@ -13,14 +13,30 @@ MATPLOTLIB_TIMEOUT_SEC="${MATPLOTLIB_TIMEOUT_SEC:-180}"
 info() { echo "[release-smoke] $*"; }
 err() { echo "[release-smoke] ERROR: $*" >&2; }
 
+run_make_target_with_token_retry() {
+  local target="$1"
+  local label="$2"
+  local rc=0
+  set +e
+  (cd "${ROOT_DIR}" && make "${target}")
+  rc=$?
+  set -e
+  if [[ "${rc}" -eq 0 ]]; then
+    return 0
+  fi
+  info "${label} failed (rc=${rc}); attempting token refresh and retry once"
+  (cd "${ROOT_DIR}" && BASE_URL="${BASE_URL:-http://localhost:3001}" make notebook-agent-refresh-token)
+  (cd "${ROOT_DIR}" && make "${target}")
+}
+
 run_basic_smoke() {
   info "running notebook-agent-smoke-task"
-  (cd "${ROOT_DIR}" && make notebook-agent-smoke-task)
+  run_make_target_with_token_retry notebook-agent-smoke-task notebook-agent-smoke-task
 }
 
 run_inputrefs_loop_smoke() {
   info "running notebook-agent-inputrefs-loop-smoke"
-  (cd "${ROOT_DIR}" && make notebook-agent-inputrefs-loop-smoke)
+  run_make_target_with_token_retry notebook-agent-inputrefs-loop-smoke notebook-agent-inputrefs-loop-smoke
 }
 
 run_matplotlib_smoke() {

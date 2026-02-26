@@ -47,8 +47,8 @@ Included checks:
 ## Commit Range (RC governance extension)
 
 - Base (previous governance smoke/token refresh RC): `21bd82c`
-- Current head: `c7afb99`
-- Incremental range: `21bd82c..c7afb99`
+- Current head: `d9a02ad`
+- Incremental range: `21bd82c..d9a02ad`
 
 Key commits in this increment:
 - `9e155d3` `test(governance): add member quota effect smoke`
@@ -59,6 +59,8 @@ Key commits in this increment:
 - `87c3bdd` `docs(release): update governance RC note with member effect coverage`
 - `4499bcb` `test(governance): add policy quota effect smoke`
 - `c7afb99` `test(governance): add policy access effect smoke` (includes access-denied usage `end_user_id` fix)
+- `f95a7d1` `test(governance): add policy group access effect smoke`
+- `d9a02ad` `feat(governance): add member lifecycle write path and smoke`
 
 ## References
 

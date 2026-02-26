@@ -24,7 +24,7 @@ Outcome:
 - App version baseline: `0.1.0` (`package.json`)
 - Branch: `main`
 - RC record date: `2026-02-24`
-- RC commit (current HEAD at validation record time): `c7afb99`
+- RC commit (current HEAD at validation record time): `d9a02ad`
 
 ## Commit Range (This RC Increment)
 
@@ -47,9 +47,11 @@ Governance release hardening sequence captured in this RC:
 - `4499bcb` `test(governance): add policy quota effect smoke`
 - `c7afb99` `test(governance): add policy access effect smoke`
   - includes `resource_policy.access_denied` usage evidence consistency fix (`end_user_id`)
+- `f95a7d1` `test(governance): add policy group access effect smoke`
+- `d9a02ad` `feat(governance): add member lifecycle write path and smoke`
 
 Suggested range notation for release notes / changelog references:
-- `fbef5f2..c7afb99`
+- `fbef5f2..d9a02ad`
 
 ## What Changed
 
@@ -192,4 +194,4 @@ Result:
 - Release owner: `TODO`
 - Validation operator: `TODO`
 - Validation environment: `TODO` (host / API base / web base)
-- Commit range finalized: `fbef5f2..c7afb99` (or replace with tagged range)
+- Commit range finalized: `fbef5f2..d9a02ad` (or replace with tagged range)

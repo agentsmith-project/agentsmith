@@ -18,6 +18,8 @@ const SETTLE_MAX_MS = Number(process.env.SETTLE_MAX_MS || 15000);
 const SETTLE_INTERVAL_MS = Number(process.env.SETTLE_INTERVAL_MS || 1000);
 const HTTP_RETRY_ATTEMPTS = Number(process.env.HTTP_RETRY_ATTEMPTS || 5);
 const HTTP_RETRY_DELAY_MS = Number(process.env.HTTP_RETRY_DELAY_MS || 500);
+const STREAM_CONFLICT_RETRY_ATTEMPTS = Number(process.env.STREAM_CONFLICT_RETRY_ATTEMPTS || 15);
+const STREAM_CONFLICT_RETRY_DELAY_MS = Number(process.env.STREAM_CONFLICT_RETRY_DELAY_MS || 1000);
 
 function safeRead(path) {
   try {
@@ -92,6 +94,27 @@ async function main() {
       throw new Error(`POST ${path} -> ${res.status}: ${text.slice(0, 500)}`);
     }
     return asJson(res, `POST ${path}`);
+  }
+
+  async function postTaskMessage(taskId, body) {
+    for (let attempt = 1; attempt <= STREAM_CONFLICT_RETRY_ATTEMPTS; attempt += 1) {
+      try {
+        return await post(`/tasks/${taskId}/messages`, body);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const isStreamConflict =
+          /POST \/tasks\/.+\/messages -> 409/.test(message) &&
+          /TASK_STREAM_CONFLICT|task_stream_conflict/i.test(message);
+        if (!isStreamConflict || attempt === STREAM_CONFLICT_RETRY_ATTEMPTS) {
+          throw error;
+        }
+        process.stdout.write(
+          `[inputrefs-loop] message retry ${attempt}/${STREAM_CONFLICT_RETRY_ATTEMPTS}: stream still active\n`,
+        );
+        await sleep(STREAM_CONFLICT_RETRY_DELAY_MS);
+      }
+    }
+    throw new Error('unreachable');
   }
 
   async function uploadObject(libraryId, fileName, content, prefix) {
@@ -186,7 +209,7 @@ async function main() {
     throw new Error('URL input ref not visible in task inputs');
   }
 
-  await post(`/tasks/${taskId}/messages`, {
+  await postTaskMessage(taskId, {
     role: 'user',
     content:
       'Use notebook-inputs helper to list and fetch the URL input. Then create ./artifacts/url-summary.txt containing exactly the URL string only (no extra text). Reply with the filename only.',
@@ -228,7 +251,7 @@ async function main() {
     throw new Error('Artifact input ref not visible in task inputs');
   }
 
-  await post(`/tasks/${taskId}/messages`, {
+  await postTaskMessage(taskId, {
     role: 'user',
     content: 'Use notebook-inputs helper to fetch the artifact input and reply exactly: url artifact loop ok',
   });

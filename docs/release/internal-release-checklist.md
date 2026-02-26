@@ -99,6 +99,7 @@ Bundle includes:
 - `governance-pages-real-backend-interaction-smoke` (basic interactions)
 - `governance-policy-effect-smoke` (endpoint policy rate-limit effect + audit/usage evidence)
 - `governance-member-quota-effect-smoke` (member endpoint quota effect + audit/usage evidence)
+- `governance-member-permission-effect-smoke` (member permission route authz deny -> allow effect)
 
 ## 4. Contract / Quality Gates
 ### Required checks

@@ -10,6 +10,7 @@ Current status:
 - `Audit` / `Usage` real-backend UX is productized (unified error state + i18n + retry)
 - Governance release smoke is token-expiry tolerant
 - Governance release smoke now covers real effect paths for:
+  - `Resource Policy` allow-list access control (deny -> allow)
   - `Resource Policy` rate limit
   - `Resource Policy` endpoint quota (`daily_token_limit`)
   - `Members` endpoint quota
@@ -29,6 +30,7 @@ Included checks:
 - `governance-pages-real-backend-smoke`
 - `governance-pages-real-backend-interaction-smoke`
 - `governance-policy-effect-smoke`
+- `governance-policy-access-effect-smoke`
 - `governance-policy-quota-effect-smoke`
 - `governance-member-quota-effect-smoke`
 - `governance-member-permission-effect-smoke`
@@ -41,8 +43,8 @@ Included checks:
 ## Commit Range (RC governance extension)
 
 - Base (previous governance smoke/token refresh RC): `21bd82c`
-- Current head: `4499bcb`
-- Incremental range: `21bd82c..4499bcb`
+- Current head: `c7afb99`
+- Incremental range: `21bd82c..c7afb99`
 
 Key commits in this increment:
 - `9e155d3` `test(governance): add member quota effect smoke`
@@ -52,6 +54,7 @@ Key commits in this increment:
 - `1f96992` `test(governance): add member permission effect smoke`
 - `87c3bdd` `docs(release): update governance RC note with member effect coverage`
 - `4499bcb` `test(governance): add policy quota effect smoke`
+- `c7afb99` `test(governance): add policy access effect smoke` (includes access-denied usage `end_user_id` fix)
 
 ## References
 

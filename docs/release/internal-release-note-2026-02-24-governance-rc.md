@@ -13,6 +13,7 @@ Outcome:
   - member endpoint quota enforcement (`deny + audit/usage evidence`)
   - member route authorization enforcement (`deny -> grant -> allow`)
 - `governance-release-smoke` now validates `Resource Policy` quota enforcement (`endpoint.daily_token_limit`) in addition to rate limiting.
+- `governance-release-smoke` now validates `Resource Policy` allow-list access control (`deny -> allow`) with audit/usage evidence.
 - Endpoint success usage recording now persists `tokens_total`, enabling real member quota enforcement on endpoint traffic.
 - Real-environment validation for the governance smoke bundle passed end-to-end.
 
@@ -21,7 +22,7 @@ Outcome:
 - App version baseline: `0.1.0` (`package.json`)
 - Branch: `main`
 - RC record date: `2026-02-24`
-- RC commit (current HEAD at validation record time): `4499bcb`
+- RC commit (current HEAD at validation record time): `c7afb99`
 
 ## Commit Range (This RC Increment)
 
@@ -42,9 +43,11 @@ Governance release hardening sequence captured in this RC:
 - `1f96992` `test(governance): add member permission effect smoke`
 - `bc8ba8b` `docs(release): add governance RC internal announcement draft`
 - `4499bcb` `test(governance): add policy quota effect smoke`
+- `c7afb99` `test(governance): add policy access effect smoke`
+  - includes `resource_policy.access_denied` usage evidence consistency fix (`end_user_id`)
 
 Suggested range notation for release notes / changelog references:
-- `fbef5f2..4499bcb`
+- `fbef5f2..c7afb99`
 
 ## What Changed
 
@@ -71,6 +74,10 @@ Impact:
 - Added `governance-policy-quota-effect-smoke`
   - verifies `RESOURCE_POLICY_QUOTA_EXCEEDED` on endpoint `daily_token_limit`
   - verifies `Audit` / `Usage` evidence and restores original endpoint policy
+- Added `governance-policy-access-effect-smoke`
+  - verifies `RESOURCE_POLICY_DENIED` on endpoint allow-list deny
+  - verifies `Audit` / `Usage` evidence for denied preflight
+  - verifies allow-list grant clears deny (allow path may time out under slow upstream and is tolerated after deny-path preflight evidence)
 
 - Added `governance-member-quota-effect-smoke`
   - verifies member endpoint quota enforcement returns `MEMBER_QUOTA_EXCEEDED`
@@ -82,7 +89,7 @@ Impact:
 - Bundled all governance effect smokes into `governance-release-smoke`
 
 Impact:
-- Governance release smoke now covers `Resource Policy` rate + quota and `Members` quota + permission runtime effects
+- Governance release smoke now covers `Resource Policy` access + rate + quota and `Members` quota + permission runtime effects
 - Real backend `Members` functionality has stronger regression protection
 - `Resource Policy` quota path has real-environment regression protection
 
@@ -94,6 +101,14 @@ Impact:
 Impact:
 - `endpoint.daily_token_limit` member quota enforcement now works in real backend runtime
 - `Usage` data better reflects actual endpoint token consumption
+
+### 5. Policy access-denied usage evidence consistency fix
+
+- `resource_policy.access_denied` endpoint preflight failures now record `end_user_id` in usage facts
+
+Impact:
+- `Usage` evidence for policy access denies can be queried consistently by user
+- Enables stable real-backend smoke assertions for policy allow-list deny paths
 
 ## Validation Record (Real Environment)
 
@@ -110,6 +125,8 @@ Result:
   - Includes verified expired-token scenario: auto refresh + one retry succeeds
   - Includes policy rate-limit effect / audit evidence / usage evidence checks
   - Includes policy restore path
+- `governance-policy-access-effect-smoke` ✅
+  - Includes policy allow-list deny (`RESOURCE_POLICY_DENIED`) + `Audit/Usage` evidence + allow-path verification + restore
 - `governance-policy-quota-effect-smoke` ✅
   - Includes policy quota deny (`RESOURCE_POLICY_QUOTA_EXCEEDED`) + `Audit/Usage` evidence + restore
 - `governance-member-quota-effect-smoke` ✅
@@ -151,4 +168,4 @@ Result:
 - Release owner: `TODO`
 - Validation operator: `TODO`
 - Validation environment: `TODO` (host / API base / web base)
-- Commit range finalized: `fbef5f2..4499bcb` (or replace with tagged range)
+- Commit range finalized: `fbef5f2..c7afb99` (or replace with tagged range)

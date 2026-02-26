@@ -9,6 +9,7 @@ TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 MEMBER_USER_ID="${MEMBER_USER_ID:-dev-admin}"
+MEMBER_USER_CANDIDATES="${MEMBER_USER_CANDIDATES:-dev-admin,integration-user}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-45}"
 
 info() { echo "[gov-member-quota-smoke] $*"; }
@@ -72,6 +73,25 @@ usage_tokens_for_user_endpoint() {
   rm -f "${out_file}"
 }
 
+pick_member_user_with_usage() {
+  local base="$1"
+  local token="$2"
+  local endpoint_id="$3"
+  local candidates_csv="$4"
+  local candidate tokens
+  IFS=',' read -r -a _candidates <<< "${candidates_csv}"
+  for candidate in "${_candidates[@]}"; do
+    candidate="$(echo "${candidate}" | xargs)"
+    [[ -n "${candidate}" ]] || continue
+    tokens="$(usage_tokens_for_user_endpoint "${base}" "${token}" "${endpoint_id}" "${candidate}" 2>/dev/null || echo 0)"
+    if [[ "${tokens}" =~ ^[0-9]+$ ]] && (( tokens > 0 )); then
+      printf '%s\n%s\n' "${candidate}" "${tokens}"
+      return 0
+    fi
+  done
+  return 1
+}
+
 main() {
   local token project_id endpoint_id
   require_file "${TOKEN_FILE}"
@@ -93,7 +113,6 @@ main() {
   local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"
   local endpoint_url="${base}/endpoints/${endpoint_id}"
   local proxy_url="${endpoint_url}/proxy/chat/completions"
-  local quota_url="${base}/members/${MEMBER_USER_ID}/quota-overrides"
 
   local endpoint_code
   endpoint_code="$(
@@ -115,7 +134,25 @@ main() {
   usage_file="$(mktemp)"
   trap 'rm -f "${original_quota_file}" "${quota_get_file}" "${quota_patch_file}" "${warmup_file}" "${block_file}" "${audit_file}" "${usage_file}"; if [[ -n "${token:-}" && -s "${original_quota_file}" ]]; then curl -sS -o /dev/null -w "%{http_code}" -X PATCH "${quota_url}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" --data-binary @"${original_quota_file}" >/dev/null || true; fi' EXIT
 
-  info "reading current member quota overrides for ${MEMBER_USER_ID}"
+  local selected_member_user current_tokens auto_pick
+  selected_member_user="${MEMBER_USER_ID}"
+  current_tokens=""
+  if [[ "${MEMBER_USER_ID}" == "auto" ]]; then
+    info "searching member user with existing endpoint token usage (${MEMBER_USER_CANDIDATES})"
+    auto_pick="$(pick_member_user_with_usage "${base}" "${token}" "${endpoint_id}" "${MEMBER_USER_CANDIDATES}" || true)"
+    if [[ -n "${auto_pick}" ]]; then
+      selected_member_user="$(printf '%s' "${auto_pick}" | sed -n '1p')"
+      current_tokens="$(printf '%s' "${auto_pick}" | sed -n '2p')"
+      info "selected member user ${selected_member_user} with existing tokens=${current_tokens}"
+    else
+      selected_member_user="dev-admin"
+      info "no candidate has existing token usage; falling back to warm-up with ${selected_member_user}"
+    fi
+  fi
+
+  local quota_url="${base}/members/${selected_member_user}/quota-overrides"
+
+  info "reading current member quota overrides for ${selected_member_user}"
   local quota_get_code
   quota_get_code="$(
     curl -sS -o "${quota_get_file}" -w '%{http_code}' \
@@ -129,11 +166,13 @@ main() {
   cp "${quota_get_file}" "${original_quota_file}"
 
   local current_tokens
-  current_tokens="$(usage_tokens_for_user_endpoint "${base}" "${token}" "${endpoint_id}" "${MEMBER_USER_ID}")"
-  info "current endpoint tokens for ${MEMBER_USER_ID} today: ${current_tokens}"
+  if [[ -z "${current_tokens}" ]]; then
+    current_tokens="$(usage_tokens_for_user_endpoint "${base}" "${token}" "${endpoint_id}" "${selected_member_user}")"
+  fi
+  info "current endpoint tokens for ${selected_member_user} today: ${current_tokens}"
 
   if [[ "${current_tokens}" == "0" ]]; then
-    info "no existing endpoint token usage for ${MEMBER_USER_ID}; sending one warm-up request"
+    info "no existing endpoint token usage for ${selected_member_user}; sending one warm-up request"
     local warmup_code
     warmup_code="$(
       curl -sS -o "${warmup_file}" -w '%{http_code}' \
@@ -155,12 +194,12 @@ main() {
     fi
     info "warm-up request HTTP ${warmup_code}"
     sleep 2
-    current_tokens="$(usage_tokens_for_user_endpoint "${base}" "${token}" "${endpoint_id}" "${MEMBER_USER_ID}")"
+    current_tokens="$(usage_tokens_for_user_endpoint "${base}" "${token}" "${endpoint_id}" "${selected_member_user}")"
     info "endpoint tokens after warm-up: ${current_tokens}"
   fi
 
   if [[ "${current_tokens}" == "0" ]]; then
-    err "unable to observe endpoint token usage for ${MEMBER_USER_ID}; cannot deterministically trigger member quota"
+    err "unable to observe endpoint token usage for ${selected_member_user}; cannot deterministically trigger member quota"
     exit 1
   fi
 
@@ -223,7 +262,7 @@ main() {
   enc_end="$(urlencode "${end_time}")"
   audit_code="$(
     curl -sS -o "${audit_file}" -w '%{http_code}' \
-      "${base}/audit?start_time=${enc_start}&end_time=${enc_end}&action=member_quota.quota_exceeded&actor_id=$(urlencode "${MEMBER_USER_ID}")&resource_type=endpoint&resource_id=${endpoint_id}&page=1&page_size=50" \
+      "${base}/audit?start_time=${enc_start}&end_time=${enc_end}&action=member_quota.quota_exceeded&actor_id=$(urlencode "${selected_member_user}")&resource_type=endpoint&resource_id=${endpoint_id}&page=1&page_size=50" \
       -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${audit_code}" != "200" ]]; then
@@ -232,9 +271,9 @@ main() {
     exit 1
   fi
   local audit_has
-  audit_has="$(cat "${audit_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>i.action==='member_quota.quota_exceeded'&&i.resource_type==='endpoint'&&String(i.resource_id||'')==='${endpoint_id}'&&String(i.actor_id||'')==='${MEMBER_USER_ID}'); process.stdout.write(ok?'1':'0');")"
+  audit_has="$(cat "${audit_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>i.action==='member_quota.quota_exceeded'&&i.resource_type==='endpoint'&&String(i.resource_id||'')==='${endpoint_id}'&&String(i.actor_id||'')==='${selected_member_user}'); process.stdout.write(ok?'1':'0');")"
   if [[ "${audit_has}" != "1" ]]; then
-    err "audit does not contain member_quota.quota_exceeded for endpoint ${endpoint_id} user ${MEMBER_USER_ID}"
+    err "audit does not contain member_quota.quota_exceeded for endpoint ${endpoint_id} user ${selected_member_user}"
     cat "${audit_file}" >&2 || true
     exit 1
   fi
@@ -242,7 +281,7 @@ main() {
   info "checking usage evidence"
   usage_code="$(
     curl -sS -o "${usage_file}" -w '%{http_code}' \
-      "${base}/usage?start_time=${enc_start}&end_time=${enc_end}&resource_type=endpoint&resource_id=${endpoint_id}&end_user_id=$(urlencode "${MEMBER_USER_ID}")&group_by=hour&page=1&page_size=50" \
+      "${base}/usage?start_time=${enc_start}&end_time=${enc_end}&resource_type=endpoint&resource_id=${endpoint_id}&end_user_id=$(urlencode "${selected_member_user}")&group_by=hour&page=1&page_size=50" \
       -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${usage_code}" != "200" ]]; then
@@ -251,9 +290,9 @@ main() {
     exit 1
   fi
   local usage_has
-  usage_has="$(cat "${usage_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>String(i.resource_type||'')==='endpoint'&&String(i.resource_id||'')==='${endpoint_id}'&&String(i.end_user_id||'')==='${MEMBER_USER_ID}'&&Number(i.requests||0)>=1); process.stdout.write(ok?'1':'0');")"
+  usage_has="$(cat "${usage_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>String(i.resource_type||'')==='endpoint'&&String(i.resource_id||'')==='${endpoint_id}'&&String(i.end_user_id||'')==='${selected_member_user}'&&Number(i.requests||0)>=1); process.stdout.write(ok?'1':'0');")"
   if [[ "${usage_has}" != "1" ]]; then
-    err "usage does not contain endpoint row for ${endpoint_id} user ${MEMBER_USER_ID}"
+    err "usage does not contain endpoint row for ${endpoint_id} user ${selected_member_user}"
     cat "${usage_file}" >&2 || true
     exit 1
   fi

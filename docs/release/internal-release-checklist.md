@@ -97,6 +97,7 @@ make governance-release-smoke
 Bundle includes:
 - `governance-pages-real-backend-smoke` (open routes)
 - `governance-pages-real-backend-interaction-smoke` (basic interactions)
+- `governance-policy-access-effect-smoke` (endpoint policy allow-list access deny -> allow + audit/usage evidence)
 - `governance-policy-effect-smoke` (endpoint policy rate-limit effect + audit/usage evidence)
 - `governance-policy-quota-effect-smoke` (endpoint policy quota effect + audit/usage evidence)
 - `governance-member-quota-effect-smoke` (member endpoint quota effect + audit/usage evidence)

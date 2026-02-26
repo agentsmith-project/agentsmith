@@ -225,6 +225,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         projectId: route.projectId,
         endpointId: endpoint.id,
         requestId,
+        endUserId: user.id,
         ...failure,
       });
       return true;

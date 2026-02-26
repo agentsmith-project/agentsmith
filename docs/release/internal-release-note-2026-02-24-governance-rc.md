@@ -12,6 +12,7 @@ Outcome:
 - `governance-release-smoke` now validates `Members` real-backend effect paths:
   - member endpoint quota enforcement (`deny + audit/usage evidence`)
   - member route authorization enforcement (`deny -> grant -> allow`)
+- `governance-release-smoke` now validates `Resource Policy` quota enforcement (`endpoint.daily_token_limit`) in addition to rate limiting.
 - Endpoint success usage recording now persists `tokens_total`, enabling real member quota enforcement on endpoint traffic.
 - Real-environment validation for the governance smoke bundle passed end-to-end.
 
@@ -20,7 +21,7 @@ Outcome:
 - App version baseline: `0.1.0` (`package.json`)
 - Branch: `main`
 - RC record date: `2026-02-24`
-- RC commit (current HEAD at validation record time): `1f96992`
+- RC commit (current HEAD at validation record time): `4499bcb`
 
 ## Commit Range (This RC Increment)
 
@@ -39,9 +40,11 @@ Governance release hardening sequence captured in this RC:
 - `53aa0ae` `test(governance): auto-detect member quota smoke user`
 - `da59eec` `fix(governance): record endpoint tokens for member quota enforcement`
 - `1f96992` `test(governance): add member permission effect smoke`
+- `bc8ba8b` `docs(release): add governance RC internal announcement draft`
+- `4499bcb` `test(governance): add policy quota effect smoke`
 
 Suggested range notation for release notes / changelog references:
-- `fbef5f2..1f96992`
+- `fbef5f2..4499bcb`
 
 ## What Changed
 
@@ -63,7 +66,11 @@ Impact:
 - Improves release smoke reliability in long-running local/demo sessions
 - Reduces false negatives during RC verification and internal release checks
 
-### 3. Members governance real-backend effect smoke coverage
+### 3. Governance real-backend effect smoke coverage expansion
+
+- Added `governance-policy-quota-effect-smoke`
+  - verifies `RESOURCE_POLICY_QUOTA_EXCEEDED` on endpoint `daily_token_limit`
+  - verifies `Audit` / `Usage` evidence and restores original endpoint policy
 
 - Added `governance-member-quota-effect-smoke`
   - verifies member endpoint quota enforcement returns `MEMBER_QUOTA_EXCEEDED`
@@ -72,11 +79,12 @@ Impact:
   - verifies member route authorization deny (`403`) before grant
   - grants `project:member:manage` and verifies allow (`200`)
   - restores original member permissions
-- Bundled both into `governance-release-smoke`
+- Bundled all governance effect smokes into `governance-release-smoke`
 
 Impact:
-- Governance release smoke now covers both `Resource Policy` and `Members` runtime effects
+- Governance release smoke now covers `Resource Policy` rate + quota and `Members` quota + permission runtime effects
 - Real backend `Members` functionality has stronger regression protection
+- `Resource Policy` quota path has real-environment regression protection
 
 ### 4. Endpoint token usage recording fix (enables member quota enforcement)
 
@@ -102,6 +110,8 @@ Result:
   - Includes verified expired-token scenario: auto refresh + one retry succeeds
   - Includes policy rate-limit effect / audit evidence / usage evidence checks
   - Includes policy restore path
+- `governance-policy-quota-effect-smoke` ✅
+  - Includes policy quota deny (`RESOURCE_POLICY_QUOTA_EXCEEDED`) + `Audit/Usage` evidence + restore
 - `governance-member-quota-effect-smoke` ✅
   - Includes member quota deny (`MEMBER_QUOTA_EXCEEDED`) + `Audit/Usage` evidence + restore
 - `governance-member-permission-effect-smoke` ✅
@@ -141,4 +151,4 @@ Result:
 - Release owner: `TODO`
 - Validation operator: `TODO`
 - Validation environment: `TODO` (host / API base / web base)
-- Commit range finalized: `fbef5f2..1f96992` (or replace with tagged range)
+- Commit range finalized: `fbef5f2..4499bcb` (or replace with tagged range)

@@ -33,6 +33,7 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 ## Release / Validation
 
 - [测试与发布验证指南-v1](./release/测试与发布验证指南-v1.md) — 面向开发/测试/实施的通俗指南（术语解释、推荐命令、发布前后流程、排障顺序）
+- [新手FAQ-v1](./release/新手FAQ-v1.md) — 面向资浅同学的常见问题速查（命令选择、报错处理、发布最小标准）
 - [internal-release-checklist](./release/internal-release-checklist.md) — 内部发布检查清单
 - [internal-release-note-2026-02-24-governance-rc](./release/internal-release-note-2026-02-24-governance-rc.md) — 治理 RC 发布记录
 

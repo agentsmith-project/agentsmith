@@ -14,6 +14,7 @@ Outcome:
   - member route authorization enforcement (`deny -> grant -> allow`)
 - `governance-release-smoke` now validates `Resource Policy` quota enforcement (`endpoint.daily_token_limit`) in addition to rate limiting.
 - `governance-release-smoke` now validates `Resource Policy` allow-list access control (`deny -> allow`) with audit/usage evidence.
+- `governance-release-smoke` now validates `Resource Policy` group-subject allow-list matching effect (`deny -> group-allow`).
 - Endpoint success usage recording now persists `tokens_total`, enabling real member quota enforcement on endpoint traffic.
 - Real-environment validation for the governance smoke bundle passed end-to-end.
 
@@ -78,6 +79,9 @@ Impact:
   - verifies `RESOURCE_POLICY_DENIED` on endpoint allow-list deny
   - verifies `Audit` / `Usage` evidence for denied preflight
   - verifies allow-list grant clears deny (allow path may time out under slow upstream and is tolerated after deny-path preflight evidence)
+- Added `governance-policy-group-access-effect-smoke`
+  - verifies group-subject allow-list matching can clear deny for current user via group membership
+  - verifies deny-path `Audit` / `Usage` evidence and restores policy/group state
 
 - Added `governance-member-quota-effect-smoke`
   - verifies member endpoint quota enforcement returns `MEMBER_QUOTA_EXCEEDED`
@@ -89,7 +93,7 @@ Impact:
 - Bundled all governance effect smokes into `governance-release-smoke`
 
 Impact:
-- Governance release smoke now covers `Resource Policy` access + rate + quota and `Members` quota + permission runtime effects
+- Governance release smoke now covers `Resource Policy` user-access + group-access + rate + quota and `Members` quota + permission runtime effects
 - Real backend `Members` functionality has stronger regression protection
 - `Resource Policy` quota path has real-environment regression protection
 
@@ -127,6 +131,8 @@ Result:
   - Includes policy restore path
 - `governance-policy-access-effect-smoke` ✅
   - Includes policy allow-list deny (`RESOURCE_POLICY_DENIED`) + `Audit/Usage` evidence + allow-path verification + restore
+- `governance-policy-group-access-effect-smoke` ✅
+  - Includes policy group-subject allow-list effect verification + deny-path `Audit/Usage` evidence + restore
 - `governance-policy-quota-effect-smoke` ✅
   - Includes policy quota deny (`RESOURCE_POLICY_QUOTA_EXCEEDED`) + `Audit/Usage` evidence + restore
 - `governance-member-quota-effect-smoke` ✅

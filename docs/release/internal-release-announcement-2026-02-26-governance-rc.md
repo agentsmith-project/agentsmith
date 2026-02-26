@@ -11,6 +11,7 @@ Current status:
 - Governance release smoke is token-expiry tolerant
 - Governance release smoke now covers real effect paths for:
   - `Resource Policy` allow-list access control (deny -> allow)
+  - `Resource Policy` group-subject allow-list effect
   - `Resource Policy` rate limit
   - `Resource Policy` endpoint quota (`daily_token_limit`)
   - `Members` endpoint quota
@@ -31,6 +32,7 @@ Included checks:
 - `governance-pages-real-backend-interaction-smoke`
 - `governance-policy-effect-smoke`
 - `governance-policy-access-effect-smoke`
+- `governance-policy-group-access-effect-smoke`
 - `governance-policy-quota-effect-smoke`
 - `governance-member-quota-effect-smoke`
 - `governance-member-permission-effect-smoke`

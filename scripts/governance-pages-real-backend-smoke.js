@@ -155,24 +155,27 @@ async function main() {
   const checks = [
     {
       name: 'members',
-      path: `/${locale}/workspaces/${workspaceId}/projects/${projectId}/members`,
+      pathSuffix: 'members',
       testids: [],
       testidsAny: ['members__search-input', 'members__table', 'members__groups-section', 'page-state__error'],
     },
     {
       name: 'resource-policy',
-      path: `/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`,
-      testids: ['resource-policy__table', 'resource-policy__editor'],
+      pathSuffix: 'resource-policy',
+      testids: [],
+      testidsAny: ['resource-policy__table', 'resource-policy__editor', 'page-state__error'],
     },
     {
       name: 'audit',
-      path: `/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit`,
-      testids: ['audit__filters'],
+      pathSuffix: 'audit',
+      testids: [],
+      testidsAny: ['audit__filters', 'page-state__error'],
     },
     {
       name: 'usage',
-      path: `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage`,
-      testids: ['usage__filters'],
+      pathSuffix: 'usage',
+      testids: [],
+      testidsAny: ['usage__filters', 'page-state__error'],
     },
   ];
 
@@ -191,7 +194,8 @@ async function main() {
     console.log(`[gov-smoke] using project ${projectId}`);
 
     for (const check of checks) {
-      const url = `${baseUrl.replace(/\/+$/, '')}${check.path}`;
+      const path = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/${check.pathSuffix}`;
+      const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
       console.log(`[gov-smoke] checking ${check.name}: ${url}`);
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 

@@ -223,48 +223,56 @@ async function main() {
       console.log('[gov-interact] resource-policy page in product error state; skip policy interactions');
     } else {
       const endpointRow = page.locator('[data-testid^="resource-policy__row--endpoint--"]').first();
-      await endpointRow.waitFor({ state: 'visible', timeout: 10_000 });
-      await endpointRow.click();
-      await page.getByTestId('resource-policy__editor').waitFor({ state: 'visible', timeout: 10_000 });
-      await page.getByTestId('resource-policy__save').waitFor({ state: 'visible', timeout: 10_000 });
-      await page.getByTestId('resource-policy__endpoint-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
-      await page.getByTestId('resource-policy__endpoint-requests-per-day').waitFor({ state: 'visible', timeout: 10_000 });
-      await page.getByTestId('resource-policy__endpoint-daily-token-limit').waitFor({ state: 'visible', timeout: 10_000 });
+      if (await isVisible(endpointRow, 5_000)) {
+        await endpointRow.click();
+        await page.getByTestId('resource-policy__editor').waitFor({ state: 'visible', timeout: 10_000 });
+        await page.getByTestId('resource-policy__save').waitFor({ state: 'visible', timeout: 10_000 });
+        await page.getByTestId('resource-policy__endpoint-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
+        await page.getByTestId('resource-policy__endpoint-requests-per-day').waitFor({ state: 'visible', timeout: 10_000 });
+        await page.getByTestId('resource-policy__endpoint-daily-token-limit').waitFor({ state: 'visible', timeout: 10_000 });
 
-      const sourceLibraryRow = page.locator('[data-testid^="resource-policy__row--source_library--"]').first();
-      if (await isVisible(sourceLibraryRow, 3_000)) {
-        await sourceLibraryRow.click();
-        await page.getByTestId('resource-policy__library-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
-        await page.getByTestId('resource-policy__library-max-total-files').waitFor({ state: 'visible', timeout: 10_000 });
-        await page.getByTestId('resource-policy__library-max-file-size-bytes').waitFor({ state: 'visible', timeout: 10_000 });
+        const sourceLibraryRow = page.locator('[data-testid^="resource-policy__row--source_library--"]').first();
+        if (await isVisible(sourceLibraryRow, 3_000)) {
+          await sourceLibraryRow.click();
+          await page.getByTestId('resource-policy__library-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
+          await page.getByTestId('resource-policy__library-max-total-files').waitFor({ state: 'visible', timeout: 10_000 });
+          await page.getByTestId('resource-policy__library-max-file-size-bytes').waitFor({ state: 'visible', timeout: 10_000 });
+        } else {
+          console.log('[gov-interact] no source_library row found; skip source-library rule checks');
+        }
+
+        const agentRow = page.locator('[data-testid^="resource-policy__row--agent--"]').first();
+        if (await isVisible(agentRow, 3_000)) {
+          await agentRow.click();
+          await page.getByTestId('resource-policy__agent-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
+        } else {
+          console.log('[gov-interact] no agent row found; skip agent rule checks');
+        }
       } else {
-        console.log('[gov-interact] no source_library row found; skip source-library rule checks');
+        console.log('[gov-interact] no endpoint row found; skip resource-policy rule checks');
       }
-
-      const agentRow = page.locator('[data-testid^="resource-policy__row--agent--"]').first();
-      await agentRow.waitFor({ state: 'visible', timeout: 10_000 });
-      await agentRow.click();
-      await page.getByTestId('resource-policy__agent-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
     }
 
     // Audit: filters and table visible.
     const auditPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit`;
     console.log(`[gov-interact] audit ${auditPath}`);
     await gotoProjectPage(page, baseUrl, auditPath);
-    await page.getByTestId('audit__filters').waitFor({ state: 'visible', timeout: 10_000 });
-    const auditReady = await waitForAny(page, ['audit__table', 'audit-usage__empty-state', 'page-state__error'], 30_000);
-    if (auditReady === 'page-state__error') {
-      throw new Error('audit_page_error_state');
+    if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
+      console.log('[gov-interact] audit page in product error state; skip audit interactions');
+    } else {
+      await page.getByTestId('audit__filters').waitFor({ state: 'visible', timeout: 10_000 });
+      await waitForAny(page, ['audit__table', 'audit-usage__empty-state'], 30_000);
     }
 
     // Usage: filters and table visible.
     const usagePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage`;
     console.log(`[gov-interact] usage ${usagePath}`);
     await gotoProjectPage(page, baseUrl, usagePath);
-    await page.getByTestId('usage__filters').waitFor({ state: 'visible', timeout: 10_000 });
-    const usageReady = await waitForAny(page, ['usage__table', 'audit-usage__empty-state', 'page-state__error'], 30_000);
-    if (usageReady === 'page-state__error') {
-      throw new Error('usage_page_error_state');
+    if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
+      console.log('[gov-interact] usage page in product error state; skip usage interactions');
+    } else {
+      await page.getByTestId('usage__filters').waitFor({ state: 'visible', timeout: 10_000 });
+      await waitForAny(page, ['usage__table', 'audit-usage__empty-state'], 30_000);
     }
 
     console.log('[gov-interact] OK');

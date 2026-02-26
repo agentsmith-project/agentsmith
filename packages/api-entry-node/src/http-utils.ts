@@ -82,7 +82,7 @@ export async function proxyJsonRequest(
     timeoutSeconds?: number;
     responsesFallbackToChat?: boolean;
   },
-): Promise<void> {
+): Promise<{ upstream_status: number; tokens_total?: number }> {
   const method = req.method ?? 'POST';
   const isBodyAllowed = method !== 'GET' && method !== 'HEAD';
   const rawBody = isBodyAllowed ? await readBody(req) : {};
@@ -146,11 +146,21 @@ export async function proxyJsonRequest(
         fallbackMode: useResponsesFallback,
         debug: debugEndpointProxy,
       });
-      return;
+      return { upstream_status: upstreamRes.status };
     }
 
     let payload = Buffer.from(await upstreamRes.arrayBuffer());
     let contentType = upstreamRes.headers.get('content-type') ?? 'application/json';
+    let tokensTotal: number | undefined;
+    try {
+      const parsed = JSON.parse(payload.toString('utf-8')) as { usage?: { total_tokens?: unknown } };
+      const maybeTotal = parsed?.usage?.total_tokens;
+      if (typeof maybeTotal === 'number' && Number.isFinite(maybeTotal) && maybeTotal >= 0) {
+        tokensTotal = Math.floor(maybeTotal);
+      }
+    } catch {
+      // Non-JSON or partial payloads are still proxied; usage extraction is best-effort.
+    }
     if (useResponsesFallback && upstreamRes.ok) {
       const translatedResponse = translateChatCompletionResponseToResponses(payload.toString('utf-8'), upstreamBody);
       if (requestedResponsesStream) {
@@ -168,7 +178,9 @@ export async function proxyJsonRequest(
       content_type: contentType,
       translated_non_stream_response: useResponsesFallback && upstreamRes.ok,
       payload_bytes: payload.byteLength,
+      tokens_total: tokensTotal ?? null,
     });
+    return { upstream_status: upstreamRes.status, tokens_total: tokensTotal };
   } finally {
     clearTimeout(timeout);
   }

@@ -17,7 +17,7 @@ describe('http-utils', () => {
 
   it('proxyJsonRequest overrides request model when model option is provided', async () => {
     const upstream = vi.fn(async (_url: string, _init?: RequestInit) => {
-      return new Response(JSON.stringify({ ok: true }), {
+      return new Response(JSON.stringify({ ok: true, usage: { total_tokens: 123 } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -41,7 +41,7 @@ describe('http-utils', () => {
     };
     const res = resLike as unknown as import('node:http').ServerResponse;
 
-    await proxyJsonRequest(req, res, {
+    const result = await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/chat/completions',
       apiKey: 'test-key',
       model: 'forced-model',
@@ -54,6 +54,7 @@ describe('http-utils', () => {
     const init = firstCall?.[1] as RequestInit | undefined;
     const body = JSON.parse(String(init?.body ?? '{}')) as { model?: string };
     expect(body.model).toBe('forced-model');
+    expect(result.tokens_total).toBe(123);
 
     vi.unstubAllGlobals();
   });

@@ -8,7 +8,7 @@ WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-MEMBER_USER_ID="${MEMBER_USER_ID:-dev-admin}"
+MEMBER_USER_ID="${MEMBER_USER_ID:-auto}"
 MEMBER_USER_CANDIDATES="${MEMBER_USER_CANDIDATES:-dev-admin,integration-user}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-45}"
 
@@ -35,6 +35,13 @@ token_is_valid() {
 json_get() {
   local script="$1"
   node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync(0,'utf8')); ${script}"
+}
+
+jwt_claim() {
+  local token="$1"
+  local claim="$2"
+  node -e 'const t=process.argv[1]||""; const k=process.argv[2]||""; try { const p=JSON.parse(Buffer.from(String(t).split(".")[1]||"", "base64url").toString("utf8")); const v=p?.[k]; process.stdout.write(v == null ? "" : String(v)); } catch { process.stdout.write(""); }' \
+    "${token}" "${claim}"
 }
 
 urlencode() {
@@ -134,18 +141,23 @@ main() {
   usage_file="$(mktemp)"
   trap 'rm -f "${original_quota_file}" "${quota_get_file}" "${quota_patch_file}" "${warmup_file}" "${block_file}" "${audit_file}" "${usage_file}"; if [[ -n "${token:-}" && -s "${original_quota_file}" ]]; then curl -sS -o /dev/null -w "%{http_code}" -X PATCH "${quota_url}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" --data-binary @"${original_quota_file}" >/dev/null || true; fi' EXIT
 
-  local selected_member_user current_tokens auto_pick
+  local selected_member_user current_tokens auto_pick token_user_id token_username candidate_list
   selected_member_user="${MEMBER_USER_ID}"
   current_tokens=""
   if [[ "${MEMBER_USER_ID}" == "auto" ]]; then
-    info "searching member user with existing endpoint token usage (${MEMBER_USER_CANDIDATES})"
-    auto_pick="$(pick_member_user_with_usage "${base}" "${token}" "${endpoint_id}" "${MEMBER_USER_CANDIDATES}" || true)"
+    token_user_id="$(jwt_claim "${token}" "sub")"
+    token_username="$(jwt_claim "${token}" "preferred_username")"
+    candidate_list="${MEMBER_USER_CANDIDATES}"
+    if [[ -n "${token_user_id}" ]]; then candidate_list="${token_user_id},${candidate_list}"; fi
+    if [[ -n "${token_username}" ]]; then candidate_list="${token_username},${candidate_list}"; fi
+    info "searching member user with existing endpoint token usage (${candidate_list})"
+    auto_pick="$(pick_member_user_with_usage "${base}" "${token}" "${endpoint_id}" "${candidate_list}" || true)"
     if [[ -n "${auto_pick}" ]]; then
       selected_member_user="$(printf '%s' "${auto_pick}" | sed -n '1p')"
       current_tokens="$(printf '%s' "${auto_pick}" | sed -n '2p')"
       info "selected member user ${selected_member_user} with existing tokens=${current_tokens}"
     else
-      selected_member_user="dev-admin"
+      selected_member_user="${token_user_id:-dev-admin}"
       info "no candidate has existing token usage; falling back to warm-up with ${selected_member_user}"
     fi
   fi

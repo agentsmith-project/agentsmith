@@ -364,7 +364,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
     const startedAtMs = Date.now();
     try {
-      await proxyJsonRequest(req, res, {
+      const proxyResult = await proxyJsonRequest(req, res, {
         upstreamUrl: buildUpstreamUrl(endpoint.base_url, resolved.proxyPath || proxyPath),
         apiKey,
         model: resolvedModel,
@@ -381,6 +381,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         endUserId: user.id,
         requestId,
         requests: 1,
+        tokensTotal: proxyResult.tokens_total,
         durationMs: Date.now() - startedAtMs,
         result: 'ok',
         metadata: {

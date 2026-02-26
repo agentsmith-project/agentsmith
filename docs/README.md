@@ -37,6 +37,10 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 - [internal-release-note-2026-02-24-governance-rc](./release/internal-release-note-2026-02-24-governance-rc.md) — 治理发布记录（历史留档）
 - [internal-release-capability-matrix](./release/internal-release-capability-matrix.md) — 当前内部发布能力边界（主线 + 治理）
 
+## Product Plans
+
+- [next-release-product-roadmap-prd-v1](./plans/next-release-product-roadmap-prd-v1.md) — 下一期产品路线图 PRD（目标、里程碑、验收指标、风险与依赖）
+
 ## Other
 
 - [Agent Collaboration Playbook](./agent-collaboration-playbook.md) — contract-first workflow for human/agent collaboration

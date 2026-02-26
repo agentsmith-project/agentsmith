@@ -2980,7 +2980,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(agentUsage?.requests).toBeGreaterThanOrEqual(1);
     expect(agentUsage?.tokens).toBeUndefined();
-    wsClient?.close();
+    (wsClient as WebSocket | null)?.close();
   });
 
   it('deduplicates notebook task artifacts by task_relative_path across repeated runtime artifact frames', async () => {

@@ -47,7 +47,7 @@ interface EndpointHandlerArgs {
       timeoutSeconds?: number;
       responsesFallbackToChat?: boolean;
     },
-  ) => Promise<void>;
+  ) => Promise<{ upstream_status: number; tokens_total?: number }>;
 }
 
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {

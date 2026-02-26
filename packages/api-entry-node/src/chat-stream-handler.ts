@@ -83,6 +83,20 @@ function toDataUrl(attachment: ChatAttachmentRecord, mimeType: string | null): s
   return toImageDataUrl(attachment.content_base64, mimeType);
 }
 
+function readLegacyAttachmentIds(rawAttachments: unknown): string[] | null {
+  if (rawAttachments == null) return [];
+  if (!Array.isArray(rawAttachments)) return null;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of rawAttachments) {
+    if (typeof item !== 'string' || item.length === 0) return null;
+    if (seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
+  }
+  return out;
+}
+
 async function toDataUrlFromAttachmentOrSourceObject(
   deps: ChatStreamHandlerArgs['deps'],
   route: { workspaceId: string; projectId: string },
@@ -215,7 +229,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     endpoint_id?: string;
     from_message_id?: string;
     branch_leaf_message_id?: string;
-    input?: { role?: 'user'; content?: string; inputs?: unknown };
+    input?: { role?: 'user'; content?: string; inputs?: unknown; attachments?: unknown };
   };
   const useExternalAgent = typeof session.external_agent_id === 'string' && session.external_agent_id.length > 0;
   if (useExternalAgent && session.external_agent_id) {
@@ -359,11 +373,16 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
 
   if (raw.input?.content?.trim()) {
     const inputRefs = readChatMessageInputs(raw.input.inputs);
+    const legacyAttachmentIds = readLegacyAttachmentIds(raw.input.attachments);
     if (inputRefs === null) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_input_refs_invalid' });
       return true;
     }
-    if (inputRefs.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+    if (legacyAttachmentIds === null) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_input_refs_invalid' });
+      return true;
+    }
+    if (inputRefs.length + legacyAttachmentIds.length > MAX_ATTACHMENTS_PER_MESSAGE) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_limit_exceeded' });
       return true;
     }
@@ -377,7 +396,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       source_library_id?: string;
       source_object_key?: string;
     }> = [];
-    if (inputRefs.length > 0) {
+    if (inputRefs.length > 0 || legacyAttachmentIds.length > 0) {
       if (useExternalAgent) {
         const agent = await deps.agentResourceService.getAgent(
           route.workspaceId,
@@ -398,12 +417,21 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         route.sessionId,
       );
       const byRef = indexChatAttachmentsByLibraryObjectRef(allSessionAttachments);
-      const resolvedAttachments = resolveChatInputsFromAttachmentIndex(inputRefs, byRef);
-      if (resolvedAttachments.some((item) => !item)) {
+      const byId = new Map(allSessionAttachments.map((attachment) => [attachment.id, attachment] as const));
+      const resolvedFromInputRefs = resolveChatInputsFromAttachmentIndex(inputRefs, byRef);
+      const resolvedFromLegacyIds = legacyAttachmentIds.map((id) => byId.get(id) ?? null);
+      const resolvedAttachments = [...resolvedFromInputRefs, ...resolvedFromLegacyIds];
+      if (resolvedAttachments.some((item) => item === null)) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_not_found' });
         return true;
       }
-      const attachments = resolvedAttachments as ChatAttachmentRecord[];
+      const attachments: ChatAttachmentRecord[] = [];
+      const seenAttachmentIds = new Set<string>();
+      for (const attachment of resolvedAttachments as ChatAttachmentRecord[]) {
+        if (seenAttachmentIds.has(attachment.id)) continue;
+        seenAttachmentIds.add(attachment.id);
+        attachments.push(attachment);
+      }
       const notReady = attachments.find((item) => item.upload_status !== 'ready');
       if (notReady) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_not_ready' });

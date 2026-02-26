@@ -19,9 +19,10 @@ import {
 import { drainJobQueue } from '@mbos/application';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
-import { writeProjectAuditEvent } from './audit-usage-recorders.js';
+import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import {
   getProjectResourcePolicyOrDefault,
+  isProjectResourceAccessAllowedForUser,
   upsertProjectResourcePolicy,
 } from './project-resource-policy-store.js';
 import {
@@ -231,6 +232,64 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     ownerWorkspacePermissions,
     resolveProjectPermissions,
   } = args;
+  const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+
+  const enforceSourceLibraryAccess = async (params: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    routeKind: string;
+  }): Promise<boolean> => {
+    const check = isProjectResourceAccessAllowedForUser({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      resourceType: 'source_library',
+      resourceId: params.libraryId,
+      userId: user.id,
+    });
+    if (check.allowed) return true;
+    await writeProjectAuditEvent(deps, {
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'resource_policy.access_denied',
+      result: 'error',
+      requestId,
+      resourceType: 'source_library',
+      resourceId: params.libraryId,
+      errorCode: 'RESOURCE_POLICY_DENIED',
+      errorMessage: 'resource_policy_denied',
+      metadata: {
+        governance_kind: 'resource_policy',
+        enforcement_kind: 'allow_list',
+        route_kind: params.routeKind,
+      },
+    });
+    await writeProjectUsageFact(deps, {
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      resourceType: 'source_library',
+      resourceId: params.libraryId,
+      endUserId: user.id,
+      requestId,
+      requests: 1,
+      result: 'error',
+      errorCode: 'RESOURCE_POLICY_DENIED',
+      metadata: {
+        stage: 'preflight',
+        governance_kind: 'resource_policy',
+        enforcement_kind: 'allow_list',
+        route_kind: params.routeKind,
+      },
+    });
+    json(res, 403, {
+      error_code: 'RESOURCE_POLICY_DENIED',
+      message: 'resource_policy_denied',
+      resource_type: 'source_library',
+      resource_id: params.libraryId,
+    });
+    return false;
+  };
 
   if (route.kind === 'workspacesCollection' && method === 'GET') {
     json(res, 200, { items: workspaces, total: workspaces.length });
@@ -1314,6 +1373,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjects' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const query = ListSourceObjectsQuerySchema.parse({
       prefix: requestUrl.searchParams.get('prefix') ?? undefined,
       delimiter: requestUrl.searchParams.get('delimiter') ?? '/',
@@ -1340,6 +1407,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryFolders' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const raw = await readBody(req);
     const input = CreateSourceFolderRequestSchema.parse(raw);
     await deps.createSourceFolderUseCase.execute({
@@ -1354,6 +1429,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsUpload' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const workspaceId = route.workspaceId;
     const projectId = route.projectId;
     const libraryId = route.libraryId;
@@ -1382,6 +1465,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsDownload' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const rawKey = requestUrl.searchParams.get('key') ?? '';
     if (!rawKey.trim()) {
       throw new Error('invalid_key');
@@ -1412,6 +1503,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsDelete' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const raw = await readBody(req);
     const input = DeleteSourceObjectsRequestSchema.parse(raw);
     const result = await deps.deleteSourceObjectsUseCase.execute({
@@ -1425,6 +1524,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsMove' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const raw = await readBody(req);
     const input = MoveSourceObjectRequestSchema.parse(raw);
     await deps.moveSourceObjectUseCase.execute({
@@ -1439,6 +1546,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsMeta' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const key = requestUrl.searchParams.get('key') ?? '';
     const meta = await deps.getSourceObjectMetaUseCase.execute({
       workspaceId: route.workspaceId,
@@ -1451,6 +1566,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryObjectsShareLink' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const raw = await readBody(req);
     const input = SourceObjectShareLinkCreateRequestSchema.parse(raw);
     const shareLink = await deps.createSourceObjectShareLinkUseCase.execute({
@@ -1512,6 +1635,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryAIReadyJobs' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const raw = await readBody(req);
     const input = CreateAIReadyJobRequestSchema.parse(raw);
     const created = await deps.createAIReadyJobUseCase.execute({
@@ -1527,6 +1658,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryAIReadyJobItem' && method === 'GET' && route.workspaceId && route.projectId && route.libraryId && route.jobId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     await drainJobQueue(deps.aiReadyJobQueue, async (item) => {
       await deps.runQueuedAIReadyJobUseCase.execute({
         workspaceId: item.workspaceId,
@@ -1546,6 +1685,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'sourceLibraryAIReadyJobCancel' && method === 'POST' && route.workspaceId && route.projectId && route.libraryId && route.jobId) {
+    if (!(await enforceSourceLibraryAccess({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: route.libraryId,
+      routeKind: route.kind,
+    }))) {
+      return true;
+    }
     const updated = await deps.cancelAIReadyJobUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,

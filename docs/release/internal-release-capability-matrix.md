@@ -32,7 +32,7 @@ This matrix is for internal/controlled releases where the primary supported flow
   - member quota overrides/templates can enforce endpoint `daily_token_limit` (baseline)
 - Resource Policy governance
   - read/write configuration API baseline
-  - minimal runtime enforcement for `endpoint` and notebook/chat `agent` paths via allow-all / allow-list rules
+  - minimal runtime enforcement for `endpoint`, `source_library`, and notebook/chat `agent` paths via allow-all / allow-list rules
   - user-subject and group-subject allow-list matching are supported (baseline)
   - endpoint `requests_per_minute` rate limiting is enforced
   - endpoint policy quota enforcement baseline supports `endpoint.daily_token_limit` and `endpoint.requests_per_day`
@@ -49,4 +49,4 @@ It does **not** yet apply member templates/custom permissions/resource policy co
 - In real backend mode:
   - Audit/Usage are available for internal governance workflows (first-stage coverage)
 - Members is now partial in real backend mode (read baseline + join request create/approve/reject actions with minimal membership activation on approve + groups CRUD + permission/quota templates CRUD + member permissions/quota overrides/history), and backend route authorization is now partially influenced by both group permission templates and member custom/template permissions (allow-only union model). Member quota overrides/templates also have a first-stage endpoint `daily_token_limit` runtime effect.
-- Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/agent allow-list rules, including group subjects, plus endpoint `requests_per_minute` rate limiting and endpoint (`daily_token_limit`, `requests_per_day`) quota enforcement baseline).
+- Resource Policy is partial in real backend mode (read/write configuration API baseline + minimal runtime enforcement for endpoint/source_library/agent allow-list rules, including group subjects, plus endpoint `requests_per_minute` rate limiting and endpoint (`daily_token_limit`, `requests_per_day`) quota enforcement baseline).

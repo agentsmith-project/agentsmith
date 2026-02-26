@@ -1,4 +1,6 @@
-# Internal Release Checklist (Notebook/Agent Mainline)
+# Internal Release Checklist (Mainline + Governance)
+
+Last updated: 2026-02-26
 
 ## Scope
 - This checklist is for the current internal/controlled release focused on:
@@ -6,7 +8,8 @@
   - Notebook task + external agent (Codex CLI)
   - Execution trace panel
   - Artifacts (including output-to-input loop)
-- Governance pages (Audit / Usage / Members / Resource Policy) are **not** part of this release scope in real backend mode.
+  - Governance pages and effect paths (Audit / Usage / Members / Resource Policy) in real backend mode
+- Governance in real backend is release-gated with strict page smoke + policy/member effect smokes.
   - See: `docs/release/internal-release-capability-matrix.md`
 
 ## Preconditions
@@ -75,6 +78,17 @@ Behavior:
 - refreshes token once automatically if needed
 - runs bundled release smoke set
 
+## 3.1 Governance Release Smoke (Strict Gate)
+```bash
+make governance-release-smoke
+```
+
+Behavior:
+- uses strict page gate (`governance-pages-real-backend-smoke-strict`)
+- uses strict interaction gate (`governance-pages-real-backend-interaction-smoke-strict`)
+- runs governance effect smokes (policy/member/source/agent)
+- auto-refreshes token and retries once on token-expiry failures for eligible smoke steps
+
 ### Bundled release smoke only
 ```bash
 make notebook-agent-release-smoke
@@ -89,14 +103,9 @@ Default bundle includes:
 RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
 ```
 
-### Governance pages (real backend) smoke bundle
-```bash
-make governance-release-smoke
-```
-
-Bundle includes:
-- `governance-pages-real-backend-smoke` (open routes)
-- `governance-pages-real-backend-interaction-smoke` (basic interactions)
+### Governance smoke bundle includes
+- `governance-pages-real-backend-smoke-strict` (open routes, fail on product error states)
+- `governance-pages-real-backend-interaction-smoke-strict` (basic interactions, fail on product error states)
 - `governance-policy-access-effect-smoke` (endpoint policy allow-list access deny -> allow + audit/usage evidence)
 - `governance-policy-group-access-effect-smoke` (endpoint policy group-subject allow-list effect + audit/usage evidence)
 - `governance-policy-effect-smoke` (endpoint policy rate-limit effect + audit/usage evidence)
@@ -108,10 +117,14 @@ Bundle includes:
 ## 4. Contract / Quality Gates
 ### Required checks
 ```bash
-npm run lint
+make verify-contracts
+```
+
+Equivalent expanded commands:
+```bash
+npm run ws:typecheck
+npm run openapi:check-generated
 npm run contracts:check-openapi
-npm run typecheck -w @mbos/api-entry-node
-npm run typecheck -w @mbos/agent-codex-runner
 ```
 
 ### High-value targeted tests (recommended)
@@ -163,6 +176,6 @@ Release is **GO** (internal/controlled) when all are true:
 - `demo-check` passes
 - `release-smoke-full` passes
 - `governance-release-smoke` passes
-- contract and lint/typecheck gates pass
+- contract/typecheck gates pass
 - deployment constraint (single instance or sticky) is confirmed
 - SSE risk is explicitly accepted for this release

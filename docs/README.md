@@ -7,7 +7,6 @@ Central index for AgentSmith documentation. Product scope and principles are in 
 | Doc | Description |
 |-----|-------------|
 | [项目宪法 (Project Constitution)](./项目宪法.md) | 产品目标、设计风格与功能范围之最高指导；防漂移 |
-| [开发推进情况 (Development Progress)](./开发推进情况.md) | 截止当前的开发进度说明（路由/门禁/测试/契约） |
 
 ## Contracts (`./contracts/`)
 
@@ -35,7 +34,8 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 - [测试与发布验证指南-v1](./release/测试与发布验证指南-v1.md) — 面向开发/测试/实施的通俗指南（术语解释、推荐命令、发布前后流程、排障顺序）
 - [新手FAQ-v1](./release/新手FAQ-v1.md) — 面向资浅同学的常见问题速查（命令选择、报错处理、发布最小标准）
 - [internal-release-checklist](./release/internal-release-checklist.md) — 内部发布检查清单
-- [internal-release-note-2026-02-24-governance-rc](./release/internal-release-note-2026-02-24-governance-rc.md) — 治理 RC 发布记录
+- [internal-release-note-2026-02-24-governance-rc](./release/internal-release-note-2026-02-24-governance-rc.md) — 治理发布记录（历史留档）
+- [internal-release-capability-matrix](./release/internal-release-capability-matrix.md) — 当前内部发布能力边界（主线 + 治理）
 
 ## Other
 

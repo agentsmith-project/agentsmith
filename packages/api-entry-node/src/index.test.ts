@@ -2201,6 +2201,165 @@ describe('api-entry-node projects routes', () => {
     ws.close();
   });
 
+  it('enforces agent resource policy rate limit for external chat stream and records governance evidence', async () => {
+    const { baseUrl } = startServer();
+
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'echo-agent-rate',
+          mode: 'external',
+          interaction_mode: 'chat',
+          capabilities: { streaming_completion: true, multimodal_completion: true },
+        }),
+      },
+    );
+    expect(createAgentRes.status).toBe(201);
+    const agent = (await createAgentRes.json()) as { id: string };
+
+    const patchPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/agent/${agent.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'agent.requests_per_minute', value: 1 }] },
+        }),
+      },
+    );
+    expect(patchPolicyRes.status).toBe(204);
+
+    const keyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
+    expect(keyRes.status).toBe(201);
+    const keyPayload = (await keyRes.json()) as { key: string };
+
+    const connInfoRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+    );
+    expect(connInfoRes.status).toBe(200);
+    const connInfo = (await connInfoRes.json()) as { ws_url: string };
+    const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
+
+    let dispatchCount = 0;
+    const ws = new WebSocket(wsUrl, {
+      headers: { Authorization: `Bearer ${keyPayload.key}` },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
+    });
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString('utf-8')) as { type?: string; request_id?: string };
+      if (msg.type !== 'server.request.start' || !msg.request_id) return;
+      dispatchCount += 1;
+      ws.send(JSON.stringify({
+        type: 'agent.response.delta',
+        request_id: msg.request_id,
+        payload: { delta: 'rate-ok' },
+      }));
+      ws.send(JSON.stringify({
+        type: 'agent.response.done',
+        request_id: msg.request_id,
+        payload: { finish_reason: 'stop', usage_tokens: 2 },
+      }));
+    });
+
+    const createSessionRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ external_agent_id: agent.id, model: 'external-echo' }),
+      },
+    );
+    expect(createSessionRes.status).toBe(201);
+    const session = (await createSessionRes.json()) as { id: string };
+
+    const firstStreamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: { role: 'user', content: 'first' } }),
+      },
+    );
+    expect(firstStreamRes.status).toBe(200);
+    await firstStreamRes.text();
+
+    const secondStreamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: { role: 'user', content: 'second' } }),
+      },
+    );
+    expect(secondStreamRes.status).toBe(429);
+    const secondBody = (await secondStreamRes.json()) as {
+      error_code?: string;
+      message?: string;
+      resource_type?: string;
+      resource_id?: string;
+      retry_after_seconds?: number;
+    };
+    expect(secondBody).toMatchObject({
+      error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+      resource_type: 'agent',
+      resource_id: agent.id,
+    });
+    expect(typeof secondBody.retry_after_seconds).toBe('number');
+    expect(dispatchCount).toBe(1);
+
+    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.rate_limited&resource_type=agent&resource_id=${agent.id}&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const auditBody = (await auditRes.json()) as {
+      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
+    };
+    expect(
+      auditBody.items.some(
+        (item) => item.action === 'resource_policy.rate_limited'
+          && item.resource_type === 'agent'
+          && item.resource_id === agent.id
+          && item.error_code === 'RESOURCE_POLICY_RATE_LIMITED',
+      ),
+    ).toBe(true);
+
+    const usageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&resource_type=agent&resource_id=${agent.id}&page=1&page_size=50`,
+    );
+    expect(usageRes.status).toBe(200);
+    const usageBody = (await usageRes.json()) as {
+      items: Array<{ resource_type: string; resource_id?: string; requests: number }>;
+    };
+    expect(
+      usageBody.items.some(
+        (item) => item.resource_type === 'agent' && item.resource_id === agent.id && item.requests >= 1,
+      ),
+    ).toBe(true);
+    ws.close();
+  });
+
   it('returns AGENT_OFFLINE when external agent session streams without active runtime socket', async () => {
     const { baseUrl } = startServer();
 

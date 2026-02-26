@@ -23,6 +23,7 @@ import {
 import { logChatStreamEvent } from './chat-observability.js';
 import type { ChatAttachmentRecord } from './resource-models.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
+import { checkAndConsumeProjectResourceRateLimitsForUser } from './project-resource-policy-enforcer.js';
 import {
   indexChatAttachmentsByLibraryObjectRef,
   readChatMessageInputs,
@@ -229,6 +230,67 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         message: 'resource_policy_denied',
         resource_type: 'agent',
         resource_id: session.external_agent_id,
+      });
+      return true;
+    }
+    const agentRateCheck = checkAndConsumeProjectResourceRateLimitsForUser({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceType: 'agent',
+      resourceId: session.external_agent_id,
+      userId: user.id,
+      policy: agentPolicyCheck.policy,
+    });
+    if (!agentRateCheck.allowed) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'resource_policy.rate_limited',
+        result: 'error',
+        resourceType: 'agent',
+        resourceId: session.external_agent_id,
+        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+        errorMessage: 'resource_policy_rate_limited',
+        metadata: {
+          governance_kind: 'resource_policy',
+          enforcement_kind: 'rate_limit',
+          effective_limit_per_minute: agentRateCheck.effective_limit_per_minute,
+          retry_after_seconds: agentRateCheck.retry_after_seconds,
+          scope: agentRateCheck.scope,
+          rate_key: 'agent.requests_per_minute',
+          source: 'chat_stream_preflight',
+          session_id: route.sessionId,
+        },
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'agent',
+        resourceId: session.external_agent_id,
+        endUserId: user.id,
+        requests: 1,
+        result: 'error',
+        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+        metadata: {
+          stage: 'preflight',
+          governance_kind: 'resource_policy',
+          enforcement_kind: 'rate_limit',
+          effective_limit_per_minute: agentRateCheck.effective_limit_per_minute,
+          retry_after_seconds: agentRateCheck.retry_after_seconds,
+          scope: agentRateCheck.scope,
+          rate_key: 'agent.requests_per_minute',
+          source: 'chat_stream_preflight',
+          session_id: route.sessionId,
+        },
+      });
+      res.setHeader('Retry-After', String(agentRateCheck.retry_after_seconds));
+      json(res, 429, {
+        error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+        message: 'resource_policy_rate_limited',
+        resource_type: 'agent',
+        resource_id: session.external_agent_id,
+        retry_after_seconds: agentRateCheck.retry_after_seconds,
       });
       return true;
     }

@@ -60,6 +60,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     metadata: Record<string, unknown>;
     endUserId?: string;
     retryAfterSeconds?: number;
+    quotaKey?: string;
   };
   const governanceMetadata = (
     kind: 'access_denied' | 'policy_quota' | 'member_quota' | 'policy_rate',
@@ -96,6 +97,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     message: 'resource_policy_quota_exceeded',
     statusCode: 429,
     retryAfterSeconds: params.retryAfterSeconds,
+    quotaKey: params.quotaKey,
     metadata: governanceMetadata('policy_quota', {
       quota_key: params.quotaKey,
       effective_limit: params.effectiveLimit,
@@ -161,6 +163,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     metadata?: Record<string, unknown>;
     endUserId?: string;
     retryAfterSeconds?: number;
+    quotaKey?: string;
   }): Promise<void> => {
     await writeProjectAuditEvent(deps, {
       workspaceId: params.workspaceId,
@@ -199,6 +202,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       resource_type: 'endpoint',
       resource_id: params.endpointId,
       ...(params.retryAfterSeconds ? { retry_after_seconds: params.retryAfterSeconds } : {}),
+      ...(params.quotaKey ? { quota_key: params.quotaKey } : {}),
     });
   };
   const inferActionFromProxyPath = (proxyPath: string): EndpointTaskAction => {

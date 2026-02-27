@@ -10,8 +10,8 @@
 **结论（按“PRD feature 全量 E2E 覆盖”口径）**: **GO**  
 原因：A/B/C 的关键验收链路已由浏览器 E2E 闭环验证（smoke + 治理/策略/安全/C1/C2 全通过）。
 
-**结论（按“当前发布门禁”口径）**: **Conditional GO（internal/controlled）**  
-原因：代码与本地自动化门禁通过；真实后端治理 smoke 仍受外部 Keycloak/后端环境可用性约束，需在发布环境补跑并留档。
+**结论（按“当前发布门禁”口径）**: **GO（internal/controlled）**  
+原因：代码门禁、PRD 关键 E2E 以及真实后端治理 smoke 均已完成并通过。
 
 ---
 
@@ -24,7 +24,7 @@
 - `npm run test:run -- src/lib/api/__tests__/sse-client.test.ts` ✅（21 passed）
 - `BASE_URL=http://localhost:3002 npx playwright test --project=smoke e2e/smoke.spec.ts --workers=1` ✅（26 passed）
 - `BASE_URL=http://localhost:3002 npx playwright test --project=chromium e2e/governance.spec.ts e2e/resource-policy.spec.ts e2e/epic-b-security.spec.ts e2e/cost-quota-dashboard.spec.ts e2e/alerts.spec.ts --workers=1` ✅（62 passed）
-- `make governance-release-smoke` ⚠️ 本轮未完成（外部 Keycloak/后端依赖导致无法本机闭环）
+- `BASE_URL=http://localhost:3001 make governance-release-smoke` ✅（页面/交互/策略/成员生命周期 smoke 全通过）
 
 ---
 
@@ -73,9 +73,8 @@
 ## Non-Blocking Items
 
 1. **工作区非干净**：`git status` 显示当前仍有修改/未跟踪文件。
-2. **外部依赖敏感**：治理真实后端 smoke 依赖 Keycloak 与后端联调环境完整可用。
+2. **外部依赖敏感**：治理真实后端 smoke 仍依赖 Keycloak 与后端联调环境稳定可用。
 3. **Keycloak 回调端口约束**：`agentsmith` client 当前仅放行 `http://localhost:3001/.../login/callback`，若切换到 `3002` 会触发 `Invalid parameter: redirect_uri`。
-4. **发布操作项**：`artifacts/release-reports/report-20260227-*.{json,md}` 需统一归档策略（保留或清理）。
 
 ---
 

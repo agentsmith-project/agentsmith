@@ -19,6 +19,7 @@
 - `npm run test:run -- src/lib/api/__tests__/sse-client.test.ts` (21/21)
 - `BASE_URL=http://localhost:3002 npx playwright test --project=smoke e2e/smoke.spec.ts --workers=1` (26/26)
 - `BASE_URL=http://localhost:3002 npx playwright test --project=chromium e2e/governance.spec.ts e2e/resource-policy.spec.ts e2e/epic-b-security.spec.ts e2e/cost-quota-dashboard.spec.ts e2e/alerts.spec.ts --workers=1` (62/62)
+- `BASE_URL=http://localhost:3001 make governance-release-smoke`（PASS）
 
 3. Structured release report generated (PASS):
 - `artifacts/release-reports/release-closure-20260227.json`
@@ -54,9 +55,8 @@
 
 ## Residual Non-Blocking Risks
 
-1. `make governance-release-smoke` 依赖真实 Keycloak/后端联调环境，本地无完整外部依赖时无法在同一轮闭环（非代码缺陷）。
-2. Keycloak client 回调地址存在端口白名单约束（`3001` 可用，`3002` 会报 `Invalid parameter: redirect_uri`），执行 real-backend smoke 时需保持一致。
-3. 工作区存在未归档的 `artifacts/release-reports/report-20260227-*.{json,md}` 临时产物，发布前需清理或归档。
+1. Keycloak client 回调地址存在端口白名单约束（`3001` 可用，`3002` 会报 `Invalid parameter: redirect_uri`），执行 real-backend smoke 时需保持一致。
+2. 真实后端 smoke 对联调环境可用性敏感，建议保留日志与截图产物用于审计与排障。
 
 ---
 

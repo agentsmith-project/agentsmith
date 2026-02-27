@@ -48,7 +48,7 @@ Governance surfaces such as `Members` and `Resource Policy` are now partially im
   - Codex runner task workdir `.codex/config.toml` generation and noisy warning filtering.
 - Verified:
   - `packages/api-entry-node/src/http-utils.test.ts` (responses/chat translation) passing.
-  - End-to-end Notebook external agent pipeline with real GLM (`glm-4.7`) returns `turn.completed`.
+  - End-to-end Notebook external agent pipeline with real GLM (`glm-5`) returns `turn.completed`.
 
 ## 3. End-to-End Flow
 1. User creates Notebook task with notebook-capable external agent.

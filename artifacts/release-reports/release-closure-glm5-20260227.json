@@ -1,0 +1,100 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-27T08:39:40.066Z",
+    "duration_ms": 220972,
+    "environment": {
+      "node_version": "v25.4.0",
+      "npm_version": "11.7.0",
+      "platform": "linux",
+      "arch": "x64",
+      "cwd": "/home/percy/works/mbos-v1/agentsmith"
+    },
+    "git": {
+      "commit_hash": "f2a1eb8af6cf968d25a9ddc3ca5bd38a75a1de46",
+      "commit_short": "f2a1eb8",
+      "branch": "main",
+      "commit_message": "test(model): switch default smoke model from glm-4.7 to glm-5",
+      "author": "lizhijian",
+      "date": "2026-02-27T16:28:52+08:00"
+    }
+  },
+  "execution": {
+    "total_checks": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "checks": [
+      {
+        "name": "TypeScript typecheck",
+        "category": "typecheck",
+        "status": "pass",
+        "duration_ms": 14840,
+        "command": "npm run ws:typecheck"
+      },
+      {
+        "name": "OpenAPI generated check",
+        "category": "contract",
+        "status": "pass",
+        "duration_ms": 1715,
+        "command": "npm run openapi:check-generated"
+      },
+      {
+        "name": "OpenAPI contract checks",
+        "category": "contract",
+        "status": "pass",
+        "duration_ms": 1124,
+        "command": "npm run contracts:check-openapi"
+      },
+      {
+        "name": "Mainline release smoke",
+        "category": "smoke-main",
+        "status": "pass",
+        "duration_ms": 142475,
+        "command": "make notebook-agent-release-smoke-full"
+      },
+      {
+        "name": "Governance release smoke",
+        "category": "smoke-governance",
+        "status": "pass",
+        "duration_ms": 60679,
+        "command": "make governance-release-smoke"
+      }
+    ]
+  },
+  "summary": {
+    "status": "pass",
+    "stats": {
+      "total_duration_ms": 220833,
+      "fastest_check": {
+        "name": "OpenAPI contract checks",
+        "duration_ms": 1124
+      },
+      "slowest_check": {
+        "name": "Mainline release smoke",
+        "duration_ms": 142475
+      },
+      "by_category": {
+        "typecheck": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        },
+        "contract": {
+          "total": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        "smoke-main": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        },
+        "smoke-governance": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        }
+      }
+    }
+  }
+}

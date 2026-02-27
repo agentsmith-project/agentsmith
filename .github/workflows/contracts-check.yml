@@ -26,6 +26,14 @@ jobs:
             exit 1
           fi
 
+      - name: Verify default smoke model baseline (glm-5)
+        run: |
+          set -euo pipefail
+          grep -q 'GLM_MODEL="${GLM_MODEL:-glm-5}"' scripts/notebook-agent-demo-up.sh
+          grep -q 'GLM_MODEL="${GLM_MODEL:-glm-5}"' scripts/notebook-agent-init-resources.sh
+          grep -q '"model":"glm-5"' scripts/notebook-agent-demo-check.sh
+          grep -q '"model":"glm-5"' scripts/notebook-agent-release-smoke.sh
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

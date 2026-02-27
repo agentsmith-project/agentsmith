@@ -68,6 +68,10 @@ vi.mock('@/components/settings/SettingsTokenReference', () => ({
   SettingsTokenReference: () => <div data-testid="settings__token-ref" />,
 }));
 
+vi.mock('@/components/settings/RuntimeControlPlanePanel', () => ({
+  RuntimeControlPlanePanel: () => <div data-testid="settings__runtime-control-plane" />,
+}));
+
 // Keep Tabs simple to reduce render complexity in route-level tests
 vi.mock('@/components/ui/tabs', () => ({
   Tabs: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

@@ -71,6 +71,33 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByText(/locale/i).first()).toBeVisible();
   });
 
+  test('runtime control plane can create provider via API', async ({ authedPage }) => {
+    await goToProject(authedPage, 'settings');
+    await authedPage.getByTestId('settings__tab--runtime').click();
+    await expect(authedPage.getByTestId('settings-runtime__panel')).toBeVisible();
+
+    await authedPage.getByTestId('settings-runtime__provider-name').fill('openai');
+    await authedPage.getByTestId('settings-runtime__provider-base-url').fill('https://api.openai.com/v1');
+    await authedPage.getByTestId('settings-runtime__provider-credential-ref').fill('cred_e2e');
+
+    const providerCreateReq = authedPage.waitForRequest((req) => {
+      return req.method() === 'POST'
+        && /\/api\/v1\/workspaces\/.*\/projects\/.*\/runtime\/providers$/.test(req.url());
+    });
+
+    await authedPage.getByTestId('settings-runtime__provider-create').click();
+
+    const request = await providerCreateReq;
+    const payload = request.postDataJSON() as {
+      provider?: string;
+      base_url?: string;
+      credential_ref?: string;
+    };
+    expect(payload.provider).toBe('openai');
+    expect(payload.base_url).toBe('https://api.openai.com/v1');
+    expect(payload.credential_ref).toBe('cred_e2e');
+  });
+
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {
     await goToProject(authedPage, 'settings');
     await expect(authedPage.getByTestId('settings__tab--general')).toBeVisible({ timeout: 10000 });

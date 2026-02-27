@@ -25,6 +25,7 @@ import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RuntimePreferencesEditor, type RuntimePreferences } from '@/components/settings/RuntimePreferencesEditor';
 import { SettingsTokenReference } from '@/components/settings/SettingsTokenReference';
+import { RuntimeControlPlanePanel } from '@/components/settings/RuntimeControlPlanePanel';
 import { useApiError } from '@/lib/hooks/use-api-error';
 import { RUNTIME_PREFERENCES_TOKENS } from '@/components/settings/settingsTokenRefs';
 import { useProject } from '@/lib/hooks/use-projects-queries';
@@ -255,6 +256,11 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <RuntimePreferencesEditor
               value={runtimePreferences}
               onChange={setRuntimePreferences}
+              disabled={!canManageSettings}
+            />
+            <RuntimeControlPlanePanel
+              workspaceId={resolvedParams.workspace}
+              projectId={resolvedParams.project}
               disabled={!canManageSettings}
             />
             <div className="mt-4 flex justify-end">

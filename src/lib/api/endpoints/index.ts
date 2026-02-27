@@ -17,6 +17,7 @@ export { ChatAPI } from './chat';
 export { FilesAPI } from './files';
 export { TaskAPI } from './tasks';
 export { AlertAPI } from './alerts';
+export { RuntimeAPI } from './runtime';
 
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';
@@ -42,3 +43,15 @@ export type {
   TaskListParams,
   TaskListResponse,
 } from './tasks';
+export type {
+  RuntimeProviderConnection,
+  CreateRuntimeProviderConnectionRequest,
+  UpdateRuntimeProviderConnectionRequest,
+  RuntimeModelCatalogEntry,
+  CreateRuntimeModelCatalogEntryRequest,
+  RuntimeModelAlias,
+  CreateRuntimeModelAliasRequest,
+  RuntimeModelCombo,
+  CreateRuntimeModelComboRequest,
+  RuntimePricingMap,
+} from './runtime';

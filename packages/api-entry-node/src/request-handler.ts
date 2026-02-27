@@ -6,6 +6,7 @@ import { handleAuditUsageRoute } from './audit-usage-route-handler.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import { handleChatStreamRoute } from './chat-stream-handler.js';
 import { handleEndpointRoute } from './endpoint-route-handler.js';
+import { handleRuntimeRoute } from './runtime-route-handler.js';
 import { handleAgentRoute } from './agent-route-handler.js';
 import { matchProjectsRoute, type ProjectsRoute } from './projects-route-match.js';
 import type { ChatRoute } from './chat-route-match.js';
@@ -118,6 +119,21 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
 
   if (route.kind === 'credentials' || route.kind === 'credentialItem' || route.kind === 'credentialRotate') {
     return ['project:credential:manage'];
+  }
+
+  if (
+    route.kind === 'llmUnifiedChat'
+    || route.kind === 'runtimeProviders'
+    || route.kind === 'runtimeProviderItem'
+    || route.kind === 'runtimeModels'
+    || route.kind === 'runtimeRoutingAliases'
+    || route.kind === 'runtimeRoutingCombos'
+    || route.kind === 'runtimePricing'
+  ) {
+    if (route.kind === 'llmUnifiedChat') {
+      return ['project:endpoint:use'];
+    }
+    return ['project:endpoint:manage'];
   }
 
   if (
@@ -366,6 +382,19 @@ export async function handleRequest(
       if (handledTaskRoute) {
         return;
       }
+    }
+
+    const handledRuntimeRoute = await handleRuntimeRoute({
+      route,
+      method,
+      req,
+      res,
+      deps,
+      json,
+      readBody,
+    });
+    if (handledRuntimeRoute) {
+      return;
     }
 
     const handledEndpointRoute = await handleEndpointRoute({

@@ -42,6 +42,22 @@
     {
       "name": "Notebook",
       "description": "Notebook tasks and execution trace APIs"
+    },
+    {
+      "name": "Authorization",
+      "description": "Unified authorization decision API"
+    },
+    {
+      "name": "SSE",
+      "description": "Server-Sent Events ticket exchange"
+    },
+    {
+      "name": "Governance",
+      "description": "Quota checks and audit export"
+    },
+    {
+      "name": "LLM Runtime",
+      "description": "Provider/model routing, unified proxy, and pricing control plane"
     }
   ],
   "paths": {
@@ -5293,6 +5309,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       },
@@ -5976,6 +5995,1508 @@
           }
         }
       }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/authorize": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Authorization"
+        ],
+        "operationId": "checkAuthorization",
+        "summary": "Unified authorization decision endpoint",
+        "description": "Checks if a subject is authorized to perform an action on a resource.\nThis endpoint unifies permission checks, resource policy evaluation, and\nproject default settings into a single decision point.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorization decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/check": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Governance"
+        ],
+        "operationId": "checkQuota",
+        "summary": "Verify quota before operation",
+        "description": "Checks if a subject has sufficient quota remaining to perform an operation.\nReturns quota status including remaining amount, limit, and reset time.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotaCheckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Quota check result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaCheckResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Governance"
+        ],
+        "operationId": "exportAuditEvents",
+        "summary": "Export audit events",
+        "description": "Exports audit events in CSV or JSON format. Supports filtering by\ntime range, action, actor type, and other criteria.\n",
+        "parameters": [
+          {
+            "name": "start_time",
+            "in": "query",
+            "required": true,
+            "description": "Start time in ISO 8601 format",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "required": true,
+            "description": "End time in ISO 8601 format",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "Export format",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "default": "json"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Filter by action type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor_type",
+            "in": "query",
+            "description": "Filter by actor type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent",
+                "plugin"
+              ]
+            }
+          },
+          {
+            "name": "result",
+            "in": "query",
+            "description": "Filter by result",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "error"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditExportResponse"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/sse-ticket": {
+      "post": {
+        "tags": [
+          "SSE"
+        ],
+        "operationId": "createSSETicket",
+        "summary": "Exchange JWT for SSE ticket",
+        "description": "Creates a short-lived ticket for Server-Sent Events connections.\nThis prevents JWT tokens from being exposed in SSE URL query parameters.\nTickets are valid for approximately 5 minutes and are single-use.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SSETicketRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ticket created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SSETicketResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Governance"
+        ],
+        "operationId": "getQuotaSummary",
+        "summary": "Get quota summary for all resources",
+        "description": "Returns quota usage summary across all resource types (endpoints, source libraries, agents).\nIncludes current usage, limits, percentage used, and reset times.\n",
+        "responses": {
+          "200": {
+            "description": "Quota summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaOverview"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/timeseries": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Governance"
+        ],
+        "operationId": "getUsageTimeseries",
+        "summary": "Get usage/cost time series data",
+        "description": "Returns time-series usage data for cost and quota tracking.\nSupports filtering by metric type, time range, and granularity.\n",
+        "parameters": [
+          {
+            "name": "metric",
+            "in": "query",
+            "description": "Metric type to retrieve",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "tokens",
+                "requests",
+                "cost",
+                "bytes"
+              ],
+              "default": "tokens"
+            }
+          },
+          {
+            "name": "start_time",
+            "in": "query",
+            "description": "Start time in ISO 8601 format",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "description": "End time in ISO 8601 format",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "description": "Time granularity for aggregation",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hour",
+                "day",
+                "week",
+                "month"
+              ],
+              "default": "day"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "description": "Filter by resource type",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "endpoint",
+                "source_library",
+                "agent"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Time series data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageTimeseriesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/llm/chat/completions": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "createUnifiedChatCompletion",
+        "summary": "Unified LLM chat completion proxy",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnifiedChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completion response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedChatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "listRuntimeProviders",
+        "summary": "List runtime provider connections",
+        "responses": {
+          "200": {
+            "description": "Provider connection list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RuntimeProviderConnection"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "createRuntimeProvider",
+        "summary": "Create runtime provider connection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeProviderConnectionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeProviderConnection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "name": "providerConnectionId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "updateRuntimeProvider",
+        "summary": "Update runtime provider connection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeProviderConnectionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeProviderConnection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "deleteRuntimeProvider",
+        "summary": "Delete runtime provider connection",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "listRuntimeModels",
+        "summary": "List runtime model catalog entries",
+        "responses": {
+          "200": {
+            "description": "Model list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RuntimeModelCatalogEntry"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "createRuntimeModel",
+        "summary": "Create runtime model catalog entry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeModelCatalogEntryCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeModelCatalogEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "listRuntimeRoutingAliases",
+        "summary": "List model aliases",
+        "responses": {
+          "200": {
+            "description": "Alias list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RuntimeModelAlias"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "createRuntimeRoutingAlias",
+        "summary": "Create model alias",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeModelAliasCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeModelAlias"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "listRuntimeRoutingCombos",
+        "summary": "List model combos",
+        "responses": {
+          "200": {
+            "description": "Combo list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RuntimeModelCombo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "createRuntimeRoutingCombo",
+        "summary": "Create model combo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeModelComboCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeModelCombo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "getRuntimePricing",
+        "summary": "Get effective runtime pricing",
+        "responses": {
+          "200": {
+            "description": "Pricing map",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePricingMap"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "patchRuntimePricing",
+        "summary": "Upsert runtime pricing overrides",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePricingMap"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated pricing map",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimePricingMap"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-rules": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "listAlertRules",
+        "summary": "List alert rules",
+        "description": "Returns all alert rules for the project. Rules can be filtered by enabled status,\nseverity, and alert type.\n",
+        "parameters": [
+          {
+            "name": "enabled",
+            "in": "query",
+            "description": "Filter by enabled status",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "description": "Filter by severity level",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "info",
+                "warning",
+                "error",
+                "critical"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Filter by alert type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rules list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlertRule"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "createAlertRule",
+        "summary": "Create alert rule",
+        "description": "Creates a new alert rule for the project. The rule defines trigger conditions,\nnotification channels, and behavior settings.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Alert rule created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-rules/{ruleId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "name": "ruleId",
+          "in": "path",
+          "required": true,
+          "description": "Alert rule ID",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "getAlertRule",
+        "summary": "Get alert rule",
+        "description": "Returns a single alert rule by ID",
+        "responses": {
+          "200": {
+            "description": "Alert rule details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRule"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "updateAlertRule",
+        "summary": "Update alert rule",
+        "description": "Updates an existing alert rule. Only provide fields that should be changed.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert rule updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "deleteAlertRule",
+        "summary": "Delete alert rule",
+        "description": "Permanently deletes an alert rule",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Alert rule deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-rules/{ruleId}/test": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "name": "ruleId",
+          "in": "path",
+          "required": true,
+          "description": "Alert rule ID",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "testAlertRule",
+        "summary": "Test alert rule",
+        "description": "Evaluates the alert rule against current data to check if it would trigger.\nReturns the test result without actually sending any notifications.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Test result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRuleTestResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-notifications": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "listAlertNotifications",
+        "summary": "List alert notifications",
+        "description": "Returns alert notifications (triggered alert instances) for the project.\nSupports filtering by status, time range, and rule.\n",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by notification status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "firing",
+                "resolved",
+                "silenced"
+              ]
+            }
+          },
+          {
+            "name": "rule_id",
+            "in": "query",
+            "description": "Filter by alert rule",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_time",
+            "in": "query",
+            "description": "Start time in ISO 8601 format",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "description": "End time in ISO 8601 format",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Items per page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 25,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertNotificationsListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-notifications/{notificationId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "name": "notificationId",
+          "in": "path",
+          "required": true,
+          "description": "Alert notification ID",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "updateAlertNotification",
+        "summary": "Update alert notification status",
+        "description": "Updates the status of an alert notification (e.g., mark as resolved or silenced).\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SilenceNotificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Notification updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertNotification"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6047,21 +7568,113 @@
     },
     "responses": {
       "Unauthorized": {
-        "description": "Unauthorized",
+        "description": "Unauthorized - Missing or invalid authentication token",
         "content": {
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "error_code": "UNAUTHORIZED",
+              "message": "Missing or invalid authorization token"
             }
           }
         }
       },
       "Forbidden": {
-        "description": "Forbidden",
+        "description": "Forbidden - Valid token but insufficient permissions",
         "content": {
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "error_code": "PERMISSION_DENIED",
+              "message": "You do not have permission to perform this action"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "error_code": "RESOURCE_NOT_FOUND",
+              "message": "The requested resource does not exist"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Bad Request - Invalid request parameters",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "error_code": "VALIDATION_ERROR",
+              "message": "Invalid request parameters"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict - Resource already exists or state conflict",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "error_code": "RESOURCE_ALREADY_EXISTS",
+              "message": "A resource with this identifier already exists"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Too Many Requests - Rate limit exceeded",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "error_code": "RATE_LIMIT_EXCEEDED",
+              "message": "Rate limit exceeded. Please retry after a few seconds"
+            }
+          }
+        }
+      },
+      "QuotaExceeded": {
+        "description": "Quota Exceeded - Resource quota exceeded",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "error_code": "QUOTA_EXCEEDED",
+              "message": "Resource quota exceeded"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Internal Server Error - Unexpected server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "error_code": "INTERNAL_ERROR",
+              "message": "An unexpected error occurred. Please try again later"
             }
           }
         }
@@ -6579,10 +8192,36 @@
         ],
         "properties": {
           "error_code": {
-            "type": "string"
+            "type": "string",
+            "description": "Machine-readable error code",
+            "enum": [
+              "UNAUTHORIZED",
+              "PERMISSION_DENIED",
+              "RESOURCE_NOT_FOUND",
+              "RESOURCE_ALREADY_EXISTS",
+              "VALIDATION_ERROR",
+              "RATE_LIMIT_EXCEEDED",
+              "QUOTA_EXCEEDED",
+              "INTERNAL_ERROR"
+            ]
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "description": "Human-readable error message"
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Unique identifier for the request (for debugging)"
+          },
+          "details": {
+            "type": "object",
+            "description": "Additional error details",
+            "additionalProperties": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the error occurred"
           }
         }
       },
@@ -6689,6 +8328,1548 @@
             "description": "Cursor for loading an earlier slice using `before_id`."
           }
         }
+      },
+      "AuthorizationRequest": {
+        "type": "object",
+        "required": [
+          "subject",
+          "action",
+          "resource"
+        ],
+        "properties": {
+          "subject": {
+            "type": "object",
+            "required": [
+              "type",
+              "id"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "group",
+                  "agent"
+                ]
+              },
+              "id": {
+                "type": "string"
+              }
+            }
+          },
+          "action": {
+            "type": "string",
+            "description": "e.g., \"endpoint.invoke\", \"project.delete\"",
+            "examples": [
+              "endpoint.invoke",
+              "project.delete",
+              "source.file.upload"
+            ]
+          },
+          "resource": {
+            "type": "object",
+            "required": [
+              "type",
+              "id"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "endpoint",
+                  "source_library",
+                  "agent"
+                ]
+              },
+              "id": {
+                "type": "string"
+              }
+            }
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "end_user_id": {
+                "type": "string"
+              },
+              "metadata": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "AuthorizationResponse": {
+        "type": "object",
+        "required": [
+          "allowed",
+          "decision"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "decision": {
+            "type": "object",
+            "required": [
+              "source",
+              "reason"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "permission",
+                  "resource_policy",
+                  "project_default"
+                ]
+              },
+              "rule_id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          },
+          "matched_policy": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "resource_type": {
+                "type": "string"
+              },
+              "resource_id": {
+                "type": "string"
+              },
+              "access_mode": {
+                "type": "string",
+                "enum": [
+                  "allow_all_members",
+                  "allow_list"
+                ]
+              },
+              "matched_subject": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "group"
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "QuotaCheckRequest": {
+        "type": "object",
+        "required": [
+          "subject_id",
+          "resource_type",
+          "resource_id",
+          "operation"
+        ],
+        "properties": {
+          "subject_id": {
+            "type": "string",
+            "description": "User ID, group ID, or agent ID"
+          },
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "endpoint",
+              "source_library",
+              "agent"
+            ]
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "invoke",
+              "upload",
+              "create"
+            ]
+          },
+          "estimated_cost": {
+            "type": "number",
+            "description": "Estimated tokens/bytes for the operation",
+            "minimum": 0
+          }
+        }
+      },
+      "QuotaCheckResponse": {
+        "type": "object",
+        "required": [
+          "allowed",
+          "quota_remaining",
+          "quota_limit",
+          "quota_reset_at",
+          "policy_id"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "quota_remaining": {
+            "type": "number",
+            "minimum": 0
+          },
+          "quota_limit": {
+            "type": "number",
+            "minimum": 0
+          },
+          "quota_reset_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policy_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AuditExportResponse": {
+        "type": "object",
+        "required": [
+          "export_id",
+          "generated_at",
+          "time_range",
+          "filter",
+          "events"
+        ],
+        "properties": {
+          "export_id": {
+            "type": "string"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "time_range": {
+            "type": "object",
+            "required": [
+              "start",
+              "end"
+            ],
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "filter": {
+            "type": "object",
+            "properties": {
+              "workspace_id": {
+                "type": "string"
+              },
+              "project_id": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "actor_type": {
+                "type": "string"
+              },
+              "result": {
+                "type": "string"
+              }
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "workspace_id": {
+                  "type": "string"
+                },
+                "project_id": {
+                  "type": "string"
+                },
+                "actor_type": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "agent",
+                    "plugin"
+                  ]
+                },
+                "actor_id": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                },
+                "resource_type": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "end_user_id": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "error"
+                  ]
+                },
+                "error_code": {
+                  "type": "string"
+                },
+                "error_message": {
+                  "type": "string"
+                },
+                "request_id": {
+                  "type": "string"
+                },
+                "metadata_json": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "authz_subject": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "group",
+                        "agent"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "authz_action": {
+                  "type": "string"
+                },
+                "authz_resource": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "authz_decision": {
+                  "type": "object",
+                  "properties": {
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "permission",
+                        "resource_policy",
+                        "project_default",
+                        "allow_list"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "policy_id": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "usage_metrics": {
+                  "type": "object",
+                  "properties": {
+                    "quantity": {
+                      "type": "number"
+                    },
+                    "unit": {
+                      "type": "string",
+                      "enum": [
+                        "tokens",
+                        "bytes",
+                        "requests",
+                        "seconds"
+                      ]
+                    }
+                  }
+                },
+                "quota_remaining": {
+                  "type": "number"
+                },
+                "quota_limit": {
+                  "type": "number"
+                },
+                "quota_reset_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "policy_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "SSETicketRequest": {
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "intended_use"
+        ],
+        "properties": {
+          "workspace_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "intended_use": {
+            "type": "string",
+            "enum": [
+              "task_events",
+              "chat_stream",
+              "other"
+            ]
+          }
+        }
+      },
+      "SSETicketResponse": {
+        "type": "object",
+        "required": [
+          "ticket",
+          "expires_at",
+          "sso_url",
+          "max_connections"
+        ],
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "description": "Short-lived token (UUID)"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Ticket expiration time (~5 minutes)"
+          },
+          "sso_url": {
+            "type": "string",
+            "description": "SSE endpoint URL with ticket"
+          },
+          "max_connections": {
+            "type": "integer",
+            "description": "Single-use enforcement",
+            "enum": [
+              1
+            ]
+          }
+        }
+      },
+      "QuotaOverview": {
+        "type": "object",
+        "description": "Aggregate quota summary across all resource types",
+        "properties": {
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuotaSummary"
+            }
+          },
+          "source_libraries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuotaSummary"
+            }
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuotaSummary"
+            }
+          },
+          "total_quota_used": {
+            "type": "number",
+            "description": "Total quota used across all resource types"
+          },
+          "total_quota_limit": {
+            "type": "number",
+            "description": "Total quota limit across all resource types"
+          }
+        }
+      },
+      "QuotaSummary": {
+        "type": "object",
+        "description": "Quota summary for a specific resource",
+        "required": [
+          "resource_type",
+          "resource_id",
+          "resource_name",
+          "quota_used",
+          "quota_limit",
+          "quota_reset_at",
+          "percentage_used",
+          "quota_unit"
+        ],
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "endpoint",
+              "source_library",
+              "agent"
+            ]
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "resource_name": {
+            "type": "string"
+          },
+          "quota_used": {
+            "type": "number",
+            "minimum": 0
+          },
+          "quota_limit": {
+            "type": "number",
+            "minimum": 0
+          },
+          "quota_reset_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "percentage_used": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "quota_unit": {
+            "type": "string",
+            "enum": [
+              "tokens",
+              "requests",
+              "bytes",
+              "files"
+            ]
+          }
+        }
+      },
+      "UsageTimeseriesRequest": {
+        "type": "object",
+        "description": "Request parameters for usage time series data",
+        "required": [
+          "start_time",
+          "end_time"
+        ],
+        "properties": {
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start of time range (ISO 8601)"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End of time range (ISO 8601)"
+          },
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day"
+            ],
+            "default": "hour",
+            "description": "Time granularity for aggregation"
+          },
+          "resource_type": {
+            "type": "string",
+            "description": "Filter by resource type"
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "Filter by specific resource"
+          },
+          "end_user_id": {
+            "type": "string",
+            "description": "Filter by end user"
+          }
+        }
+      },
+      "UsageTimeseriesResponse": {
+        "type": "object",
+        "description": "Usage/cost time series data",
+        "required": [
+          "time_range",
+          "data_points"
+        ],
+        "properties": {
+          "time_range": {
+            "type": "object",
+            "required": [
+              "start",
+              "end"
+            ],
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "granularity": {
+                "type": "string",
+                "enum": [
+                  "hour",
+                  "day"
+                ]
+              }
+            }
+          },
+          "data_points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageDataPoint"
+            }
+          },
+          "resource_breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceCostBreakdown"
+            }
+          },
+          "total_cost": {
+            "type": "number",
+            "description": "Total estimated cost in USD"
+          }
+        }
+      },
+      "UsageDataPoint": {
+        "type": "object",
+        "required": [
+          "time_bucket",
+          "requests",
+          "errors"
+        ],
+        "properties": {
+          "time_bucket": {
+            "type": "string",
+            "description": "Time bucket identifier (ISO 8601 or formatted date)"
+          },
+          "requests": {
+            "type": "number",
+            "minimum": 0
+          },
+          "tokens": {
+            "type": "number",
+            "minimum": 0
+          },
+          "errors": {
+            "type": "number",
+            "minimum": 0
+          },
+          "estimated_cost": {
+            "type": "number",
+            "description": "Estimated cost in USD"
+          },
+          "duration_p95_ms": {
+            "type": "number",
+            "description": "P95 response time in milliseconds"
+          },
+          "bytes_in": {
+            "type": "number",
+            "minimum": 0
+          },
+          "bytes_out": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "ResourceCostBreakdown": {
+        "type": "object",
+        "required": [
+          "resource_type",
+          "resource_id",
+          "resource_name",
+          "requests",
+          "estimated_cost",
+          "percentage_of_total"
+        ],
+        "properties": {
+          "resource_type": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "resource_name": {
+            "type": "string"
+          },
+          "requests": {
+            "type": "number",
+            "minimum": 0
+          },
+          "tokens": {
+            "type": "number",
+            "minimum": 0
+          },
+          "estimated_cost": {
+            "type": "number",
+            "description": "Estimated cost in USD"
+          },
+          "percentage_of_total": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      },
+      "AlertRule": {
+        "type": "object",
+        "description": "Alert rule configuration",
+        "required": [
+          "id",
+          "project_id",
+          "workspace_id",
+          "name",
+          "enabled",
+          "trigger",
+          "channels",
+          "behavior",
+          "created_at",
+          "created_by",
+          "updated_at",
+          "updated_by"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/AlertTrigger"
+          },
+          "channels": {
+            "$ref": "#/components/schemas/AlertChannels"
+          },
+          "behavior": {
+            "$ref": "#/components/schemas/AlertBehavior"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "last_triggered_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AlertTrigger": {
+        "type": "object",
+        "description": "Alert trigger conditions",
+        "required": [
+          "metric",
+          "operator",
+          "threshold"
+        ],
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/AlertMetric"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/AlertOperator"
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Threshold value for comparison"
+          },
+          "window": {
+            "$ref": "#/components/schemas/AlertWindow",
+            "description": "Time window for aggregation (for time-aggregated metrics)"
+          }
+        }
+      },
+      "AlertMetric": {
+        "type": "string",
+        "description": "Supported alert metrics",
+        "enum": [
+          "requests_per_day",
+          "requests_per_hour",
+          "quota_percent",
+          "error_rate",
+          "token_usage",
+          "response_time_p95"
+        ]
+      },
+      "AlertOperator": {
+        "type": "string",
+        "description": "Alert comparison operators",
+        "enum": [
+          "gt",
+          "gte",
+          "lt",
+          "lte",
+          "eq"
+        ]
+      },
+      "AlertWindow": {
+        "type": "string",
+        "description": "Time windows for aggregation",
+        "enum": [
+          "5m",
+          "15m",
+          "1h",
+          "24h",
+          "7d"
+        ]
+      },
+      "AlertChannels": {
+        "type": "object",
+        "description": "Alert notification channels",
+        "required": [
+          "in_app"
+        ],
+        "properties": {
+          "in_app": {
+            "type": "boolean",
+            "description": "Show in UI notification center"
+          },
+          "webhook": {
+            "$ref": "#/components/schemas/WebhookConfig"
+          }
+        }
+      },
+      "WebhookConfig": {
+        "type": "object",
+        "description": "Webhook configuration for alert notifications",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Custom HTTP headers for webhook requests"
+          }
+        }
+      },
+      "AlertBehavior": {
+        "type": "object",
+        "description": "Alert behavior settings",
+        "required": [
+          "debounce_minutes",
+          "notify_on_recovery"
+        ],
+        "properties": {
+          "debounce_minutes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Minimum time between alerts"
+          },
+          "notify_on_recovery": {
+            "type": "boolean",
+            "description": "Send \"resolved\" notification"
+          }
+        }
+      },
+      "AlertRuleCreateRequest": {
+        "type": "object",
+        "description": "Create alert rule request",
+        "required": [
+          "name",
+          "enabled",
+          "trigger",
+          "channels",
+          "behavior"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/AlertTrigger"
+          },
+          "channels": {
+            "$ref": "#/components/schemas/AlertChannels"
+          },
+          "behavior": {
+            "$ref": "#/components/schemas/AlertBehavior"
+          }
+        }
+      },
+      "AlertRuleUpdateRequest": {
+        "type": "object",
+        "description": "Update alert rule request (all fields optional)",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/AlertTrigger"
+          },
+          "channels": {
+            "$ref": "#/components/schemas/AlertChannels"
+          },
+          "behavior": {
+            "$ref": "#/components/schemas/AlertBehavior"
+          }
+        }
+      },
+      "AlertRuleTestResponse": {
+        "type": "object",
+        "description": "Alert rule test response",
+        "required": [
+          "would_trigger",
+          "actual_value",
+          "details"
+        ],
+        "properties": {
+          "would_trigger": {
+            "type": "boolean",
+            "description": "Whether the rule would trigger with current data"
+          },
+          "actual_value": {
+            "type": "number",
+            "description": "Current value of the metric being tested"
+          },
+          "details": {
+            "type": "string",
+            "description": "Human-readable explanation of the test result"
+          }
+        }
+      },
+      "UnifiedChatRequest": {
+        "type": "object",
+        "required": [
+          "model",
+          "messages"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "provider/model, alias, or combo:<name>"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "stream": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "UnifiedChatResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "choices"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "runtime": {
+            "type": "object",
+            "required": [
+              "provider",
+              "resolved_model"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "resolved_model": {
+                "type": "string"
+              },
+              "fallback_hops": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      },
+      "RuntimeProviderConnection": {
+        "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "auth_mode",
+          "base_url",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "auth_mode": {
+            "type": "string",
+            "enum": [
+              "api_key",
+              "oauth",
+              "aws_sdk",
+              "token"
+            ]
+          },
+          "base_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "credential_ref": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          }
+        }
+      },
+      "RuntimeProviderConnectionCreate": {
+        "type": "object",
+        "required": [
+          "provider",
+          "auth_mode",
+          "base_url"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "auth_mode": {
+            "type": "string",
+            "enum": [
+              "api_key",
+              "oauth",
+              "aws_sdk",
+              "token"
+            ]
+          },
+          "base_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "credential_ref": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          }
+        }
+      },
+      "RuntimeProviderConnectionUpdate": {
+        "type": "object",
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "credential_ref": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          }
+        }
+      },
+      "RuntimeModelPricing": {
+        "type": "object",
+        "required": [
+          "input",
+          "output"
+        ],
+        "properties": {
+          "input": {
+            "type": "number"
+          },
+          "output": {
+            "type": "number"
+          },
+          "cached": {
+            "type": "number"
+          },
+          "reasoning": {
+            "type": "number"
+          },
+          "cache_creation": {
+            "type": "number"
+          }
+        }
+      },
+      "RuntimeModelCatalogEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "model_id",
+          "capabilities"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "context_window": {
+            "type": "integer"
+          },
+          "max_tokens": {
+            "type": "integer"
+          },
+          "pricing": {
+            "$ref": "#/components/schemas/RuntimeModelPricing"
+          }
+        }
+      },
+      "RuntimeModelCatalogEntryCreate": {
+        "type": "object",
+        "required": [
+          "provider",
+          "model_id",
+          "capabilities"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "context_window": {
+            "type": "integer"
+          },
+          "max_tokens": {
+            "type": "integer"
+          },
+          "pricing": {
+            "$ref": "#/components/schemas/RuntimeModelPricing"
+          }
+        }
+      },
+      "RuntimeModelAlias": {
+        "type": "object",
+        "required": [
+          "alias",
+          "target_provider",
+          "target_model"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "target_provider": {
+            "type": "string"
+          },
+          "target_model": {
+            "type": "string"
+          }
+        }
+      },
+      "RuntimeModelAliasCreate": {
+        "$ref": "#/components/schemas/RuntimeModelAlias"
+      },
+      "RuntimeModelComboTarget": {
+        "type": "object",
+        "required": [
+          "provider",
+          "model"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
+      },
+      "RuntimeModelComboFallbackPolicy": {
+        "type": "object",
+        "required": [
+          "max_hops",
+          "retryable_error_classes"
+        ],
+        "properties": {
+          "max_hops": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "retryable_error_classes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RuntimeModelCombo": {
+        "type": "object",
+        "required": [
+          "name",
+          "targets",
+          "fallback_policy"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeModelComboTarget"
+            }
+          },
+          "fallback_policy": {
+            "$ref": "#/components/schemas/RuntimeModelComboFallbackPolicy"
+          }
+        }
+      },
+      "RuntimeModelComboCreate": {
+        "$ref": "#/components/schemas/RuntimeModelCombo"
+      },
+      "RuntimePricingMap": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/components/schemas/RuntimeModelPricing"
+          }
+        }
+      },
+      "AlertNotificationsListResponse": {
+        "type": "object",
+        "description": "Paginated list of alert notifications",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "has_more"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertNotification"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AlertNotification": {
+        "type": "object",
+        "description": "Alert notification (triggered alert instance)",
+        "required": [
+          "id",
+          "rule_id",
+          "rule_name",
+          "status",
+          "triggered_at",
+          "metric",
+          "operator",
+          "threshold",
+          "actual_value",
+          "context",
+          "delivery"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "rule_name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AlertStatus"
+          },
+          "triggered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolved_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/AlertMetric"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/AlertOperator"
+          },
+          "threshold": {
+            "type": "number"
+          },
+          "actual_value": {
+            "type": "number"
+          },
+          "context": {
+            "$ref": "#/components/schemas/AlertContext"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/AlertDelivery"
+          }
+        }
+      },
+      "AlertStatus": {
+        "type": "string",
+        "description": "Alert notification status",
+        "enum": [
+          "firing",
+          "resolved",
+          "silenced"
+        ]
+      },
+      "AlertContext": {
+        "type": "object",
+        "description": "Alert context information",
+        "properties": {
+          "resource_type": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "resource_name": {
+            "type": "string"
+          },
+          "end_user_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AlertDelivery": {
+        "type": "object",
+        "description": "Alert delivery status",
+        "required": [
+          "in_app_sent",
+          "webhook_sent"
+        ],
+        "properties": {
+          "in_app_sent": {
+            "type": "boolean"
+          },
+          "in_app_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "webhook_sent": {
+            "type": "boolean"
+          },
+          "webhook_status": {
+            "type": "integer",
+            "description": "HTTP status code from webhook delivery"
+          },
+          "webhook_error": {
+            "type": "string",
+            "description": "Error message if webhook delivery failed"
+          }
+        }
+      },
+      "SilenceNotificationRequest": {
+        "type": "object",
+        "description": "Silence notification request",
+        "properties": {
+          "duration_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Duration in minutes. If omitted, silence indefinitely."
+          }
+        }
+      },
+      "AlertRulesListResponse": {
+        "type": "object",
+        "description": "Paginated list of alert rules",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "has_more"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertRule"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token authorization"
       }
     }
   }

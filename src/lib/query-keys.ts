@@ -182,6 +182,21 @@ export const queryKeys = {
       ['endpoints', workspaceId, projectId] as const,
   },
 
+  /** LLM runtime control plane */
+  runtime: {
+    _def: ['runtime'] as const,
+    providers: (workspaceId: string, projectId: string) =>
+      ['runtime', workspaceId, projectId, 'providers'] as const,
+    models: (workspaceId: string, projectId: string) =>
+      ['runtime', workspaceId, projectId, 'models'] as const,
+    aliases: (workspaceId: string, projectId: string) =>
+      ['runtime', workspaceId, projectId, 'aliases'] as const,
+    combos: (workspaceId: string, projectId: string) =>
+      ['runtime', workspaceId, projectId, 'combos'] as const,
+    pricing: (workspaceId: string, projectId: string) =>
+      ['runtime', workspaceId, projectId, 'pricing'] as const,
+  },
+
   /** Credentials */
   credentials: {
     _def: ['credentials'] as const,

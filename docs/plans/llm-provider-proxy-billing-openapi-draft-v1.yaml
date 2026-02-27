@@ -1,0 +1,541 @@
+openapi: 3.1.0
+info:
+  title: AgentSmith LLM Runtime API Draft
+  version: 0.1.0-draft
+  description: Draft contract for LLM provider/model routing, unified proxy, and billing.
+
+paths:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/llm/chat/completions:
+    post:
+      summary: Unified chat proxy entry
+      operationId: createUnifiedChatCompletion
+      tags: [llm-runtime]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnifiedChatRequest'
+      responses:
+        '200':
+          description: Success (stream/non-stream envelope abstracted)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnifiedChatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers:
+    get:
+      summary: List provider connections
+      operationId: listRuntimeProviders
+      tags: [runtime-providers]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: Provider connection list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderConnection'
+                required: [items]
+    post:
+      summary: Create provider connection
+      operationId: createRuntimeProvider
+      tags: [runtime-providers]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderConnectionCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConnection'
+
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId}:
+    put:
+      summary: Update provider connection
+      operationId: updateRuntimeProvider
+      tags: [runtime-providers]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+        - name: providerConnectionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderConnectionUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConnection'
+    delete:
+      summary: Delete provider connection
+      operationId: deleteRuntimeProvider
+      tags: [runtime-providers]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+        - name: providerConnectionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models:
+    get:
+      summary: List model catalog entries
+      operationId: listRuntimeModels
+      tags: [runtime-models]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: Model catalog list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ModelCatalogEntry'
+                required: [items]
+    post:
+      summary: Create model catalog entry
+      operationId: createRuntimeModel
+      tags: [runtime-models]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelCatalogEntryCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCatalogEntry'
+
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases:
+    get:
+      summary: List aliases
+      operationId: listModelAliases
+      tags: [runtime-routing]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: Alias list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ModelAlias'
+                required: [items]
+    post:
+      summary: Create alias
+      operationId: createModelAlias
+      tags: [runtime-routing]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelAliasCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelAlias'
+
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos:
+    get:
+      summary: List combos
+      operationId: listModelCombos
+      tags: [runtime-routing]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: Combo list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ModelCombo'
+                required: [items]
+    post:
+      summary: Create combo
+      operationId: createModelCombo
+      tags: [runtime-routing]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelComboCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCombo'
+
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing:
+    get:
+      summary: Get effective pricing map
+      operationId: getRuntimePricing
+      tags: [runtime-pricing]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: Effective pricing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingMap'
+    patch:
+      summary: Upsert pricing overrides
+      operationId: patchRuntimePricing
+      tags: [runtime-pricing]
+      parameters:
+        - $ref: '#/components/parameters/workspaceId'
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PricingMap'
+      responses:
+        '200':
+          description: Updated effective pricing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingMap'
+
+components:
+  parameters:
+    workspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+    projectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+      required: [error_code, message]
+
+    UnifiedChatRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          description: provider/model, alias, or combo:<name>
+        messages:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        stream:
+          type: boolean
+          default: false
+      required: [model, messages]
+
+    UnifiedChatResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        usage:
+          type: object
+          additionalProperties: true
+        runtime:
+          type: object
+          properties:
+            provider:
+              type: string
+            resolved_model:
+              type: string
+            fallback_hops:
+              type: integer
+          required: [provider, resolved_model]
+      required: [id, object, choices]
+
+    ProviderConnection:
+      type: object
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+        auth_mode:
+          type: string
+          enum: [api_key, oauth, aws_sdk, token]
+        base_url:
+          type: string
+        credential_ref:
+          type: string
+        priority:
+          type: integer
+        status:
+          type: string
+          enum: [active, disabled]
+      required: [id, provider, auth_mode, base_url, status]
+
+    ProviderConnectionCreate:
+      type: object
+      properties:
+        provider:
+          type: string
+        auth_mode:
+          type: string
+          enum: [api_key, oauth, aws_sdk, token]
+        base_url:
+          type: string
+        credential_ref:
+          type: string
+        priority:
+          type: integer
+      required: [provider, auth_mode, base_url]
+
+    ProviderConnectionUpdate:
+      type: object
+      properties:
+        base_url:
+          type: string
+        credential_ref:
+          type: string
+        priority:
+          type: integer
+        status:
+          type: string
+          enum: [active, disabled]
+
+    ModelCatalogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+        model_id:
+          type: string
+        display_name:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        context_window:
+          type: integer
+        max_tokens:
+          type: integer
+        pricing:
+          $ref: '#/components/schemas/ModelPricing'
+      required: [id, provider, model_id, capabilities]
+
+    ModelCatalogEntryCreate:
+      type: object
+      properties:
+        provider:
+          type: string
+        model_id:
+          type: string
+        display_name:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        context_window:
+          type: integer
+        max_tokens:
+          type: integer
+        pricing:
+          $ref: '#/components/schemas/ModelPricing'
+      required: [provider, model_id, capabilities]
+
+    ModelAlias:
+      type: object
+      properties:
+        alias:
+          type: string
+        target_provider:
+          type: string
+        target_model:
+          type: string
+      required: [alias, target_provider, target_model]
+
+    ModelAliasCreate:
+      $ref: '#/components/schemas/ModelAlias'
+
+    ModelCombo:
+      type: object
+      properties:
+        name:
+          type: string
+        targets:
+          type: array
+          items:
+            type: object
+            properties:
+              provider:
+                type: string
+              model:
+                type: string
+            required: [provider, model]
+        fallback_policy:
+          type: object
+          properties:
+            max_hops:
+              type: integer
+              minimum: 1
+            retryable_error_classes:
+              type: array
+              items:
+                type: string
+          required: [max_hops, retryable_error_classes]
+      required: [name, targets, fallback_policy]
+
+    ModelComboCreate:
+      $ref: '#/components/schemas/ModelCombo'
+
+    ModelPricing:
+      type: object
+      properties:
+        input:
+          type: number
+        output:
+          type: number
+        cached:
+          type: number
+        reasoning:
+          type: number
+        cache_creation:
+          type: number
+      required: [input, output]
+
+    PricingMap:
+      type: object
+      additionalProperties:
+        type: object
+        additionalProperties:
+          $ref: '#/components/schemas/ModelPricing'

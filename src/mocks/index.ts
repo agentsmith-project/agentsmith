@@ -14,6 +14,7 @@ import { taskHandlers } from './handlers/tasks';
 import { meHandlers } from './handlers/me';
 import { userKeyHandlers } from './handlers/user-keys';
 import { alertsHandlers } from './handlers/alerts';
+import { runtimeHandlers } from './handlers/runtime';
 
 export const handlers = [
   ...authHandlers,
@@ -32,4 +33,5 @@ export const handlers = [
   ...taskHandlers,
   ...userKeyHandlers,
   ...alertsHandlers,
+  ...runtimeHandlers,
 ];

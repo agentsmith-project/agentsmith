@@ -239,6 +239,34 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents",
     "method": "get"
   },
+  "llmUnifiedChat": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/llm/chat/completions",
+    "method": "post"
+  },
+  "runtimeProviders": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers",
+    "method": "get"
+  },
+  "runtimeProviderItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId}",
+    "method": "put"
+  },
+  "runtimeModels": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models",
+    "method": "get"
+  },
+  "runtimeRoutingAliases": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases",
+    "method": "get"
+  },
+  "runtimeRoutingCombos": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos",
+    "method": "get"
+  },
+  "runtimePricing": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing",
+    "method": "get"
+  },
   "agentItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}",
     "method": "get"

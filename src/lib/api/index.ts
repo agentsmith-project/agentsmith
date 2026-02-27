@@ -53,6 +53,7 @@ export {
   FilesAPI,
   TaskAPI,
   AlertAPI,
+  RuntimeAPI,
 } from './endpoints';
 
 export type {
@@ -78,6 +79,16 @@ export type {
   SaveArtifactRequest,
   TaskListParams,
   TaskListResponse,
+  RuntimeProviderConnection,
+  CreateRuntimeProviderConnectionRequest,
+  UpdateRuntimeProviderConnectionRequest,
+  RuntimeModelCatalogEntry,
+  CreateRuntimeModelCatalogEntryRequest,
+  RuntimeModelAlias,
+  CreateRuntimeModelAliasRequest,
+  RuntimeModelCombo,
+  CreateRuntimeModelComboRequest,
+  RuntimePricingMap,
 } from './endpoints';
 
 // Adapters (for advanced usage)

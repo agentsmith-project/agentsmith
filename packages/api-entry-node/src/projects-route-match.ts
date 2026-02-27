@@ -113,6 +113,18 @@ export type ProjectsRoute =
     proxyPath: string;
   }
   | { kind: 'endpointImportOpenAICompatible'; workspaceId: string; projectId: string }
+  | { kind: 'llmUnifiedChat'; workspaceId: string; projectId: string }
+  | { kind: 'runtimeProviders'; workspaceId: string; projectId: string }
+  | {
+    kind: 'runtimeProviderItem';
+    workspaceId: string;
+    projectId: string;
+    providerConnectionId: string;
+  }
+  | { kind: 'runtimeModels'; workspaceId: string; projectId: string }
+  | { kind: 'runtimeRoutingAliases'; workspaceId: string; projectId: string }
+  | { kind: 'runtimeRoutingCombos'; workspaceId: string; projectId: string }
+  | { kind: 'runtimePricing'; workspaceId: string; projectId: string }
   | { kind: 'credentials'; workspaceId: string; projectId: string }
   | { kind: 'credentialItem'; workspaceId: string; projectId: string; credentialId: string }
   | { kind: 'credentialRotate'; workspaceId: string; projectId: string; credentialId: string };
@@ -868,6 +880,84 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'agents',
       workspaceId: decodeURIComponent(agentsMatched[1]),
       projectId: decodeURIComponent(agentsMatched[2]),
+    };
+  }
+
+  const llmUnifiedChatMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/llm\/chat\/completions\/?$/,
+  );
+  if (llmUnifiedChatMatched) {
+    return {
+      kind: 'llmUnifiedChat',
+      workspaceId: decodeURIComponent(llmUnifiedChatMatched[1]),
+      projectId: decodeURIComponent(llmUnifiedChatMatched[2]),
+    };
+  }
+
+  const runtimeProviderItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/providers\/([^/]+)\/?$/,
+  );
+  if (runtimeProviderItemMatched) {
+    return {
+      kind: 'runtimeProviderItem',
+      workspaceId: decodeURIComponent(runtimeProviderItemMatched[1]),
+      projectId: decodeURIComponent(runtimeProviderItemMatched[2]),
+      providerConnectionId: decodeURIComponent(runtimeProviderItemMatched[3]),
+    };
+  }
+
+  const runtimeProvidersMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/providers\/?$/,
+  );
+  if (runtimeProvidersMatched) {
+    return {
+      kind: 'runtimeProviders',
+      workspaceId: decodeURIComponent(runtimeProvidersMatched[1]),
+      projectId: decodeURIComponent(runtimeProvidersMatched[2]),
+    };
+  }
+
+  const runtimeModelsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/models\/?$/,
+  );
+  if (runtimeModelsMatched) {
+    return {
+      kind: 'runtimeModels',
+      workspaceId: decodeURIComponent(runtimeModelsMatched[1]),
+      projectId: decodeURIComponent(runtimeModelsMatched[2]),
+    };
+  }
+
+  const runtimeRoutingAliasesMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/aliases\/?$/,
+  );
+  if (runtimeRoutingAliasesMatched) {
+    return {
+      kind: 'runtimeRoutingAliases',
+      workspaceId: decodeURIComponent(runtimeRoutingAliasesMatched[1]),
+      projectId: decodeURIComponent(runtimeRoutingAliasesMatched[2]),
+    };
+  }
+
+  const runtimeRoutingCombosMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/combos\/?$/,
+  );
+  if (runtimeRoutingCombosMatched) {
+    return {
+      kind: 'runtimeRoutingCombos',
+      workspaceId: decodeURIComponent(runtimeRoutingCombosMatched[1]),
+      projectId: decodeURIComponent(runtimeRoutingCombosMatched[2]),
+    };
+  }
+
+  const runtimePricingMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/pricing\/?$/,
+  );
+  if (runtimePricingMatched) {
+    return {
+      kind: 'runtimePricing',
+      workspaceId: decodeURIComponent(runtimePricingMatched[1]),
+      projectId: decodeURIComponent(runtimePricingMatched[2]),
     };
   }
 

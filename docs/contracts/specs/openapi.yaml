@@ -24,6 +24,8 @@ tags:
     description: Server-Sent Events ticket exchange
   - name: Governance
     description: Quota checks and audit export
+  - name: LLM Runtime
+    description: Provider/model routing, unified proxy, and pricing control plane
 paths:
   /api/v1/openapi.json:
     get:
@@ -3997,6 +3999,337 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/llm/chat/completions:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    post:
+      tags:
+        - LLM Runtime
+      operationId: createUnifiedChatCompletion
+      summary: Unified LLM chat completion proxy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnifiedChatRequest"
+      responses:
+        "200":
+          description: Completion response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnifiedChatResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+        "429":
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - LLM Runtime
+      operationId: listRuntimeProviders
+      summary: List runtime provider connections
+      responses:
+        "200":
+          description: Provider connection list
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RuntimeProviderConnection"
+        "401": *a1
+        "403": *a2
+    post:
+      tags:
+        - LLM Runtime
+      operationId: createRuntimeProvider
+      summary: Create runtime provider connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeProviderConnectionCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeProviderConnection"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId}:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: providerConnectionId
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags:
+        - LLM Runtime
+      operationId: updateRuntimeProvider
+      summary: Update runtime provider connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeProviderConnectionUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeProviderConnection"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+    delete:
+      tags:
+        - LLM Runtime
+      operationId: deleteRuntimeProvider
+      summary: Delete runtime provider connection
+      responses:
+        "204":
+          description: Deleted
+        "401": *a1
+        "403": *a2
+        "404": *a3
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - LLM Runtime
+      operationId: listRuntimeModels
+      summary: List runtime model catalog entries
+      responses:
+        "200":
+          description: Model list
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RuntimeModelCatalogEntry"
+        "401": *a1
+        "403": *a2
+    post:
+      tags:
+        - LLM Runtime
+      operationId: createRuntimeModel
+      summary: Create runtime model catalog entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeModelCatalogEntryCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeModelCatalogEntry"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - LLM Runtime
+      operationId: listRuntimeRoutingAliases
+      summary: List model aliases
+      responses:
+        "200":
+          description: Alias list
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RuntimeModelAlias"
+        "401": *a1
+        "403": *a2
+    post:
+      tags:
+        - LLM Runtime
+      operationId: createRuntimeRoutingAlias
+      summary: Create model alias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeModelAliasCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeModelAlias"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - LLM Runtime
+      operationId: listRuntimeRoutingCombos
+      summary: List model combos
+      responses:
+        "200":
+          description: Combo list
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RuntimeModelCombo"
+        "401": *a1
+        "403": *a2
+    post:
+      tags:
+        - LLM Runtime
+      operationId: createRuntimeRoutingCombo
+      summary: Create model combo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeModelComboCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeModelCombo"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - LLM Runtime
+      operationId: getRuntimePricing
+      summary: Get effective runtime pricing
+      responses:
+        "200":
+          description: Pricing map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimePricingMap"
+        "401": *a1
+        "403": *a2
+    patch:
+      tags:
+        - LLM Runtime
+      operationId: patchRuntimePricing
+      summary: Upsert runtime pricing overrides
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimePricingMap"
+      responses:
+        "200":
+          description: Updated pricing map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimePricingMap"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-rules:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -5499,6 +5832,241 @@ components:
         details:
           type: string
           description: Human-readable explanation of the test result
+    UnifiedChatRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          description: provider/model, alias, or combo:<name>
+        messages:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        stream:
+          type: boolean
+          default: false
+    UnifiedChatResponse:
+      type: object
+      required:
+        - id
+        - object
+        - choices
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        usage:
+          type: object
+          additionalProperties: true
+        runtime:
+          type: object
+          required:
+            - provider
+            - resolved_model
+          properties:
+            provider:
+              type: string
+            resolved_model:
+              type: string
+            fallback_hops:
+              type: integer
+              minimum: 0
+    RuntimeProviderConnection:
+      type: object
+      required:
+        - id
+        - provider
+        - auth_mode
+        - base_url
+        - status
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+        auth_mode:
+          type: string
+          enum: [api_key, oauth, aws_sdk, token]
+        base_url:
+          type: string
+          format: uri
+        credential_ref:
+          type: string
+        priority:
+          type: integer
+        status:
+          type: string
+          enum: [active, disabled]
+    RuntimeProviderConnectionCreate:
+      type: object
+      required:
+        - provider
+        - auth_mode
+        - base_url
+      properties:
+        provider:
+          type: string
+        auth_mode:
+          type: string
+          enum: [api_key, oauth, aws_sdk, token]
+        base_url:
+          type: string
+          format: uri
+        credential_ref:
+          type: string
+        priority:
+          type: integer
+    RuntimeProviderConnectionUpdate:
+      type: object
+      properties:
+        base_url:
+          type: string
+          format: uri
+        credential_ref:
+          type: string
+        priority:
+          type: integer
+        status:
+          type: string
+          enum: [active, disabled]
+    RuntimeModelPricing:
+      type: object
+      required:
+        - input
+        - output
+      properties:
+        input:
+          type: number
+        output:
+          type: number
+        cached:
+          type: number
+        reasoning:
+          type: number
+        cache_creation:
+          type: number
+    RuntimeModelCatalogEntry:
+      type: object
+      required:
+        - id
+        - provider
+        - model_id
+        - capabilities
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+        model_id:
+          type: string
+        display_name:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        context_window:
+          type: integer
+        max_tokens:
+          type: integer
+        pricing:
+          $ref: "#/components/schemas/RuntimeModelPricing"
+    RuntimeModelCatalogEntryCreate:
+      type: object
+      required:
+        - provider
+        - model_id
+        - capabilities
+      properties:
+        provider:
+          type: string
+        model_id:
+          type: string
+        display_name:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        context_window:
+          type: integer
+        max_tokens:
+          type: integer
+        pricing:
+          $ref: "#/components/schemas/RuntimeModelPricing"
+    RuntimeModelAlias:
+      type: object
+      required:
+        - alias
+        - target_provider
+        - target_model
+      properties:
+        alias:
+          type: string
+        target_provider:
+          type: string
+        target_model:
+          type: string
+    RuntimeModelAliasCreate:
+      $ref: "#/components/schemas/RuntimeModelAlias"
+    RuntimeModelComboTarget:
+      type: object
+      required:
+        - provider
+        - model
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+    RuntimeModelComboFallbackPolicy:
+      type: object
+      required:
+        - max_hops
+        - retryable_error_classes
+      properties:
+        max_hops:
+          type: integer
+          minimum: 1
+        retryable_error_classes:
+          type: array
+          items:
+            type: string
+    RuntimeModelCombo:
+      type: object
+      required:
+        - name
+        - targets
+        - fallback_policy
+      properties:
+        name:
+          type: string
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeModelComboTarget"
+        fallback_policy:
+          $ref: "#/components/schemas/RuntimeModelComboFallbackPolicy"
+    RuntimeModelComboCreate:
+      $ref: "#/components/schemas/RuntimeModelCombo"
+    RuntimePricingMap:
+      type: object
+      additionalProperties:
+        type: object
+        additionalProperties:
+          $ref: "#/components/schemas/RuntimeModelPricing"
     AlertNotificationsListResponse:
       type: object
       description: Paginated list of alert notifications

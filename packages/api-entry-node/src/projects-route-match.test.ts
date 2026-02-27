@@ -122,6 +122,59 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches runtime routing and unified chat routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/llm/chat/completions'),
+    ).toEqual({
+      kind: 'llmUnifiedChat',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/providers'),
+    ).toEqual({
+      kind: 'runtimeProviders',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/providers/prov_1'),
+    ).toEqual({
+      kind: 'runtimeProviderItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      providerConnectionId: 'prov_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/models'),
+    ).toEqual({
+      kind: 'runtimeModels',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases'),
+    ).toEqual({
+      kind: 'runtimeRoutingAliases',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/combos'),
+    ).toEqual({
+      kind: 'runtimeRoutingCombos',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing'),
+    ).toEqual({
+      kind: 'runtimePricing',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+  });
+
   it('matches agent management and key routes', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/agents'),

@@ -1181,6 +1181,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/llm/chat/completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unified LLM chat completion proxy */
+        post: operations["createUnifiedChatCompletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members": {
         parameters: {
             query?: never;
@@ -1419,6 +1439,133 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["update_projectResourcePolicy"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List runtime model catalog entries */
+        get: operations["listRuntimeModels"];
+        put?: never;
+        /** Create runtime model catalog entry */
+        post: operations["createRuntimeModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Get effective runtime pricing */
+        get: operations["getRuntimePricing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Upsert runtime pricing overrides */
+        patch: operations["patchRuntimePricing"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List runtime provider connections */
+        get: operations["listRuntimeProviders"];
+        put?: never;
+        /** Create runtime provider connection */
+        post: operations["createRuntimeProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                providerConnectionId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Update runtime provider connection */
+        put: operations["updateRuntimeProvider"];
+        post?: never;
+        /** Delete runtime provider connection */
+        delete: operations["deleteRuntimeProvider"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List model aliases */
+        get: operations["listRuntimeRoutingAliases"];
+        put?: never;
+        /** Create model alias */
+        post: operations["createRuntimeRoutingAlias"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List model combos */
+        get: operations["listRuntimeRoutingCombos"];
+        put?: never;
+        /** Create model combo */
+        post: operations["createRuntimeRoutingCombo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries": {
@@ -2584,6 +2731,86 @@ export interface components {
             resource_type: string;
             tokens?: number;
         };
+        RuntimeModelAlias: {
+            alias: string;
+            target_model: string;
+            target_provider: string;
+        };
+        RuntimeModelAliasCreate: components["schemas"]["RuntimeModelAlias"];
+        RuntimeModelCatalogEntry: {
+            capabilities: string[];
+            context_window?: number;
+            display_name?: string;
+            id: string;
+            max_tokens?: number;
+            model_id: string;
+            pricing?: components["schemas"]["RuntimeModelPricing"];
+            provider: string;
+        };
+        RuntimeModelCatalogEntryCreate: {
+            capabilities: string[];
+            context_window?: number;
+            display_name?: string;
+            max_tokens?: number;
+            model_id: string;
+            pricing?: components["schemas"]["RuntimeModelPricing"];
+            provider: string;
+        };
+        RuntimeModelCombo: {
+            fallback_policy: components["schemas"]["RuntimeModelComboFallbackPolicy"];
+            name: string;
+            targets: components["schemas"]["RuntimeModelComboTarget"][];
+        };
+        RuntimeModelComboCreate: components["schemas"]["RuntimeModelCombo"];
+        RuntimeModelComboFallbackPolicy: {
+            max_hops: number;
+            retryable_error_classes: string[];
+        };
+        RuntimeModelComboTarget: {
+            model: string;
+            provider: string;
+        };
+        RuntimeModelPricing: {
+            cache_creation?: number;
+            cached?: number;
+            input: number;
+            output: number;
+            reasoning?: number;
+        };
+        RuntimePricingMap: {
+            [key: string]: {
+                [key: string]: components["schemas"]["RuntimeModelPricing"];
+            };
+        };
+        RuntimeProviderConnection: {
+            /** @enum {string} */
+            auth_mode: "api_key" | "oauth" | "aws_sdk" | "token";
+            /** Format: uri */
+            base_url: string;
+            credential_ref?: string;
+            id: string;
+            priority?: number;
+            provider: string;
+            /** @enum {string} */
+            status: "active" | "disabled";
+        };
+        RuntimeProviderConnectionCreate: {
+            /** @enum {string} */
+            auth_mode: "api_key" | "oauth" | "aws_sdk" | "token";
+            /** Format: uri */
+            base_url: string;
+            credential_ref?: string;
+            priority?: number;
+            provider: string;
+        };
+        RuntimeProviderConnectionUpdate: {
+            /** Format: uri */
+            base_url?: string;
+            credential_ref?: string;
+            priority?: number;
+            /** @enum {string} */
+            status?: "active" | "disabled";
+        };
         /** @description Silence notification request */
         SilenceNotificationRequest: {
             /** @description Duration in minutes. If omitted, silence indefinitely. */
@@ -2645,6 +2872,31 @@ export interface components {
             /** @description Cursor for loading an earlier slice using `before_id`. */
             next_after_id?: string | null;
             total: number;
+        };
+        UnifiedChatRequest: {
+            messages: {
+                [key: string]: unknown;
+            }[];
+            /** @description provider/model, alias, or combo:<name> */
+            model: string;
+            /** @default false */
+            stream: boolean;
+        };
+        UnifiedChatResponse: {
+            choices: {
+                [key: string]: unknown;
+            }[];
+            id: string;
+            model?: string;
+            object: string;
+            runtime?: {
+                fallback_hops?: number;
+                provider: string;
+                resolved_model: string;
+            };
+            usage?: {
+                [key: string]: unknown;
+            };
         };
         UpdateAgentRequest: {
             description?: string;
@@ -5159,6 +5411,53 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    createUnifiedChatCompletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnifiedChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Completion response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnifiedChatResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     get_projectMembers: {
         parameters: {
             query?: never;
@@ -5898,6 +6197,394 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listRuntimeModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RuntimeModelCatalogEntry"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createRuntimeModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeModelCatalogEntryCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelCatalogEntry"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getRuntimePricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pricing map */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePricingMap"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    patchRuntimePricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimePricingMap"];
+            };
+        };
+        responses: {
+            /** @description Updated pricing map */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePricingMap"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listRuntimeProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider connection list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RuntimeProviderConnection"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createRuntimeProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeProviderConnectionCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeProviderConnection"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateRuntimeProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                providerConnectionId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeProviderConnectionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeProviderConnection"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteRuntimeProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                providerConnectionId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRuntimeRoutingAliases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Alias list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RuntimeModelAlias"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createRuntimeRoutingAlias: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeModelAliasCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelAlias"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listRuntimeRoutingCombos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Combo list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RuntimeModelCombo"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createRuntimeRoutingCombo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeModelComboCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelCombo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];

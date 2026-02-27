@@ -34,9 +34,10 @@ async function executeRoute(params: {
   await handleRuntimeRoute({
     route: params.route,
     method: params.method,
-    req: {} as http.IncomingMessage,
+    req: { headers: {} } as http.IncomingMessage,
     res,
     deps: params.deps,
+    user: { id: 'user_test', email: 'u@test', name: 'U' },
     readBody: async () => params.body,
     json: (_res, status, payload) => {
       response.statusCode = status;
@@ -130,7 +131,7 @@ describe('runtime-route-handler', () => {
       },
     });
 
-    expect(res.statusCode).toBe(501);
-    expect((res.body as { error_code?: string }).error_code).toBe('NOT_IMPLEMENTED');
+    expect(res.statusCode).toBe(502);
+    expect((res.body as { error_code?: string }).error_code).toBe('RUNTIME_PROVIDER_CONNECTION_NOT_FOUND');
   });
 });

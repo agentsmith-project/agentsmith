@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
+import type { AuthenticatedUser } from './auth.js';
+import { writeProjectUsageFact } from './audit-usage-recorders.js';
 
 interface AnyRoute {
   kind: string;
@@ -15,6 +17,7 @@ interface RuntimeHandlerArgs {
   req: http.IncomingMessage;
   res: http.ServerResponse;
   deps: NodeApiDeps;
+  user: AuthenticatedUser;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
 }
@@ -130,17 +133,209 @@ function pricingRecordId(workspaceId: string, projectId: string): string {
   return `runtime_pricing_${workspaceId}_${projectId}`;
 }
 
+function shouldFallback(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+function normalizeUsage(payload: Record<string, unknown> | null): {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+} {
+  const usage = payload?.usage;
+  if (!usage || typeof usage !== 'object') return {};
+  const obj = usage as Record<string, unknown>;
+  const inputTokens = typeof obj.prompt_tokens === 'number'
+    ? obj.prompt_tokens
+    : (typeof obj.input_tokens === 'number' ? obj.input_tokens : undefined);
+  const outputTokens = typeof obj.completion_tokens === 'number'
+    ? obj.completion_tokens
+    : (typeof obj.output_tokens === 'number' ? obj.output_tokens : undefined);
+  const totalTokens = typeof obj.total_tokens === 'number'
+    ? obj.total_tokens
+    : ((typeof inputTokens === 'number' && typeof outputTokens === 'number') ? inputTokens + outputTokens : undefined);
+  return { inputTokens, outputTokens, totalTokens };
+}
+
+function calculateEstimatedCost(
+  pricingMap: RuntimePricingRecord['pricing_map'],
+  provider: string,
+  model: string,
+  usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number },
+): number | undefined {
+  const providerEntry = pricingMap[provider];
+  const modelEntry = providerEntry?.[model];
+  if (!modelEntry) return undefined;
+  const inputRate = typeof modelEntry.input === 'number' ? modelEntry.input : undefined;
+  const outputRate = typeof modelEntry.output === 'number' ? modelEntry.output : undefined;
+  if (inputRate === undefined || outputRate === undefined) return undefined;
+  const inTokens = usage.inputTokens ?? 0;
+  const outTokens = usage.outputTokens ?? 0;
+  const cost = (inTokens * (inputRate / 1_000_000)) + (outTokens * (outputRate / 1_000_000));
+  return Number.isFinite(cost) ? cost : undefined;
+}
+
 export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<boolean> {
-  const { route, method, req, res, deps, json, readBody } = args;
+  const { route, method, req, res, deps, user, json, readBody } = args;
 
   const scope = requireProjectScope(route, json, res);
   if (!scope) return false;
   const { workspaceId, projectId } = scope;
 
   if (route.kind === 'llmUnifiedChat' && method === 'POST') {
-    json(res, 501, {
-      error_code: 'NOT_IMPLEMENTED',
-      message: 'llm_unified_chat_not_implemented',
+    const raw = asObject(await readBody(req));
+    const modelRaw = asNonEmptyString(raw?.model);
+    if (!raw || !modelRaw) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_unified_chat_model_required' });
+      return true;
+    }
+    const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+    const startedAtMs = Date.now();
+
+    const providers = await listScoped<RuntimeProviderConnectionRecord>(deps, PROVIDERS_COLLECTION, workspaceId, projectId);
+    const aliases = await listScoped<RuntimeModelAliasRecord>(deps, ALIASES_COLLECTION, workspaceId, projectId);
+    const combos = await listScoped<RuntimeModelComboRecord>(deps, COMBOS_COLLECTION, workspaceId, projectId);
+    const pricing = await deps.docStore.get<RuntimePricingRecord>(PRICING_COLLECTION, pricingRecordId(workspaceId, projectId));
+    const pricingMap = pricing?.pricing_map ?? {};
+
+    const attempts: Array<{ provider: string; model: string }> = [];
+    const comboName = modelRaw.startsWith('combo:') ? modelRaw.slice('combo:'.length).trim() : null;
+    if (comboName) {
+      const combo = combos.find((item) => item.name === comboName);
+      if (!combo || combo.targets.length === 0) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_not_found' });
+        return true;
+      }
+      attempts.push(...combo.targets);
+    } else if (modelRaw.includes('/')) {
+      const [provider, model] = modelRaw.split('/', 2);
+      if (!provider || !model) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_model_format_invalid' });
+        return true;
+      }
+      attempts.push({ provider, model });
+    } else {
+      const alias = aliases.find((item) => item.alias === modelRaw);
+      if (!alias) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_alias_not_found' });
+        return true;
+      }
+      attempts.push({ provider: alias.target_provider, model: alias.target_model });
+    }
+
+    if (attempts.length === 0) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_routing_target_required' });
+      return true;
+    }
+
+    let lastErrorCode = 'RUNTIME_UPSTREAM_ERROR';
+    let lastMessage = 'runtime_upstream_error';
+
+    for (let idx = 0; idx < attempts.length; idx += 1) {
+      const attempt = attempts[idx]!;
+      const available = providers
+        .filter((item) => item.provider === attempt.provider && item.status === 'active')
+        .sort((a, b) => (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER));
+      if (available.length === 0) {
+        lastErrorCode = 'RUNTIME_PROVIDER_CONNECTION_NOT_FOUND';
+        lastMessage = 'runtime_provider_connection_not_found';
+        continue;
+      }
+      const providerConn = available[0]!;
+      if (!providerConn.credential_ref) {
+        lastErrorCode = 'RUNTIME_PROVIDER_CREDENTIAL_MISSING';
+        lastMessage = 'runtime_provider_credential_missing';
+        continue;
+      }
+      const apiKey = await deps.endpointResourceService.getCredentialSecret(
+        workspaceId,
+        projectId,
+        providerConn.credential_ref,
+      );
+      if (!apiKey) {
+        lastErrorCode = 'RUNTIME_PROVIDER_CREDENTIAL_NOT_FOUND';
+        lastMessage = 'runtime_provider_credential_not_found';
+        continue;
+      }
+
+      const upstreamUrl = `${providerConn.base_url.replace(/\/+$/, '')}/chat/completions`;
+      const body = { ...raw, model: attempt.model };
+      let upstreamRes: Response;
+      try {
+        upstreamRes = await fetch(upstreamUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+      } catch {
+        if (idx < attempts.length - 1) continue;
+        json(res, 502, { error_code: 'RUNTIME_UPSTREAM_NETWORK_ERROR', message: 'runtime_upstream_network_error' });
+        return true;
+      }
+
+      if (!upstreamRes.ok && idx < attempts.length - 1 && shouldFallback(upstreamRes.status)) {
+        continue;
+      }
+
+      const contentType = upstreamRes.headers.get('content-type') ?? 'application/json';
+      const text = await upstreamRes.text();
+      let parsed: Record<string, unknown> | null = null;
+      try {
+        parsed = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        parsed = null;
+      }
+      const usage = normalizeUsage(parsed);
+      const estimatedCost = calculateEstimatedCost(pricingMap, attempt.provider, attempt.model, usage);
+
+      await writeProjectUsageFact(deps, {
+        workspaceId,
+        projectId,
+        resourceType: 'endpoint',
+        resourceId: providerConn.id,
+        endUserId: user.id,
+        requestId,
+        requests: 1,
+        durationMs: Date.now() - startedAtMs,
+        tokensIn: usage.inputTokens,
+        tokensOut: usage.outputTokens,
+        tokensTotal: usage.totalTokens,
+        result: upstreamRes.ok ? 'ok' : 'error',
+        errorCode: upstreamRes.ok ? undefined : `UPSTREAM_${upstreamRes.status}`,
+        metadata: {
+          provider: attempt.provider,
+          model: attempt.model,
+          routed_by: comboName ? 'combo' : (modelRaw.includes('/') ? 'direct' : 'alias'),
+          fallback_hops: idx,
+          pricing_version: pricing?.updated_at ?? null,
+          estimated_cost: estimatedCost ?? null,
+        },
+      });
+
+      res.statusCode = upstreamRes.status;
+      res.setHeader('content-type', contentType);
+      if (contentType.toLowerCase().includes('application/json') && parsed && typeof parsed === 'object') {
+        const responsePayload = {
+          ...parsed,
+          runtime: {
+            provider: attempt.provider,
+            resolved_model: attempt.model,
+            fallback_hops: idx,
+          },
+        };
+        res.end(JSON.stringify(responsePayload));
+      } else {
+        res.end(text);
+      }
+      return true;
+    }
+
+    json(res, 502, {
+      error_code: lastErrorCode,
+      message: lastMessage,
     });
     return true;
   }

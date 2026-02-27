@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-27  
 **Scope**: `docs/plans/next-release-product-roadmap-prd-v1.md`  
-**Status**: GO
+**Status**: CONDITIONAL (Blocked on E2E baseline mode alignment)
 
 ---
 
@@ -24,6 +24,14 @@
 3. Structured release report generated (PASS):
 - `artifacts/release-reports/release-closure-20260227.json`
 - `artifacts/release-reports/release-closure-20260227.md`
+
+4. Full Playwright matrix re-run (2026-02-27, manual real-backend env, `BASE_URL=http://localhost:3001`):
+- `npx playwright test --project=smoke` -> **6 passed / 20 failed**
+- `npx playwright test --project=chromium` -> **25 passed / 252 failed**
+- `npx playwright test --project=visual` -> **8 passed / 25 failed**
+- Failure pattern is systemic and consistent with **test baseline mode mismatch**:
+  - Most tests assume MSW fixture IDs/routes (`ws_default/proj_001/task_001`) and stable mock UI states.
+  - Current run targets real backend demo data, so selectors and expected page states diverge.
 
 ---
 
@@ -57,6 +65,27 @@
 
 1. Keycloak client 回调地址存在端口白名单约束（`3001` 可用，`3002` 会报 `Invalid parameter: redirect_uri`），执行 real-backend smoke 时需保持一致。
 2. 真实后端 smoke 对联调环境可用性敏感，建议保留日志与截图产物用于审计与排障。
+
+---
+
+## Blocking Items (Latest Re-Verification)
+
+1. **E2E baseline split is not enforced at gate level**
+- Full Playwright matrix currently mixes assumptions:
+  - MSW/mock baseline assertions
+  - real-backend runtime execution
+- Without explicit lane separation, the release gate is not reproducible.
+
+2. **Visual baseline not updated for current rendering/runtime context**
+- `visual` project shows broad snapshot mismatch (size/layout/content deltas).
+- Needs explicit decision: maintain MSW visual baseline only, or create dedicated real-backend visual baseline lane.
+
+---
+
+## Release Operator Decision
+
+1. For **real-backend manual demo**: GO (core notebook streaming and runtime chain verified).
+2. For **full Playwright matrix gate**: NO-GO until baseline mode alignment is completed and rerun passes in the chosen lane.
 
 ---
 

@@ -7,11 +7,11 @@
 
 ## Executive Conclusion
 
-**结论（按“PRD feature 全量 E2E 覆盖”口径）**: **GO**  
-原因：A/B/C 的关键验收链路已由浏览器 E2E 闭环验证（smoke + 治理/策略/安全/C1/C2 全通过）。
+**结论（按“当前代码修复与手动 demo 可用性”口径）**: **GO（internal/controlled）**  
+原因：Notebook 流式阻塞根因已修复（`/sse-ticket` + ticket 契约），关键类型/单测通过，真实后端手动链路可用。
 
-**结论（按“当前发布门禁”口径）**: **GO（internal/controlled）**  
-原因：代码门禁、PRD 关键 E2E 以及真实后端治理 smoke 均已完成并通过。
+**结论（按“全量 Playwright 矩阵门禁”口径）**: **NO-GO（当前阻塞）**  
+原因：2026-02-27 复跑全量矩阵失败，且失败呈系统性模式，主要为 MSW 基线假设与 real-backend 运行模式混用导致。
 
 ---
 
@@ -22,8 +22,9 @@
 - `npm run ws:typecheck` ✅
 - `make verify-contracts` ✅
 - `npm run test:run -- src/lib/api/__tests__/sse-client.test.ts` ✅（21 passed）
-- `BASE_URL=http://localhost:3002 npx playwright test --project=smoke e2e/smoke.spec.ts --workers=1` ✅（26 passed）
-- `BASE_URL=http://localhost:3002 npx playwright test --project=chromium e2e/governance.spec.ts e2e/resource-policy.spec.ts e2e/epic-b-security.spec.ts e2e/cost-quota-dashboard.spec.ts e2e/alerts.spec.ts --workers=1` ✅（62 passed）
+- `BASE_URL=http://localhost:3001 npx playwright test --project=smoke` ❌（6 passed / 20 failed）
+- `BASE_URL=http://localhost:3001 npx playwright test --project=chromium` ❌（25 passed / 252 failed）
+- `BASE_URL=http://localhost:3001 npx playwright test --project=visual` ❌（8 passed / 25 failed）
 - `BASE_URL=http://localhost:3001 make governance-release-smoke` ✅（页面/交互/策略/成员生命周期 smoke 全通过）
 
 ---
@@ -64,9 +65,20 @@
 
 ---
 
-## Blocking Items (for “full PRD E2E coverage”)
+## Blocking Items (for full matrix release gate)
 
-1. **无阻塞项**（截至 2026-02-27 本轮复验）。
+1. **E2E 基线模式未分离（阻塞）**
+- 当前全量 Playwright 用例大量依赖 MSW fixture 页面结构与稳定数据；
+- 本次复验在 real-backend 手动 demo 环境运行，导致系统性 selector/state 断言失败；
+- 需明确并固化双 lane：
+  - `mock-lane`: MSW + 全量 UI/visual 基线
+  - `real-lane`: real backend + 关键路径 smoke/contracts
+
+2. **Visual 基线与运行上下文未对齐（阻塞）**
+- `visual` 项目大量 snapshot mismatch（含页面高度、布局与内容差异）；
+- 需决定并执行以下其一：
+  - 仅在 MSW lane 维护视觉基线；
+  - 增设 real-backend 视觉基线并独立存档。
 
 ---
 
@@ -80,13 +92,15 @@
 
 ## Decision Recommendation
 
-1. **若目标是“当前门禁发布”**：可 **GO（internal/controlled）**。  
-2. **若目标是“PRD features 全量 E2E 覆盖后发布”**：可 **GO**。
+1. **若目标是“真实后端手动演示与关键链路可用”**：可 **GO（internal/controlled）**。  
+2. **若目标是“全量 Playwright 矩阵作为发布门禁”**：当前 **NO-GO**，先完成 baseline lane 对齐并复跑通过。
 
 ---
 
 ## Next Actions
 
-1. 保持 C1/C2 新增用例进入主干 CI 必跑集合。
-2. 在发布文档中继续区分“浏览器 E2E”与“脚本/流水线验证”口径。
-3. 清理工作区后再打 release tag，并附上本报告作为 gate 证据。
+1. 固化测试分层：
+- `mock-lane`: `NEXT_PUBLIC_USE_MSW=true` + `playwright --project=smoke/chromium/visual`
+- `real-lane`: `governance-release-smoke` + notebook/contract key smokes
+2. 将当前 full-matrix 失败结果归档为本次 gate 证据，并在 PRD 收口表中标注阻塞状态。
+3. lane 对齐后复跑全量矩阵，再决定 release tag。

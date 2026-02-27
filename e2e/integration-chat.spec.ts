@@ -1965,25 +1965,26 @@ test.describe('integration chat flow', () => {
     }
   });
 
-  test('chat works with real deepseek completion endpoint imported from integration resource', async ({ page }) => {
-    test.skip(!RUN_REAL_COMPLETION, 'Enable with INTEGRATION_REAL_COMPLETION_E2E=true');
-    test.setTimeout(300_000);
-    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
-    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
-    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+  if (RUN_REAL_COMPLETION) {
+    test('chat works with real deepseek completion endpoint imported from integration resource', async ({ page }) => {
+      test.setTimeout(300_000);
+      const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+      const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+      const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
 
-    const payload = loadOpenAICompatiblePayloadForE2E();
-    expect(payload.completion).toBeTruthy();
+      const payload = loadOpenAICompatiblePayloadForE2E();
+      expect(payload.completion).toBeTruthy();
 
-    await keycloakLogin(page, locale, username, password);
-    const projectId = await createProjectFromUi(page, locale);
-    await importOpenAICompatibleViaApi(page, projectId, payload);
-    await openChatAndSendExpectAssistantAny(
-      page,
-      locale,
-      projectId,
-      'Reply with one short sentence to confirm end-to-end chat works.',
-    );
-  });
+      await keycloakLogin(page, locale, username, password);
+      const projectId = await createProjectFromUi(page, locale);
+      await importOpenAICompatibleViaApi(page, projectId, payload);
+      await openChatAndSendExpectAssistantAny(
+        page,
+        locale,
+        projectId,
+        'Reply with one short sentence to confirm end-to-end chat works.',
+      );
+    });
+  }
 
 });

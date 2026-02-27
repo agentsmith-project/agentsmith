@@ -31,17 +31,20 @@
 2. `npm run contracts:check-openapi`
 3. `npm run openapi:check-generated`
 4. `npm run test:run -- packages/api-entry-node/src/runtime-route-handler.test.ts packages/api-entry-node/src/projects-route-match.test.ts`
+5. `npm run test:e2e:integration:runtime-proxy-billing:with-api` (1 passed)
 
 ## E2E Coverage Against This PRD
 - Current state:
 1. Added real-backend integration e2e spec:
 - `e2e/integration-runtime-proxy-billing.spec.ts`
 - coverage: provider setup + alias/combo routing + unified chat + usage/timeseries/quota endpoints
-2. This new spec still requires full lane execution evidence in CI/local run artifacts.
+2. Local execution evidence captured:
+- Command: `npm run test:e2e:integration:runtime-proxy-billing:with-api`
+- Result: `1 passed (4.6s)` on 2026-02-27
 
 - Conclusion:
-1. E2E acceptance for this PRD is `partially covered` (test implemented, execution evidence pending).
-2. Existing confidence is still mainly from unit + contract checks until lane evidence is captured.
+1. E2E acceptance for runtime proxy billing backend chain is `covered` at integration-e2e level.
+2. Remaining gap is frontend operator workflow (runtime control-plane UI) acceptance coverage.
 
 ## Docs Consistency
 - Consistent:
@@ -52,8 +55,7 @@
 1. PRD asks full-chain closure (`type/contract/integration/e2e/visual`), while current evidence is missing e2e and visual coverage for runtime module.
 
 ## Blocking Items
-1. Capture passing evidence for runtime proxy billing integration e2e lane (`integration-runtime-proxy-billing.spec.ts`).
-2. Frontend runtime control-plane pages are not yet validated as production-grade operator workflow.
+1. Frontend runtime control-plane pages are not yet validated as production-grade operator workflow.
 
 ## Non-Blocking Items
 1. Upstream provider volatility (429/timeout) still requires robust replay/idempotency strategy in later hardening.

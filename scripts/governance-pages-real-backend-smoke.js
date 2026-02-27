@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 const fs = require('node:fs');
+const path = require('node:path');
 const crypto = require('node:crypto');
 const { chromium } = require('playwright');
 
@@ -24,6 +25,25 @@ function parseProjectIdFromHref(href) {
   return match?.[1] ?? null;
 }
 
+async function captureLoginDebugArtifacts(page, reason) {
+  try {
+    const outDir = path.join(process.cwd(), 'artifacts', 'release-reports');
+    fs.mkdirSync(outDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeReason = String(reason || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+    const screenshotPath = path.join(outDir, `gov-smoke-login-failure-${safeReason}-${ts}.png`);
+    const htmlPath = path.join(outDir, `gov-smoke-login-failure-${safeReason}-${ts}.html`);
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    const html = await page.content();
+    fs.writeFileSync(htmlPath, html, 'utf8');
+    console.error(`[gov-smoke] login debug screenshot: ${screenshotPath}`);
+    console.error(`[gov-smoke] login debug html: ${htmlPath}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[gov-smoke] failed to capture login debug artifacts: ${msg}`);
+  }
+}
+
 async function waitForPostLoginLanding(page, locale, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -34,11 +54,13 @@ async function waitForPostLoginLanding(page, locale, timeoutMs = 120_000) {
       const callbackError = await page.getByTestId('login-callback__error').isVisible().catch(() => false);
       if (callbackError) {
         const message = await page.getByTestId('login-callback__error').textContent().catch(() => '');
+        await captureLoginDebugArtifacts(page, 'login_callback_error');
         throw new Error(`login_callback_error:${(message || 'unknown').trim()}`);
       }
     }
     await page.waitForTimeout(250);
   }
+  await captureLoginDebugArtifacts(page, 'post_login_timeout');
   throw new Error(`post_login_timeout current_url=${page.url()}`);
 }
 
@@ -76,25 +98,31 @@ async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, c
 
   const authWaitDeadline = Date.now() + 30_000;
   let authPageState = 'unknown';
-  while (Date.now() < authWaitDeadline) {
-    if (await keycloakErrorLocator.isVisible().catch(() => false)) {
-      const errorText = (await keycloakErrorLocator.textContent().catch(() => 'unknown')).trim();
-      throw new Error(`keycloak_auth_page_error:${errorText || 'unknown'}`);
+  try {
+    while (Date.now() < authWaitDeadline) {
+      if (await keycloakErrorLocator.isVisible().catch(() => false)) {
+        const errorText = (await keycloakErrorLocator.textContent().catch(() => 'unknown')).trim();
+        await captureLoginDebugArtifacts(page, `keycloak_auth_page_error_${errorText || 'unknown'}`);
+        throw new Error(`keycloak_auth_page_error:${errorText || 'unknown'}`);
+      }
+      if (page.url().includes(`/${locale}/`)) {
+        authPageState = 'app_redirect';
+        break;
+      }
+      if (await usernameLocator.isVisible().catch(() => false)) {
+        authPageState = 'login_form';
+        break;
+      }
+      if (await loginButtonLocator.isVisible().catch(() => false)) {
+        // Some themes hide username/email field but still expose a submit flow.
+        authPageState = 'login_button_only';
+        break;
+      }
+      await page.waitForTimeout(500);
     }
-    if (page.url().includes(`/${locale}/`)) {
-      authPageState = 'app_redirect';
-      break;
-    }
-    if (await usernameLocator.isVisible().catch(() => false)) {
-      authPageState = 'login_form';
-      break;
-    }
-    if (await loginButtonLocator.isVisible().catch(() => false)) {
-      // Some themes hide username/email field but still expose a submit flow.
-      authPageState = 'login_button_only';
-      break;
-    }
-    await page.waitForTimeout(500);
+  } catch (error) {
+    await captureLoginDebugArtifacts(page, 'auth_wait_exception');
+    throw error;
   }
 
   if (authPageState === 'login_form') {
@@ -113,6 +141,7 @@ async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, c
     await waitForPostLoginLanding(page, locale, 120_000);
   } else {
     const pageTitle = await page.title().catch(() => '');
+    await captureLoginDebugArtifacts(page, 'auth_state_unresolved');
     throw new Error(`auth_state_unresolved current_url=${page.url()} title=${pageTitle}`);
   }
 }

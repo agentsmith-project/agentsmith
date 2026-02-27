@@ -14,6 +14,57 @@ import type {
 } from '../types';
 import type { ApiClient } from '../client';
 
+export interface UsageDataPoint {
+  time_bucket: string;
+  requests: number;
+  errors: number;
+  tokens?: number;
+  estimated_cost?: number;
+  duration_p95_ms?: number;
+  bytes_in?: number;
+  bytes_out?: number;
+}
+
+export interface ResourceCostBreakdown {
+  resource_id: string;
+  resource_name: string;
+  resource_type: string;
+  requests: number;
+  tokens?: number;
+  estimated_cost: number;
+  percentage_of_total: number;
+}
+
+export interface UsageTimeseriesResponse {
+  data_points: UsageDataPoint[];
+  resource_breakdown?: ResourceCostBreakdown[];
+  time_range: {
+    start: string;
+    end: string;
+    granularity?: 'hour' | 'day' | 'week' | 'month';
+  };
+  total_cost?: number;
+}
+
+export interface QuotaSummaryItem {
+  resource_id: string;
+  resource_name: string;
+  resource_type: 'endpoint' | 'source_library' | 'agent';
+  quota_used: number;
+  quota_limit: number;
+  quota_unit: 'tokens' | 'requests' | 'bytes' | 'files';
+  quota_reset_at: string;
+  percentage_used: number;
+}
+
+export interface QuotaOverview {
+  endpoints?: QuotaSummaryItem[];
+  source_libraries?: QuotaSummaryItem[];
+  agents?: QuotaSummaryItem[];
+  total_quota_limit?: number;
+  total_quota_used?: number;
+}
+
 export class AuditAPI {
   constructor(private client: ApiClient) {}
 
@@ -126,6 +177,44 @@ export class UsageAPI {
     const query = searchParams.toString();
     return this.client.get<PaginatedResponse<UsageRecord>>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage${query ? `?${query}` : ''}`,
+    );
+  }
+
+  /**
+   * Get usage/cost time-series data
+   */
+  async getTimeseries(
+    workspaceId: string,
+    projectId: string,
+    params: {
+      start_time: string;
+      end_time: string;
+      granularity?: 'hour' | 'day' | 'week' | 'month';
+      metric?: 'tokens' | 'requests' | 'cost' | 'bytes';
+      resource_type?: 'endpoint' | 'source_library' | 'agent';
+    },
+  ): Promise<UsageTimeseriesResponse> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('start_time', params.start_time);
+    searchParams.set('end_time', params.end_time);
+    if (params.granularity) searchParams.set('granularity', params.granularity);
+    if (params.metric) searchParams.set('metric', params.metric);
+    if (params.resource_type) searchParams.set('resource_type', params.resource_type);
+
+    return this.client.get<UsageTimeseriesResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/timeseries?${searchParams.toString()}`,
+    );
+  }
+
+  /**
+   * Get aggregate quota summary for the project
+   */
+  async getQuotaSummary(
+    workspaceId: string,
+    projectId: string,
+  ): Promise<QuotaOverview> {
+    return this.client.get<QuotaOverview>(
+      `/workspaces/${workspaceId}/projects/${projectId}/quota/summary`,
     );
   }
 }

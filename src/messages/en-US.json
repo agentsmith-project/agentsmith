@@ -732,6 +732,7 @@
   },
   "usage": {
     "title": "Usage",
+    "dashboard": "Cost & Quota Dashboard",
     "subtitle": "Usage statistics and resource consumption",
     "kpi": {
       "requests_today": "Requests Today",
@@ -767,6 +768,43 @@
     "permission_denied": "You don't have permission to view usage statistics.",
     "scope_my_usage": "My Usage",
     "scope_project_usage": "Project Usage"
+  },
+  "dashboard": {
+    "title": "Cost & Quota Dashboard",
+    "subtitle": "Trend, top usage, and anomaly insights",
+    "refresh": "Refresh",
+    "refreshed_data": "Dashboard data refreshed",
+    "filters": "Filters",
+    "clear_filters": "Clear filters",
+    "granularity": "Granularity",
+    "granularity_day": "Day",
+    "granularity_week": "Week",
+    "granularity_month": "Month",
+    "resource_type_label": "Resource Type",
+    "resource_id_label": "Resource ID",
+    "all_types": "All resource types",
+    "type_endpoint": "Endpoint",
+    "type_agent": "Agent",
+    "type_source_library": "Source Library",
+    "filter_by_resource_id": "Filter by resource ID",
+    "top_resources": "Top Resources",
+    "top_users": "Top Users",
+    "anomalies": "Anomalies",
+    "no_data": "No trend data",
+    "no_resources": "No resource data",
+    "no_users": "No user data",
+    "no_anomalies": "No anomalies detected",
+    "kpi": {
+      "requests_today": "Requests",
+      "errors_today": "Errors",
+      "tokens_today": "Tokens",
+      "cost_today": "Cost"
+    },
+    "resource_type": {
+      "endpoint": "Endpoint",
+      "agent": "Agent",
+      "source_library": "Source Library"
+    }
   },
   "settings": {
     "title": "Project Settings",
@@ -1754,6 +1792,7 @@
     "no_rules_description": "Create your first alert rule to get notified about important events",
     "no_alerts": "No notifications",
     "no_alerts_description": "You're all caught up! No new alerts to display",
+    "resolved": "Resolved",
     "dismiss": "Dismiss",
     "form": {
       "title": {

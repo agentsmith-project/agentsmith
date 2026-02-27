@@ -734,6 +734,7 @@
   },
   "usage": {
     "title": "用量",
+    "dashboard": "成本与配额看板",
     "subtitle": "用量统计与资源消耗",
     "kpi": {
       "requests_today": "今日请求数",
@@ -769,6 +770,43 @@
     "permission_denied": "您没有权限查看用量统计。",
     "scope_my_usage": "我的用量",
     "scope_project_usage": "项目用量"
+  },
+  "dashboard": {
+    "title": "成本与配额看板",
+    "subtitle": "趋势、Top 消耗与异常洞察",
+    "refresh": "刷新",
+    "refreshed_data": "看板数据已刷新",
+    "filters": "筛选",
+    "clear_filters": "清空筛选",
+    "granularity": "粒度",
+    "granularity_day": "日",
+    "granularity_week": "周",
+    "granularity_month": "月",
+    "resource_type_label": "资源类型",
+    "resource_id_label": "资源 ID",
+    "all_types": "全部资源类型",
+    "type_endpoint": "端点",
+    "type_agent": "Agent",
+    "type_source_library": "资料库",
+    "filter_by_resource_id": "按资源 ID 筛选",
+    "top_resources": "资源 Top",
+    "top_users": "用户 Top",
+    "anomalies": "异常",
+    "no_data": "暂无趋势数据",
+    "no_resources": "暂无资源数据",
+    "no_users": "暂无用户数据",
+    "no_anomalies": "暂无异常",
+    "kpi": {
+      "requests_today": "请求数",
+      "errors_today": "错误数",
+      "tokens_today": "Token",
+      "cost_today": "成本"
+    },
+    "resource_type": {
+      "endpoint": "端点",
+      "agent": "Agent",
+      "source_library": "资料库"
+    }
   },
   "settings": {
     "title": "项目设置",
@@ -1756,6 +1794,7 @@
     "no_rules_description": "创建第一条告警规则，在重要事件发生时收到通知",
     "no_alerts": "暂无通知",
     "no_alerts_description": "已全部处理完毕！没有新告警",
+    "resolved": "已恢复",
     "dismiss": "忽略",
     "form": {
       "title": {

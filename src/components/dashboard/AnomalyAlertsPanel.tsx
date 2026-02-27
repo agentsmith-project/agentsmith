@@ -42,7 +42,7 @@ export function AnomalyAlertsPanel({ anomalies, onAnomalyClick, loading }: Anoma
 
   if (loading) {
     return (
-      <div className="bg-surface border border-border rounded-xl p-4">
+      <div className="bg-surface border border-border rounded-xl p-4" data-testid="dashboard-anomalies">
         <div className="animate-pulse space-y-3">
           {[1, 2].map((i) => (
             <div key={i} className="h-16 bg-surface-high rounded" />
@@ -54,7 +54,7 @@ export function AnomalyAlertsPanel({ anomalies, onAnomalyClick, loading }: Anoma
 
   if (!anomalies || anomalies.length === 0) {
     return (
-      <div className="bg-surface border border-border rounded-xl p-8 text-center">
+      <div className="bg-surface border border-border rounded-xl p-8 text-center" data-testid="dashboard-anomalies">
         <Zap className="h-8 w-8 mx-auto mb-2 text-success" />
         <p className="text-sm text-tertiary">{t('no_anomalies')}</p>
       </div>
@@ -74,6 +74,7 @@ export function AnomalyAlertsPanel({ anomalies, onAnomalyClick, loading }: Anoma
           return (
             <div
               key={anomaly.id}
+              data-testid={`dashboard-anomalies__row--${anomaly.id}`}
               className={cn(
                 'px-4 py-3 hover:bg-hover cursor-pointer transition-colors',
                 onAnomalyClick && 'hover:bg-hover'

@@ -96,6 +96,7 @@ export function TopResourcesList({ resources, onResourceClick, loading }: TopRes
         {resources.map((resource) => (
           <div
             key={resource.resource_id}
+            data-testid={`dashboard-top-resources__row--${resource.resource_id}`}
             className={cn(
               'px-4 py-3 hover:bg-hover cursor-pointer transition-colors',
               onResourceClick && 'hover:bg-hover'

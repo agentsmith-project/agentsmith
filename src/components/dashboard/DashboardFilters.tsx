@@ -46,6 +46,7 @@ export function DashboardFilters({ filters, onChange, onClear }: DashboardFilter
           <select
             value={filters.granularity}
             onChange={(e) => onChange({ granularity: e.target.value as 'day' | 'week' | 'month' })}
+            data-testid="dashboard-filters__granularity"
             className="w-full px-3 py-2 bg-surface-high border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
           >
             <option value="day">{t('granularity_day')}</option>
@@ -56,10 +57,11 @@ export function DashboardFilters({ filters, onChange, onClear }: DashboardFilter
 
         {/* Resource Type Filter */}
         <div>
-          <label className="block text-xs text-tertiary mb-1">{t('resource_type')}</label>
+          <label className="block text-xs text-tertiary mb-1">{t('resource_type_label')}</label>
           <select
             value={filters.resource_type || ''}
             onChange={(e) => onChange({ resource_type: e.target.value || undefined })}
+            data-testid="dashboard-filters__resource-type"
             className="w-full px-3 py-2 bg-surface-high border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
           >
             <option value="">{t('all_types')}</option>
@@ -71,12 +73,13 @@ export function DashboardFilters({ filters, onChange, onClear }: DashboardFilter
 
         {/* Resource ID Filter */}
         <div>
-          <label className="block text-xs text-tertiary mb-1">{t('resource_id')}</label>
+          <label className="block text-xs text-tertiary mb-1">{t('resource_id_label')}</label>
           <input
             type="text"
             value={filters.resource_id || ''}
             onChange={(e) => onChange({ resource_id: e.target.value || undefined })}
             placeholder={t('filter_by_resource_id')}
+            data-testid="dashboard-filters__resource-id"
             className="w-full px-3 py-2 bg-surface-high border border-border rounded-lg text-sm text-foreground placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent"
           />
         </div>

@@ -53,6 +53,7 @@ export function TopUsersList({ users, onUserClick, loading }: TopUsersListProps)
         {users.map((user) => (
           <div
             key={user.end_user_id}
+            data-testid={`dashboard-top-users__row--${user.end_user_id}`}
             className={cn(
               'px-4 py-3 hover:bg-hover cursor-pointer transition-colors',
               onUserClick && 'hover:bg-hover'

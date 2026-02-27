@@ -16,6 +16,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import type { UsageListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CostDashboardPage } from '@/components/dashboard';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -42,6 +43,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   // If defaultEndUserId is provided, scope is locked to the current user usage.
   const isScopeLocked = !!defaultEndUserId;
   const [scope, setScope] = React.useState<'my' | 'project'>(defaultEndUserId ? 'my' : 'project');
+  const [panel, setPanel] = React.useState<'usage' | 'dashboard'>('usage');
 
   const effectiveEndUserId = isScopeLocked
     ? defaultEndUserId
@@ -110,6 +112,20 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
     [effectiveEndUserId]
   );
 
+  const applyDrillDown = React.useCallback(
+    (payload: { resourceId?: string; resourceType?: string; endUserId?: string }) => {
+      setPanel('usage');
+      setFilters((prev) => ({
+        ...prev,
+        resource_id: payload.resourceId,
+        resource_type: payload.resourceType,
+        end_user_id: payload.endUserId,
+        page: 1,
+      }));
+    },
+    []
+  );
+
   const currentPage = data?.page ?? filters.page ?? 1;
   const pageSize = data?.page_size ?? filters.page_size ?? 25;
   const totalItems = data?.total ?? 0;
@@ -161,67 +177,92 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
       )}
       toolbar={(
         <PageToolbar className="w-full">
-          {!isScopeLocked && currentUserId && (
-            <Tabs value={scope} onValueChange={(value) => setScope(value as 'my' | 'project')}>
+          <div className="flex flex-wrap items-center gap-3">
+            <Tabs value={panel} onValueChange={(value) => setPanel(value as 'usage' | 'dashboard')}>
               <TabsList>
-                <TabsTrigger value="my">{t('scope_my_usage')}</TabsTrigger>
-                <TabsTrigger value="project">{t('scope_project_usage')}</TabsTrigger>
+                <TabsTrigger value="usage" data-testid="usage__panel-tab--usage">{t('title')}</TabsTrigger>
+                <TabsTrigger value="dashboard" data-testid="usage__panel-tab--dashboard">{t('dashboard')}</TabsTrigger>
               </TabsList>
             </Tabs>
-          )}
+            {!isScopeLocked && currentUserId && (
+              <Tabs value={scope} onValueChange={(value) => setScope(value as 'my' | 'project')}>
+                <TabsList>
+                  <TabsTrigger value="my">{t('scope_my_usage')}</TabsTrigger>
+                  <TabsTrigger value="project">{t('scope_project_usage')}</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
+          </div>
         </PageToolbar>
       )}
     >
-      <div className="w-full space-y-3 min-h-0 flex-1 flex flex-col">
-        <UsageKPICards kpi={kpiData} loading={kpiLoading} />
+      {panel === 'dashboard' ? (
+        <CostDashboardPage
+          workspaceId={workspaceId}
+          projectId={projectId}
+          embedded
+          onResourceDrillDown={(resourceId, resourceType) => {
+            applyDrillDown({ resourceId, resourceType });
+          }}
+          onUserDrillDown={(endUserId) => {
+            applyDrillDown({ endUserId });
+          }}
+          onAnomalyDrillDown={(resourceId, resourceType) => {
+            applyDrillDown({ resourceId, resourceType });
+          }}
+        />
+      ) : (
+        <div className="w-full space-y-3 min-h-0 flex-1 flex flex-col">
+          <UsageKPICards kpi={kpiData} loading={kpiLoading} />
 
-        <div data-testid="usage__filters">
-          <UsageFilters
-            filters={apiFilters}
-            onChange={handleFiltersChange}
-            onClear={handleClearFilters}
-            defaultEndUserId={effectiveEndUserId}
-          />
-        </div>
-
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <div className="rounded-xl border border-border bg-surface p-3">
-            <UsageTable
-              data={data?.items || []}
-              loading={isLoading}
-              onClearFilters={handleClearFilters}
-              hasActiveFilters={hasActiveFilters}
+          <div data-testid="usage__filters">
+            <UsageFilters
+              filters={apiFilters}
+              onChange={handleFiltersChange}
+              onClear={handleClearFilters}
+              defaultEndUserId={effectiveEndUserId}
             />
-            <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
-              <p className="text-xs text-tertiary">
-                {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·
-                {' '}
-                {commonT('total_items', { count: String(totalItems) })}
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!canGoPrev || isLoading}
-                  onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
-                >
-                  {commonT('previous')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!canGoNext || isLoading}
-                  onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
-                >
-                  {commonT('next')}
-                </Button>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="rounded-xl border border-border bg-surface p-3">
+              <UsageTable
+                data={data?.items || []}
+                loading={isLoading}
+                onClearFilters={handleClearFilters}
+                hasActiveFilters={hasActiveFilters}
+              />
+              <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
+                <p className="text-xs text-tertiary">
+                  {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·
+                  {' '}
+                  {commonT('total_items', { count: String(totalItems) })}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canGoPrev || isLoading}
+                    onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
+                  >
+                    {commonT('previous')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canGoNext || isLoading}
+                    onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
+                  >
+                    {commonT('next')}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </PageLayout>
   );
 }

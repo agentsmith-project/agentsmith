@@ -17,23 +17,25 @@ Run from command line:
 
 ```bash
 # Quick verification with dry-run mode (fastest)
-npm run verify-release -- --dry-run
+npm run release:report -- --dry-run
 
 # Full verification with actual smoke tests
-npm run verify-release
+make verify-release
 
+# Generate structured report after verification
+npm run release:report -- --name release-$(date +%Y%m%d-%H%M%S)
 # Custom output directory
-npm run verify-release -- --output ./reports
+npm run release:report -- --output ./reports
 
 # Named report
-npm run verify-release -- --name my-release
+npm run release:report -- --name my-release
 ```
 
 ### Command Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--output` | Output directory for reports | `./reports` |
+| `--output` | Output directory for reports | `./artifacts/release-reports` |
 | `--name` | Report name (without extension) | `release-YYYYMMDD-HHMMSS` |
 | `--commit-range` | Git commit range to test | Current HEAD |
 | `--dry-run` | Skip actual tests, use mock data | false |
@@ -255,10 +257,11 @@ Before tagging a release:
 
 ```bash
 # Run full verification
-npm run verify-release -- --name pre-release-check
+make verify-release
+npm run release:report -- --name pre-release-check
 
 # Review report
-cat reports/pre-release-check.md
+cat artifacts/release-reports/pre-release-check.md
 ```
 
 ### Post-Release Verification
@@ -267,10 +270,11 @@ After deploying:
 
 ```bash
 # Verify deployed version
-npm run verify-release -- --name post-release-check
+make verify-release
+npm run release:report -- --name post-release-check
 
 # Compare with pre-release
-diff reports/pre-release-check.json reports/post-release-check.json
+diff artifacts/release-reports/pre-release-check.json artifacts/release-reports/post-release-check.json
 ```
 
 ### Continuous Verification
@@ -280,7 +284,7 @@ Automate in CI/CD:
 ```yaml
 # .github/workflows/verify.yml
 - name: Run Release Verification
-  run: npm run verify-release -- --dry-run
+  run: npm run release:report -- --dry-run
 
 - name: Upload Reports
   uses: actions/upload-artifact@v3
@@ -311,7 +315,7 @@ For quick validation without full tests:
 
 ```bash
 # Fast validation (mock data)
-npm run verify-release -- --dry-run
+npm run release:report -- --dry-run
 
 # Use when:
 # - Testing report format
@@ -325,7 +329,7 @@ Keep historical records:
 
 ```bash
 # Create timestamped archive
-npm run verify-release -- --archive
+npm run release:report -- --archive
 
 # Archive naming:
 # release-20260227-100000.json
@@ -355,7 +359,7 @@ jobs:
           node-version: '22'
       - run: npm ci
       - name: Run Verification
-        run: npm run verify-release -- --dry-run
+        run: npm run release:report -- --dry-run
       - name: Upload Reports
         uses: actions/upload-artifact@v3
         with:
@@ -369,7 +373,7 @@ jobs:
 verify:
   script:
     - npm ci
-    - npm run verify-release -- --dry-run
+    - npm run release:report -- --dry-run
   artifacts:
     paths:
       - reports/

@@ -9,6 +9,7 @@ fi
 shift
 
 API_PORT="${INTEGRATION_API_PORT:-20010}"
+WEB_BASE_URL="${BASE_URL:-http://localhost:3001}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-node-integration.log}"
@@ -44,7 +45,23 @@ if [[ "${ready}" -ne 1 ]]; then
   exit 1
 fi
 
+web_ready=0
+for _ in $(seq 1 30); do
+  web_code="$(curl -s -o /dev/null -w "%{http_code}" "${WEB_BASE_URL}/en-US/login" || true)"
+  if [[ "${web_code}" == "200" || "${web_code}" == "307" || "${web_code}" == "308" ]]; then
+    web_ready=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${web_ready}" -ne 1 ]]; then
+  echo "Web did not become ready at ${WEB_BASE_URL} (last status: ${web_code:-n/a})." >&2
+  echo "Hint: start frontend first, or use the *-auto make targets (for example: make e2e-int-runtime-proxy-billing-auto)." >&2
+  exit 1
+fi
+
 INTEGRATION_API_BASE="http://localhost:${API_PORT}" \
-BASE_URL="${BASE_URL:-http://localhost:3001}" \
+BASE_URL="${WEB_BASE_URL}" \
 env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@"

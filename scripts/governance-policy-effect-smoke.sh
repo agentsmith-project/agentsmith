@@ -13,6 +13,7 @@ WAIT_NEXT_MINUTE="${WAIT_NEXT_MINUTE:-1}"
 
 info() { echo "[gov-policy-smoke] $*"; }
 err() { echo "[gov-policy-smoke] ERROR: $*" >&2; }
+warn() { echo "[gov-policy-smoke] WARN: $*" >&2; }
 
 require_file() {
   local path="$1"
@@ -48,6 +49,12 @@ wait_until_next_minute() {
   if (( sleep_for < 1 )); then sleep_for=1; fi
   info "waiting ${sleep_for}s for a fresh minute bucket"
   sleep "${sleep_for}"
+}
+
+is_upstream_429_payload() {
+  local file="$1"
+  [[ -f "${file}" ]] || return 1
+  grep -Eq '"code":"1302"|Too Many Requests|速率限制|rate limit' "${file}" 2>/dev/null
 }
 
 main() {
@@ -91,7 +98,7 @@ main() {
   req2_file="$(mktemp)"
   audit_file="$(mktemp)"
   usage_file="$(mktemp)"
-  trap 'rm -f "${original_policy_file}" "${patch_resp_file}" "${req1_file}" "${req2_file}" "${audit_file}" "${usage_file}"; if [[ -n "${token:-}" && -s "${original_policy_file}" ]]; then curl -sS -o /dev/null -X PATCH "${policy_url}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" --data-binary @"${original_policy_file}" || true; fi' EXIT
+  trap 'op="${original_policy_file:-}"; pr="${patch_resp_file:-}"; r1="${req1_file:-}"; r2="${req2_file:-}"; au="${audit_file:-}"; us="${usage_file:-}"; tk="${token:-}"; pu="${policy_url:-}"; rm -f "${op}" "${pr}" "${r1}" "${r2}" "${au}" "${us}"; if [[ -n "${tk}" && -n "${op}" && -s "${op}" && -n "${pu}" ]]; then curl -sS -o /dev/null -X PATCH "${pu}" -H "Authorization: Bearer ${tk}" -H "Content-Type: application/json" --data-binary @"${op}" || true; fi' EXIT
 
   local policy_get_code
   policy_get_code="$(
@@ -139,6 +146,11 @@ main() {
       --data '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}]}' || true
   )"
   if [[ "${req1_code}" == "429" ]]; then
+    if is_upstream_429_payload "${req1_file}"; then
+      warn "first request hit upstream/provider rate limit (HTTP 429); skipping this smoke as non-blocking"
+      cat "${req1_file}" >&2 || true
+      return 0
+    fi
     err "first request unexpectedly rate-limited (existing bucket state not reset?)"
     cat "${req1_file}" >&2 || true
     exit 1

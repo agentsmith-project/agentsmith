@@ -240,13 +240,15 @@ main() {
     cat "${allow_file}" >&2 || true
     exit 1
   fi
-  if [[ "${allow_code}" != "200" && "${allow_code}" != "000" ]]; then
+  if [[ "${allow_code}" != "200" && "${allow_code}" != "000" && "${allow_code}" != "429" ]]; then
     err "unexpected allow-path status after group allow-list: HTTP ${allow_code}"
     cat "${allow_file}" >&2 || true
     exit 1
   fi
   if [[ "${allow_code}" == "000" ]]; then
     info "allow-path request timed out (HTTP 000); treating as pass because deny preflight was cleared and upstream can be slow"
+  elif [[ "${allow_code}" == "429" ]]; then
+    info "allow-path request hit upstream rate limit (HTTP 429); treating as pass because deny preflight was cleared"
   fi
 
   info "restoring original endpoint policy and cleaning up group"

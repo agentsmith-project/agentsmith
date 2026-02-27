@@ -222,10 +222,13 @@ main() {
       -X POST "${sources_url}/${source_id}/ai-ready/start" \
       -H "Authorization: Bearer ${token}" || true
   )"
-  if [[ "${allow_code}" != "200" ]]; then
+  if [[ "${allow_code}" != "200" && "${allow_code}" != "429" ]]; then
     err "expected 200 after allow policy, got HTTP ${allow_code}"
     cat "${allow_file}" >&2 || true
     exit 1
+  fi
+  if [[ "${allow_code}" == "429" ]]; then
+    info "allow-path request hit upstream rate limit (HTTP 429); treating as pass because deny preflight was cleared"
   fi
 
   info "restoring policy and cleanup"

@@ -80,6 +80,31 @@ export function formatCurrency(value: number): string {
  * Formats timestamp to relative time (e.g., "2 hours ago")
  */
 export function formatRelativeTime(timestamp: string): string {
-  // TODO: Implement with TDD approach
-  return timestamp;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  const diffMs = date.getTime() - Date.now();
+  const isFuture = diffMs > 0;
+  const absMs = Math.abs(diffMs);
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  const formatUnit = (value: number, unit: 'm' | 'h' | 'd') =>
+    isFuture ? `in ${value}${unit}` : `${value}${unit} ago`;
+
+  if (absMs < minute) {
+    return isFuture ? 'in <1m' : 'just now';
+  }
+  if (absMs < hour) {
+    return formatUnit(Math.floor(absMs / minute), 'm');
+  }
+  if (absMs < day) {
+    return formatUnit(Math.floor(absMs / hour), 'h');
+  }
+  if (absMs < 7 * day) {
+    return formatUnit(Math.floor(absMs / day), 'd');
+  }
+
+  return date.toISOString().slice(0, 10);
 }

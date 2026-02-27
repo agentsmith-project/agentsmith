@@ -4,13 +4,14 @@
  * TDD: Tests first, then implementation.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   formatNumber,
   formatPercent,
   formatDuration,
   formatBytes,
   formatCurrency,
+  formatRelativeTime,
 } from '../format-metrics';
 
 describe('formatNumber', () => {
@@ -146,5 +147,36 @@ describe('formatCurrency', () => {
   it('handles cents correctly', () => {
     expect(formatCurrency(0.01)).toBe('$0.01');
     expect(formatCurrency(0.99)).toBe('$0.99');
+  });
+});
+
+describe('formatRelativeTime', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-27T12:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('formats recent past time', () => {
+    expect(formatRelativeTime('2026-02-27T11:59:40.000Z')).toBe('just now');
+    expect(formatRelativeTime('2026-02-27T11:57:00.000Z')).toBe('3m ago');
+    expect(formatRelativeTime('2026-02-27T10:00:00.000Z')).toBe('2h ago');
+  });
+
+  it('formats future time', () => {
+    expect(formatRelativeTime('2026-02-27T12:00:30.000Z')).toBe('in <1m');
+    expect(formatRelativeTime('2026-02-27T12:10:00.000Z')).toBe('in 10m');
+    expect(formatRelativeTime('2026-02-28T12:00:00.000Z')).toBe('in 1d');
+  });
+
+  it('falls back to date for older timestamps', () => {
+    expect(formatRelativeTime('2026-01-01T00:00:00.000Z')).toBe('2026-01-01');
+  });
+
+  it('returns placeholder for invalid timestamp', () => {
+    expect(formatRelativeTime('invalid')).toBe('-');
   });
 });

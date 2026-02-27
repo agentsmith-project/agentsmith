@@ -8,11 +8,15 @@ type TestResponse = {
   statusCode: number;
   ended: boolean;
   body?: unknown;
+  headers?: Record<string, string>;
 };
 
 function createDeps(): NodeApiDeps {
   return {
     docStore: new InMemoryJsonDocStore(),
+    endpointResourceService: {
+      getCredentialSecret: async () => 'test_api_key',
+    },
   } as unknown as NodeApiDeps;
 }
 
@@ -22,12 +26,27 @@ async function executeRoute(params: {
   method: string;
   body?: unknown;
 }): Promise<TestResponse> {
-  const response: TestResponse = { statusCode: 200, ended: false };
+  const response: TestResponse = { statusCode: 200, ended: false, headers: {} };
+  const responseHeaders: Record<string, string> = {};
   const res = {
     statusCode: 200,
-    end: () => {
+    setHeader: (name: string, value: string) => {
+      responseHeaders[name.toLowerCase()] = value;
+      response.headers = responseHeaders;
+    },
+    getHeader: (name: string) => responseHeaders[name.toLowerCase()],
+    end: (payload?: string | Buffer) => {
       response.ended = true;
       response.statusCode = res.statusCode;
+      if (typeof payload === 'string') {
+        try {
+          response.body = JSON.parse(payload) as unknown;
+        } catch {
+          response.body = payload;
+        }
+      } else if (payload) {
+        response.body = payload.toString('utf8');
+      }
     },
   } as unknown as http.ServerResponse;
 
@@ -133,5 +152,149 @@ describe('runtime-route-handler', () => {
 
     expect(res.statusCode).toBe(502);
     expect((res.body as { error_code?: string }).error_code).toBe('RUNTIME_PROVIDER_CONNECTION_NOT_FOUND');
+  });
+
+  it('handles unified chat direct model and writes usage fact', async () => {
+    const deps = createDeps();
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl_test',
+          object: 'chat.completion',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'openai',
+          auth_mode: 'api_key',
+          base_url: 'https://api.openai.com/v1',
+          credential_ref: 'cred_runtime',
+        },
+      });
+
+      const res = await executeRoute({
+        deps,
+        route: { kind: 'llmUnifiedChat', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          model: 'openai/gpt-4o',
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(fetchCalls).toBe(1);
+      const payload = res.body as {
+        runtime?: { provider?: string; resolved_model?: string; fallback_hops?: number };
+      };
+      expect(payload.runtime?.provider).toBe('openai');
+      expect(payload.runtime?.resolved_model).toBe('gpt-4o');
+      expect(payload.runtime?.fallback_hops).toBe(0);
+
+      const usageFacts = await deps.docStore.list<{ resource_type: string; result: string }>('project_usage_facts', {});
+      expect(usageFacts.length).toBeGreaterThanOrEqual(1);
+      expect(usageFacts.some((fact) => fact.resource_type === 'endpoint' && fact.result === 'ok')).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('handles combo fallback when first provider returns retryable error', async () => {
+    const deps = createDeps();
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        return new Response(
+          JSON.stringify({ error: { message: 'rate limited' } }),
+          { status: 429, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl_test2',
+          object: 'chat.completion',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'fallback ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 6, completion_tokens: 2, total_tokens: 8 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'openai',
+          auth_mode: 'api_key',
+          base_url: 'https://api.openai.com/v1',
+          credential_ref: 'cred_runtime_openai',
+          priority: 1,
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'anthropic',
+          auth_mode: 'api_key',
+          base_url: 'https://api.anthropic.com/v1',
+          credential_ref: 'cred_runtime_anthropic',
+          priority: 1,
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          name: 'prod-chat',
+          targets: [
+            { provider: 'openai', model: 'gpt-4o' },
+            { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+          ],
+          fallback_policy: {
+            max_hops: 2,
+            retryable_error_classes: ['provider_retryable'],
+          },
+        },
+      });
+
+      const res = await executeRoute({
+        deps,
+        route: { kind: 'llmUnifiedChat', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          model: 'combo:prod-chat',
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(fetchCalls).toBe(2);
+      const payload = res.body as {
+        runtime?: { provider?: string; resolved_model?: string; fallback_hops?: number };
+      };
+      expect(payload.runtime?.provider).toBe('anthropic');
+      expect(payload.runtime?.fallback_hops).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

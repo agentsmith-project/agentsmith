@@ -76,6 +76,32 @@ export const usageHandlers = [
       total_cost: Number(totalCost.toFixed(2)),
     });
   }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/runtime-observability', ({ request }) => {
+    const url = new URL(request.url);
+    const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const end = url.searchParams.get('end_time') ?? new Date().toISOString();
+    return HttpResponse.json({
+      total_requests: 120,
+      total_errors: 7,
+      error_rate: 0.0583,
+      fallback_hops_histogram: {
+        '0': 100,
+        '1': 18,
+        '2': 2,
+      },
+      error_class_counts: {
+        provider_retryable: 5,
+        provider_non_retryable: 1,
+        system_error: 1,
+      },
+      avg_estimated_cost: 0.0021,
+      p95_estimated_cost: 0.0068,
+      time_range: {
+        start,
+        end,
+      },
+    });
+  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/quota/summary', () => {
     const resources = p0.top_resources as Array<{
       resource_id: string;

@@ -739,4 +739,146 @@ describe('runtime-route-handler', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('falls back on network error when combo policy allows system_error', async () => {
+    const deps = createDeps();
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        throw new Error('network_down');
+      }
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl_network_fallback',
+          object: 'chat.completion',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 3, completion_tokens: 1, total_tokens: 4 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'provider_a',
+          auth_mode: 'api_key',
+          base_url: 'https://a.example/v1',
+          credential_ref: 'cred_a',
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'provider_b',
+          auth_mode: 'api_key',
+          base_url: 'https://b.example/v1',
+          credential_ref: 'cred_b',
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          name: 'network-recoverable',
+          targets: [
+            { provider: 'provider_a', model: 'model-a' },
+            { provider: 'provider_b', model: 'model-b' },
+          ],
+          fallback_policy: {
+            max_hops: 1,
+            retryable_error_classes: ['provider_retryable', 'system_error'],
+          },
+        },
+      });
+
+      const res = await executeRoute({
+        deps,
+        route: { kind: 'llmUnifiedChat', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          model: 'combo:network-recoverable',
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(fetchCalls).toBe(2);
+      const payload = res.body as { runtime?: { provider?: string; fallback_hops?: number } };
+      expect(payload.runtime?.provider).toBe('provider_b');
+      expect(payload.runtime?.fallback_hops).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('does not fallback on network error when combo policy excludes system_error', async () => {
+    const deps = createDeps();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error('network_down');
+    }) as typeof fetch;
+
+    try {
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'provider_a',
+          auth_mode: 'api_key',
+          base_url: 'https://a.example/v1',
+          credential_ref: 'cred_a',
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'provider_b',
+          auth_mode: 'api_key',
+          base_url: 'https://b.example/v1',
+          credential_ref: 'cred_b',
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          name: 'network-strict',
+          targets: [
+            { provider: 'provider_a', model: 'model-a' },
+            { provider: 'provider_b', model: 'model-b' },
+          ],
+          fallback_policy: {
+            max_hops: 1,
+            retryable_error_classes: ['provider_retryable'],
+          },
+        },
+      });
+
+      const res = await executeRoute({
+        deps,
+        route: { kind: 'llmUnifiedChat', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          model: 'combo:network-strict',
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+      });
+      expect(res.statusCode).toBe(502);
+      expect((res.body as { error_code?: string }).error_code).toBe('RUNTIME_UPSTREAM_NETWORK_ERROR');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

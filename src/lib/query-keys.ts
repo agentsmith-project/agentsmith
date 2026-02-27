@@ -225,6 +225,8 @@ export const queryKeys = {
       ['usage', workspaceId, projectId, params] as const,
     timeseries: (workspaceId: string, projectId: string, params?: object) =>
       ['usage-timeseries', workspaceId, projectId, params] as const,
+    runtimeObservability: (workspaceId: string, projectId: string, params?: object) =>
+      ['usage-runtime-observability', workspaceId, projectId, params] as const,
     quotaSummary: (workspaceId: string, projectId: string) =>
       ['usage-quota-summary', workspaceId, projectId] as const,
   },

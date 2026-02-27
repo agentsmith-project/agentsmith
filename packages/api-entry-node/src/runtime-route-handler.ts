@@ -266,7 +266,17 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
           body: JSON.stringify(body),
         });
       } catch {
-        if (idx < attempts.length - 1) continue;
+        if (idx < attempts.length - 1) {
+          const hopAfterFallback = idx + 1;
+          const shouldFallback = shouldFallbackByPolicy({
+            errorClass: 'system_error',
+            hopAfterFallback,
+            policy: comboName ? comboFallbackPolicy : undefined,
+          });
+          if (shouldFallback) {
+            continue;
+          }
+        }
         json(res, 502, { error_code: 'RUNTIME_UPSTREAM_NETWORK_ERROR', message: 'runtime_upstream_network_error' });
         return true;
       }

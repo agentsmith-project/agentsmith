@@ -1,7 +1,14 @@
 import type http from 'node:http';
 import type { ProjectsRoute } from './projects-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
-import { aggregateUsageRecords, getQuotaSummary, getUsageKpi, getUsageTimeseries, listAuditEvents } from './audit-usage-store.js';
+import {
+  aggregateUsageRecords,
+  getQuotaSummary,
+  getRuntimeObservability,
+  getUsageKpi,
+  getUsageTimeseries,
+  listAuditEvents,
+} from './audit-usage-store.js';
 
 type JsonResponder = (res: http.ServerResponse, status: number, payload: unknown) => void;
 
@@ -142,6 +149,19 @@ export async function handleAuditUsageRoute({
     const payload = await getQuotaSummary(deps.docStore, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+    });
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageRuntimeObservability' && method === 'GET') {
+    const range = requireTimeRange(requestUrl, json, res);
+    if (range === true) return true;
+    const payload = await getRuntimeObservability(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      startTime: range.start.toISOString(),
+      endTime: range.end.toISOString(),
     });
     json(res, 200, payload);
     return true;

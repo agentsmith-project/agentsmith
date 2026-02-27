@@ -156,6 +156,20 @@ export type QuotaOverview = {
   total_quota_used?: number;
 };
 
+export type RuntimeObservabilityResponse = {
+  total_requests: number;
+  total_errors: number;
+  error_rate: number;
+  fallback_hops_histogram: Record<string, number>;
+  error_class_counts: Record<'provider_retryable' | 'provider_non_retryable' | 'system_error', number>;
+  avg_estimated_cost: number;
+  p95_estimated_cost: number;
+  time_range: {
+    start: string;
+    end: string;
+  };
+};
+
 export const AUDIT_EVENTS_COLLECTION = 'project_audit_events';
 export const USAGE_FACTS_COLLECTION = 'project_usage_facts';
 
@@ -192,6 +206,18 @@ function nonEmptyString(value: unknown): string | undefined {
 function estimateFactCost(fact: UsageFactRecord): number {
   const raw = fact.metadata_json?.cost_usd ?? fact.metadata_json?.estimated_cost ?? 0;
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
+}
+
+function classifyRuntimeErrorClass(errorCode?: string): 'provider_retryable' | 'provider_non_retryable' | 'system_error' {
+  if (!errorCode) return 'system_error';
+  const normalized = errorCode.toUpperCase();
+  if (!normalized.startsWith('UPSTREAM_')) return 'system_error';
+  const statusRaw = normalized.replace('UPSTREAM_', '');
+  const status = Number.parseInt(statusRaw, 10);
+  if (!Number.isFinite(status)) return 'system_error';
+  if (status === 429 || status >= 500) return 'provider_retryable';
+  if (status >= 400) return 'provider_non_retryable';
+  return 'system_error';
 }
 
 export async function recordAuditEvent(
@@ -618,5 +644,69 @@ export async function getQuotaSummary(
     agents,
     total_quota_used: totalQuotaUsed || undefined,
     total_quota_limit: totalQuotaLimit || undefined,
+  };
+}
+
+export async function getRuntimeObservability(
+  docStore: JsonDocStorePort,
+  query: { workspaceId: string; projectId: string; startTime: string; endTime: string },
+): Promise<RuntimeObservabilityResponse> {
+  const facts = await listUsageFacts(docStore, {
+    workspaceId: query.workspaceId,
+    projectId: query.projectId,
+    startTime: query.startTime,
+    endTime: query.endTime,
+    resourceType: 'endpoint',
+  });
+
+  const fallbackHopsHistogram = new Map<string, number>();
+  const errorClassCounts: RuntimeObservabilityResponse['error_class_counts'] = {
+    provider_retryable: 0,
+    provider_non_retryable: 0,
+    system_error: 0,
+  };
+  const estimatedCosts: number[] = [];
+  let totalRequests = 0;
+  let totalErrors = 0;
+
+  for (const fact of facts) {
+    const reqs = fact.requests ?? 1;
+    totalRequests += reqs;
+    if (fact.result === 'error') {
+      totalErrors += reqs;
+      const errorClass = classifyRuntimeErrorClass(fact.error_code);
+      errorClassCounts[errorClass] += reqs;
+    }
+    const fallbackHopsRaw = fact.metadata_json?.fallback_hops;
+    const fallbackHops = typeof fallbackHopsRaw === 'number' && Number.isFinite(fallbackHopsRaw)
+      ? Math.max(0, Math.floor(fallbackHopsRaw))
+      : 0;
+    fallbackHopsHistogram.set(
+      String(fallbackHops),
+      (fallbackHopsHistogram.get(String(fallbackHops)) ?? 0) + reqs,
+    );
+    const estimatedCost = estimateFactCost(fact);
+    if (estimatedCost > 0) {
+      estimatedCosts.push(estimatedCost);
+    }
+  }
+
+  const p95Cost = estimatedCosts.length > 0 ? (percentile95(estimatedCosts) ?? 0) : 0;
+  const totalCost = estimatedCosts.reduce((sum, value) => sum + value, 0);
+  const avgCost = estimatedCosts.length > 0 ? totalCost / estimatedCosts.length : 0;
+  const errorRate = totalRequests > 0 ? Number((totalErrors / totalRequests).toFixed(4)) : 0;
+
+  return {
+    total_requests: totalRequests,
+    total_errors: totalErrors,
+    error_rate: errorRate,
+    fallback_hops_histogram: Object.fromEntries(fallbackHopsHistogram.entries()),
+    error_class_counts: errorClassCounts,
+    avg_estimated_cost: Number(avgCost.toFixed(8)),
+    p95_estimated_cost: Number(p95Cost.toFixed(8)),
+    time_range: {
+      start: query.startTime,
+      end: query.endTime,
+    },
   };
 }

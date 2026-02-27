@@ -132,3 +132,31 @@ export function useQuotaSummary(
     staleTime: 30000,
   });
 }
+
+/**
+ * Hook to query runtime observability summary (fallback/error/cost distribution)
+ */
+export function useRuntimeObservability(
+  workspaceId: string,
+  projectId: string,
+  params: {
+    start_time: string;
+    end_time: string;
+  },
+  options?: { enabled?: boolean },
+) {
+  const usageAPI = new UsageAPI(getApiClient());
+  const enabled =
+    (options?.enabled ?? true) &&
+    !!workspaceId &&
+    !!projectId &&
+    !!params.start_time &&
+    !!params.end_time;
+
+  return useQuery({
+    queryKey: queryKeys.usage.runtimeObservability(workspaceId, projectId, params),
+    queryFn: () => usageAPI.getRuntimeObservability(workspaceId, projectId, params),
+    enabled,
+    staleTime: 10000,
+  });
+}

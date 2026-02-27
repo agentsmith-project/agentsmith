@@ -7,6 +7,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Save } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -251,6 +252,13 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <div>
               <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('runtime_preferences_title')}</h2>
               <p className="text-sm text-tertiary">{settingsT('runtime_help')}</p>
+            </div>
+            <div className="flex justify-end">
+              <Button asChild variant="outline" size="sm" data-testid="settings__runtime-open-control-plane">
+                <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-control-plane`}>
+                  {settingsT('runtime_open_control_plane')}
+                </Link>
+              </Button>
             </div>
             <SettingsTokenReference tokens={RUNTIME_PREFERENCES_TOKENS} />
             <RuntimePreferencesEditor

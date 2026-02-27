@@ -65,6 +65,24 @@ export interface QuotaOverview {
   total_quota_used?: number;
 }
 
+export interface RuntimeObservabilityResponse {
+  total_requests: number;
+  total_errors: number;
+  error_rate: number;
+  fallback_hops_histogram: Record<string, number>;
+  error_class_counts: {
+    provider_retryable: number;
+    provider_non_retryable: number;
+    system_error: number;
+  };
+  avg_estimated_cost: number;
+  p95_estimated_cost: number;
+  time_range: {
+    start: string;
+    end: string;
+  };
+}
+
 export class AuditAPI {
   constructor(private client: ApiClient) {}
 
@@ -215,6 +233,22 @@ export class UsageAPI {
   ): Promise<QuotaOverview> {
     return this.client.get<QuotaOverview>(
       `/workspaces/${workspaceId}/projects/${projectId}/quota/summary`,
+    );
+  }
+
+  async getRuntimeObservability(
+    workspaceId: string,
+    projectId: string,
+    params: {
+      start_time: string;
+      end_time: string;
+    },
+  ): Promise<RuntimeObservabilityResponse> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('start_time', params.start_time);
+    searchParams.set('end_time', params.end_time);
+    return this.client.get<RuntimeObservabilityResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/runtime-observability?${searchParams.toString()}`,
     );
   }
 }

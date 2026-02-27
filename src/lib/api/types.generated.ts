@@ -2332,6 +2332,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/runtime-observability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get runtime routing observability snapshot
+         * @description Returns aggregate runtime routing health for a time range, including
+         *     fallback hop distribution, error class counts, and estimated cost metrics.
+         */
+        get: operations["getRuntimeObservability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/timeseries": {
         parameters: {
             query?: never;
@@ -2861,6 +2885,31 @@ export interface components {
             input: number;
             output: number;
             reasoning?: number;
+        };
+        /** @description Runtime routing observability summary for a time range */
+        RuntimeObservabilityResponse: {
+            /** @description Average estimated cost in USD */
+            avg_estimated_cost: number;
+            error_class_counts: {
+                provider_non_retryable: number;
+                provider_retryable: number;
+                system_error: number;
+            };
+            error_rate: number;
+            /** @description Keyed by fallback hops (for example "0", "1", "2") */
+            fallback_hops_histogram: {
+                [key: string]: number;
+            };
+            /** @description P95 estimated cost in USD */
+            p95_estimated_cost: number;
+            time_range: {
+                /** Format: date-time */
+                end: string;
+                /** Format: date-time */
+                start: string;
+            };
+            total_errors: number;
+            total_requests: number;
         };
         RuntimePricingMap: {
             [key: string]: {
@@ -8065,6 +8114,45 @@ export interface operations {
                         tokens_today?: number;
                         tokens_yesterday?: number;
                     };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getRuntimeObservability: {
+        parameters: {
+            query: {
+                /** @description End time in ISO 8601 format */
+                end_time: string;
+                /** @description Start time in ISO 8601 format */
+                start_time: string;
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Runtime observability snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeObservabilityResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             401: components["responses"]["Unauthorized"];

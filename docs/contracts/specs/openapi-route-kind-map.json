@@ -39,6 +39,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/timeseries",
     "method": "get"
   },
+  "usageRuntimeObservability": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/runtime-observability",
+    "method": "get"
+  },
   "quotaSummary": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary",
     "method": "get"

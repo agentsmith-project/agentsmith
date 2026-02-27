@@ -8,25 +8,23 @@
 ## Executive Conclusion
 
 **结论（按“PRD feature 全量 E2E 覆盖”口径）**: **GO**  
-原因：A/B/C/D 的关键验收链路均已补齐对应自动化证据（浏览器 E2E + 脚本门禁）。
+原因：A/B/C 的关键验收链路已由浏览器 E2E 闭环验证（smoke + 治理/策略/安全/C1/C2 全通过）。
 
-**结论（按“当前发布门禁”口径）**: **GO（internal/controlled）**  
-原因：类型/契约/smoke/治理真实后端 smoke 全通过，且 C1/C2 缺口已完成补测闭环。
+**结论（按“当前发布门禁”口径）**: **Conditional GO（internal/controlled）**  
+原因：代码与本地自动化门禁通过；真实后端治理 smoke 仍受外部 Keycloak/后端环境可用性约束，需在发布环境补跑并留档。
 
 ---
 
 ## Re-Verification Snapshot
 
-- `git status --short`：**dirty worktree**（存在已修改与未跟踪文件，需在正式发版前清理）
+- `git status --short`: **dirty worktree**（包含本轮收口修改与未归档 artifacts）
 - `npm run lint` ✅
+- `npm run ws:typecheck` ✅
 - `make verify-contracts` ✅
-- `npm run test:e2e -- --project=smoke --workers=1` ✅（26 passed）
-- `npm run test:e2e -- e2e/alerts.spec.ts e2e/cost-quota-dashboard.spec.ts --project=chromium --workers=1` ✅（19 passed, 1 skipped）
-- `make governance-release-smoke` ✅（本轮已通过，链路可用）
-- `make verify-release` ✅（本轮已通过）
-- `npm run release:report -- --name release-closure-20260227 --archive` ✅（PASS）
-  - JSON: `artifacts/release-reports/release-closure-20260227.json`
-  - Markdown: `artifacts/release-reports/release-closure-20260227.md`
+- `npm run test:run -- src/lib/api/__tests__/sse-client.test.ts` ✅（21 passed）
+- `BASE_URL=http://localhost:3002 npx playwright test --project=smoke e2e/smoke.spec.ts --workers=1` ✅（26 passed）
+- `BASE_URL=http://localhost:3002 npx playwright test --project=chromium e2e/governance.spec.ts e2e/resource-policy.spec.ts e2e/epic-b-security.spec.ts e2e/cost-quota-dashboard.spec.ts e2e/alerts.spec.ts --workers=1` ✅（62 passed）
+- `make governance-release-smoke` ⚠️ 本轮未完成（外部 Keycloak/后端依赖导致无法本机闭环）
 
 ---
 
@@ -75,13 +73,8 @@
 ## Non-Blocking Items
 
 1. **工作区非干净**：`git status` 显示当前仍有修改/未跟踪文件。
-2. **明显技术债 TODO**：
-- `src/lib/hooks/use-alerts-sse.ts`（backend endpoint verify）
-- `src/lib/stores/alertStore.ts`（high severity toast）
-- `src/components/alerts/AlertNotificationItem.tsx`
-- `src/lib/utils/dashboard/detect-anomalies.ts`
-- `src/lib/utils/dashboard/format-metrics.ts`
-3. **环境敏感性**：治理真实后端 smoke 依赖 Keycloak 环境变量完整注入。
+2. **外部依赖敏感**：治理真实后端 smoke 依赖 Keycloak 与后端联调环境完整可用。
+3. **发布操作项**：`artifacts/release-reports/report-20260227-*.{json,md}` 需统一归档策略（保留或清理）。
 
 ---
 

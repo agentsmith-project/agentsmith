@@ -12,12 +12,13 @@
 - C1 成本与配额看板：趋势、资源过滤、Top 列表、异常钻取已形成可执行 E2E 闭环。
 - C2 告警中心：规则 CRUD 契约、通知防抖可见性、恢复通知、webhook 投递证据已形成可执行 E2E 闭环。
 
-2. Key release gates passed:
+2. Key release gates passed (local MSW baseline):
+- `npm run lint`
+- `npm run ws:typecheck`
 - `make verify-contracts`
-- `npm run test:e2e -- --project=smoke --workers=1`
-- `npm run test:e2e -- e2e/alerts.spec.ts e2e/cost-quota-dashboard.spec.ts --project=chromium --workers=1`
-- `make governance-release-smoke`
-- `make verify-release`
+- `npm run test:run -- src/lib/api/__tests__/sse-client.test.ts` (21/21)
+- `BASE_URL=http://localhost:3002 npx playwright test --project=smoke e2e/smoke.spec.ts --workers=1` (26/26)
+- `BASE_URL=http://localhost:3002 npx playwright test --project=chromium e2e/governance.spec.ts e2e/resource-policy.spec.ts e2e/epic-b-security.spec.ts e2e/cost-quota-dashboard.spec.ts e2e/alerts.spec.ts --workers=1` (62/62)
 
 3. Structured release report generated (PASS):
 - `artifacts/release-reports/release-closure-20260227.json`
@@ -53,9 +54,8 @@
 
 ## Residual Non-Blocking Risks
 
-1. `use-alerts-sse` endpoint verification TODO remains.
-2. High-severity alert toast integration TODO remains.
-3. Dashboard anomaly utility TDD TODO remains.
+1. `make governance-release-smoke` 依赖真实 Keycloak/后端联调环境，本地无完整外部依赖时无法在同一轮闭环（非代码缺陷）。
+2. 工作区存在未归档的 `artifacts/release-reports/report-20260227-*.{json,md}` 临时产物，发布前需清理或归档。
 
 ---
 

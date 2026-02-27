@@ -3,7 +3,7 @@
 	e2e e2e-local \
 	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-runtime-proxy-billing e2e-int-local \
 	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api e2e-int-runtime-proxy-billing-local-api \
-	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
+	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto e2e-int-runtime-proxy-billing-auto \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
@@ -108,6 +108,7 @@ help:
 	@echo "  make e2e-int-agent-auto     # auto start deps+api+web and run integration-agent spec"
 	@echo "  make e2e-int-notebook-agent-auto # auto start deps+api+web and run notebook external-agent integration spec"
 	@echo "  make e2e-int-chat-ux-auto   # auto start deps+api+web and run targeted chat UX integration checks"
+	@echo "  make e2e-int-runtime-proxy-billing-auto # auto start deps+api+web and run runtime proxy/billing integration spec"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT and write /tmp/agentsmith_user_token.txt"
@@ -538,6 +539,15 @@ e2e-int-chat-ux-auto:
 	KEYCLOAK_URL=$(KEYCLOAK_URL) \
 	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts --grep "deleting the only thread shows clear empty-state actions and disabled composer|text-only endpoint hides attachment actions in composer"
+
+e2e-int-runtime-proxy-billing-auto:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	KEYCLOAK_URL=$(KEYCLOAK_URL) \
+	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	./scripts/run-integration-e2e-full.sh e2e/integration-runtime-proxy-billing.spec.ts
 
 agent-test-runner:
 	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \

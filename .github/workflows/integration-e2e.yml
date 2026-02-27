@@ -159,7 +159,7 @@ jobs:
       - name: Run runtime proxy billing integration suite
         run: |
           set -euo pipefail
-          make e2e-int-runtime-proxy-billing-local-api PORT_API=20032 2>&1 | tee /tmp/ci-e2e-int-runtime-proxy-billing.log
+          make e2e-int-runtime-proxy-billing-auto PORT_API=20032 PORT_WEB=3015 2>&1 | tee /tmp/ci-e2e-int-runtime-proxy-billing.log
 
       - name: Failure Attribution (runtime-proxy-billing)
         if: failure()

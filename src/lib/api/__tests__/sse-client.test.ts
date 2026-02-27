@@ -99,10 +99,10 @@ describe('fetchSSETicket', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('returns ticket_id when backend returns 200 with ticket_id', async () => {
+  it('returns ticket when backend returns 200 with ticket', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ ticket_id: 'short-lived-ticket-123' }),
+      json: () => Promise.resolve({ ticket: 'short-lived-ticket-123' }),
     });
     const result = await fetchSSETicket('jwt-token', 'https://api.example.com/api/v1');
     expect(result).toBe('short-lived-ticket-123');
@@ -181,7 +181,7 @@ describe('SSE Ticket Migration - Feature Flag', () => {
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ ticket_id: 'ticket-abc-123' }),
+      json: () => Promise.resolve({ ticket: 'ticket-abc-123' }),
     });
     globalThis.fetch = mockFetch;
 
@@ -293,7 +293,7 @@ describe('SSE Ticket Migration - Security', () => {
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ ticket_id: 'secure-ticket-xyz' }),
+      json: () => Promise.resolve({ ticket: 'secure-ticket-xyz' }),
     });
     globalThis.fetch = mockFetch;
 
@@ -341,7 +341,7 @@ describe('SSE Ticket Migration - Smoke Tests (Full Flow)', () => {
     // Mock successful ticket exchange
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ ticket_id: 'ticket-smoke-test-123' }),
+      json: () => Promise.resolve({ ticket: 'ticket-smoke-test-123' }),
     });
     globalThis.fetch = mockFetch;
 
@@ -433,3 +433,11 @@ describe('SSE Ticket Migration - Smoke Tests (Full Flow)', () => {
     delete process.env.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE;
   });
 });
+  it('supports legacy ticket_id response for backward compatibility', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ticket_id: 'legacy-ticket-123' }),
+    });
+    const result = await fetchSSETicket('jwt-token', 'https://api.example.com/api/v1');
+    expect(result).toBe('legacy-ticket-123');
+  });

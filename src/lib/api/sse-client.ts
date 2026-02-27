@@ -26,8 +26,8 @@
  *             Authorization: Bearer <jwt_token>
  *
  * 2. Backend validates JWT and returns short-lived ticket
- *    Response: { ticket_id: "abc123", expires_in: 300 }
- *              - ticket_id: Random, single-use, short-lived (5 min)
+ *    Response: { ticket: "abc123", expires_in: 300 }
+ *              - ticket: Random, single-use, short-lived (5 min)
  *              - expires_in: Seconds until expiration
  *
  * 3. Client connects to SSE endpoint with ticket (not JWT)
@@ -193,7 +193,7 @@ export function createAuthenticatedSSE(
  *
  * @param token - JWT (Bearer); if null, returns null
  * @param apiBase - Base URL for the API (e.g. https://api.example.com/api/v1)
- * @returns Ticket ID to use in SSE URL, null if no ticket available, or JWT when explicit fallback is enabled
+ * @returns Ticket to use in SSE URL, null if no ticket available, or JWT when explicit fallback is enabled
  */
 export async function fetchSSETicket(
   token: string | null,
@@ -207,7 +207,11 @@ export async function fetchSSETicket(
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return SSE_ALLOW_JWT_FALLBACK ? token : null;
-    const data = (await res.json()) as { ticket_id?: string };
+    const data = (await res.json()) as { ticket?: string; ticket_id?: string };
+    // Contract field is `ticket`; keep `ticket_id` for backward compatibility.
+    if (typeof data?.ticket === 'string' && data.ticket.length > 0) {
+      return data.ticket;
+    }
     if (typeof data?.ticket_id === 'string' && data.ticket_id.length > 0) {
       return data.ticket_id;
     }

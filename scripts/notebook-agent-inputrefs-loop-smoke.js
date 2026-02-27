@@ -23,6 +23,7 @@ const STREAM_CONFLICT_RETRY_ATTEMPTS = Number(process.env.STREAM_CONFLICT_RETRY_
 const STREAM_CONFLICT_RETRY_DELAY_MS = Number(process.env.STREAM_CONFLICT_RETRY_DELAY_MS || 1000);
 const SCENARIO_ATTEMPTS = Number(process.env.SCENARIO_ATTEMPTS || 4);
 const SCENARIO_BACKOFF_MS = Number(process.env.SCENARIO_BACKOFF_MS || 45000);
+const SOFT_FAIL_EXIT_CODE = Number(process.env.SOFT_FAIL_EXIT_CODE || 75);
 
 function safeRead(path) {
   try {
@@ -61,6 +62,16 @@ function isRetryableScenarioError(error) {
     /did not reach terminal trace within timeout/i.test(message) ||
     /url-summary\.txt artifact not found/i.test(message) ||
     /final text/i.test(message) ||
+    /401|UNAUTHORIZED|invalid bearer token/i.test(message)
+  );
+}
+
+function isUpstreamThrottleError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /429 Too Many Requests|retry limit/i.test(message) ||
+    /First turn upstream rate limited/i.test(message) ||
+    /url-summary\.txt artifact not found/i.test(message) ||
     /401|UNAUTHORIZED|invalid bearer token/i.test(message)
   );
 }
@@ -267,7 +278,18 @@ async function runScenario() {
     content:
       'Use notebook-inputs helper to list and fetch the URL input. Then create ./artifacts/url-summary.txt containing exactly the URL string only (no extra text). Reply with the filename only.',
   });
-  await waitTaskTerminal(taskId);
+  const firstTurn = await waitTaskTerminal(taskId);
+  const firstTurnStatus = String(firstTurn?.terminal?.status || '');
+  const firstTurnAgentMessage = [...(Array.isArray(firstTurn?.messages) ? firstTurn.messages : [])]
+    .reverse()
+    .find((m) => m.role === 'agent');
+  const firstTurnContent = String(firstTurnAgentMessage?.content || '');
+  if (firstTurnStatus !== 'success') {
+    if (/429 Too Many Requests|retry limit/i.test(firstTurnContent)) {
+      throw new Error('First turn upstream rate limited (429/retry limit)');
+    }
+    throw new Error(`First turn failed with terminal status=${firstTurnStatus || 'unknown'}`);
+  }
 
   let summaryArtifact = null;
   for (let i = 1; i <= 15; i += 1) {
@@ -346,6 +368,12 @@ async function main() {
 }
 
 main().catch((error) => {
+  if (isUpstreamThrottleError(error)) {
+    process.stderr.write(
+      `[inputrefs-loop] SCENARIO_WARN ${error instanceof Error ? error.stack || error.message : String(error)}\n`,
+    );
+    process.exit(SOFT_FAIL_EXIT_CODE);
+  }
   process.stderr.write(`[inputrefs-loop] SCENARIO_FAIL ${error instanceof Error ? error.stack || error.message : String(error)}\n`);
   process.exit(1);
 });

@@ -3,6 +3,7 @@ import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import { writeProjectUsageFact } from './audit-usage-recorders.js';
+import { classifyUpstreamStatus, resolveRoutingPlan, shouldFallbackByPolicy } from './runtime-routing.js';
 
 interface AnyRoute {
   kind: string;
@@ -136,33 +137,6 @@ function pricingRecordId(workspaceId: string, projectId: string): string {
   return `runtime_pricing_${workspaceId}_${projectId}`;
 }
 
-type RuntimeErrorClass = 'provider_retryable' | 'provider_non_retryable' | 'system_error';
-
-function classifyUpstreamStatus(status: number): RuntimeErrorClass {
-  if (status === 429 || status >= 500) {
-    return 'provider_retryable';
-  }
-  if (status >= 400) {
-    return 'provider_non_retryable';
-  }
-  return 'system_error';
-}
-
-function shouldFallbackByPolicy(params: {
-  errorClass: RuntimeErrorClass;
-  hopAfterFallback: number;
-  policy?: RuntimeModelComboRecord['fallback_policy'];
-}): boolean {
-  const { errorClass, hopAfterFallback, policy } = params;
-  if (!policy) {
-    return errorClass === 'provider_retryable';
-  }
-  if (hopAfterFallback > policy.max_hops) {
-    return false;
-  }
-  return policy.retryable_error_classes.includes(errorClass);
-}
-
 function normalizeUsage(payload: Record<string, unknown> | null): {
   inputTokens?: number;
   outputTokens?: number;
@@ -224,37 +198,30 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
     const pricing = await deps.docStore.get<RuntimePricingRecord>(PRICING_COLLECTION, pricingRecordId(workspaceId, projectId));
     const pricingMap = pricing?.pricing_map ?? {};
 
-    const attempts: Array<{ provider: string; model: string }> = [];
-    let comboFallbackPolicy: RuntimeModelComboRecord['fallback_policy'] | undefined;
-    const comboName = modelRaw.startsWith('combo:') ? modelRaw.slice('combo:'.length).trim() : null;
-    if (comboName) {
-      const combo = combos.find((item) => item.name === comboName);
-      if (!combo || combo.targets.length === 0) {
-        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_not_found' });
-        return true;
-      }
-      comboFallbackPolicy = combo.fallback_policy;
-      attempts.push(...combo.targets);
-    } else if (modelRaw.includes('/')) {
-      const [provider, model] = modelRaw.split('/', 2);
-      if (!provider || !model) {
-        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_model_format_invalid' });
-        return true;
-      }
-      attempts.push({ provider, model });
-    } else {
-      const alias = aliases.find((item) => item.alias === modelRaw);
-      if (!alias) {
-        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_alias_not_found' });
-        return true;
-      }
-      attempts.push({ provider: alias.target_provider, model: alias.target_model });
+    const routingPlan = resolveRoutingPlan({
+      modelRaw,
+      aliases: aliases.map((item) => ({
+        alias: item.alias,
+        target_provider: item.target_provider,
+        target_model: item.target_model,
+      })),
+      combos: combos.map((item) => ({
+        name: item.name,
+        targets: item.targets,
+        fallback_policy: item.fallback_policy,
+      })),
+    });
+    if ('errorCode' in routingPlan) {
+      json(res, 422, { error_code: routingPlan.errorCode, message: routingPlan.message });
+      return true;
     }
-
-    if (attempts.length === 0) {
+    if (routingPlan.attempts.length === 0) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_routing_target_required' });
       return true;
     }
+    const attempts = routingPlan.attempts;
+    const comboName = routingPlan.comboName ?? null;
+    const comboFallbackPolicy = routingPlan.fallbackPolicy;
 
     let lastErrorCode = 'RUNTIME_UPSTREAM_ERROR';
     let lastMessage = 'runtime_upstream_error';
@@ -345,7 +312,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
         metadata: {
           provider: attempt.provider,
           model: attempt.model,
-          routed_by: comboName ? 'combo' : (modelRaw.includes('/') ? 'direct' : 'alias'),
+          routed_by: routingPlan.routedBy,
           fallback_hops: idx,
           pricing_version: pricing?.updated_at ?? null,
           estimated_cost: estimatedCost ?? null,

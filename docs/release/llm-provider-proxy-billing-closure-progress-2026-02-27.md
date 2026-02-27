@@ -77,9 +77,10 @@
 4. Runtime control-plane UI is currently in settings tab and should be split into dedicated pages/module in next iteration.
 
 ## Technical Debt Scan (Obvious)
-1. Runtime handler currently centralizes multiple responsibilities (routing policy, upstream call, usage recording); service decomposition is pending.
-2. Retry/error taxonomy is partially enforced in code but lacks complete contract-level test matrix.
-3. Absence of runtime feature-level visual snapshots means UX regressions may slip through.
+1. Runtime handler decomposition has started:
+- extracted pure routing-policy module `runtime-routing.ts` with dedicated tests.
+2. Retry/error taxonomy is enforced for runtime routing path and covered by unit tests, but cross-provider classification matrix can be expanded.
+3. Runtime feature-level visual baseline currently relies on settings page baseline; dedicated runtime module visual snapshots are still pending.
 
 ## Recommended Closure Sequence (Best-Practice)
 1. Complete API surface parity first: add item-level CRUD for models/aliases/combos with strict validation and contract tests.

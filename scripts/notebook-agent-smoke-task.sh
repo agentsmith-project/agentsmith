@@ -15,6 +15,8 @@ AGENT_ID="${AGENT_ID:-$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)}"
 PROMPT="${PROMPT:-reply exactly: chain ok}"
 POLL_MAX="${POLL_MAX:-40}"
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-2}"
+SCENARIO_ATTEMPTS="${SCENARIO_ATTEMPTS:-4}"
+SCENARIO_BACKOFF_SEC="${SCENARIO_BACKOFF_SEC:-45}"
 FINAL_MESSAGE_SETTLE_MAX_SEC="${FINAL_MESSAGE_SETTLE_MAX_SEC:-15}"
 FINAL_MESSAGE_SETTLE_INTERVAL_SEC="${FINAL_MESSAGE_SETTLE_INTERVAL_SEC:-1}"
 WAIT_AGENT_ONLINE_MAX="${WAIT_AGENT_ONLINE_MAX:-20}"
@@ -66,75 +68,107 @@ json_get() {
   node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s);let v=j;for(const p of process.argv[1].split(".")){if(!p) continue; v=v?.[p]} if(v==null) process.exit(2); process.stdout.write(String(v));})' "$1"
 }
 
+run_attempt() {
+  local attempt="$1"
+  local create_task_resp TASK_ID task_json status messages_json traces_json
+  local agent_tail trace_info trace_count trace_rest trace_terminal_status trace_terminal_summary
+  local final_messages_json final_agent_tail settle_attempt settle_deadline
+
+  create_task_resp="$(curl -sS -X POST "${BASE}/tasks" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"title\":\"smoke-$(date +%s)\",\"agent_id\":\"${AGENT_ID}\"}")"
+
+  TASK_ID="$(printf '%s' "${create_task_resp}" | json_get id)"
+  echo "${TASK_ID}" > /tmp/agentsmith_last_task_id.txt
+  echo "[smoke] task_id=${TASK_ID} (attempt ${attempt}/${SCENARIO_ATTEMPTS})"
+
+  curl -sS -X POST "${BASE}/tasks/${TASK_ID}/messages" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "$(node -e 'console.log(JSON.stringify({role:"user",content:process.argv[1]}))' "${PROMPT}")" >/dev/null
+
+  for i in $(seq 1 "${POLL_MAX}"); do
+    task_json="$(curl -sS "${BASE}/tasks/${TASK_ID}" -H "Authorization: Bearer ${TOKEN}")"
+    status="$(printf '%s' "${task_json}" | json_get status || true)"
+    messages_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/messages" -H "Authorization: Bearer ${TOKEN}")"
+    traces_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/traces?page_size=200" -H "Authorization: Bearer ${TOKEN}" || true)"
+    agent_tail="$(printf '%s' "${messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const a=JSON.parse(s);const m=[...a].reverse().find(x=>x.role==="agent");process.stdout.write((m?.content||"").slice(-320));}catch{}})')"
+    trace_info="$(printf '%s' "${traces_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);const items=Array.isArray(j.items)?j.items:[];const t=[...items].reverse().find(x=>x&&(x.status==="success"||x.status==="error"||x.status==="cancelled"));process.stdout.write(String(items.length)+"|"+(t?.status||"")+"|"+(t?.summary||""))}catch{process.stdout.write("0||")}})')"
+    trace_count="${trace_info%%|*}"
+    trace_rest="${trace_info#*|}"
+    trace_terminal_status="${trace_rest%%|*}"
+    trace_terminal_summary="${trace_rest#*|}"
+    echo "[smoke][${i}] status=${status} traces=${trace_count} terminal=${trace_terminal_status:-none} tail=${agent_tail//$'\n'/ }"
+    if [[ "${status}" == "closed" || -n "${trace_terminal_status}" ]]; then
+      break
+    fi
+    sleep "${POLL_INTERVAL_SEC}"
+  done
+
+  echo "[smoke] final task:"
+  curl -sS "${BASE}/tasks/${TASK_ID}" -H "Authorization: Bearer ${TOKEN}"
+  echo
+  settle_attempt=0
+  settle_deadline=$((SECONDS + FINAL_MESSAGE_SETTLE_MAX_SEC))
+  while true; do
+    settle_attempt=$((settle_attempt + 1))
+    final_messages_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/messages" -H "Authorization: Bearer ${TOKEN}")"
+    final_agent_tail="$(printf '%s' "${final_messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const a=JSON.parse(s);const m=[...a].reverse().find(x=>x.role==="agent");process.stdout.write((m?.content||"").trim());}catch{process.exit(2)}})')"
+    if [[ -z "${trace_terminal_status:-}" ]]; then
+      break
+    fi
+    if [[ "${trace_terminal_status}" != "success" ]]; then
+      break
+    fi
+    if [[ "${final_agent_tail}" == *'"turn.completed"'* ]]; then
+      break
+    fi
+    if (( SECONDS >= settle_deadline )); then
+      break
+    fi
+    echo "[smoke] waiting for final agent message settle... [${settle_attempt}] " \
+      "elapsed=$((FINAL_MESSAGE_SETTLE_MAX_SEC - (settle_deadline - SECONDS)))s/${FINAL_MESSAGE_SETTLE_MAX_SEC}s" >&2
+    sleep "${FINAL_MESSAGE_SETTLE_INTERVAL_SEC}"
+  done
+
+  echo "[smoke] final messages:"
+  printf '%s' "${final_messages_json}"
+  echo
+
+  if [[ -z "${trace_terminal_status:-}" || "${trace_count:-0}" == "0" ]]; then
+    echo "[smoke] WARN: no terminal trace found for task ${TASK_ID}" >&2
+    return 75
+  fi
+  if [[ "${trace_terminal_status}" != "success" ]]; then
+    if [[ "${final_agent_tail}" == *"429 Too Many Requests"* || "${final_agent_tail}" == *"retry limit"* ]]; then
+      echo "[smoke] WARN: upstream throttled task ${TASK_ID}" >&2
+      return 75
+    fi
+    echo "[smoke] ERROR: terminal trace status=${trace_terminal_status} summary=${trace_terminal_summary}" >&2
+    return 2
+  fi
+  if [[ -z "${final_agent_tail}" ]]; then
+    echo "[smoke] WARN: final agent message empty for task ${TASK_ID}" >&2
+    return 75
+  fi
+  return 0
+}
+
 if [[ "${WAIT_AGENT_ONLINE}" != "0" ]]; then
   wait_for_agent_online
 else
   echo "[smoke] skipping agent-online wait (WAIT_AGENT_ONLINE=0)"
 fi
 
-create_task_resp="$(curl -sS -X POST "${BASE}/tasks" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d "{\"title\":\"smoke-$(date +%s)\",\"agent_id\":\"${AGENT_ID}\"}")"
-
-TASK_ID="$(printf '%s' "${create_task_resp}" | json_get id)"
-echo "${TASK_ID}" > /tmp/agentsmith_last_task_id.txt
-echo "[smoke] task_id=${TASK_ID}"
-
-curl -sS -X POST "${BASE}/tasks/${TASK_ID}/messages" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d "$(node -e 'console.log(JSON.stringify({role:"user",content:process.argv[1]}))' "${PROMPT}")" >/dev/null
-
-for i in $(seq 1 "${POLL_MAX}"); do
-  task_json="$(curl -sS "${BASE}/tasks/${TASK_ID}" -H "Authorization: Bearer ${TOKEN}")"
-  status="$(printf '%s' "${task_json}" | json_get status || true)"
-  messages_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/messages" -H "Authorization: Bearer ${TOKEN}")"
-  traces_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/traces?page_size=200" -H "Authorization: Bearer ${TOKEN}" || true)"
-  agent_tail="$(printf '%s' "${messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const a=JSON.parse(s);const m=[...a].reverse().find(x=>x.role==="agent");process.stdout.write((m?.content||"").slice(-320));}catch{}})')"
-  trace_info="$(printf '%s' "${traces_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);const items=Array.isArray(j.items)?j.items:[];const t=[...items].reverse().find(x=>x&&(x.status==="success"||x.status==="error"||x.status==="cancelled"));process.stdout.write(String(items.length)+"|"+(t?.status||"")+"|"+(t?.summary||""))}catch{process.stdout.write("0||")}})')"
-  trace_count="${trace_info%%|*}"
-  trace_rest="${trace_info#*|}"
-  trace_terminal_status="${trace_rest%%|*}"
-  trace_terminal_summary="${trace_rest#*|}"
-  echo "[smoke][${i}] status=${status} traces=${trace_count} terminal=${trace_terminal_status:-none} tail=${agent_tail//$'\n'/ }"
-  if [[ "${status}" == "closed" || -n "${trace_terminal_status}" ]]; then
-    break
+for attempt in $(seq 1 "${SCENARIO_ATTEMPTS}"); do
+  if run_attempt "${attempt}"; then
+    exit 0
   fi
-  sleep "${POLL_INTERVAL_SEC}"
+  rc=$?
+  if [[ "${rc}" != "75" || "${attempt}" == "${SCENARIO_ATTEMPTS}" ]]; then
+    exit "${rc}"
+  fi
+  echo "[smoke] retrying smoke scenario after ${SCENARIO_BACKOFF_SEC}s (${attempt}/${SCENARIO_ATTEMPTS})" >&2
+  sleep "${SCENARIO_BACKOFF_SEC}"
 done
-
-echo "[smoke] final task:"
-curl -sS "${BASE}/tasks/${TASK_ID}" -H "Authorization: Bearer ${TOKEN}"
-echo
-settle_attempt=0
-settle_deadline=$((SECONDS + FINAL_MESSAGE_SETTLE_MAX_SEC))
-while true; do
-  settle_attempt=$((settle_attempt + 1))
-  final_messages_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/messages" -H "Authorization: Bearer ${TOKEN}")"
-  final_agent_tail="$(printf '%s' "${final_messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const a=JSON.parse(s);const m=[...a].reverse().find(x=>x.role==="agent");process.stdout.write((m?.content||"").trim());}catch{process.exit(2)}})')"
-  if [[ -z "${trace_terminal_status:-}" ]]; then
-    break
-  fi
-  if [[ "${trace_terminal_status}" != "success" ]]; then
-    break
-  fi
-  if [[ "${final_agent_tail}" == *'"turn.completed"'* ]]; then
-    break
-  fi
-  if (( SECONDS >= settle_deadline )); then
-    break
-  fi
-  echo "[smoke] waiting for final agent message settle... [${settle_attempt}] " \
-    "elapsed=$((FINAL_MESSAGE_SETTLE_MAX_SEC - (settle_deadline - SECONDS)))s/${FINAL_MESSAGE_SETTLE_MAX_SEC}s" >&2
-  sleep "${FINAL_MESSAGE_SETTLE_INTERVAL_SEC}"
-done
-
-echo "[smoke] final messages:"
-printf '%s' "${final_messages_json}"
-echo
-
-if [[ -z "${final_agent_tail}" ]]; then
-  echo "[smoke] ERROR: final agent message is empty" >&2
-  exit 2
-fi

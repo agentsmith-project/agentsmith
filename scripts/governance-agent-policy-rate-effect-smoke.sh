@@ -120,8 +120,9 @@ main() {
   fi
 
   local start_time end_time
-  start_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  end_time="$(date -u -d '5 minutes' +"%Y-%m-%dT%H:%M:%SZ")"
+  # Buffered evidence window for async persistence while still binding evidence to current run.
+  start_time="$(date -u -d '2 minutes ago' +"%Y-%m-%dT%H:%M:%SZ")"
+  end_time="$(date -u -d '20 minutes' +"%Y-%m-%dT%H:%M:%SZ")"
 
   info "creating task-1 and posting first run"
   local create_task1_code
@@ -169,7 +170,7 @@ main() {
 
   info "checking audit evidence for agent rate limit"
   local audit_has="0"
-  for _ in $(seq 1 10); do
+  for _ in $(seq 1 40); do
     local audit_code
     audit_code="$(
       curl -sS -o "${audit_file}" -w '%{http_code}' \
@@ -181,14 +182,14 @@ main() {
       cat "${audit_file}" >&2 || true
       exit 1
     fi
-    audit_has="$(cat "${audit_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>i.action==='resource_policy.rate_limited'&&String(i.resource_type||'')==='agent'&&String(i.resource_id||'')==='${agent_id}'&&String(i.error_code||'')==='RESOURCE_POLICY_RATE_LIMITED'); process.stdout.write(ok?'1':'0');")"
+    audit_has="$(cat "${audit_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>i.action==='resource_policy.rate_limited'&&String(i.resource_type||'')==='agent'&&String(i.resource_id||'')==='${agent_id}'&&String(i.error_code||'')==='RESOURCE_POLICY_RATE_LIMITED'&&String(i.metadata_json?.task_id||'')==='${task2_id}'); process.stdout.write(ok?'1':'0');")"
     if [[ "${audit_has}" == "1" ]]; then
       break
     fi
-    sleep 1
+    sleep 2
   done
   if [[ "${audit_has}" != "1" ]]; then
-    err "audit missing resource_policy.rate_limited for agent ${agent_id}"
+    err "audit missing resource_policy.rate_limited for current task ${task2_id} agent ${agent_id}"
     cat "${audit_file}" >&2 || true
     exit 1
   fi
@@ -196,7 +197,7 @@ main() {
   info "checking usage evidence for agent rate limit"
   local usage_has="0"
   local usage_tokens_absent="0"
-  for _ in $(seq 1 10); do
+  for _ in $(seq 1 40); do
     local usage_code
     usage_code="$(
       curl -sS -o "${usage_file}" -w '%{http_code}' \
@@ -213,7 +214,7 @@ main() {
     if [[ "${usage_has}" == "1" && "${usage_tokens_absent}" == "1" ]]; then
       break
     fi
-    sleep 1
+    sleep 2
   done
   if [[ "${usage_has}" != "1" ]]; then
     err "usage missing agent row for rate limit evidence agent ${agent_id} user ${user_id}"

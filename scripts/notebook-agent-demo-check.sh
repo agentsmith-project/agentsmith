@@ -83,11 +83,14 @@ main() {
       -H 'Content-Type: application/json' \
       --data '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}]}' || true
   )"
-  if [[ "${proxy_code}" != "200" ]]; then
+  if [[ "${proxy_code}" == "429" ]]; then
+    info "endpoint proxy reachable but currently rate-limited (HTTP 429)"
+  elif [[ "${proxy_code}" != "200" ]]; then
     err "endpoint proxy check failed (HTTP ${proxy_code}); verify endpoint configuration/upstream provider and API state"
     exit 1
+  else
+    info "endpoint proxy reachable (HTTP 200)"
   fi
-  info "endpoint proxy reachable (HTTP 200)"
 
   info "checking agent websocket metadata"
   if [[ "${ws_url}" != ws://localhost:${PORT_API}/api/v1/agent-runtime/ws\?agent_id=* ]]; then

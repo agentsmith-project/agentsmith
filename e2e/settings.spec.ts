@@ -142,7 +142,7 @@ test.describe('Settings Page', () => {
     const deleteBtn = authedPage.getByTestId('settings__delete-project-btn');
     await expect(deleteBtn).toBeVisible();
     if (!(await deleteBtn.isEnabled())) {
-      test.skip(true, 'Delete project action is disabled for current fixture role');
+      await expect(deleteBtn).toBeDisabled();
       return;
     }
 

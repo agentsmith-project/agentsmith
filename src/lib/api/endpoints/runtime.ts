@@ -57,6 +57,15 @@ export interface CreateRuntimeModelCatalogEntryRequest {
   pricing?: Record<string, number>;
 }
 
+export interface UpdateRuntimeModelCatalogEntryRequest {
+  provider?: string;
+  display_name?: string;
+  capabilities?: string[];
+  context_window?: number;
+  max_tokens?: number;
+  pricing?: Record<string, number>;
+}
+
 export interface RuntimeModelAlias {
   id: string;
   workspace_id: string;
@@ -72,6 +81,11 @@ export interface CreateRuntimeModelAliasRequest {
   alias: string;
   target_provider: string;
   target_model: string;
+}
+
+export interface UpdateRuntimeModelAliasRequest {
+  target_provider?: string;
+  target_model?: string;
 }
 
 export interface RuntimeModelComboTarget {
@@ -97,6 +111,14 @@ export interface CreateRuntimeModelComboRequest {
   name: string;
   targets: RuntimeModelComboTarget[];
   fallback_policy: {
+    max_hops: number;
+    retryable_error_classes: string[];
+  };
+}
+
+export interface UpdateRuntimeModelComboRequest {
+  targets?: RuntimeModelComboTarget[];
+  fallback_policy?: {
     max_hops: number;
     retryable_error_classes: string[];
   };
@@ -147,6 +169,23 @@ export class RuntimeAPI {
     return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/models`, payload);
   }
 
+  async getModel(workspaceId: string, projectId: string, modelId: string): Promise<RuntimeModelCatalogEntry> {
+    return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/models/${modelId}`);
+  }
+
+  async updateModel(
+    workspaceId: string,
+    projectId: string,
+    modelId: string,
+    payload: UpdateRuntimeModelCatalogEntryRequest,
+  ): Promise<RuntimeModelCatalogEntry> {
+    return this.client.put(`/workspaces/${workspaceId}/projects/${projectId}/runtime/models/${modelId}`, payload);
+  }
+
+  async deleteModel(workspaceId: string, projectId: string, modelId: string): Promise<void> {
+    return this.client.delete(`/workspaces/${workspaceId}/projects/${projectId}/runtime/models/${modelId}`);
+  }
+
   async listAliases(workspaceId: string, projectId: string): Promise<{ items: RuntimeModelAlias[] }> {
     return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/aliases`);
   }
@@ -159,6 +198,23 @@ export class RuntimeAPI {
     return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/aliases`, payload);
   }
 
+  async getAlias(workspaceId: string, projectId: string, alias: string): Promise<RuntimeModelAlias> {
+    return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/aliases/${alias}`);
+  }
+
+  async updateAlias(
+    workspaceId: string,
+    projectId: string,
+    alias: string,
+    payload: UpdateRuntimeModelAliasRequest,
+  ): Promise<RuntimeModelAlias> {
+    return this.client.put(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/aliases/${alias}`, payload);
+  }
+
+  async deleteAlias(workspaceId: string, projectId: string, alias: string): Promise<void> {
+    return this.client.delete(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/aliases/${alias}`);
+  }
+
   async listCombos(workspaceId: string, projectId: string): Promise<{ items: RuntimeModelCombo[] }> {
     return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/combos`);
   }
@@ -169,6 +225,23 @@ export class RuntimeAPI {
     payload: CreateRuntimeModelComboRequest,
   ): Promise<RuntimeModelCombo> {
     return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/combos`, payload);
+  }
+
+  async getCombo(workspaceId: string, projectId: string, combo: string): Promise<RuntimeModelCombo> {
+    return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/combos/${combo}`);
+  }
+
+  async updateCombo(
+    workspaceId: string,
+    projectId: string,
+    combo: string,
+    payload: UpdateRuntimeModelComboRequest,
+  ): Promise<RuntimeModelCombo> {
+    return this.client.put(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/combos/${combo}`, payload);
+  }
+
+  async deleteCombo(workspaceId: string, projectId: string, combo: string): Promise<void> {
+    return this.client.delete(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/combos/${combo}`);
   }
 
   async getPricing(workspaceId: string, projectId: string): Promise<RuntimePricingMap> {

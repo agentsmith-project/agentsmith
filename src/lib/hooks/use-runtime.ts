@@ -8,6 +8,9 @@ import type {
   CreateRuntimeModelComboRequest,
   CreateRuntimeProviderConnectionRequest,
   RuntimePricingMap,
+  UpdateRuntimeModelAliasRequest,
+  UpdateRuntimeModelCatalogEntryRequest,
+  UpdateRuntimeModelComboRequest,
   UpdateRuntimeProviderConnectionRequest,
 } from '@/lib/api';
 
@@ -84,6 +87,35 @@ export function useCreateRuntimeModel(workspaceId: string, projectId: string) {
   });
 }
 
+export function useUpdateRuntimeModel(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      modelId,
+      payload,
+    }: {
+      modelId: string;
+      payload: UpdateRuntimeModelCatalogEntryRequest;
+    }) => getRuntimeAPI().updateModel(workspaceId, projectId, modelId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.models(workspaceId, projectId) });
+    },
+    onError: (error) => handleErrorForToast(error, 'useUpdateRuntimeModel'),
+  });
+}
+
+export function useDeleteRuntimeModel(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (modelId: string) =>
+      getRuntimeAPI().deleteModel(workspaceId, projectId, modelId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.models(workspaceId, projectId) });
+    },
+    onError: (error) => handleErrorForToast(error, 'useDeleteRuntimeModel'),
+  });
+}
+
 export function useRuntimeAliases(workspaceId: string, projectId: string) {
   return useQuery({
     queryKey: queryKeys.runtime.aliases(workspaceId, projectId),
@@ -105,6 +137,35 @@ export function useCreateRuntimeAlias(workspaceId: string, projectId: string) {
   });
 }
 
+export function useUpdateRuntimeAlias(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      alias,
+      payload,
+    }: {
+      alias: string;
+      payload: UpdateRuntimeModelAliasRequest;
+    }) => getRuntimeAPI().updateAlias(workspaceId, projectId, alias, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.aliases(workspaceId, projectId) });
+    },
+    onError: (error) => handleErrorForToast(error, 'useUpdateRuntimeAlias'),
+  });
+}
+
+export function useDeleteRuntimeAlias(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (alias: string) =>
+      getRuntimeAPI().deleteAlias(workspaceId, projectId, alias),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.aliases(workspaceId, projectId) });
+    },
+    onError: (error) => handleErrorForToast(error, 'useDeleteRuntimeAlias'),
+  });
+}
+
 export function useRuntimeCombos(workspaceId: string, projectId: string) {
   return useQuery({
     queryKey: queryKeys.runtime.combos(workspaceId, projectId),
@@ -123,6 +184,35 @@ export function useCreateRuntimeCombo(workspaceId: string, projectId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.runtime.combos(workspaceId, projectId) });
     },
     onError: (error) => handleErrorForToast(error, 'useCreateRuntimeCombo'),
+  });
+}
+
+export function useUpdateRuntimeCombo(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      combo,
+      payload,
+    }: {
+      combo: string;
+      payload: UpdateRuntimeModelComboRequest;
+    }) => getRuntimeAPI().updateCombo(workspaceId, projectId, combo, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.combos(workspaceId, projectId) });
+    },
+    onError: (error) => handleErrorForToast(error, 'useUpdateRuntimeCombo'),
+  });
+}
+
+export function useDeleteRuntimeCombo(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (combo: string) =>
+      getRuntimeAPI().deleteCombo(workspaceId, projectId, combo),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.combos(workspaceId, projectId) });
+    },
+    onError: (error) => handleErrorForToast(error, 'useDeleteRuntimeCombo'),
   });
 }
 

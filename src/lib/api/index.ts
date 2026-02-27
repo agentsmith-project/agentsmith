@@ -84,10 +84,13 @@ export type {
   UpdateRuntimeProviderConnectionRequest,
   RuntimeModelCatalogEntry,
   CreateRuntimeModelCatalogEntryRequest,
+  UpdateRuntimeModelCatalogEntryRequest,
   RuntimeModelAlias,
   CreateRuntimeModelAliasRequest,
+  UpdateRuntimeModelAliasRequest,
   RuntimeModelCombo,
   CreateRuntimeModelComboRequest,
+  UpdateRuntimeModelComboRequest,
   RuntimePricingMap,
 } from './endpoints';
 

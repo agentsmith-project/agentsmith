@@ -11,7 +11,7 @@ import { defineConfig, devices } from '@playwright/test';
 const baseURL = process.env.BASE_URL || 'http://localhost:3001';
 const useManagedDevServer = !process.env.BASE_URL;
 /** Local worker count; override with PW_WORKERS (e.g. PW_WORKERS=12). */
-const localWorkers = Number(process.env.PW_WORKERS ?? 10);
+const localWorkers = Number(process.env.PW_WORKERS ?? 6);
 const isCI = !!process.env.CI;
 
 const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port 3001')].join(
@@ -37,7 +37,7 @@ export default defineConfig({
     ? {
         command: webServerCommand,
         url: 'http://localhost:3001',
-        reuseExistingServer: false,
+        reuseExistingServer: true,
         timeout: 120000,
       }
     : undefined,

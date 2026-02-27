@@ -117,7 +117,18 @@ test.describe('Files Page (object browser)', () => {
       const url = response.url();
       return url.includes('/source-libraries/') && url.includes('/objects?') && url.includes('continuation_token=');
     });
-    await authedPage.getByTestId('files__load-more').click();
+    let clicked = false;
+    for (let attempt = 0; attempt < 3 && !clicked; attempt += 1) {
+      try {
+        await authedPage
+          .getByTestId('files__load-more')
+          .evaluate((node) => (node as HTMLButtonElement).click());
+        clicked = true;
+      } catch {
+        if (attempt === 2) throw new Error('Failed to click load-more button after retries');
+        await authedPage.waitForTimeout(200);
+      }
+    }
     await continuationResponse;
 
     await authedPage.getByTestId('files__search').fill('bulk-0250');

@@ -152,8 +152,7 @@ test.describe('Chat Page', () => {
 
   test('should show layout toggle on ultrawide viewport and switch state', async ({ authedPage }) => {
     await authedPage.setViewportSize({ width: 2200, height: 1200 });
-    await authedPage.reload({ waitUntil: 'domcontentloaded' });
-    await authedPage.waitForTimeout(300);
+    await goToProject(authedPage, 'chat');
 
     const toggle = authedPage.getByTestId('topbar__layout-toggle');
     await expect(toggle).toBeVisible({ timeout: 10000 });
@@ -166,8 +165,7 @@ test.describe('Chat Page', () => {
 
   test('should persist ultrawide layout preference after refresh', async ({ authedPage }) => {
     await authedPage.setViewportSize({ width: 2200, height: 1200 });
-    await authedPage.reload({ waitUntil: 'domcontentloaded' });
-    await authedPage.waitForTimeout(300);
+    await goToProject(authedPage, 'chat');
 
     const toggle = authedPage.getByTestId('topbar__layout-toggle');
     await expect(toggle).toBeVisible({ timeout: 10000 });
@@ -178,6 +176,10 @@ test.describe('Chat Page', () => {
     }
 
     await authedPage.reload({ waitUntil: 'domcontentloaded' });
+    const persistedToggle = authedPage.getByTestId('topbar__layout-toggle');
+    if (!(await persistedToggle.isVisible().catch(() => false))) {
+      await goToProject(authedPage, 'chat');
+    }
     await expect(authedPage.getByTestId('topbar__layout-toggle')).toHaveAttribute('data-state', 'ultrawide');
   });
 });

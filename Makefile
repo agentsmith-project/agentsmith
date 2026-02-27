@@ -269,18 +269,15 @@ verify-release:
 
 lane-mock-smoke:
 	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	NEXT_PUBLIC_USE_MSW=true \
-	$(NPM) run test:e2e:lane:mock:smoke
+	./scripts/run-mock-lane-playwright.sh --project=smoke
 
 lane-mock-chromium:
 	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	NEXT_PUBLIC_USE_MSW=true \
-	$(NPM) run test:e2e:lane:mock:chromium
+	PW_WORKERS=6 ./scripts/run-mock-lane-playwright.sh --project=chromium
 
 lane-mock-visual:
 	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	NEXT_PUBLIC_USE_MSW=true \
-	$(NPM) run test:e2e:lane:mock:visual
+	PW_WORKERS=1 ./scripts/run-mock-lane-playwright.sh --project=visual
 
 lane-mock-full:
 	@set -e; \

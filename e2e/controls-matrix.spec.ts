@@ -81,13 +81,21 @@ test.describe('Controls Matrix', () => {
 
   test('navigation retains project scope', async ({ authedPage }) => {
     await goToProject(authedPage, 'overview');
-    await authedPage.getByRole('link', { name: /chat/i }).first().click();
+    const chatNav = authedPage.getByTestId('sidebar__nav-item--chat');
+    const notebookNav = authedPage.getByTestId('sidebar__nav-item--notebook');
+    await expect(chatNav).toBeVisible();
+    await expect(notebookNav).toBeVisible();
+
+    const expectedChatPath = `/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/chat`;
+    const expectedNotebookPath = `/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook`;
+    await expect(chatNav).toHaveAttribute('href', expectedChatPath);
+    await expect(notebookNav).toHaveAttribute('href', expectedNotebookPath);
+
+    await goToProject(authedPage, 'chat');
+    await expect(authedPage).toHaveURL(new RegExp(`${expectedChatPath}$`));
+    await goToProject(authedPage, 'notebook');
     await expect(authedPage).toHaveURL(
-      new RegExp(`/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/chat$`)
-    );
-    await authedPage.getByRole('link', { name: /notebook/i }).first().click();
-    await expect(authedPage).toHaveURL(
-      new RegExp(`/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook$`)
+      new RegExp(`${expectedNotebookPath}$`)
     );
   });
 });

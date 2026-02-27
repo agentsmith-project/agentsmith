@@ -11,6 +11,7 @@
 import { test } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
+import { gotoAndWait } from './utils/navigation';
 
 const BASE = path.join(process.cwd(), 'test-results', 'screenshots');
 const WS_ID = 'ws_default';
@@ -68,6 +69,11 @@ async function mockLogin(page: import('@playwright/test').Page) {
   }, { wsId: WS_ID });
 }
 
+async function navigateForCapture(page: import('@playwright/test').Page, url: string) {
+  await gotoAndWait(page, url, 30000);
+  await page.waitForTimeout(500);
+}
+
 /** Expand SettingsTokenReference (click to show all quota/limits tokens) */
 async function expandTokenReference(page: import('@playwright/test').Page) {
   const btn = page.getByRole('button', { name: /支持的 token|Supported tokens/i });
@@ -84,41 +90,34 @@ test.describe('Screenshot Capture', () => {
     test.setTimeout(180000);
 
     // === 01-auth ===
-    await page.goto('/zh-CN/login', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(500);
+    await navigateForCapture(page, '/zh-CN/login');
     await page.screenshot({ path: path.join(BASE, '01-auth', 'login.png'), fullPage: true });
 
-    await page.goto('/zh-CN/join', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(500);
+    await navigateForCapture(page, '/zh-CN/join');
     await page.screenshot({ path: path.join(BASE, '01-auth', 'join-invalid.png'), fullPage: true });
 
     await mockLogin(page);
     await page.reload();
     await page.waitForTimeout(1500);
-    await page.goto('/zh-CN/login/workspace', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, '/zh-CN/login/workspace');
     await page.screenshot({ path: path.join(BASE, '01-auth', 'login-workspace.png'), fullPage: true });
 
-    await page.goto('/zh-CN/workspaces/ws_default/projects', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, '/zh-CN/workspaces/ws_default/projects');
     await page.screenshot({ path: path.join(BASE, '01-auth', 'workspace-select.png'), fullPage: true });
 
     // === 02-projects ===
     await page.screenshot({ path: path.join(BASE, '02-projects', 'projects-list.png'), fullPage: true });
 
     // === 16-workspace ===
-    await page.goto('/zh-CN/workspaces/ws_default/settings', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, '/zh-CN/workspaces/ws_default/settings');
     await page.screenshot({ path: path.join(BASE, '16-workspace', 'workspace-settings.png'), fullPage: true });
 
     // === 03-overview ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/overview`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(1000);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/overview`);
     await page.screenshot({ path: path.join(BASE, '03-overview', 'overview.png'), fullPage: true });
 
     // === 04-chat ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/chat`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/chat`);
     await page.screenshot({ path: path.join(BASE, '04-chat', 'chat.png'), fullPage: true });
 
     // === 05-notebook ===
@@ -148,18 +147,15 @@ test.describe('Screenshot Capture', () => {
     await page.screenshot({ path: path.join(BASE, '05-notebook', 'task-detail.png'), fullPage: true });
 
     // === 06-agents ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agents`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agents`);
     await page.screenshot({ path: path.join(BASE, '06-agents', 'agents.png'), fullPage: true });
 
     // === 07-endpoints ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/endpoints`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/endpoints`);
     await page.screenshot({ path: path.join(BASE, '07-endpoints', 'endpoints.png'), fullPage: true });
 
     // === 08-members ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/members`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(1000);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/members`);
     await page.screenshot({ path: path.join(BASE, '08-members', 'members-list.png'), fullPage: true });
 
     const memberRow = page.locator('table tbody tr').first();
@@ -188,18 +184,15 @@ test.describe('Screenshot Capture', () => {
     }
 
     // === 09-audit ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/audit`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/audit`);
     await page.screenshot({ path: path.join(BASE, '09-audit', 'audit.png'), fullPage: true });
 
     // === 10-usage ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/usage`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/usage`);
     await page.screenshot({ path: path.join(BASE, '10-usage', 'usage.png'), fullPage: true });
 
     // === 11-settings ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/settings`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(1000);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/settings`);
     await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-general.png'), fullPage: true });
 
     const runtimeTab = page.getByRole('tab', { name: /运行偏好|Runtime Preferences/i });
@@ -211,13 +204,11 @@ test.describe('Screenshot Capture', () => {
     }
 
     // === 12-files ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/files`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/files`);
     await page.screenshot({ path: path.join(BASE, '12-files', 'files.png'), fullPage: true });
 
     // === 13-credentials ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/credentials`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/credentials`);
     await page.screenshot({ path: path.join(BASE, '13-credentials', 'credentials-list.png'), fullPage: true });
     const createKeyBtn = page.getByRole('button', { name: /创建凭据|Create Key|Create Credential/i }).first();
     if (await createKeyBtn.isVisible()) {
@@ -228,12 +219,10 @@ test.describe('Screenshot Capture', () => {
     }
 
     // === 14-user ===
-    await page.goto('/zh-CN/user/profile', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(500);
+    await navigateForCapture(page, '/zh-CN/user/profile');
     await page.screenshot({ path: path.join(BASE, '14-user', 'profile.png'), fullPage: true });
 
-    await page.goto('/zh-CN/user/api-keys', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(500);
+    await navigateForCapture(page, '/zh-CN/user/api-keys');
     await page.screenshot({ path: path.join(BASE, '14-user', 'api-keys.png'), fullPage: true });
 
     const expectedScreenshots = [

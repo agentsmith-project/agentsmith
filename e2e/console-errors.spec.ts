@@ -48,6 +48,7 @@ base.describe('Console Errors Detection', () => {
     base.setTimeout(120000);
 
     const errorsByPage: Record<string, string[]> = {};
+    let authInjected = false;
 
     for (const route of ALL_ROUTES) {
       const pageErrors: string[] = [];
@@ -67,7 +68,10 @@ base.describe('Console Errors Detection', () => {
       const needsAuth =
         route.path.includes('/workspaces/') || route.path.includes('/user/');
       if (needsAuth) {
-        await withAuth(page, WS_ID, TEST_EMAIL);
+        if (!authInjected) {
+          await withAuth(page, WS_ID, TEST_EMAIL);
+          authInjected = true;
+        }
       }
 
       await gotoAndWait(page, route.path);

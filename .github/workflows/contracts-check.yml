@@ -16,6 +16,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify AGENTS symlink contract
+        run: |
+          set -euo pipefail
+          test -L AGENTS.md
+          target="$(readlink AGENTS.md)"
+          if [[ "${target}" != "CLAUDE.md" ]]; then
+            echo "AGENTS.md must symlink to CLAUDE.md, got: ${target}" >&2
+            exit 1
+          fi
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

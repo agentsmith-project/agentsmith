@@ -6,14 +6,16 @@
 
 import type { ApiClient } from '../client';
 import type {
+  PaginatedResponse,
+} from '../types';
+import type {
   AlertRule,
   AlertRuleCreateRequest,
   AlertRuleUpdateRequest,
   AlertRuleTestResponse,
   AlertNotification,
   AlertHistoryListParams,
-  PaginatedResponse,
-} from '../types';
+} from '../../types/alerts';
 
 function toQuery(params: Record<string, string | number | boolean | undefined>): string {
   const searchParams = new URLSearchParams();

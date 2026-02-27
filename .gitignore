@@ -53,3 +53,6 @@ test-results
 secrets/*
 !secrets/.gitkeep
 !secrets/e2e-openai-compatible.demo.json
+
+# Generated release failure artifacts (local triage outputs)
+artifacts/release-reports/failed/

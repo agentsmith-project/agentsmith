@@ -50,6 +50,12 @@ describe('Failure Classifier: TDD Suite (Epic D2)', () => {
       expect(result.category).toBe('token');
     });
 
+    it('should classify invalid bearer token errors', () => {
+      const error = 'POST /tasks/abc/messages -> 401: invalid bearer token';
+      const result = classifyFailure(error);
+      expect(result.category).toBe('token');
+    });
+
     it('should provide specific troubleshooting steps for token failures', () => {
       const error = 'jwt expired';
       const result = classifyFailure(error);
@@ -94,6 +100,12 @@ describe('Failure Classifier: TDD Suite (Epic D2)', () => {
 
     it('should classify network unreachable errors', () => {
       const error = 'Network unreachable';
+      const result = classifyFailure(error);
+      expect(result.category).toBe('network');
+    });
+
+    it('should classify fetch failed errors', () => {
+      const error = 'TypeError: fetch failed';
       const result = classifyFailure(error);
       expect(result.category).toBe('network');
     });
@@ -145,6 +157,12 @@ describe('Failure Classifier: TDD Suite (Epic D2)', () => {
       expect(result.category).toBe('backend');
     });
 
+    it('should classify agent runtime protocol errors', () => {
+      const error = 'AGENT_PROTOCOL_ERROR: invalid runtime response frame';
+      const result = classifyFailure(error);
+      expect(result.category).toBe('backend');
+    });
+
     it('should provide troubleshooting steps for backend failures', () => {
       const error = '500 Internal Server Error';
       const result = classifyFailure(error);
@@ -187,6 +205,26 @@ describe('Failure Classifier: TDD Suite (Epic D2)', () => {
 
       expect(steps).toBeDefined();
       expect(steps.some(s => s.includes('selector') || s.includes('test'))).toBe(true);
+    });
+
+    it('should classify second-turn output mismatch as assertion', () => {
+      const error = 'Second turn agent message did not produce expected output: ...';
+      const result = classifyFailure(error);
+      expect(result.category).toBe('assertion');
+    });
+  });
+
+  describe('RED Phase 4.5: Timeout and Rate-limit Script Errors', () => {
+    it('should classify missing terminal trace timeout errors', () => {
+      const error = 'task t_123 did not reach terminal trace within timeout';
+      const result = classifyFailure(error);
+      expect(result.category).toBe('timeout');
+    });
+
+    it('should classify retry limit errors as rate_limit', () => {
+      const error = 'provider reply failed due to retry limit';
+      const result = classifyFailure(error);
+      expect(result.category).toBe('rate_limit');
     });
   });
 

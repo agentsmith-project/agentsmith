@@ -38,6 +38,7 @@
 6. `BASE_URL=http://localhost:3002 npx playwright test e2e/runtime-proxy-billing.spec.ts --project=chromium --workers=1` (1 passed, MSW lane)
 7. `BASE_URL=http://localhost:3002 npx playwright test e2e/settings.spec.ts --project=chromium --workers=1` (11 passed)
 8. `BASE_URL=http://localhost:3002 npx playwright test e2e/visual.spec.ts --project=visual --workers=1` (33 passed)
+9. `npm run test:run -- src/components/settings/__tests__/RuntimeControlPlanePanel.test.tsx` (2 passed)
 
 ## E2E Coverage Against This PRD
 - Current state:

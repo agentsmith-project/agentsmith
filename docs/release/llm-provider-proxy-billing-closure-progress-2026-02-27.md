@@ -32,6 +32,7 @@
 3. `npm run openapi:check-generated`
 4. `npm run test:run -- packages/api-entry-node/src/runtime-route-handler.test.ts packages/api-entry-node/src/projects-route-match.test.ts`
 5. `npm run test:e2e:integration:runtime-proxy-billing:with-api` (1 passed)
+6. `BASE_URL=http://localhost:3002 npx playwright test e2e/runtime-proxy-billing.spec.ts --project=chromium --workers=1` (1 passed, MSW lane)
 
 ## E2E Coverage Against This PRD
 - Current state:
@@ -41,10 +42,13 @@
 2. Local execution evidence captured:
 - Command: `npm run test:e2e:integration:runtime-proxy-billing:with-api`
 - Result: `1 passed (4.6s)` on 2026-02-27
+3. Mock-lane browser evidence captured:
+- Command: `BASE_URL=http://localhost:3002 npx playwright test e2e/runtime-proxy-billing.spec.ts --project=chromium --workers=1`
+- Result: `1 passed (6.7s)` on 2026-02-27
 
 - Conclusion:
-1. E2E acceptance for runtime proxy billing backend chain is `covered` at integration-e2e level.
-2. Remaining gap is frontend operator workflow (runtime control-plane UI) acceptance coverage.
+1. E2E acceptance for runtime proxy billing API chain is `covered` in both real-backend and mock-browser lanes.
+2. Remaining gap is dedicated runtime control-plane UI page workflow acceptance coverage.
 
 ## Docs Consistency
 - Consistent:

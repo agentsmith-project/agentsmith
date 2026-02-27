@@ -14,6 +14,16 @@ function projectKey(params: Record<string, string | readonly string[] | undefine
   return `${params.ws ?? 'ws'}:${params.prj ?? 'prj'}`;
 }
 
+function asString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function nowId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10_000)}`;
+}
+
 export const runtimeHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/providers', ({ params }) => {
     const key = projectKey(params);
@@ -69,8 +79,11 @@ export const runtimeHandlers = [
   http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/models', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const key = projectKey(params);
+    if (models.some((item) => item._scope === key && item.provider === body.provider && item.model_id === body.model_id)) {
+      return HttpResponse.json({ error_code: 'CONFLICT', message: 'runtime_model_already_exists' }, { status: 409 });
+    }
     const item = {
-      id: `rmc_${Date.now()}`,
+      id: nowId('rmc'),
       workspace_id: params.ws,
       project_id: params.prj,
       provider: body.provider ?? 'openai',
@@ -87,6 +100,37 @@ export const runtimeHandlers = [
     return HttpResponse.json(responseItem, { status: 201 });
   }),
 
+  http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/models/:modelId', ({ params }) => {
+    const key = projectKey(params);
+    const item = models.find((entry) => entry._scope === key && entry.model_id === params.modelId);
+    if (!item) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
+    const { _scope, ...responseItem } = item;
+    return HttpResponse.json(responseItem);
+  }),
+
+  http.put('/api/v1/workspaces/:ws/projects/:prj/runtime/models/:modelId', async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const key = projectKey(params);
+    const idx = models.findIndex((entry) => entry._scope === key && entry.model_id === params.modelId);
+    if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
+    models[idx] = {
+      ...models[idx],
+      ...body,
+      model_id: models[idx].model_id,
+      updated_at: nowIso(),
+    };
+    const { _scope, ...responseItem } = models[idx];
+    return HttpResponse.json(responseItem);
+  }),
+
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/runtime/models/:modelId', ({ params }) => {
+    const key = projectKey(params);
+    const idx = models.findIndex((entry) => entry._scope === key && entry.model_id === params.modelId);
+    if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
+    models.splice(idx, 1);
+    return new HttpResponse(null, { status: 204 });
+  }),
+
   http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/aliases', ({ params }) => {
     const key = projectKey(params);
     const items = aliases.filter((item) => item._scope === key).map(({ _scope, ...rest }) => rest);
@@ -96,8 +140,11 @@ export const runtimeHandlers = [
   http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/aliases', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const key = projectKey(params);
+    if (aliases.some((item) => item._scope === key && item.alias === body.alias)) {
+      return HttpResponse.json({ error_code: 'CONFLICT', message: 'runtime_alias_already_exists' }, { status: 409 });
+    }
     const item = {
-      id: `rma_${Date.now()}`,
+      id: nowId('rma'),
       workspace_id: params.ws,
       project_id: params.prj,
       alias: body.alias ?? 'prod-chat',
@@ -112,6 +159,37 @@ export const runtimeHandlers = [
     return HttpResponse.json(responseItem, { status: 201 });
   }),
 
+  http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/aliases/:alias', ({ params }) => {
+    const key = projectKey(params);
+    const item = aliases.find((entry) => entry._scope === key && entry.alias === params.alias);
+    if (!item) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
+    const { _scope, ...responseItem } = item;
+    return HttpResponse.json(responseItem);
+  }),
+
+  http.put('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/aliases/:alias', async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const key = projectKey(params);
+    const idx = aliases.findIndex((entry) => entry._scope === key && entry.alias === params.alias);
+    if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
+    aliases[idx] = {
+      ...aliases[idx],
+      ...body,
+      alias: aliases[idx].alias,
+      updated_at: nowIso(),
+    };
+    const { _scope, ...responseItem } = aliases[idx];
+    return HttpResponse.json(responseItem);
+  }),
+
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/aliases/:alias', ({ params }) => {
+    const key = projectKey(params);
+    const idx = aliases.findIndex((entry) => entry._scope === key && entry.alias === params.alias);
+    if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
+    aliases.splice(idx, 1);
+    return new HttpResponse(null, { status: 204 });
+  }),
+
   http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/combos', ({ params }) => {
     const key = projectKey(params);
     const items = combos.filter((item) => item._scope === key).map(({ _scope, ...rest }) => rest);
@@ -121,8 +199,11 @@ export const runtimeHandlers = [
   http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/combos', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const key = projectKey(params);
+    if (combos.some((item) => item._scope === key && item.name === body.name)) {
+      return HttpResponse.json({ error_code: 'CONFLICT', message: 'runtime_combo_already_exists' }, { status: 409 });
+    }
     const item = {
-      id: `rmco_${Date.now()}`,
+      id: nowId('rmco'),
       workspace_id: params.ws,
       project_id: params.prj,
       name: body.name ?? 'prod-chat',
@@ -137,6 +218,37 @@ export const runtimeHandlers = [
     return HttpResponse.json(responseItem, { status: 201 });
   }),
 
+  http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/combos/:combo', ({ params }) => {
+    const key = projectKey(params);
+    const item = combos.find((entry) => entry._scope === key && entry.name === params.combo);
+    if (!item) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
+    const { _scope, ...responseItem } = item;
+    return HttpResponse.json(responseItem);
+  }),
+
+  http.put('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/combos/:combo', async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const key = projectKey(params);
+    const idx = combos.findIndex((entry) => entry._scope === key && entry.name === params.combo);
+    if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
+    combos[idx] = {
+      ...combos[idx],
+      ...body,
+      name: combos[idx].name,
+      updated_at: nowIso(),
+    };
+    const { _scope, ...responseItem } = combos[idx];
+    return HttpResponse.json(responseItem);
+  }),
+
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/combos/:combo', ({ params }) => {
+    const key = projectKey(params);
+    const idx = combos.findIndex((entry) => entry._scope === key && entry.name === params.combo);
+    if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
+    combos.splice(idx, 1);
+    return new HttpResponse(null, { status: 204 });
+  }),
+
   http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/pricing', ({ params }) => {
     const key = projectKey(params);
     return HttpResponse.json(pricingByProject.get(key) ?? {});
@@ -149,13 +261,88 @@ export const runtimeHandlers = [
     return HttpResponse.json(body);
   }),
 
-  http.post('/api/v1/workspaces/:ws/projects/:prj/llm/chat/completions', () => {
+  http.post('/api/v1/workspaces/:ws/projects/:prj/llm/chat/completions', async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const key = projectKey(params);
+    const modelRaw = asString(body.model);
+    if (!modelRaw) {
+      return HttpResponse.json(
+        { error_code: 'VALIDATION_ERROR', message: 'runtime_unified_chat_model_required' },
+        { status: 422 },
+      );
+    }
+
+    const scopedProviders = providers.filter((item) => item._scope === key && item.status === 'active');
+    const scopedAliases = aliases.filter((item) => item._scope === key);
+    const scopedCombos = combos.filter((item) => item._scope === key);
+    const pricing = pricingByProject.get(key) as Record<string, Record<string, Record<string, number>>> | undefined;
+
+    const attempts: Array<{ provider: string; model: string }> = [];
+    if (modelRaw.startsWith('combo:')) {
+      const comboName = modelRaw.slice('combo:'.length).trim();
+      const combo = scopedCombos.find((item) => item.name === comboName);
+      if (!combo || !Array.isArray(combo.targets) || combo.targets.length === 0) {
+        return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'runtime_combo_not_found' }, { status: 422 });
+      }
+      attempts.push(...(combo.targets as Array<{ provider: string; model: string }>));
+    } else if (modelRaw.includes('/')) {
+      const [provider, model] = modelRaw.split('/', 2);
+      if (!provider || !model) {
+        return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'runtime_model_format_invalid' }, { status: 422 });
+      }
+      attempts.push({ provider, model });
+    } else {
+      const alias = scopedAliases.find((item) => item.alias === modelRaw);
+      if (!alias) {
+        return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'runtime_alias_not_found' }, { status: 422 });
+      }
+      attempts.push({
+        provider: String(alias.target_provider),
+        model: String(alias.target_model),
+      });
+    }
+
+    for (let idx = 0; idx < attempts.length; idx += 1) {
+      const attempt = attempts[idx]!;
+      const provider = scopedProviders.find((item) => item.provider === attempt.provider);
+      if (!provider) continue;
+      const baseUrl = asString(provider.base_url) ?? '';
+      if (baseUrl.includes('nonretryable')) {
+        return HttpResponse.json(
+          { error_code: 'UPSTREAM_400', message: 'runtime_upstream_non_retryable' },
+          { status: 400 },
+        );
+      }
+      if (baseUrl.includes('retryable') && idx < attempts.length - 1) {
+        continue;
+      }
+      const inputTokens = 1000;
+      const outputTokens = 500;
+      const inRate = pricing?.[attempt.provider]?.[attempt.model]?.input ?? 0;
+      const outRate = pricing?.[attempt.provider]?.[attempt.model]?.output ?? 0;
+      const estimatedCost = Number((((inputTokens * inRate) + (outputTokens * outRate)) / 1_000_000).toFixed(6));
+      return HttpResponse.json({
+        id: nowId('chatcmpl'),
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: inputTokens,
+          completion_tokens: outputTokens,
+          total_tokens: inputTokens + outputTokens,
+        },
+        runtime: {
+          provider: attempt.provider,
+          resolved_model: attempt.model,
+          fallback_hops: idx,
+          estimated_cost: estimatedCost,
+        },
+      });
+    }
+
     return HttpResponse.json(
-      {
-        error_code: 'NOT_IMPLEMENTED',
-        message: 'llm_unified_chat_not_implemented',
-      },
-      { status: 501 },
+      { error_code: 'RUNTIME_PROVIDER_CONNECTION_NOT_FOUND', message: 'runtime_provider_connection_not_found' },
+      { status: 502 },
     );
   }),
 ];

@@ -21,6 +21,7 @@
     "test:e2e:lane:mock:chromium": "playwright test --project=chromium",
     "test:e2e:lane:mock:visual": "playwright test --project=visual",
     "test:e2e:lane:mock:full": "playwright test --project=smoke --project=chromium --project=visual",
+    "test:e2e:runtime-proxy-billing": "playwright test e2e/runtime-proxy-billing.spec.ts --project=chromium --workers=1",
     "test:e2e:lane:real": "playwright test --config playwright.config.integration.ts --project=chromium",
     "test:e2e:integration:minimal": "playwright test --config playwright.config.integration.ts e2e/integration-minimal.spec.ts --project=chromium --workers=1",
     "test:e2e:integration:files": "playwright test --config playwright.config.integration.ts e2e/integration-files.spec.ts --project=chromium --workers=1",

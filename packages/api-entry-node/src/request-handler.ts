@@ -217,6 +217,23 @@ export async function handleRequest(
       unauthorized(res);
       return;
     }
+    if (requestUrl.pathname === '/api/v1/sse-ticket' && method === 'POST') {
+      const bearerToken = extractBearerToken(req);
+      if (!bearerToken) {
+        unauthorized(res);
+        return;
+      }
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const host = req.headers.host || 'localhost';
+      const protocol = (req.headers['x-forwarded-proto'] as string | undefined) || 'http';
+      json(res, 200, {
+        ticket: bearerToken,
+        expires_at: expiresAt,
+        max_connections: 1,
+        sso_url: `${protocol}://${host}/api/v1/events?ticket=${encodeURIComponent(bearerToken)}`,
+      });
+      return;
+    }
     if (await handleMeRoute({ req, res, method, requestUrl, user })) {
       return;
     }

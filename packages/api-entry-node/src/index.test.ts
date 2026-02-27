@@ -348,6 +348,25 @@ describe('api-entry-node me routes', () => {
   });
 });
 
+describe('api-entry-node sse ticket routes', () => {
+  it('returns an sse ticket for authenticated requests', async () => {
+    const { baseUrl } = startServer();
+    const response = await apiFetch(baseUrl, '/api/v1/sse-ticket', { method: 'POST' });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      ticket: string;
+      expires_at: string;
+      max_connections: number;
+      sso_url: string;
+    };
+    expect(body.ticket).toBe('test-token');
+    expect(body.max_connections).toBe(1);
+    expect(body.sso_url).toContain('/api/v1/events?ticket=');
+    expect(typeof body.expires_at).toBe('string');
+    expect(Number.isNaN(Date.parse(body.expires_at))).toBe(false);
+  });
+});
+
 describe('api-entry-node projects routes', () => {
   it('returns authenticated workspace and member payload', async () => {
     const { baseUrl } = startServer();

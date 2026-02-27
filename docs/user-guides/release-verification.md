@@ -19,6 +19,8 @@ Use a lane-based model to avoid mixing MSW baseline assertions with real-backend
 - **Real lane** (manual/controlled env):
   - `make lane-real-smoke` (L3)
 
+Local convenience: you can persist `GLM_API_KEY` in `.env.local` (local-only) so real-lane commands do not require repeated inline key input.
+
 Gate levels:
 
 - `make gate-l0`: lint + typecheck + OpenAPI/contract checks

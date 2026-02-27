@@ -110,12 +110,12 @@ export function AuditFilters({
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.action')}</label>
+            <label htmlFor="audit-filter-action" className="text-xs text-tertiary mb-1 block">{t('filters.action')}</label>
             <Select
               value={filters.action || 'all'}
               onValueChange={(value) => handleSelectFilterChange('action', value === 'all' ? undefined : value)}
             >
-              <SelectTrigger>
+              <SelectTrigger id="audit-filter-action">
                 <SelectValue placeholder={commonT('all_actions')} />
               </SelectTrigger>
               <SelectContent>
@@ -130,12 +130,12 @@ export function AuditFilters({
           </div>
 
           <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.actor_type')}</label>
+            <label htmlFor="audit-filter-actor-type" className="text-xs text-tertiary mb-1 block">{t('filters.actor_type')}</label>
             <Select
               value={filters.actor_type || 'all'}
               onValueChange={(value) => handleSelectFilterChange('actor_type', value === 'all' ? undefined : value as 'user' | 'agent' | 'plugin')}
             >
-              <SelectTrigger>
+              <SelectTrigger id="audit-filter-actor-type">
                 <SelectValue placeholder={commonT('all_types')} />
               </SelectTrigger>
               <SelectContent>
@@ -148,8 +148,9 @@ export function AuditFilters({
           </div>
 
           <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.actor_id')}</label>
+            <label htmlFor="audit-filter-actor-id" className="text-xs text-tertiary mb-1 block">{t('filters.actor_id')}</label>
             <Input
+              id="audit-filter-actor-id"
               placeholder={commonT('filter_by_actor_id')}
               value={filters.actor_id || ''}
               onChange={(e) => handleTextFilterChange('actor_id', e.target.value || undefined)}
@@ -157,8 +158,9 @@ export function AuditFilters({
           </div>
 
           <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.end_user_id')}</label>
+            <label htmlFor="audit-filter-end-user-id" className="text-xs text-tertiary mb-1 block">{t('filters.end_user_id')}</label>
             <Input
+              id="audit-filter-end-user-id"
               placeholder={commonT('filter_by_end_user_id')}
               value={filters.end_user_id || defaultEndUserId || ''}
               onChange={(e) => handleTextFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
@@ -167,12 +169,12 @@ export function AuditFilters({
           </div>
 
           <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.resource_type')}</label>
+            <label htmlFor="audit-filter-resource-type" className="text-xs text-tertiary mb-1 block">{t('filters.resource_type')}</label>
             <Select
               value={filters.resource_type || 'all'}
               onValueChange={(value) => handleSelectFilterChange('resource_type', value === 'all' ? undefined : value)}
             >
-              <SelectTrigger>
+              <SelectTrigger id="audit-filter-resource-type">
                 <SelectValue placeholder={commonT('all_types')} />
               </SelectTrigger>
               <SelectContent>
@@ -187,8 +189,9 @@ export function AuditFilters({
           </div>
 
           <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.resource_id')}</label>
+            <label htmlFor="audit-filter-resource-id" className="text-xs text-tertiary mb-1 block">{t('filters.resource_id')}</label>
             <Input
+              id="audit-filter-resource-id"
               placeholder={commonT('filter_by_resource_id')}
               value={filters.resource_id || ''}
               onChange={(e) => handleTextFilterChange('resource_id', e.target.value || undefined)}
@@ -196,12 +199,12 @@ export function AuditFilters({
           </div>
 
           <div>
-            <label className="text-xs text-tertiary mb-1 block">{t('filters.result')}</label>
+            <label htmlFor="audit-filter-result" className="text-xs text-tertiary mb-1 block">{t('filters.result')}</label>
             <Select
               value={filters.result || 'all'}
               onValueChange={(value) => handleSelectFilterChange('result', value === 'all' ? undefined : value as 'ok' | 'error')}
             >
-              <SelectTrigger>
+              <SelectTrigger id="audit-filter-result">
                 <SelectValue placeholder={commonT('all_results')} />
               </SelectTrigger>
               <SelectContent>

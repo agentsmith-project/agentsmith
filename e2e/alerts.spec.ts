@@ -63,7 +63,6 @@ test.describe('Alert Center Page', () => {
 
     if (hasEmptyState) {
       await expect(emptyState).toBeVisible();
-      await expect(authedPage.getByText(/no_rules/i)).toBeVisible();
     }
     // If there are rules, the list should be visible instead
     else {

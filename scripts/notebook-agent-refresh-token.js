@@ -146,7 +146,11 @@ async function main() {
     throw new Error('token_not_found');
   }
   fs.writeFileSync(outFile, token, 'utf8');
-  process.stdout.write(`${token}\n`);
+  if (process.env.PRINT_TOKEN === '1') {
+    process.stdout.write(`${token}\n`);
+  } else {
+    process.stdout.write(`[refresh-token] token written to ${outFile}\n`);
+  }
 }
 
 main().catch((error) => {

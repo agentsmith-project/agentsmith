@@ -6,8 +6,8 @@
 - Verification time: 2026-02-27
 
 ## Executive Verdict
-- Current status: `PARTIAL (not release-ready)`
-- Reason: backend contract and core runtime path are available and tested at unit/type/contract level, but PRD-level end-to-end acceptance is not yet closed.
+- Current status: `READY (with non-blocking hardening backlog)`
+- Reason: backend contract, runtime routing matrix, dedicated runtime module UI, and PRD-level type/contract/e2e/visual evidence are all closed.
 
 ## Code State
 - Implemented:
@@ -23,10 +23,15 @@
 - `quota/summary`
 4. Runtime fallback behavior:
 - combo fallback now enforces `retryable_error_classes` and `max_hops`
+- network/system errors also follow combo fallback policy (`system_error` class)
 - direct/alias/combo path writes usage facts with runtime metadata and estimated cost
 5. Frontend runtime control-plane workflow (settings runtime tab):
 - provider/model/alias/combo/pricing operation panel
 - API hooks aligned to item-level endpoints (`GET/PUT/DELETE`)
+6. Runtime observability:
+- new endpoint: `usage/runtime-observability`
+- dimensions: `error_class_counts`, `fallback_hops_histogram`, `avg/p95_estimated_cost`
+- dedicated runtime module page: `runtime-control-plane`
 
 ## Key Automation Check
 - Passed:
@@ -39,6 +44,8 @@
 7. `BASE_URL=http://localhost:3002 npx playwright test e2e/settings.spec.ts --project=chromium --workers=1` (11 passed)
 8. `BASE_URL=http://localhost:3002 npx playwright test e2e/visual.spec.ts --project=visual --workers=1` (33 passed)
 9. `npm run test:run -- src/components/settings/__tests__/RuntimeControlPlanePanel.test.tsx` (2 passed)
+10. `BASE_URL=http://localhost:3001 npx playwright test e2e/visual.spec.ts --project=visual --workers=1` (34 passed; includes runtime control plane baseline)
+11. `BASE_URL=http://localhost:3001 npx playwright test e2e/settings.spec.ts --project=chromium --workers=1` (12 passed; includes runtime control plane page assertions)
 
 ## E2E Coverage Against This PRD
 - Current state:
@@ -55,10 +62,19 @@
 - Command: `BASE_URL=http://localhost:3002 npx playwright test e2e/settings.spec.ts --project=chromium --workers=1`
 - Result: `11 passed (20.8s)` on 2026-02-27
 - New assertion: `runtime control plane can create provider via API`
+5. Dedicated runtime module evidence captured:
+- Command: `BASE_URL=http://localhost:3001 npx playwright test e2e/settings.spec.ts --project=chromium --workers=1`
+- Result: `12 passed (26.6s)` on 2026-02-28
+- New assertion: `runtime control plane page shows observability KPIs`
+6. Runtime visual baseline evidence captured:
+- Command: `BASE_URL=http://localhost:3001 npx playwright test e2e/visual.spec.ts --project=visual --workers=1`
+- Result: `34 passed (1.6m)` on 2026-02-28
+- New snapshot: `runtime-control-plane.png`
 
 - Conclusion:
 1. E2E acceptance for runtime proxy billing API chain is `covered` in both real-backend and mock-browser lanes.
-2. Runtime control-plane UI workflow has baseline acceptance coverage in settings runtime tab.
+2. Runtime control-plane UI workflow is `covered` in both settings runtime tab and dedicated runtime module page.
+3. PRD release chain (`type/contract/integration/e2e/visual`) is closed with current evidence.
 
 ## Docs Consistency
 - Consistent:
@@ -66,16 +82,15 @@
 2. Route-kind map is aligned with added runtime endpoints.
 
 - Inconsistencies or shortfalls:
-1. PRD asks full-chain closure (`type/contract/integration/e2e/visual`), while current evidence is missing e2e and visual coverage for runtime module.
+1. No blocking inconsistency found in current closure scope.
 
 ## Blocking Items
 1. No blocking item found in current closure scope.
 
 ## Non-Blocking Items
 1. Upstream provider volatility (429/timeout) still requires robust replay/idempotency strategy in later hardening.
-2. Streaming path quality gates are not yet benchmarked under sustained load.
-3. Runtime observability dimensions (error-class distribution, fallback hop histogram) need dedicated dashboards/alerts.
-4. Runtime control-plane UI is currently in settings tab and should be split into dedicated pages/module in next iteration.
+2. Streaming path benchmark tooling is added (`make runtime-proxy-stream-bench` / `make runtime-proxy-stream-bench-gate`), but threshold baselines still need production-like calibration.
+3. Runtime observability endpoint is available; alert rules/dashboard wiring still needs SRE-level rollout.
 
 ## Technical Debt Scan (Obvious)
 1. Runtime handler decomposition has started:

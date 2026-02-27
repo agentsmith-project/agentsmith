@@ -12,6 +12,7 @@ on:
           - all
           - agent
           - notebook-agent
+          - runtime-proxy-billing
   pull_request:
     paths:
       - "e2e/**"
@@ -130,6 +131,60 @@ jobs:
           if-no-files-found: ignore
           path: |
             /tmp/ci-e2e-int-notebook-agent.log
+            /tmp/agentsmith-api-node-integration.log
+            /tmp/agentsmith-web-integration.log
+            test-results/**
+            playwright-report/**
+
+  integration-runtime-proxy-billing:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.suite == 'all' || inputs.suite == 'runtime-proxy-billing' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright (chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Run runtime proxy billing integration suite
+        run: |
+          set -euo pipefail
+          make e2e-int-runtime-proxy-billing-local-api PORT_API=20032 2>&1 | tee /tmp/ci-e2e-int-runtime-proxy-billing.log
+
+      - name: Failure Attribution (runtime-proxy-billing)
+        if: failure()
+        run: |
+          set -euo pipefail
+          tag="INT-RUNTIME-PROXY-BILLING-UNKNOWN"
+          if grep -R -n "redirect_uri" test-results /tmp/ci-e2e-int-runtime-proxy-billing.log /tmp/agentsmith-web-integration.log 2>/dev/null; then
+            tag="INT-KEYCLOAK-REDIRECT"
+          elif grep -R -n "RUNTIME_PROVIDER_CONNECTION_NOT_FOUND\\|runtime_combo_not_found\\|runtime_alias_not_found" test-results /tmp/ci-e2e-int-runtime-proxy-billing.log /tmp/agentsmith-api-node-integration.log 2>/dev/null; then
+            tag="INT-RUNTIME-ROUTING"
+          elif grep -R -n "ECONNREFUSED\\|did not become ready in time" /tmp/ci-e2e-int-runtime-proxy-billing.log /tmp/agentsmith-api-node-integration.log /tmp/agentsmith-web-integration.log 2>/dev/null; then
+            tag="INT-INFRA-BOOT"
+          fi
+          echo "### Failure Tag: ${tag}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- job: integration-runtime-proxy-billing" >> "$GITHUB_STEP_SUMMARY"
+          echo "- spec: e2e/integration-runtime-proxy-billing.spec.ts" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs and test artifacts (runtime-proxy-billing)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-runtime-proxy-billing-artifacts
+          if-no-files-found: ignore
+          path: |
+            /tmp/ci-e2e-int-runtime-proxy-billing.log
             /tmp/agentsmith-api-node-integration.log
             /tmp/agentsmith-web-integration.log
             test-results/**

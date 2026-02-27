@@ -13,6 +13,7 @@
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
+	runtime-proxy-stream-bench runtime-proxy-stream-bench-gate \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
 	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
@@ -152,6 +153,8 @@ help:
 	@echo "  make notebook-agent-traces-query-bench # benchmark /tasks/:id/traces?message_id=... query path"
 	@echo "  make notebook-agent-traces-query-sweep # compare message-scoped traces query latency across page sizes"
 	@echo "  make notebook-agent-traces-query-sweep-compare # compare two traces-query-sweep dirs by page_size"
+	@echo "  make runtime-proxy-stream-bench # benchmark unified /llm/chat/completions stream path"
+	@echo "  make runtime-proxy-stream-bench-gate # run stream benchmark with p95/error-rate thresholds"
 	@echo "  make openapi-generate   # generate frontend API types from docs/contracts/specs/openapi.yaml"
 	@echo "  make openapi-check-generated # verify generated API types are in sync"
 	@echo "  make openapi-changelog  # generate OpenAPI diff changelog vs origin/main"
@@ -876,6 +879,17 @@ notebook-agent-traces-query-sweep-compare:
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	node ./scripts/notebook-agent-traces-query-sweep-compare.js
+
+runtime-proxy-stream-bench:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	BASE_URL=http://localhost:$(PORT_API) \
+	./scripts/runtime-proxy-streaming-benchmark.sh
+
+runtime-proxy-stream-bench-gate:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	BASE_URL=http://localhost:$(PORT_API) \
+	STRICT_GATE=1 \
+	./scripts/runtime-proxy-streaming-benchmark.sh
 
 openapi-generate:
 	$(NPM) run openapi:generate

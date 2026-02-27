@@ -60,6 +60,8 @@ export type ProjectsRoute =
   | { kind: 'audit'; workspaceId: string; projectId: string }
   | { kind: 'usage'; workspaceId: string; projectId: string }
   | { kind: 'usageKpi'; workspaceId: string; projectId: string }
+  | { kind: 'usageTimeseries'; workspaceId: string; projectId: string }
+  | { kind: 'quotaSummary'; workspaceId: string; projectId: string }
   | { kind: 'projectMembers'; workspaceId: string; projectId: string }
   | { kind: 'projectJoinRequests'; workspaceId: string; projectId: string }
   | { kind: 'projectJoinRequestApprove'; workspaceId: string; projectId: string; joinId: string }
@@ -198,6 +200,28 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'usage',
       workspaceId: decodeURIComponent(usageMatched[1]),
       projectId: decodeURIComponent(usageMatched[2]),
+    };
+  }
+
+  const usageTimeseriesMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/timeseries\/?$/,
+  );
+  if (usageTimeseriesMatched) {
+    return {
+      kind: 'usageTimeseries',
+      workspaceId: decodeURIComponent(usageTimeseriesMatched[1]),
+      projectId: decodeURIComponent(usageTimeseriesMatched[2]),
+    };
+  }
+
+  const quotaSummaryMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/quota\/summary\/?$/,
+  );
+  if (quotaSummaryMatched) {
+    return {
+      kind: 'quotaSummary',
+      workspaceId: decodeURIComponent(quotaSummaryMatched[1]),
+      projectId: decodeURIComponent(quotaSummaryMatched[2]),
     };
   }
 

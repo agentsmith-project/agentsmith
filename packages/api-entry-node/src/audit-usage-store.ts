@@ -105,6 +105,57 @@ export type UsageKpi = {
   tokens_yesterday?: number;
 };
 
+export type UsageTimeseriesPoint = {
+  time_bucket: string;
+  requests: number;
+  errors: number;
+  tokens?: number;
+  estimated_cost?: number;
+  duration_p95_ms?: number;
+  bytes_in?: number;
+  bytes_out?: number;
+};
+
+export type UsageResourceBreakdownItem = {
+  resource_id: string;
+  resource_name: string;
+  resource_type: 'endpoint' | 'source_library' | 'agent';
+  requests: number;
+  tokens?: number;
+  estimated_cost: number;
+  percentage_of_total: number;
+};
+
+export type UsageTimeseriesResponse = {
+  data_points: UsageTimeseriesPoint[];
+  resource_breakdown?: UsageResourceBreakdownItem[];
+  time_range: {
+    start: string;
+    end: string;
+    granularity?: 'hour' | 'day' | 'week' | 'month';
+  };
+  total_cost?: number;
+};
+
+export type QuotaSummaryItem = {
+  resource_id: string;
+  resource_name: string;
+  resource_type: 'endpoint' | 'source_library' | 'agent';
+  quota_used: number;
+  quota_limit: number;
+  quota_unit: 'tokens' | 'requests' | 'bytes' | 'files';
+  quota_reset_at: string;
+  percentage_used: number;
+};
+
+export type QuotaOverview = {
+  endpoints?: QuotaSummaryItem[];
+  source_libraries?: QuotaSummaryItem[];
+  agents?: QuotaSummaryItem[];
+  total_quota_limit?: number;
+  total_quota_used?: number;
+};
+
 export const AUDIT_EVENTS_COLLECTION = 'project_audit_events';
 export const USAGE_FACTS_COLLECTION = 'project_usage_facts';
 
@@ -136,6 +187,11 @@ function percentile95(values: number[]): number | undefined {
 
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function estimateFactCost(fact: UsageFactRecord): number {
+  const raw = fact.metadata_json?.cost_usd ?? fact.metadata_json?.estimated_cost ?? 0;
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
 }
 
 export async function recordAuditEvent(
@@ -378,5 +434,189 @@ export async function getUsageKpi(
     requests_yesterday: requestsYesterday,
     errors_yesterday: errorsYesterday,
     tokens_yesterday: tokensYesterday || undefined,
+  };
+}
+
+export async function getUsageTimeseries(
+  docStore: JsonDocStorePort,
+  query: {
+    workspaceId: string;
+    projectId: string;
+    startTime: string;
+    endTime: string;
+    granularity?: 'hour' | 'day' | 'week' | 'month';
+    metric?: 'tokens' | 'requests' | 'cost' | 'bytes';
+    resourceType?: 'endpoint' | 'source_library' | 'agent' | null;
+  },
+): Promise<UsageTimeseriesResponse> {
+  const normalizedGranularity = query.granularity === 'hour' ? 'hour' : 'day';
+  const facts = await listUsageFacts(docStore, {
+    workspaceId: query.workspaceId,
+    projectId: query.projectId,
+    startTime: query.startTime,
+    endTime: query.endTime,
+    resourceType: query.resourceType ?? null,
+  });
+
+  const buckets = new Map<string, {
+    requests: number;
+    errors: number;
+    tokens: number;
+    cost: number;
+    bytesIn: number;
+    bytesOut: number;
+    durations: number[];
+  }>();
+
+  const breakdown = new Map<string, UsageResourceBreakdownItem>();
+
+  for (const fact of facts) {
+    const timeBucket = formatBucket(fact.timestamp, normalizedGranularity);
+    const bucket = buckets.get(timeBucket) ?? {
+      requests: 0,
+      errors: 0,
+      tokens: 0,
+      cost: 0,
+      bytesIn: 0,
+      bytesOut: 0,
+      durations: [],
+    };
+    const reqs = fact.requests ?? 1;
+    const tokens = isRequestsOnlyUsageResourceType(fact.resource_type) ? 0 : (fact.tokens_total ?? 0);
+    const cost = estimateFactCost(fact);
+    bucket.requests += reqs;
+    if (fact.result === 'error') bucket.errors += reqs;
+    bucket.tokens += tokens;
+    bucket.cost += cost;
+    bucket.bytesIn += fact.bytes_in ?? 0;
+    bucket.bytesOut += fact.bytes_out ?? 0;
+    if (typeof fact.duration_ms === 'number') bucket.durations.push(fact.duration_ms);
+    buckets.set(timeBucket, bucket);
+
+    if (
+      fact.resource_type === 'endpoint'
+      || fact.resource_type === 'source_library'
+      || fact.resource_type === 'agent'
+    ) {
+      const key = `${fact.resource_type}:${fact.resource_id ?? 'unknown'}`;
+      const existing = breakdown.get(key) ?? {
+        resource_id: fact.resource_id ?? 'unknown',
+        resource_name: fact.resource_id ?? 'unknown',
+        resource_type: fact.resource_type,
+        requests: 0,
+        tokens: fact.resource_type === 'agent' ? undefined : 0,
+        estimated_cost: 0,
+        percentage_of_total: 0,
+      };
+      existing.requests += reqs;
+      if (existing.tokens !== undefined) {
+        existing.tokens += tokens;
+      }
+      existing.estimated_cost += cost;
+      breakdown.set(key, existing);
+    }
+  }
+
+  const dataPoints: UsageTimeseriesPoint[] = Array.from(buckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([timeBucket, agg]) => ({
+      time_bucket: timeBucket,
+      requests: agg.requests,
+      errors: agg.errors,
+      tokens: agg.tokens || undefined,
+      estimated_cost: agg.cost || undefined,
+      duration_p95_ms: percentile95(agg.durations),
+      bytes_in: agg.bytesIn || undefined,
+      bytes_out: agg.bytesOut || undefined,
+    }));
+
+  const resourceBreakdown = Array.from(breakdown.values())
+    .sort((a, b) => b.requests - a.requests);
+  const totalCost = resourceBreakdown.reduce((sum, item) => sum + item.estimated_cost, 0);
+  for (const item of resourceBreakdown) {
+    item.percentage_of_total = totalCost > 0 ? Number(((item.estimated_cost / totalCost) * 100).toFixed(2)) : 0;
+  }
+
+  return {
+    data_points: dataPoints,
+    resource_breakdown: resourceBreakdown,
+    time_range: {
+      start: query.startTime,
+      end: query.endTime,
+      granularity: query.granularity ?? 'day',
+    },
+    total_cost: totalCost || undefined,
+  };
+}
+
+export async function getQuotaSummary(
+  docStore: JsonDocStorePort,
+  query: { workspaceId: string; projectId: string },
+): Promise<QuotaOverview> {
+  const now = new Date();
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  const tomorrowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+
+  const facts = await listUsageFacts(docStore, {
+    workspaceId: query.workspaceId,
+    projectId: query.projectId,
+    startTime: todayStart,
+    endTime: tomorrowStart,
+  });
+
+  const byResource = new Map<string, { resourceType: 'endpoint' | 'source_library' | 'agent'; resourceId: string; requests: number }>();
+  for (const fact of facts) {
+    if (fact.resource_type !== 'endpoint' && fact.resource_type !== 'source_library' && fact.resource_type !== 'agent') {
+      continue;
+    }
+    const key = `${fact.resource_type}:${fact.resource_id ?? 'unknown'}`;
+    const existing = byResource.get(key) ?? {
+      resourceType: fact.resource_type,
+      resourceId: fact.resource_id ?? 'unknown',
+      requests: 0,
+    };
+    existing.requests += fact.requests ?? 1;
+    byResource.set(key, existing);
+  }
+
+  const limitByResourceType: Record<'endpoint' | 'source_library' | 'agent', number> = {
+    endpoint: 20000,
+    source_library: 10000,
+    agent: 12000,
+  };
+  const resetAt = tomorrowStart;
+
+  const endpoints: QuotaSummaryItem[] = [];
+  const sourceLibraries: QuotaSummaryItem[] = [];
+  const agents: QuotaSummaryItem[] = [];
+
+  for (const item of byResource.values()) {
+    const limit = limitByResourceType[item.resourceType];
+    const row: QuotaSummaryItem = {
+      resource_id: item.resourceId,
+      resource_name: item.resourceId,
+      resource_type: item.resourceType,
+      quota_used: item.requests,
+      quota_limit: limit,
+      quota_unit: 'requests',
+      quota_reset_at: resetAt,
+      percentage_used: Number(((item.requests / Math.max(1, limit)) * 100).toFixed(2)),
+    };
+    if (item.resourceType === 'endpoint') endpoints.push(row);
+    if (item.resourceType === 'source_library') sourceLibraries.push(row);
+    if (item.resourceType === 'agent') agents.push(row);
+  }
+
+  const totalQuotaUsed = [...endpoints, ...sourceLibraries, ...agents].reduce((sum, item) => sum + item.quota_used, 0);
+  const totalQuotaLimit = endpoints.length * limitByResourceType.endpoint
+    + sourceLibraries.length * limitByResourceType.source_library
+    + agents.length * limitByResourceType.agent;
+
+  return {
+    endpoints,
+    source_libraries: sourceLibraries,
+    agents,
+    total_quota_used: totalQuotaUsed || undefined,
+    total_quota_limit: totalQuotaLimit || undefined,
   };
 }

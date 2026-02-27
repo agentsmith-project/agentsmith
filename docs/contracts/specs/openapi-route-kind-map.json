@@ -35,6 +35,14 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi",
     "method": "get"
   },
+  "usageTimeseries": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/timeseries",
+    "method": "get"
+  },
+  "quotaSummary": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary",
+    "method": "get"
+  },
   "projectMembers": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members",
     "method": "get"

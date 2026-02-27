@@ -452,6 +452,20 @@ describe('matchProjectsRoute', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
     });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/timeseries'),
+    ).toEqual({
+      kind: 'usageTimeseries',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/quota/summary'),
+    ).toEqual({
+      kind: 'quotaSummary',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
   });
 
   it('returns null for unknown route', () => {

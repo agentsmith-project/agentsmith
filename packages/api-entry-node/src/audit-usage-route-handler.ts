@@ -1,7 +1,7 @@
 import type http from 'node:http';
 import type { ProjectsRoute } from './projects-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
-import { aggregateUsageRecords, getUsageKpi, listAuditEvents } from './audit-usage-store.js';
+import { aggregateUsageRecords, getQuotaSummary, getUsageKpi, getUsageTimeseries, listAuditEvents } from './audit-usage-store.js';
 
 type JsonResponder = (res: http.ServerResponse, status: number, payload: unknown) => void;
 
@@ -97,6 +97,51 @@ export async function handleAuditUsageRoute({
       sortOrder,
       page,
       pageSize,
+    });
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageTimeseries' && method === 'GET') {
+    const range = requireTimeRange(requestUrl, json, res);
+    if (range === true) return true;
+    const granularityRaw = requestUrl.searchParams.get('granularity');
+    const granularity = (
+      granularityRaw === 'hour'
+      || granularityRaw === 'day'
+      || granularityRaw === 'week'
+      || granularityRaw === 'month'
+    ) ? granularityRaw : 'day';
+    const metricRaw = requestUrl.searchParams.get('metric');
+    const metric = (
+      metricRaw === 'tokens'
+      || metricRaw === 'requests'
+      || metricRaw === 'cost'
+      || metricRaw === 'bytes'
+    ) ? metricRaw : 'tokens';
+    const resourceTypeRaw = requestUrl.searchParams.get('resource_type');
+    const resourceType = (
+      resourceTypeRaw === 'endpoint'
+      || resourceTypeRaw === 'source_library'
+      || resourceTypeRaw === 'agent'
+    ) ? resourceTypeRaw : null;
+    const payload = await getUsageTimeseries(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      startTime: range.start.toISOString(),
+      endTime: range.end.toISOString(),
+      granularity,
+      metric,
+      resourceType,
+    });
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'quotaSummary' && method === 'GET') {
+    const payload = await getQuotaSummary(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
     });
     json(res, 200, payload);
     return true;

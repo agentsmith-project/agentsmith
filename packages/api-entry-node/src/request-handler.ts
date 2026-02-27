@@ -68,7 +68,13 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     return ['project:notebook:access'];
   }
 
-  if (route.kind === 'audit' || route.kind === 'usage' || route.kind === 'usageKpi') {
+  if (
+    route.kind === 'audit'
+    || route.kind === 'usage'
+    || route.kind === 'usageKpi'
+    || route.kind === 'usageTimeseries'
+    || route.kind === 'quotaSummary'
+  ) {
     return route.kind === 'audit' ? ['project:audit:view'] : ['project:usage:view'];
   }
 

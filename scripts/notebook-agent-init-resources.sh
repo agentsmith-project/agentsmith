@@ -15,7 +15,7 @@ ENDPOINT_NAME="${ENDPOINT_NAME:-glm47-coding-$(date +%s)}"
 CREDENTIAL_NAME="${CREDENTIAL_NAME:-glm-key-$(date +%s)}"
 
 GLM_BASE_URL="${GLM_BASE_URL:-https://open.bigmodel.cn/api/coding/paas/v4}"
-GLM_MODEL="${GLM_MODEL:-glm-4.7}"
+GLM_MODEL="${GLM_MODEL:-glm-5}"
 GLM_API_KEY="${GLM_API_KEY:-}"
 
 WIRE_API="${WIRE_API:-responses}"

@@ -81,7 +81,7 @@ main() {
       "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/endpoints/${endpoint_id}/proxy/chat/completions" \
       -H "Authorization: Bearer ${token}" \
       -H 'Content-Type: application/json' \
-      --data '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"ping"}]}' || true
   )"
   if [[ "${proxy_code}" == "429" ]]; then
     info "endpoint proxy reachable but currently rate-limited (HTTP 429)"

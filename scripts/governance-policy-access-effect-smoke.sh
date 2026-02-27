@@ -129,7 +129,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-4.7","messages":[{"role":"user","content":"policy access deny smoke"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"policy access deny smoke"}]}' || true
   )"
   if [[ "${deny_code}" != "403" ]]; then
     err "expected 403 on deny policy, got HTTP ${deny_code}"
@@ -208,7 +208,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-4.7","messages":[{"role":"user","content":"policy access allow smoke"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"policy access allow smoke"}]}' || true
   )"
   if [[ "${allow_code}" != "200" ]]; then
     if [[ "${allow_code}" == "000" ]]; then

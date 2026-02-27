@@ -143,7 +143,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"ping"}]}' || true
   )"
   if [[ "${req1_code}" == "429" ]]; then
     if is_upstream_429_payload "${req1_file}"; then
@@ -163,7 +163,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-4.7","messages":[{"role":"user","content":"ping again"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"ping again"}]}' || true
   )"
   if [[ "${req2_code}" != "429" ]]; then
     err "second request did not hit rate limit (HTTP ${req2_code})"

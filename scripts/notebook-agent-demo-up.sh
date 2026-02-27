@@ -39,7 +39,7 @@ RUNNER_PID_FILE="${RUNNER_PID_FILE:-/tmp/agentsmith_demo_runner.pid}"
 
 GLM_API_KEY="${GLM_API_KEY:-}"
 GLM_BASE_URL="${GLM_BASE_URL:-https://open.bigmodel.cn/api/coding/paas/v4}"
-GLM_MODEL="${GLM_MODEL:-glm-4.7}"
+GLM_MODEL="${GLM_MODEL:-glm-5}"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 DEMO_REFRESH_TIMEOUT_SEC="${DEMO_REFRESH_TIMEOUT_SEC:-180}"
 DEMO_REFRESH_TOKEN_FORCE="${DEMO_REFRESH_TOKEN_FORCE:-0}"

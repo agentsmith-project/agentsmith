@@ -145,7 +145,7 @@ main() {
         "${proxy_url}" \
         -H "Authorization: Bearer ${token}" \
         -H "Content-Type: application/json" \
-        --data '{"model":"glm-4.7","messages":[{"role":"user","content":"policy quota smoke warmup"}]}' || true
+        --data '{"model":"glm-5","messages":[{"role":"user","content":"policy quota smoke warmup"}]}' || true
     )"
     if [[ ! "${warmup_code}" =~ ^2[0-9][0-9]$ ]]; then
       err "warm-up request failed (HTTP ${warmup_code}); endpoint upstream may be unavailable"
@@ -191,7 +191,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-4.7","messages":[{"role":"user","content":"policy quota smoke blocked request"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"policy quota smoke blocked request"}]}' || true
   )"
   if [[ "${req_code}" != "429" ]]; then
     err "request did not hit policy quota (HTTP ${req_code})"

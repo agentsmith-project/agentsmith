@@ -192,7 +192,7 @@ main() {
         "${proxy_url}" \
         -H "Authorization: Bearer ${token}" \
         -H "Content-Type: application/json" \
-        --data '{"model":"glm-4.7","messages":[{"role":"user","content":"member quota smoke warmup"}]}' || true
+        --data '{"model":"glm-5","messages":[{"role":"user","content":"member quota smoke warmup"}]}' || true
     )"
     if [[ "${warmup_code}" == "429" ]]; then
       err "warm-up request returned 429; existing policy/member quota may already block endpoint"
@@ -242,7 +242,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-4.7","messages":[{"role":"user","content":"member quota smoke blocked request"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"member quota smoke blocked request"}]}' || true
   )"
   if [[ "${req_code}" != "429" ]]; then
     err "request did not hit member quota (HTTP ${req_code})"

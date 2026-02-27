@@ -133,7 +133,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-4.7","messages":[{"role":"user","content":"policy group deny smoke"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"policy group deny smoke"}]}' || true
   )"
   if [[ "${deny_code}" != "403" ]]; then
     err "expected 403 on deny policy, got HTTP ${deny_code}"
@@ -233,7 +233,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-4.7","messages":[{"role":"user","content":"policy group allow smoke"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"policy group allow smoke"}]}' || true
   )"
   if [[ "${allow_code}" == "403" ]]; then
     err "group allow-list did not clear deny (still 403)"

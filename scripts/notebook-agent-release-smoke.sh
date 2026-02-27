@@ -128,7 +128,7 @@ proxy_probe_status() {
     -X POST "${url}" \
     -H "Authorization: Bearer ${token}" \
     -H 'Content-Type: application/json' \
-    --data '{"model":"glm-4.7","messages":[{"role":"user","content":"release smoke probe"}]}' || true
+    --data '{"model":"glm-5","messages":[{"role":"user","content":"release smoke probe"}]}' || true
 }
 
 wait_proxy_ready() {

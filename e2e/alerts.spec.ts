@@ -243,9 +243,7 @@ test.describe('Alert Delivery Behaviors', () => {
 
 test.describe('Alert Center Authorization', () => {
   test('redirects to permission denied when user lacks view permission', async ({ page }) => {
-    // This test would need a different user with limited permissions
-    // For now, we assume the default test user has permissions
-    // Skip or implement with multi-user testing
+    // This test requires a second auth fixture with non-owner permissions.
     test.skip(true, 'Requires multi-user auth setup');
   });
 });

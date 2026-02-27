@@ -37,10 +37,12 @@ export async function goToProject(page: Page, section: string) {
   try {
     await waitForPageReady(page);
   } catch {
-    const is404 = await page.getByRole('heading', { name: '404' }).isVisible().catch(() => false);
-    if (!is404) throw new Error(`Failed to load project route: ${url}`);
     await gotoAndWait(page, url);
-    await waitForPageReady(page);
+    try {
+      await waitForPageReady(page);
+    } catch {
+      throw new Error(`Failed to load project route: ${url}`);
+    }
   }
 }
 
@@ -50,9 +52,11 @@ export async function goTo(page: Page, path: string) {
   try {
     await waitForPageReady(page);
   } catch {
-    const is404 = await page.getByRole('heading', { name: '404' }).isVisible().catch(() => false);
-    if (!is404) throw new Error(`Failed to load route: ${path}`);
     await gotoAndWait(page, path);
-    await waitForPageReady(page);
+    try {
+      await waitForPageReady(page);
+    } catch {
+      throw new Error(`Failed to load route: ${path}`);
+    }
   }
 }

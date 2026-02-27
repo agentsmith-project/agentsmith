@@ -10,7 +10,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 // Toast will be imported when available - avoiding circular dependency
 import type {
   Alert,
@@ -31,6 +31,9 @@ const defaultPreferences: AlertPreferences = {
     'endpoint.error',
   ] as InAppAlertType[],
 };
+
+const ALERT_STORE_KEY = 'agentsmith-alert-storage';
+const LEGACY_ALERT_STORE_KEY = 'agentmith-alert-storage';
 
 interface AlertStore {
   // State
@@ -195,7 +198,7 @@ export const useAlertStore = create<AlertStore>()(
       // Storage sync (manual for debugging)
       _loadFromStorage: () => {
         // Handled by zustand persist middleware automatically
-        const stored = localStorage.getItem('agentmith-alert-storage');
+        const stored = localStorage.getItem(ALERT_STORE_KEY) ?? localStorage.getItem(LEGACY_ALERT_STORE_KEY);
         if (stored) {
           try {
             const parsed = JSON.parse(stored);
@@ -212,7 +215,17 @@ export const useAlertStore = create<AlertStore>()(
       },
     }),
     {
-      name: 'agentmith-alert-storage',
+      name: ALERT_STORE_KEY,
+      storage: createJSONStorage(() => ({
+        getItem: (name) => localStorage.getItem(name) ?? localStorage.getItem(LEGACY_ALERT_STORE_KEY),
+        setItem: (name, value) => localStorage.setItem(name, value),
+        removeItem: (name) => {
+          localStorage.removeItem(name);
+          if (name === ALERT_STORE_KEY) {
+            localStorage.removeItem(LEGACY_ALERT_STORE_KEY);
+          }
+        },
+      })),
       partialize: (state) => ({
         alerts: state.alerts,
         preferences: state.preferences,

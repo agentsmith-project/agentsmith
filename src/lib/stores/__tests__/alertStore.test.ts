@@ -40,6 +40,7 @@ Object.defineProperty(window, 'localStorage', {
 // The persist middleware is replaced with a pass-through that returns the config directly
 vi.mock('zustand/middleware', () => ({
   persist: (stateCreator: any) => stateCreator, // Bypass persist, return store creator as-is
+  createJSONStorage: () => undefined,
 }));
 
 describe('alertStore', () => {

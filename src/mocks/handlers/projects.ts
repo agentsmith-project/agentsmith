@@ -6,12 +6,24 @@ import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 
 const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
 
+function getRequestUserId(request: Request): string {
+  const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
+  if (!authHeader) return CURRENT_USER_ID;
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token.startsWith('mock_token_')) return CURRENT_USER_ID;
+  const rest = token.slice('mock_token_'.length);
+  const separator = rest.lastIndexOf('_');
+  if (separator <= 0) return CURRENT_USER_ID;
+  return rest.slice(0, separator);
+}
+
 export const projectHandlers = [
-  http.get('/api/v1/workspaces/:ws/projects', () => {
+  http.get('/api/v1/workspaces/:ws/projects', ({ request }) => {
+    const userId = getRequestUserId(request);
     const items = projects.map((project) => {
       const membership =
         projectMembershipFixtures.find(
-        (m) => m.project_id === project.id && m.user_id === CURRENT_USER_ID,
+        (m) => m.project_id === project.id && m.user_id === userId,
         ) ??
         projectMembershipFixtures.find(
           (m) => m.project_id === project.id && m.role === 'owner',
@@ -24,12 +36,13 @@ export const projectHandlers = [
     });
     return HttpResponse.json({ items });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj', ({ params }) => {
+  http.get('/api/v1/workspaces/:ws/projects/:prj', ({ params, request }) => {
+    const userId = getRequestUserId(request);
     const projectId = params.prj as string;
     const project = projects.find((p) => p.id === projectId) || projectFixtures.find((p) => p.id === projectId);
     const membership =
       projectMembershipFixtures.find(
-        (m) => m.project_id === projectId && m.user_id === CURRENT_USER_ID,
+        (m) => m.project_id === projectId && m.user_id === userId,
       ) ??
       projectMembershipFixtures.find(
         (m) => m.project_id === projectId && m.role === 'owner',

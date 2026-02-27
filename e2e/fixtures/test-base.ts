@@ -6,6 +6,7 @@ import { gotoAndWait, waitForPageReady } from '../utils/navigation';
 export const WS_ID = 'ws_default';
 export const PROJECT_ID = 'proj_001';
 export const TEST_EMAIL = 'test@example.com';
+export const LIMITED_TEST_EMAIL = 'viewer@example.com';
 export const LOCALE = 'en-US';
 
 /** Build a project-scoped URL */
@@ -21,9 +22,14 @@ export function projectUrl(
 /** Custom test fixture with authentication support */
 export const test = base.extend<{
   authedPage: Page;
+  limitedPage: Page;
 }>({
   authedPage: async ({ page }, use) => {
     await withAuth(page, WS_ID, TEST_EMAIL);
+    await use(page);
+  },
+  limitedPage: async ({ page }, use) => {
+    await withAuth(page, WS_ID, LIMITED_TEST_EMAIL, 'user_004');
     await use(page);
   },
 });

@@ -1,17 +1,17 @@
 import { Page } from '@playwright/test';
 
-export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'test@example.com') {
-  await page.addInitScript(({ wsId, userEmail }) => {
+export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'test@example.com', userId = 'user_001') {
+  await page.addInitScript(({ wsId, userEmail, userId }) => {
     (window as any).__MBOS_AUTH_SETUP__ = true;
 
     const user = {
-      id: 'user_001',
+      id: userId,
       email: userEmail,
       name: userEmail.split('@')[0],
       locale: 'en-US',
     };
 
-    const token = `mock_token_${Date.now()}`;
+    const token = `mock_token_${userId}_${Date.now()}`;
     const refreshToken = `mock_refresh_${Date.now()}`;
     const tokenExpiresAt = Date.now() + 60 * 60 * 1000;
 
@@ -26,5 +26,5 @@ export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'tes
 
     // Preserve signature compatibility (workspace is derived from URL in-app).
     void wsId;
-  }, { wsId, userEmail });
+  }, { wsId, userEmail, userId });
 }

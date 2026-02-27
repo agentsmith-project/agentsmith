@@ -242,8 +242,8 @@ test.describe('Alert Delivery Behaviors', () => {
 });
 
 test.describe('Alert Center Authorization', () => {
-  test('redirects to permission denied when user lacks view permission', async ({ page }) => {
-    // This test requires a second auth fixture with non-owner permissions.
-    test.skip(true, 'Requires multi-user auth setup');
+  test('redirects to permission denied when user lacks view permission', async ({ limitedPage }) => {
+    await goToProject(limitedPage, 'alerts');
+    await expect(limitedPage.getByTestId('page-state__error')).toBeVisible({ timeout: 10000 });
   });
 });

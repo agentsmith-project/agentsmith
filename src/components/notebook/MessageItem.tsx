@@ -157,8 +157,10 @@ function decodeCodexEventText(raw: string): string {
   if (agentDeltas.length > 0) {
     return agentDeltas.join('');
   }
+  // Tool/runtime error events can be transient and auto-recovered by subsequent retries.
+  // Keep bubble content neutral instead of surfacing raw error text as assistant output.
   if (errors.length > 0) {
-    return errors.join('\n');
+    return '';
   }
   // Streaming state before agent_message is completed: render as empty to keep placeholder skeleton.
   return '';

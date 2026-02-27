@@ -117,6 +117,19 @@ describe('MessageItem', () => {
       expect(messageBubble).toBeInTheDocument();
     });
 
+    it('does not render raw tool/runtime error text as assistant bubble content', () => {
+      const errorOnlyMessage: TaskMessage = {
+        ...mockAgentMessage,
+        content: '{"type":"error","message":"工具调用错误"}{"type":"turn.failed","error":{"message":"upstream error"}}',
+      };
+
+      renderComponent(errorOnlyMessage);
+
+      expect(screen.getByTestId('markdown-content')).toHaveTextContent('');
+      expect(screen.queryByText('工具调用错误')).not.toBeInTheDocument();
+      expect(screen.queryByText('upstream error')).not.toBeInTheDocument();
+    });
+
     it('renders expandable execution details when trace events are provided', async () => {
       const user = userEvent.setup();
       render(

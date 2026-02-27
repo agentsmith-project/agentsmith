@@ -77,6 +77,38 @@ test.describe('Alert Rules CRUD', () => {
     await goToProject(authedPage, 'alerts');
   });
 
+  test('create alert rule sends API payload with trigger/channels/behavior', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+
+    const createRequest = authedPage.waitForRequest((req) => {
+      return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/alert-rules$/.test(req.url());
+    });
+
+    await authedPage.getByTestId('alert-center__create-button').click();
+    await expect(authedPage.getByTestId('alert-rule-form-dialog')).toBeVisible();
+
+    await authedPage.getByTestId('alert-rule-form-dialog__name-input').fill(`E2E Rule ${Date.now()}`);
+    await authedPage.getByTestId('alert-rule-form-dialog__threshold-input').fill('1234');
+    await authedPage.getByTestId('alert-rule-form-dialog__debounce-input').fill('7');
+    await authedPage.getByTestId('alert-rule-form-dialog__webhook-input').fill('https://example.com/alerts');
+    await authedPage.getByTestId('alert-rule-form-dialog__submit-btn').click();
+
+    const request = await createRequest;
+    const payload = request.postDataJSON() as {
+      name: string;
+      trigger: { threshold: number };
+      channels: { in_app: boolean; webhook?: { url: string } };
+      behavior: { debounce_minutes: number };
+    };
+
+    expect(payload.name).toContain('E2E Rule');
+    expect(payload.trigger.threshold).toBe(1234);
+    expect(payload.channels.in_app).toBe(true);
+    expect(payload.channels.webhook?.url).toBe('https://example.com/alerts');
+    expect(payload.behavior.debounce_minutes).toBe(7);
+    expect(payload.behavior.notify_on_recovery).toBe(true);
+  });
+
   test('displays alert rule cards with expected information', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
 
@@ -96,18 +128,17 @@ test.describe('Alert Rules CRUD', () => {
   test('enable/disable toggle works for alert rules', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
 
-    // Look for toggle switches
-    const toggles = authedPage.getByRole('switch');
-    const count = await toggles.count();
+    const updateRequest = authedPage.waitForRequest((req) => {
+      return req.method() === 'PUT' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/alert-rules\/[^/]+$/.test(req.url());
+    });
 
-    if (count > 0) {
-      // First toggle should be visible
-      await expect(toggles.first()).toBeVisible();
+    const toggles = authedPage.getByTestId('alert-rule-toggle');
+    await expect(toggles.first()).toBeVisible();
+    await toggles.first().click();
 
-      // Click toggle to change state
-      await toggles.first().click();
-      // Verify toggle changed (visual check only - state would need API)
-    }
+    const request = await updateRequest;
+    const payload = request.postDataJSON() as { enabled?: boolean };
+    expect(typeof payload.enabled).toBe('boolean');
   });
 
   test('action menu shows Edit, Test, Delete options', async ({ authedPage }) => {
@@ -125,6 +156,22 @@ test.describe('Alert Rules CRUD', () => {
       // Check for menu items (they may be in a dropdown)
       // Note: This may need adjustment based on actual UI implementation
     }
+  });
+
+  test('delete action sends DELETE request for selected alert rule', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+
+    const deleteRequest = authedPage.waitForRequest((req) => {
+      return req.method() === 'DELETE' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/alert-rules\/[^/]+$/.test(req.url());
+    });
+
+    const firstCard = authedPage.getByTestId('alert-rule-card').first();
+    await expect(firstCard).toBeVisible();
+    await firstCard.getByRole('button').first().click();
+    await authedPage.getByRole('menuitem', { name: /delete/i }).click();
+
+    const request = await deleteRequest;
+    expect(request.method()).toBe('DELETE');
   });
 });
 
@@ -176,6 +223,22 @@ test.describe('Alert Notifications', () => {
       // At least one severity badge should be visible
       await expect(severityBadges.first()).toBeVisible();
     }
+  });
+});
+
+test.describe('Alert Delivery Behaviors', () => {
+  test('debounce suppresses duplicated firing notifications in UI list', async ({ authedPage }) => {
+    await goToProject(authedPage, 'alerts');
+    await authedPage.getByRole('tab', { name: /notifications/i }).click();
+    await expect(authedPage.getByTestId('alert-card')).toHaveCount(2);
+  });
+
+  test('resolved and webhook delivery evidence are visible in notifications', async ({ authedPage }) => {
+    await goToProject(authedPage, 'alerts');
+    await authedPage.getByRole('tab', { name: /notifications/i }).click();
+    await expect(authedPage.getByTestId('alert-status-resolved-notif_resolved_1')).toBeVisible();
+    await expect(authedPage.getByTestId('alert-webhook-notif_resolved_1')).toContainText('failed');
+    await expect(authedPage.getByTestId('alert-webhook-notif_resolved_1')).toContainText('500');
   });
 });
 

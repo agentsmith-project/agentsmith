@@ -1,84 +1,123 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCenterPage } from '@/components/alerts/AlertCenterPage';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { useAuthStore } from '@/lib/stores/authStore';
+import { getApiClient, AlertAPI } from '@/lib/api';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { useAlertStore } from '@/lib/stores/alertStore';
-import type { AlertRule } from '@/lib/types/alerts';
+import { toast } from '@/components/ui/toast';
+import type {
+  Alert,
+  AlertNotification,
+  AlertRuleCreateRequest,
+  AlertRuleUpdateRequest,
+} from '@/lib/types/alerts';
 
 interface AlertsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
 
-// Mock alert rules for E2E testing (will be replaced with API call)
-const mockAlertRules: AlertRule[] = [
-  {
-    id: 'rule_1',
-    project_id: 'proj_001',
-    workspace_id: 'ws_1',
-    name: 'High Requests Alert',
-    description: 'Alert when daily requests exceed threshold',
-    enabled: true,
-    trigger: {
-      metric: 'requests_per_day',
-      operator: 'gt',
-      threshold: 1000,
-    },
-    channels: {
-      in_app: true,
-      webhook: { url: 'https://example.com/webhook' },
-    },
-    behavior: {
-      debounce_minutes: 10,
-      notify_on_recovery: true,
-    },
-    created_at: '2026-02-01T10:00:00Z',
-    updated_at: '2026-02-01T10:00:00Z',
-    last_triggered_at: '2026-02-27T14:30:00Z',
-  },
-];
+function toInAppAlert(
+  workspaceId: string,
+  projectId: string,
+  notification: AlertNotification,
+): Alert {
+  const delivery = notification.delivery ?? {
+    in_app_sent: true,
+    webhook_sent: false,
+  };
+  const mappedType =
+    notification.metric === 'quota_percent'
+      ? 'quota.warning'
+      : notification.metric === 'error_rate'
+        ? 'endpoint.error'
+        : notification.metric === 'requests_per_day' || notification.metric === 'requests_per_hour'
+          ? 'rate_limit.warning'
+          : 'system.maintenance';
 
-// Initialize alert store with mock notifications for E2E testing
-function initializeMockAlerts(store: ReturnType<typeof useAlertStore.getState>) {
-  if (store.alerts.length === 0) {
-    store.addAlert({
-      workspace_id: 'ws_1',
-      project_id: 'proj_001',
-      type: 'quota.exceeded',
-      severity: 'critical',
-      title: 'Quota Exceeded',
-      message: 'Daily quota has been exceeded',
-      resource_type: 'endpoint',
-      resource_id: 'ep_1',
-      resource_name: 'OpenAI Main',
-      metadata: {},
-    });
+  return {
+    id: notification.id,
+    workspace_id: workspaceId,
+    project_id: projectId,
+    type: mappedType,
+    severity: 'info',
+    title: notification.rule_name || 'Alert',
+    message:
+      notification.context?.resource_name ||
+      notification.context?.resource_id ||
+      notification.rule_name ||
+      'Alert notification',
+    metadata: {
+      metric: notification.metric,
+      actual_value: notification.actual_value,
+      threshold: notification.threshold,
+      delivery,
+      status: notification.status,
+      webhook_sent: delivery.webhook_sent,
+      webhook_status: delivery.webhook_status,
+      webhook_error: delivery.webhook_error,
+    },
+    created_at: notification.triggered_at || new Date().toISOString(),
+    status: notification.status === 'firing' ? 'unread' : 'read',
+  };
+}
+
+function dedupeFiringNotifications(
+  notifications: AlertNotification[],
+  debounceMinutes = 5,
+): AlertNotification[] {
+  const sorted = [...notifications].sort(
+    (a, b) => new Date(a.triggered_at).getTime() - new Date(b.triggered_at).getTime(),
+  );
+  const deduped: AlertNotification[] = [];
+
+  for (const item of sorted) {
+    if (item.status !== 'firing') {
+      deduped.push(item);
+      continue;
+    }
+    const last = deduped[deduped.length - 1];
+    const sameSeries =
+      last &&
+      last.status === 'firing' &&
+      last.rule_id === item.rule_id &&
+      last.metric === item.metric &&
+      last.context?.resource_id === item.context?.resource_id;
+    if (!sameSeries) {
+      deduped.push(item);
+      continue;
+    }
+    const lastAt = new Date(last.triggered_at).getTime();
+    const currentAt = new Date(item.triggered_at).getTime();
+    const diffMinutes = (currentAt - lastAt) / (1000 * 60);
+    if (diffMinutes <= debounceMinutes) {
+      deduped[deduped.length - 1] = item;
+    } else {
+      deduped.push(item);
+    }
   }
+
+  return deduped;
 }
 
 export default function AlertsPage({ params }: AlertsPageProps) {
   const tErrors = useTranslations('errors');
   const t = useTranslations('alerts');
+  const tCommon = useTranslations('common');
   const [resolvedParams, setResolvedParams] = useState<{
     workspace?: string;
     project?: string;
   } | null>(null);
-  const [_rules, _setRules] = useState<AlertRule[]>(mockAlertRules);
-
-  const _currentUser = useAuthStore((s) => s.user);
+  const queryClient = useQueryClient();
+  const alertAPI = useMemo(() => new AlertAPI(getApiClient()), []);
+  const [localAlerts, setLocalAlerts] = useState<Alert[]>([]);
   const canViewAlerts = useHasPermission('project:alert:view');
-  const _canManageAlerts = useHasPermission('project:alert:manage');
-
-  // Get alerts from store
-  const alerts = useAlertStore((s) => s.alerts);
-  const _unreadCount = useAlertStore((s) => s.unreadCount);
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
@@ -92,13 +131,26 @@ export default function AlertsPage({ params }: AlertsPageProps) {
     );
   }, [params]);
 
-  // Initialize mock alerts for E2E testing
+  const { data: rules = [] } = useQuery({
+    queryKey: ['alert-rules', workspaceId, projectId],
+    queryFn: () => alertAPI.listRules(workspaceId, projectId),
+    enabled: !!workspaceId && !!projectId && canViewAlerts,
+  });
+
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['alert-notifications', workspaceId, projectId],
+    queryFn: () => alertAPI.listNotifications(workspaceId, projectId, { page: 1, page_size: 100 }),
+    enabled: !!workspaceId && !!projectId && canViewAlerts,
+  });
+
   useEffect(() => {
-    if (workspaceId && projectId) {
-      const store = useAlertStore.getState();
-      initializeMockAlerts(store);
+    if (notifications.length > 0) {
+      const normalizedNotifications = dedupeFiringNotifications(notifications);
+      setLocalAlerts(normalizedNotifications.map((item) => toInAppAlert(workspaceId, projectId, item)));
+    } else {
+      setLocalAlerts([]);
     }
-  }, [workspaceId, projectId]);
+  }, [notifications, workspaceId, projectId]);
 
   if (!resolvedParams) {
     return (
@@ -136,27 +188,60 @@ export default function AlertsPage({ params }: AlertsPageProps) {
         <AlertCenterPage
           workspaceId={workspaceId}
           projectId={projectId}
-          rules={_rules}
-          alerts={alerts}
-          onRuleCreate={async () => {
-            // TODO: API call
+          rules={rules}
+          alerts={localAlerts}
+          onRuleCreate={async (rule) => {
+            const payload: AlertRuleCreateRequest = {
+              name: rule.name,
+              description: rule.description,
+              enabled: rule.enabled,
+              trigger: rule.trigger,
+              channels: rule.channels,
+              behavior: rule.behavior,
+            };
+            await alertAPI.createRule(workspaceId, projectId, payload);
+            await queryClient.invalidateQueries({ queryKey: ['alert-rules', workspaceId, projectId] });
+            toast.success(tCommon('create_success'));
           }}
-          onRuleUpdate={async () => {
-            // TODO: API call
+          onRuleUpdate={async (ruleId, updates) => {
+            const payload: AlertRuleUpdateRequest = {
+              name: updates.name,
+              description: updates.description,
+              enabled: updates.enabled,
+              trigger: updates.trigger,
+              channels: updates.channels,
+              behavior: updates.behavior,
+            };
+            await alertAPI.updateRule(workspaceId, projectId, ruleId, payload);
+            await queryClient.invalidateQueries({ queryKey: ['alert-rules', workspaceId, projectId] });
+            toast.success(tCommon('update_success'));
           }}
-          onRuleDelete={async () => {
-            // TODO: API call
+          onRuleDelete={async (ruleId) => {
+            await alertAPI.deleteRule(workspaceId, projectId, ruleId);
+            await queryClient.invalidateQueries({ queryKey: ['alert-rules', workspaceId, projectId] });
+            toast.success(tCommon('delete_success'));
           }}
-          onRuleTest={async () => {
-            // TODO: API call
+          onRuleTest={async (ruleId) => {
+            const result = await alertAPI.testRule(workspaceId, projectId, ruleId);
+            toast.info(result.details);
           }}
           onAlertMarkAsRead={(alertId) => {
-            const store = useAlertStore.getState();
-            store.markAsRead(alertId);
+            setLocalAlerts((prev) =>
+              prev.map((alert) =>
+                alert.id === alertId && alert.status === 'unread'
+                  ? { ...alert, status: 'read', read_at: new Date().toISOString() }
+                  : alert
+              )
+            );
           }}
           onAlertDismiss={(alertId) => {
-            const store = useAlertStore.getState();
-            store.dismissAlert(alertId);
+            setLocalAlerts((prev) =>
+              prev.map((alert) =>
+                alert.id === alertId
+                  ? { ...alert, status: 'dismissed', dismissed_at: new Date().toISOString() }
+                  : alert
+              )
+            );
           }}
         />
       </PageLayout>

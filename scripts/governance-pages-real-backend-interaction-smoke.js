@@ -22,6 +22,24 @@ function parseProjectIdFromHref(href) {
   return match?.[1] ?? null;
 }
 
+async function waitForPostLoginLanding(page, locale, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const currentUrl = page.url();
+    if (currentUrl.includes(`/${locale}/login/workspace`)) return;
+    if (currentUrl.includes(`/${locale}/workspaces/`)) return;
+    if (currentUrl.includes(`/${locale}/login/callback`)) {
+      const callbackError = await page.getByTestId('login-callback__error').isVisible().catch(() => false);
+      if (callbackError) {
+        const message = await page.getByTestId('login-callback__error').textContent().catch(() => '');
+        throw new Error(`login_callback_error:${(message || 'unknown').trim()}`);
+      }
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`post_login_timeout current_url=${page.url()}`);
+}
+
 async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, clientId, username, password }) {
   const verifier = b64url(crypto.randomBytes(48));
   const state = b64url(crypto.randomBytes(24));
@@ -68,18 +86,10 @@ async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, c
   if (mode === 'login_form') {
     await usernameLocator.fill(username);
     await passwordLocator.fill(password);
-    await Promise.all([
-      page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 120_000 }),
-      loginButtonLocator.click(),
-    ]);
+    await loginButtonLocator.click();
+    await waitForPostLoginLanding(page, locale, 120_000);
   } else if (mode === 'app_redirect') {
-    await page.waitForURL((url) => {
-      try {
-        return url.pathname.startsWith(`/${locale}/`);
-      } catch {
-        return false;
-      }
-    }, { timeout: 120_000 });
+    await waitForPostLoginLanding(page, locale, 120_000);
   } else {
     throw new Error(`auth_state_unresolved current_url=${page.url()}`);
   }

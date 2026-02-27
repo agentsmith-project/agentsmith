@@ -115,16 +115,28 @@ describe('fetchSSETicket', () => {
     );
   });
 
-  it('returns token when backend returns non-ok', async () => {
+  it('returns null when backend returns non-ok (strict mode default)', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false });
+    const result = await fetchSSETicket('my-jwt', 'https://api.example.com/api/v1');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when fetch throws (strict mode default)', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
+    const result = await fetchSSETicket('my-jwt', 'https://api.example.com/api/v1');
+    expect(result).toBeNull();
+  });
+
+  it('returns token when explicit JWT fallback is enabled', async () => {
+    process.env.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK = 'true';
+    vi.resetModules();
+    const sseModule = await import('../sse-client');
+    const { fetchSSETicket } = sseModule;
+
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false });
     const result = await fetchSSETicket('my-jwt', 'https://api.example.com/api/v1');
     expect(result).toBe('my-jwt');
-  });
-
-  it('returns token when fetch throws', async () => {
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
-    const result = await fetchSSETicket('my-jwt', 'https://api.example.com/api/v1');
-    expect(result).toBe('my-jwt');
+    delete process.env.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK;
   });
 });
 
@@ -365,7 +377,7 @@ describe('SSE Ticket Migration - Smoke Tests (Full Flow)', () => {
     const sseModule = await import('../sse-client');
     const { createAuthenticatedSSEAsync } = sseModule;
 
-    // Should still create EventSource (fallback to JWT in legacy mode)
+    // Still creates EventSource; URL will not include ticket/JWT when strict mode fallback is disabled.
     const eventSource = await createAuthenticatedSSEAsync(
       '/api/v1/chat/stream',
       jwtToken,
@@ -373,9 +385,9 @@ describe('SSE Ticket Migration - Smoke Tests (Full Flow)', () => {
       apiBase,
     );
 
-    // In legacy mode (ticket mode disabled), falls back to JWT
     expect(eventSource).toBeInstanceOf(EventSource);
     expect(mockFetch).toHaveBeenCalled();
+    expect(eventSource.url).toBe('/api/v1/chat/stream');
   });
 
   it('smoke: deterministic user assignment for grayscale rollout', async () => {

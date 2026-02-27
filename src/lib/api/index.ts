@@ -52,6 +52,7 @@ export {
   ChatAPI,
   FilesAPI,
   TaskAPI,
+  AlertAPI,
 } from './endpoints';
 
 export type {

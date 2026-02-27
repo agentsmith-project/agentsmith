@@ -16,6 +16,7 @@ export { MeAPI } from './me';
 export { ChatAPI } from './chat';
 export { FilesAPI } from './files';
 export { TaskAPI } from './tasks';
+export { AlertAPI } from './alerts';
 
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';

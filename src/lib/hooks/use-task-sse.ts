@@ -134,7 +134,7 @@ export function useTaskSSE(
     emitDebug({ phase: 'connect_start', summary: `connecting task=${taskId}` });
 
     const token = client.getToken();
-    // Try ticket exchange first (secure); fallback to token in URL when backend has no /sse-ticket
+    // Try ticket exchange first; JWT URL fallback only happens when NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK=true.
     void (async () => {
       try {
         const ticket = await fetchSSETicket(token, API_BASE);

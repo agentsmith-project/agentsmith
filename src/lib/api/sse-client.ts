@@ -42,7 +42,7 @@
  * --------------------------------------------------------------------
  * - Ticket mode is controlled by NEXT_PUBLIC_SSE_TICKET_ENABLED env var
  * - Grayscale rollout controlled by NEXT_PUBLIC_SSE_TICKET_PERCENTAGE (0-100)
- * - When ticket mode is enabled, NO JWT fallback occurs (returns null on failure)
+ * - JWT fallback is disabled by default; only enabled via NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK=true
  * - Use shouldUseTicket(userId) for grayscale rollout decision
  *
  * Related: https://developer.mozilla.org/en-US/docs/Web/API/EventSource
@@ -55,6 +55,8 @@ const SSE_TICKET_ENABLED =
 const SSE_TICKET_PERCENTAGE = Number(
   typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE || '0',
 );
+const SSE_ALLOW_JWT_FALLBACK =
+  typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK === 'true';
 
 /**
  * Configuration for SSE ticket migration
@@ -180,13 +182,13 @@ export function createAuthenticatedSSE(
  * Exchange JWT for a short-lived SSE ticket when backend supports it.
  * Call this before createAuthenticatedSSE to avoid putting the JWT in the SSE URL.
  *
- * When ticket mode is enabled (NEXT_PUBLIC_SSE_TICKET_ENABLED=true), this function
- * will NOT fall back to JWT on failure - it returns null instead. This is the
- * secure behavior for production.
+ * By default this function does NOT fall back to JWT on failure.
+ * To temporarily enable fallback in controlled environments, set:
+ * NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK=true
  *
  * @param token - JWT (Bearer); if null, returns null
  * @param apiBase - Base URL for the API (e.g. https://api.example.com/api/v1)
- * @returns Ticket ID to use in SSE URL, null if no ticket available, or the token as fallback (legacy mode only)
+ * @returns Ticket ID to use in SSE URL, null if no ticket available, or JWT when explicit fallback is enabled
  */
 export async function fetchSSETicket(
   token: string | null,
@@ -199,30 +201,16 @@ export async function fetchSSETicket(
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) {
-      // When ticket mode is enabled, do NOT fall back to JWT
-      if (SSE_TICKET_ENABLED) {
-        return null;
-      }
-      return token; // Legacy mode: fall back to JWT
-    }
+    if (!res.ok) return SSE_ALLOW_JWT_FALLBACK ? token : null;
     const data = (await res.json()) as { ticket_id?: string };
     if (typeof data?.ticket_id === 'string' && data.ticket_id.length > 0) {
       return data.ticket_id;
     }
   } catch {
     // Network or parse error
-    // When ticket mode is enabled, do NOT fall back to JWT
-    if (SSE_TICKET_ENABLED) {
-      return null;
-    }
-    // Legacy mode: fall back to token in URL (existing risk)
+    return SSE_ALLOW_JWT_FALLBACK ? token : null;
   }
-  // Legacy fallback (only when ticket mode is disabled)
-  if (!SSE_TICKET_ENABLED) {
-    return token;
-  }
-  return null;
+  return SSE_ALLOW_JWT_FALLBACK ? token : null;
 }
 
 /**

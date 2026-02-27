@@ -15,10 +15,77 @@ export const alertsHandlers = [
 
   // Get alert notifications
   http.get('/api/v1/workspaces/:ws/projects/:prj/alert-notifications', () => {
+    const notifications = [
+      {
+        id: 'notif_dup_1',
+        rule_id: 'rule_requests',
+        rule_name: 'High Requests',
+        status: 'firing',
+        triggered_at: '2026-02-27T10:00:00.000Z',
+        metric: 'requests_per_hour',
+        operator: 'gte',
+        threshold: 1000,
+        actual_value: 1400,
+        context: {
+          resource_type: 'endpoint',
+          resource_id: 'ep_1',
+          resource_name: 'OpenAI Main',
+        },
+        delivery: {
+          in_app_sent: true,
+          webhook_sent: true,
+          webhook_status: 200,
+        },
+      },
+      {
+        id: 'notif_dup_2',
+        rule_id: 'rule_requests',
+        rule_name: 'High Requests',
+        status: 'firing',
+        triggered_at: '2026-02-27T10:02:00.000Z',
+        metric: 'requests_per_hour',
+        operator: 'gte',
+        threshold: 1000,
+        actual_value: 1450,
+        context: {
+          resource_type: 'endpoint',
+          resource_id: 'ep_1',
+          resource_name: 'OpenAI Main',
+        },
+        delivery: {
+          in_app_sent: true,
+          webhook_sent: true,
+          webhook_status: 200,
+        },
+      },
+      {
+        id: 'notif_resolved_1',
+        rule_id: 'rule_errors',
+        rule_name: 'Error Rate',
+        status: 'resolved',
+        triggered_at: '2026-02-27T09:00:00.000Z',
+        resolved_at: '2026-02-27T09:10:00.000Z',
+        metric: 'error_rate',
+        operator: 'gte',
+        threshold: 5,
+        actual_value: 2,
+        context: {
+          resource_type: 'endpoint',
+          resource_id: 'ep_1',
+          resource_name: 'OpenAI Main',
+        },
+        delivery: {
+          in_app_sent: true,
+          webhook_sent: false,
+          webhook_status: 500,
+          webhook_error: 'timeout',
+        },
+      },
+    ];
     return HttpResponse.json({
-      items: p0.alert_notifications,
-      total: p0.alert_notifications?.length ?? 0,
-      unread_count: p0.alert_notifications?.filter((a: any) => a.status === 'unread').length ?? 0,
+      items: notifications,
+      total: notifications.length,
+      unread_count: notifications.filter((a) => a.status === 'firing').length,
       page: 1,
       page_size: 25,
       has_more: false,
@@ -70,9 +137,10 @@ export const alertsHandlers = [
   }),
 
   // Update alert rule (stub)
-  http.patch('/api/v1/workspaces/:ws/projects/:prj/alert-rules/:id', async ({ request }) => {
+  http.put('/api/v1/workspaces/:ws/projects/:prj/alert-rules/:ruleId', async ({ request, params }) => {
     const data = await request.json() as Record<string, unknown>;
     return HttpResponse.json({
+      id: params.ruleId,
       ...data,
       updated_at: new Date().toISOString(),
     });

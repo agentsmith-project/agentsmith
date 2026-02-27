@@ -138,10 +138,27 @@ export function AlertNotificationsPanel({
                 {/* Message */}
                 <p className="mt-1 text-sm text-tertiary">{alert.message}</p>
 
+                {alert.metadata?.status === 'resolved' && (
+                  <p
+                    className="mt-1 text-xs text-success"
+                    data-testid={`alert-status-resolved-${alert.id}`}
+                  >
+                    {t('resolved')}
+                  </p>
+                )}
+
                 {/* Resource context */}
                 {alert.resource_name && (
                   <p className="mt-1 text-xs text-tertiary">
                     {t('resource')}: {alert.resource_name}
+                  </p>
+                )}
+
+                {typeof alert.metadata?.webhook_sent === 'boolean' && (
+                  <p className="mt-1 text-xs text-tertiary" data-testid={`alert-webhook-${alert.id}`}>
+                    webhook: {alert.metadata.webhook_sent ? 'sent' : 'failed'}
+                    {typeof alert.metadata.webhook_status === 'number' ? ` (${String(alert.metadata.webhook_status)})` : ''}
+                    {typeof alert.metadata.webhook_error === 'string' ? ` ${alert.metadata.webhook_error}` : ''}
                   </p>
                 )}
 

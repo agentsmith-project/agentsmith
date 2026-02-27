@@ -297,4 +297,165 @@ describe('runtime-route-handler', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('does not fallback on provider_non_retryable status even when combo has backups', async () => {
+    const deps = createDeps();
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response(
+        JSON.stringify({ error: { message: 'bad request' } }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'openai',
+          auth_mode: 'api_key',
+          base_url: 'https://api.openai.com/v1',
+          credential_ref: 'cred_runtime_openai',
+          priority: 1,
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'anthropic',
+          auth_mode: 'api_key',
+          base_url: 'https://api.anthropic.com/v1',
+          credential_ref: 'cred_runtime_anthropic',
+          priority: 1,
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          name: 'strict-chat',
+          targets: [
+            { provider: 'openai', model: 'gpt-4o' },
+            { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+          ],
+          fallback_policy: {
+            max_hops: 2,
+            retryable_error_classes: ['provider_retryable'],
+          },
+        },
+      });
+
+      const res = await executeRoute({
+        deps,
+        route: { kind: 'llmUnifiedChat', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          model: 'combo:strict-chat',
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(fetchCalls).toBe(1);
+      const payload = res.body as { runtime?: { provider?: string; fallback_hops?: number } };
+      expect(payload.runtime?.provider).toBe('openai');
+      expect(payload.runtime?.fallback_hops).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('respects combo max_hops limit and stops before third attempt', async () => {
+    const deps = createDeps();
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response(
+        JSON.stringify({ error: { message: 'rate limited' } }),
+        { status: 429, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'openai',
+          auth_mode: 'api_key',
+          base_url: 'https://api.openai.com/v1',
+          credential_ref: 'cred_runtime_openai',
+          priority: 1,
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'anthropic',
+          auth_mode: 'api_key',
+          base_url: 'https://api.anthropic.com/v1',
+          credential_ref: 'cred_runtime_anthropic',
+          priority: 1,
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'deepseek',
+          auth_mode: 'api_key',
+          base_url: 'https://api.deepseek.com/v1',
+          credential_ref: 'cred_runtime_deepseek',
+          priority: 1,
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          name: 'two-hop-cap',
+          targets: [
+            { provider: 'openai', model: 'gpt-4o' },
+            { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+            { provider: 'deepseek', model: 'deepseek-chat' },
+          ],
+          fallback_policy: {
+            max_hops: 1,
+            retryable_error_classes: ['provider_retryable'],
+          },
+        },
+      });
+
+      const res = await executeRoute({
+        deps,
+        route: { kind: 'llmUnifiedChat', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          model: 'combo:two-hop-cap',
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+      });
+
+      expect(res.statusCode).toBe(429);
+      expect(fetchCalls).toBe(2);
+      const payload = res.body as { runtime?: { provider?: string; fallback_hops?: number } };
+      expect(payload.runtime?.provider).toBe('anthropic');
+      expect(payload.runtime?.fallback_hops).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

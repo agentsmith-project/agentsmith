@@ -133,8 +133,31 @@ function pricingRecordId(workspaceId: string, projectId: string): string {
   return `runtime_pricing_${workspaceId}_${projectId}`;
 }
 
-function shouldFallback(status: number): boolean {
-  return status === 429 || status >= 500;
+type RuntimeErrorClass = 'provider_retryable' | 'provider_non_retryable' | 'system_error';
+
+function classifyUpstreamStatus(status: number): RuntimeErrorClass {
+  if (status === 429 || status >= 500) {
+    return 'provider_retryable';
+  }
+  if (status >= 400) {
+    return 'provider_non_retryable';
+  }
+  return 'system_error';
+}
+
+function shouldFallbackByPolicy(params: {
+  errorClass: RuntimeErrorClass;
+  hopAfterFallback: number;
+  policy?: RuntimeModelComboRecord['fallback_policy'];
+}): boolean {
+  const { errorClass, hopAfterFallback, policy } = params;
+  if (!policy) {
+    return errorClass === 'provider_retryable';
+  }
+  if (hopAfterFallback > policy.max_hops) {
+    return false;
+  }
+  return policy.retryable_error_classes.includes(errorClass);
 }
 
 function normalizeUsage(payload: Record<string, unknown> | null): {
@@ -199,6 +222,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
     const pricingMap = pricing?.pricing_map ?? {};
 
     const attempts: Array<{ provider: string; model: string }> = [];
+    let comboFallbackPolicy: RuntimeModelComboRecord['fallback_policy'] | undefined;
     const comboName = modelRaw.startsWith('combo:') ? modelRaw.slice('combo:'.length).trim() : null;
     if (comboName) {
       const combo = combos.find((item) => item.name === comboName);
@@ -206,6 +230,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_not_found' });
         return true;
       }
+      comboFallbackPolicy = combo.fallback_policy;
       attempts.push(...combo.targets);
     } else if (modelRaw.includes('/')) {
       const [provider, model] = modelRaw.split('/', 2);
@@ -276,8 +301,17 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
         return true;
       }
 
-      if (!upstreamRes.ok && idx < attempts.length - 1 && shouldFallback(upstreamRes.status)) {
-        continue;
+      const errorClass = upstreamRes.ok ? undefined : classifyUpstreamStatus(upstreamRes.status);
+      if (!upstreamRes.ok && idx < attempts.length - 1 && errorClass) {
+        const hopAfterFallback = idx + 1;
+        const shouldFallback = shouldFallbackByPolicy({
+          errorClass,
+          hopAfterFallback,
+          policy: comboName ? comboFallbackPolicy : undefined,
+        });
+        if (shouldFallback) {
+          continue;
+        }
       }
 
       const contentType = upstreamRes.headers.get('content-type') ?? 'application/json';

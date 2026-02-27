@@ -34,12 +34,14 @@
 
 ## E2E Coverage Against This PRD
 - Current state:
-1. No Playwright E2E test currently targets new runtime proxy/control-plane endpoints.
-2. No PRD-level browser flow proves provider/alias/combo/pricing/usage-cost closed loop.
+1. Added real-backend integration e2e spec:
+- `e2e/integration-runtime-proxy-billing.spec.ts`
+- coverage: provider setup + alias/combo routing + unified chat + usage/timeseries/quota endpoints
+2. This new spec still requires full lane execution evidence in CI/local run artifacts.
 
 - Conclusion:
-1. E2E acceptance for this PRD is `not covered`.
-2. Existing confidence is mostly from unit + contract checks.
+1. E2E acceptance for this PRD is `partially covered` (test implemented, execution evidence pending).
+2. Existing confidence is still mainly from unit + contract checks until lane evidence is captured.
 
 ## Docs Consistency
 - Consistent:
@@ -50,7 +52,7 @@
 1. PRD asks full-chain closure (`type/contract/integration/e2e/visual`), while current evidence is missing e2e and visual coverage for runtime module.
 
 ## Blocking Items
-1. Missing E2E closure for runtime provider/proxy/billing key scenarios (direct, alias, combo fallback, pricing override, usage drill-down).
+1. Capture passing evidence for runtime proxy billing integration e2e lane (`integration-runtime-proxy-billing.spec.ts`).
 2. Frontend runtime control-plane pages are not yet validated as production-grade operator workflow.
 
 ## Non-Blocking Items

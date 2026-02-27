@@ -11,7 +11,7 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-// Toast will be imported when available - avoiding circular dependency
+import { toast } from '@/components/ui/toast';
 import type {
   Alert,
   AlertPreferences,
@@ -96,11 +96,9 @@ export const useAlertStore = create<AlertStore>()(
           const newAlerts = [alert, ...state.alerts];
           const unreadCount = newAlerts.filter((a) => a.status === 'unread').length;
 
-          // TODO: Show toast for high-severity alerts (error, critical)
-          // Will add toast integration when component dependencies are resolved
-          // if (alert.severity === 'error' || alert.severity === 'critical') {
-          //   toast.error(alert.title);
-          // }
+          if (alert.severity === 'error' || alert.severity === 'critical') {
+            toast.error(alert.title);
+          }
 
           return {
             alerts: newAlerts,

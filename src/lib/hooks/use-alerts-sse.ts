@@ -14,6 +14,8 @@ import { useAlertStore } from '@/lib/stores/alertStore';
 import { createAuthenticatedSSEAsync } from '@/lib/api/sse-client';
 import type { Alert, InAppAlertType } from '@/lib/types/alerts';
 
+const ALERT_STREAM_PATH = '/api/v1/alerts/stream';
+
 /**
  * SSE Alert Message Format
  *
@@ -132,7 +134,7 @@ export function useAlertsSSE(options: UseAlertsSSEOptions = {}) {
 
       // Create SSE connection using ticket-based auth (Epic B1)
       const eventSource = await createAuthenticatedSSEAsync(
-        '/api/v1/alerts/stream', // TODO: Verify backend endpoint
+        ALERT_STREAM_PATH,
         token,
         undefined,
         process.env.NEXT_PUBLIC_API_BASE || ''

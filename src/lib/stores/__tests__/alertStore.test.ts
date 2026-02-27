@@ -9,6 +9,17 @@ import { renderHook, act } from '@testing-library/react';
 import { useAlertStore } from '../alertStore';
 import type { Alert } from '@/lib/types/alerts';
 
+const toastMock = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  info: vi.fn(),
+}));
+
+vi.mock('@/components/ui/toast', () => ({
+  toast: toastMock,
+}));
+
 // Proper localStorage mock (kept for completeness, but not used for zustand)
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -45,6 +56,7 @@ vi.mock('zustand/middleware', () => ({
 
 describe('alertStore', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     // Clear localStorage before each test
     localStorageMock.clear();
     // Reset the store state using setState (triggers updates)
@@ -173,6 +185,42 @@ describe('alertStore', () => {
       });
 
       expect(result.current.alerts).toHaveLength(0);
+    });
+
+    it('shows toast for high severity alerts', () => {
+      const { result } = renderHook(() => useAlertStore());
+
+      act(() => {
+        result.current.addAlert({
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          type: 'quota.exceeded',
+          severity: 'error',
+          title: 'Critical quota alert',
+          message: 'Over quota',
+          metadata: {},
+        });
+      });
+
+      expect(toastMock.error).toHaveBeenCalledWith('Critical quota alert');
+    });
+
+    it('does not show toast for warning alerts', () => {
+      const { result } = renderHook(() => useAlertStore());
+
+      act(() => {
+        result.current.addAlert({
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          type: 'quota.warning',
+          severity: 'warning',
+          title: 'Warning',
+          message: 'Approaching quota',
+          metadata: {},
+        });
+      });
+
+      expect(toastMock.error).not.toHaveBeenCalled();
     });
   });
 

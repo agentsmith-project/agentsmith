@@ -70,6 +70,9 @@
 - Command: `BASE_URL=http://localhost:3001 npx playwright test e2e/visual.spec.ts --project=visual --workers=1`
 - Result: `34 passed (1.6m)` on 2026-02-28
 - New snapshot: `runtime-control-plane.png`
+7. Runtime observability endpoint acceptance captured:
+- `e2e/runtime-proxy-billing.spec.ts` now asserts `GET /usage/runtime-observability` in mock lane.
+- `e2e/integration-runtime-proxy-billing.spec.ts` now asserts `GET /usage/runtime-observability` in real-backend lane.
 
 - Conclusion:
 1. E2E acceptance for runtime proxy billing API chain is `covered` in both real-backend and mock-browser lanes.

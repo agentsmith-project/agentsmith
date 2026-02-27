@@ -107,9 +107,12 @@ test.describe('runtime proxy billing (mock lane)', () => {
       const usageTimeseries = await get(
         `/usage/timeseries?start_time=${encodeURIComponent(start.toISOString())}&end_time=${encodeURIComponent(end.toISOString())}&granularity=day&metric=cost&resource_type=endpoint`,
       );
+      const runtimeObservability = await get(
+        `/usage/runtime-observability?start_time=${encodeURIComponent(start.toISOString())}&end_time=${encodeURIComponent(end.toISOString())}`,
+      );
       const quotaSummary = await get('/quota/summary');
 
-      return { direct, alias, combo, usageTimeseries, quotaSummary };
+      return { direct, alias, combo, usageTimeseries, runtimeObservability, quotaSummary };
     }, { wsId: WS_ID, projectId: PROJECT_ID });
 
     expect(result.direct.status).toBe(200);
@@ -127,6 +130,26 @@ test.describe('runtime proxy billing (mock lane)', () => {
     expect((result.combo.body as { runtime?: { fallback_hops?: number } }).runtime?.fallback_hops).toBe(1);
 
     expect(result.usageTimeseries.status).toBe(200);
+    expect(result.runtimeObservability.status).toBe(200);
+    const runtimeObs = result.runtimeObservability.body as {
+      total_requests?: number;
+      total_errors?: number;
+      error_rate?: number;
+      fallback_hops_histogram?: Record<string, number>;
+      error_class_counts?: {
+        provider_retryable?: number;
+        provider_non_retryable?: number;
+        system_error?: number;
+      };
+    };
+    expect(runtimeObs.total_requests ?? 0).toBeGreaterThan(0);
+    expect(runtimeObs.total_errors ?? 0).toBeGreaterThanOrEqual(0);
+    expect(runtimeObs.error_rate ?? 0).toBeGreaterThanOrEqual(0);
+    expect(runtimeObs.error_rate ?? 0).toBeLessThanOrEqual(1);
+    expect((runtimeObs.fallback_hops_histogram ?? {})['0'] ?? 0).toBeGreaterThanOrEqual(0);
+    expect(runtimeObs.error_class_counts?.provider_retryable ?? 0).toBeGreaterThanOrEqual(0);
+    expect(runtimeObs.error_class_counts?.provider_non_retryable ?? 0).toBeGreaterThanOrEqual(0);
+    expect(runtimeObs.error_class_counts?.system_error ?? 0).toBeGreaterThanOrEqual(0);
     expect(result.quotaSummary.status).toBe(200);
   });
 });

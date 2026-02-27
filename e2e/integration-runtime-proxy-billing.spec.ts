@@ -303,6 +303,37 @@ test.describe('@lane-real integration runtime proxy billing', () => {
       expect((timeseriesPayload.data_points ?? []).length).toBeGreaterThan(0);
       expect(timeseriesPayload.total_cost ?? 0).toBeGreaterThan(0);
 
+      const runtimeObsRes = await page.request.get(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/runtime-observability`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            start_time: start.toISOString(),
+            end_time: end.toISOString(),
+          },
+        },
+      );
+      expect(runtimeObsRes.ok()).toBeTruthy();
+      const runtimeObsPayload = (await runtimeObsRes.json()) as {
+        total_requests?: number;
+        total_errors?: number;
+        error_rate?: number;
+        fallback_hops_histogram?: Record<string, number>;
+        error_class_counts?: {
+          provider_retryable?: number;
+          provider_non_retryable?: number;
+          system_error?: number;
+        };
+      };
+      expect(runtimeObsPayload.total_requests ?? 0).toBeGreaterThan(0);
+      expect(runtimeObsPayload.total_errors ?? 0).toBeGreaterThanOrEqual(0);
+      expect(runtimeObsPayload.error_rate ?? 0).toBeGreaterThanOrEqual(0);
+      expect(runtimeObsPayload.error_rate ?? 0).toBeLessThanOrEqual(1);
+      expect((runtimeObsPayload.fallback_hops_histogram ?? {})['0'] ?? 0).toBeGreaterThanOrEqual(0);
+      expect(runtimeObsPayload.error_class_counts?.provider_retryable ?? 0).toBeGreaterThanOrEqual(0);
+      expect(runtimeObsPayload.error_class_counts?.provider_non_retryable ?? 0).toBeGreaterThanOrEqual(0);
+      expect(runtimeObsPayload.error_class_counts?.system_error ?? 0).toBeGreaterThanOrEqual(0);
+
       const quotaRes = await page.request.get(
         `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/quota/summary`,
         {

@@ -7,25 +7,24 @@
 
 ## Executive Conclusion
 
-**结论（按“当前代码修复与手动 demo 可用性”口径）**: **GO（internal/controlled）**  
-原因：Notebook 流式阻塞根因已修复（`/sse-ticket` + ticket 契约），关键类型/单测通过，真实后端手动链路可用。
-
-**结论（按“全量 Playwright 矩阵门禁”口径）**: **NO-GO（当前阻塞）**  
-原因：2026-02-27 复跑全量矩阵失败，且失败呈系统性模式，主要为 MSW 基线假设与 real-backend 运行模式混用导致。
+**结论（按当前门禁执行口径）**: **GO（internal/controlled）**  
+原因：`L0 + mock lane(full) + real lane(smoke)` 已在 2026-02-27 完成复验并通过；真实链路可用。
 
 ---
 
 ## Re-Verification Snapshot
 
-- `git status --short`: **dirty worktree**（包含本轮收口修改与未归档 artifacts）
 - `npm run lint` ✅
 - `npm run ws:typecheck` ✅
 - `make verify-contracts` ✅
-- `npm run test:run -- src/lib/api/__tests__/sse-client.test.ts` ✅（21 passed）
-- `BASE_URL=http://localhost:3001 npx playwright test --project=smoke` ❌（6 passed / 20 failed）
-- `BASE_URL=http://localhost:3001 npx playwright test --project=chromium` ❌（25 passed / 252 failed）
-- `BASE_URL=http://localhost:3001 npx playwright test --project=visual` ❌（8 passed / 25 failed）
-- `BASE_URL=http://localhost:3001 make governance-release-smoke` ✅（页面/交互/策略/成员生命周期 smoke 全通过）
+- `make gate-l0` ✅
+- `make lane-mock-full` ✅
+  - smoke: `26/26`
+  - chromium: `277/277`
+  - visual: `33/33`（已更新快照基线：`chat-standard/endpoints/audit`）
+- `make lane-real-smoke` ✅
+  - notebook release smoke + governance release smoke 全链路通过
+  - 期间出现上游 `429/timeout` 与 token 刷新重试，脚本按非阻塞策略自动恢复
 
 ---
 
@@ -65,42 +64,30 @@
 
 ---
 
-## Blocking Items (for full matrix release gate)
+## Blocking Items (for current gate)
 
-1. **E2E 基线模式未分离（阻塞）**
-- 当前全量 Playwright 用例大量依赖 MSW fixture 页面结构与稳定数据；
-- 本次复验在 real-backend 手动 demo 环境运行，导致系统性 selector/state 断言失败；
-- 需明确并固化双 lane：
-  - `mock-lane`: MSW + 全量 UI/visual 基线
-  - `real-lane`: real backend + 关键路径 smoke/contracts
-
-2. **Visual 基线与运行上下文未对齐（阻塞）**
-- `visual` 项目大量 snapshot mismatch（含页面高度、布局与内容差异）；
-- 需决定并执行以下其一：
-  - 仅在 MSW lane 维护视觉基线；
-  - 增设 real-backend 视觉基线并独立存档。
+1. **无阻塞项**
+- 按当前 lane/gate 设计，关键门禁已通过。
 
 ---
 
 ## Non-Blocking Items
 
-1. **工作区非干净**：`git status` 显示当前仍有修改/未跟踪文件。
-2. **外部依赖敏感**：治理真实后端 smoke 仍依赖 Keycloak 与后端联调环境稳定可用。
-3. **Keycloak 回调端口约束**：`agentsmith` client 当前仅放行 `http://localhost:3001/.../login/callback`，若切换到 `3002` 会触发 `Invalid parameter: redirect_uri`。
+1. **上游 provider 饱和波动**：real smoke 过程中偶发 `429/timeout`，当前通过脚本重试策略可恢复。
+2. **token 时效敏感**：真实链路长跑时可能出现 token 失效；当前已验证自动刷新可恢复。
+3. **Keycloak 回调端口约束**：`agentsmith` client 当前仅放行 `http://localhost:3001/.../login/callback`，切换端口会触发 `redirect_uri` 错误。
 
 ---
 
 ## Decision Recommendation
 
-1. **若目标是“真实后端手动演示与关键链路可用”**：可 **GO（internal/controlled）**。  
-2. **若目标是“全量 Playwright 矩阵作为发布门禁”**：当前 **NO-GO**，先完成 baseline lane 对齐并复跑通过。
+1. **当前 release 建议**：**GO（internal/controlled）**。
+2. **外部依赖风险控制**：保留 real smoke 的重试与降级告警，发布窗口内关注上游 429。
 
 ---
 
 ## Next Actions
 
-1. 固化测试分层：
-- `mock-lane`: `NEXT_PUBLIC_USE_MSW=true` + `playwright --project=smoke/chromium/visual`
-- `real-lane`: `governance-release-smoke` + notebook/contract key smokes
-2. 将当前 full-matrix 失败结果归档为本次 gate 证据，并在 PRD 收口表中标注阻塞状态。
-3. lane 对齐后复跑全量矩阵，再决定 release tag。
+1. 将本次 `lane-mock-full` 与 `lane-real-smoke` 的日志归档到 release artifacts。
+2. 对 `notebook-agent-inputrefs-loop-smoke` 的 `429/产物延迟` 场景补充更稳定的判定窗口与分级告警。
+3. 发布后首周继续监控上游限流与 token 刷新成功率。

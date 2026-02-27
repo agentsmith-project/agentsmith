@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-27  
 **Scope**: `docs/plans/next-release-product-roadmap-prd-v1.md`  
-**Status**: CONDITIONAL (Blocked on E2E baseline mode alignment)
+**Status**: GO (internal/controlled)
 
 ---
 
@@ -25,13 +25,14 @@
 - `artifacts/release-reports/release-closure-20260227.json`
 - `artifacts/release-reports/release-closure-20260227.md`
 
-4. Full Playwright matrix re-run (2026-02-27, manual real-backend env, `BASE_URL=http://localhost:3001`):
-- `npx playwright test --project=smoke` -> **6 passed / 20 failed**
-- `npx playwright test --project=chromium` -> **25 passed / 252 failed**
-- `npx playwright test --project=visual` -> **8 passed / 25 failed**
-- Failure pattern is systemic and consistent with **test baseline mode mismatch**:
-  - Most tests assume MSW fixture IDs/routes (`ws_default/proj_001/task_001`) and stable mock UI states.
-  - Current run targets real backend demo data, so selectors and expected page states diverge.
+4. Final lane/gate re-run (2026-02-27):
+- `make gate-l0` -> PASS
+- `make lane-mock-full` -> PASS (`smoke 26/26`, `chromium 277/277`, `visual 33/33`)
+- `make lane-real-smoke` -> PASS（notebook + governance real-backend smoke bundle 全通过）
+- Visual baselines updated for 3 snapshots:
+  - `e2e/__screenshots__/visual.spec.ts/chat-standard.png`
+  - `e2e/__screenshots__/visual.spec.ts/endpoints.png`
+  - `e2e/__screenshots__/visual.spec.ts/audit.png`
 
 ---
 
@@ -70,22 +71,14 @@
 
 ## Blocking Items (Latest Re-Verification)
 
-1. **E2E baseline split is not enforced at gate level**
-- Full Playwright matrix currently mixes assumptions:
-  - MSW/mock baseline assertions
-  - real-backend runtime execution
-- Without explicit lane separation, the release gate is not reproducible.
-
-2. **Visual baseline not updated for current rendering/runtime context**
-- `visual` project shows broad snapshot mismatch (size/layout/content deltas).
-- Needs explicit decision: maintain MSW visual baseline only, or create dedicated real-backend visual baseline lane.
+1. **None**
 
 ---
 
 ## Release Operator Decision
 
-1. For **real-backend manual demo**: GO (core notebook streaming and runtime chain verified).
-2. For **full Playwright matrix gate**: NO-GO until baseline mode alignment is completed and rerun passes in the chosen lane.
+1. For **current lane-based release gate**: GO.
+2. Keep internal-controlled rollout and monitor upstream provider throttling in release window.
 
 ---
 
@@ -98,3 +91,5 @@
 2. Recommended pre-tag command:
 - `make verify-release`
 3. Archive release report artifacts with the release tag for audit trail.
+4. Known non-blocking runtime noise:
+- real smoke may encounter transient upstream `429/timeout` and token refresh retries; current scripts can auto-recover in observed runs.

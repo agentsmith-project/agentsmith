@@ -1462,6 +1462,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models/{modelId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelId: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Get runtime model catalog entry */
+        get: operations["getRuntimeModel"];
+        /** Update runtime model catalog entry */
+        put: operations["updateRuntimeModel"];
+        post?: never;
+        /** Delete runtime model catalog entry */
+        delete: operations["deleteRuntimeModel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing": {
         parameters: {
             query?: never;
@@ -1547,6 +1570,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Get model alias */
+        get: operations["getRuntimeRoutingAlias"];
+        /** Update model alias */
+        put: operations["updateRuntimeRoutingAlias"];
+        post?: never;
+        /** Delete model alias */
+        delete: operations["deleteRuntimeRoutingAlias"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos": {
         parameters: {
             query?: never;
@@ -1563,6 +1609,29 @@ export interface paths {
         /** Create model combo */
         post: operations["createRuntimeRoutingCombo"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                combo: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Get model combo */
+        get: operations["getRuntimeRoutingCombo"];
+        /** Update model combo */
+        put: operations["updateRuntimeRoutingCombo"];
+        post?: never;
+        /** Delete model combo */
+        delete: operations["deleteRuntimeRoutingCombo"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2737,6 +2806,10 @@ export interface components {
             target_provider: string;
         };
         RuntimeModelAliasCreate: components["schemas"]["RuntimeModelAlias"];
+        RuntimeModelAliasUpdate: {
+            target_model?: string;
+            target_provider?: string;
+        };
         RuntimeModelCatalogEntry: {
             capabilities: string[];
             context_window?: number;
@@ -2756,6 +2829,14 @@ export interface components {
             pricing?: components["schemas"]["RuntimeModelPricing"];
             provider: string;
         };
+        RuntimeModelCatalogEntryUpdate: {
+            capabilities?: string[];
+            context_window?: number;
+            display_name?: string;
+            max_tokens?: number;
+            pricing?: components["schemas"]["RuntimeModelPricing"];
+            provider?: string;
+        };
         RuntimeModelCombo: {
             fallback_policy: components["schemas"]["RuntimeModelComboFallbackPolicy"];
             name: string;
@@ -2769,6 +2850,10 @@ export interface components {
         RuntimeModelComboTarget: {
             model: string;
             provider: string;
+        };
+        RuntimeModelComboUpdate: {
+            fallback_policy?: components["schemas"]["RuntimeModelComboFallbackPolicy"];
+            targets?: components["schemas"]["RuntimeModelComboTarget"][];
         };
         RuntimeModelPricing: {
             cache_creation?: number;
@@ -6267,6 +6352,98 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    getRuntimeModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelId: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelCatalogEntry"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateRuntimeModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelId: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeModelCatalogEntryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelCatalogEntry"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteRuntimeModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelId: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getRuntimePricing: {
         parameters: {
             query?: never;
@@ -6525,6 +6702,98 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    getRuntimeRoutingAlias: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Alias */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelAlias"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateRuntimeRoutingAlias: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeModelAliasUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelAlias"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteRuntimeRoutingAlias: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listRuntimeRoutingCombos: {
         parameters: {
             query?: never;
@@ -6588,6 +6857,98 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getRuntimeRoutingCombo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                combo: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Combo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelCombo"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateRuntimeRoutingCombo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                combo: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeModelComboUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelCombo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteRuntimeRoutingCombo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                combo: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listSourceLibraries: {

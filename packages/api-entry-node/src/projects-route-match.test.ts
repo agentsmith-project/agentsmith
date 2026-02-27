@@ -153,6 +153,14 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/models/gpt-4o'),
+    ).toEqual({
+      kind: 'runtimeModelItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      modelId: 'gpt-4o',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases'),
     ).toEqual({
       kind: 'runtimeRoutingAliases',
@@ -160,11 +168,27 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases/assistant-main'),
+    ).toEqual({
+      kind: 'runtimeRoutingAliasItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      alias: 'assistant-main',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/combos'),
     ).toEqual({
       kind: 'runtimeRoutingCombos',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/combos/prod-chat'),
+    ).toEqual({
+      kind: 'runtimeRoutingComboItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      combo: 'prod-chat',
     });
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing'),

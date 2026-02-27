@@ -22,7 +22,15 @@ function createDeps(): NodeApiDeps {
 
 async function executeRoute(params: {
   deps: NodeApiDeps;
-  route: { kind: string; workspaceId: string; projectId: string; providerConnectionId?: string };
+  route: {
+    kind: string;
+    workspaceId: string;
+    projectId: string;
+    providerConnectionId?: string;
+    modelId?: string;
+    alias?: string;
+    combo?: string;
+  };
   method: string;
   body?: unknown;
 }): Promise<TestResponse> {
@@ -135,6 +143,110 @@ describe('runtime-route-handler', () => {
     };
     expect(map.openai?.['gpt-4o']?.input).toBe(2.5);
     expect(map.openai?.['gpt-4o']?.output).toBe(10);
+  });
+
+  it('supports runtime model/alias/combo item CRUD operations', async () => {
+    const deps = createDeps();
+
+    const modelCreate = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModels', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        provider: 'openai',
+        model_id: 'gpt-4o',
+        capabilities: ['chat'],
+      },
+    });
+    expect(modelCreate.statusCode).toBe(201);
+
+    const modelGet = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      method: 'GET',
+    });
+    expect(modelGet.statusCode).toBe(200);
+
+    const modelPut = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      method: 'PUT',
+      body: {
+        display_name: 'GPT-4o Main',
+        capabilities: ['chat', 'tools'],
+      },
+    });
+    expect(modelPut.statusCode).toBe(200);
+    const modelPutPayload = modelPut.body as { display_name?: string; capabilities?: string[] };
+    expect(modelPutPayload.display_name).toBe('GPT-4o Main');
+    expect(modelPutPayload.capabilities).toEqual(['chat', 'tools']);
+
+    const aliasCreate = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliases', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        alias: 'assistant-main',
+        target_provider: 'openai',
+        target_model: 'gpt-4o',
+      },
+    });
+    expect(aliasCreate.statusCode).toBe(201);
+
+    const aliasPut = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliasItem', workspaceId, projectId, alias: 'assistant-main' },
+      method: 'PUT',
+      body: {
+        target_model: 'gpt-4.1',
+      },
+    });
+    expect(aliasPut.statusCode).toBe(200);
+    const aliasPutPayload = aliasPut.body as { target_model?: string };
+    expect(aliasPutPayload.target_model).toBe('gpt-4.1');
+
+    const comboCreate = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        name: 'prod-chat',
+        targets: [{ provider: 'openai', model: 'gpt-4o' }],
+        fallback_policy: {
+          max_hops: 1,
+          retryable_error_classes: ['provider_retryable'],
+        },
+      },
+    });
+    expect(comboCreate.statusCode).toBe(201);
+
+    const comboGet = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingComboItem', workspaceId, projectId, combo: 'prod-chat' },
+      method: 'GET',
+    });
+    expect(comboGet.statusCode).toBe(200);
+
+    const comboDelete = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingComboItem', workspaceId, projectId, combo: 'prod-chat' },
+      method: 'DELETE',
+    });
+    expect(comboDelete.statusCode).toBe(204);
+
+    const aliasDelete = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliasItem', workspaceId, projectId, alias: 'assistant-main' },
+      method: 'DELETE',
+    });
+    expect(aliasDelete.statusCode).toBe(204);
+
+    const modelDelete = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      method: 'DELETE',
+    });
+    expect(modelDelete.statusCode).toBe(204);
   });
 
   it('returns not implemented for unified chat', async () => {

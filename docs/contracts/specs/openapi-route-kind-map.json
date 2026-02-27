@@ -263,13 +263,25 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models",
     "method": "get"
   },
+  "runtimeModelItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models/{modelId}",
+    "method": "put"
+  },
   "runtimeRoutingAliases": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases",
     "method": "get"
   },
+  "runtimeRoutingAliasItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}",
+    "method": "put"
+  },
   "runtimeRoutingCombos": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos",
     "method": "get"
+  },
+  "runtimeRoutingComboItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}",
+    "method": "put"
   },
   "runtimePricing": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing",

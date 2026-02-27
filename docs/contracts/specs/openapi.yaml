@@ -4184,6 +4184,68 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401": *a1
         "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models/{modelId}:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - LLM Runtime
+      operationId: getRuntimeModel
+      summary: Get runtime model catalog entry
+      responses:
+        "200":
+          description: Model entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeModelCatalogEntry"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+    put:
+      tags:
+        - LLM Runtime
+      operationId: updateRuntimeModel
+      summary: Update runtime model catalog entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeModelCatalogEntryUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeModelCatalogEntry"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+    delete:
+      tags:
+        - LLM Runtime
+      operationId: deleteRuntimeModel
+      summary: Delete runtime model catalog entry
+      responses:
+        "204":
+          description: Deleted
+        "401": *a1
+        "403": *a2
+        "404": *a3
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4235,6 +4297,68 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401": *a1
         "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: alias
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - LLM Runtime
+      operationId: getRuntimeRoutingAlias
+      summary: Get model alias
+      responses:
+        "200":
+          description: Alias
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeModelAlias"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+    put:
+      tags:
+        - LLM Runtime
+      operationId: updateRuntimeRoutingAlias
+      summary: Update model alias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeModelAliasUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeModelAlias"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+    delete:
+      tags:
+        - LLM Runtime
+      operationId: deleteRuntimeRoutingAlias
+      summary: Delete model alias
+      responses:
+        "204":
+          description: Deleted
+        "401": *a1
+        "403": *a2
+        "404": *a3
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4286,6 +4410,68 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401": *a1
         "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: combo
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - LLM Runtime
+      operationId: getRuntimeRoutingCombo
+      summary: Get model combo
+      responses:
+        "200":
+          description: Combo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeModelCombo"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+    put:
+      tags:
+        - LLM Runtime
+      operationId: updateRuntimeRoutingCombo
+      summary: Update model combo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeModelComboUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeModelCombo"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+    delete:
+      tags:
+        - LLM Runtime
+      operationId: deleteRuntimeRoutingCombo
+      summary: Delete model combo
+      responses:
+        "204":
+          description: Deleted
+        "401": *a1
+        "403": *a2
+        "404": *a3
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -6006,6 +6192,23 @@ components:
           type: integer
         pricing:
           $ref: "#/components/schemas/RuntimeModelPricing"
+    RuntimeModelCatalogEntryUpdate:
+      type: object
+      properties:
+        provider:
+          type: string
+        display_name:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        context_window:
+          type: integer
+        max_tokens:
+          type: integer
+        pricing:
+          $ref: "#/components/schemas/RuntimeModelPricing"
     RuntimeModelAlias:
       type: object
       required:
@@ -6021,6 +6224,13 @@ components:
           type: string
     RuntimeModelAliasCreate:
       $ref: "#/components/schemas/RuntimeModelAlias"
+    RuntimeModelAliasUpdate:
+      type: object
+      properties:
+        target_provider:
+          type: string
+        target_model:
+          type: string
     RuntimeModelComboTarget:
       type: object
       required:
@@ -6061,6 +6271,15 @@ components:
           $ref: "#/components/schemas/RuntimeModelComboFallbackPolicy"
     RuntimeModelComboCreate:
       $ref: "#/components/schemas/RuntimeModelCombo"
+    RuntimeModelComboUpdate:
+      type: object
+      properties:
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeModelComboTarget"
+        fallback_policy:
+          $ref: "#/components/schemas/RuntimeModelComboFallbackPolicy"
     RuntimePricingMap:
       type: object
       additionalProperties:

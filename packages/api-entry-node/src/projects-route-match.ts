@@ -124,8 +124,26 @@ export type ProjectsRoute =
     providerConnectionId: string;
   }
   | { kind: 'runtimeModels'; workspaceId: string; projectId: string }
+  | {
+    kind: 'runtimeModelItem';
+    workspaceId: string;
+    projectId: string;
+    modelId: string;
+  }
   | { kind: 'runtimeRoutingAliases'; workspaceId: string; projectId: string }
+  | {
+    kind: 'runtimeRoutingAliasItem';
+    workspaceId: string;
+    projectId: string;
+    alias: string;
+  }
   | { kind: 'runtimeRoutingCombos'; workspaceId: string; projectId: string }
+  | {
+    kind: 'runtimeRoutingComboItem';
+    workspaceId: string;
+    projectId: string;
+    combo: string;
+  }
   | { kind: 'runtimePricing'; workspaceId: string; projectId: string }
   | { kind: 'credentials'; workspaceId: string; projectId: string }
   | { kind: 'credentialItem'; workspaceId: string; projectId: string; credentialId: string }
@@ -952,6 +970,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
+  const runtimeModelItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/models\/([^/]+)\/?$/,
+  );
+  if (runtimeModelItemMatched) {
+    return {
+      kind: 'runtimeModelItem',
+      workspaceId: decodeURIComponent(runtimeModelItemMatched[1]),
+      projectId: decodeURIComponent(runtimeModelItemMatched[2]),
+      modelId: decodeURIComponent(runtimeModelItemMatched[3]),
+    };
+  }
+
   const runtimeRoutingAliasesMatched = pathname.match(
     /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/aliases\/?$/,
   );
@@ -963,6 +993,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
+  const runtimeRoutingAliasItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/aliases\/([^/]+)\/?$/,
+  );
+  if (runtimeRoutingAliasItemMatched) {
+    return {
+      kind: 'runtimeRoutingAliasItem',
+      workspaceId: decodeURIComponent(runtimeRoutingAliasItemMatched[1]),
+      projectId: decodeURIComponent(runtimeRoutingAliasItemMatched[2]),
+      alias: decodeURIComponent(runtimeRoutingAliasItemMatched[3]),
+    };
+  }
+
   const runtimeRoutingCombosMatched = pathname.match(
     /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/combos\/?$/,
   );
@@ -971,6 +1013,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'runtimeRoutingCombos',
       workspaceId: decodeURIComponent(runtimeRoutingCombosMatched[1]),
       projectId: decodeURIComponent(runtimeRoutingCombosMatched[2]),
+    };
+  }
+
+  const runtimeRoutingComboItemMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/combos\/([^/]+)\/?$/,
+  );
+  if (runtimeRoutingComboItemMatched) {
+    return {
+      kind: 'runtimeRoutingComboItem',
+      workspaceId: decodeURIComponent(runtimeRoutingComboItemMatched[1]),
+      projectId: decodeURIComponent(runtimeRoutingComboItemMatched[2]),
+      combo: decodeURIComponent(runtimeRoutingComboItemMatched[3]),
     };
   }
 

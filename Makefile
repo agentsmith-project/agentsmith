@@ -1,8 +1,8 @@
 .PHONY: help quick-help help-glossary bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
 	e2e e2e-local \
-	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
-	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api \
+	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-runtime-proxy-billing e2e-int-local \
+	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api e2e-int-runtime-proxy-billing-local-api \
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
@@ -96,11 +96,13 @@ help:
 	@echo "  make e2e-int-chat      # run chat integration e2e (real backend)"
 	@echo "  make e2e-int-agent     # run external-agent integration e2e (real backend)"
 	@echo "  make e2e-int-chat-real # run real deepseek chat integration e2e (real upstream)"
+	@echo "  make e2e-int-runtime-proxy-billing # run runtime proxy/billing integration e2e (real backend)"
 	@echo "  make e2e-int-local     # run integration e2e against a manually started web server (BASE_URL)"
 	@echo "  make e2e-int-minimal-local-api  # run minimal integration e2e with current node api"
 	@echo "  make e2e-int-chat-local-api     # run chat integration e2e with current node api"
 	@echo "  make e2e-int-agent-local-api    # run external-agent integration e2e with current node api"
 	@echo "  make e2e-int-chat-real-local-api # run real deepseek chat e2e with current node api"
+	@echo "  make e2e-int-runtime-proxy-billing-local-api # run runtime proxy/billing integration e2e with current node api"
 	@echo "  make e2e-int-chat-auto      # auto start deps+api+web and run integration-chat spec"
 	@echo "  make e2e-int-agent-auto     # auto start deps+api+web and run integration-agent spec"
 	@echo "  make e2e-int-notebook-agent-auto # auto start deps+api+web and run notebook external-agent integration spec"
@@ -461,6 +463,9 @@ e2e-int-agent:
 e2e-int-chat-real:
 	$(NPM) run test:e2e:integration:chat:real
 
+e2e-int-runtime-proxy-billing:
+	$(NPM) run test:e2e:integration:runtime-proxy-billing
+
 e2e-int-local:
 	BASE_URL=$(BASE_URL) \
 	$(NPM) run test:e2e:integration:minimal
@@ -488,6 +493,12 @@ e2e-int-chat-real-local-api:
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
 	$(NPM) run test:e2e:integration:chat:real:with-api
+
+e2e-int-runtime-proxy-billing-local-api:
+	INTEGRATION_API_PORT=$(PORT_API) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	$(NPM) run test:e2e:integration:runtime-proxy-billing:with-api
 
 e2e-int-chat-auto:
 	INTEGRATION_API_PORT=$(PORT_API) \

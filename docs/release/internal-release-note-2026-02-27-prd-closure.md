@@ -55,7 +55,8 @@
 ## Residual Non-Blocking Risks
 
 1. `make governance-release-smoke` 依赖真实 Keycloak/后端联调环境，本地无完整外部依赖时无法在同一轮闭环（非代码缺陷）。
-2. 工作区存在未归档的 `artifacts/release-reports/report-20260227-*.{json,md}` 临时产物，发布前需清理或归档。
+2. Keycloak client 回调地址存在端口白名单约束（`3001` 可用，`3002` 会报 `Invalid parameter: redirect_uri`），执行 real-backend smoke 时需保持一致。
+3. 工作区存在未归档的 `artifacts/release-reports/report-20260227-*.{json,md}` 临时产物，发布前需清理或归档。
 
 ---
 

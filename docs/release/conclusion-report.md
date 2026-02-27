@@ -74,7 +74,8 @@
 
 1. **工作区非干净**：`git status` 显示当前仍有修改/未跟踪文件。
 2. **外部依赖敏感**：治理真实后端 smoke 依赖 Keycloak 与后端联调环境完整可用。
-3. **发布操作项**：`artifacts/release-reports/report-20260227-*.{json,md}` 需统一归档策略（保留或清理）。
+3. **Keycloak 回调端口约束**：`agentsmith` client 当前仅放行 `http://localhost:3001/.../login/callback`，若切换到 `3002` 会触发 `Invalid parameter: redirect_uri`。
+4. **发布操作项**：`artifacts/release-reports/report-20260227-*.{json,md}` 需统一归档策略（保留或清理）。
 
 ---
 

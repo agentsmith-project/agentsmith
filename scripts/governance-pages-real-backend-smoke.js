@@ -72,16 +72,26 @@ async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, c
   const usernameLocator = page.locator('input#username, input[name="username"], input[name="email"]').first();
   const passwordLocator = page.locator('input#password, input[name="password"]').first();
   const loginButtonLocator = page.locator('#kc-login, button[type="submit"]').first();
+  const keycloakErrorLocator = page.locator('#kc-error-message .instruction, #kc-error-message').first();
 
   const authWaitDeadline = Date.now() + 30_000;
   let authPageState = 'unknown';
   while (Date.now() < authWaitDeadline) {
+    if (await keycloakErrorLocator.isVisible().catch(() => false)) {
+      const errorText = (await keycloakErrorLocator.textContent().catch(() => 'unknown')).trim();
+      throw new Error(`keycloak_auth_page_error:${errorText || 'unknown'}`);
+    }
     if (page.url().includes(`/${locale}/`)) {
       authPageState = 'app_redirect';
       break;
     }
     if (await usernameLocator.isVisible().catch(() => false)) {
       authPageState = 'login_form';
+      break;
+    }
+    if (await loginButtonLocator.isVisible().catch(() => false)) {
+      // Some themes hide username/email field but still expose a submit flow.
+      authPageState = 'login_button_only';
       break;
     }
     await page.waitForTimeout(500);
@@ -92,10 +102,18 @@ async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, c
     await passwordLocator.fill(password);
     await loginButtonLocator.click();
     await waitForPostLoginLanding(page, locale, 120_000);
+  } else if (authPageState === 'login_button_only') {
+    const hasPassword = await passwordLocator.isVisible().catch(() => false);
+    if (hasPassword) {
+      await passwordLocator.fill(password);
+    }
+    await loginButtonLocator.click();
+    await waitForPostLoginLanding(page, locale, 120_000);
   } else if (authPageState === 'app_redirect') {
     await waitForPostLoginLanding(page, locale, 120_000);
   } else {
-    throw new Error(`auth_state_unresolved current_url=${page.url()}`);
+    const pageTitle = await page.title().catch(() => '');
+    throw new Error(`auth_state_unresolved current_url=${page.url()} title=${pageTitle}`);
   }
 }
 

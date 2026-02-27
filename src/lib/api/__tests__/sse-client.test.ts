@@ -129,6 +129,7 @@ describe('fetchSSETicket', () => {
 
   it('returns token when explicit JWT fallback is enabled', async () => {
     process.env.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK = 'true';
+    process.env.NODE_ENV = 'test';
     vi.resetModules();
     const sseModule = await import('../sse-client');
     const { fetchSSETicket } = sseModule;
@@ -136,6 +137,21 @@ describe('fetchSSETicket', () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false });
     const result = await fetchSSETicket('my-jwt', 'https://api.example.com/api/v1');
     expect(result).toBe('my-jwt');
+    delete process.env.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK;
+  });
+
+  it('never falls back to JWT in production even when fallback env is enabled', async () => {
+    process.env.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK = 'true';
+    process.env.NODE_ENV = 'production';
+    vi.resetModules();
+    const sseModule = await import('../sse-client');
+    const { fetchSSETicket } = sseModule;
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false });
+    const result = await fetchSSETicket('my-jwt', 'https://api.example.com/api/v1');
+    expect(result).toBeNull();
+
+    process.env.NODE_ENV = 'test';
     delete process.env.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK;
   });
 });

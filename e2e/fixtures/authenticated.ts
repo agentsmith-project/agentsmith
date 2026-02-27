@@ -2,7 +2,7 @@ import { Page } from '@playwright/test';
 
 export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'test@example.com', userId = 'user_001') {
   await page.addInitScript(({ wsId, userEmail, userId }) => {
-    (window as any).__MBOS_AUTH_SETUP__ = true;
+    window.__MBOS_AUTH_SETUP__ = true;
 
     const user = {
       id: userId,
@@ -22,6 +22,32 @@ export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'tes
       }));
     } catch {
       // If localStorage is unavailable, route gates will fail loudly.
+    }
+
+    // Also set auth directly into Zustand store to avoid hydration race in ProtectedRoute.
+    const trySetAuth = () => {
+      const authStore = window.__MBOS_AUTH_STORE__;
+      if (!authStore || typeof authStore.getState !== 'function') {
+        return false;
+      }
+      const state = authStore.getState();
+      if (!state.isAuthenticated && typeof state.setAuth === 'function') {
+        state.setAuth(user, token, {
+          refreshToken,
+          expiresIn: 60 * 60,
+        });
+      }
+      return true;
+    };
+
+    if (!trySetAuth()) {
+      let attempts = 0;
+      const interval = window.setInterval(() => {
+        attempts += 1;
+        if (trySetAuth() || attempts > 100) {
+          window.clearInterval(interval);
+        }
+      }, 50);
     }
 
     // Preserve signature compatibility (workspace is derived from URL in-app).

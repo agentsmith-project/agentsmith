@@ -43,6 +43,7 @@
  * - Ticket mode is controlled by NEXT_PUBLIC_SSE_TICKET_ENABLED env var
  * - Grayscale rollout controlled by NEXT_PUBLIC_SSE_TICKET_PERCENTAGE (0-100)
  * - JWT fallback is disabled by default; only enabled via NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK=true
+ *   and it is always ignored in production (NODE_ENV=production).
  * - Use shouldUseTicket(userId) for grayscale rollout decision
  *
  * Related: https://developer.mozilla.org/en-US/docs/Web/API/EventSource
@@ -55,8 +56,12 @@ const SSE_TICKET_ENABLED =
 const SSE_TICKET_PERCENTAGE = Number(
   typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE || '0',
 );
+const IS_PRODUCTION =
+  typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
 const SSE_ALLOW_JWT_FALLBACK =
-  typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK === 'true';
+  typeof process !== 'undefined'
+  && process.env?.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK === 'true'
+  && !IS_PRODUCTION;
 
 /**
  * Configuration for SSE ticket migration

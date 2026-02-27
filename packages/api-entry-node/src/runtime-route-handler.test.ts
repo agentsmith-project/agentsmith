@@ -298,6 +298,93 @@ describe('runtime-route-handler', () => {
     }
   });
 
+  it('resolves alias target and persists estimated cost metadata from pricing map', async () => {
+    const deps = createDeps();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({
+        id: 'chatcmpl_alias',
+        object: 'chat.completion',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'alias ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )) as typeof fetch;
+
+    try {
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeProviders', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          provider: 'openai',
+          auth_mode: 'api_key',
+          base_url: 'https://api.openai.com/v1',
+          credential_ref: 'cred_runtime_openai',
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimePricing', workspaceId, projectId },
+        method: 'PATCH',
+        body: {
+          openai: {
+            'gpt-4o': {
+              input: 2,
+              output: 10,
+            },
+          },
+        },
+      });
+      await executeRoute({
+        deps,
+        route: { kind: 'runtimeRoutingAliases', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          alias: 'assistant-main',
+          target_provider: 'openai',
+          target_model: 'gpt-4o',
+        },
+      });
+
+      const res = await executeRoute({
+        deps,
+        route: { kind: 'llmUnifiedChat', workspaceId, projectId },
+        method: 'POST',
+        body: {
+          model: 'assistant-main',
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const payload = res.body as {
+        runtime?: { provider?: string; resolved_model?: string; fallback_hops?: number };
+      };
+      expect(payload.runtime?.provider).toBe('openai');
+      expect(payload.runtime?.resolved_model).toBe('gpt-4o');
+      expect(payload.runtime?.fallback_hops).toBe(0);
+
+      const usageFacts = await deps.docStore.list<{
+        resource_type: string;
+        result: string;
+        metadata_json?: {
+          routed_by?: string;
+          estimated_cost?: number;
+          pricing_version?: string | null;
+        };
+      }>('project_usage_facts', {});
+      const lastFact = usageFacts[usageFacts.length - 1];
+      expect(lastFact?.resource_type).toBe('endpoint');
+      expect(lastFact?.result).toBe('ok');
+      expect(lastFact?.metadata_json?.routed_by).toBe('alias');
+      expect(lastFact?.metadata_json?.pricing_version).toBeTruthy();
+      expect(lastFact?.metadata_json?.estimated_cost).toBe(0.007);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('does not fallback on provider_non_retryable status even when combo has backups', async () => {
     const deps = createDeps();
     const originalFetch = globalThis.fetch;

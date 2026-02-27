@@ -1,0 +1,80 @@
+name: Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_name:
+        description: "Custom release report name (optional)"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
+      REPORT_NAME: ${{ inputs.report_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright (chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          if [[ -z "${GLM_API_KEY:-}" ]]; then
+            echo "GLM_API_KEY secret is required for release gate real-lane smoke." >&2
+            exit 1
+          fi
+
+      - name: Prepare integration dependencies
+        run: |
+          set -euo pipefail
+          make bootstrap
+
+      - name: Run release gate
+        run: |
+          set -euo pipefail
+          make verify-release
+
+      - name: Generate release report (archived)
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -n "${REPORT_NAME:-}" ]]; then
+            make release-report REPORT_NAME="${REPORT_NAME}" REPORT_ARCHIVE=1
+          else
+            make release-report REPORT_ARCHIVE=1
+          fi
+
+      - name: Upload release artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-artifacts
+          if-no-files-found: ignore
+          path: |
+            artifacts/release-reports/**
+            test-results/**
+            playwright-report/**
+            /tmp/agentsmith*.log
+            /tmp/ci-*.log

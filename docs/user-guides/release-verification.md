@@ -39,8 +39,11 @@ Run from command line:
 # Quick verification with dry-run mode (fastest)
 npm run release:report -- --dry-run
 
-# Full verification with actual smoke tests
+# Full verification with lane-based release gate (L0 + L2 + L3)
 make verify-release
+
+# Legacy verification path (for temporary compatibility only)
+make verify-release-legacy
 
 # Generate structured report after verification
 npm run release:report -- --name release-$(date +%Y%m%d-%H%M%S)
@@ -60,6 +63,17 @@ npm run release:report -- --name my-release
 | `--commit-range` | Git commit range to test | Current HEAD |
 | `--dry-run` | Skip actual tests, use mock data | false |
 | `--archive` | Create timestamped archive | false |
+
+## CI Execution
+
+Use GitHub Actions workflow **Release Gate** (`.github/workflows/release-gate.yml`) for auditable release runs:
+
+1. Open Actions -> `Release Gate` -> `Run workflow`.
+2. Optionally set `report_name`.
+3. Workflow runs:
+- `make verify-release` (strict lane-based gate)
+- `make release-report REPORT_ARCHIVE=1`
+4. Download `release-gate-artifacts` for archived reports, logs, and test outputs.
 
 ## Report Structure
 

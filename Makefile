@@ -16,7 +16,8 @@
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
 	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
-	lane-real-smoke gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release
+	lane-real-smoke gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release \
+	verify-release-legacy
 
 NPM ?= npm
 
@@ -57,7 +58,8 @@ help:
 	@echo "  make smoke-main     # mainline release smoke (auto demo-check + token fallback)"
 	@echo "  make smoke-governance # governance release smoke (strict page gate + effects)"
 	@echo "  make smoke-all      # run mainline + governance release smokes"
-	@echo "  make verify-release # contracts/typecheck + smoke-all"
+	@echo "  make verify-release # strict release gate (L0 + L2 + L3)"
+	@echo "  make verify-release-legacy # legacy path (contracts/typecheck + smoke-all)"
 	@echo "  make gate-pr       # L0+L1 (fast PR gate: lint/type/contracts + mock smoke)"
 	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock full matrix)"
 	@echo "  make gate-release  # L0+L2+L3 (release gate: mock full + real-backend smoke)"
@@ -171,7 +173,10 @@ quick-help:
 	@echo "    Run typecheck + OpenAPI generated check + OpenAPI contract checks."
 	@echo ""
 	@echo "  make verify-release"
-	@echo "    Run verify-contracts + smoke-all."
+	@echo "    Run gate-release (L0 + mock full matrix + real smoke)."
+	@echo ""
+	@echo "  make verify-release-legacy"
+	@echo "    Legacy path: verify-contracts + smoke-all."
 	@echo ""
 	@echo "  make gate-pr"
 	@echo "    L0 + L1 gate. Recommended pull request baseline."
@@ -240,10 +245,14 @@ verify-contracts:
 	$(NPM) run openapi:check-generated
 	$(NPM) run contracts:check-openapi
 
-verify-release:
+verify-release-legacy:
 	@set -e; \
 	$(MAKE) verify-contracts; \
 	$(MAKE) smoke-all
+
+verify-release:
+	@set -e; \
+	$(MAKE) gate-release
 
 # ---------------------------------------------------------------------------
 # Lane / Gate Model (Best-practice baseline)

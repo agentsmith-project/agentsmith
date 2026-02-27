@@ -9,6 +9,26 @@ The Release Verification tool automates testing and validation for releases, pro
 - **Failure Classification**: Categorizes failures by type (token, network, backend, assertion)
 - **Troubleshooting Guidance**: Actionable recommendations for fixing issues
 
+## Quality Lanes and Gates
+
+Use a lane-based model to avoid mixing MSW baseline assertions with real-backend runtime checks:
+
+- **Mock lane** (`NEXT_PUBLIC_USE_MSW=true`):
+  - `make lane-mock-smoke` (L1)
+  - `make lane-mock-full` (L2 = smoke + chromium + visual)
+- **Real lane** (manual/controlled env):
+  - `make lane-real-smoke` (L3)
+
+Gate levels:
+
+- `make gate-l0`: lint + typecheck + OpenAPI/contract checks
+- `make gate-l1`: L0 + mock smoke
+- `make gate-l2`: L0 + mock full matrix
+- `make gate-l3`: L0 + real-lane smoke
+- `make gate-pr`: recommended PR gate (L1)
+- `make gate-premerge`: recommended pre-merge gate (L2)
+- `make gate-release`: recommended release gate (L0 + L2 + L3)
+
 ## Running Release Verification
 
 ### Basic Usage

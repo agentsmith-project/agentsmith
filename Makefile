@@ -14,7 +14,9 @@
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
-	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release
+	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
+	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
+	lane-real-smoke gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release
 
 NPM ?= npm
 
@@ -56,6 +58,9 @@ help:
 	@echo "  make smoke-governance # governance release smoke (strict page gate + effects)"
 	@echo "  make smoke-all      # run mainline + governance release smokes"
 	@echo "  make verify-release # contracts/typecheck + smoke-all"
+	@echo "  make gate-pr       # L0+L1 (fast PR gate: lint/type/contracts + mock smoke)"
+	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock full matrix)"
+	@echo "  make gate-release  # L0+L2+L3 (release gate: mock full + real-backend smoke)"
 	@echo ""
 	@echo "Bootstrap:"
 	@echo "  make bootstrap    # deps-up → wait for ready → deps-init → deps-smoke (ordered)"
@@ -168,6 +173,15 @@ quick-help:
 	@echo "  make verify-release"
 	@echo "    Run verify-contracts + smoke-all."
 	@echo ""
+	@echo "  make gate-pr"
+	@echo "    L0 + L1 gate. Recommended pull request baseline."
+	@echo ""
+	@echo "  make gate-premerge"
+	@echo "    L0 + L2 gate. Recommended merge-to-main baseline."
+	@echo ""
+	@echo "  make gate-release"
+	@echo "    L0 + L2 + L3 gate. Recommended release baseline."
+	@echo ""
 	@echo "  make release-report"
 	@echo "    Generate release verification report (JSON + Markdown)."
 	@echo ""
@@ -230,6 +244,69 @@ verify-release:
 	@set -e; \
 	$(MAKE) verify-contracts; \
 	$(MAKE) smoke-all
+
+# ---------------------------------------------------------------------------
+# Lane / Gate Model (Best-practice baseline)
+#
+# L0: static quality gates (lint/type/contracts)
+# L1: mock-lane smoke
+# L2: mock-lane full UI matrix (smoke + chromium + visual)
+# L3: real-lane key smoke (real backend + governance/runtime checks)
+# ---------------------------------------------------------------------------
+
+lane-mock-smoke:
+	$(NPM) run test:e2e -- --project=smoke
+
+lane-mock-chromium:
+	$(NPM) run test:e2e -- --project=chromium
+
+lane-mock-visual:
+	$(NPM) run test:e2e -- --project=visual
+
+lane-mock-full:
+	@set -e; \
+	$(MAKE) lane-mock-smoke; \
+	$(MAKE) lane-mock-chromium; \
+	$(MAKE) lane-mock-visual
+
+lane-real-smoke:
+	$(MAKE) smoke-all
+
+gate-l0:
+	@set -e; \
+	$(NPM) run lint; \
+	$(NPM) run ws:typecheck; \
+	$(NPM) run openapi:check-generated; \
+	$(NPM) run contracts:check-openapi
+
+gate-l1:
+	@set -e; \
+	$(MAKE) gate-l0; \
+	$(MAKE) lane-mock-smoke
+
+gate-l2:
+	@set -e; \
+	$(MAKE) gate-l0; \
+	$(MAKE) lane-mock-full
+
+gate-l3:
+	@set -e; \
+	$(MAKE) gate-l0; \
+	$(MAKE) lane-real-smoke
+
+gate-pr:
+	@set -e; \
+	$(MAKE) gate-l1
+
+gate-premerge:
+	@set -e; \
+	$(MAKE) gate-l2
+
+gate-release:
+	@set -e; \
+	$(MAKE) gate-l0; \
+	$(MAKE) lane-mock-full; \
+	$(MAKE) lane-real-smoke
 
 # Generate release report (JSON + Markdown) after verify-release
 # Use REPORT_NAME=name to customize, REPORT_COMMIT_RANGE=range to specify commits

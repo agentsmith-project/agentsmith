@@ -1,0 +1,165 @@
+name: Quality Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      run_l2:
+        description: "Run L2 mock full matrix (smoke+chromium+visual)"
+        required: false
+        default: true
+        type: boolean
+      run_l3:
+        description: "Run L3 real-lane smoke (requires GLM_API_KEY secret)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: quality-gates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  l0:
+    name: L0 (lint/type/contracts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run L0 gate
+        run: make gate-l0
+
+  l1-mock-smoke:
+    name: L1 (mock smoke)
+    needs: l0
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright (chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Run L1 gate
+        run: make lane-mock-smoke
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: l1-mock-smoke-artifacts
+          if-no-files-found: ignore
+          path: |
+            test-results/**
+            playwright-report/**
+
+  l2-mock-full:
+    name: L2 (mock full matrix)
+    needs: l1-mock-smoke
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_l2) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright (chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Run L2 gate
+        run: make lane-mock-full
+
+      - name: Upload L2 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: l2-mock-full-artifacts
+          if-no-files-found: ignore
+          path: |
+            test-results/**
+            playwright-report/**
+
+  l3-real-smoke:
+    name: L3 (real lane smoke)
+    needs: l0
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_l3 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          if [[ -z "${GLM_API_KEY:-}" ]]; then
+            echo "GLM_API_KEY secret is required for L3 real-lane smoke." >&2
+            exit 1
+          fi
+
+      - name: Prepare integration dependencies
+        run: |
+          set -euo pipefail
+          make bootstrap
+
+      - name: Run L3 gate
+        run: |
+          set -euo pipefail
+          make lane-real-smoke
+
+      - name: Upload L3 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: l3-real-lane-artifacts
+          if-no-files-found: ignore
+          path: |
+            /tmp/agentsmith*.log
+            /tmp/ci-*.log
+            test-results/**
+            playwright-report/**

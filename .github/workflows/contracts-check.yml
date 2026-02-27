@@ -43,14 +43,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run L0 quality gate (lint + typecheck + contract checks)
+        run: make gate-l0
+
       - name: Run permission contract drift check
         run: npm run contracts:check
 
       - name: Run release baseline sync check
         run: npm run contracts:check-release-sync
-
-      - name: Run OpenAPI governance checks
-        run: npm run contracts:check-openapi
-
-      - name: Verify OpenAPI generated types are in sync
-        run: npm run openapi:check-generated

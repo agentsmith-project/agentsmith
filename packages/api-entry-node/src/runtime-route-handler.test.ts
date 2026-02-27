@@ -249,6 +249,88 @@ describe('runtime-route-handler', () => {
     expect(modelDelete.statusCode).toBe(204);
   });
 
+  it('returns conflict on duplicate model/alias/combo definitions', async () => {
+    const deps = createDeps();
+
+    const modelBody = { provider: 'openai', model_id: 'gpt-4o', capabilities: ['chat'] };
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeModels', workspaceId, projectId },
+      method: 'POST',
+      body: modelBody,
+    });
+    const duplicateModel = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModels', workspaceId, projectId },
+      method: 'POST',
+      body: modelBody,
+    });
+    expect(duplicateModel.statusCode).toBe(409);
+
+    const aliasBody = {
+      alias: 'assistant-main',
+      target_provider: 'openai',
+      target_model: 'gpt-4o',
+    };
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliases', workspaceId, projectId },
+      method: 'POST',
+      body: aliasBody,
+    });
+    const duplicateAlias = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliases', workspaceId, projectId },
+      method: 'POST',
+      body: aliasBody,
+    });
+    expect(duplicateAlias.statusCode).toBe(409);
+
+    const comboBody = {
+      name: 'prod-chat',
+      targets: [{ provider: 'openai', model: 'gpt-4o' }],
+      fallback_policy: { max_hops: 1, retryable_error_classes: ['provider_retryable'] },
+    };
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+      method: 'POST',
+      body: comboBody,
+    });
+    const duplicateCombo = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+      method: 'POST',
+      body: comboBody,
+    });
+    expect(duplicateCombo.statusCode).toBe(409);
+  });
+
+  it('returns not found for missing runtime model/alias/combo item routes', async () => {
+    const deps = createDeps();
+
+    const modelGet = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'missing-model' },
+      method: 'GET',
+    });
+    expect(modelGet.statusCode).toBe(404);
+
+    const aliasGet = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliasItem', workspaceId, projectId, alias: 'missing-alias' },
+      method: 'GET',
+    });
+    expect(aliasGet.statusCode).toBe(404);
+
+    const comboGet = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingComboItem', workspaceId, projectId, combo: 'missing-combo' },
+      method: 'GET',
+    });
+    expect(comboGet.statusCode).toBe(404);
+  });
+
   it('returns not implemented for unified chat', async () => {
     const deps = createDeps();
 

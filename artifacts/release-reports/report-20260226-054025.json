@@ -1,0 +1,100 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-26T21:37:42.093Z",
+    "duration_ms": 163182,
+    "environment": {
+      "node_version": "v25.4.0",
+      "npm_version": "11.7.0",
+      "platform": "linux",
+      "arch": "x64",
+      "cwd": "/home/percy/works/mbos-v1/agentsmith"
+    },
+    "git": {
+      "commit_hash": "a1df7dbc238969307f9a449be10da1b704135edb",
+      "commit_short": "a1df7db",
+      "branch": "main",
+      "commit_message": "chore: add missing utility files and CLAUDE.md migration\n\n- Migrate AGENTS.md to CLAUDE.md\n- Add Epic C utility exports\n- Add alert handlers for MSW mocking\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>",
+      "author": "lizhijian",
+      "date": "2026-02-27T03:40:36+08:00"
+    }
+  },
+  "execution": {
+    "total_checks": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "checks": [
+      {
+        "name": "TypeScript typecheck",
+        "category": "typecheck",
+        "status": "pass",
+        "duration_ms": 8670,
+        "command": "npm run ws:typecheck"
+      },
+      {
+        "name": "OpenAPI generated check",
+        "category": "contract",
+        "status": "pass",
+        "duration_ms": 1033,
+        "command": "npm run openapi:check-generated"
+      },
+      {
+        "name": "OpenAPI contract checks",
+        "category": "contract",
+        "status": "pass",
+        "duration_ms": 898,
+        "command": "npm run contracts:check-openapi"
+      },
+      {
+        "name": "Mainline release smoke",
+        "category": "smoke-main",
+        "status": "pass",
+        "duration_ms": 28096,
+        "command": "make notebook-agent-release-smoke-full"
+      },
+      {
+        "name": "Governance release smoke",
+        "category": "smoke-governance",
+        "status": "pass",
+        "duration_ms": 124386,
+        "command": "make governance-release-smoke"
+      }
+    ]
+  },
+  "summary": {
+    "status": "pass",
+    "stats": {
+      "total_duration_ms": 163083,
+      "fastest_check": {
+        "name": "OpenAPI contract checks",
+        "duration_ms": 898
+      },
+      "slowest_check": {
+        "name": "Governance release smoke",
+        "duration_ms": 124386
+      },
+      "by_category": {
+        "typecheck": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        },
+        "contract": {
+          "total": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        "smoke-main": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        },
+        "smoke-governance": {
+          "total": 1,
+          "passed": 1,
+          "failed": 0
+        }
+      }
+    }
+  }
+}

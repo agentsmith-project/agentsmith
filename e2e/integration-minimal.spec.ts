@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('minimal integration flow', () => {
+test.describe('@lane-real minimal integration flow', () => {
   test('keycloak login and create project', async ({ page }) => {
     test.setTimeout(180_000);
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';

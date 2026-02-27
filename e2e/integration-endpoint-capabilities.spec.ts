@@ -98,7 +98,7 @@ async function getToken(page: import('@playwright/test').Page): Promise<string> 
   return token;
 }
 
-test.describe('integration endpoint capabilities', () => {
+test.describe('@lane-real integration endpoint capabilities', () => {
   test('supports rerank/image/video task routes', async ({ page }) => {
     test.setTimeout(180_000);
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
@@ -253,4 +253,3 @@ test.describe('integration endpoint capabilities', () => {
     }
   });
 });
-

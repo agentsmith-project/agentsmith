@@ -141,7 +141,7 @@ type StartMessage = {
   };
 };
 
-test.describe('integration notebook external runtime', () => {
+test.describe('@lane-real integration notebook external runtime', () => {
   test('task message streams through runtime->endpoint proxy chain', async ({ page }) => {
     test.setTimeout(180_000);
 

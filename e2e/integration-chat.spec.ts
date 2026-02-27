@@ -838,7 +838,7 @@ function isStreamStopRequestFor(url: string, sessionId: string): boolean {
   return new RegExp(`/api/v1/workspaces/[^/]+/projects/[^/]+/chat/sessions/${sessionId}/messages/streams/[^/]+/stop/?$`).test(url);
 }
 
-test.describe('integration chat flow', () => {
+test.describe('@lane-real integration chat flow', () => {
   test('keycloak login + create endpoint + chat stream through openai-compatible proxy', async ({ page }) => {
     test.setTimeout(240_000);
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test.describe('files integration flow', () => {
+test.describe('@lane-real files integration flow', () => {
   test('keycloak login, create project, and complete files object-browser CRUD', async ({ page }) => {
     test.setTimeout(240_000);
     const multiSelectModifier: 'Control' | 'Meta' = process.platform === 'darwin' ? 'Meta' : 'Control';

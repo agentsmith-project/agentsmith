@@ -270,17 +270,17 @@ verify-release:
 lane-mock-smoke:
 	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	NEXT_PUBLIC_USE_MSW=true \
-	$(NPM) run test:e2e -- --project=smoke
+	$(NPM) run test:e2e:lane:mock:smoke
 
 lane-mock-chromium:
 	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	NEXT_PUBLIC_USE_MSW=true \
-	$(NPM) run test:e2e -- --project=chromium
+	$(NPM) run test:e2e:lane:mock:chromium
 
 lane-mock-visual:
 	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	NEXT_PUBLIC_USE_MSW=true \
-	$(NPM) run test:e2e -- --project=visual
+	$(NPM) run test:e2e:lane:mock:visual
 
 lane-mock-full:
 	@set -e; \

@@ -399,7 +399,7 @@ function connectEchoWs(args: {
   });
 }
 
-test.describe('integration external agent chat stream', () => {
+test.describe('@lane-real integration external agent chat stream', () => {
   test('chat streams through external agent websocket', async ({ page }) => {
     test.setTimeout(180_000);
 

@@ -19,6 +19,7 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: './e2e',
+  grep: /@lane-real/,
   fullyParallel: false,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,

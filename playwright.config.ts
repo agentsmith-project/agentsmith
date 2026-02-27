@@ -20,6 +20,7 @@ const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true n
 
 export default defineConfig({
   testDir: './e2e',
+  grepInvert: /@lane-real/,
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
@@ -67,4 +68,3 @@ export default defineConfig({
     },
   ],
 });
-

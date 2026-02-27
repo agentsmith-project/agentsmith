@@ -18,6 +18,12 @@ Use a lane-based model to avoid mixing MSW baseline assertions with real-backend
   - `make lane-mock-full` (L2 = smoke + chromium + visual)
 - **Real lane** (manual/controlled env):
   - `make lane-real-smoke` (L3)
+  - Playwright integration tests are explicitly tagged `@lane-real` and run via `playwright.config.integration.ts`.
+
+Tagging convention:
+
+- `@lane-real`: tests that require real backend/services.
+- Mock lane config excludes `@lane-real` by default.
 
 Local convenience: you can persist `GLM_API_KEY` in `.env.local` (local-only) so real-lane commands do not require repeated inline key input.
 

@@ -81,6 +81,9 @@ describe('usage-report-delivery', () => {
     }));
     expect(result.delivery_metadata).toEqual(expect.objectContaining({
       dispatch_mode: 'webhook',
+      webhook_target_protocol: 'https',
+      webhook_target_host: 'example.internal',
+      webhook_target_path: '/hook',
       credential_ref: 'cred_webhook',
       secret_header_name: 'x-webhook-secret',
       signature_mode: 'hmac_sha256',

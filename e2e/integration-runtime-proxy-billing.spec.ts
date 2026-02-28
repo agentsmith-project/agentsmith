@@ -91,6 +91,12 @@ async function keycloakLogin(page: Page, baseUrl: string, locale: string, userna
 
 type UpstreamMode = 'ok' | 'retryable_once_then_ok';
 
+type WebhookCapture = {
+  attempt: number;
+  headers: http.IncomingHttpHeaders;
+  body: string;
+};
+
 type RuntimeReleaseEvidence = {
   source: 'artifact';
   generated_at: string;
@@ -192,6 +198,45 @@ async function startOpenAICompatibleUpstream(mode: UpstreamMode): Promise<{
   };
 }
 
+async function startUsageReportWebhookTarget(): Promise<{
+  server: Server;
+  url: string;
+  captures: () => WebhookCapture[];
+}> {
+  const received: WebhookCapture[] = [];
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const body = Buffer.concat(chunks).toString('utf-8');
+      const attempt = received.length + 1;
+      received.push({
+        attempt,
+        headers: req.headers,
+        body,
+      });
+      res.setHeader('content-type', 'application/json');
+      res.setHeader('x-request-id', `webhook-${attempt}`);
+      if (attempt === 1) {
+        res.statusCode = 503;
+        res.end(JSON.stringify({ error: 'temporary_unavailable' }));
+        return;
+      }
+      res.statusCode = 200;
+      res.end(JSON.stringify({ ok: true, attempt }));
+    })();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address() as AddressInfo;
+  return {
+    server,
+    url: `http://127.0.0.1:${address.port}/usage-report-hook`,
+    captures: () => received.slice(),
+  };
+}
+
 test.describe('@lane-real integration runtime proxy billing', () => {
   test('covers direct/alias/combo routing and usage-cost endpoints', async ({ page }) => {
     test.setTimeout(180_000);
@@ -203,6 +248,7 @@ test.describe('@lane-real integration runtime proxy billing', () => {
     const directUpstream = await startOpenAICompatibleUpstream('ok');
     const comboPrimaryUpstream = await startOpenAICompatibleUpstream('retryable_once_then_ok');
     const comboBackupUpstream = await startOpenAICompatibleUpstream('ok');
+    const usageWebhookTarget = await startUsageReportWebhookTarget();
 
     try {
       const token = await keycloakLogin(
@@ -244,6 +290,7 @@ test.describe('@lane-real integration runtime proxy billing', () => {
       const directCred = await createCredential('it-runtime-direct-key', 'sk-it-direct');
       const primaryCred = await createCredential('it-runtime-primary-key', 'sk-it-primary');
       const backupCred = await createCredential('it-runtime-backup-key', 'sk-it-backup');
+      const usageWebhookCred = await createCredential('it-usage-webhook-secret', 'whsec-it-usage');
 
       const providerCreate = async (payload: Record<string, unknown>) => {
         const res = await page.request.post(
@@ -574,6 +621,87 @@ test.describe('@lane-real integration runtime proxy billing', () => {
       );
       expect(acknowledgeRes.ok()).toBeTruthy();
 
+      const runnerSweepRes = await page.request.post(
+        `${apiBase}/api/v1/internal/usage-report-runner/run-due`,
+        { headers },
+      );
+      expect(runnerSweepRes.ok()).toBeTruthy();
+
+      const createWebhookScheduleRes = await page.request.post(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-schedules`,
+        {
+          headers,
+          data: {
+            name: 'Webhook Delivery Audit',
+            cadence: 'daily',
+            status: 'active',
+            format: 'json',
+            time_window: 'last_7d',
+            delivery_channel: 'webhook',
+            delivery_config: {
+              webhook_url: usageWebhookTarget.url,
+              credential_ref: usageWebhookCred.id,
+              secret_header_name: 'x-webhook-secret',
+              signature_header_name: 'x-agentsmith-signature',
+              timeout_seconds: 5,
+              retry_attempts: 2,
+              retry_backoff_ms: 100,
+            },
+            release_evidence_required: false,
+            empty_result_policy: 'deliver',
+            filters: {
+              provider: 'secondaryok',
+            },
+          },
+        },
+      );
+      expect(createWebhookScheduleRes.status()).toBe(201);
+      const webhookSchedule = (await createWebhookScheduleRes.json()) as { id: string };
+
+      const runWebhookScheduleRes = await page.request.post(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-schedules/${webhookSchedule.id}/run-now`,
+        { headers },
+      );
+      expect(runWebhookScheduleRes.ok()).toBeTruthy();
+      const runWebhookSchedulePayload = (await runWebhookScheduleRes.json()) as {
+        delivery_id?: string;
+        status?: 'success' | 'failed';
+        delivery_metadata?: Record<string, unknown>;
+      };
+      expect(runWebhookSchedulePayload.status).toBe('success');
+      expect(runWebhookSchedulePayload.delivery_metadata).toEqual(expect.objectContaining({
+        dispatch_mode: 'webhook',
+        webhook_target_host: expect.stringContaining('127.0.0.1'),
+        response_status: 200,
+        attempt: 2,
+      }));
+
+      const webhookCaptures = usageWebhookTarget.captures();
+      expect(webhookCaptures).toHaveLength(2);
+      expect(webhookCaptures[0]?.headers['x-agentsmith-report-attempt']).toBe('1');
+      expect(webhookCaptures[1]?.headers['x-agentsmith-report-attempt']).toBe('2');
+      expect(webhookCaptures[1]?.headers['x-webhook-secret']).toBe('whsec-it-usage');
+      expect(String(webhookCaptures[1]?.headers['x-agentsmith-signature'] ?? '')).toContain('sha256=');
+
+      const listSchedulesRes = await page.request.get(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-schedules`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      expect(listSchedulesRes.ok()).toBeTruthy();
+      const listedSchedules = (await listSchedulesRes.json()) as { items?: Array<{
+        id: string;
+        recent_deliveries?: Array<{ id: string; delivery_metadata?: Record<string, unknown> }>;
+      }> };
+      const webhookListed = listedSchedules.items?.find((item) => item.id === webhookSchedule.id);
+      expect(webhookListed?.recent_deliveries?.[0]?.delivery_metadata).toEqual(expect.objectContaining({
+        response_status: 200,
+        response_body_snippet: '{"ok":true,"attempt":2}',
+        response_headers: expect.objectContaining({
+          'content-type': 'application/json',
+          'x-request-id': 'webhook-2',
+        }),
+      }));
+
       const usageReportEvidenceRes = await page.request.get(
         `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-evidence`,
         { headers: { Authorization: `Bearer ${token}` } },
@@ -635,6 +763,7 @@ test.describe('@lane-real integration runtime proxy billing', () => {
       await new Promise<void>((resolve) => directUpstream.server.close(() => resolve()));
       await new Promise<void>((resolve) => comboPrimaryUpstream.server.close(() => resolve()));
       await new Promise<void>((resolve) => comboBackupUpstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => usageWebhookTarget.server.close(() => resolve()));
     }
   });
 });

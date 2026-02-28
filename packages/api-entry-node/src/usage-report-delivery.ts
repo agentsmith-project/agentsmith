@@ -87,6 +87,21 @@ function shouldRetryDelivery(errorClass: UsageReportDeliveryErrorClass): boolean
     || errorClass === 'delivery_channel_5xx';
 }
 
+function summarizeWebhookTarget(webhookUrl: string): Record<string, string> {
+  try {
+    const parsed = new URL(webhookUrl);
+    return {
+      webhook_target_protocol: parsed.protocol.replace(/:$/, ''),
+      webhook_target_host: parsed.host,
+      webhook_target_path: parsed.pathname || '/',
+    };
+  } catch {
+    return {
+      webhook_target_host: webhookUrl,
+    };
+  }
+}
+
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -142,10 +157,10 @@ export function createUsageReportDeliveryDispatcher(
       const retryBackoffMs = normalizeRetryBackoffMs(schedule.delivery_config?.retry_backoff_ms);
       const deliveryMetadata: Record<string, unknown> = {
         dispatch_mode: 'webhook',
-        webhook_url: webhookUrl,
         timeout_seconds: timeoutSeconds,
         retry_attempts: retryAttempts,
         retry_backoff_ms: retryBackoffMs,
+        ...summarizeWebhookTarget(webhookUrl),
       };
       let credentialSecret: string | null = null;
       if (credentialRef) {

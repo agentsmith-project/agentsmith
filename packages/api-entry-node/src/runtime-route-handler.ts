@@ -34,6 +34,7 @@ interface AnyRoute {
   workspaceId?: string;
   projectId?: string;
   providerConnectionId?: string;
+  provider?: string;
   modelId?: string;
   alias?: string;
   combo?: string;
@@ -405,11 +406,11 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimeModelItem' && method === 'GET') {
-    if (!route.modelId) {
-      json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_id_required' });
+    if (!route.provider || !route.modelId) {
+      json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_locator_required' });
       return true;
     }
-    const item = await runtimeStore.findModelByModelId(projectScope, route.modelId);
+    const item = await runtimeStore.findModel(projectScope, route.provider, route.modelId);
     if (!item) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
       return true;
@@ -419,11 +420,11 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimeModelItem' && method === 'PUT') {
-    if (!route.modelId) {
-      json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_id_required' });
+    if (!route.provider || !route.modelId) {
+      json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_locator_required' });
       return true;
     }
-    const existing = await runtimeStore.findModelByModelId(projectScope, route.modelId);
+    const existing = await runtimeStore.findModel(projectScope, route.provider, route.modelId);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
       return true;
@@ -467,11 +468,11 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimeModelItem' && method === 'DELETE') {
-    if (!route.modelId) {
-      json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_id_required' });
+    if (!route.provider || !route.modelId) {
+      json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_locator_required' });
       return true;
     }
-    const existing = await runtimeStore.findModelByModelId(projectScope, route.modelId);
+    const existing = await runtimeStore.findModel(projectScope, route.provider, route.modelId);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
       return true;

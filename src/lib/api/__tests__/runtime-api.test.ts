@@ -31,15 +31,15 @@ describe('RuntimeAPI', () => {
     const mock = createClient();
     const api = new RuntimeAPI(toApiClient(mock));
 
-    await api.getModel('ws_1', 'proj_1', 'gpt-4o');
-    await api.updateModel('ws_1', 'proj_1', 'gpt-4o', { display_name: 'GPT-4o Main' });
-    await api.deleteModel('ws_1', 'proj_1', 'gpt-4o');
+    await api.getModel('ws_1', 'proj_1', 'openai', 'gpt-4o');
+    await api.updateModel('ws_1', 'proj_1', 'openai', 'gpt-4o', { display_name: 'GPT-4o Main' });
+    await api.deleteModel('ws_1', 'proj_1', 'openai', 'gpt-4o');
 
-    expect(mock.get).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/models/gpt-4o');
-    expect(mock.put).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/models/gpt-4o', {
+    expect(mock.get).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/providers/openai/models/gpt-4o');
+    expect(mock.put).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/providers/openai/models/gpt-4o', {
       display_name: 'GPT-4o Main',
     });
-    expect(mock.delete).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/models/gpt-4o');
+    expect(mock.delete).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/providers/openai/models/gpt-4o');
   });
 
   it('calls alias and combo item endpoints', async () => {

@@ -4226,10 +4226,15 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401": *a1
         "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models/{modelId}:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{provider}/models/{modelId}:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
       - name: modelId
         in: path
         required: true

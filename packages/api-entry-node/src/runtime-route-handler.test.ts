@@ -47,6 +47,7 @@ async function executeRoute(params: {
     workspaceId: string;
     projectId: string;
     providerConnectionId?: string;
+    provider?: string;
     modelId?: string;
     alias?: string;
     combo?: string;
@@ -182,7 +183,7 @@ describe('runtime-route-handler', () => {
 
     const modelGet = await executeRoute({
       deps,
-      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, provider: 'openai', modelId: 'gpt-4o' },
       method: 'GET',
     });
     expect(modelGet.statusCode).toBe(200);
@@ -199,7 +200,7 @@ describe('runtime-route-handler', () => {
 
     const modelPut = await executeRoute({
       deps,
-      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, provider: 'openai', modelId: 'gpt-4o' },
       method: 'PUT',
       body: {
         display_name: 'GPT-4o Main',
@@ -273,14 +274,14 @@ describe('runtime-route-handler', () => {
 
     const modelDelete = await executeRoute({
       deps,
-      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, provider: 'openai', modelId: 'gpt-4o' },
       method: 'DELETE',
     });
     expect(modelDelete.statusCode).toBe(204);
 
     const secondModelDelete = await executeRoute({
       deps,
-      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4.1' },
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, provider: 'openai', modelId: 'gpt-4.1' },
       method: 'DELETE',
     });
     expect(secondModelDelete.statusCode).toBe(204);
@@ -346,7 +347,7 @@ describe('runtime-route-handler', () => {
 
     const aliasDeleteBlocked = await executeRoute({
       deps,
-      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, provider: 'openai', modelId: 'gpt-4o' },
       method: 'DELETE',
     });
     expect(aliasDeleteBlocked.statusCode).toBe(409);
@@ -373,7 +374,7 @@ describe('runtime-route-handler', () => {
 
     const comboDeleteBlocked = await executeRoute({
       deps,
-      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, provider: 'openai', modelId: 'gpt-4o' },
       method: 'DELETE',
     });
     expect(comboDeleteBlocked.statusCode).toBe(409);
@@ -404,7 +405,7 @@ describe('runtime-route-handler', () => {
 
     const aliasBlockedUpdate = await executeRoute({
       deps,
-      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, provider: 'openai', modelId: 'gpt-4o' },
       method: 'PUT',
       body: {
         provider: 'anthropic',
@@ -435,7 +436,7 @@ describe('runtime-route-handler', () => {
 
     const comboBlockedUpdate = await executeRoute({
       deps,
-      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, provider: 'openai', modelId: 'gpt-4o' },
       method: 'PUT',
       body: {
         provider: 'anthropic',
@@ -508,7 +509,7 @@ describe('runtime-route-handler', () => {
 
     const modelGet = await executeRoute({
       deps,
-      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'missing-model' },
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, provider: 'openai', modelId: 'missing-model' },
       method: 'GET',
     });
     expect(modelGet.statusCode).toBe(404);

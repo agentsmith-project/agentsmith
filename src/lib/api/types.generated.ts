@@ -1462,12 +1462,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models/{modelId}": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{provider}/models/{modelId}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 modelId: string;
+                provider: string;
                 projectId: components["parameters"]["projectId"];
                 workspaceId: components["parameters"]["workspaceId"];
             };

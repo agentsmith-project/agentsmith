@@ -268,7 +268,7 @@
     "method": "get"
   },
   "runtimeModelItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models/{modelId}",
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{provider}/models/{modelId}",
     "method": "put"
   },
   "runtimeRoutingAliases": {

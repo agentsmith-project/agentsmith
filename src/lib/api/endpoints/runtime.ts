@@ -169,21 +169,22 @@ export class RuntimeAPI {
     return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/models`, payload);
   }
 
-  async getModel(workspaceId: string, projectId: string, modelId: string): Promise<RuntimeModelCatalogEntry> {
-    return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/models/${modelId}`);
+  async getModel(workspaceId: string, projectId: string, provider: string, modelId: string): Promise<RuntimeModelCatalogEntry> {
+    return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/providers/${provider}/models/${modelId}`);
   }
 
   async updateModel(
     workspaceId: string,
     projectId: string,
+    provider: string,
     modelId: string,
     payload: UpdateRuntimeModelCatalogEntryRequest,
   ): Promise<RuntimeModelCatalogEntry> {
-    return this.client.put(`/workspaces/${workspaceId}/projects/${projectId}/runtime/models/${modelId}`, payload);
+    return this.client.put(`/workspaces/${workspaceId}/projects/${projectId}/runtime/providers/${provider}/models/${modelId}`, payload);
   }
 
-  async deleteModel(workspaceId: string, projectId: string, modelId: string): Promise<void> {
-    return this.client.delete(`/workspaces/${workspaceId}/projects/${projectId}/runtime/models/${modelId}`);
+  async deleteModel(workspaceId: string, projectId: string, provider: string, modelId: string): Promise<void> {
+    return this.client.delete(`/workspaces/${workspaceId}/projects/${projectId}/runtime/providers/${provider}/models/${modelId}`);
   }
 
   async listAliases(workspaceId: string, projectId: string): Promise<{ items: RuntimeModelAlias[] }> {

@@ -107,7 +107,7 @@ describe('runtime-store', () => {
       updated_at: store.nowIso(),
     });
 
-    expect((await store.findModelByModelId(scope, 'gpt-4o'))?.provider).toBe('openai');
+    expect((await store.findModel(scope, 'openai', 'gpt-4o'))?.provider).toBe('openai');
     expect((await store.findAlias(scope, 'assistant-main'))?.target_model).toBe('gpt-4o');
     expect((await store.findCombo(scope, 'prod-chat'))?.fallback_policy.max_hops).toBe(1);
   });

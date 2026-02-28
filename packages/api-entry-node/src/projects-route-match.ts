@@ -129,6 +129,7 @@ export type ProjectsRoute =
     kind: 'runtimeModelItem';
     workspaceId: string;
     projectId: string;
+    provider: string;
     modelId: string;
   }
   | { kind: 'runtimeRoutingAliases'; workspaceId: string; projectId: string }
@@ -983,14 +984,15 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   }
 
   const runtimeModelItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/models\/([^/]+)\/?$/,
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/providers\/([^/]+)\/models\/([^/]+)\/?$/,
   );
   if (runtimeModelItemMatched) {
     return {
       kind: 'runtimeModelItem',
       workspaceId: decodeURIComponent(runtimeModelItemMatched[1]),
       projectId: decodeURIComponent(runtimeModelItemMatched[2]),
-      modelId: decodeURIComponent(runtimeModelItemMatched[3]),
+      provider: decodeURIComponent(runtimeModelItemMatched[3]),
+      modelId: decodeURIComponent(runtimeModelItemMatched[4]),
     };
   }
 

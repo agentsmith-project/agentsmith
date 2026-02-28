@@ -116,9 +116,9 @@ export function createRuntimeStore(docStore: JsonDocStorePort) {
     listModels(scope: RuntimeProjectScope) {
       return listScoped<RuntimeModelCatalogEntryRecord>(MODELS_COLLECTION, scope);
     },
-    async findModelByModelId(scope: RuntimeProjectScope, modelId: string) {
+    async findModel(scope: RuntimeProjectScope, provider: string, modelId: string) {
       const items = await listScoped<RuntimeModelCatalogEntryRecord>(MODELS_COLLECTION, scope);
-      return items.find((item) => item.model_id === modelId);
+      return items.find((item) => item.provider === provider && item.model_id === modelId);
     },
     upsertModel(record: RuntimeModelCatalogEntryRecord) {
       return docStore.upsert(MODELS_COLLECTION, record.id, record);

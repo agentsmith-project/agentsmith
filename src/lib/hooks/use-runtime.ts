@@ -91,12 +91,14 @@ export function useUpdateRuntimeModel(workspaceId: string, projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({
+      provider,
       modelId,
       payload,
     }: {
+      provider: string;
       modelId: string;
       payload: UpdateRuntimeModelCatalogEntryRequest;
-    }) => getRuntimeAPI().updateModel(workspaceId, projectId, modelId, payload),
+    }) => getRuntimeAPI().updateModel(workspaceId, projectId, provider, modelId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.runtime.models(workspaceId, projectId) });
     },
@@ -107,8 +109,8 @@ export function useUpdateRuntimeModel(workspaceId: string, projectId: string) {
 export function useDeleteRuntimeModel(workspaceId: string, projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (modelId: string) =>
-      getRuntimeAPI().deleteModel(workspaceId, projectId, modelId),
+    mutationFn: ({ provider, modelId }: { provider: string; modelId: string }) =>
+      getRuntimeAPI().deleteModel(workspaceId, projectId, provider, modelId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.runtime.models(workspaceId, projectId) });
     },

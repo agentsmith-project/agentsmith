@@ -153,11 +153,12 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/models/gpt-4o'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/providers/openai/models/gpt-4o'),
     ).toEqual({
       kind: 'runtimeModelItem',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
+      provider: 'openai',
       modelId: 'gpt-4o',
     });
     expect(

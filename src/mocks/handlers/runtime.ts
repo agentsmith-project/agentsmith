@@ -100,18 +100,18 @@ export const runtimeHandlers = [
     return HttpResponse.json(responseItem, { status: 201 });
   }),
 
-  http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/models/:modelId', ({ params }) => {
+  http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/providers/:provider/models/:modelId', ({ params }) => {
     const key = projectKey(params);
-    const item = models.find((entry) => entry._scope === key && entry.model_id === params.modelId);
+    const item = models.find((entry) => entry._scope === key && entry.provider === params.provider && entry.model_id === params.modelId);
     if (!item) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
     const { _scope, ...responseItem } = item;
     return HttpResponse.json(responseItem);
   }),
 
-  http.put('/api/v1/workspaces/:ws/projects/:prj/runtime/models/:modelId', async ({ params, request }) => {
+  http.put('/api/v1/workspaces/:ws/projects/:prj/runtime/providers/:provider/models/:modelId', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const key = projectKey(params);
-    const idx = models.findIndex((entry) => entry._scope === key && entry.model_id === params.modelId);
+    const idx = models.findIndex((entry) => entry._scope === key && entry.provider === params.provider && entry.model_id === params.modelId);
     if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
     models[idx] = {
       ...models[idx],
@@ -123,9 +123,9 @@ export const runtimeHandlers = [
     return HttpResponse.json(responseItem);
   }),
 
-  http.delete('/api/v1/workspaces/:ws/projects/:prj/runtime/models/:modelId', ({ params }) => {
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/runtime/providers/:provider/models/:modelId', ({ params }) => {
     const key = projectKey(params);
-    const idx = models.findIndex((entry) => entry._scope === key && entry.model_id === params.modelId);
+    const idx = models.findIndex((entry) => entry._scope === key && entry.provider === params.provider && entry.model_id === params.modelId);
     if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
     models.splice(idx, 1);
     return new HttpResponse(null, { status: 204 });

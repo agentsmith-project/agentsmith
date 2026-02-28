@@ -11,6 +11,17 @@ import {
   type RuntimePricingRecord,
   type RuntimeProviderConnectionRecord,
 } from './runtime-store.js';
+import {
+  parseRuntimeAliasPayload,
+  parseRuntimeAliasUpdatePayload,
+  parseRuntimeComboPayload,
+  parseRuntimeComboUpdatePayload,
+  parseRuntimeModelCreatePayload,
+  parseRuntimeModelUpdatePayload,
+  parseRuntimePricingPayload,
+  parseRuntimeProviderCreatePayload,
+  parseRuntimeProviderUpdatePayload,
+} from './runtime-validation.js';
 
 interface AnyRoute {
   kind: string;
@@ -282,29 +293,23 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimeProviders' && method === 'POST') {
-    const body = asObject(await readBody(req));
-    if (!body) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_provider_payload_invalid' });
+    const parsedProvider = parseRuntimeProviderCreatePayload(await readBody(req));
+    if (!parsedProvider.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedProvider.message });
       return true;
     }
-    const provider = asNonEmptyString(body.provider);
-    const authMode = asNonEmptyString(body.auth_mode) as RuntimeProviderConnectionRecord['auth_mode'] | undefined;
-    const baseUrl = asNonEmptyString(body.base_url);
-    if (!provider || !authMode || !baseUrl) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_provider_required_fields_missing' });
-      return true;
-    }
+    const providerPayload = parsedProvider.value;
 
     const record: RuntimeProviderConnectionRecord = {
       id: runtimeStore.createId('rpc'),
       workspace_id: workspaceId,
       project_id: projectId,
-      provider,
-      auth_mode: authMode,
-      base_url: baseUrl,
-      credential_ref: asNonEmptyString(body.credential_ref),
-      priority: typeof body.priority === 'number' ? body.priority : undefined,
-      status: (asNonEmptyString(body.status) as RuntimeProviderConnectionRecord['status']) ?? 'active',
+      provider: providerPayload.provider,
+      auth_mode: providerPayload.auth_mode,
+      base_url: providerPayload.base_url,
+      credential_ref: providerPayload.credential_ref,
+      priority: providerPayload.priority,
+      status: providerPayload.status,
       created_at: runtimeStore.nowIso(),
       updated_at: runtimeStore.nowIso(),
     };
@@ -321,18 +326,19 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       return true;
     }
 
-    const body = asObject(await readBody(req));
-    if (!body) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_provider_payload_invalid' });
+    const parsedProviderUpdate = parseRuntimeProviderUpdatePayload(await readBody(req));
+    if (!parsedProviderUpdate.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedProviderUpdate.message });
       return true;
     }
+    const providerUpdate = parsedProviderUpdate.value;
 
     const updated: RuntimeProviderConnectionRecord = {
       ...existing,
-      base_url: asNonEmptyString(body.base_url) ?? existing.base_url,
-      credential_ref: asNonEmptyString(body.credential_ref) ?? existing.credential_ref,
-      priority: typeof body.priority === 'number' ? body.priority : existing.priority,
-      status: (asNonEmptyString(body.status) as RuntimeProviderConnectionRecord['status']) ?? existing.status,
+      base_url: providerUpdate.base_url || existing.base_url,
+      credential_ref: providerUpdate.credential_ref ?? existing.credential_ref,
+      priority: providerUpdate.priority ?? existing.priority,
+      status: providerUpdate.status ?? existing.status,
       updated_at: runtimeStore.nowIso(),
     };
 
@@ -360,24 +366,14 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimeModels' && method === 'POST') {
-    const body = asObject(await readBody(req));
-    if (!body) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_model_payload_invalid' });
+    const parsedModel = parseRuntimeModelCreatePayload(await readBody(req));
+    if (!parsedModel.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedModel.message });
       return true;
     }
-
-    const provider = asNonEmptyString(body.provider);
-    const modelId = asNonEmptyString(body.model_id);
-    const capabilities = Array.isArray(body.capabilities)
-      ? body.capabilities.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
-      : [];
-
-    if (!provider || !modelId || capabilities.length === 0) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_model_required_fields_missing' });
-      return true;
-    }
+    const modelPayload = parsedModel.value;
     const existing = await runtimeStore.listModels(projectScope);
-    if (existing.some((item) => item.provider === provider && item.model_id === modelId)) {
+    if (existing.some((item) => item.provider === modelPayload.provider && item.model_id === modelPayload.model_id)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'runtime_model_already_exists' });
       return true;
     }
@@ -386,13 +382,13 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       id: runtimeStore.createId('rmc'),
       workspace_id: workspaceId,
       project_id: projectId,
-      provider,
-      model_id: modelId,
-      display_name: asNonEmptyString(body.display_name),
-      capabilities,
-      context_window: typeof body.context_window === 'number' ? body.context_window : undefined,
-      max_tokens: typeof body.max_tokens === 'number' ? body.max_tokens : undefined,
-      pricing: asObject(body.pricing) as Record<string, number> | undefined,
+      provider: modelPayload.provider,
+      model_id: modelPayload.model_id,
+      display_name: modelPayload.display_name,
+      capabilities: modelPayload.capabilities,
+      context_window: modelPayload.context_window,
+      max_tokens: modelPayload.max_tokens,
+      pricing: modelPayload.pricing,
       created_at: runtimeStore.nowIso(),
       updated_at: runtimeStore.nowIso(),
     };
@@ -421,32 +417,25 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_id_required' });
       return true;
     }
-    const body = asObject(await readBody(req));
-    if (!body) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_model_payload_invalid' });
-      return true;
-    }
     const existing = await runtimeStore.findModelByModelId(projectScope, route.modelId);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
       return true;
     }
-    const capabilities = Array.isArray(body.capabilities)
-      ? body.capabilities.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
-      : existing.capabilities;
-    if (capabilities.length === 0) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_model_capabilities_required' });
+    const parsedModelUpdate = parseRuntimeModelUpdatePayload(await readBody(req), existing.capabilities);
+    if (!parsedModelUpdate.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedModelUpdate.message });
       return true;
     }
-    const provider = asNonEmptyString(body.provider) ?? existing.provider;
+    const modelUpdate = parsedModelUpdate.value;
     const updated: RuntimeModelCatalogEntryRecord = {
       ...existing,
-      provider,
-      display_name: asNonEmptyString(body.display_name) ?? existing.display_name,
-      capabilities,
-      context_window: typeof body.context_window === 'number' ? body.context_window : existing.context_window,
-      max_tokens: typeof body.max_tokens === 'number' ? body.max_tokens : existing.max_tokens,
-      pricing: asObject(body.pricing) as Record<string, number> | undefined ?? existing.pricing,
+      provider: modelUpdate.provider || existing.provider,
+      display_name: modelUpdate.display_name ?? existing.display_name,
+      capabilities: modelUpdate.capabilities,
+      context_window: modelUpdate.context_window ?? existing.context_window,
+      max_tokens: modelUpdate.max_tokens ?? existing.max_tokens,
+      pricing: modelUpdate.pricing ?? existing.pricing,
       updated_at: runtimeStore.nowIso(),
     };
     await runtimeStore.upsertModel(updated);
@@ -477,21 +466,14 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimeRoutingAliases' && method === 'POST') {
-    const body = asObject(await readBody(req));
-    if (!body) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_alias_payload_invalid' });
+    const parsedAlias = parseRuntimeAliasPayload(await readBody(req));
+    if (!parsedAlias.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedAlias.message });
       return true;
     }
-    const alias = asNonEmptyString(body.alias);
-    const targetProvider = asNonEmptyString(body.target_provider);
-    const targetModel = asNonEmptyString(body.target_model);
-
-    if (!alias || !targetProvider || !targetModel) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_alias_required_fields_missing' });
-      return true;
-    }
+    const aliasPayload = parsedAlias.value;
     const existing = await runtimeStore.listAliases(projectScope);
-    if (existing.some((item) => item.alias === alias)) {
+    if (existing.some((item) => item.alias === aliasPayload.alias)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'runtime_alias_already_exists' });
       return true;
     }
@@ -500,9 +482,9 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       id: runtimeStore.createId('rma'),
       workspace_id: workspaceId,
       project_id: projectId,
-      alias,
-      target_provider: targetProvider,
-      target_model: targetModel,
+      alias: aliasPayload.alias,
+      target_provider: aliasPayload.target_provider,
+      target_model: aliasPayload.target_model,
       created_at: runtimeStore.nowIso(),
       updated_at: runtimeStore.nowIso(),
     };
@@ -531,22 +513,21 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_alias_required' });
       return true;
     }
-    const body = asObject(await readBody(req));
-    if (!body) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_alias_payload_invalid' });
-      return true;
-    }
     const existing = await runtimeStore.findAlias(projectScope, route.alias);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_alias_not_found' });
       return true;
     }
-    const targetProvider = asNonEmptyString(body.target_provider) ?? existing.target_provider;
-    const targetModel = asNonEmptyString(body.target_model) ?? existing.target_model;
+    const parsedAliasUpdate = parseRuntimeAliasUpdatePayload(await readBody(req));
+    if (!parsedAliasUpdate.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedAliasUpdate.message });
+      return true;
+    }
+    const aliasUpdate = parsedAliasUpdate.value;
     const updated: RuntimeModelAliasRecord = {
       ...existing,
-      target_provider: targetProvider,
-      target_model: targetModel,
+      target_provider: aliasUpdate.target_provider || existing.target_provider,
+      target_model: aliasUpdate.target_model || existing.target_model,
       updated_at: runtimeStore.nowIso(),
     };
     await runtimeStore.upsertAlias(updated);
@@ -577,38 +558,14 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimeRoutingCombos' && method === 'POST') {
-    const body = asObject(await readBody(req));
-    if (!body) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_payload_invalid' });
+    const parsedCombo = parseRuntimeComboPayload(await readBody(req));
+    if (!parsedCombo.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedCombo.message });
       return true;
     }
-
-    const name = asNonEmptyString(body.name);
-    const targets = Array.isArray(body.targets)
-      ? body.targets
-        .map((item) => asObject(item))
-        .filter((item): item is Record<string, unknown> => item !== null)
-        .map((item) => ({
-          provider: asNonEmptyString(item.provider),
-          model: asNonEmptyString(item.model),
-        }))
-        .filter((item): item is { provider: string; model: string } => Boolean(item.provider && item.model))
-      : [];
-
-    const fallbackPolicy = asObject(body.fallback_policy);
-    const maxHops = fallbackPolicy && typeof fallbackPolicy.max_hops === 'number'
-      ? Math.max(1, Math.floor(fallbackPolicy.max_hops))
-      : undefined;
-    const retryableErrorClasses = fallbackPolicy && Array.isArray(fallbackPolicy.retryable_error_classes)
-      ? fallbackPolicy.retryable_error_classes.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : [];
-
-    if (!name || targets.length === 0 || !maxHops || retryableErrorClasses.length === 0) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_required_fields_missing' });
-      return true;
-    }
+    const comboPayload = parsedCombo.value;
     const existing = await runtimeStore.listCombos(projectScope);
-    if (existing.some((item) => item.name === name)) {
+    if (existing.some((item) => item.name === comboPayload.name)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'runtime_combo_already_exists' });
       return true;
     }
@@ -617,12 +574,9 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       id: runtimeStore.createId('rmco'),
       workspace_id: workspaceId,
       project_id: projectId,
-      name,
-      targets,
-      fallback_policy: {
-        max_hops: maxHops,
-        retryable_error_classes: retryableErrorClasses,
-      },
+      name: comboPayload.name,
+      targets: comboPayload.targets,
+      fallback_policy: comboPayload.fallback_policy,
       created_at: runtimeStore.nowIso(),
       updated_at: runtimeStore.nowIso(),
     };
@@ -651,44 +605,21 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_combo_required' });
       return true;
     }
-    const body = asObject(await readBody(req));
-    if (!body) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_payload_invalid' });
-      return true;
-    }
     const existing = await runtimeStore.findCombo(projectScope, route.combo);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_combo_not_found' });
       return true;
     }
-    const targets = Array.isArray(body.targets)
-      ? body.targets
-        .map((item) => asObject(item))
-        .filter((item): item is Record<string, unknown> => item !== null)
-        .map((item) => ({
-          provider: asNonEmptyString(item.provider),
-          model: asNonEmptyString(item.model),
-        }))
-        .filter((item): item is { provider: string; model: string } => Boolean(item.provider && item.model))
-      : existing.targets;
-    const fallbackPolicy = asObject(body.fallback_policy);
-    const maxHops = fallbackPolicy && typeof fallbackPolicy.max_hops === 'number'
-      ? Math.max(1, Math.floor(fallbackPolicy.max_hops))
-      : existing.fallback_policy.max_hops;
-    const retryableErrorClasses = fallbackPolicy && Array.isArray(fallbackPolicy.retryable_error_classes)
-      ? fallbackPolicy.retryable_error_classes.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : existing.fallback_policy.retryable_error_classes;
-    if (targets.length === 0 || retryableErrorClasses.length === 0) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_required_fields_missing' });
+    const parsedComboUpdate = parseRuntimeComboUpdatePayload(await readBody(req), existing);
+    if (!parsedComboUpdate.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedComboUpdate.message });
       return true;
     }
+    const comboUpdate = parsedComboUpdate.value;
     const updated: RuntimeModelComboRecord = {
       ...existing,
-      targets,
-      fallback_policy: {
-        max_hops: maxHops,
-        retryable_error_classes: retryableErrorClasses,
-      },
+      targets: comboUpdate.targets,
+      fallback_policy: comboUpdate.fallback_policy,
       updated_at: runtimeStore.nowIso(),
     };
     await runtimeStore.upsertCombo(updated);
@@ -719,9 +650,9 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimePricing' && method === 'PATCH') {
-    const body = asObject(await readBody(req));
-    if (!body) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_pricing_payload_invalid' });
+    const parsedPricing = parseRuntimePricingPayload(await readBody(req));
+    if (!parsedPricing.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedPricing.message });
       return true;
     }
 
@@ -729,7 +660,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       id: runtimeStore.pricingRecordId(projectScope),
       workspace_id: workspaceId,
       project_id: projectId,
-      pricing_map: body as RuntimePricingRecord['pricing_map'],
+      pricing_map: parsedPricing.value,
       updated_at: runtimeStore.nowIso(),
     };
 

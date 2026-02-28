@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
-import { readFileSync, unlinkSync, existsSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -244,6 +244,44 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.runtime_release_evidence?.guardrails?.warnings?.length).toBeGreaterThan(0);
       expect(report.summary?.runtime_release_evidence?.pricing_version_coverage?.total_usage_facts).toBeGreaterThan(0);
       expect(report.summary?.runtime_release_evidence?.pricing_version_coverage?.coverage_ratio).toBeGreaterThan(0);
+    });
+
+    it('should fail when runtime release evidence reports blocked guardrails', () => {
+      const runtimeEvidencePath = join(OUTPUT_DIR, 'runtime-evidence-blocked.json');
+      const runtimeEvidence = {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        guardrails: {
+          target: 'combo:prod-chat',
+          release_readiness: 'blocked',
+          blockers: ['runtime_guardrail_primary_pricing_missing'],
+          warnings: [],
+          planned_attempts: 2,
+        },
+        pricing_version_coverage: {
+          total_usage_facts: 2,
+          covered_usage_facts: 2,
+          missing_usage_facts: 0,
+          missing_price_facts: 0,
+          coverage_ratio: 1,
+        },
+      };
+      mkdirSync(OUTPUT_DIR, { recursive: true });
+      writeFileSync(runtimeEvidencePath, JSON.stringify(runtimeEvidence), 'utf-8');
+
+      runScript([
+        '--output', OUTPUT_DIR,
+        '--name', 'report-test',
+        '--dry-run',
+        '--runtime-evidence', runtimeEvidencePath,
+      ]);
+
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: { status?: string; recommendations?: string[] };
+      };
+
+      expect(report.summary?.status).toBe('fail');
+      expect(report.summary?.recommendations?.some((item) => item.includes('runtime_guardrail_primary_pricing_missing'))).toBe(true);
     });
   });
 

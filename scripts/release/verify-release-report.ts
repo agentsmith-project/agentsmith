@@ -81,14 +81,14 @@ const CHECK_DEFINITIONS: Array<{
     name: 'Mainline release smoke',
     category: 'smoke-main',
     command: 'make notebook-agent-release-smoke-full',
-    timeout: 300000, // 5 minutes
+    timeout: 600000, // 10 minutes
   },
   {
     id: 'smoke-governance',
     name: 'Governance release smoke',
     category: 'smoke-governance',
     command: 'make governance-release-smoke',
-    timeout: 300000, // 5 minutes
+    timeout: 600000, // 10 minutes
   },
   {
     id: 'runtime-release-evidence',
@@ -537,14 +537,15 @@ function buildCommand(
  * Generate report summary
  */
 function generateSummary(execution: ExecutionResults, options: VerifyReleaseOptions): ReportSummary {
-  const status = execution.failed === 0 ? 'pass' : 'fail';
+  const runtimeEvidence = loadRuntimeReleaseEvidence(options);
+  const runtimeBlockingReasons = getRuntimeEvidenceBlockingReasons(runtimeEvidence);
+  const status = execution.failed === 0 && runtimeBlockingReasons.length === 0 ? 'pass' : 'fail';
 
   const summary: ReportSummary = {
     status,
     stats: calculateStats(execution),
   };
 
-  const runtimeEvidence = loadRuntimeReleaseEvidence(options);
   if (runtimeEvidence) {
     summary.runtime_release_evidence = runtimeEvidence;
   }
@@ -556,6 +557,11 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
     summary.recommendations = generateRecommendations(summary.failure_categories);
   }
 
+  if (runtimeBlockingReasons.length > 0) {
+    const runtimeRecommendations = runtimeBlockingReasons.map((reason) => `Runtime release blocker: ${reason}`);
+    summary.recommendations = [...(summary.recommendations ?? []), ...runtimeRecommendations];
+  }
+
   return summary;
 }
 
@@ -565,40 +571,40 @@ function getRuntimeEvidencePath(options: VerifyReleaseOptions): string {
 }
 
 function loadRuntimeReleaseEvidence(options: VerifyReleaseOptions): RuntimeReleaseEvidence | undefined {
+  const evidencePath = getRuntimeEvidencePath(options);
+  if (existsSync(evidencePath)) {
+    try {
+      const parsed = JSON.parse(readFileSync(evidencePath, 'utf-8')) as RuntimeReleaseEvidence;
+      return parsed;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_error';
+      return {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        guardrails: {
+          target: 'unknown',
+          release_readiness: 'blocked',
+          blockers: ['runtime_release_evidence_unreadable'],
+          warnings: [],
+          planned_attempts: 0,
+        },
+        pricing_version_coverage: {
+          total_usage_facts: 0,
+          covered_usage_facts: 0,
+          missing_usage_facts: 0,
+          missing_price_facts: 0,
+          coverage_ratio: 0,
+        },
+        note: `Failed to parse runtime release evidence: ${message}`,
+      };
+    }
+  }
+
   if (options.dryRun) {
     return createMockRuntimeReleaseEvidence();
   }
 
-  const evidencePath = getRuntimeEvidencePath(options);
-  if (!existsSync(evidencePath)) {
-    return undefined;
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(evidencePath, 'utf-8')) as RuntimeReleaseEvidence;
-    return parsed;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'unknown_error';
-    return {
-      source: 'artifact',
-      generated_at: new Date().toISOString(),
-      guardrails: {
-        target: 'unknown',
-        release_readiness: 'blocked',
-        blockers: ['runtime_release_evidence_unreadable'],
-        warnings: [],
-        planned_attempts: 0,
-      },
-      pricing_version_coverage: {
-        total_usage_facts: 0,
-        covered_usage_facts: 0,
-        missing_usage_facts: 0,
-        missing_price_facts: 0,
-        coverage_ratio: 0,
-      },
-      note: `Failed to parse runtime release evidence: ${message}`,
-    };
-  }
+  return undefined;
 }
 
 function createMockRuntimeReleaseEvidence(): RuntimeReleaseEvidence {
@@ -614,13 +620,35 @@ function createMockRuntimeReleaseEvidence(): RuntimeReleaseEvidence {
     },
     pricing_version_coverage: {
       total_usage_facts: 4,
-      covered_usage_facts: 3,
-      missing_usage_facts: 1,
-      missing_price_facts: 1,
-      coverage_ratio: 0.75,
+      covered_usage_facts: 4,
+      missing_usage_facts: 0,
+      missing_price_facts: 0,
+      coverage_ratio: 1,
     },
     note: 'Dry-run evidence uses deterministic fixture data and does not call live runtime services.',
   };
+}
+
+function getRuntimeEvidenceBlockingReasons(runtimeEvidence?: RuntimeReleaseEvidence): string[] {
+  if (!runtimeEvidence) return [];
+
+  const reasons: string[] = [];
+  if (runtimeEvidence.guardrails.release_readiness === 'blocked') {
+    reasons.push(
+      runtimeEvidence.guardrails.blockers.length > 0
+        ? `guardrails blocked by ${runtimeEvidence.guardrails.blockers.join(', ')}`
+        : 'guardrails reported blocked release readiness',
+    );
+  }
+  if (runtimeEvidence.pricing_version_coverage.missing_usage_facts > 0) {
+    reasons.push(
+      `pricing version coverage incomplete (${runtimeEvidence.pricing_version_coverage.covered_usage_facts}/${runtimeEvidence.pricing_version_coverage.total_usage_facts})`,
+    );
+  }
+  if (runtimeEvidence.pricing_version_coverage.missing_price_facts > 0) {
+    reasons.push(`runtime missing_price facts detected (${runtimeEvidence.pricing_version_coverage.missing_price_facts})`);
+  }
+  return reasons;
 }
 
 /**

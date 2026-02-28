@@ -229,6 +229,18 @@ test.describe('@lane-real integration runtime proxy billing', () => {
                 output: 10,
               },
             },
+            primaryfail: {
+              'model-a': {
+                input: 3,
+                output: 12,
+              },
+            },
+            secondaryok: {
+              'model-b': {
+                input: 4,
+                output: 14,
+              },
+            },
           },
         },
       );

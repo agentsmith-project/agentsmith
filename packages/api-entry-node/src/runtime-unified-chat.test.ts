@@ -88,15 +88,32 @@ describe('runtime-unified-chat', () => {
 
     expect(result.statusCode).toBe(200);
     if (!('body' in result)) throw new Error('expected_json_result');
-    expect((result.body as { runtime?: { provider?: string; resolved_model?: string } }).runtime).toEqual({
+    const runtime = (result.body as {
+      runtime?: { provider?: string; resolved_model?: string; attempts?: Array<{ outcome: string; durationMs?: number }> };
+    }).runtime;
+    expect(runtime?.provider).toBe('openai');
+    expect(runtime?.resolved_model).toBe('gpt-4o');
+    expect(runtime?.attempts).toHaveLength(1);
+    expect(runtime?.attempts?.[0]).toMatchObject({
+      index: 0,
       provider: 'openai',
-      resolved_model: 'gpt-4o',
-      fallback_hops: 0,
+      model: 'gpt-4o',
+      providerConnectionId: 'rpc_1',
+      outcome: 'success',
+      statusCode: 200,
+      reason: 'runtime_upstream_ok',
     });
+    expect(runtime?.attempts?.[0]?.durationMs).toBe(10);
 
-    const usageFacts = await deps.docStore.list<{ metadata_json?: { estimated_cost?: number } }>('project_usage_facts', {});
+    const usageFacts = await deps.docStore.list<{
+      metadata_json?: {
+        estimated_cost?: number;
+        attempt_trace?: Array<{ outcome?: string }>;
+      };
+    }>('project_usage_facts', {});
     expect(usageFacts).toHaveLength(1);
     expect(usageFacts[0]?.metadata_json?.estimated_cost).toBe(0.007);
+    expect(usageFacts[0]?.metadata_json?.attempt_trace?.map((item) => item.outcome)).toEqual(['success']);
   });
 
   it('falls back across combo targets when policy allows retryable provider errors', async () => {
@@ -176,10 +193,76 @@ describe('runtime-unified-chat', () => {
     expect(fetchCalls).toBe(2);
     expect(result.statusCode).toBe(200);
     if (!('body' in result)) throw new Error('expected_json_result');
-    expect((result.body as { runtime?: { provider?: string; fallback_hops?: number } }).runtime).toEqual({
-      provider: 'anthropic',
-      resolved_model: 'claude-sonnet-4-5',
-      fallback_hops: 1,
+    const comboRuntime = (result.body as {
+      runtime?: {
+        provider?: string;
+        fallback_hops?: number;
+        attempts?: Array<{ outcome?: string; provider?: string; errorClass?: string }>;
+      };
+    }).runtime;
+    expect(comboRuntime?.provider).toBe('anthropic');
+    expect(comboRuntime?.fallback_hops).toBe(1);
+    expect(comboRuntime?.attempts).toHaveLength(2);
+    expect(comboRuntime?.attempts?.[0]).toMatchObject({
+      index: 0,
+      provider: 'openai',
+      model: 'gpt-4o',
+      providerConnectionId: 'rpc_openai',
+      outcome: 'fallback_upstream_error',
+      statusCode: 429,
+      errorClass: 'provider_retryable',
+      reason: 'runtime_upstream_error_recovered',
     });
+    expect(comboRuntime?.attempts?.[1]).toMatchObject({
+      index: 1,
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-5',
+      providerConnectionId: 'rpc_anthropic',
+      outcome: 'success',
+      statusCode: 200,
+      reason: 'runtime_upstream_ok',
+    });
+  });
+
+  it('records terminal failure usage with attempt trace when no provider connection exists', async () => {
+    const deps = createDeps();
+
+    const result = await executeRuntimeUnifiedChat({
+      deps,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      rawBody: {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'hello' }],
+      },
+      endUserId: 'user_test',
+      requestId: 'req_missing_provider',
+    });
+
+    expect(result.statusCode).toBe(502);
+    if (!('body' in result)) throw new Error('expected_json_result');
+    const failurePayload = result.body as {
+      error_code?: string;
+      runtime?: { attempts?: Array<{ outcome?: string; reason?: string }> };
+    };
+    expect(failurePayload.error_code).toBe('RUNTIME_PROVIDER_CONNECTION_NOT_FOUND');
+    expect(failurePayload.runtime?.attempts).toHaveLength(1);
+    expect(failurePayload.runtime?.attempts?.[0]).toMatchObject({
+      index: 0,
+      provider: 'openai',
+      model: 'gpt-4o',
+      outcome: 'provider_connection_missing',
+      reason: 'runtime_provider_connection_not_found',
+    });
+
+    const usageFacts = await deps.docStore.list<{
+      result?: string;
+      error_code?: string;
+      metadata_json?: { attempt_trace?: Array<{ outcome?: string }> };
+    }>('project_usage_facts', {});
+    expect(usageFacts).toHaveLength(1);
+    expect(usageFacts[0]?.result).toBe('error');
+    expect(usageFacts[0]?.error_code).toBe('RUNTIME_PROVIDER_CONNECTION_NOT_FOUND');
+    expect(usageFacts[0]?.metadata_json?.attempt_trace?.map((item) => item.outcome)).toEqual(['provider_connection_missing']);
   });
 });

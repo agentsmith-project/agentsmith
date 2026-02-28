@@ -9,6 +9,28 @@ import {
 import { resolveRoutingPlan } from './runtime-routing.js';
 import { createRuntimeStore, type RuntimePricingRecord } from './runtime-store.js';
 
+export type RuntimeAttemptOutcome =
+  | 'provider_connection_missing'
+  | 'credential_ref_missing'
+  | 'credential_secret_missing'
+  | 'fallback_network_error'
+  | 'terminal_network_error'
+  | 'fallback_upstream_error'
+  | 'terminal_upstream_error'
+  | 'success';
+
+export type RuntimeAttemptTrace = {
+  index: number;
+  provider: string;
+  model: string;
+  providerConnectionId?: string;
+  outcome: RuntimeAttemptOutcome;
+  statusCode?: number;
+  errorClass?: string;
+  reason: string;
+  durationMs?: number;
+};
+
 function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -71,6 +93,52 @@ export type RuntimeUnifiedChatResult =
     body?: undefined;
     text: string;
   };
+
+async function writeRuntimeUsageFact(params: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  resourceId?: string;
+  endUserId: string;
+  requestId?: string | null;
+  startedAtMs: number;
+  nowMs: () => number;
+  attempts: RuntimeAttemptTrace[];
+  routedBy: 'direct' | 'alias' | 'combo';
+  resolvedProvider?: string;
+  resolvedModel?: string;
+  fallbackHops?: number;
+  pricingVersion?: string | null;
+  estimatedCost?: number | null;
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  result: 'ok' | 'error';
+  errorCode?: string;
+}) {
+  await writeProjectUsageFact(params.deps, {
+    workspaceId: params.workspaceId,
+    projectId: params.projectId,
+    resourceType: 'endpoint',
+    resourceId: params.resourceId,
+    endUserId: params.endUserId,
+    requestId: params.requestId,
+    requests: 1,
+    durationMs: params.nowMs() - params.startedAtMs,
+    tokensIn: params.usage?.inputTokens,
+    tokensOut: params.usage?.outputTokens,
+    tokensTotal: params.usage?.totalTokens,
+    result: params.result,
+    errorCode: params.errorCode,
+    metadata: {
+      provider: params.resolvedProvider ?? null,
+      model: params.resolvedModel ?? null,
+      routed_by: params.routedBy,
+      fallback_hops: params.fallbackHops ?? null,
+      pricing_version: params.pricingVersion ?? null,
+      estimated_cost: params.estimatedCost ?? null,
+      attempt_trace: params.attempts,
+    },
+  });
+}
 
 export async function executeRuntimeUnifiedChat(params: {
   deps: NodeApiDeps;
@@ -143,15 +211,27 @@ export async function executeRuntimeUnifiedChat(params: {
   const attempts = routingPlan.attempts;
   const comboName = routingPlan.comboName ?? null;
   const comboFallbackPolicy = routingPlan.fallbackPolicy;
+  const attemptTrace: RuntimeAttemptTrace[] = [];
   let lastErrorCode = 'RUNTIME_UPSTREAM_ERROR';
   let lastMessage = 'runtime_upstream_error';
 
   for (let idx = 0; idx < attempts.length; idx += 1) {
     const attempt = attempts[idx]!;
+    const attemptStartedAtMs = nowMs();
     const providerSelection = selectProviderConnection({ providers, attempt });
     if (!providerSelection.ok) {
       lastErrorCode = providerSelection.failure.errorCode;
       lastMessage = providerSelection.failure.message;
+      attemptTrace.push({
+        index: idx,
+        provider: attempt.provider,
+        model: attempt.model,
+        outcome: providerSelection.failure.errorCode === 'RUNTIME_PROVIDER_CONNECTION_NOT_FOUND'
+          ? 'provider_connection_missing'
+          : 'credential_ref_missing',
+        reason: providerSelection.failure.message,
+        durationMs: nowMs() - attemptStartedAtMs,
+      });
       continue;
     }
     const providerConn = providerSelection.providerConnection;
@@ -164,6 +244,15 @@ export async function executeRuntimeUnifiedChat(params: {
       const failure = toMissingCredentialFailure();
       lastErrorCode = failure.errorCode;
       lastMessage = failure.message;
+      attemptTrace.push({
+        index: idx,
+        provider: attempt.provider,
+        model: attempt.model,
+        providerConnectionId: providerConn.id,
+        outcome: 'credential_secret_missing',
+        reason: failure.message,
+        durationMs: nowMs() - attemptStartedAtMs,
+      });
       continue;
     }
 
@@ -180,17 +269,51 @@ export async function executeRuntimeUnifiedChat(params: {
         body: JSON.stringify(upstreamBody),
       });
     } catch {
-      if (shouldFallbackAfterNetworkError({
+      const shouldFallback = shouldFallbackAfterNetworkError({
         attemptIndex: idx,
         attemptCount: attempts.length,
         comboName,
         comboFallbackPolicy,
-      })) {
+      });
+      attemptTrace.push({
+        index: idx,
+        provider: attempt.provider,
+        model: attempt.model,
+        providerConnectionId: providerConn.id,
+        outcome: shouldFallback ? 'fallback_network_error' : 'terminal_network_error',
+        errorClass: 'system_error',
+        reason: shouldFallback ? 'runtime_upstream_network_error_recovered' : 'runtime_upstream_network_error',
+        durationMs: nowMs() - attemptStartedAtMs,
+      });
+      if (shouldFallback) {
         continue;
       }
+      await writeRuntimeUsageFact({
+        deps,
+        workspaceId,
+        projectId,
+        resourceId: providerConn.id,
+        endUserId,
+        requestId,
+        startedAtMs,
+        nowMs,
+        attempts: attemptTrace,
+        routedBy: routingPlan.routedBy,
+        result: 'error',
+        errorCode: 'RUNTIME_UPSTREAM_NETWORK_ERROR',
+      });
       return {
         statusCode: 502,
-        body: { error_code: 'RUNTIME_UPSTREAM_NETWORK_ERROR', message: 'runtime_upstream_network_error' },
+        body: {
+          error_code: 'RUNTIME_UPSTREAM_NETWORK_ERROR',
+          message: 'runtime_upstream_network_error',
+          runtime: {
+            provider: attempt.provider,
+            resolved_model: attempt.model,
+            fallback_hops: idx,
+            attempts: attemptTrace,
+          },
+        },
       };
     }
 
@@ -200,6 +323,21 @@ export async function executeRuntimeUnifiedChat(params: {
       upstreamStatus: upstreamRes.status,
       comboName,
       comboFallbackPolicy,
+    });
+    attemptTrace.push({
+      index: idx,
+      provider: attempt.provider,
+      model: attempt.model,
+      providerConnectionId: providerConn.id,
+      outcome: upstreamRes.ok
+        ? 'success'
+        : (upstreamDecision.shouldFallback ? 'fallback_upstream_error' : 'terminal_upstream_error'),
+      statusCode: upstreamRes.status,
+      errorClass: upstreamRes.ok ? undefined : upstreamDecision.errorClass,
+      reason: upstreamRes.ok
+        ? 'runtime_upstream_ok'
+        : (upstreamDecision.shouldFallback ? 'runtime_upstream_error_recovered' : 'runtime_upstream_error'),
+      durationMs: nowMs() - attemptStartedAtMs,
     });
     if (!upstreamRes.ok && upstreamDecision.shouldFallback) {
       continue;
@@ -216,28 +354,25 @@ export async function executeRuntimeUnifiedChat(params: {
     const usage = normalizeUsage(parsed);
     const estimatedCost = calculateEstimatedCost(pricingMap, attempt.provider, attempt.model, usage);
 
-    await writeProjectUsageFact(deps, {
+    await writeRuntimeUsageFact({
+      deps,
       workspaceId,
       projectId,
-      resourceType: 'endpoint',
       resourceId: providerConn.id,
       endUserId,
       requestId,
-      requests: 1,
-      durationMs: nowMs() - startedAtMs,
-      tokensIn: usage.inputTokens,
-      tokensOut: usage.outputTokens,
-      tokensTotal: usage.totalTokens,
+      startedAtMs,
+      nowMs,
+      attempts: attemptTrace,
+      routedBy: routingPlan.routedBy,
+      resolvedProvider: attempt.provider,
+      resolvedModel: attempt.model,
+      fallbackHops: idx,
+      pricingVersion: pricing?.updated_at ?? null,
+      estimatedCost: estimatedCost ?? null,
+      usage,
       result: upstreamRes.ok ? 'ok' : 'error',
       errorCode: upstreamRes.ok ? undefined : `UPSTREAM_${upstreamRes.status}`,
-      metadata: {
-        provider: attempt.provider,
-        model: attempt.model,
-        routed_by: routingPlan.routedBy,
-        fallback_hops: idx,
-        pricing_version: pricing?.updated_at ?? null,
-        estimated_cost: estimatedCost ?? null,
-      },
     });
 
     if (contentType.toLowerCase().includes('application/json') && parsed) {
@@ -249,6 +384,7 @@ export async function executeRuntimeUnifiedChat(params: {
             provider: attempt.provider,
             resolved_model: attempt.model,
             fallback_hops: idx,
+            attempts: attemptTrace,
           },
         },
       };
@@ -261,11 +397,28 @@ export async function executeRuntimeUnifiedChat(params: {
     };
   }
 
+  await writeRuntimeUsageFact({
+    deps,
+    workspaceId,
+    projectId,
+    endUserId,
+    requestId,
+    startedAtMs,
+    nowMs,
+    attempts: attemptTrace,
+    routedBy: routingPlan.routedBy,
+    result: 'error',
+    errorCode: lastErrorCode,
+  });
   return {
     statusCode: 502,
     body: {
       error_code: lastErrorCode,
       message: lastMessage,
+      runtime: {
+        fallback_hops: attemptTrace.filter((item) => item.outcome.startsWith('fallback_')).length,
+        attempts: attemptTrace,
+      },
     },
   };
 }

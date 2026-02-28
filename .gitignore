@@ -8,6 +8,7 @@ coverage
 
 # Next.js
 .next/
+.next.stale.*/
 out/
 build
 dist
@@ -62,5 +63,10 @@ artifacts/release-reports/report-*.json
 artifacts/release-reports/report-*.md
 artifacts/release-reports/closure-*.json
 artifacts/release-reports/closure-*.md
+artifacts/release-reports/runtime-evidence-*.json
+artifacts/release-reports/runtime-evidence-*.md
+artifacts/release-reports/runtime-release-evidence.json
+artifacts/release-reports/wp11-release-controls-*.json
+artifacts/release-reports/wp11-release-controls-*.md
 artifacts/release-reports/gov-smoke-login-failure-*.png
 artifacts/release-reports/gov-smoke-login-failure-*.html

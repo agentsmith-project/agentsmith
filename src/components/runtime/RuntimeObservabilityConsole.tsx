@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,7 @@ type RuntimeObservabilityFilters = {
   end_time: string;
   provider?: string;
   model?: string;
+  result?: 'ok' | 'error';
   error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
 };
 
@@ -41,6 +43,10 @@ function formatUsd(value?: number): string {
 
 function formatPercent(value?: number): string {
   return `${(((value ?? 0) * 100)).toFixed(2)}%`;
+}
+
+function formatMs(value?: number): string {
+  return typeof value === 'number' ? `${Math.round(value)}ms` : '-';
 }
 
 export function RuntimeObservabilityConsole({
@@ -141,6 +147,27 @@ export function RuntimeObservabilityConsole({
             />
           </div>
           <div>
+            <label className="mb-1 block text-xs text-tertiary">{settingsT('runtime_observability_filter_result')}</label>
+            <Select
+              value={filters.result ?? 'all'}
+              onValueChange={(value) => setFilters((prev) => ({
+                ...prev,
+                result: value === 'all'
+                  ? undefined
+                  : value as RuntimeObservabilityFilters['result'],
+              }))}
+            >
+              <SelectTrigger data-testid="runtime-observability__filter-result">
+                <SelectValue placeholder={commonT('all')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{commonT('all')}</SelectItem>
+                <SelectItem value="ok">{settingsT('runtime_observability_filter_result_ok')}</SelectItem>
+                <SelectItem value="error">{settingsT('runtime_observability_filter_result_error')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
             <label className="mb-1 block text-xs text-tertiary">{settingsT('runtime_observability_filter_error_class')}</label>
             <Select
               value={filters.error_class ?? 'all'}
@@ -206,6 +233,95 @@ export function RuntimeObservabilityConsole({
           </div>
         </div>
       </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <section className="rounded-xl border border-border bg-surface p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-foreground">{settingsT('runtime_observability_request_trend_title')}</h3>
+            <p className="text-xs text-tertiary">{settingsT('runtime_observability_request_trend_subtitle')}</p>
+          </div>
+          {(observability?.request_trend?.length ?? 0) === 0 ? (
+            <EmptyState
+              title={settingsT('runtime_observability_empty_title')}
+              description={settingsT('runtime_observability_empty_description')}
+            />
+          ) : (
+            <div className="space-y-2" data-testid="runtime-observability__request-trend">
+              {observability?.request_trend.slice(-8).map((item) => (
+                <div key={item.time_bucket} className="rounded-lg border border-subtle bg-bg-base/40 px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-mono text-xs text-foreground">{item.time_bucket}</div>
+                    <div className="text-xs text-tertiary">
+                      {settingsT('runtime_observability_request_trend_value', {
+                        requests: item.requests,
+                        errors: item.errors,
+                        recovered: item.recovered_requests,
+                      })}
+                    </div>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-3 text-xs text-tertiary">
+                    <span>{settingsT('runtime_observability_avg_cost_label')}: {formatUsd(item.avg_estimated_cost)}</span>
+                    <span>{settingsT('runtime_observability_p95_latency_label')}: {formatMs(item.duration_p95_ms)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-border bg-surface p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-foreground">{settingsT('runtime_observability_distribution_title')}</h3>
+            <p className="text-xs text-tertiary">{settingsT('runtime_observability_distribution_subtitle')}</p>
+          </div>
+          <div className="space-y-3" data-testid="runtime-observability__distributions">
+            <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+              <div className="text-xs text-tertiary">{settingsT('runtime_observability_distribution_latency')}</div>
+              <div className="mt-2 grid grid-cols-3 gap-2 text-sm text-foreground">
+                <div>P50 {formatMs(observability?.latency_distribution_ms.p50)}</div>
+                <div>P95 {formatMs(observability?.latency_distribution_ms.p95)}</div>
+                <div>P99 {formatMs(observability?.latency_distribution_ms.p99)}</div>
+              </div>
+            </div>
+            <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+              <div className="text-xs text-tertiary">{settingsT('runtime_observability_distribution_cost')}</div>
+              <div className="mt-2 grid grid-cols-3 gap-2 text-sm text-foreground">
+                <div>P50 {formatUsd(observability?.cost_distribution_usd.p50)}</div>
+                <div>P95 {formatUsd(observability?.cost_distribution_usd.p95)}</div>
+                <div>P99 {formatUsd(observability?.cost_distribution_usd.p99)}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section className="rounded-xl border border-border bg-surface p-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-foreground">{settingsT('runtime_observability_signals_title')}</h3>
+          <p className="text-xs text-tertiary">{settingsT('runtime_observability_signals_subtitle')}</p>
+        </div>
+        {(observability?.degradation_signals?.length ?? 0) === 0 ? (
+          <div className="rounded-lg border border-subtle bg-bg-base/40 px-3 py-4 text-sm text-tertiary" data-testid="runtime-observability__signals-empty">
+            {settingsT('runtime_observability_signals_empty')}
+          </div>
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2" data-testid="runtime-observability__signals">
+            {observability?.degradation_signals.map((signal) => (
+              <div key={signal.id} className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">{signal.title}</div>
+                    <div className="mt-1 text-xs text-tertiary">{signal.message}</div>
+                  </div>
+                  <Badge variant={signal.severity === 'high' ? 'destructive' : 'outline'}>
+                    {settingsT(`runtime_observability_signal_severity_${signal.severity}`)}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="rounded-xl border border-border bg-surface p-4">

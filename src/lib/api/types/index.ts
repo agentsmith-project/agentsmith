@@ -516,6 +516,7 @@ export interface UsageListParams extends PaginationParams {
   end_user_id?: string;
   provider?: string;
   model?: string;
+  result?: 'ok' | 'error';
   error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
   group_by?: 'day' | 'hour';
   sort_by?: 'time_bucket' | 'resource_type' | 'requests';

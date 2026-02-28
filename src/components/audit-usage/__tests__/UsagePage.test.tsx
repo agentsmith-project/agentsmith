@@ -84,6 +84,16 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
     },
     isLoading: false,
   }),
+  useUsageOperationsSummary: () => ({
+    data: {
+      top_providers: [{ provider: 'secondaryok', requests: 2, errors: 0, estimated_cost: 0.0068 }],
+      top_models: [{ provider: 'secondaryok', model: 'model-b', requests: 2, errors: 0, estimated_cost: 0.0068 }],
+      top_end_users: [{ end_user_id: 'user_001', requests: 2, errors: 0, estimated_cost: 0.0068 }],
+      anomaly_peaks: [],
+      recent_requests: [{ id: 'req_1', timestamp: '2026-02-28T15:10:00.000Z', request_id: 'req_1', provider: 'secondaryok', model: 'model-b', end_user_id: 'user_001', result: 'ok', estimated_cost: 0.0068 }],
+    },
+    isLoading: false,
+  }),
 }));
 
 vi.mock('@/components/dashboard', () => ({
@@ -101,6 +111,7 @@ describe('UsagePage', () => {
     const user = userEvent.setup();
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
+    expect(screen.getByTestId('usage__operations-summary')).toBeInTheDocument();
     await user.click(screen.getByTestId('usage__table__row'));
 
     expect(screen.getByText('detail.title')).toBeInTheDocument();

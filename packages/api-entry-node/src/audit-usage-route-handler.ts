@@ -5,6 +5,7 @@ import {
   aggregateUsageRecords,
   getQuotaSummary,
   getRuntimeObservability,
+  getUsageOperationsSummary,
   getUsageKpi,
   getUsageTimeseries,
   listAuditEvents,
@@ -94,6 +95,11 @@ export async function handleAuditUsageRoute({
     const endUserId = requestUrl.searchParams.get('end_user_id');
     const provider = requestUrl.searchParams.get('provider');
     const model = requestUrl.searchParams.get('model');
+    const result = requestUrl.searchParams.get('result') === 'error'
+      ? 'error'
+      : requestUrl.searchParams.get('result') === 'ok'
+        ? 'ok'
+        : null;
     const errorClass = parseRuntimeErrorClass(requestUrl.searchParams.get('error_class'));
     const groupBy = requestUrl.searchParams.get('group_by') === 'hour' ? 'hour' : 'day';
     const sortByRaw = requestUrl.searchParams.get('sort_by');
@@ -112,6 +118,7 @@ export async function handleAuditUsageRoute({
       endUserId,
       provider,
       model,
+      result,
       errorClass,
       groupBy,
       sortBy,
@@ -138,6 +145,11 @@ export async function handleAuditUsageRoute({
       endUserId: requestUrl.searchParams.get('end_user_id'),
       provider: requestUrl.searchParams.get('provider'),
       model: requestUrl.searchParams.get('model'),
+      result: requestUrl.searchParams.get('result') === 'error'
+        ? 'error'
+        : requestUrl.searchParams.get('result') === 'ok'
+          ? 'ok'
+          : null,
       errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
       sortOrder: requestUrl.searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc',
       page,
@@ -202,6 +214,35 @@ export async function handleAuditUsageRoute({
       endTime: range.end.toISOString(),
       provider: requestUrl.searchParams.get('provider'),
       model: requestUrl.searchParams.get('model'),
+      result: requestUrl.searchParams.get('result') === 'error'
+        ? 'error'
+        : requestUrl.searchParams.get('result') === 'ok'
+          ? 'ok'
+          : null,
+      errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
+    });
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageOperationsSummary' && method === 'GET') {
+    const range = requireTimeRange(requestUrl, json, res);
+    if (range === true) return true;
+    const payload = await getUsageOperationsSummary(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      startTime: range.start.toISOString(),
+      endTime: range.end.toISOString(),
+      resourceType: requestUrl.searchParams.get('resource_type'),
+      resourceId: requestUrl.searchParams.get('resource_id'),
+      endUserId: requestUrl.searchParams.get('end_user_id'),
+      provider: requestUrl.searchParams.get('provider'),
+      model: requestUrl.searchParams.get('model'),
+      result: requestUrl.searchParams.get('result') === 'error'
+        ? 'error'
+        : requestUrl.searchParams.get('result') === 'ok'
+          ? 'ok'
+          : null,
       errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
     });
     json(res, 200, payload);

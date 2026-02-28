@@ -85,6 +85,31 @@ export interface RuntimeObservabilityResponse {
     provider_count: number;
     model_count: number;
   };
+  request_trend: Array<{
+    time_bucket: string;
+    requests: number;
+    errors: number;
+    recovered_requests: number;
+    avg_estimated_cost: number;
+    duration_p95_ms?: number;
+  }>;
+  latency_distribution_ms: {
+    p50?: number;
+    p95?: number;
+    p99?: number;
+  };
+  cost_distribution_usd: {
+    p50?: number;
+    p95?: number;
+    p99?: number;
+  };
+  degradation_signals: Array<{
+    id: string;
+    severity: 'low' | 'medium' | 'high';
+    kind: 'fallback_spike' | 'error_rate_spike' | 'missing_price' | 'latency_spike';
+    title: string;
+    message: string;
+  }>;
   provider_breakdown: Array<{
     provider: string;
     requests: number;
@@ -110,6 +135,47 @@ export interface RuntimeObservabilityResponse {
     start: string;
     end: string;
   };
+}
+
+export interface UsageOperationsSummaryResponse {
+  top_providers: Array<{
+    provider: string;
+    requests: number;
+    errors: number;
+    estimated_cost: number;
+  }>;
+  top_models: Array<{
+    provider: string;
+    model: string;
+    requests: number;
+    errors: number;
+    estimated_cost: number;
+  }>;
+  top_end_users: Array<{
+    end_user_id: string;
+    requests: number;
+    errors: number;
+    estimated_cost: number;
+  }>;
+  anomaly_peaks: Array<{
+    id: string;
+    time_bucket: string;
+    metric: 'requests' | 'errors' | 'cost';
+    value: number;
+    baseline: number;
+    severity: 'medium' | 'high';
+  }>;
+  recent_requests: Array<{
+    id: string;
+    timestamp: string;
+    request_id?: string;
+    provider?: string;
+    model?: string;
+    end_user_id?: string;
+    result: 'ok' | 'error';
+    error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
+    estimated_cost?: number;
+  }>;
 }
 
 export class AuditAPI {
@@ -209,6 +275,7 @@ export class UsageAPI {
     if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
     if (params.provider) searchParams.set('provider', params.provider);
     if (params.model) searchParams.set('model', params.model);
+    if (params.result) searchParams.set('result', params.result);
     if (params.error_class) searchParams.set('error_class', params.error_class);
     if (params.group_by) searchParams.set('group_by', params.group_by);
 
@@ -245,6 +312,7 @@ export class UsageAPI {
     if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
     if (params.provider) searchParams.set('provider', params.provider);
     if (params.model) searchParams.set('model', params.model);
+    if (params.result) searchParams.set('result', params.result);
     if (params.error_class) searchParams.set('error_class', params.error_class);
     if (params.sort_order) searchParams.set('sort_order', params.sort_order);
 
@@ -300,6 +368,7 @@ export class UsageAPI {
       end_time: string;
       provider?: string;
       model?: string;
+      result?: 'ok' | 'error';
       error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
     },
   ): Promise<RuntimeObservabilityResponse> {
@@ -308,9 +377,40 @@ export class UsageAPI {
     searchParams.set('end_time', params.end_time);
     if (params.provider) searchParams.set('provider', params.provider);
     if (params.model) searchParams.set('model', params.model);
+    if (params.result) searchParams.set('result', params.result);
     if (params.error_class) searchParams.set('error_class', params.error_class);
     return this.client.get<RuntimeObservabilityResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/runtime-observability?${searchParams.toString()}`,
+    );
+  }
+
+  async getOperationsSummary(
+    workspaceId: string,
+    projectId: string,
+    params: {
+      start_time: string;
+      end_time: string;
+      resource_type?: string;
+      resource_id?: string;
+      end_user_id?: string;
+      provider?: string;
+      model?: string;
+      result?: 'ok' | 'error';
+      error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
+    },
+  ): Promise<UsageOperationsSummaryResponse> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('start_time', params.start_time);
+    searchParams.set('end_time', params.end_time);
+    if (params.resource_type) searchParams.set('resource_type', params.resource_type);
+    if (params.resource_id) searchParams.set('resource_id', params.resource_id);
+    if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
+    if (params.provider) searchParams.set('provider', params.provider);
+    if (params.model) searchParams.set('model', params.model);
+    if (params.result) searchParams.set('result', params.result);
+    if (params.error_class) searchParams.set('error_class', params.error_class);
+    return this.client.get<UsageOperationsSummaryResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/operations-summary?${searchParams.toString()}`,
     );
   }
 }

@@ -63,6 +63,7 @@ export type ProjectsRoute =
   | { kind: 'usageKpi'; workspaceId: string; projectId: string }
   | { kind: 'usageTimeseries'; workspaceId: string; projectId: string }
   | { kind: 'usageRuntimeObservability'; workspaceId: string; projectId: string }
+  | { kind: 'usageOperationsSummary'; workspaceId: string; projectId: string }
   | { kind: 'quotaSummary'; workspaceId: string; projectId: string }
   | { kind: 'projectMembers'; workspaceId: string; projectId: string }
   | { kind: 'projectJoinRequests'; workspaceId: string; projectId: string }
@@ -269,6 +270,17 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'usageRuntimeObservability',
       workspaceId: decodeURIComponent(usageRuntimeObservabilityMatched[1]),
       projectId: decodeURIComponent(usageRuntimeObservabilityMatched[2]),
+    };
+  }
+
+  const usageOperationsSummaryMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/operations-summary\/?$/,
+  );
+  if (usageOperationsSummaryMatched) {
+    return {
+      kind: 'usageOperationsSummary',
+      workspaceId: decodeURIComponent(usageOperationsSummaryMatched[1]),
+      projectId: decodeURIComponent(usageOperationsSummaryMatched[2]),
     };
   }
 

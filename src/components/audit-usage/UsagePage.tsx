@@ -6,8 +6,9 @@ import { useTranslations } from 'next-intl';
 import { UsageKPICards } from './UsageKPICards';
 import { UsageFilters } from './UsageFilters';
 import { UsageFactDetailDrawer } from './UsageFactDetailDrawer';
+import { UsageOperationsSummary } from './UsageOperationsSummary';
 import { UsageTable } from './UsageTable';
-import { useUsageFacts, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
+import { useUsageFacts, useUsageKPI, useUsageOperationsSummary, useUsageRecords } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -98,6 +99,9 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const { data, isLoading, error } = useUsageRecords(workspaceId, projectId, apiFilters, {
     enabled: canReadUsage,
   });
+  const operationsSummaryQuery = useUsageOperationsSummary(workspaceId, projectId, apiFilters, {
+    enabled: canReadUsage && panel === 'usage',
+  });
   const usageDetailRange = React.useMemo(
     () => selectedUsageRecord ? getBucketRange(selectedUsageRecord.time_bucket, apiFilters.group_by === 'hour' ? 'hour' : 'day') : null,
     [selectedUsageRecord, apiFilters.group_by],
@@ -111,6 +115,10 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
       resource_type: selectedUsageRecord?.resource_type,
       resource_id: selectedUsageRecord?.resource_id,
       end_user_id: selectedUsageRecord?.end_user_id,
+      result: apiFilters.result,
+      provider: apiFilters.provider,
+      model: apiFilters.model,
+      error_class: apiFilters.error_class,
       page: 1,
       page_size: 20,
       sort_order: 'desc',
@@ -177,6 +185,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
     || !!apiFilters.end_user_id
     || !!apiFilters.provider
     || !!apiFilters.model
+    || !!apiFilters.result
     || !!apiFilters.error_class;
 
   const handleSelectUsageRecord = React.useCallback((record: UsageRecord) => {
@@ -273,6 +282,11 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
               defaultEndUserId={effectiveEndUserId}
             />
           </div>
+
+          <UsageOperationsSummary
+            summary={operationsSummaryQuery.data}
+            loading={operationsSummaryQuery.isLoading}
+          />
 
           <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="rounded-xl border border-border bg-surface p-3">

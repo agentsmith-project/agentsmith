@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
-import { getRuntimeObservability, listUsageFactRecords, recordUsageFact } from './audit-usage-store.js';
+import {
+  getRuntimeObservability,
+  getUsageOperationsSummary,
+  listUsageFactRecords,
+  recordUsageFact,
+} from './audit-usage-store.js';
 
 describe('audit-usage-store runtime observability', () => {
   it('aggregates fallback hops and error classes from usage facts', async () => {
@@ -62,6 +67,11 @@ describe('audit-usage-store runtime observability', () => {
     expect(summary.p95_estimated_cost).toBeGreaterThan(0);
     expect(summary.health_summary.recovered_requests).toBe(2);
     expect(summary.health_summary.missing_price_facts).toBe(1);
+    expect(summary.request_trend.length).toBeGreaterThan(0);
+    expect(summary.cost_distribution_usd.p95).toBeGreaterThan(0);
+    expect(summary.degradation_signals).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'missing_price' })]),
+    );
     expect(summary.provider_breakdown).toEqual([
       expect.objectContaining({ provider: 'openai', requests: 2, errors: 1, fallback_rate: 0.5 }),
       expect.objectContaining({ provider: 'anthropic', requests: 1, errors: 1, missing_price_facts: 1 }),
@@ -174,5 +184,65 @@ describe('audit-usage-store runtime observability', () => {
     expect(rows.total).toBe(1);
     expect(rows.items[0]?.request_id).toBe('req_error');
     expect(rows.items[0]?.runtime?.error_class).toBe('provider_retryable');
+  });
+
+  it('builds usage operations summary from filtered runtime facts', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+    const now = new Date().toISOString();
+
+    await recordUsageFact(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'rpc_1',
+      end_user_id: 'user_a',
+      requests: 2,
+      result: 'ok',
+      request_id: 'req_a',
+      metadata_json: {
+        provider: 'openai',
+        resolved_model: 'gpt-4o',
+        estimated_cost: 0.01,
+      },
+    });
+    await recordUsageFact(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'rpc_1',
+      end_user_id: 'user_b',
+      requests: 1,
+      result: 'error',
+      error_code: 'UPSTREAM_429',
+      request_id: 'req_b',
+      metadata_json: {
+        provider: 'anthropic',
+        resolved_model: 'claude-sonnet-4-5',
+        estimated_cost: 0.02,
+      },
+    });
+
+    const summary = await getUsageOperationsSummary(store, {
+      workspaceId,
+      projectId,
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      endTime: new Date(Date.now() + 60_000).toISOString(),
+      result: null,
+    });
+
+    expect(summary.top_providers[0]).toEqual(expect.objectContaining({ provider: 'anthropic', estimated_cost: 0.02 }));
+    expect(summary.top_models).toEqual(
+      expect.arrayContaining([expect.objectContaining({ provider: 'openai', model: 'gpt-4o', requests: 2 })]),
+    );
+    expect(summary.top_end_users).toEqual(
+      expect.arrayContaining([expect.objectContaining({ end_user_id: 'user_a', requests: 2 })]),
+    );
+    expect(summary.recent_requests).toEqual(
+      expect.arrayContaining([expect.objectContaining({ request_id: 'req_b', result: 'error', error_class: 'provider_retryable' })]),
+    );
   });
 });

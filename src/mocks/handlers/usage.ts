@@ -23,6 +23,9 @@ type UsageLikeRecord = {
 type RuntimeFactLike = {
   requests?: number;
   result: 'ok' | 'error';
+  timestamp?: string;
+  end_user_id?: string;
+  request_id?: string;
   error_code?: string;
   runtime?: {
     provider?: string;
@@ -136,6 +139,14 @@ function buildRuntimeObservabilitySummary(records: Array<Record<string, unknown>
     missingPriceFacts: number;
   }>();
   const costs: number[] = [];
+  const durations: number[] = [];
+  const trend = new Map<string, {
+    requests: number;
+    errors: number;
+    recoveredRequests: number;
+    costs: number[];
+    durations: number[];
+  }>();
   let totalRequests = 0;
   let totalErrors = 0;
   let recoveredRequests = 0;
@@ -154,7 +165,23 @@ function buildRuntimeObservabilitySummary(records: Array<Record<string, unknown>
     }
     const cost = typeof fact.runtime?.estimated_cost === 'number' ? fact.runtime.estimated_cost : 0;
     if (cost > 0) costs.push(cost);
+    const durationMs = typeof (fact as { duration_ms?: number }).duration_ms === 'number' ? (fact as { duration_ms?: number }).duration_ms : undefined;
+    if (typeof durationMs === 'number') durations.push(durationMs);
     if (fact.runtime?.missing_price) missingPriceFacts += reqs;
+    const bucketKey = typeof fact.timestamp === 'string' ? fact.timestamp.slice(0, 13).replace('T', ' ') + ':00' : 'unknown';
+    const trendItem = trend.get(bucketKey) ?? {
+      requests: 0,
+      errors: 0,
+      recoveredRequests: 0,
+      costs: [],
+      durations: [],
+    };
+    trendItem.requests += reqs;
+    if (fact.result === 'error') trendItem.errors += reqs;
+    if (fallbackHops > 0) trendItem.recoveredRequests += reqs;
+    if (cost > 0) trendItem.costs.push(cost);
+    if (typeof durationMs === 'number') trendItem.durations.push(durationMs);
+    trend.set(bucketKey, trendItem);
 
     if (fact.runtime?.provider) {
       const providerAgg = providerBreakdown.get(fact.runtime.provider) ?? {
@@ -199,6 +226,12 @@ function buildRuntimeObservabilitySummary(records: Array<Record<string, unknown>
     const idx = Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1);
     return sorted[idx] ?? 0;
   };
+  const percentile = (values: number[], ratio: number) => {
+    if (values.length === 0) return undefined;
+    const sorted = [...values].sort((a, b) => a - b);
+    const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
+    return sorted[idx];
+  };
 
   const mapBreakdown = <
     T extends {
@@ -227,6 +260,55 @@ function buildRuntimeObservabilitySummary(records: Array<Record<string, unknown>
     }));
 
   const totalCost = costs.reduce((sum, value) => sum + value, 0);
+  const requestTrend = Array.from(trend.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([time_bucket, item]) => ({
+    time_bucket,
+    requests: item.requests,
+    errors: item.errors,
+    recovered_requests: item.recoveredRequests,
+    avg_estimated_cost: item.costs.length > 0
+      ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
+      : 0,
+    duration_p95_ms: percentile(item.durations, 0.95),
+  }));
+  const latestTrend = requestTrend[requestTrend.length - 1];
+  const degradationSignals = [];
+  if (latestTrend && latestTrend.recovered_requests > Math.max(1, latestTrend.requests * 0.4)) {
+    degradationSignals.push({
+      id: `fallback-${latestTrend.time_bucket}`,
+      severity: 'high',
+      kind: 'fallback_spike',
+      title: 'Fallback spike detected',
+      message: `${latestTrend.recovered_requests} recovered requests in ${latestTrend.time_bucket}`,
+    });
+  }
+  if (latestTrend && latestTrend.errors > Math.max(1, latestTrend.requests * 0.2)) {
+    degradationSignals.push({
+      id: `errors-${latestTrend.time_bucket}`,
+      severity: 'high',
+      kind: 'error_rate_spike',
+      title: 'Error spike detected',
+      message: `${latestTrend.errors} errored requests in ${latestTrend.time_bucket}`,
+    });
+  }
+  if (missingPriceFacts > 0) {
+    degradationSignals.push({
+      id: 'missing-price',
+      severity: missingPriceFacts > 1 ? 'high' : 'medium',
+      kind: 'missing_price',
+      title: 'Missing price coverage',
+      message: `${missingPriceFacts} runtime facts are missing price attribution`,
+    });
+  }
+  const latencyP95 = percentile(durations, 0.95);
+  if (latestTrend?.duration_p95_ms && latencyP95 && latestTrend.duration_p95_ms > latencyP95 * 1.25) {
+    degradationSignals.push({
+      id: `latency-${latestTrend.time_bucket}`,
+      severity: 'medium',
+      kind: 'latency_spike',
+      title: 'Latency spike detected',
+      message: `P95 latency elevated to ${Math.round(latestTrend.duration_p95_ms)}ms in ${latestTrend.time_bucket}`,
+    });
+  }
 
   return {
     total_requests: totalRequests,
@@ -243,12 +325,116 @@ function buildRuntimeObservabilitySummary(records: Array<Record<string, unknown>
       provider_count: providerBreakdown.size,
       model_count: modelBreakdown.size,
     },
+    request_trend: requestTrend,
+    latency_distribution_ms: {
+      p50: percentile(durations, 0.5),
+      p95: latencyP95,
+      p99: percentile(durations, 0.99),
+    },
+    cost_distribution_usd: {
+      p50: percentile(costs, 0.5),
+      p95: percentile(costs, 0.95),
+      p99: percentile(costs, 0.99),
+    },
+    degradation_signals: degradationSignals,
     provider_breakdown: mapBreakdown(Array.from(providerBreakdown.values()).sort((a, b) => b.requests - a.requests)),
     model_breakdown: mapBreakdown(Array.from(modelBreakdown.values()).sort((a, b) => b.requests - a.requests)),
     time_range: {
       start,
       end,
     },
+  };
+}
+
+function buildUsageOperationsSummary(records: Array<Record<string, unknown>>) {
+  const facts = records.map(toRuntimeFact);
+  const providerAgg = new Map<string, { provider: string; requests: number; errors: number; estimated_cost: number }>();
+  const modelAgg = new Map<string, { provider: string; model: string; requests: number; errors: number; estimated_cost: number }>();
+  const endUserAgg = new Map<string, { end_user_id: string; requests: number; errors: number; estimated_cost: number }>();
+  const trend = new Map<string, { requests: number; errors: number; cost: number }>();
+
+  for (const fact of facts) {
+    const reqs = fact.requests ?? 1;
+    const cost = typeof fact.runtime?.estimated_cost === 'number' ? fact.runtime.estimated_cost : 0;
+    const provider = fact.runtime?.provider;
+    const model = fact.runtime?.resolved_model;
+    const endUserId = fact.end_user_id;
+    const bucketKey = typeof fact.timestamp === 'string' ? fact.timestamp.slice(0, 13).replace('T', ' ') + ':00' : 'unknown';
+    const trendItem = trend.get(bucketKey) ?? { requests: 0, errors: 0, cost: 0 };
+    trendItem.requests += reqs;
+    if (fact.result === 'error') trendItem.errors += reqs;
+    trendItem.cost += cost;
+    trend.set(bucketKey, trendItem);
+
+    if (provider) {
+      const item = providerAgg.get(provider) ?? { provider, requests: 0, errors: 0, estimated_cost: 0 };
+      item.requests += reqs;
+      if (fact.result === 'error') item.errors += reqs;
+      item.estimated_cost += cost;
+      providerAgg.set(provider, item);
+    }
+    if (provider && model) {
+      const key = `${provider}:${model}`;
+      const item = modelAgg.get(key) ?? { provider, model, requests: 0, errors: 0, estimated_cost: 0 };
+      item.requests += reqs;
+      if (fact.result === 'error') item.errors += reqs;
+      item.estimated_cost += cost;
+      modelAgg.set(key, item);
+    }
+    if (endUserId) {
+      const item = endUserAgg.get(endUserId) ?? { end_user_id: endUserId, requests: 0, errors: 0, estimated_cost: 0 };
+      item.requests += reqs;
+      if (fact.result === 'error') item.errors += reqs;
+      item.estimated_cost += cost;
+      endUserAgg.set(endUserId, item);
+    }
+  }
+
+  const trendItems = Array.from(trend.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([time_bucket, item]) => ({ time_bucket, ...item }));
+  const baselineRequests = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.requests, 0) / trendItems.length : 0;
+  const baselineErrors = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.errors, 0) / trendItems.length : 0;
+  const baselineCost = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.cost, 0) / trendItems.length : 0;
+  const anomalyPeaks = trendItems.slice(-12).flatMap((item) => {
+    const peaks: Array<{
+      id: string;
+      time_bucket: string;
+      metric: 'requests' | 'errors' | 'cost';
+      value: number;
+      baseline: number;
+      severity: 'medium' | 'high';
+    }> = [];
+    if (baselineRequests > 0 && item.requests > baselineRequests * 1.5) {
+      peaks.push({ id: `requests-${item.time_bucket}`, time_bucket: item.time_bucket, metric: 'requests', value: item.requests, baseline: Number(baselineRequests.toFixed(2)), severity: item.requests > baselineRequests * 2 ? 'high' : 'medium' });
+    }
+    if (baselineErrors > 0 && item.errors > baselineErrors * 1.5) {
+      peaks.push({ id: `errors-${item.time_bucket}`, time_bucket: item.time_bucket, metric: 'errors', value: item.errors, baseline: Number(baselineErrors.toFixed(2)), severity: item.errors > baselineErrors * 2 ? 'high' : 'medium' });
+    }
+    if (baselineCost > 0 && item.cost > baselineCost * 1.5) {
+      peaks.push({ id: `cost-${item.time_bucket}`, time_bucket: item.time_bucket, metric: 'cost', value: Number(item.cost.toFixed(8)), baseline: Number(baselineCost.toFixed(8)), severity: item.cost > baselineCost * 2 ? 'high' : 'medium' });
+    }
+    return peaks;
+  });
+
+  return {
+    top_providers: Array.from(providerAgg.values()).sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests).slice(0, 5),
+    top_models: Array.from(modelAgg.values()).sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests).slice(0, 5),
+    top_end_users: Array.from(endUserAgg.values()).sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests).slice(0, 5),
+    anomaly_peaks: anomalyPeaks.slice(0, 6),
+    recent_requests: facts
+      .slice()
+      .sort((a, b) => String(b.timestamp ?? '').localeCompare(String(a.timestamp ?? '')))
+      .slice(0, 12)
+      .map((fact) => ({
+        id: fact.request_id ?? `${fact.timestamp ?? 'unknown'}-${fact.runtime?.provider ?? 'runtime'}`,
+        timestamp: fact.timestamp ?? new Date().toISOString(),
+        request_id: fact.request_id,
+        provider: fact.runtime?.provider,
+        model: fact.runtime?.resolved_model,
+        end_user_id: fact.end_user_id,
+        result: fact.result,
+        error_class: fact.runtime?.error_class ?? (fact.result === 'error' ? classifyRuntimeErrorClass(fact.error_code) : undefined),
+        estimated_cost: fact.runtime?.estimated_cost ?? undefined,
+      })),
   };
 }
 
@@ -260,6 +446,7 @@ export const usageHandlers = [
     const endUserId = url.searchParams.get('end_user_id');
     const provider = url.searchParams.get('provider');
     const model = url.searchParams.get('model');
+    const result = url.searchParams.get('result');
     const errorClass = url.searchParams.get('error_class');
     const groupBy = url.searchParams.get('group_by') === 'hour' ? 'hour' : 'day';
     const usageItems = p0.usage as Array<{ resource_type?: string | null }> | undefined;
@@ -280,6 +467,7 @@ export const usageHandlers = [
         endUserId,
         provider,
         model,
+        result: result === 'ok' || result === 'error' ? result : null,
         errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
       },
     });
@@ -302,6 +490,7 @@ export const usageHandlers = [
     const endUserId = url.searchParams.get('end_user_id');
     const provider = url.searchParams.get('provider');
     const model = url.searchParams.get('model');
+    const result = url.searchParams.get('result');
     const errorClass = url.searchParams.get('error_class');
     const fixtureItems = [
       {
@@ -410,6 +599,7 @@ export const usageHandlers = [
       if (endUserId && item.end_user_id !== endUserId) return false;
       if (provider && item.runtime?.provider !== provider) return false;
       if (model && item.runtime?.resolved_model !== model) return false;
+      if (result && item.result !== result) return false;
       if (errorClass && item.runtime?.error_class !== errorClass) return false;
       return true;
     });
@@ -421,6 +611,7 @@ export const usageHandlers = [
       endUserId,
       provider,
       model,
+      result: result === 'ok' || result === 'error' ? result : null,
       errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
     });
     const items = [...runtimeItems, ...fixtureItems];
@@ -491,6 +682,7 @@ export const usageHandlers = [
     const end = url.searchParams.get('end_time') ?? new Date().toISOString();
     const provider = url.searchParams.get('provider');
     const model = url.searchParams.get('model');
+    const result = url.searchParams.get('result');
     const errorClass = url.searchParams.get('error_class');
     const factsResponse = listRuntimeUsageFacts({
       startTime: start,
@@ -528,10 +720,70 @@ export const usageHandlers = [
     ].filter((item) => {
       if (provider && item.runtime.provider !== provider) return false;
       if (model && item.runtime.resolved_model !== model) return false;
+      if (result && item.result !== result) return false;
       if (errorClass && item.runtime.error_class !== errorClass) return false;
       return true;
     });
     return HttpResponse.json(buildRuntimeObservabilitySummary([...factsResponse, ...fixtureFactsResponse], start, end));
+  }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/operations-summary', ({ request }) => {
+    const url = new URL(request.url);
+    const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const end = url.searchParams.get('end_time') ?? new Date().toISOString();
+    const resourceType = url.searchParams.get('resource_type');
+    const resourceId = url.searchParams.get('resource_id');
+    const endUserId = url.searchParams.get('end_user_id');
+    const provider = url.searchParams.get('provider');
+    const model = url.searchParams.get('model');
+    const result = url.searchParams.get('result');
+    const errorClass = url.searchParams.get('error_class');
+    const runtimeFacts = listRuntimeUsageFacts({
+      startTime: start,
+      endTime: end,
+      resourceType,
+      resourceId,
+      endUserId,
+      provider,
+      model,
+      result: result === 'ok' || result === 'error' ? result : null,
+      errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
+    });
+    const fixtureFacts = [
+      {
+        timestamp: end,
+        end_user_id: 'user_001',
+        request_id: 'req_runtime_001',
+        requests: 1,
+        result: 'ok',
+        runtime: {
+          provider: 'secondaryok',
+          resolved_model: 'model-b',
+          estimated_cost: 0.0068,
+        },
+      },
+      {
+        timestamp: start,
+        end_user_id: 'user_002',
+        request_id: 'req_runtime_002',
+        requests: 1,
+        result: 'error',
+        error_code: 'UPSTREAM_429',
+        runtime: {
+          provider: 'primaryfail',
+          resolved_model: 'model-a',
+          error_class: 'provider_retryable',
+          estimated_cost: null,
+        },
+      },
+    ].filter((item) => {
+      if (endUserId && item.end_user_id !== endUserId) return false;
+      if (provider && item.runtime.provider !== provider) return false;
+      if (model && item.runtime.resolved_model !== model) return false;
+      if (result && item.result !== result) return false;
+      if (errorClass && item.runtime.error_class !== errorClass) return false;
+      return true;
+    });
+    return HttpResponse.json(buildUsageOperationsSummary([...runtimeFacts, ...fixtureFacts]));
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/quota/summary', () => {
     const resources = p0.top_resources as Array<{

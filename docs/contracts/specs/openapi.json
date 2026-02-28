@@ -4134,6 +4134,17 @@
             }
           },
           {
+            "name": "result",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "error"
+              ]
+            }
+          },
+          {
             "name": "error_class",
             "in": "query",
             "schema": {
@@ -4356,6 +4367,17 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "result",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "error"
+              ]
             }
           },
           {
@@ -6220,6 +6242,12 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -6229,12 +6257,6 @@
                 }
               }
             }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -6276,6 +6298,12 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -6285,12 +6313,6 @@
                 }
               }
             }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -6396,6 +6418,12 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -6405,12 +6433,6 @@
                 }
               }
             }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -6449,6 +6471,9 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -6458,9 +6483,6 @@
                 }
               }
             }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }
@@ -6596,6 +6618,12 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -6605,12 +6633,6 @@
                 }
               }
             }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -6671,6 +6693,19 @@
             }
           },
           {
+            "name": "result",
+            "in": "query",
+            "description": "Filter by request result",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "error"
+              ]
+            }
+          },
+          {
             "name": "error_class",
             "in": "query",
             "description": "Filter by runtime error class",
@@ -6696,6 +6731,12 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -6705,12 +6746,137 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/operations-summary": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Governance"
+        ],
+        "operationId": "getUsageOperationsSummary",
+        "summary": "Get usage operations summary",
+        "description": "Returns top providers/models/end users, anomaly peaks, and recent request outcomes\nfor the current usage filter scope.\n",
+        "parameters": [
+          {
+            "name": "start_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "result",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "error"
+              ]
+            }
+          },
+          {
+            "name": "error_class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "provider_retryable",
+                "provider_non_retryable",
+                "system_error"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage operations summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageOperationsSummaryResponse"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -8206,6 +8372,12 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -8215,12 +8387,6 @@
                 }
               }
             }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -8305,6 +8471,15 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -8314,15 +8489,6 @@
                 }
               }
             }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
           }
         }
       },
@@ -10065,6 +10231,10 @@
           "avg_estimated_cost",
           "p95_estimated_cost",
           "health_summary",
+          "request_trend",
+          "latency_distribution_ms",
+          "cost_distribution_usd",
+          "degradation_signals",
           "provider_breakdown",
           "model_breakdown",
           "time_range"
@@ -10155,6 +10325,24 @@
               }
             }
           },
+          "request_trend": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeObservabilityTrendPoint"
+            }
+          },
+          "latency_distribution_ms": {
+            "$ref": "#/components/schemas/RuntimeObservabilityDistribution"
+          },
+          "cost_distribution_usd": {
+            "$ref": "#/components/schemas/RuntimeObservabilityDistribution"
+          },
+          "degradation_signals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeObservabilitySignal"
+            }
+          },
           "provider_breakdown": {
             "type": "array",
             "items": {
@@ -10183,6 +10371,96 @@
                 "format": "date-time"
               }
             }
+          }
+        }
+      },
+      "RuntimeObservabilityTrendPoint": {
+        "type": "object",
+        "required": [
+          "time_bucket",
+          "requests",
+          "errors",
+          "recovered_requests",
+          "avg_estimated_cost"
+        ],
+        "properties": {
+          "time_bucket": {
+            "type": "string"
+          },
+          "requests": {
+            "type": "number",
+            "minimum": 0
+          },
+          "errors": {
+            "type": "number",
+            "minimum": 0
+          },
+          "recovered_requests": {
+            "type": "number",
+            "minimum": 0
+          },
+          "avg_estimated_cost": {
+            "type": "number",
+            "minimum": 0
+          },
+          "duration_p95_ms": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "RuntimeObservabilityDistribution": {
+        "type": "object",
+        "properties": {
+          "p50": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p95": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p99": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "RuntimeObservabilitySignal": {
+        "type": "object",
+        "required": [
+          "id",
+          "severity",
+          "kind",
+          "title",
+          "message"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "fallback_spike",
+              "error_rate_spike",
+              "missing_price",
+              "latency_spike"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
           }
         }
       },
@@ -10448,6 +10726,218 @@
           "metadata_json": {
             "type": "object",
             "additionalProperties": true
+          }
+        }
+      },
+      "UsageOperationsSummaryResponse": {
+        "type": "object",
+        "required": [
+          "top_providers",
+          "top_models",
+          "top_end_users",
+          "anomaly_peaks",
+          "recent_requests"
+        ],
+        "properties": {
+          "top_providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageOperationsProviderSummary"
+            }
+          },
+          "top_models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageOperationsModelSummary"
+            }
+          },
+          "top_end_users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageOperationsEndUserSummary"
+            }
+          },
+          "anomaly_peaks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageOperationsAnomalyPeak"
+            }
+          },
+          "recent_requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageOperationsRecentRequest"
+            }
+          }
+        }
+      },
+      "UsageOperationsProviderSummary": {
+        "type": "object",
+        "required": [
+          "provider",
+          "requests",
+          "errors",
+          "estimated_cost"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "requests": {
+            "type": "number",
+            "minimum": 0
+          },
+          "errors": {
+            "type": "number",
+            "minimum": 0
+          },
+          "estimated_cost": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "UsageOperationsModelSummary": {
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "requests",
+          "errors",
+          "estimated_cost"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "requests": {
+            "type": "number",
+            "minimum": 0
+          },
+          "errors": {
+            "type": "number",
+            "minimum": 0
+          },
+          "estimated_cost": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "UsageOperationsEndUserSummary": {
+        "type": "object",
+        "required": [
+          "end_user_id",
+          "requests",
+          "errors",
+          "estimated_cost"
+        ],
+        "properties": {
+          "end_user_id": {
+            "type": "string"
+          },
+          "requests": {
+            "type": "number",
+            "minimum": 0
+          },
+          "errors": {
+            "type": "number",
+            "minimum": 0
+          },
+          "estimated_cost": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "UsageOperationsAnomalyPeak": {
+        "type": "object",
+        "required": [
+          "id",
+          "time_bucket",
+          "metric",
+          "value",
+          "baseline",
+          "severity"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "time_bucket": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string",
+            "enum": [
+              "requests",
+              "errors",
+              "cost"
+            ]
+          },
+          "value": {
+            "type": "number"
+          },
+          "baseline": {
+            "type": "number"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "medium",
+              "high"
+            ]
+          }
+        }
+      },
+      "UsageOperationsRecentRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "timestamp",
+          "result"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "end_user_id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error"
+            ]
+          },
+          "error_class": {
+            "type": "string",
+            "enum": [
+              "provider_retryable",
+              "provider_non_retryable",
+              "system_error"
+            ]
+          },
+          "estimated_cost": {
+            "type": "number",
+            "minimum": 0
           }
         }
       },

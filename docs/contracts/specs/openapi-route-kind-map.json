@@ -47,6 +47,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/runtime-observability",
     "method": "get"
   },
+  "usageOperationsSummary": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/operations-summary",
+    "method": "get"
+  },
   "quotaSummary": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary",
     "method": "get"

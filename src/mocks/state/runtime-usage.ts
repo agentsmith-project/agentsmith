@@ -8,6 +8,7 @@ type UsageFilters = {
   endUserId?: string | null;
   provider?: string | null;
   model?: string | null;
+  result?: 'ok' | 'error' | null;
   errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
 };
 
@@ -52,6 +53,7 @@ function withinRange(item: UsageFactRecord, filters: UsageFilters): boolean {
   if (filters.endUserId && item.end_user_id !== filters.endUserId) return false;
   if (filters.provider && item.runtime?.provider !== filters.provider) return false;
   if (filters.model && item.runtime?.resolved_model !== filters.model) return false;
+  if (filters.result && item.result !== filters.result) return false;
   if (filters.errorClass && item.runtime?.error_class !== filters.errorClass) return false;
   return true;
 }

@@ -68,6 +68,7 @@ export type UsageQuery = {
   endUserId?: string | null;
   provider?: string | null;
   model?: string | null;
+  result?: 'ok' | 'error' | null;
   errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
   groupBy: 'day' | 'hour';
   sortBy: 'time_bucket' | 'resource_type' | 'requests';
@@ -78,7 +79,7 @@ export type UsageQuery = {
 
 export type UsageFactsQuery = Pick<
   UsageQuery,
-  'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId' | 'provider' | 'model' | 'errorClass'
+  'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId' | 'provider' | 'model' | 'result' | 'errorClass'
 > & {
   sortOrder: 'asc' | 'desc';
   page: number;
@@ -214,6 +215,31 @@ export type RuntimeObservabilityResponse = {
     provider_count: number;
     model_count: number;
   };
+  request_trend: Array<{
+    time_bucket: string;
+    requests: number;
+    errors: number;
+    recovered_requests: number;
+    avg_estimated_cost: number;
+    duration_p95_ms?: number;
+  }>;
+  latency_distribution_ms: {
+    p50?: number;
+    p95?: number;
+    p99?: number;
+  };
+  cost_distribution_usd: {
+    p50?: number;
+    p95?: number;
+    p99?: number;
+  };
+  degradation_signals: Array<{
+    id: string;
+    severity: 'low' | 'medium' | 'high';
+    kind: 'fallback_spike' | 'error_rate_spike' | 'missing_price' | 'latency_spike';
+    title: string;
+    message: string;
+  }>;
   provider_breakdown: Array<{
     provider: string;
     requests: number;
@@ -239,6 +265,47 @@ export type RuntimeObservabilityResponse = {
     start: string;
     end: string;
   };
+};
+
+export type UsageOperationsSummaryResponse = {
+  top_providers: Array<{
+    provider: string;
+    requests: number;
+    errors: number;
+    estimated_cost: number;
+  }>;
+  top_models: Array<{
+    provider: string;
+    model: string;
+    requests: number;
+    errors: number;
+    estimated_cost: number;
+  }>;
+  top_end_users: Array<{
+    end_user_id: string;
+    requests: number;
+    errors: number;
+    estimated_cost: number;
+  }>;
+  anomaly_peaks: Array<{
+    id: string;
+    time_bucket: string;
+    metric: 'requests' | 'errors' | 'cost';
+    value: number;
+    baseline: number;
+    severity: 'medium' | 'high';
+  }>;
+  recent_requests: Array<{
+    id: string;
+    timestamp: string;
+    request_id?: string;
+    provider?: string;
+    model?: string;
+    end_user_id?: string;
+    result: 'ok' | 'error';
+    error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
+    estimated_cost?: number;
+  }>;
 };
 
 export const AUDIT_EVENTS_COLLECTION = 'project_audit_events';
@@ -267,6 +334,13 @@ function percentile95(values: number[]): number | undefined {
   if (values.length === 0) return undefined;
   const sorted = [...values].sort((a, b) => a - b);
   const idx = Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1);
+  return sorted[idx];
+}
+
+function percentile(values: number[], ratio: number): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1);
   return sorted[idx];
 }
 
@@ -406,7 +480,7 @@ export async function listAuditEvents(
 
 export async function listUsageFacts(
   docStore: JsonDocStorePort,
-  query: Pick<UsageQuery, 'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId' | 'provider' | 'model' | 'errorClass'>,
+  query: Pick<UsageQuery, 'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId' | 'provider' | 'model' | 'result' | 'errorClass'>,
 ): Promise<UsageFactRecord[]> {
   const rows = (await docStore.list(USAGE_FACTS_COLLECTION, {
     workspace_id: query.workspaceId,
@@ -421,6 +495,7 @@ export async function listUsageFacts(
     if (query.endUserId && row.end_user_id !== query.endUserId) return false;
     if (query.provider && getFactProvider(row) !== query.provider) return false;
     if (query.model && getFactModel(row) !== query.model) return false;
+    if (query.result && row.result !== query.result) return false;
     if (query.errorClass && getFactErrorClass(row) !== query.errorClass) return false;
     return true;
   });
@@ -812,6 +887,7 @@ export async function getRuntimeObservability(
     endTime: string;
     provider?: string | null;
     model?: string | null;
+    result?: 'ok' | 'error' | null;
     errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
   },
 ): Promise<RuntimeObservabilityResponse> {
@@ -823,6 +899,7 @@ export async function getRuntimeObservability(
     resourceType: 'endpoint',
     provider: query.provider ?? null,
     model: query.model ?? null,
+    result: query.result ?? null,
     errorClass: query.errorClass ?? null,
   });
 
@@ -850,6 +927,14 @@ export async function getRuntimeObservability(
     missingPriceFacts: number;
   }>();
   const estimatedCosts: number[] = [];
+  const durations: number[] = [];
+  const trendBuckets = new Map<string, {
+    requests: number;
+    errors: number;
+    recoveredRequests: number;
+    costs: number[];
+    durations: number[];
+  }>();
   let totalRequests = 0;
   let totalErrors = 0;
   let recoveredRequests = 0;
@@ -878,9 +963,26 @@ export async function getRuntimeObservability(
     if (estimatedCost > 0) {
       estimatedCosts.push(estimatedCost);
     }
+    if (typeof fact.duration_ms === 'number') {
+      durations.push(fact.duration_ms);
+    }
     if (missingPrice) {
       missingPriceFacts += reqs;
     }
+    const trendBucketKey = formatBucket(fact.timestamp, 'hour');
+    const trendBucket = trendBuckets.get(trendBucketKey) ?? {
+      requests: 0,
+      errors: 0,
+      recoveredRequests: 0,
+      costs: [],
+      durations: [],
+    };
+    trendBucket.requests += reqs;
+    if (fact.result === 'error') trendBucket.errors += reqs;
+    if (fallbackHops > 0) trendBucket.recoveredRequests += reqs;
+    if (estimatedCost > 0) trendBucket.costs.push(estimatedCost);
+    if (typeof fact.duration_ms === 'number') trendBucket.durations.push(fact.duration_ms);
+    trendBuckets.set(trendBucketKey, trendBucket);
 
     if (provider) {
       const providerAgg = providerBreakdown.get(provider) ?? {
@@ -923,6 +1025,64 @@ export async function getRuntimeObservability(
   const totalCost = estimatedCosts.reduce((sum, value) => sum + value, 0);
   const avgCost = estimatedCosts.length > 0 ? totalCost / estimatedCosts.length : 0;
   const errorRate = totalRequests > 0 ? Number((totalErrors / totalRequests).toFixed(4)) : 0;
+  const requestTrend = Array.from(trendBuckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([timeBucket, item]) => ({
+      time_bucket: timeBucket,
+      requests: item.requests,
+      errors: item.errors,
+      recovered_requests: item.recoveredRequests,
+      avg_estimated_cost: item.costs.length > 0
+        ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
+        : 0,
+      duration_p95_ms: item.durations.length > 0 ? percentile95(item.durations) : undefined,
+    }));
+  const baselineRequests = requestTrend.length > 0
+    ? requestTrend.reduce((sum, item) => sum + item.requests, 0) / requestTrend.length
+    : 0;
+  const baselineErrors = requestTrend.length > 0
+    ? requestTrend.reduce((sum, item) => sum + item.errors, 0) / requestTrend.length
+    : 0;
+  const latestTrend = requestTrend[requestTrend.length - 1];
+  const degradationSignals: RuntimeObservabilityResponse['degradation_signals'] = [];
+  if (latestTrend && baselineRequests > 0 && latestTrend.recovered_requests > Math.max(3, latestTrend.requests * 0.4)) {
+    degradationSignals.push({
+      id: `fallback-${latestTrend.time_bucket}`,
+      severity: 'high',
+      kind: 'fallback_spike',
+      title: 'Fallback spike detected',
+      message: `${latestTrend.recovered_requests} recovered requests in ${latestTrend.time_bucket}`,
+    });
+  }
+  if (latestTrend && baselineErrors > 0 && latestTrend.errors > Math.max(2, baselineErrors * 1.5)) {
+    degradationSignals.push({
+      id: `errors-${latestTrend.time_bucket}`,
+      severity: 'high',
+      kind: 'error_rate_spike',
+      title: 'Error spike detected',
+      message: `${latestTrend.errors} errored requests in ${latestTrend.time_bucket}`,
+    });
+  }
+  if (missingPriceFacts > 0) {
+    degradationSignals.push({
+      id: 'missing-price',
+      severity: missingPriceFacts > 3 ? 'high' : 'medium',
+      kind: 'missing_price',
+      title: 'Missing price coverage',
+      message: `${missingPriceFacts} runtime facts are missing price attribution`,
+    });
+  }
+  const p95Latency = durations.length > 0 ? percentile95(durations) : undefined;
+  const p99Latency = durations.length > 0 ? percentile(durations, 0.99) : undefined;
+  if (latestTrend?.duration_p95_ms && p95Latency && latestTrend.duration_p95_ms > p95Latency * 1.25) {
+    degradationSignals.push({
+      id: `latency-${latestTrend.time_bucket}`,
+      severity: 'medium',
+      kind: 'latency_spike',
+      title: 'Latency spike detected',
+      message: `P95 latency elevated to ${Math.round(latestTrend.duration_p95_ms)}ms in ${latestTrend.time_bucket}`,
+    });
+  }
 
   return {
     total_requests: totalRequests,
@@ -939,6 +1099,18 @@ export async function getRuntimeObservability(
       provider_count: providerBreakdown.size,
       model_count: modelBreakdown.size,
     },
+    request_trend: requestTrend,
+    latency_distribution_ms: {
+      p50: percentile(durations, 0.5),
+      p95: p95Latency,
+      p99: p99Latency,
+    },
+    cost_distribution_usd: {
+      p50: percentile(estimatedCosts, 0.5),
+      p95: percentile(estimatedCosts, 0.95),
+      p99: percentile(estimatedCosts, 0.99),
+    },
+    degradation_signals: degradationSignals,
     provider_breakdown: Array.from(providerBreakdown.values())
       .sort((a, b) => b.requests - a.requests || a.provider.localeCompare(b.provider))
       .map((item) => ({
@@ -972,5 +1144,148 @@ export async function getRuntimeObservability(
       start: query.startTime,
       end: query.endTime,
     },
+  };
+}
+
+export async function getUsageOperationsSummary(
+  docStore: JsonDocStorePort,
+  query: {
+    workspaceId: string;
+    projectId: string;
+    startTime: string;
+    endTime: string;
+    resourceType?: string | null;
+    resourceId?: string | null;
+    endUserId?: string | null;
+    provider?: string | null;
+    model?: string | null;
+    result?: 'ok' | 'error' | null;
+    errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
+  },
+): Promise<UsageOperationsSummaryResponse> {
+  const facts = await listUsageFacts(docStore, {
+    workspaceId: query.workspaceId,
+    projectId: query.projectId,
+    startTime: query.startTime,
+    endTime: query.endTime,
+    resourceType: query.resourceType ?? null,
+    resourceId: query.resourceId ?? null,
+    endUserId: query.endUserId ?? null,
+    provider: query.provider ?? null,
+    model: query.model ?? null,
+    result: query.result ?? null,
+    errorClass: query.errorClass ?? null,
+  });
+
+  const providerAgg = new Map<string, { provider: string; requests: number; errors: number; estimated_cost: number }>();
+  const modelAgg = new Map<string, { provider: string; model: string; requests: number; errors: number; estimated_cost: number }>();
+  const endUserAgg = new Map<string, { end_user_id: string; requests: number; errors: number; estimated_cost: number }>();
+  const trendBuckets = new Map<string, { requests: number; errors: number; cost: number }>();
+
+  for (const fact of facts) {
+    const reqs = fact.requests ?? 1;
+    const cost = estimateFactCost(fact);
+    const provider = getFactProvider(fact);
+    const model = getFactModel(fact);
+    const endUserId = nonEmptyString(fact.end_user_id);
+    const bucketKey = formatBucket(fact.timestamp, 'hour');
+    const trend = trendBuckets.get(bucketKey) ?? { requests: 0, errors: 0, cost: 0 };
+    trend.requests += reqs;
+    if (fact.result === 'error') trend.errors += reqs;
+    trend.cost += cost;
+    trendBuckets.set(bucketKey, trend);
+
+    if (provider) {
+      const item = providerAgg.get(provider) ?? { provider, requests: 0, errors: 0, estimated_cost: 0 };
+      item.requests += reqs;
+      if (fact.result === 'error') item.errors += reqs;
+      item.estimated_cost += cost;
+      providerAgg.set(provider, item);
+    }
+    if (provider && model) {
+      const key = `${provider}:${model}`;
+      const item = modelAgg.get(key) ?? { provider, model, requests: 0, errors: 0, estimated_cost: 0 };
+      item.requests += reqs;
+      if (fact.result === 'error') item.errors += reqs;
+      item.estimated_cost += cost;
+      modelAgg.set(key, item);
+    }
+    if (endUserId) {
+      const item = endUserAgg.get(endUserId) ?? { end_user_id: endUserId, requests: 0, errors: 0, estimated_cost: 0 };
+      item.requests += reqs;
+      if (fact.result === 'error') item.errors += reqs;
+      item.estimated_cost += cost;
+      endUserAgg.set(endUserId, item);
+    }
+  }
+
+  const trendItems = Array.from(trendBuckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([time_bucket, item]) => ({ time_bucket, ...item }));
+  const baselineRequests = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.requests, 0) / trendItems.length : 0;
+  const baselineErrors = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.errors, 0) / trendItems.length : 0;
+  const baselineCost = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.cost, 0) / trendItems.length : 0;
+  const anomalyPeaks: UsageOperationsSummaryResponse['anomaly_peaks'] = [];
+  for (const item of trendItems.slice(-12)) {
+    if (baselineRequests > 0 && item.requests > baselineRequests * 1.5) {
+      anomalyPeaks.push({
+        id: `requests-${item.time_bucket}`,
+        time_bucket: item.time_bucket,
+        metric: 'requests',
+        value: item.requests,
+        baseline: Number(baselineRequests.toFixed(2)),
+        severity: item.requests > baselineRequests * 2 ? 'high' : 'medium',
+      });
+    }
+    if (baselineErrors > 0 && item.errors > baselineErrors * 1.5) {
+      anomalyPeaks.push({
+        id: `errors-${item.time_bucket}`,
+        time_bucket: item.time_bucket,
+        metric: 'errors',
+        value: item.errors,
+        baseline: Number(baselineErrors.toFixed(2)),
+        severity: item.errors > baselineErrors * 2 ? 'high' : 'medium',
+      });
+    }
+    if (baselineCost > 0 && item.cost > baselineCost * 1.5) {
+      anomalyPeaks.push({
+        id: `cost-${item.time_bucket}`,
+        time_bucket: item.time_bucket,
+        metric: 'cost',
+        value: Number(item.cost.toFixed(8)),
+        baseline: Number(baselineCost.toFixed(8)),
+        severity: item.cost > baselineCost * 2 ? 'high' : 'medium',
+      });
+    }
+  }
+
+  const recentRequests = facts
+    .slice()
+    .sort((a, b) => parseIsoMillis(b.timestamp) - parseIsoMillis(a.timestamp))
+    .slice(0, 12)
+    .map((fact) => ({
+      id: fact.id,
+      timestamp: fact.timestamp,
+      request_id: fact.request_id,
+      provider: getFactProvider(fact),
+      model: getFactModel(fact),
+      end_user_id: fact.end_user_id,
+      result: fact.result,
+      error_class: getFactErrorClass(fact),
+      estimated_cost: estimateFactCost(fact) || undefined,
+    }));
+
+  return {
+    top_providers: Array.from(providerAgg.values())
+      .sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests)
+      .slice(0, 5),
+    top_models: Array.from(modelAgg.values())
+      .sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests)
+      .slice(0, 5),
+    top_end_users: Array.from(endUserAgg.values())
+      .sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests)
+      .slice(0, 5),
+    anomaly_peaks: anomalyPeaks.slice(0, 6),
+    recent_requests: recentRequests,
   };
 }

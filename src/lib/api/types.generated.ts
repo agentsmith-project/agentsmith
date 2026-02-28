@@ -2493,6 +2493,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/operations-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get usage operations summary
+         * @description Returns top providers/models/end users, anomaly peaks, and recent request outcomes
+         *     for the current usage filter scope.
+         */
+        get: operations["getUsageOperationsSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/runtime-observability": {
         parameters: {
             query?: never;
@@ -3104,6 +3128,11 @@ export interface components {
             output: number;
             reasoning?: number;
         };
+        RuntimeObservabilityDistribution: {
+            p50?: number;
+            p95?: number;
+            p99?: number;
+        };
         RuntimeObservabilityModelBreakdown: {
             avg_estimated_cost: number;
             error_rate: number;
@@ -3129,6 +3158,8 @@ export interface components {
         RuntimeObservabilityResponse: {
             /** @description Average estimated cost in USD */
             avg_estimated_cost: number;
+            cost_distribution_usd: components["schemas"]["RuntimeObservabilityDistribution"];
+            degradation_signals: components["schemas"]["RuntimeObservabilitySignal"][];
             error_class_counts: {
                 provider_non_retryable: number;
                 provider_retryable: number;
@@ -3146,10 +3177,12 @@ export interface components {
                 recovered_requests: number;
                 terminal_error_requests: number;
             };
+            latency_distribution_ms: components["schemas"]["RuntimeObservabilityDistribution"];
             model_breakdown: components["schemas"]["RuntimeObservabilityModelBreakdown"][];
             /** @description P95 estimated cost in USD */
             p95_estimated_cost: number;
             provider_breakdown: components["schemas"]["RuntimeObservabilityProviderBreakdown"][];
+            request_trend: components["schemas"]["RuntimeObservabilityTrendPoint"][];
             time_range: {
                 /** Format: date-time */
                 end: string;
@@ -3158,6 +3191,23 @@ export interface components {
             };
             total_errors: number;
             total_requests: number;
+        };
+        RuntimeObservabilitySignal: {
+            id: string;
+            /** @enum {string} */
+            kind: "fallback_spike" | "error_rate_spike" | "missing_price" | "latency_spike";
+            message: string;
+            /** @enum {string} */
+            severity: "low" | "medium" | "high";
+            title: string;
+        };
+        RuntimeObservabilityTrendPoint: {
+            avg_estimated_cost: number;
+            duration_p95_ms?: number;
+            errors: number;
+            recovered_requests: number;
+            requests: number;
+            time_bucket: string;
         };
         RuntimePricingActivationReadiness: {
             blockers: string[];
@@ -3498,6 +3548,56 @@ export interface components {
             pricing_version?: string | null;
             provider?: string;
             resolved_model?: string;
+        };
+        UsageOperationsAnomalyPeak: {
+            baseline: number;
+            id: string;
+            /** @enum {string} */
+            metric: "requests" | "errors" | "cost";
+            /** @enum {string} */
+            severity: "medium" | "high";
+            time_bucket: string;
+            value: number;
+        };
+        UsageOperationsEndUserSummary: {
+            end_user_id: string;
+            errors: number;
+            estimated_cost: number;
+            requests: number;
+        };
+        UsageOperationsModelSummary: {
+            errors: number;
+            estimated_cost: number;
+            model: string;
+            provider: string;
+            requests: number;
+        };
+        UsageOperationsProviderSummary: {
+            errors: number;
+            estimated_cost: number;
+            provider: string;
+            requests: number;
+        };
+        UsageOperationsRecentRequest: {
+            end_user_id?: string;
+            /** @enum {string} */
+            error_class?: "provider_retryable" | "provider_non_retryable" | "system_error";
+            estimated_cost?: number;
+            id: string;
+            model?: string;
+            provider?: string;
+            request_id?: string;
+            /** @enum {string} */
+            result: "ok" | "error";
+            /** Format: date-time */
+            timestamp: string;
+        };
+        UsageOperationsSummaryResponse: {
+            anomaly_peaks: components["schemas"]["UsageOperationsAnomalyPeak"][];
+            recent_requests: components["schemas"]["UsageOperationsRecentRequest"][];
+            top_end_users: components["schemas"]["UsageOperationsEndUserSummary"][];
+            top_models: components["schemas"]["UsageOperationsModelSummary"][];
+            top_providers: components["schemas"]["UsageOperationsProviderSummary"][];
         };
         /** @description Request parameters for usage time series data */
         UsageTimeseriesRequest: {
@@ -8777,6 +8877,7 @@ export interface operations {
                 provider?: string;
                 resource_id?: string;
                 resource_type?: string;
+                result?: "ok" | "error";
                 sort_by?: string;
                 sort_order?: "asc" | "desc";
                 start_time: string;
@@ -8834,6 +8935,7 @@ export interface operations {
                 provider?: string;
                 resource_id?: string;
                 resource_type?: string;
+                result?: "ok" | "error";
                 sort_order?: "asc" | "desc";
                 start_time: string;
             };
@@ -8901,6 +9003,50 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    getUsageOperationsSummary: {
+        parameters: {
+            query: {
+                end_time: string;
+                end_user_id?: string;
+                error_class?: "provider_retryable" | "provider_non_retryable" | "system_error";
+                model?: string;
+                provider?: string;
+                resource_id?: string;
+                resource_type?: string;
+                result?: "ok" | "error";
+                start_time: string;
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage operations summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageOperationsSummaryResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     getRuntimeObservability: {
         parameters: {
             query: {
@@ -8912,6 +9058,8 @@ export interface operations {
                 model?: string;
                 /** @description Filter by runtime provider */
                 provider?: string;
+                /** @description Filter by request result */
+                result?: "ok" | "error";
                 /** @description Start time in ISO 8601 format */
                 start_time: string;
             };

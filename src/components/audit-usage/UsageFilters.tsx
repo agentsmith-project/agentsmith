@@ -90,9 +90,10 @@ export function UsageFilters({
       || filters.end_user_id
       || filters.provider
       || filters.model
+      || filters.result
       || filters.error_class
     );
-  }, [filters.resource_type, filters.resource_id, filters.end_user_id, filters.provider, filters.model, filters.error_class, hasNonDefaultTimeRange]);
+  }, [filters.resource_type, filters.resource_id, filters.end_user_id, filters.provider, filters.model, filters.result, filters.error_class, hasNonDefaultTimeRange]);
 
   return (
     <div className={cn('bg-surface border border-border rounded-xl p-4 space-y-4', className)}>
@@ -177,6 +178,23 @@ export function UsageFilters({
             value={filters.model || ''}
             onChange={(e) => handleTextFilterChange('model', e.target.value || undefined)}
           />
+        </div>
+
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.result')}</label>
+          <Select
+            value={filters.result || 'all'}
+            onValueChange={(value) => handleSelectFilterChange('result', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger className="h-10">
+              <SelectValue placeholder={commonT('all')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{commonT('all')}</SelectItem>
+              <SelectItem value="ok">{t('filters.result_ok')}</SelectItem>
+              <SelectItem value="error">{t('filters.result_error')}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div>

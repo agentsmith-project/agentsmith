@@ -98,7 +98,7 @@ test.describe('Settings Page', () => {
     expect(payload.credential_ref).toBe('cred_e2e');
   });
 
-  test('runtime control plane page shows observability KPIs', async ({ authedPage }) => {
+  test('runtime control plane page shows embedded observability console', async ({ authedPage }) => {
     await goToProject(authedPage, 'settings');
     await authedPage.getByTestId('settings__tab--runtime').click();
     const openControlPlane = authedPage.getByTestId('settings__runtime-open-control-plane');
@@ -112,12 +112,30 @@ test.describe('Settings Page', () => {
     ]);
 
     await expect(authedPage).toHaveURL(/\/runtime-control-plane$/);
-    await expect(authedPage.getByTestId('runtime-cp__kpi-total-requests')).toBeVisible();
-    await expect(authedPage.getByTestId('runtime-cp__kpi-error-rate')).toBeVisible();
-    await expect(authedPage.getByTestId('runtime-cp__kpi-fallback-rate')).toBeVisible();
-    await expect(authedPage.getByTestId('runtime-cp__kpi-p95-cost')).toBeVisible();
-    await expect(authedPage.getByTestId('runtime-cp__alert-fallback')).toBeVisible();
-    await expect(authedPage.getByTestId('runtime-cp__alert-error-rate')).toBeVisible();
+    await expect(authedPage.getByTestId('runtime-observability__kpi-total-requests')).toBeVisible();
+    await expect(authedPage.getByTestId('runtime-observability__kpi-error-rate')).toBeVisible();
+    await expect(authedPage.getByTestId('runtime-observability__kpi-fallback-rate')).toBeVisible();
+    await expect(authedPage.getByTestId('runtime-observability__kpi-p95-cost')).toBeVisible();
+    await expect(authedPage.getByTestId('runtime-observability__provider-table')).toBeVisible();
+    await expect(authedPage.getByTestId('runtime-cp__open-observability')).toBeVisible();
+  });
+
+  test('runtime observability console route is reachable from settings', async ({ authedPage }) => {
+    await goToProject(authedPage, 'settings');
+    await authedPage.getByTestId('settings__tab--runtime').click();
+    const openObservability = authedPage.getByTestId('settings__runtime-open-observability');
+    const clickTarget = (await openObservability.locator('a').count()) > 0
+      ? openObservability.locator('a').first()
+      : openObservability;
+
+    await Promise.all([
+      authedPage.waitForURL(/\/runtime-observability$/, { timeout: 10000 }),
+      clickTarget.click(),
+    ]);
+
+    await expect(authedPage).toHaveURL(/\/runtime-observability$/);
+    await expect(authedPage.getByTestId('runtime-observability__provider-table')).toBeVisible();
+    await expect(authedPage.getByTestId('runtime-observability__model-table')).toBeVisible();
   });
 
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {

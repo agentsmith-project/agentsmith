@@ -161,6 +161,16 @@ export function UsageFactDetailDrawer({
                     </div>
 
                     <div className="border-t border-subtle px-5 py-4">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.error_class')}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <code className="rounded bg-surface-high px-2 py-1 text-xs text-foreground">
+                          {fact.runtime?.error_class ?? '--'}
+                        </code>
+                        {fact.error_code ? <Badge variant="outline">{fact.error_code}</Badge> : null}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-subtle px-5 py-4">
                       <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.pricing_version')}</div>
                       <div className="mt-2 flex flex-wrap items-center gap-2" data-testid={`usage__detail-pricing-version-${fact.id}`}>
                         <code className="rounded bg-surface-high px-2 py-1 text-xs text-foreground">

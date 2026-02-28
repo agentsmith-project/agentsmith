@@ -172,7 +172,12 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const canGoPrev = currentPage > 1;
   const canGoNext = !!data?.has_more || currentPage < totalPages;
-  const hasActiveFilters = !!apiFilters.resource_type || !!apiFilters.resource_id || !!apiFilters.end_user_id;
+  const hasActiveFilters = !!apiFilters.resource_type
+    || !!apiFilters.resource_id
+    || !!apiFilters.end_user_id
+    || !!apiFilters.provider
+    || !!apiFilters.model
+    || !!apiFilters.error_class;
 
   const handleSelectUsageRecord = React.useCallback((record: UsageRecord) => {
     setSelectedUsageRecord(record);

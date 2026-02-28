@@ -164,6 +164,9 @@ export function useRuntimeObservability(
   params: {
     start_time: string;
     end_time: string;
+    provider?: string;
+    model?: string;
+    error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
   },
   options?: { enabled?: boolean },
 ) {

@@ -178,6 +178,11 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('runtime-control-plane.png', { fullPage: true });
   });
 
+  test('runtime observability', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('runtime-observability'));
+    await expect(authedPage).toHaveScreenshot('runtime-observability.png', { fullPage: true });
+  });
+
 });
 
 // ─── User Pages ─────────────────────────────────────────────────────────────

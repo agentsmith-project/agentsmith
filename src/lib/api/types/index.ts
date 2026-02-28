@@ -455,6 +455,7 @@ export interface UsageRecord {
 export interface UsageFactRuntimeMetadata {
   provider?: string;
   resolved_model?: string;
+  error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
   fallback_hops?: number;
   pricing_version?: string | null;
   estimated_cost?: number | null;
@@ -513,6 +514,9 @@ export interface UsageListParams extends PaginationParams {
   resource_type?: string;
   resource_id?: string;
   end_user_id?: string;
+  provider?: string;
+  model?: string;
+  error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
   group_by?: 'day' | 'hour';
   sort_by?: 'time_bucket' | 'resource_type' | 'requests';
   sort_order?: 'asc' | 'desc';

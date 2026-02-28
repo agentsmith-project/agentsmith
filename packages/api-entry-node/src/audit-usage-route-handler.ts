@@ -22,6 +22,13 @@ type HandlerArgs = {
   deps: NodeApiDeps;
 };
 
+function parseRuntimeErrorClass(value: string | null): 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null {
+  if (value === 'provider_retryable' || value === 'provider_non_retryable' || value === 'system_error') {
+    return value;
+  }
+  return null;
+}
+
 function parsePositiveInt(value: string | null, fallback: number, max?: number): number {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -85,6 +92,9 @@ export async function handleAuditUsageRoute({
     const resourceType = requestUrl.searchParams.get('resource_type');
     const resourceId = requestUrl.searchParams.get('resource_id');
     const endUserId = requestUrl.searchParams.get('end_user_id');
+    const provider = requestUrl.searchParams.get('provider');
+    const model = requestUrl.searchParams.get('model');
+    const errorClass = parseRuntimeErrorClass(requestUrl.searchParams.get('error_class'));
     const groupBy = requestUrl.searchParams.get('group_by') === 'hour' ? 'hour' : 'day';
     const sortByRaw = requestUrl.searchParams.get('sort_by');
     const sortOrder = requestUrl.searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc';
@@ -100,6 +110,9 @@ export async function handleAuditUsageRoute({
       resourceType,
       resourceId,
       endUserId,
+      provider,
+      model,
+      errorClass,
       groupBy,
       sortBy,
       sortOrder,
@@ -123,6 +136,9 @@ export async function handleAuditUsageRoute({
       resourceType: requestUrl.searchParams.get('resource_type'),
       resourceId: requestUrl.searchParams.get('resource_id'),
       endUserId: requestUrl.searchParams.get('end_user_id'),
+      provider: requestUrl.searchParams.get('provider'),
+      model: requestUrl.searchParams.get('model'),
+      errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
       sortOrder: requestUrl.searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc',
       page,
       pageSize,
@@ -184,6 +200,9 @@ export async function handleAuditUsageRoute({
       projectId: route.projectId,
       startTime: range.start.toISOString(),
       endTime: range.end.toISOString(),
+      provider: requestUrl.searchParams.get('provider'),
+      model: requestUrl.searchParams.get('model'),
+      errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
     });
     json(res, 200, payload);
     return true;

@@ -2998,6 +2998,27 @@ export interface components {
             output: number;
             reasoning?: number;
         };
+        RuntimeObservabilityModelBreakdown: {
+            avg_estimated_cost: number;
+            error_rate: number;
+            errors: number;
+            fallback_rate: number;
+            missing_price_facts: number;
+            model: string;
+            p95_estimated_cost: number;
+            provider: string;
+            requests: number;
+        };
+        RuntimeObservabilityProviderBreakdown: {
+            avg_estimated_cost: number;
+            error_rate: number;
+            errors: number;
+            fallback_rate: number;
+            missing_price_facts: number;
+            p95_estimated_cost: number;
+            provider: string;
+            requests: number;
+        };
         /** @description Runtime routing observability summary for a time range */
         RuntimeObservabilityResponse: {
             /** @description Average estimated cost in USD */
@@ -3012,8 +3033,17 @@ export interface components {
             fallback_hops_histogram: {
                 [key: string]: number;
             };
+            health_summary: {
+                missing_price_facts: number;
+                model_count: number;
+                provider_count: number;
+                recovered_requests: number;
+                terminal_error_requests: number;
+            };
+            model_breakdown: components["schemas"]["RuntimeObservabilityModelBreakdown"][];
             /** @description P95 estimated cost in USD */
             p95_estimated_cost: number;
+            provider_breakdown: components["schemas"]["RuntimeObservabilityProviderBreakdown"][];
             time_range: {
                 /** Format: date-time */
                 end: string;
@@ -3241,6 +3271,8 @@ export interface components {
             attempts?: {
                 [key: string]: unknown;
             }[];
+            /** @enum {string} */
+            error_class?: "provider_retryable" | "provider_non_retryable" | "system_error";
             estimated_cost?: number | null;
             fallback_hops?: number;
             missing_price?: boolean;
@@ -8300,9 +8332,12 @@ export interface operations {
             query: {
                 end_time: string;
                 end_user_id?: string;
+                error_class?: "provider_retryable" | "provider_non_retryable" | "system_error";
                 group_by?: "day" | "hour";
+                model?: string;
                 page?: number;
                 page_size?: number;
+                provider?: string;
                 resource_id?: string;
                 resource_type?: string;
                 sort_by?: string;
@@ -8355,8 +8390,11 @@ export interface operations {
             query: {
                 end_time: string;
                 end_user_id?: string;
+                error_class?: "provider_retryable" | "provider_non_retryable" | "system_error";
+                model?: string;
                 page?: number;
                 page_size?: number;
+                provider?: string;
                 resource_id?: string;
                 resource_type?: string;
                 sort_order?: "asc" | "desc";
@@ -8431,6 +8469,12 @@ export interface operations {
             query: {
                 /** @description End time in ISO 8601 format */
                 end_time: string;
+                /** @description Filter by runtime error class */
+                error_class?: "provider_retryable" | "provider_non_retryable" | "system_error";
+                /** @description Filter by resolved runtime model */
+                model?: string;
+                /** @description Filter by runtime provider */
+                provider?: string;
                 /** @description Start time in ISO 8601 format */
                 start_time: string;
             };

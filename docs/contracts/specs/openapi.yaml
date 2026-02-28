@@ -2555,6 +2555,22 @@ paths:
           in: query
           schema:
             type: string
+        - name: provider
+          in: query
+          schema:
+            type: string
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: error_class
+          in: query
+          schema:
+            type: string
+            enum:
+              - provider_retryable
+              - provider_non_retryable
+              - system_error
         - name: group_by
           in: query
           schema:
@@ -2683,6 +2699,19 @@ paths:
           in: query
           schema:
             type: string
+        - name: provider
+          in: query
+          schema:
+            type: string
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: error_class
+          in: query
+          schema:
+            type: string
+            enum: [provider_retryable, provider_non_retryable, system_error]
         - name: sort_order
           in: query
           schema:
@@ -4109,6 +4138,25 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: provider
+          in: query
+          description: Filter by runtime provider
+          required: false
+          schema:
+            type: string
+        - name: model
+          in: query
+          description: Filter by resolved runtime model
+          required: false
+          schema:
+            type: string
+        - name: error_class
+          in: query
+          description: Filter by runtime error class
+          required: false
+          schema:
+            type: string
+            enum: [provider_retryable, provider_non_retryable, system_error]
       responses:
         "200":
           description: Runtime observability snapshot
@@ -5978,6 +6026,9 @@ components:
         - error_class_counts
         - avg_estimated_cost
         - p95_estimated_cost
+        - health_summary
+        - provider_breakdown
+        - model_breakdown
         - time_range
       properties:
         total_requests:
@@ -6020,6 +6071,38 @@ components:
           type: number
           minimum: 0
           description: P95 estimated cost in USD
+        health_summary:
+          type: object
+          required:
+            - recovered_requests
+            - terminal_error_requests
+            - missing_price_facts
+            - provider_count
+            - model_count
+          properties:
+            recovered_requests:
+              type: number
+              minimum: 0
+            terminal_error_requests:
+              type: number
+              minimum: 0
+            missing_price_facts:
+              type: number
+              minimum: 0
+            provider_count:
+              type: number
+              minimum: 0
+            model_count:
+              type: number
+              minimum: 0
+        provider_breakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeObservabilityProviderBreakdown"
+        model_breakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeObservabilityModelBreakdown"
         time_range:
           type: object
           required:
@@ -6032,6 +6115,83 @@ components:
             end:
               type: string
               format: date-time
+    RuntimeObservabilityProviderBreakdown:
+      type: object
+      required:
+        - provider
+        - requests
+        - errors
+        - error_rate
+        - fallback_rate
+        - avg_estimated_cost
+        - p95_estimated_cost
+        - missing_price_facts
+      properties:
+        provider:
+          type: string
+        requests:
+          type: number
+          minimum: 0
+        errors:
+          type: number
+          minimum: 0
+        error_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        fallback_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        avg_estimated_cost:
+          type: number
+          minimum: 0
+        p95_estimated_cost:
+          type: number
+          minimum: 0
+        missing_price_facts:
+          type: number
+          minimum: 0
+    RuntimeObservabilityModelBreakdown:
+      type: object
+      required:
+        - provider
+        - model
+        - requests
+        - errors
+        - error_rate
+        - fallback_rate
+        - avg_estimated_cost
+        - p95_estimated_cost
+        - missing_price_facts
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        requests:
+          type: number
+          minimum: 0
+        errors:
+          type: number
+          minimum: 0
+        error_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        fallback_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        avg_estimated_cost:
+          type: number
+          minimum: 0
+        p95_estimated_cost:
+          type: number
+          minimum: 0
+        missing_price_facts:
+          type: number
+          minimum: 0
     UsageDataPoint:
       type: object
       required:
@@ -6070,6 +6230,9 @@ components:
           type: string
         resolved_model:
           type: string
+        error_class:
+          type: string
+          enum: [provider_retryable, provider_non_retryable, system_error]
         fallback_hops:
           type: number
         pricing_version:

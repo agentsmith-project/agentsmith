@@ -66,6 +66,9 @@ export type UsageQuery = {
   resourceType?: string | null;
   resourceId?: string | null;
   endUserId?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
   groupBy: 'day' | 'hour';
   sortBy: 'time_bucket' | 'resource_type' | 'requests';
   sortOrder: 'asc' | 'desc';
@@ -75,7 +78,7 @@ export type UsageQuery = {
 
 export type UsageFactsQuery = Pick<
   UsageQuery,
-  'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId'
+  'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId' | 'provider' | 'model' | 'errorClass'
 > & {
   sortOrder: 'asc' | 'desc';
   page: number;
@@ -126,6 +129,7 @@ export type UsageFactListItem = {
   runtime?: {
     provider?: string;
     resolved_model?: string;
+    error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
     fallback_hops?: number;
     pricing_version?: string | null;
     estimated_cost?: number | null;
@@ -203,6 +207,34 @@ export type RuntimeObservabilityResponse = {
   error_class_counts: Record<'provider_retryable' | 'provider_non_retryable' | 'system_error', number>;
   avg_estimated_cost: number;
   p95_estimated_cost: number;
+  health_summary: {
+    recovered_requests: number;
+    terminal_error_requests: number;
+    missing_price_facts: number;
+    provider_count: number;
+    model_count: number;
+  };
+  provider_breakdown: Array<{
+    provider: string;
+    requests: number;
+    errors: number;
+    error_rate: number;
+    fallback_rate: number;
+    avg_estimated_cost: number;
+    p95_estimated_cost: number;
+    missing_price_facts: number;
+  }>;
+  model_breakdown: Array<{
+    provider: string;
+    model: string;
+    requests: number;
+    errors: number;
+    error_rate: number;
+    fallback_rate: number;
+    avg_estimated_cost: number;
+    p95_estimated_cost: number;
+    missing_price_facts: number;
+  }>;
   time_range: {
     start: string;
     end: string;
@@ -257,6 +289,30 @@ function classifyRuntimeErrorClass(errorCode?: string): 'provider_retryable' | '
   if (status === 429 || status >= 500) return 'provider_retryable';
   if (status >= 400) return 'provider_non_retryable';
   return 'system_error';
+}
+
+function getFactProvider(fact: UsageFactRecord): string | undefined {
+  return nonEmptyString(fact.metadata_json?.provider);
+}
+
+function getFactModel(fact: UsageFactRecord): string | undefined {
+  return nonEmptyString(fact.metadata_json?.resolved_model);
+}
+
+function getFactErrorClass(fact: UsageFactRecord): 'provider_retryable' | 'provider_non_retryable' | 'system_error' | undefined {
+  if (fact.result !== 'error') return undefined;
+  return classifyRuntimeErrorClass(fact.error_code);
+}
+
+function getFactFallbackHops(fact: UsageFactRecord): number {
+  const fallbackHopsRaw = fact.metadata_json?.fallback_hops;
+  return typeof fallbackHopsRaw === 'number' && Number.isFinite(fallbackHopsRaw)
+    ? Math.max(0, Math.floor(fallbackHopsRaw))
+    : 0;
+}
+
+function isFactMissingPrice(fact: UsageFactRecord): boolean {
+  return fact.metadata_json?.missing_price === true;
 }
 
 export async function recordAuditEvent(
@@ -350,7 +406,7 @@ export async function listAuditEvents(
 
 export async function listUsageFacts(
   docStore: JsonDocStorePort,
-  query: Pick<UsageQuery, 'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId'>,
+  query: Pick<UsageQuery, 'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId' | 'provider' | 'model' | 'errorClass'>,
 ): Promise<UsageFactRecord[]> {
   const rows = (await docStore.list(USAGE_FACTS_COLLECTION, {
     workspace_id: query.workspaceId,
@@ -363,6 +419,9 @@ export async function listUsageFacts(
     if (query.resourceType && row.resource_type !== query.resourceType) return false;
     if (query.resourceId && row.resource_id !== query.resourceId) return false;
     if (query.endUserId && row.end_user_id !== query.endUserId) return false;
+    if (query.provider && getFactProvider(row) !== query.provider) return false;
+    if (query.model && getFactModel(row) !== query.model) return false;
+    if (query.errorClass && getFactErrorClass(row) !== query.errorClass) return false;
     return true;
   });
 }
@@ -393,6 +452,7 @@ function mapFactToListItem(fact: UsageFactRecord): UsageFactListItem {
     runtime: {
       provider: nonEmptyString(metadata?.provider),
       resolved_model: nonEmptyString(metadata?.resolved_model),
+      error_class: fact.result === 'error' ? classifyRuntimeErrorClass(fact.error_code) : undefined,
       fallback_hops: typeof metadata?.fallback_hops === 'number' ? metadata.fallback_hops : undefined,
       pricing_version: typeof metadata?.pricing_version === 'string' ? metadata.pricing_version : null,
       estimated_cost: typeof metadata?.estimated_cost === 'number' ? metadata.estimated_cost : null,
@@ -745,7 +805,15 @@ export async function getQuotaSummary(
 
 export async function getRuntimeObservability(
   docStore: JsonDocStorePort,
-  query: { workspaceId: string; projectId: string; startTime: string; endTime: string },
+  query: {
+    workspaceId: string;
+    projectId: string;
+    startTime: string;
+    endTime: string;
+    provider?: string | null;
+    model?: string | null;
+    errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
+  },
 ): Promise<RuntimeObservabilityResponse> {
   const facts = await listUsageFacts(docStore, {
     workspaceId: query.workspaceId,
@@ -753,6 +821,9 @@ export async function getRuntimeObservability(
     startTime: query.startTime,
     endTime: query.endTime,
     resourceType: 'endpoint',
+    provider: query.provider ?? null,
+    model: query.model ?? null,
+    errorClass: query.errorClass ?? null,
   });
 
   const fallbackHopsHistogram = new Map<string, number>();
@@ -761,29 +832,90 @@ export async function getRuntimeObservability(
     provider_non_retryable: 0,
     system_error: 0,
   };
+  const providerBreakdown = new Map<string, {
+    provider: string;
+    requests: number;
+    errors: number;
+    fallbackRequests: number;
+    costs: number[];
+    missingPriceFacts: number;
+  }>();
+  const modelBreakdown = new Map<string, {
+    provider: string;
+    model: string;
+    requests: number;
+    errors: number;
+    fallbackRequests: number;
+    costs: number[];
+    missingPriceFacts: number;
+  }>();
   const estimatedCosts: number[] = [];
   let totalRequests = 0;
   let totalErrors = 0;
+  let recoveredRequests = 0;
+  let missingPriceFacts = 0;
 
   for (const fact of facts) {
     const reqs = fact.requests ?? 1;
+    const provider = getFactProvider(fact);
+    const model = getFactModel(fact);
+    const fallbackHops = getFactFallbackHops(fact);
+    const estimatedCost = estimateFactCost(fact);
+    const errorClass = getFactErrorClass(fact);
+    const missingPrice = isFactMissingPrice(fact);
     totalRequests += reqs;
     if (fact.result === 'error') {
       totalErrors += reqs;
-      const errorClass = classifyRuntimeErrorClass(fact.error_code);
-      errorClassCounts[errorClass] += reqs;
+      if (errorClass) errorClassCounts[errorClass] += reqs;
     }
-    const fallbackHopsRaw = fact.metadata_json?.fallback_hops;
-    const fallbackHops = typeof fallbackHopsRaw === 'number' && Number.isFinite(fallbackHopsRaw)
-      ? Math.max(0, Math.floor(fallbackHopsRaw))
-      : 0;
+    if (fallbackHops > 0) {
+      recoveredRequests += reqs;
+    }
     fallbackHopsHistogram.set(
       String(fallbackHops),
       (fallbackHopsHistogram.get(String(fallbackHops)) ?? 0) + reqs,
     );
-    const estimatedCost = estimateFactCost(fact);
     if (estimatedCost > 0) {
       estimatedCosts.push(estimatedCost);
+    }
+    if (missingPrice) {
+      missingPriceFacts += reqs;
+    }
+
+    if (provider) {
+      const providerAgg = providerBreakdown.get(provider) ?? {
+        provider,
+        requests: 0,
+        errors: 0,
+        fallbackRequests: 0,
+        costs: [],
+        missingPriceFacts: 0,
+      };
+      providerAgg.requests += reqs;
+      if (fact.result === 'error') providerAgg.errors += reqs;
+      if (fallbackHops > 0) providerAgg.fallbackRequests += reqs;
+      if (estimatedCost > 0) providerAgg.costs.push(estimatedCost);
+      if (missingPrice) providerAgg.missingPriceFacts += reqs;
+      providerBreakdown.set(provider, providerAgg);
+    }
+
+    if (provider && model) {
+      const modelKey = `${provider}:${model}`;
+      const modelAgg = modelBreakdown.get(modelKey) ?? {
+        provider,
+        model,
+        requests: 0,
+        errors: 0,
+        fallbackRequests: 0,
+        costs: [],
+        missingPriceFacts: 0,
+      };
+      modelAgg.requests += reqs;
+      if (fact.result === 'error') modelAgg.errors += reqs;
+      if (fallbackHops > 0) modelAgg.fallbackRequests += reqs;
+      if (estimatedCost > 0) modelAgg.costs.push(estimatedCost);
+      if (missingPrice) modelAgg.missingPriceFacts += reqs;
+      modelBreakdown.set(modelKey, modelAgg);
     }
   }
 
@@ -800,6 +932,42 @@ export async function getRuntimeObservability(
     error_class_counts: errorClassCounts,
     avg_estimated_cost: Number(avgCost.toFixed(8)),
     p95_estimated_cost: Number(p95Cost.toFixed(8)),
+    health_summary: {
+      recovered_requests: recoveredRequests,
+      terminal_error_requests: totalErrors,
+      missing_price_facts: missingPriceFacts,
+      provider_count: providerBreakdown.size,
+      model_count: modelBreakdown.size,
+    },
+    provider_breakdown: Array.from(providerBreakdown.values())
+      .sort((a, b) => b.requests - a.requests || a.provider.localeCompare(b.provider))
+      .map((item) => ({
+        provider: item.provider,
+        requests: item.requests,
+        errors: item.errors,
+        error_rate: item.requests > 0 ? Number((item.errors / item.requests).toFixed(4)) : 0,
+        fallback_rate: item.requests > 0 ? Number((item.fallbackRequests / item.requests).toFixed(4)) : 0,
+        avg_estimated_cost: item.costs.length > 0
+          ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
+          : 0,
+        p95_estimated_cost: item.costs.length > 0 ? Number((percentile95(item.costs) ?? 0).toFixed(8)) : 0,
+        missing_price_facts: item.missingPriceFacts,
+      })),
+    model_breakdown: Array.from(modelBreakdown.values())
+      .sort((a, b) => b.requests - a.requests || a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model))
+      .map((item) => ({
+        provider: item.provider,
+        model: item.model,
+        requests: item.requests,
+        errors: item.errors,
+        error_rate: item.requests > 0 ? Number((item.errors / item.requests).toFixed(4)) : 0,
+        fallback_rate: item.requests > 0 ? Number((item.fallbackRequests / item.requests).toFixed(4)) : 0,
+        avg_estimated_cost: item.costs.length > 0
+          ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
+          : 0,
+        p95_estimated_cost: item.costs.length > 0 ? Number((percentile95(item.costs) ?? 0).toFixed(8)) : 0,
+        missing_price_facts: item.missingPriceFacts,
+      })),
     time_range: {
       start: query.startTime,
       end: query.endTime,

@@ -253,7 +253,12 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('runtime_preferences_title')}</h2>
               <p className="text-sm text-tertiary">{settingsT('runtime_help')}</p>
             </div>
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              <Button asChild variant="outline" size="sm" data-testid="settings__runtime-open-observability">
+                <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-observability`}>
+                  {settingsT('runtime_observability_open_console')}
+                </Link>
+              </Button>
               <Button asChild variant="outline" size="sm" data-testid="settings__runtime-open-control-plane">
                 <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-control-plane`}>
                   {settingsT('runtime_open_control_plane')}

@@ -78,6 +78,34 @@ export interface RuntimeObservabilityResponse {
   };
   avg_estimated_cost: number;
   p95_estimated_cost: number;
+  health_summary: {
+    recovered_requests: number;
+    terminal_error_requests: number;
+    missing_price_facts: number;
+    provider_count: number;
+    model_count: number;
+  };
+  provider_breakdown: Array<{
+    provider: string;
+    requests: number;
+    errors: number;
+    error_rate: number;
+    fallback_rate: number;
+    avg_estimated_cost: number;
+    p95_estimated_cost: number;
+    missing_price_facts: number;
+  }>;
+  model_breakdown: Array<{
+    provider: string;
+    model: string;
+    requests: number;
+    errors: number;
+    error_rate: number;
+    fallback_rate: number;
+    avg_estimated_cost: number;
+    p95_estimated_cost: number;
+    missing_price_facts: number;
+  }>;
   time_range: {
     start: string;
     end: string;
@@ -179,6 +207,9 @@ export class UsageAPI {
     if (params.resource_type) searchParams.set('resource_type', params.resource_type);
     if (params.resource_id) searchParams.set('resource_id', params.resource_id);
     if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
+    if (params.provider) searchParams.set('provider', params.provider);
+    if (params.model) searchParams.set('model', params.model);
+    if (params.error_class) searchParams.set('error_class', params.error_class);
     if (params.group_by) searchParams.set('group_by', params.group_by);
 
     // Sorting
@@ -212,6 +243,9 @@ export class UsageAPI {
     if (params.resource_type) searchParams.set('resource_type', params.resource_type);
     if (params.resource_id) searchParams.set('resource_id', params.resource_id);
     if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
+    if (params.provider) searchParams.set('provider', params.provider);
+    if (params.model) searchParams.set('model', params.model);
+    if (params.error_class) searchParams.set('error_class', params.error_class);
     if (params.sort_order) searchParams.set('sort_order', params.sort_order);
 
     const query = searchParams.toString();
@@ -264,11 +298,17 @@ export class UsageAPI {
     params: {
       start_time: string;
       end_time: string;
+      provider?: string;
+      model?: string;
+      error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
     },
   ): Promise<RuntimeObservabilityResponse> {
     const searchParams = new URLSearchParams();
     searchParams.set('start_time', params.start_time);
     searchParams.set('end_time', params.end_time);
+    if (params.provider) searchParams.set('provider', params.provider);
+    if (params.model) searchParams.set('model', params.model);
+    if (params.error_class) searchParams.set('error_class', params.error_class);
     return this.client.get<RuntimeObservabilityResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/runtime-observability?${searchParams.toString()}`,
     );

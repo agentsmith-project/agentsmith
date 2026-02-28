@@ -6,6 +6,9 @@ type UsageFilters = {
   resourceType?: string | null;
   resourceId?: string | null;
   endUserId?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
 };
 
 declare global {
@@ -47,6 +50,9 @@ function withinRange(item: UsageFactRecord, filters: UsageFilters): boolean {
   if (filters.resourceType && item.resource_type !== filters.resourceType) return false;
   if (filters.resourceId && item.resource_id !== filters.resourceId) return false;
   if (filters.endUserId && item.end_user_id !== filters.endUserId) return false;
+  if (filters.provider && item.runtime?.provider !== filters.provider) return false;
+  if (filters.model && item.runtime?.resolved_model !== filters.model) return false;
+  if (filters.errorClass && item.runtime?.error_class !== filters.errorClass) return false;
   return true;
 }
 

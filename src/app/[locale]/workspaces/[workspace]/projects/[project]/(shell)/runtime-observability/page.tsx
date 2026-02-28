@@ -1,28 +1,24 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { RuntimeControlPlanePanel } from '@/components/settings/RuntimeControlPlanePanel';
-import { RuntimeObservabilityConsole } from '@/components/runtime/RuntimeObservabilityConsole';
+import { PageState } from '@/components/layout/PageState';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { RuntimeObservabilityConsole } from '@/components/runtime/RuntimeObservabilityConsole';
 
-interface RuntimeControlPlanePageProps {
+interface RuntimeObservabilityPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
 
-export default function RuntimeControlPlanePage({ params }: RuntimeControlPlanePageProps) {
+export default function RuntimeObservabilityPage({ params }: RuntimeObservabilityPageProps) {
   const tErrors = useTranslations('errors');
   const settingsT = useTranslations('settings');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
-  const canManage = useHasPermission('project:settings:manage');
+  const canReadUsage = useHasPermission('project:usage:view');
 
   useEffect(() => {
     params.then((p) => setResolvedParams({
@@ -32,9 +28,6 @@ export default function RuntimeControlPlanePage({ params }: RuntimeControlPlaneP
     }));
   }, [params]);
 
-  const workspaceId = resolvedParams?.workspace ?? '';
-  const projectId = resolvedParams?.project ?? '';
-
   if (!resolvedParams) {
     return (
       <PageState state="loading">
@@ -43,7 +36,7 @@ export default function RuntimeControlPlanePage({ params }: RuntimeControlPlaneP
     );
   }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.workspace || !resolvedParams.project) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -54,7 +47,7 @@ export default function RuntimeControlPlanePage({ params }: RuntimeControlPlaneP
     );
   }
 
-  if (!canManage) {
+  if (!canReadUsage) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -68,31 +61,18 @@ export default function RuntimeControlPlanePage({ params }: RuntimeControlPlaneP
   return (
     <PageState state="success">
       <PageLayout
-        header={
+        header={(
           <PageHeader
-            title={settingsT('runtime_control_plane_title')}
-            subtitle={settingsT('runtime_control_plane_subtitle')}
-            actions={(
-              <Link
-                href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-observability`}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="runtime-cp__open-observability"
-              >
-                {settingsT('runtime_observability_open_console')}
-              </Link>
-            )}
+            title={settingsT('runtime_observability_console_title')}
+            subtitle={settingsT('runtime_observability_console_subtitle')}
           />
-        }
+        )}
       >
-        <div className="space-y-4">
-          <RuntimeObservabilityConsole
-            workspaceId={workspaceId}
-            projectId={projectId}
-            locale={resolvedParams.locale}
-            embedded
-          />
-          <RuntimeControlPlanePanel workspaceId={workspaceId} projectId={projectId} />
-        </div>
+        <RuntimeObservabilityConsole
+          workspaceId={resolvedParams.workspace}
+          projectId={resolvedParams.project}
+          locale={resolvedParams.locale}
+        />
       </PageLayout>
     </PageState>
   );

@@ -83,8 +83,16 @@ export function UsageFilters({
   }, [filters.start_time, filters.end_time]);
 
   const hasActiveFilters = React.useMemo(() => {
-    return !!(hasNonDefaultTimeRange || filters.resource_type || filters.resource_id || filters.end_user_id);
-  }, [filters.resource_type, filters.resource_id, filters.end_user_id, hasNonDefaultTimeRange]);
+    return !!(
+      hasNonDefaultTimeRange
+      || filters.resource_type
+      || filters.resource_id
+      || filters.end_user_id
+      || filters.provider
+      || filters.model
+      || filters.error_class
+    );
+  }, [filters.resource_type, filters.resource_id, filters.end_user_id, filters.provider, filters.model, filters.error_class, hasNonDefaultTimeRange]);
 
   return (
     <div className={cn('bg-surface border border-border rounded-xl p-4 space-y-4', className)}>
@@ -149,6 +157,44 @@ export function UsageFilters({
             onChange={(e) => handleTextFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
             disabled={!!defaultEndUserId}
           />
+        </div>
+
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.provider')}</label>
+          <Input
+            className="h-10"
+            placeholder={t('filters.provider_placeholder')}
+            value={filters.provider || ''}
+            onChange={(e) => handleTextFilterChange('provider', e.target.value || undefined)}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.model')}</label>
+          <Input
+            className="h-10"
+            placeholder={t('filters.model_placeholder')}
+            value={filters.model || ''}
+            onChange={(e) => handleTextFilterChange('model', e.target.value || undefined)}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.error_class')}</label>
+          <Select
+            value={filters.error_class || 'all'}
+            onValueChange={(value) => handleSelectFilterChange('error_class', value === 'all' ? undefined : value)}
+          >
+            <SelectTrigger className="h-10">
+              <SelectValue placeholder={commonT('all')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{commonT('all')}</SelectItem>
+              <SelectItem value="provider_retryable">{t('error_class.provider_retryable')}</SelectItem>
+              <SelectItem value="provider_non_retryable">{t('error_class.provider_non_retryable')}</SelectItem>
+              <SelectItem value="system_error">{t('error_class.system_error')}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>

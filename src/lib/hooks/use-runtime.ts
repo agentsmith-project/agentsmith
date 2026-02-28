@@ -7,6 +7,7 @@ import type {
   CreateRuntimeModelCatalogEntryRequest,
   CreateRuntimeModelComboRequest,
   CreateRuntimeProviderConnectionRequest,
+  RuntimeRoutingDryRunRequest,
   RuntimeUnifiedChatRequest,
   RuntimePricingMap,
   UpdateRuntimeModelAliasRequest,
@@ -245,5 +246,13 @@ export function useRuntimeUnifiedChatProbe(workspaceId: string, projectId: strin
     mutationFn: (payload: RuntimeUnifiedChatRequest) =>
       getRuntimeAPI().probeUnifiedChat(workspaceId, projectId, payload),
     onError: (error) => handleErrorForToast(error, 'useRuntimeUnifiedChatProbe'),
+  });
+}
+
+export function useRuntimeRoutingDryRun(workspaceId: string, projectId: string) {
+  return useMutation({
+    mutationFn: (payload: RuntimeRoutingDryRunRequest) =>
+      getRuntimeAPI().dryRunRouting(workspaceId, projectId, payload),
+    onError: (error) => handleErrorForToast(error, 'useRuntimeRoutingDryRun'),
   });
 }

@@ -25,6 +25,7 @@ export type RuntimeRoutingCombo = {
 export type RuntimeRoutingSuccess = {
   attempts: RuntimeRoutingAttempt[];
   routedBy: 'direct' | 'alias' | 'combo';
+  aliasName?: string;
   comboName?: string;
   fallbackPolicy?: RuntimeFallbackPolicy;
 };
@@ -81,6 +82,7 @@ export function resolveRoutingPlan(params: {
   return {
     attempts: [{ provider: alias.target_provider, model: alias.target_model }],
     routedBy: 'alias',
+    aliasName: alias.alias,
   };
 }
 

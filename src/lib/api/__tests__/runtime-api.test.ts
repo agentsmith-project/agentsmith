@@ -71,6 +71,17 @@ describe('RuntimeAPI', () => {
     expect(mock.delete).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/routing/combos/prod-chat');
   });
 
+  it('calls runtime routing dry-run endpoint', async () => {
+    const mock = createClient();
+    const api = new RuntimeAPI(toApiClient(mock));
+
+    await api.dryRunRouting('ws_1', 'proj_1', { model: 'combo:prod-chat' });
+
+    expect(mock.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/routing/dry-run', {
+      model: 'combo:prod-chat',
+    });
+  });
+
   it('probes unified chat and preserves non-2xx runtime payloads', async () => {
     const mock = createClient();
     const api = new RuntimeAPI(toApiClient(mock));

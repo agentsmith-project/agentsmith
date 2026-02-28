@@ -137,6 +137,99 @@ export const runtimeHandlers = [
     return HttpResponse.json({ items });
   }),
 
+  http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/dry-run', async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const key = projectKey(params);
+    const modelRaw = asString(body.model);
+    if (!modelRaw) {
+      return HttpResponse.json(
+        { error_code: 'VALIDATION_ERROR', message: 'runtime_unified_chat_model_required' },
+        { status: 422 },
+      );
+    }
+
+    const scopedProviders = providers.filter((item) => item._scope === key);
+    const scopedModels = models.filter((item) => item._scope === key);
+    const scopedAliases = aliases.filter((item) => item._scope === key);
+    const scopedCombos = combos.filter((item) => item._scope === key);
+    const pricing = pricingByProject.get(key) as Record<string, Record<string, Record<string, number>>> | undefined;
+
+    let routedBy: 'direct' | 'alias' | 'combo' = 'direct';
+    let aliasName: string | undefined;
+    let comboName: string | undefined;
+    let fallbackPolicy: Record<string, unknown> | undefined;
+    let attempts: Array<{ provider: string; model: string }> = [];
+
+    if (modelRaw.startsWith('combo:')) {
+      comboName = modelRaw.slice('combo:'.length).trim();
+      const combo = scopedCombos.find((item) => item.name === comboName);
+      if (!combo || !Array.isArray(combo.targets) || combo.targets.length === 0) {
+        return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'runtime_combo_not_found' }, { status: 422 });
+      }
+      routedBy = 'combo';
+      fallbackPolicy = combo.fallback_policy as Record<string, unknown>;
+      attempts = combo.targets as Array<{ provider: string; model: string }>;
+    } else if (modelRaw.includes('/')) {
+      const [provider, model] = modelRaw.split('/', 2);
+      if (!provider || !model) {
+        return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'runtime_model_format_invalid' }, { status: 422 });
+      }
+      attempts = [{ provider, model }];
+    } else {
+      const alias = scopedAliases.find((item) => item.alias === modelRaw);
+      if (!alias) {
+        return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'runtime_alias_not_found' }, { status: 422 });
+      }
+      routedBy = 'alias';
+      aliasName = String(alias.alias);
+      attempts = [{
+        provider: String(alias.target_provider),
+        model: String(alias.target_model),
+      }];
+    }
+
+    const issues = new Set<string>();
+    const plannedAttempts = attempts.map((attempt, index) => {
+      const providerConnections = scopedProviders
+        .filter((item) => item.provider === attempt.provider)
+        .sort((a, b) => Number(a.priority ?? Number.MAX_SAFE_INTEGER) - Number(b.priority ?? Number.MAX_SAFE_INTEGER));
+      const activeConnection = providerConnections.find((item) => item.status === 'active');
+      const fallbackConnection = activeConnection ?? providerConnections[0];
+      const modelEntry = scopedModels.find((item) => item.provider === attempt.provider && item.model_id === attempt.model);
+      const projectPricing = pricing?.[attempt.provider]?.[attempt.model];
+      const modelPricing = modelEntry?.pricing as Record<string, number> | undefined;
+      const pricingSource = projectPricing ? 'project_override' : modelPricing ? 'model_catalog' : 'missing';
+
+      if (!modelEntry) issues.add('runtime_model_not_registered');
+      if (pricingSource === 'missing') issues.add('runtime_pricing_missing');
+      if (!fallbackConnection) issues.add('runtime_provider_connection_missing');
+      else if (fallbackConnection.status !== 'active') issues.add('runtime_provider_connection_disabled');
+      else if (!fallbackConnection.credential_ref) issues.add('runtime_provider_credential_missing');
+
+      return {
+        index,
+        provider: attempt.provider,
+        model: attempt.model,
+        provider_connection_id: fallbackConnection?.id as string | undefined,
+        provider_connection_status: !fallbackConnection ? 'missing' : (fallbackConnection.status === 'active' ? 'active' : 'disabled'),
+        connection_priority: fallbackConnection?.priority as number | undefined,
+        connection_base_url: fallbackConnection?.base_url as string | undefined,
+        pricing_source: pricingSource,
+        pricing: projectPricing ?? modelPricing,
+      };
+    });
+
+    return HttpResponse.json({
+      model: modelRaw,
+      routed_by: routedBy,
+      alias: aliasName,
+      combo_name: comboName,
+      fallback_policy: fallbackPolicy,
+      attempts: plannedAttempts,
+      issues: Array.from(issues),
+    });
+  }),
+
   http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/aliases', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const key = projectKey(params);

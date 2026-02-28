@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import type {
   RuntimeAttemptTrace,
+  RuntimeRoutingDryRunAttempt,
+  RuntimeRoutingDryRunResponse,
   RuntimeUnifiedChatResponse,
   RuntimeUnifiedChatResult,
   UnifiedChatRuntimeMetadata,
@@ -25,6 +27,7 @@ import {
   useRuntimeModels,
   useRuntimePricing,
   useRuntimeProviders,
+  useRuntimeRoutingDryRun,
   useRuntimeUnifiedChatProbe,
 } from '@/lib/hooks/use-runtime';
 import { cn } from '@/lib/utils';
@@ -146,6 +149,26 @@ function mapAttemptReason(t: ReturnType<typeof useTranslations>, attempt: Runtim
   return t(translatedKey);
 }
 
+function mapDryRunIssue(t: ReturnType<typeof useTranslations>, issue: string): string {
+  const keyMap: Record<string, string> = {
+    runtime_model_not_registered: 'runtime_dry_run_issue_model_not_registered',
+    runtime_pricing_missing: 'runtime_dry_run_issue_pricing_missing',
+    runtime_provider_connection_missing: 'runtime_dry_run_issue_provider_connection_missing',
+    runtime_provider_connection_disabled: 'runtime_dry_run_issue_provider_connection_disabled',
+    runtime_provider_credential_missing: 'runtime_dry_run_issue_provider_credential_missing',
+  };
+  return keyMap[issue] ? t(keyMap[issue]) : issue.replaceAll('_', ' ');
+}
+
+function mapDryRunPricingSource(t: ReturnType<typeof useTranslations>, source: RuntimeRoutingDryRunAttempt['pricing_source']): string {
+  const keyMap: Record<RuntimeRoutingDryRunAttempt['pricing_source'], string> = {
+    project_override: 'runtime_dry_run_pricing_project_override',
+    model_catalog: 'runtime_dry_run_pricing_model_catalog',
+    missing: 'runtime_dry_run_pricing_missing',
+  };
+  return t(keyMap[source]);
+}
+
 export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = false }: RuntimeControlPlanePanelProps) {
   const t = useTranslations('settings');
   const [provider, setProvider] = useState('openai');
@@ -159,6 +182,8 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const [aliasTargetModel, setAliasTargetModel] = useState('gpt-4o');
   const [comboJson, setComboJson] = useState(DEFAULT_COMBO_JSON);
   const [pricingJson, setPricingJson] = useState(DEFAULT_PRICING_JSON);
+  const [dryRunModel, setDryRunModel] = useState('combo:prod-chat');
+  const [dryRunResult, setDryRunResult] = useState<RuntimeRoutingDryRunResponse | null>(null);
   const [probeModel, setProbeModel] = useState('combo:prod-chat');
   const [probePrompt, setProbePrompt] = useState('Summarize the runtime recovery path in one sentence.');
   const [probeResult, setProbeResult] = useState<RuntimeUnifiedChatResult | null>(null);
@@ -174,6 +199,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const createAlias = useCreateRuntimeAlias(workspaceId, projectId);
   const createCombo = useCreateRuntimeCombo(workspaceId, projectId);
   const patchPricing = usePatchRuntimePricing(workspaceId, projectId);
+  const dryRunRouting = useRuntimeRoutingDryRun(workspaceId, projectId);
   const probeRuntime = useRuntimeUnifiedChatProbe(workspaceId, projectId);
 
   const pricingPretty = useMemo(() => {
@@ -262,6 +288,17 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
     }
   };
 
+  const handleRunDryRun = async () => {
+    try {
+      const result = await dryRunRouting.mutateAsync({
+        model: dryRunModel.trim(),
+      });
+      setDryRunResult(result);
+    } catch {
+      toast.error(t('runtime_dry_run_failed'));
+    }
+  };
+
   return (
     <div className="space-y-4 rounded-xl border border-border bg-surface-high/70 p-4" data-testid="settings-runtime__panel">
       <div className="flex items-center justify-between gap-4">
@@ -324,6 +361,144 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
           {t('runtime_action_save')}
         </Button>
       </div>
+
+      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__probe">
+        <CardHeader className="pb-4">
+          <CardTitle>{t('runtime_dry_run_title')}</CardTitle>
+          <p className="text-sm text-tertiary">{t('runtime_dry_run_description')}</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <div className="space-y-3 rounded-xl border border-border/60 bg-surface-high/50 p-4">
+              <div className="space-y-1">
+                <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_dry_run_route_label')}</div>
+                <Input
+                  value={dryRunModel}
+                  onChange={(e) => setDryRunModel(e.target.value)}
+                  disabled={disabled || dryRunRouting.isPending}
+                  placeholder="combo:prod-chat"
+                  data-testid="settings-runtime__dry-run-model"
+                />
+              </div>
+              <div className="rounded-lg border border-dashed border-border/70 bg-surface p-3 text-xs text-tertiary">
+                {t('runtime_dry_run_hint')}
+              </div>
+              <Button
+                onClick={handleRunDryRun}
+                disabled={disabled || dryRunRouting.isPending || !dryRunModel.trim()}
+                data-testid="settings-runtime__dry-run-run"
+              >
+                {dryRunRouting.isPending ? t('runtime_dry_run_running') : t('runtime_dry_run_run')}
+              </Button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-xl border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0))] p-4" data-testid="settings-runtime__dry-run-summary">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_dry_run_summary_title')}</div>
+                    <div className="mt-1 text-sm text-tertiary">
+                      {dryRunResult ? t('runtime_dry_run_summary_ready') : t('runtime_dry_run_summary_idle')}
+                    </div>
+                  </div>
+                  {dryRunResult ? (
+                    <Badge variant={dryRunResult.issues.length > 0 ? 'secondary' : 'outline'} data-testid="settings-runtime__dry-run-status">
+                      {dryRunResult.issues.length > 0 ? t('runtime_dry_run_status_attention') : t('runtime_dry_run_status_ready')}
+                    </Badge>
+                  ) : null}
+                </div>
+
+                {dryRunResult ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-lg border border-border/60 bg-surface p-3">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_dry_run_routed_by')}</div>
+                      <div className="mt-2 text-sm font-semibold text-foreground">{dryRunResult.routed_by}</div>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-surface p-3">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_dry_run_alias_or_combo')}</div>
+                      <div className="mt-2 truncate font-mono text-sm text-foreground">{dryRunResult.alias ?? dryRunResult.combo_name ?? '--'}</div>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-surface p-3">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_dry_run_hops')}</div>
+                      <div className="mt-2 text-sm font-semibold text-foreground">{dryRunResult.attempts.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-surface p-3">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_dry_run_policy')}</div>
+                      <div className="mt-2 text-sm text-foreground">
+                        {dryRunResult.fallback_policy
+                          ? `${dryRunResult.fallback_policy.max_hops} hops`
+                          : '--'}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-6 rounded-lg border border-dashed border-border/70 bg-surface-high/40 p-4" data-testid="settings-runtime__dry-run-empty">
+                    <div className="text-sm font-medium text-foreground">{t('runtime_dry_run_empty_title')}</div>
+                    <div className="mt-1 text-sm text-tertiary">{t('runtime_dry_run_summary_idle')}</div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-surface-high/35 p-4" data-testid="settings-runtime__dry-run-issues">
+                <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_dry_run_issues_title')}</div>
+                {dryRunResult?.issues.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {dryRunResult.issues.map((issue) => (
+                      <Badge key={issue} variant="secondary">{mapDryRunIssue(t, issue)}</Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 text-sm text-tertiary">{t('runtime_dry_run_issues_empty')}</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-surface p-4" data-testid="settings-runtime__dry-run-plan">
+            <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_dry_run_plan_title')}</div>
+            {dryRunResult?.attempts.length ? (
+              <div className="mt-4 space-y-3">
+                {dryRunResult.attempts.map((attempt) => (
+                  <div key={`${attempt.index}-${attempt.provider}-${attempt.model}`} className="rounded-lg border border-border/70 bg-surface-high/50 p-4" data-testid={`settings-runtime__dry-run-attempt-${attempt.index}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.14em] text-tertiary">{t('runtime_dry_run_attempt_label', { index: attempt.index + 1 })}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <code className="rounded bg-surface px-2 py-1 text-xs text-foreground">{attempt.provider}</code>
+                          <span className="text-tertiary">/</span>
+                          <code className="rounded bg-surface px-2 py-1 text-xs text-foreground">{attempt.model}</code>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant={attempt.provider_connection_status === 'active' ? 'outline' : 'secondary'}>
+                          {attempt.provider_connection_status}
+                        </Badge>
+                        <Badge variant="secondary">{mapDryRunPricingSource(t, attempt.pricing_source)}</Badge>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 text-sm text-tertiary md:grid-cols-3">
+                      <div>{t('runtime_dry_run_connection_label')}: {attempt.provider_connection_id ?? '--'}</div>
+                      <div>{t('runtime_dry_run_priority_label')}: {typeof attempt.connection_priority === 'number' ? attempt.connection_priority : '--'}</div>
+                      <div className="truncate">{t('runtime_dry_run_base_url_label')}: {attempt.connection_base_url ?? '--'}</div>
+                    </div>
+                    {attempt.pricing ? (
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-tertiary">
+                        {Object.entries(attempt.pricing).map(([key, value]) => (
+                          <code key={key} className="rounded bg-surface px-2 py-1">{key}:{String(value)}</code>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border border-dashed border-border/70 bg-surface-high/40 p-4 text-sm text-tertiary">
+                {t('runtime_dry_run_plan_empty')}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__probe">
         <CardHeader className="pb-4">

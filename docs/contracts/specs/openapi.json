@@ -7179,6 +7179,61 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/dry-run": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "dryRunRuntimeRouting",
+        "summary": "Preview runtime routing plan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeRoutingDryRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dry-run route plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeRoutingDryRunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}": {
       "parameters": [
         {
@@ -10394,6 +10449,111 @@
           },
           "model": {
             "type": "string"
+          }
+        }
+      },
+      "RuntimeRoutingDryRunRequest": {
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "provider/model, alias, or combo:<name>"
+          }
+        }
+      },
+      "RuntimeRoutingDryRunAttempt": {
+        "type": "object",
+        "required": [
+          "index",
+          "provider",
+          "model",
+          "provider_connection_status",
+          "pricing_source"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider_connection_id": {
+            "type": "string"
+          },
+          "provider_connection_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "missing"
+            ]
+          },
+          "connection_priority": {
+            "type": "integer"
+          },
+          "connection_base_url": {
+            "type": "string"
+          },
+          "pricing_source": {
+            "type": "string",
+            "enum": [
+              "project_override",
+              "model_catalog",
+              "missing"
+            ]
+          },
+          "pricing": {
+            "$ref": "#/components/schemas/RuntimeModelPricing"
+          }
+        }
+      },
+      "RuntimeRoutingDryRunResponse": {
+        "type": "object",
+        "required": [
+          "model",
+          "routed_by",
+          "attempts",
+          "issues"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "routed_by": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "alias",
+              "combo"
+            ]
+          },
+          "alias": {
+            "type": "string"
+          },
+          "combo_name": {
+            "type": "string"
+          },
+          "fallback_policy": {
+            "$ref": "#/components/schemas/RuntimeFallbackPolicy"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeRoutingDryRunAttempt"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

@@ -131,6 +131,35 @@ export interface RuntimeUnifiedChatRequest {
   stream?: boolean;
 }
 
+export interface RuntimeRoutingDryRunRequest {
+  model: string;
+}
+
+export interface RuntimeRoutingDryRunAttempt {
+  index: number;
+  provider: string;
+  model: string;
+  provider_connection_id?: string;
+  provider_connection_status: 'active' | 'disabled' | 'missing';
+  connection_priority?: number;
+  connection_base_url?: string;
+  pricing_source: 'project_override' | 'model_catalog' | 'missing';
+  pricing?: Record<string, number>;
+}
+
+export interface RuntimeRoutingDryRunResponse {
+  model: string;
+  routed_by: 'direct' | 'alias' | 'combo';
+  alias?: string;
+  combo_name?: string;
+  fallback_policy?: {
+    max_hops: number;
+    retryable_error_classes: string[];
+  };
+  attempts: RuntimeRoutingDryRunAttempt[];
+  issues: string[];
+}
+
 export interface RuntimeUnifiedChatResponse {
   id: string;
   object: string;
@@ -310,6 +339,14 @@ export class RuntimeAPI {
 
   async patchPricing(workspaceId: string, projectId: string, payload: RuntimePricingMap): Promise<RuntimePricingMap> {
     return this.client.patch(`/workspaces/${workspaceId}/projects/${projectId}/runtime/pricing`, payload);
+  }
+
+  async dryRunRouting(
+    workspaceId: string,
+    projectId: string,
+    payload: RuntimeRoutingDryRunRequest,
+  ): Promise<RuntimeRoutingDryRunResponse> {
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/dry-run`, payload);
   }
 
   async probeUnifiedChat(

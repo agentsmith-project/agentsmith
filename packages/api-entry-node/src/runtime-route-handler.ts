@@ -8,6 +8,7 @@ import {
   validateModelProviderMutationAllowed,
 } from './runtime-domain.js';
 import { executeRuntimeUnifiedChat } from './runtime-unified-chat.js';
+import { dryRunRuntimeRouting } from './runtime-routing-dry-run.js';
 import {
   createRuntimeStore,
   type RuntimeModelAliasRecord,
@@ -50,17 +51,6 @@ interface RuntimeHandlerArgs {
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
 }
 
-function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function asNonEmptyString(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
-}
-
 function requireProjectScope(
   route: AnyRoute,
   json: RuntimeHandlerArgs['json'],
@@ -98,6 +88,17 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
     res.statusCode = result.statusCode;
     res.setHeader('content-type', result.contentType ?? 'application/octet-stream');
     res.end(result.text ?? '');
+    return true;
+  }
+
+  if (route.kind === 'runtimeRoutingDryRun' && method === 'POST') {
+    const result = await dryRunRuntimeRouting({
+      deps,
+      workspaceId,
+      projectId,
+      rawBody: await readBody(req),
+    });
+    json(res, result.statusCode, result.body);
     return true;
   }
 

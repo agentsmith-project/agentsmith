@@ -8,6 +8,23 @@ const createModelMutateAsync = vi.fn().mockResolvedValue({});
 const createAliasMutateAsync = vi.fn().mockResolvedValue({});
 const createComboMutateAsync = vi.fn().mockResolvedValue({});
 const patchPricingMutateAsync = vi.fn().mockResolvedValue({});
+const dryRunMutateAsync = vi.fn().mockResolvedValue({
+  model: 'combo:prod-chat',
+  routed_by: 'combo',
+  combo_name: 'prod-chat',
+  attempts: [
+    {
+      index: 0,
+      provider: 'openai',
+      model: 'gpt-4o',
+      provider_connection_id: 'rpc_1',
+      provider_connection_status: 'active',
+      pricing_source: 'project_override',
+      pricing: { input: 2, output: 10 },
+    },
+  ],
+  issues: [],
+});
 const probeMutateAsync = vi.fn().mockResolvedValue({
   ok: true,
   statusCode: 200,
@@ -50,6 +67,7 @@ vi.mock('@/lib/hooks/use-runtime', () => ({
   useCreateRuntimeAlias: () => ({ mutateAsync: createAliasMutateAsync, isPending: false }),
   useCreateRuntimeCombo: () => ({ mutateAsync: createComboMutateAsync, isPending: false }),
   usePatchRuntimePricing: () => ({ mutateAsync: patchPricingMutateAsync, isPending: false }),
+  useRuntimeRoutingDryRun: () => ({ mutateAsync: dryRunMutateAsync, isPending: false }),
   useRuntimeUnifiedChatProbe: () => ({ mutateAsync: probeMutateAsync, isPending: false }),
 }));
 
@@ -119,5 +137,20 @@ describe('RuntimeControlPlanePanel', () => {
     expect(screen.getByTestId('settings-runtime__probe-response')).toHaveTextContent('probe ok');
     expect(screen.getByTestId('settings-runtime__probe-attempt-0')).toBeInTheDocument();
     expect(screen.getByTestId('settings-runtime__probe-attempt-1')).toBeInTheDocument();
+  });
+
+  it('runs routing dry-run and renders planned attempts', async () => {
+    const user = userEvent.setup();
+    render(<RuntimeControlPlanePanel workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.clear(screen.getByTestId('settings-runtime__dry-run-model'));
+    await user.type(screen.getByTestId('settings-runtime__dry-run-model'), 'combo:prod-chat');
+    await user.click(screen.getByTestId('settings-runtime__dry-run-run'));
+
+    expect(dryRunMutateAsync).toHaveBeenCalledWith({
+      model: 'combo:prod-chat',
+    });
+    expect(screen.getByTestId('settings-runtime__dry-run-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-runtime__dry-run-attempt-0')).toBeInTheDocument();
   });
 });

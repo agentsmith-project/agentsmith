@@ -342,7 +342,10 @@ export type UsageReportScheduleRecord = {
     webhook_url?: string;
     credential_ref?: string;
     secret_header_name?: string;
+    signature_header_name?: string;
     timeout_seconds?: number;
+    retry_attempts?: number;
+    retry_backoff_ms?: number;
   };
   filters?: {
     resource_type?: string;
@@ -2140,13 +2143,23 @@ export async function getUsageReportEvidence(
 
   const warnings: string[] = [];
   if (activeSchedules.length === 0) warnings.push('usage_report_no_active_schedules');
+  for (const schedule of activeSchedules) {
+    if (schedule.delivery_channel === 'webhook'
+      && schedule.delivery_config?.credential_ref
+      && !schedule.delivery_config.signature_header_name) {
+      warnings.push(`usage_report_schedule_webhook_signature_missing:${schedule.name}`);
+    }
+  }
   if (query.runnerHealth) {
     if (!query.runnerHealth.enabled) {
       warnings.push('usage_report_runner_disabled');
+      if (requiredSchedules.length > 0) blockers.push('usage_report_runner_disabled');
     } else if (query.runnerHealth.last_status === 'failed') {
       warnings.push('usage_report_runner_last_run_failed');
+      if (requiredSchedules.length > 0) blockers.push('usage_report_runner_last_run_failed');
     } else if (activeSchedules.length > 0 && !query.runnerHealth.last_completed_at) {
       warnings.push('usage_report_runner_not_yet_executed');
+      if (requiredSchedules.length > 0) blockers.push('usage_report_runner_not_yet_executed');
     }
   }
 

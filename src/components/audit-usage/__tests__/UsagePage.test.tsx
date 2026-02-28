@@ -275,8 +275,14 @@ describe('UsagePage', () => {
     await user.type(screen.getByTestId('usage__report-schedules-form-webhook-url'), 'https://example.internal/report-hook');
     await user.type(screen.getByTestId('usage__report-schedules-form-webhook-credential-ref'), 'cred_webhook');
     await user.type(screen.getByTestId('usage__report-schedules-form-webhook-secret-header'), 'x-webhook-secret');
+    await user.clear(screen.getByTestId('usage__report-schedules-form-webhook-signature-header'));
+    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-signature-header'), 'x-agentsmith-signature');
     await user.clear(screen.getByTestId('usage__report-schedules-form-webhook-timeout'));
     await user.type(screen.getByTestId('usage__report-schedules-form-webhook-timeout'), '15');
+    await user.clear(screen.getByTestId('usage__report-schedules-form-webhook-retry-attempts'));
+    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-retry-attempts'), '2');
+    await user.clear(screen.getByTestId('usage__report-schedules-form-webhook-retry-backoff'));
+    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-retry-backoff'), '250');
     await user.click(screen.getByTestId('usage__report-schedules-form-submit'));
 
     expect(createReportScheduleMock).toHaveBeenCalledWith(
@@ -289,7 +295,10 @@ describe('UsagePage', () => {
           webhook_url: 'https://example.internal/report-hook',
           credential_ref: 'cred_webhook',
           secret_header_name: 'x-webhook-secret',
+          signature_header_name: 'x-agentsmith-signature',
           timeout_seconds: 15,
+          retry_attempts: 2,
+          retry_backoff_ms: 250,
         },
       }),
     );

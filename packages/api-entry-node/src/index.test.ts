@@ -6568,7 +6568,7 @@ describe('api-entry-node projects routes', () => {
     );
   });
 
-  it('rejects webhook usage report schedule creation when credential_ref and secret_header_name are incomplete', async () => {
+  it('rejects webhook usage report schedule creation when credential_ref has no auth binding headers', async () => {
     const { baseUrl } = startServer();
 
     const response = await apiFetch(
@@ -6600,7 +6600,46 @@ describe('api-entry-node projects routes', () => {
     expect(await response.json()).toEqual(
       expect.objectContaining({
         error_code: 'BAD_REQUEST',
-        message: 'delivery_config.credential_ref and delivery_config.secret_header_name must be provided together',
+        message: 'delivery_config.credential_ref requires secret_header_name or signature_header_name',
+      }),
+    );
+  });
+
+  it('rejects webhook usage report schedule creation when retry policy is out of range', async () => {
+    const { baseUrl } = startServer();
+
+    const response = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Webhook Ops',
+          cadence: 'daily',
+          status: 'active',
+          format: 'json',
+          time_window: 'last_7d',
+          delivery_channel: 'webhook',
+          delivery_config: {
+            webhook_url: 'https://example.internal/report-hook',
+            credential_ref: 'cred_webhook',
+            signature_header_name: 'x-agentsmith-signature',
+            retry_attempts: 9,
+          },
+          release_evidence_required: true,
+          empty_result_policy: 'deliver',
+        }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        error_code: 'BAD_REQUEST',
+        message: 'delivery_config.retry_attempts must be between 1 and 4',
       }),
     );
   });

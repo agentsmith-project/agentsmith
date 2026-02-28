@@ -672,4 +672,42 @@ describe('audit-usage-store runtime observability', () => {
     expect(evidence.warnings).toContain('usage_report_no_active_schedules');
     expect(evidence.warnings).toContain('usage_report_runner_last_run_failed');
   });
+
+  it('blocks usage report evidence when required schedules rely on a disabled runner', async () => {
+    const store = new InMemoryJsonDocStore();
+    await createUsageReportSchedule(store, {
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      name: 'Release Snapshot',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'webhook',
+      delivery_config: {
+        webhook_url: 'https://example.internal/report-hook',
+        credential_ref: 'cred_webhook',
+        secret_header_name: 'x-webhook-secret',
+      },
+      release_evidence_required: true,
+      empty_result_policy: 'deliver',
+    });
+
+    const evidence = await getUsageReportEvidence(store, {
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      runnerHealth: {
+        enabled: false,
+        interval_ms: 60000,
+        running: false,
+        run_count: 0,
+        last_status: 'idle',
+      },
+    });
+
+    expect(evidence.release_readiness).toBe('blocked');
+    expect(evidence.blockers).toContain('usage_report_schedule_missing_delivery:Release Snapshot');
+    expect(evidence.blockers).toContain('usage_report_runner_disabled');
+    expect(evidence.warnings).toContain('usage_report_schedule_webhook_signature_missing:Release Snapshot');
+  });
 });

@@ -75,7 +75,10 @@ type ParsedDeliverySettings =
       webhook_url?: string;
       credential_ref?: string;
       secret_header_name?: string;
+      signature_header_name?: string;
       timeout_seconds?: number;
+      retry_attempts?: number;
+      retry_backoff_ms?: number;
     };
   }
   | {
@@ -96,20 +99,42 @@ function parseDeliveryChannel(
     const secretHeaderName = typeof rawDeliveryConfig.secret_header_name === 'string'
       ? rawDeliveryConfig.secret_header_name.trim()
       : '';
+    const signatureHeaderName = typeof rawDeliveryConfig.signature_header_name === 'string'
+      ? rawDeliveryConfig.signature_header_name.trim()
+      : '';
     const timeoutRaw = rawDeliveryConfig.timeout_seconds;
+    const retryAttemptsRaw = rawDeliveryConfig.retry_attempts;
+    const retryBackoffRaw = rawDeliveryConfig.retry_backoff_ms;
     const timeoutSeconds = typeof timeoutRaw === 'number'
       ? timeoutRaw
       : typeof timeoutRaw === 'string'
         ? Number.parseInt(timeoutRaw, 10)
         : undefined;
+    const retryAttempts = typeof retryAttemptsRaw === 'number'
+      ? retryAttemptsRaw
+      : typeof retryAttemptsRaw === 'string'
+        ? Number.parseInt(retryAttemptsRaw, 10)
+        : undefined;
+    const retryBackoffMs = typeof retryBackoffRaw === 'number'
+      ? retryBackoffRaw
+      : typeof retryBackoffRaw === 'string'
+        ? Number.parseInt(retryBackoffRaw, 10)
+        : undefined;
     if (!webhookUrl) {
       return { ok: false, message: 'delivery_config.webhook_url is required for webhook delivery' };
     }
-    if ((credentialRef && !secretHeaderName) || (!credentialRef && secretHeaderName)) {
-      return { ok: false, message: 'delivery_config.credential_ref and delivery_config.secret_header_name must be provided together' };
+    if ((credentialRef && !secretHeaderName && !signatureHeaderName)
+      || (!credentialRef && (secretHeaderName || signatureHeaderName))) {
+      return { ok: false, message: 'delivery_config.credential_ref requires secret_header_name or signature_header_name' };
     }
     if (timeoutSeconds != null && (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 120)) {
       return { ok: false, message: 'delivery_config.timeout_seconds must be between 1 and 120' };
+    }
+    if (retryAttempts != null && (!Number.isFinite(retryAttempts) || retryAttempts < 1 || retryAttempts > 4)) {
+      return { ok: false, message: 'delivery_config.retry_attempts must be between 1 and 4' };
+    }
+    if (retryBackoffMs != null && (!Number.isFinite(retryBackoffMs) || retryBackoffMs < 100 || retryBackoffMs > 5000)) {
+      return { ok: false, message: 'delivery_config.retry_backoff_ms must be between 100 and 5000' };
     }
     return {
       ok: true,
@@ -118,11 +143,20 @@ function parseDeliveryChannel(
         webhook_url: webhookUrl,
         credential_ref: credentialRef || undefined,
         secret_header_name: secretHeaderName || undefined,
+        signature_header_name: signatureHeaderName || undefined,
         timeout_seconds: timeoutSeconds != null ? Math.floor(timeoutSeconds) : undefined,
+        retry_attempts: retryAttempts != null ? Math.floor(retryAttempts) : undefined,
+        retry_backoff_ms: retryBackoffMs != null ? Math.floor(retryBackoffMs) : undefined,
       },
     };
   }
-  if (rawDeliveryConfig.webhook_url != null || rawDeliveryConfig.credential_ref != null || rawDeliveryConfig.secret_header_name != null || rawDeliveryConfig.timeout_seconds != null) {
+  if (rawDeliveryConfig.webhook_url != null
+    || rawDeliveryConfig.credential_ref != null
+    || rawDeliveryConfig.secret_header_name != null
+    || rawDeliveryConfig.signature_header_name != null
+    || rawDeliveryConfig.timeout_seconds != null
+    || rawDeliveryConfig.retry_attempts != null
+    || rawDeliveryConfig.retry_backoff_ms != null) {
     return { ok: false, message: 'delivery_config is only supported for webhook delivery' };
   }
   return { ok: true, deliveryChannel };

@@ -41,7 +41,10 @@ type UsageReportSchedulesPanelProps = {
       webhook_url?: string;
       credential_ref?: string;
       secret_header_name?: string;
+      signature_header_name?: string;
       timeout_seconds?: number;
+      retry_attempts?: number;
+      retry_backoff_ms?: number;
     };
     filters?: UsageReportSchedule['filters'];
     release_evidence_required: boolean;
@@ -65,7 +68,10 @@ type DraftState = {
   webhook_url: string;
   credential_ref: string;
   secret_header_name: string;
+  signature_header_name: string;
   timeout_seconds: string;
+  retry_attempts: string;
+  retry_backoff_ms: string;
   provider?: string;
   model?: string;
   result?: 'ok' | 'error';
@@ -100,7 +106,10 @@ function buildInitialDraft(filters: UsageListParams): DraftState {
     webhook_url: '',
     credential_ref: '',
     secret_header_name: '',
+    signature_header_name: '',
     timeout_seconds: '10',
+    retry_attempts: '2',
+    retry_backoff_ms: '250',
     provider: filters.provider,
     model: filters.model,
     result: filters.result,
@@ -123,6 +132,23 @@ function parseTimeoutSeconds(value: string): number | undefined {
 function hasValidTimeout(value: string): boolean {
   const parsed = parseTimeoutSeconds(value);
   return parsed == null || (parsed >= 1 && parsed <= 120);
+}
+
+function parsePositiveInt(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function hasValidRetryAttempts(value: string): boolean {
+  const parsed = parsePositiveInt(value);
+  return parsed == null || (parsed >= 1 && parsed <= 4);
+}
+
+function hasValidRetryBackoff(value: string): boolean {
+  const parsed = parsePositiveInt(value);
+  return parsed == null || (parsed >= 100 && parsed <= 5000);
 }
 
 export function UsageReportSchedulesPanel({
@@ -164,8 +190,11 @@ export function UsageReportSchedulesPanel({
   const handleCreate = React.useCallback(async () => {
     if (!draft.name.trim()) return;
     if (draft.delivery_channel === 'webhook' && !draft.webhook_url.trim()) return;
-    if (draft.delivery_channel === 'webhook' && Boolean(draft.credential_ref.trim()) !== Boolean(draft.secret_header_name.trim())) return;
+    if (draft.delivery_channel === 'webhook' && draft.credential_ref.trim() && !draft.secret_header_name.trim() && !draft.signature_header_name.trim()) return;
+    if (draft.delivery_channel === 'webhook' && !draft.credential_ref.trim() && (draft.secret_header_name.trim() || draft.signature_header_name.trim())) return;
     if (draft.delivery_channel === 'webhook' && !hasValidTimeout(draft.timeout_seconds)) return;
+    if (draft.delivery_channel === 'webhook' && !hasValidRetryAttempts(draft.retry_attempts)) return;
+    if (draft.delivery_channel === 'webhook' && !hasValidRetryBackoff(draft.retry_backoff_ms)) return;
     setSubmitting(true);
     try {
       await onCreate({
@@ -180,7 +209,10 @@ export function UsageReportSchedulesPanel({
             webhook_url: draft.webhook_url.trim(),
             credential_ref: draft.credential_ref.trim() || undefined,
             secret_header_name: draft.secret_header_name.trim() || undefined,
+            signature_header_name: draft.signature_header_name.trim() || undefined,
             timeout_seconds: parseTimeoutSeconds(draft.timeout_seconds),
+            retry_attempts: parsePositiveInt(draft.retry_attempts),
+            retry_backoff_ms: parsePositiveInt(draft.retry_backoff_ms),
           }
           : undefined,
         filters: {
@@ -642,14 +674,45 @@ export function UsageReportSchedulesPanel({
                     </div>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="usage-report-webhook-timeout">{t('report_schedules.webhook_timeout_seconds')}</Label>
+                    <Label htmlFor="usage-report-webhook-signature-header">{t('report_schedules.webhook_signature_header_name')}</Label>
                     <Input
-                      id="usage-report-webhook-timeout"
-                      value={draft.timeout_seconds}
-                      onChange={(event) => setDraft((prev) => ({ ...prev, timeout_seconds: event.target.value }))}
-                      data-testid="usage__report-schedules-form-webhook-timeout"
-                      inputMode="numeric"
+                      id="usage-report-webhook-signature-header"
+                      value={draft.signature_header_name}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, signature_header_name: event.target.value }))}
+                      data-testid="usage__report-schedules-form-webhook-signature-header"
                     />
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-2">
+                      <Label htmlFor="usage-report-webhook-timeout">{t('report_schedules.webhook_timeout_seconds')}</Label>
+                      <Input
+                        id="usage-report-webhook-timeout"
+                        value={draft.timeout_seconds}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, timeout_seconds: event.target.value }))}
+                        data-testid="usage__report-schedules-form-webhook-timeout"
+                        inputMode="numeric"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="usage-report-webhook-retry-attempts">{t('report_schedules.webhook_retry_attempts')}</Label>
+                      <Input
+                        id="usage-report-webhook-retry-attempts"
+                        value={draft.retry_attempts}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, retry_attempts: event.target.value }))}
+                        data-testid="usage__report-schedules-form-webhook-retry-attempts"
+                        inputMode="numeric"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="usage-report-webhook-retry-backoff">{t('report_schedules.webhook_retry_backoff_ms')}</Label>
+                      <Input
+                        id="usage-report-webhook-retry-backoff"
+                        value={draft.retry_backoff_ms}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, retry_backoff_ms: event.target.value }))}
+                        data-testid="usage__report-schedules-form-webhook-retry-backoff"
+                        inputMode="numeric"
+                      />
+                    </div>
                   </div>
                 </div>
               ) : null}
@@ -713,8 +776,11 @@ export function UsageReportSchedulesPanel({
                 !draft.name.trim()
                 || (draft.delivery_channel === 'webhook' && (
                   !draft.webhook_url.trim()
-                  || Boolean(draft.credential_ref.trim()) !== Boolean(draft.secret_header_name.trim())
+                  || (draft.credential_ref.trim() && !draft.secret_header_name.trim() && !draft.signature_header_name.trim())
+                  || (!draft.credential_ref.trim() && (draft.secret_header_name.trim() || draft.signature_header_name.trim()))
                   || !hasValidTimeout(draft.timeout_seconds)
+                  || !hasValidRetryAttempts(draft.retry_attempts)
+                  || !hasValidRetryBackoff(draft.retry_backoff_ms)
                 ))
                 || submitting
               }

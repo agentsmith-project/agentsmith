@@ -7164,10 +7164,20 @@ components:
               type: string
             secret_header_name:
               type: string
+            signature_header_name:
+              type: string
             timeout_seconds:
               type: integer
               minimum: 1
               maximum: 120
+            retry_attempts:
+              type: integer
+              minimum: 1
+              maximum: 4
+            retry_backoff_ms:
+              type: integer
+              minimum: 100
+              maximum: 5000
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
         release_evidence_required:
@@ -7248,10 +7258,20 @@ components:
               type: string
             secret_header_name:
               type: string
+            signature_header_name:
+              type: string
             timeout_seconds:
               type: integer
               minimum: 1
               maximum: 120
+            retry_attempts:
+              type: integer
+              minimum: 1
+              maximum: 4
+            retry_backoff_ms:
+              type: integer
+              minimum: 100
+              maximum: 5000
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
         release_evidence_required:
@@ -7288,10 +7308,20 @@ components:
               type: string
             secret_header_name:
               type: string
+            signature_header_name:
+              type: string
             timeout_seconds:
               type: integer
               minimum: 1
               maximum: 120
+            retry_attempts:
+              type: integer
+              minimum: 1
+              maximum: 4
+            retry_backoff_ms:
+              type: integer
+              minimum: 100
+              maximum: 5000
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
         release_evidence_required:

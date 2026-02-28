@@ -60,7 +60,10 @@ describe('usage-report-delivery', () => {
           webhook_url: 'https://example.internal/hook',
           credential_ref: 'cred_webhook',
           secret_header_name: 'x-webhook-secret',
+          signature_header_name: 'x-webhook-signature',
           timeout_seconds: 15,
+          retry_attempts: 2,
+          retry_backoff_ms: 300,
         },
       },
     }));
@@ -73,12 +76,18 @@ describe('usage-report-delivery', () => {
       'content-type': 'application/json; charset=utf-8',
       'x-agentsmith-report-trigger': 'manual',
       'x-webhook-secret': 'secret_token',
+      'x-webhook-signature': expect.stringMatching(/^sha256=/),
+      'x-agentsmith-signature-timestamp': expect.any(String),
     }));
     expect(result.delivery_metadata).toEqual(expect.objectContaining({
       dispatch_mode: 'webhook',
       credential_ref: 'cred_webhook',
       secret_header_name: 'x-webhook-secret',
+      signature_mode: 'hmac_sha256',
+      signature_header_name: 'x-webhook-signature',
       timeout_seconds: 15,
+      retry_attempts: 2,
+      retry_backoff_ms: 300,
       response_status: 200,
     }));
   });
@@ -134,6 +143,33 @@ describe('usage-report-delivery', () => {
       ok: false,
       error_class: 'delivery_channel_timeout',
       error: 'usage_report_webhook_timeout',
+    }));
+  });
+
+  it('retries retryable webhook failures before succeeding', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response('fail', { status: 503 }))
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    const dispatch = createUsageReportDeliveryDispatcher({ fetchImpl });
+
+    const result = await dispatch(buildDispatchArgs({
+      schedule: {
+        ...buildDispatchArgs().schedule,
+        delivery_config: {
+          webhook_url: 'https://example.internal/hook',
+          retry_attempts: 2,
+          retry_backoff_ms: 100,
+        },
+      },
+    }));
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      delivery_metadata: expect.objectContaining({
+        attempt: 2,
+        retry_attempts: 2,
+      }),
     }));
   });
 

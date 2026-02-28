@@ -193,7 +193,10 @@ export interface UsageReportSchedule {
     webhook_url?: string;
     credential_ref?: string;
     secret_header_name?: string;
+    signature_header_name?: string;
     timeout_seconds?: number;
+    retry_attempts?: number;
+    retry_backoff_ms?: number;
   };
   filters?: {
     resource_type?: string;

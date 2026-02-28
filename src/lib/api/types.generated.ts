@@ -3131,7 +3131,10 @@ export interface components {
             delivery_channel: "in_app" | "webhook";
             delivery_config?: {
                 credential_ref?: string;
+                retry_attempts?: number;
+                retry_backoff_ms?: number;
                 secret_header_name?: string;
+                signature_header_name?: string;
                 timeout_seconds?: number;
                 webhook_url?: string;
             };
@@ -3713,7 +3716,10 @@ export interface components {
             delivery_channel?: "in_app" | "webhook";
             delivery_config?: {
                 credential_ref?: string;
+                retry_attempts?: number;
+                retry_backoff_ms?: number;
                 secret_header_name?: string;
+                signature_header_name?: string;
                 timeout_seconds?: number;
                 webhook_url?: string;
             };
@@ -3916,7 +3922,10 @@ export interface components {
             delivery_channel: "in_app" | "webhook";
             delivery_config?: {
                 credential_ref?: string;
+                retry_attempts?: number;
+                retry_backoff_ms?: number;
                 secret_header_name?: string;
+                signature_header_name?: string;
                 timeout_seconds?: number;
                 webhook_url?: string;
             };

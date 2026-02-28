@@ -6,6 +6,7 @@ import type {
   CreateRuntimeModelAliasRequest,
   CreateRuntimeModelCatalogEntryRequest,
   CreateRuntimeModelComboRequest,
+  CreateRuntimePricingVersionRequest,
   CreateRuntimeProviderConnectionRequest,
   RuntimeImpactPreviewRequest,
   RuntimeRoutingDryRunRequest,
@@ -239,6 +240,49 @@ export function usePatchRuntimePricing(workspaceId: string, projectId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.runtime.pricing(workspaceId, projectId) });
     },
     onError: (error) => handleErrorForToast(error, 'usePatchRuntimePricing'),
+  });
+}
+
+export function useRuntimePricingVersions(workspaceId: string, projectId: string) {
+  return useQuery({
+    queryKey: [...queryKeys.runtime.pricing(workspaceId, projectId), 'versions'],
+    queryFn: () => getRuntimeAPI().listPricingVersions(workspaceId, projectId),
+    enabled: !!workspaceId && !!projectId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateRuntimePricingVersion(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateRuntimePricingVersionRequest) =>
+      getRuntimeAPI().createPricingVersion(workspaceId, projectId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.pricing(workspaceId, projectId) });
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.runtime.pricing(workspaceId, projectId), 'versions'] });
+    },
+    onError: (error) => handleErrorForToast(error, 'useCreateRuntimePricingVersion'),
+  });
+}
+
+export function useActivateRuntimePricingVersion(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (versionId: string) =>
+      getRuntimeAPI().activatePricingVersion(workspaceId, projectId, versionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.pricing(workspaceId, projectId) });
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.runtime.pricing(workspaceId, projectId), 'versions'] });
+    },
+    onError: (error) => handleErrorForToast(error, 'useActivateRuntimePricingVersion'),
+  });
+}
+
+export function useCompareRuntimePricingVersions(workspaceId: string, projectId: string) {
+  return useMutation({
+    mutationFn: (payload: { baseline_version_id: string; candidate_version_id: string }) =>
+      getRuntimeAPI().comparePricingVersions(workspaceId, projectId, payload),
+    onError: (error) => handleErrorForToast(error, 'useCompareRuntimePricingVersions'),
   });
 }
 

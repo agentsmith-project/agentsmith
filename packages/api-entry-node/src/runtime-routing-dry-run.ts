@@ -3,7 +3,7 @@ import { selectProviderConnection } from './runtime-execution-policy.js';
 import { createRuntimeStore } from './runtime-store.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 
-type PricingSource = 'project_override' | 'model_catalog' | 'missing';
+type PricingSource = 'project_override' | 'workspace_default' | 'global_default' | 'model_catalog' | 'missing';
 
 export type RuntimeReleaseGuardrails = {
   release_readiness: 'ready' | 'blocked';
@@ -129,7 +129,7 @@ export async function dryRunRuntimeRouting(params: {
     runtimeStore.listModels(projectScope),
     runtimeStore.listAliases(projectScope),
     runtimeStore.listCombos(projectScope),
-    runtimeStore.getPricing(projectScope),
+    runtimeStore.resolvePricing(projectScope),
   ]);
 
   const routingPlan = resolveRoutingPlan({
@@ -160,10 +160,18 @@ export async function dryRunRuntimeRouting(params: {
       issues.add('runtime_model_not_registered');
     }
 
-    const projectPricing = pricing?.pricing_map?.[attempt.provider]?.[attempt.model];
+    const effectivePricing = pricing.pricing_map?.[attempt.provider]?.[attempt.model];
     const modelPricing = modelEntry?.pricing;
-    const pricingSource: PricingSource = projectPricing
-      ? 'project_override'
+    const pricingSource: PricingSource = effectivePricing
+      ? (
+        pricing.pricing_scope_type === 'project'
+          ? 'project_override'
+          : pricing.pricing_scope_type === 'workspace'
+            ? 'workspace_default'
+            : pricing.pricing_scope_type === 'global'
+              ? 'global_default'
+              : 'project_override'
+      )
       : modelPricing
         ? 'model_catalog'
         : 'missing';
@@ -189,7 +197,7 @@ export async function dryRunRuntimeRouting(params: {
             connection_priority: disabledConnection.priority,
             connection_base_url: disabledConnection.base_url,
             pricing_source: pricingSource,
-            pricing: projectPricing ?? modelPricing,
+            pricing: effectivePricing ?? modelPricing,
           };
         }
         issues.add('runtime_provider_connection_missing');
@@ -200,7 +208,7 @@ export async function dryRunRuntimeRouting(params: {
           provider_connection_status: 'missing',
           provider_connection_has_credential: false,
           pricing_source: pricingSource,
-          pricing: projectPricing ?? modelPricing,
+          pricing: effectivePricing ?? modelPricing,
         };
       }
       issues.add(selectedConnection.failure.message);
@@ -217,7 +225,7 @@ export async function dryRunRuntimeRouting(params: {
         connection_priority: fallbackConnection?.priority,
         connection_base_url: fallbackConnection?.base_url,
         pricing_source: pricingSource,
-        pricing: projectPricing ?? modelPricing,
+        pricing: effectivePricing ?? modelPricing,
       };
     }
 
@@ -231,7 +239,7 @@ export async function dryRunRuntimeRouting(params: {
       connection_priority: selectedConnection.providerConnection.priority,
       connection_base_url: selectedConnection.providerConnection.base_url,
       pricing_source: pricingSource,
-      pricing: projectPricing ?? modelPricing,
+      pricing: effectivePricing ?? modelPricing,
     };
   });
 

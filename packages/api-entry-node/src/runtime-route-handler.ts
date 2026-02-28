@@ -9,6 +9,10 @@ import {
 } from './runtime-domain.js';
 import { executeRuntimeUnifiedChat } from './runtime-unified-chat.js';
 import { previewRuntimeImpact } from './runtime-impact-preview.js';
+import {
+  comparePricingVersions,
+  evaluatePricingActivationReadiness,
+} from './runtime-pricing-governance.js';
 import { dryRunRuntimeRouting } from './runtime-routing-dry-run.js';
 import {
   createRuntimeStore,
@@ -16,6 +20,7 @@ import {
   type RuntimeModelCatalogEntryRecord,
   type RuntimeModelComboRecord,
   type RuntimePricingRecord,
+  type RuntimePricingVersionRecord,
   type RuntimeProviderConnectionRecord,
 } from './runtime-store.js';
 import {
@@ -26,6 +31,8 @@ import {
   parseRuntimeModelCreatePayload,
   parseRuntimeModelUpdatePayload,
   parseRuntimePricingPayload,
+  parseRuntimePricingVersionComparePayload,
+  parseRuntimePricingVersionCreatePayload,
   parseRuntimeProviderCreatePayload,
   parseRuntimeProviderUpdatePayload,
 } from './runtime-validation.js';
@@ -35,6 +42,7 @@ interface AnyRoute {
   workspaceId?: string;
   projectId?: string;
   providerConnectionId?: string;
+  pricingVersionId?: string;
   provider?: string;
   modelId?: string;
   alias?: string;
@@ -546,8 +554,8 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimePricing' && method === 'GET') {
-    const record = await runtimeStore.getPricing(projectScope);
-    json(res, 200, record?.pricing_map ?? {});
+    const resolved = await runtimeStore.resolvePricing(projectScope);
+    json(res, 200, resolved.pricing_map ?? {});
     return true;
   }
 
@@ -568,6 +576,204 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
 
     await runtimeStore.upsertPricing(record);
     json(res, 200, record.pricing_map);
+    return true;
+  }
+
+  if (route.kind === 'runtimePricingVersions' && method === 'GET') {
+    const items = await runtimeStore.listScopedPricingVersions(projectScope);
+    const resolved = await runtimeStore.resolvePricing(projectScope);
+    json(res, 200, {
+      items: items.sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
+      active_versions: {
+        global: resolved.active_versions.global?.id ?? null,
+        workspace: resolved.active_versions.workspace?.id ?? null,
+        project: resolved.active_versions.project?.id ?? null,
+      },
+      effective_version: resolved.pricing_version_id
+        ? {
+          id: resolved.pricing_version_id,
+          version_name: resolved.pricing_version_name ?? resolved.pricing_version_id,
+          scope_type: resolved.pricing_scope_type,
+        }
+        : null,
+    });
+    return true;
+  }
+
+  if (route.kind === 'runtimePricingVersions' && method === 'POST') {
+    const parsed = parseRuntimePricingVersionCreatePayload(await readBody(req));
+    if (!parsed.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsed.message });
+      return true;
+    }
+    const payload = parsed.value;
+    const existing = await runtimeStore.listScopedPricingVersions(projectScope);
+    const duplicate = existing.find((item) => item.scope_type === payload.scope_type && item.version_name === payload.version_name);
+    if (duplicate) {
+      json(res, 409, { error_code: 'CONFLICT', message: 'runtime_pricing_version_already_exists' });
+      return true;
+    }
+
+    const record: RuntimePricingVersionRecord = {
+      id: runtimeStore.createId('rpv'),
+      scope_type: payload.scope_type,
+      workspace_id: payload.scope_type === 'global' ? undefined : workspaceId,
+      project_id: payload.scope_type === 'project' ? projectId : undefined,
+      version_name: payload.version_name,
+      description: payload.description,
+      pricing_map: payload.pricing_map,
+      status: payload.activate ? 'active' : 'draft',
+      created_at: runtimeStore.nowIso(),
+      updated_at: runtimeStore.nowIso(),
+      activated_at: payload.activate ? runtimeStore.nowIso() : undefined,
+    };
+
+    if (payload.activate) {
+      const resolved = await runtimeStore.resolvePricing(projectScope);
+      const [models, aliases, combos, currentVersions] = await Promise.all([
+        runtimeStore.listModels(projectScope),
+        runtimeStore.listAliases(projectScope),
+        runtimeStore.listCombos(projectScope),
+        runtimeStore.listScopedPricingVersions(projectScope),
+      ]);
+      const workspaceVersion = currentVersions.find((item) => item.scope_type === 'workspace' && item.status === 'active');
+      const globalVersion = currentVersions.find((item) => item.scope_type === 'global' && item.status === 'active');
+      const projectVersion = currentVersions.find((item) => item.scope_type === 'project' && item.status === 'active');
+      const readiness = evaluatePricingActivationReadiness({
+        scopeType: payload.scope_type,
+        candidateMap: payload.pricing_map,
+        activeProjectMap: projectVersion?.pricing_map,
+        activeWorkspaceMap: workspaceVersion?.pricing_map,
+        activeGlobalMap: globalVersion?.pricing_map,
+        models,
+        aliases,
+        combos,
+      });
+      if (readiness.release_readiness === 'blocked') {
+        json(res, 409, {
+          error_code: 'CONFLICT',
+          message: 'runtime_pricing_activation_missing_price',
+          readiness,
+          effective_version: resolved.pricing_version_id,
+        });
+        return true;
+      }
+      for (const item of currentVersions.filter((version) => (
+        version.scope_type === payload.scope_type
+        && version.status === 'active'
+        && (
+          payload.scope_type === 'global'
+          || version.workspace_id === workspaceId
+        )
+        && (
+          payload.scope_type !== 'project'
+          || version.project_id === projectId
+        )
+      ))) {
+        await runtimeStore.upsertPricingVersion({
+          ...item,
+          status: 'archived',
+          updated_at: runtimeStore.nowIso(),
+        });
+      }
+    }
+
+    await runtimeStore.upsertPricingVersion(record);
+    json(res, 201, record);
+    return true;
+  }
+
+  if (route.kind === 'runtimePricingVersionActivate' && method === 'POST') {
+    if (!route.pricingVersionId) {
+      json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_pricing_version_required' });
+      return true;
+    }
+    const version = await runtimeStore.getPricingVersion(route.pricingVersionId);
+    if (!version) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_pricing_version_not_found' });
+      return true;
+    }
+    if (version.scope_type !== 'global' && version.workspace_id !== workspaceId) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_pricing_version_not_found' });
+      return true;
+    }
+    if (version.scope_type === 'project' && version.project_id !== projectId) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_pricing_version_not_found' });
+      return true;
+    }
+
+    const [models, aliases, combos, currentVersions] = await Promise.all([
+      runtimeStore.listModels(projectScope),
+      runtimeStore.listAliases(projectScope),
+      runtimeStore.listCombos(projectScope),
+      runtimeStore.listScopedPricingVersions(projectScope),
+    ]);
+    const workspaceVersion = currentVersions.find((item) => item.scope_type === 'workspace' && item.status === 'active');
+    const globalVersion = currentVersions.find((item) => item.scope_type === 'global' && item.status === 'active');
+    const projectVersion = currentVersions.find((item) => item.scope_type === 'project' && item.status === 'active');
+    const readiness = evaluatePricingActivationReadiness({
+      scopeType: version.scope_type,
+      candidateMap: version.pricing_map,
+      activeProjectMap: projectVersion?.pricing_map,
+      activeWorkspaceMap: workspaceVersion?.pricing_map,
+      activeGlobalMap: globalVersion?.pricing_map,
+      models,
+      aliases,
+      combos,
+    });
+    if (readiness.release_readiness === 'blocked') {
+      json(res, 409, {
+        error_code: 'CONFLICT',
+        message: 'runtime_pricing_activation_missing_price',
+        readiness,
+      });
+      return true;
+    }
+    for (const item of currentVersions.filter((candidate) => (
+      candidate.scope_type === version.scope_type
+      && candidate.status === 'active'
+      && candidate.id !== version.id
+      && (
+        version.scope_type === 'global'
+        || candidate.workspace_id === workspaceId
+      )
+      && (
+        version.scope_type !== 'project'
+        || candidate.project_id === projectId
+      )
+    ))) {
+      await runtimeStore.upsertPricingVersion({
+        ...item,
+        status: 'archived',
+        updated_at: runtimeStore.nowIso(),
+      });
+    }
+    const updated: RuntimePricingVersionRecord = {
+      ...version,
+      status: 'active',
+      activated_at: runtimeStore.nowIso(),
+      updated_at: runtimeStore.nowIso(),
+    };
+    await runtimeStore.upsertPricingVersion(updated);
+    json(res, 200, { version: updated, readiness });
+    return true;
+  }
+
+  if (route.kind === 'runtimePricingCompare' && method === 'POST') {
+    const parsed = parseRuntimePricingVersionComparePayload(await readBody(req));
+    if (!parsed.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsed.message });
+      return true;
+    }
+    const [baseline, candidate] = await Promise.all([
+      runtimeStore.getPricingVersion(parsed.value.baseline_version_id),
+      runtimeStore.getPricingVersion(parsed.value.candidate_version_id),
+    ]);
+    if (!baseline || !candidate) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_pricing_version_not_found' });
+      return true;
+    }
+    json(res, 200, comparePricingVersions({ baseline, candidate }));
     return true;
   }
 

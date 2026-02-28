@@ -47,6 +47,7 @@ async function executeRoute(params: {
     workspaceId: string;
     projectId: string;
     providerConnectionId?: string;
+    pricingVersionId?: string;
     provider?: string;
     modelId?: string;
     alias?: string;
@@ -164,6 +165,186 @@ describe('runtime-route-handler', () => {
     };
     expect(map.openai?.['gpt-4o']?.input).toBe(2.5);
     expect(map.openai?.['gpt-4o']?.output).toBe(10);
+  });
+
+  it('creates, activates, lists, and compares runtime pricing versions', async () => {
+    const deps = createDeps();
+
+    await createRuntimeModel({
+      deps,
+      workspaceId,
+      projectId,
+      provider: 'openai',
+      modelId: 'gpt-4o',
+    });
+
+    const createDraft = await executeRoute({
+      deps,
+      route: { kind: 'runtimePricingVersions', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        scope_type: 'project',
+        version_name: 'runtime-pricing-v1',
+        pricing_map: {
+          openai: {
+            'gpt-4o': { input: 2, output: 10 },
+          },
+        },
+      },
+    });
+    expect(createDraft.statusCode).toBe(201);
+    const draft = createDraft.body as { id: string; status: string; version_name: string };
+    expect(draft.status).toBe('draft');
+
+    const activate = await executeRoute({
+      deps,
+      route: { kind: 'runtimePricingVersionActivate', workspaceId, projectId, pricingVersionId: draft.id },
+      method: 'POST',
+    });
+    expect(activate.statusCode).toBe(200);
+    const activatePayload = activate.body as {
+      version: { id: string; status: string; version_name: string };
+      readiness: { release_readiness: string; blockers: string[] };
+    };
+    expect(activatePayload.version.id).toBe(draft.id);
+    expect(activatePayload.version.status).toBe('active');
+    expect(activatePayload.readiness.release_readiness).toBe('ready');
+    expect(activatePayload.readiness.blockers).toEqual([]);
+
+    const createCandidate = await executeRoute({
+      deps,
+      route: { kind: 'runtimePricingVersions', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        scope_type: 'project',
+        version_name: 'runtime-pricing-v2',
+        pricing_map: {
+          openai: {
+            'gpt-4o': { input: 3, output: 12 },
+          },
+        },
+      },
+    });
+    expect(createCandidate.statusCode).toBe(201);
+    const candidate = createCandidate.body as { id: string };
+
+    const list = await executeRoute({
+      deps,
+      route: { kind: 'runtimePricingVersions', workspaceId, projectId },
+      method: 'GET',
+    });
+    expect(list.statusCode).toBe(200);
+    const listPayload = list.body as {
+      items: Array<{ id: string; version_name: string; status: string }>;
+      active_versions: { project?: string | null };
+      effective_version?: { id: string; version_name: string } | null;
+    };
+    expect(listPayload.items).toHaveLength(2);
+    expect(listPayload.active_versions.project).toBe(draft.id);
+    expect(listPayload.effective_version?.id).toBe(draft.id);
+    expect(listPayload.effective_version?.version_name).toBe('runtime-pricing-v1');
+
+    const compare = await executeRoute({
+      deps,
+      route: { kind: 'runtimePricingCompare', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        baseline_version_id: draft.id,
+        candidate_version_id: candidate.id,
+      },
+    });
+    expect(compare.statusCode).toBe(200);
+    const comparePayload = compare.body as {
+      summary: { changed: number; added: number; removed: number; unchanged: number };
+      items: Array<{ provider: string; model: string; change_type: string }>;
+    };
+    expect(comparePayload.summary).toEqual({
+      added: 0,
+      removed: 0,
+      changed: 1,
+      unchanged: 0,
+    });
+    expect(comparePayload.items[0]).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-4o',
+      change_type: 'changed',
+    });
+  });
+
+  it('blocks runtime pricing activation when referenced targets still lack pricing', async () => {
+    const deps = createDeps();
+
+    await createRuntimeModel({
+      deps,
+      workspaceId,
+      projectId,
+      provider: 'openai',
+      modelId: 'gpt-4o',
+    });
+    await createRuntimeModel({
+      deps,
+      workspaceId,
+      projectId,
+      provider: 'anthropic',
+      modelId: 'claude-sonnet-4-5',
+    });
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliases', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        alias: 'assistant-main',
+        target_provider: 'openai',
+        target_model: 'gpt-4o',
+      },
+    });
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        name: 'prod-chat',
+        targets: [
+          { provider: 'openai', model: 'gpt-4o' },
+          { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+        ],
+        fallback_policy: {
+          max_hops: 1,
+          retryable_error_classes: ['provider_retryable'],
+        },
+      },
+    });
+
+    const createBlocked = await executeRoute({
+      deps,
+      route: { kind: 'runtimePricingVersions', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        scope_type: 'project',
+        version_name: 'runtime-pricing-blocked',
+        activate: true,
+        pricing_map: {
+          openai: {
+            'gpt-4o': { input: 2, output: 10 },
+          },
+        },
+      },
+    });
+    expect(createBlocked.statusCode).toBe(409);
+    const blockedPayload = createBlocked.body as {
+      message?: string;
+      readiness?: {
+        release_readiness: string;
+        blockers: string[];
+        missing_targets: Array<{ provider: string; model: string }>;
+      };
+    };
+    expect(blockedPayload.message).toBe('runtime_pricing_activation_missing_price');
+    expect(blockedPayload.readiness?.release_readiness).toBe('blocked');
+    expect(blockedPayload.readiness?.blockers).toEqual(['runtime_pricing_activation_missing_price']);
+    expect(blockedPayload.readiness?.missing_targets).toEqual([
+      { provider: 'anthropic', model: 'claude-sonnet-4-5' },
+    ]);
   });
 
   it('supports runtime model/alias/combo item CRUD operations', async () => {

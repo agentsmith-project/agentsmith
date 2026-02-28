@@ -6,11 +6,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import type {
   RuntimeImpactPreviewResponse,
   RuntimeAttemptTrace,
+  RuntimePricingCompareResponse,
   RuntimeReleaseGuardrails,
   RuntimeRoutingDryRunAttempt,
   RuntimeRoutingDryRunResponse,
@@ -22,13 +24,17 @@ import {
   useCreateRuntimeAlias,
   useCreateRuntimeCombo,
   useCreateRuntimeModel,
+  useCreateRuntimePricingVersion,
   useCreateRuntimeProvider,
+  useActivateRuntimePricingVersion,
+  useCompareRuntimePricingVersions,
   usePatchRuntimePricing,
   useRuntimeImpactPreview,
   useRuntimeAliases,
   useRuntimeCombos,
   useRuntimeModels,
   useRuntimePricing,
+  useRuntimePricingVersions,
   useRuntimeProviders,
   useRuntimeRoutingDryRun,
   useRuntimeUnifiedChatProbe,
@@ -172,6 +178,8 @@ function mapDryRunIssue(t: ReturnType<typeof useTranslations>, issue: string): s
 function mapDryRunPricingSource(t: ReturnType<typeof useTranslations>, source: RuntimeRoutingDryRunAttempt['pricing_source']): string {
   const keyMap: Record<RuntimeRoutingDryRunAttempt['pricing_source'], string> = {
     project_override: 'runtime_dry_run_pricing_project_override',
+    workspace_default: 'runtime_dry_run_pricing_workspace_default',
+    global_default: 'runtime_dry_run_pricing_global_default',
     model_catalog: 'runtime_dry_run_pricing_model_catalog',
     missing: 'runtime_dry_run_pricing_missing',
   };
@@ -259,6 +267,12 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const [aliasTargetModel, setAliasTargetModel] = useState('gpt-4o');
   const [comboJson, setComboJson] = useState(DEFAULT_COMBO_JSON);
   const [pricingJson, setPricingJson] = useState(DEFAULT_PRICING_JSON);
+  const [pricingVersionName, setPricingVersionName] = useState('runtime-pricing-v2');
+  const [pricingVersionScope, setPricingVersionScope] = useState<'project' | 'workspace' | 'global'>('project');
+  const [pricingVersionDescription, setPricingVersionDescription] = useState('');
+  const [compareBaselineVersionId, setCompareBaselineVersionId] = useState('');
+  const [compareCandidateVersionId, setCompareCandidateVersionId] = useState('');
+  const [pricingCompareResult, setPricingCompareResult] = useState<RuntimePricingCompareResponse | null>(null);
   const [dryRunModel, setDryRunModel] = useState('combo:prod-chat');
   const [dryRunResult, setDryRunResult] = useState<RuntimeRoutingDryRunResponse | null>(null);
   const [impactPreviewResult, setImpactPreviewResult] = useState<RuntimeImpactPreviewResponse | null>(null);
@@ -277,12 +291,16 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const aliasesQuery = useRuntimeAliases(workspaceId, projectId);
   const combosQuery = useRuntimeCombos(workspaceId, projectId);
   const pricingQuery = useRuntimePricing(workspaceId, projectId);
+  const pricingVersionsQuery = useRuntimePricingVersions(workspaceId, projectId);
 
   const createProvider = useCreateRuntimeProvider(workspaceId, projectId);
   const createModel = useCreateRuntimeModel(workspaceId, projectId);
   const createAlias = useCreateRuntimeAlias(workspaceId, projectId);
   const createCombo = useCreateRuntimeCombo(workspaceId, projectId);
   const patchPricing = usePatchRuntimePricing(workspaceId, projectId);
+  const createPricingVersion = useCreateRuntimePricingVersion(workspaceId, projectId);
+  const activatePricingVersion = useActivateRuntimePricingVersion(workspaceId, projectId);
+  const comparePricingVersions = useCompareRuntimePricingVersions(workspaceId, projectId);
   const previewImpact = useRuntimeImpactPreview(workspaceId, projectId);
   const compareImpact = useRuntimeImpactPreview(workspaceId, projectId);
   const dryRunRouting = useRuntimeRoutingDryRun(workspaceId, projectId);
@@ -292,6 +310,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
     if (!pricingQuery.data || Object.keys(pricingQuery.data).length === 0) return null;
     return JSON.stringify(pricingQuery.data, null, 2);
   }, [pricingQuery.data]);
+  const pricingVersions = pricingVersionsQuery.data?.items ?? [];
 
   const runtimeMetadata = getRuntimeMetadata(probeResult);
   const responsePreview = getResponsePreview(probeResult);
@@ -421,6 +440,46 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
     }
   };
 
+  const handleCreatePricingVersion = async () => {
+    try {
+      const payload = JSON.parse(pricingJson) as Record<string, Record<string, Record<string, number>>>;
+      await createPricingVersion.mutateAsync({
+        scope_type: pricingVersionScope,
+        version_name: pricingVersionName.trim(),
+        description: pricingVersionDescription.trim() || undefined,
+        pricing_map: payload,
+      });
+      toast.success(t('runtime_pricing_version_created'));
+    } catch {
+      toast.error(t('runtime_pricing_version_create_failed'));
+    }
+  };
+
+  const handleActivatePricingVersion = async (versionId: string) => {
+    try {
+      const result = await activatePricingVersion.mutateAsync(versionId);
+      if (result.readiness.release_readiness === 'blocked') {
+        toast.error(t('runtime_pricing_version_activate_blocked'));
+        return;
+      }
+      toast.success(t('runtime_pricing_version_activated'));
+    } catch {
+      toast.error(t('runtime_pricing_version_activate_failed'));
+    }
+  };
+
+  const handleComparePricingVersions = async () => {
+    try {
+      const result = await comparePricingVersions.mutateAsync({
+        baseline_version_id: compareBaselineVersionId.trim(),
+        candidate_version_id: compareCandidateVersionId.trim(),
+      });
+      setPricingCompareResult(result);
+    } catch {
+      toast.error(t('runtime_pricing_compare_failed'));
+    }
+  };
+
   return (
     <div className="space-y-4 rounded-xl border border-border bg-surface-high/70 p-4" data-testid="settings-runtime__panel">
       <div className="flex items-center justify-between gap-4">
@@ -483,6 +542,167 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
           {t('runtime_action_save')}
         </Button>
       </div>
+
+      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__pricing-governance">
+        <CardHeader className="pb-4">
+          <CardTitle>{t('runtime_pricing_governance_title')}</CardTitle>
+          <p className="text-sm text-tertiary">{t('runtime_pricing_governance_description')}</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_180px]">
+            <div className="space-y-3 rounded-xl border border-border/60 bg-surface-high/50 p-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_pricing_version_name')}</div>
+                  <Input value={pricingVersionName} onChange={(e) => setPricingVersionName(e.target.value)} data-testid="settings-runtime__pricing-version-name" />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_pricing_version_scope')}</div>
+                  <Select value={pricingVersionScope} onValueChange={(value) => setPricingVersionScope(value as 'project' | 'workspace' | 'global')}>
+                    <SelectTrigger data-testid="settings-runtime__pricing-version-scope">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="project">{t('runtime_pricing_scope_project')}</SelectItem>
+                      <SelectItem value="workspace">{t('runtime_pricing_scope_workspace')}</SelectItem>
+                      <SelectItem value="global">{t('runtime_pricing_scope_global')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_pricing_version_description')}</div>
+                <Input value={pricingVersionDescription} onChange={(e) => setPricingVersionDescription(e.target.value)} data-testid="settings-runtime__pricing-version-description" />
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  onClick={handleCreatePricingVersion}
+                  disabled={disabled || createPricingVersion.isPending || !pricingVersionName.trim()}
+                  data-testid="settings-runtime__pricing-version-create"
+                >
+                  {t('runtime_pricing_version_create')}
+                </Button>
+                <div className="text-xs text-tertiary">
+                  {pricingVersionsQuery.data?.effective_version
+                    ? `${t('runtime_pricing_effective_version')}: ${pricingVersionsQuery.data.effective_version.version_name}`
+                    : t('runtime_pricing_effective_version_empty')}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/60 bg-surface-high/50 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_pricing_active_scopes')}</div>
+              <div className="mt-3 space-y-2 text-sm text-foreground">
+                <div>{t('runtime_pricing_scope_project')}: {pricingVersionsQuery.data?.active_versions.project ?? '--'}</div>
+                <div>{t('runtime_pricing_scope_workspace')}: {pricingVersionsQuery.data?.active_versions.workspace ?? '--'}</div>
+                <div>{t('runtime_pricing_scope_global')}: {pricingVersionsQuery.data?.active_versions.global ?? '--'}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-surface p-4" data-testid="settings-runtime__pricing-version-list">
+            <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_pricing_versions_title')}</div>
+            {pricingVersions.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {pricingVersions.map((version) => (
+                  <div key={version.id} className="rounded-lg border border-border/60 bg-surface-high/50 p-4" data-testid={`settings-runtime__pricing-version-${version.id}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">{version.version_name}</div>
+                        <div className="mt-1 text-xs text-tertiary">{version.description ?? '--'}</div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">{version.scope_type}</Badge>
+                        <Badge variant={version.status === 'active' ? 'default' : version.status === 'draft' ? 'secondary' : 'outline'}>
+                          {version.status}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-tertiary">
+                      <code className="rounded bg-surface px-2 py-1">{version.id}</code>
+                      <span>{version.updated_at}</span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleActivatePricingVersion(version.id)}
+                        disabled={disabled || activatePricingVersion.isPending || version.status === 'active'}
+                        data-testid={`settings-runtime__pricing-version-activate-${version.id}`}
+                      >
+                        {t('runtime_pricing_version_activate')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setCompareBaselineVersionId(version.id);
+                          setCompareCandidateVersionId((current) => current || version.id);
+                        }}
+                      >
+                        {t('runtime_pricing_version_use_as_baseline')}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-tertiary">{t('runtime_pricing_versions_empty')}</div>
+            )}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+            <div className="space-y-2 rounded-xl border border-border/60 bg-surface-high/50 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_pricing_compare_baseline')}</div>
+              <Input value={compareBaselineVersionId} onChange={(e) => setCompareBaselineVersionId(e.target.value)} data-testid="settings-runtime__pricing-compare-baseline" />
+            </div>
+            <div className="flex items-center justify-center text-xs uppercase tracking-[0.18em] text-tertiary">
+              {t('runtime_compare_against')}
+            </div>
+            <div className="space-y-2 rounded-xl border border-border/60 bg-surface-high/50 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_pricing_compare_candidate')}</div>
+              <Input value={compareCandidateVersionId} onChange={(e) => setCompareCandidateVersionId(e.target.value)} data-testid="settings-runtime__pricing-compare-candidate" />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              onClick={handleComparePricingVersions}
+              disabled={disabled || comparePricingVersions.isPending || !compareBaselineVersionId.trim() || !compareCandidateVersionId.trim()}
+              data-testid="settings-runtime__pricing-compare-run"
+            >
+              {t('runtime_pricing_compare_run')}
+            </Button>
+            <div className="text-xs text-tertiary">{t('runtime_pricing_compare_hint')}</div>
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-surface-high/35 p-4" data-testid="settings-runtime__pricing-compare-result">
+            <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_pricing_compare_title')}</div>
+            {pricingCompareResult ? (
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-3 md:grid-cols-4">
+                  <div className="rounded-lg border border-border/60 bg-surface p-3"><div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">added</div><div className="mt-2 text-sm font-semibold text-foreground">{pricingCompareResult.summary.added}</div></div>
+                  <div className="rounded-lg border border-border/60 bg-surface p-3"><div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">removed</div><div className="mt-2 text-sm font-semibold text-foreground">{pricingCompareResult.summary.removed}</div></div>
+                  <div className="rounded-lg border border-border/60 bg-surface p-3"><div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">changed</div><div className="mt-2 text-sm font-semibold text-foreground">{pricingCompareResult.summary.changed}</div></div>
+                  <div className="rounded-lg border border-border/60 bg-surface p-3"><div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">unchanged</div><div className="mt-2 text-sm font-semibold text-foreground">{pricingCompareResult.summary.unchanged}</div></div>
+                </div>
+                <div className="space-y-2">
+                  {pricingCompareResult.items.slice(0, 8).map((item) => (
+                    <div key={`${item.provider}-${item.model}`} className="rounded-lg border border-border/60 bg-surface p-3 text-sm text-foreground">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <code>{item.provider}/{item.model}</code>
+                        <Badge variant="secondary">{item.change_type}</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-tertiary">{t('runtime_pricing_compare_empty')}</div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__probe">
         <CardHeader className="pb-4">

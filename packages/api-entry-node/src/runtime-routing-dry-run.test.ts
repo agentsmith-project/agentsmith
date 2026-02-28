@@ -191,4 +191,104 @@ describe('runtime-routing-dry-run', () => {
       provider_connection_has_credential: true,
     });
   });
+
+  it('reports workspace and global pricing sources when active versions resolve pricing', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+    const now = new Date().toISOString();
+
+    await docStore.upsert('runtime_provider_connections', 'rpc_1', {
+      id: 'rpc_1',
+      workspace_id: workspaceId,
+      project_id: projectId,
+      provider: 'openai',
+      auth_mode: 'api_key',
+      base_url: 'https://api.openai.com/v1',
+      credential_ref: 'cred_1',
+      priority: 1,
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+    });
+    await docStore.upsert('runtime_model_catalog_entries', 'rmc_1', {
+      id: 'rmc_1',
+      workspace_id: workspaceId,
+      project_id: projectId,
+      provider: 'openai',
+      model_id: 'gpt-4o',
+      capabilities: ['chat'],
+      created_at: now,
+      updated_at: now,
+    });
+    await docStore.upsert('runtime_pricing_versions', 'rpv_workspace', {
+      id: 'rpv_workspace',
+      scope_type: 'workspace',
+      workspace_id: workspaceId,
+      version_name: 'workspace-default',
+      pricing_map: {
+        openai: {
+          'gpt-4o': { input: 2, output: 10 },
+        },
+      },
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+      activated_at: now,
+    });
+
+    const workspaceResult = await dryRunRuntimeRouting({
+      deps: { docStore } as never,
+      workspaceId,
+      projectId,
+      rawBody: { model: 'openai/gpt-4o' },
+    });
+    expect(workspaceResult.statusCode).toBe(200);
+    expect('attempts' in workspaceResult.body && workspaceResult.body.attempts[0]).toMatchObject({
+      pricing_source: 'workspace_default',
+      pricing: { input: 2, output: 10 },
+    });
+
+    await docStore.upsert('runtime_pricing_versions', 'rpv_workspace', {
+      id: 'rpv_workspace',
+      scope_type: 'workspace',
+      workspace_id: workspaceId,
+      version_name: 'workspace-default',
+      pricing_map: {
+        openai: {
+          'gpt-4o': { input: 2, output: 10 },
+        },
+      },
+      status: 'archived',
+      created_at: now,
+      updated_at: now,
+      activated_at: now,
+    });
+    await docStore.upsert('runtime_pricing_versions', 'rpv_global', {
+      id: 'rpv_global',
+      scope_type: 'global',
+      version_name: 'global-default',
+      pricing_map: {
+        openai: {
+          'gpt-4o': { input: 3, output: 11 },
+        },
+      },
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+      activated_at: now,
+    });
+
+    const globalResult = await dryRunRuntimeRouting({
+      deps: { docStore } as never,
+      workspaceId,
+      projectId,
+      rawBody: { model: 'openai/gpt-4o' },
+    });
+    expect(globalResult.statusCode).toBe(200);
+    expect('attempts' in globalResult.body && globalResult.body.attempts[0]).toMatchObject({
+      pricing_source: 'global_default',
+      pricing: { input: 3, output: 11 },
+    });
+  });
 });

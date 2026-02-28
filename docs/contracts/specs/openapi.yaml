@@ -4754,6 +4754,111 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401": *a1
         "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - LLM Runtime
+      operationId: listRuntimePricingVersions
+      summary: List runtime pricing versions in scope
+      responses:
+        "200":
+          description: Pricing versions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimePricingVersionsResponse"
+        "401": *a1
+        "403": *a2
+    post:
+      tags:
+        - LLM Runtime
+      operationId: createRuntimePricingVersion
+      summary: Create runtime pricing version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimePricingVersionCreate"
+      responses:
+        "201":
+          description: Created pricing version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimePricingVersion"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+        "409":
+          description: Activation blocked by missing pricing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions/{versionId}/activate:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - LLM Runtime
+      operationId: activateRuntimePricingVersion
+      summary: Activate runtime pricing version
+      responses:
+        "200":
+          description: Activated pricing version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimePricingActivationResponse"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+        "409":
+          description: Activation blocked by missing pricing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/compare:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    post:
+      tags:
+        - LLM Runtime
+      operationId: compareRuntimePricingVersions
+      summary: Compare runtime pricing versions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimePricingVersionCompareRequest"
+      responses:
+        "200":
+          description: Pricing version comparison
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimePricingCompareResponse"
+        "401": *a1
+        "403": *a2
+        "404": *a3
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-rules:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -6778,7 +6883,7 @@ components:
           type: string
         pricing_source:
           type: string
-          enum: [project_override, model_catalog, missing]
+          enum: [project_override, workspace_default, global_default, model_catalog, missing]
         pricing:
           $ref: "#/components/schemas/RuntimeModelPricing"
     RuntimeReleaseGuardrails:
@@ -7035,6 +7140,214 @@ components:
         type: object
         additionalProperties:
           $ref: "#/components/schemas/RuntimeModelPricing"
+    RuntimePricingScopeType:
+      type: string
+      enum: [global, workspace, project]
+    RuntimePricingVersionStatus:
+      type: string
+      enum: [draft, active, archived]
+    RuntimePricingVersion:
+      type: object
+      required:
+        - id
+        - scope_type
+        - version_name
+        - pricing_map
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        scope_type:
+          $ref: "#/components/schemas/RuntimePricingScopeType"
+        workspace_id:
+          type: string
+        project_id:
+          type: string
+        version_name:
+          type: string
+        description:
+          type: string
+        pricing_map:
+          $ref: "#/components/schemas/RuntimePricingMap"
+        status:
+          $ref: "#/components/schemas/RuntimePricingVersionStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        activated_at:
+          type: string
+          format: date-time
+    RuntimePricingVersionCreate:
+      type: object
+      required:
+        - scope_type
+        - version_name
+        - pricing_map
+      properties:
+        scope_type:
+          $ref: "#/components/schemas/RuntimePricingScopeType"
+        version_name:
+          type: string
+        description:
+          type: string
+        pricing_map:
+          $ref: "#/components/schemas/RuntimePricingMap"
+        activate:
+          type: boolean
+    RuntimePricingActivationReadiness:
+      type: object
+      required:
+        - release_readiness
+        - missing_targets
+        - blockers
+      properties:
+        release_readiness:
+          type: string
+          enum: [ready, blocked]
+        missing_targets:
+          type: array
+          items:
+            type: object
+            required:
+              - provider
+              - model
+            properties:
+              provider:
+                type: string
+              model:
+                type: string
+        blockers:
+          type: array
+          items:
+            type: string
+    RuntimePricingActivationResponse:
+      type: object
+      required:
+        - version
+        - readiness
+      properties:
+        version:
+          $ref: "#/components/schemas/RuntimePricingVersion"
+        readiness:
+          $ref: "#/components/schemas/RuntimePricingActivationReadiness"
+    RuntimePricingVersionsResponse:
+      type: object
+      required:
+        - items
+        - active_versions
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimePricingVersion"
+        active_versions:
+          type: object
+          properties:
+            global:
+              type: string
+              nullable: true
+            workspace:
+              type: string
+              nullable: true
+            project:
+              type: string
+              nullable: true
+        effective_version:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+            version_name:
+              type: string
+            scope_type:
+              $ref: "#/components/schemas/RuntimePricingScopeType"
+    RuntimePricingVersionCompareRequest:
+      type: object
+      required:
+        - baseline_version_id
+        - candidate_version_id
+      properties:
+        baseline_version_id:
+          type: string
+        candidate_version_id:
+          type: string
+    RuntimePricingCompareItem:
+      type: object
+      required:
+        - provider
+        - model
+        - change_type
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        change_type:
+          type: string
+          enum: [added, removed, changed, unchanged]
+        baseline:
+          allOf:
+            - $ref: "#/components/schemas/RuntimeModelPricing"
+          nullable: true
+        candidate:
+          allOf:
+            - $ref: "#/components/schemas/RuntimeModelPricing"
+          nullable: true
+    RuntimePricingCompareVersionRef:
+      type: object
+      required:
+        - id
+        - version_name
+        - scope_type
+      properties:
+        id:
+          type: string
+        version_name:
+          type: string
+        scope_type:
+          $ref: "#/components/schemas/RuntimePricingScopeType"
+    RuntimePricingCompareResponse:
+      type: object
+      required:
+        - baseline_version
+        - candidate_version
+        - summary
+        - items
+      properties:
+        baseline_version:
+          $ref: "#/components/schemas/RuntimePricingCompareVersionRef"
+        candidate_version:
+          $ref: "#/components/schemas/RuntimePricingCompareVersionRef"
+        summary:
+          type: object
+          required:
+            - added
+            - removed
+            - changed
+            - unchanged
+          properties:
+            added:
+              type: integer
+              minimum: 0
+            removed:
+              type: integer
+              minimum: 0
+            changed:
+              type: integer
+              minimum: 0
+            unchanged:
+              type: integer
+              minimum: 0
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimePricingCompareItem"
     AlertNotificationsListResponse:
       type: object
       description: Paginated list of alert notifications

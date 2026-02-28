@@ -145,7 +145,7 @@ export interface RuntimeRoutingDryRunAttempt {
   provider_connection_has_credential?: boolean;
   connection_priority?: number;
   connection_base_url?: string;
-  pricing_source: 'project_override' | 'model_catalog' | 'missing';
+  pricing_source: 'project_override' | 'workspace_default' | 'global_default' | 'model_catalog' | 'missing';
   pricing?: Record<string, number>;
 }
 
@@ -260,6 +260,81 @@ export interface UpdateRuntimeModelComboRequest {
 }
 
 export type RuntimePricingMap = Record<string, Record<string, Record<string, number>>>;
+export type RuntimePricingScopeType = 'global' | 'workspace' | 'project';
+export type RuntimePricingVersionStatus = 'draft' | 'active' | 'archived';
+
+export interface RuntimePricingVersion {
+  id: string;
+  scope_type: RuntimePricingScopeType;
+  workspace_id?: string;
+  project_id?: string;
+  version_name: string;
+  description?: string;
+  pricing_map: RuntimePricingMap;
+  status: RuntimePricingVersionStatus;
+  created_at: string;
+  updated_at: string;
+  activated_at?: string;
+}
+
+export interface CreateRuntimePricingVersionRequest {
+  scope_type: RuntimePricingScopeType;
+  version_name: string;
+  description?: string;
+  pricing_map: RuntimePricingMap;
+  activate?: boolean;
+}
+
+export interface RuntimePricingVersionsResponse {
+  items: RuntimePricingVersion[];
+  active_versions: {
+    global?: string | null;
+    workspace?: string | null;
+    project?: string | null;
+  };
+  effective_version?: {
+    id: string;
+    version_name: string;
+    scope_type?: RuntimePricingScopeType | null;
+  } | null;
+}
+
+export interface RuntimePricingActivationReadiness {
+  release_readiness: 'ready' | 'blocked';
+  missing_targets: Array<{ provider: string; model: string }>;
+  blockers: string[];
+}
+
+export interface RuntimePricingActivationResponse {
+  version: RuntimePricingVersion;
+  readiness: RuntimePricingActivationReadiness;
+}
+
+export interface RuntimePricingCompareResponse {
+  baseline_version: {
+    id: string;
+    version_name: string;
+    scope_type: RuntimePricingScopeType;
+  };
+  candidate_version: {
+    id: string;
+    version_name: string;
+    scope_type: RuntimePricingScopeType;
+  };
+  summary: {
+    added: number;
+    removed: number;
+    changed: number;
+    unchanged: number;
+  };
+  items: Array<{
+    provider: string;
+    model: string;
+    change_type: 'added' | 'removed' | 'changed' | 'unchanged';
+    baseline: Record<string, number> | null;
+    candidate: Record<string, number> | null;
+  }>;
+}
 
 export class RuntimeAPI {
   constructor(private client: ApiClient) {}
@@ -386,6 +461,34 @@ export class RuntimeAPI {
 
   async patchPricing(workspaceId: string, projectId: string, payload: RuntimePricingMap): Promise<RuntimePricingMap> {
     return this.client.patch(`/workspaces/${workspaceId}/projects/${projectId}/runtime/pricing`, payload);
+  }
+
+  async listPricingVersions(workspaceId: string, projectId: string): Promise<RuntimePricingVersionsResponse> {
+    return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/pricing/versions`);
+  }
+
+  async createPricingVersion(
+    workspaceId: string,
+    projectId: string,
+    payload: CreateRuntimePricingVersionRequest,
+  ): Promise<RuntimePricingVersion> {
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/pricing/versions`, payload);
+  }
+
+  async activatePricingVersion(
+    workspaceId: string,
+    projectId: string,
+    versionId: string,
+  ): Promise<RuntimePricingActivationResponse> {
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/pricing/versions/${versionId}/activate`, {});
+  }
+
+  async comparePricingVersions(
+    workspaceId: string,
+    projectId: string,
+    payload: { baseline_version_id: string; candidate_version_id: string },
+  ): Promise<RuntimePricingCompareResponse> {
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/pricing/compare`, payload);
   }
 
   async dryRunRouting(

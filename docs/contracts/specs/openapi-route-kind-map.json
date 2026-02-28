@@ -303,6 +303,18 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing",
     "method": "get"
   },
+  "runtimePricingVersions": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions",
+    "method": "get"
+  },
+  "runtimePricingVersionActivate": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions/{versionId}/activate",
+    "method": "post"
+  },
+  "runtimePricingCompare": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/compare",
+    "method": "post"
+  },
   "agentItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}",
     "method": "get"

@@ -150,6 +150,9 @@ export type ProjectsRoute =
     combo: string;
   }
   | { kind: 'runtimePricing'; workspaceId: string; projectId: string }
+  | { kind: 'runtimePricingVersions'; workspaceId: string; projectId: string }
+  | { kind: 'runtimePricingVersionActivate'; workspaceId: string; projectId: string; pricingVersionId: string }
+  | { kind: 'runtimePricingCompare'; workspaceId: string; projectId: string }
   | { kind: 'credentials'; workspaceId: string; projectId: string }
   | { kind: 'credentialItem'; workspaceId: string; projectId: string; credentialId: string }
   | { kind: 'credentialRotate'; workspaceId: string; projectId: string; credentialId: string };
@@ -1084,6 +1087,40 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'runtimePricing',
       workspaceId: decodeURIComponent(runtimePricingMatched[1]),
       projectId: decodeURIComponent(runtimePricingMatched[2]),
+    };
+  }
+
+  const runtimePricingVersionsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/pricing\/versions\/?$/,
+  );
+  if (runtimePricingVersionsMatched) {
+    return {
+      kind: 'runtimePricingVersions',
+      workspaceId: decodeURIComponent(runtimePricingVersionsMatched[1]),
+      projectId: decodeURIComponent(runtimePricingVersionsMatched[2]),
+    };
+  }
+
+  const runtimePricingVersionActivateMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/pricing\/versions\/([^/]+)\/activate\/?$/,
+  );
+  if (runtimePricingVersionActivateMatched) {
+    return {
+      kind: 'runtimePricingVersionActivate',
+      workspaceId: decodeURIComponent(runtimePricingVersionActivateMatched[1]),
+      projectId: decodeURIComponent(runtimePricingVersionActivateMatched[2]),
+      pricingVersionId: decodeURIComponent(runtimePricingVersionActivateMatched[3]),
+    };
+  }
+
+  const runtimePricingCompareMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/pricing\/compare\/?$/,
+  );
+  if (runtimePricingCompareMatched) {
+    return {
+      kind: 'runtimePricingCompare',
+      workspaceId: decodeURIComponent(runtimePricingCompareMatched[1]),
+      projectId: decodeURIComponent(runtimePricingCompareMatched[2]),
     };
   }
 

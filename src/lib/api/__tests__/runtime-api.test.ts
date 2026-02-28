@@ -94,6 +94,43 @@ describe('RuntimeAPI', () => {
     });
   });
 
+  it('calls pricing lifecycle endpoints', async () => {
+    const mock = createClient();
+    const api = new RuntimeAPI(toApiClient(mock));
+
+    await api.listPricingVersions('ws_1', 'proj_1');
+    await api.createPricingVersion('ws_1', 'proj_1', {
+      scope_type: 'project',
+      version_name: 'runtime-pricing-v2',
+      pricing_map: {
+        openai: {
+          'gpt-4o': { input: 2, output: 10 },
+        },
+      },
+    });
+    await api.activatePricingVersion('ws_1', 'proj_1', 'rpv_1');
+    await api.comparePricingVersions('ws_1', 'proj_1', {
+      baseline_version_id: 'rpv_1',
+      candidate_version_id: 'rpv_2',
+    });
+
+    expect(mock.get).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/pricing/versions');
+    expect(mock.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/pricing/versions', {
+      scope_type: 'project',
+      version_name: 'runtime-pricing-v2',
+      pricing_map: {
+        openai: {
+          'gpt-4o': { input: 2, output: 10 },
+        },
+      },
+    });
+    expect(mock.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/pricing/versions/rpv_1/activate', {});
+    expect(mock.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/pricing/compare', {
+      baseline_version_id: 'rpv_1',
+      candidate_version_id: 'rpv_2',
+    });
+  });
+
   it('probes unified chat and preserves non-2xx runtime payloads', async () => {
     const mock = createClient();
     const api = new RuntimeAPI(toApiClient(mock));

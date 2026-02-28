@@ -6,6 +6,7 @@ const models: Array<Record<string, unknown>> = [];
 const aliases: Array<Record<string, unknown>> = [];
 const combos: Array<Record<string, unknown>> = [];
 const pricingByProject = new Map<string, Record<string, unknown>>();
+const pricingVersions: Array<Record<string, unknown>> = [];
 
 function nowIso() {
   return new Date().toISOString();
@@ -27,6 +28,97 @@ function nowId(prefix: string): string {
 
 function currentEndUserId() {
   return 'user_001';
+}
+
+function resolvePricingStack(key: string) {
+  const [workspaceId] = key.split(':', 2);
+  const projectVersion = pricingVersions.find((item) => item.scope_type === 'project' && item._scope === key && item.status === 'active');
+  const workspaceVersion = pricingVersions.find((item) => item.scope_type === 'workspace' && item.workspace_id === workspaceId && item.status === 'active');
+  const globalVersion = pricingVersions.find((item) => item.scope_type === 'global' && item.status === 'active');
+  const effectiveVersion = projectVersion ?? workspaceVersion ?? globalVersion;
+  const legacyPricing = pricingByProject.get(key) as Record<string, unknown> | undefined;
+  return {
+    projectVersion,
+    workspaceVersion,
+    globalVersion,
+    effectiveVersion,
+    effectivePricing: (effectiveVersion?.pricing_map as Record<string, Record<string, Record<string, number>>> | undefined)
+      ?? (legacyPricing as Record<string, Record<string, Record<string, number>>> | undefined),
+  };
+}
+
+function getPricingEntry(
+  pricingMap: Record<string, Record<string, Record<string, number>>> | undefined,
+  provider: string,
+  model: string,
+) {
+  return pricingMap?.[provider]?.[model];
+}
+
+function collectReferencedTargets(key: string) {
+  const scopedModels = models.filter((item) => item._scope === key);
+  const scopedAliases = aliases.filter((item) => item._scope === key);
+  const scopedCombos = combos.filter((item) => item._scope === key);
+  const seen = new Set<string>();
+  const targets: Array<{ provider: string; model: string }> = [];
+  const push = (provider: string, model: string) => {
+    const targetKey = `${provider}:${model}`;
+    if (seen.has(targetKey)) return;
+    seen.add(targetKey);
+    targets.push({ provider, model });
+  };
+
+  for (const item of scopedModels) push(String(item.provider), String(item.model_id));
+  for (const item of scopedAliases) push(String(item.target_provider), String(item.target_model));
+  for (const item of scopedCombos) {
+    const comboTargets = Array.isArray(item.targets) ? item.targets : [];
+    for (const target of comboTargets) {
+      if (target && typeof target === 'object') {
+        const provider = asString((target as Record<string, unknown>).provider);
+        const model = asString((target as Record<string, unknown>).model);
+        if (provider && model) push(provider, model);
+      }
+    }
+  }
+  return {
+    targets,
+    scopedModels,
+  };
+}
+
+function evaluatePricingVersionReadiness(params: {
+  key: string;
+  scopeType: string;
+  candidateMap: Record<string, Record<string, Record<string, number>>>;
+}) {
+  const stack = resolvePricingStack(params.key);
+  const effectivePricing: Record<string, Record<string, Record<string, number>>> = {};
+  const mergeMap = (pricingMap: Record<string, Record<string, Record<string, number>>> | undefined) => {
+    if (!pricingMap) return;
+    for (const [provider, modelMap] of Object.entries(pricingMap)) {
+      effectivePricing[provider] ??= {};
+      for (const [model, pricing] of Object.entries(modelMap)) {
+        effectivePricing[provider]![model] = pricing;
+      }
+    }
+  };
+  mergeMap(stack.globalVersion?.pricing_map as Record<string, Record<string, Record<string, number>>> | undefined);
+  mergeMap(stack.workspaceVersion?.pricing_map as Record<string, Record<string, Record<string, number>>> | undefined);
+  mergeMap(stack.projectVersion?.pricing_map as Record<string, Record<string, Record<string, number>>> | undefined);
+  if (params.scopeType === 'global' || params.scopeType === 'workspace' || params.scopeType === 'project') {
+    mergeMap(params.candidateMap);
+  }
+  const { targets, scopedModels } = collectReferencedTargets(params.key);
+  const missingTargets = targets.filter((target) => {
+    if (getPricingEntry(effectivePricing, target.provider, target.model)) return false;
+    const catalog = scopedModels.find((item) => item.provider === target.provider && item.model_id === target.model);
+    return !catalog?.pricing;
+  });
+  return {
+    release_readiness: missingTargets.length > 0 ? 'blocked' : 'ready',
+    missing_targets: missingTargets,
+    blockers: missingTargets.length > 0 ? ['runtime_pricing_activation_missing_price'] : [],
+  } as const;
 }
 
 export const runtimeHandlers = [
@@ -157,7 +249,8 @@ export const runtimeHandlers = [
     const scopedModels = models.filter((item) => item._scope === key);
     const scopedAliases = aliases.filter((item) => item._scope === key);
     const scopedCombos = combos.filter((item) => item._scope === key);
-    const pricing = pricingByProject.get(key) as Record<string, Record<string, Record<string, number>>> | undefined;
+    const resolvedPricing = resolvePricingStack(key);
+    const pricing = resolvedPricing.effectivePricing;
 
     let routedBy: 'direct' | 'alias' | 'combo' = 'direct';
     let aliasName: string | undefined;
@@ -203,7 +296,15 @@ export const runtimeHandlers = [
       const modelEntry = scopedModels.find((item) => item.provider === attempt.provider && item.model_id === attempt.model);
       const projectPricing = pricing?.[attempt.provider]?.[attempt.model];
       const modelPricing = modelEntry?.pricing as Record<string, number> | undefined;
-      const pricingSource = projectPricing ? 'project_override' : modelPricing ? 'model_catalog' : 'missing';
+      const pricingSource = projectPricing
+        ? (resolvedPricing.projectVersion
+          ? 'project_override'
+          : resolvedPricing.workspaceVersion
+            ? 'workspace_default'
+            : resolvedPricing.globalVersion
+              ? 'global_default'
+              : 'project_override')
+        : modelPricing ? 'model_catalog' : 'missing';
 
       if (!modelEntry) issues.add('runtime_model_not_registered');
       if (pricingSource === 'missing') issues.add('runtime_pricing_missing');
@@ -439,7 +540,7 @@ export const runtimeHandlers = [
 
   http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/pricing', ({ params }) => {
     const key = projectKey(params);
-    return HttpResponse.json(pricingByProject.get(key) ?? {});
+    return HttpResponse.json(resolvePricingStack(key).effectivePricing ?? {});
   }),
 
   http.patch('/api/v1/workspaces/:ws/projects/:prj/runtime/pricing', async ({ params, request }) => {
@@ -447,6 +548,172 @@ export const runtimeHandlers = [
     const key = projectKey(params);
     pricingByProject.set(key, body);
     return HttpResponse.json(body);
+  }),
+
+  http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/pricing/versions', ({ params }) => {
+    const key = projectKey(params);
+    const [workspaceId, projectId] = key.split(':', 2);
+    const items = pricingVersions
+      .filter((item) => item.scope_type === 'global'
+        || (item.scope_type === 'workspace' && item.workspace_id === workspaceId && !item.project_id)
+        || (item.scope_type === 'project' && item._scope === key && item.project_id === projectId))
+      .map(({ _scope, ...rest }) => rest);
+    const resolvedPricing = resolvePricingStack(key);
+    return HttpResponse.json({
+      items,
+      active_versions: {
+        global: resolvedPricing.globalVersion?.id ?? null,
+        workspace: resolvedPricing.workspaceVersion?.id ?? null,
+        project: resolvedPricing.projectVersion?.id ?? null,
+      },
+      effective_version: resolvedPricing.effectiveVersion
+        ? {
+          id: resolvedPricing.effectiveVersion.id,
+          version_name: resolvedPricing.effectiveVersion.version_name,
+          scope_type: resolvedPricing.effectiveVersion.scope_type,
+        }
+        : null,
+    });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/pricing/versions', async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const key = projectKey(params);
+    const scopeType = asString(body.scope_type) ?? 'project';
+    const pricingMap = (body.pricing_map ?? {}) as Record<string, Record<string, Record<string, number>>>;
+    if (body.activate === true) {
+      const readiness = evaluatePricingVersionReadiness({
+        key,
+        scopeType,
+        candidateMap: pricingMap,
+      });
+      if (readiness.release_readiness === 'blocked') {
+        return HttpResponse.json(
+          {
+            error_code: 'CONFLICT',
+            message: 'runtime_pricing_activation_missing_price',
+            readiness,
+          },
+          { status: 409 },
+        );
+      }
+    }
+    const item = {
+      id: nowId('rpv'),
+      scope_type: scopeType,
+      workspace_id: scopeType === 'global' ? undefined : params.ws,
+      project_id: scopeType === 'project' ? params.prj : undefined,
+      version_name: asString(body.version_name) ?? nowId('pricing'),
+      description: asString(body.description),
+      pricing_map: pricingMap,
+      status: body.activate === true ? 'active' : 'draft',
+      created_at: nowIso(),
+      updated_at: nowIso(),
+      activated_at: body.activate === true ? nowIso() : undefined,
+      _scope: key,
+    };
+    if (body.activate === true) {
+      for (const existing of pricingVersions.filter((candidate) => candidate.scope_type === scopeType && (
+        scopeType === 'global'
+          || (scopeType === 'workspace' && candidate.workspace_id === params.ws)
+          || (scopeType === 'project' && candidate._scope === key)
+      ) && candidate.status === 'active')) {
+        existing.status = 'archived';
+        existing.updated_at = nowIso();
+      }
+    }
+    pricingVersions.push(item);
+    const { _scope, ...responseItem } = item;
+    return HttpResponse.json(responseItem, { status: 201 });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/pricing/versions/:versionId/activate', ({ params }) => {
+    const key = projectKey(params);
+    const item = pricingVersions.find((candidate) => candidate.id === params.versionId && (
+      candidate.scope_type === 'global'
+        || (candidate.scope_type === 'workspace' && candidate.workspace_id === params.ws)
+        || (candidate.scope_type === 'project' && candidate._scope === key)
+    ));
+    if (!item) return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'runtime_pricing_version_not_found' }, { status: 404 });
+    const readiness = evaluatePricingVersionReadiness({
+      key,
+      scopeType: String(item.scope_type),
+      candidateMap: (item.pricing_map ?? {}) as Record<string, Record<string, Record<string, number>>>,
+    });
+    if (readiness.release_readiness === 'blocked') {
+      return HttpResponse.json(
+        {
+          error_code: 'CONFLICT',
+          message: 'runtime_pricing_activation_missing_price',
+          readiness,
+        },
+        { status: 409 },
+      );
+    }
+    for (const existing of pricingVersions.filter((candidate) => candidate.scope_type === item.scope_type && candidate.id !== item.id && (
+      item.scope_type === 'global'
+        || (item.scope_type === 'workspace' && candidate.workspace_id === params.ws)
+        || (item.scope_type === 'project' && candidate._scope === key)
+    ) && candidate.status === 'active')) {
+      existing.status = 'archived';
+      existing.updated_at = nowIso();
+    }
+    item.status = 'active';
+    item.activated_at = nowIso();
+    item.updated_at = nowIso();
+    const { _scope, ...responseItem } = item;
+    return HttpResponse.json({
+      version: responseItem,
+      readiness,
+    });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/pricing/compare', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const baseline = pricingVersions.find((item) => item.id === body.baseline_version_id);
+    const candidate = pricingVersions.find((item) => item.id === body.candidate_version_id);
+    if (!baseline || !candidate) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'runtime_pricing_version_not_found' }, { status: 404 });
+    }
+    const keys = new Set<string>();
+    for (const [provider, modelsMap] of Object.entries((baseline.pricing_map ?? {}) as Record<string, Record<string, number>>)) {
+      for (const model of Object.keys(modelsMap)) keys.add(`${provider}:${model}`);
+    }
+    for (const [provider, modelsMap] of Object.entries((candidate.pricing_map ?? {}) as Record<string, Record<string, number>>)) {
+      for (const model of Object.keys(modelsMap)) keys.add(`${provider}:${model}`);
+    }
+    const items = Array.from(keys).sort().map((value) => {
+      const [provider, model] = value.split(':', 2);
+      const baselineEntry = (baseline.pricing_map as Record<string, Record<string, Record<string, number>>> | undefined)?.[provider!]?.[model!];
+      const candidateEntry = (candidate.pricing_map as Record<string, Record<string, Record<string, number>>> | undefined)?.[provider!]?.[model!];
+      const changeType = !baselineEntry
+        ? 'added'
+        : !candidateEntry
+          ? 'removed'
+          : JSON.stringify(baselineEntry) === JSON.stringify(candidateEntry)
+            ? 'unchanged'
+            : 'changed';
+      return { provider, model, change_type: changeType, baseline: baselineEntry ?? null, candidate: candidateEntry ?? null };
+    });
+    return HttpResponse.json({
+      baseline_version: {
+        id: baseline.id,
+        version_name: baseline.version_name,
+        scope_type: baseline.scope_type,
+      },
+      candidate_version: {
+        id: candidate.id,
+        version_name: candidate.version_name,
+        scope_type: candidate.scope_type,
+      },
+      summary: {
+        added: items.filter((item) => item.change_type === 'added').length,
+        removed: items.filter((item) => item.change_type === 'removed').length,
+        changed: items.filter((item) => item.change_type === 'changed').length,
+        unchanged: items.filter((item) => item.change_type === 'unchanged').length,
+      },
+      items,
+    });
   }),
 
   http.post('/api/v1/workspaces/:ws/projects/:prj/llm/chat/completions', async ({ params, request }) => {
@@ -463,7 +730,8 @@ export const runtimeHandlers = [
     const scopedProviders = providers.filter((item) => item._scope === key && item.status === 'active');
     const scopedAliases = aliases.filter((item) => item._scope === key);
     const scopedCombos = combos.filter((item) => item._scope === key);
-    const pricing = pricingByProject.get(key) as Record<string, Record<string, Record<string, number>>> | undefined;
+    const resolvedPricing = resolvePricingStack(key);
+    const pricing = resolvedPricing.effectivePricing;
 
     const attempts: Array<{ provider: string; model: string }> = [];
     const attemptTrace: Array<Record<string, unknown>> = [];
@@ -583,7 +851,7 @@ export const runtimeHandlers = [
           provider: attempt.provider,
           resolved_model: attempt.model,
           fallback_hops: idx,
-          pricing_version: pricing ? 'runtime-pricing-mock' : null,
+          pricing_version: resolvedPricing.effectiveVersion?.version_name ?? (pricing ? 'runtime-pricing-mock' : null),
           estimated_cost: estimatedCost,
           missing_price: estimatedCost === 0,
           attempts: attemptTrace,
@@ -592,7 +860,7 @@ export const runtimeHandlers = [
           provider: attempt.provider,
           resolved_model: attempt.model,
           fallback_hops: idx,
-          pricing_version: pricing ? 'runtime-pricing-mock' : null,
+          pricing_version: resolvedPricing.effectiveVersion?.version_name ?? (pricing ? 'runtime-pricing-mock' : null),
           estimated_cost: estimatedCost,
           attempt_trace: attemptTrace,
         },
@@ -611,7 +879,7 @@ export const runtimeHandlers = [
           provider: attempt.provider,
           resolved_model: attempt.model,
           fallback_hops: idx,
-          pricing_version: pricing ? 'runtime-pricing-mock' : null,
+          pricing_version: resolvedPricing.effectiveVersion?.version_name ?? (pricing ? 'runtime-pricing-mock' : null),
           estimated_cost: estimatedCost,
           attempts: attemptTrace,
         },

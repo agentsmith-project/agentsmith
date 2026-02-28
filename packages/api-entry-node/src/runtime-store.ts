@@ -68,11 +68,43 @@ export type RuntimePricingRecord = {
   updated_at: string;
 };
 
+export type RuntimePricingScopeType = 'global' | 'workspace' | 'project';
+export type RuntimePricingVersionStatus = 'draft' | 'active' | 'archived';
+
+export type RuntimePricingVersionRecord = {
+  id: string;
+  scope_type: RuntimePricingScopeType;
+  workspace_id?: string;
+  project_id?: string;
+  version_name: string;
+  description?: string;
+  pricing_map: Record<string, Record<string, Record<string, number>>>;
+  status: RuntimePricingVersionStatus;
+  created_at: string;
+  updated_at: string;
+  activated_at?: string;
+};
+
+export type ResolvedRuntimePricing = {
+  pricing_map: Record<string, Record<string, Record<string, number>>>;
+  pricing_version_id?: string | null;
+  pricing_version_name?: string | null;
+  pricing_scope_type?: RuntimePricingScopeType | null;
+  updated_at?: string | null;
+  source: 'versioned' | 'legacy' | 'missing';
+  active_versions: {
+    global?: RuntimePricingVersionRecord;
+    workspace?: RuntimePricingVersionRecord;
+    project?: RuntimePricingVersionRecord;
+  };
+};
+
 const PROVIDERS_COLLECTION = 'runtime_provider_connections';
 const MODELS_COLLECTION = 'runtime_model_catalog_entries';
 const ALIASES_COLLECTION = 'runtime_model_aliases';
 const COMBOS_COLLECTION = 'runtime_model_combos';
 const PRICING_COLLECTION = 'runtime_pricing_maps';
+const PRICING_VERSIONS_COLLECTION = 'runtime_pricing_versions';
 
 function scopeFilter(scope: RuntimeProjectScope) {
   return {
@@ -100,6 +132,11 @@ export function createRuntimeStore(docStore: JsonDocStorePort) {
     },
     pricingRecordId(scope: RuntimeProjectScope) {
       return `runtime_pricing_${scope.workspaceId}_${scope.projectId}`;
+    },
+    pricingVersionId(scopeType: RuntimePricingScopeType, name: string, scope: RuntimeProjectScope) {
+      const ws = scopeType === 'global' ? 'global' : scope.workspaceId;
+      const prj = scopeType === 'project' ? scope.projectId : 'default';
+      return `runtime_pricing_version_${scopeType}_${ws}_${prj}_${name}`;
     },
     listProviders(scope: RuntimeProjectScope) {
       return listScoped<RuntimeProviderConnectionRecord>(PROVIDERS_COLLECTION, scope);
@@ -157,6 +194,66 @@ export function createRuntimeStore(docStore: JsonDocStorePort) {
     },
     upsertPricing(record: RuntimePricingRecord) {
       return docStore.upsert(PRICING_COLLECTION, record.id, record);
+    },
+    listPricingVersions() {
+      return docStore.list<RuntimePricingVersionRecord>(PRICING_VERSIONS_COLLECTION, {});
+    },
+    getPricingVersion(versionId: string) {
+      return docStore.get<RuntimePricingVersionRecord>(PRICING_VERSIONS_COLLECTION, versionId);
+    },
+    upsertPricingVersion(record: RuntimePricingVersionRecord) {
+      return docStore.upsert(PRICING_VERSIONS_COLLECTION, record.id, record);
+    },
+    async listScopedPricingVersions(scope: RuntimeProjectScope) {
+      const records = await docStore.list<RuntimePricingVersionRecord>(PRICING_VERSIONS_COLLECTION, {});
+      return records.filter((record) => {
+        if (record.scope_type === 'global') return true;
+        if (record.scope_type === 'workspace') return record.workspace_id === scope.workspaceId && !record.project_id;
+        return record.workspace_id === scope.workspaceId && record.project_id === scope.projectId;
+      });
+    },
+    async resolvePricing(scope: RuntimeProjectScope): Promise<ResolvedRuntimePricing> {
+      const versions = await this.listScopedPricingVersions(scope);
+      const activeVersions = {
+        global: versions.find((item) => item.scope_type === 'global' && item.status === 'active'),
+        workspace: versions.find((item) => item.scope_type === 'workspace' && item.status === 'active'),
+        project: versions.find((item) => item.scope_type === 'project' && item.status === 'active'),
+      };
+      const effective = activeVersions.project ?? activeVersions.workspace ?? activeVersions.global;
+      if (effective) {
+        return {
+          pricing_map: effective.pricing_map,
+          pricing_version_id: effective.id,
+          pricing_version_name: effective.version_name,
+          pricing_scope_type: effective.scope_type,
+          updated_at: effective.updated_at,
+          source: 'versioned',
+          active_versions: activeVersions,
+        };
+      }
+
+      const legacy = await this.getPricing(scope);
+      if (legacy) {
+        return {
+          pricing_map: legacy.pricing_map,
+          pricing_version_id: legacy.id,
+          pricing_version_name: legacy.id,
+          pricing_scope_type: 'project',
+          updated_at: legacy.updated_at,
+          source: 'legacy',
+          active_versions: activeVersions,
+        };
+      }
+
+      return {
+        pricing_map: {},
+        pricing_version_id: null,
+        pricing_version_name: null,
+        pricing_scope_type: null,
+        updated_at: null,
+        source: 'missing',
+        active_versions: activeVersions,
+      };
     },
   };
 }

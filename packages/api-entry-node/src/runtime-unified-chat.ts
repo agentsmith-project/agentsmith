@@ -178,9 +178,9 @@ export async function executeRuntimeUnifiedChat(params: {
     runtimeStore.listProviders(projectScope),
     runtimeStore.listAliases(projectScope),
     runtimeStore.listCombos(projectScope),
-    runtimeStore.getPricing(projectScope),
+    runtimeStore.resolvePricing(projectScope),
   ]);
-  const pricingMap = pricing?.pricing_map ?? {};
+  const pricingMap = pricing.pricing_map ?? {};
 
   const routingPlan = resolveRoutingPlan({
     modelRaw,
@@ -311,7 +311,7 @@ export async function executeRuntimeUnifiedChat(params: {
             provider: attempt.provider,
             resolved_model: attempt.model,
             fallback_hops: idx,
-            pricing_version: pricing?.updated_at ?? null,
+            pricing_version: pricing.pricing_version_name ?? pricing.pricing_version_id ?? null,
             estimated_cost: null,
             attempts: attemptTrace,
           },
@@ -370,7 +370,7 @@ export async function executeRuntimeUnifiedChat(params: {
       resolvedProvider: attempt.provider,
       resolvedModel: attempt.model,
       fallbackHops: idx,
-      pricingVersion: pricing?.updated_at ?? null,
+      pricingVersion: pricing.pricing_version_name ?? pricing.pricing_version_id ?? null,
       estimatedCost: estimatedCost ?? null,
       usage,
       result: upstreamRes.ok ? 'ok' : 'error',
@@ -386,7 +386,7 @@ export async function executeRuntimeUnifiedChat(params: {
             provider: attempt.provider,
             resolved_model: attempt.model,
             fallback_hops: idx,
-            pricing_version: pricing?.updated_at ?? null,
+            pricing_version: pricing.pricing_version_name ?? pricing.pricing_version_id ?? null,
             estimated_cost: estimatedCost ?? null,
             attempts: attemptTrace,
           },
@@ -421,7 +421,7 @@ export async function executeRuntimeUnifiedChat(params: {
       message: lastMessage,
       runtime: {
         fallback_hops: attemptTrace.filter((item) => item.outcome.startsWith('fallback_')).length,
-        pricing_version: pricing?.updated_at ?? null,
+        pricing_version: pricing.pricing_version_name ?? pricing.pricing_version_id ?? null,
         estimated_cost: null,
         attempts: attemptTrace,
       },

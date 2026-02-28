@@ -205,13 +205,35 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
       combo: 'prod-chat',
     });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing'),
-    ).toEqual({
-      kind: 'runtimePricing',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
+  expect(
+    matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing'),
+  ).toEqual({
+    kind: 'runtimePricing',
+    workspaceId: 'ws_default',
+    projectId: 'proj_1',
+  });
+  expect(
+    matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/versions'),
+  ).toEqual({
+    kind: 'runtimePricingVersions',
+    workspaceId: 'ws_default',
+    projectId: 'proj_1',
+  });
+  expect(
+    matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/versions/rpv_1/activate'),
+  ).toEqual({
+    kind: 'runtimePricingVersionActivate',
+    workspaceId: 'ws_default',
+    projectId: 'proj_1',
+    pricingVersionId: 'rpv_1',
+  });
+  expect(
+    matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/compare'),
+  ).toEqual({
+    kind: 'runtimePricingCompare',
+    workspaceId: 'ws_default',
+    projectId: 'proj_1',
+  });
   });
 
   it('matches agent management and key routes', () => {

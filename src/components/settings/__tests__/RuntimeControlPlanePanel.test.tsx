@@ -8,6 +8,22 @@ const createModelMutateAsync = vi.fn().mockResolvedValue({});
 const createAliasMutateAsync = vi.fn().mockResolvedValue({});
 const createComboMutateAsync = vi.fn().mockResolvedValue({});
 const patchPricingMutateAsync = vi.fn().mockResolvedValue({});
+const createPricingVersionMutateAsync = vi.fn().mockResolvedValue({});
+const activatePricingVersionMutateAsync = vi.fn().mockResolvedValue({
+  readiness: { release_readiness: 'ready', missing_targets: [], blockers: [] },
+});
+const comparePricingVersionsMutateAsync = vi.fn().mockResolvedValue({
+  summary: { added: 1, removed: 0, changed: 1, unchanged: 0 },
+  items: [
+    {
+      provider: 'openai',
+      model: 'gpt-4o',
+      change_type: 'changed',
+      baseline: { input: 2, output: 10 },
+      candidate: { input: 3, output: 12 },
+    },
+  ],
+});
 const dryRunMutateAsync = vi.fn().mockResolvedValue({
   model: 'combo:prod-chat',
   routed_by: 'combo',
@@ -115,11 +131,31 @@ vi.mock('@/lib/hooks/use-runtime', () => ({
   useRuntimeAliases: () => ({ data: { items: [] } }),
   useRuntimeCombos: () => ({ data: { items: [] } }),
   useRuntimePricing: () => ({ data: {} }),
+  useRuntimePricingVersions: () => ({
+    data: {
+      items: [
+        {
+          id: 'rpv_1',
+          scope_type: 'project',
+          version_name: 'runtime-pricing-v1',
+          pricing_map: { openai: { 'gpt-4o': { input: 2, output: 10 } } },
+          status: 'active',
+          created_at: '2026-02-28T00:00:00.000Z',
+          updated_at: '2026-02-28T00:00:00.000Z',
+        },
+      ],
+      active_versions: { project: 'rpv_1', workspace: null, global: null },
+      effective_version: { id: 'rpv_1', version_name: 'runtime-pricing-v1', scope_type: 'project' },
+    },
+  }),
   useCreateRuntimeProvider: () => ({ mutateAsync: createProviderMutateAsync, isPending: false }),
   useCreateRuntimeModel: () => ({ mutateAsync: createModelMutateAsync, isPending: false }),
   useCreateRuntimeAlias: () => ({ mutateAsync: createAliasMutateAsync, isPending: false }),
   useCreateRuntimeCombo: () => ({ mutateAsync: createComboMutateAsync, isPending: false }),
   usePatchRuntimePricing: () => ({ mutateAsync: patchPricingMutateAsync, isPending: false }),
+  useCreateRuntimePricingVersion: () => ({ mutateAsync: createPricingVersionMutateAsync, isPending: false }),
+  useActivateRuntimePricingVersion: () => ({ mutateAsync: activatePricingVersionMutateAsync, isPending: false }),
+  useCompareRuntimePricingVersions: () => ({ mutateAsync: comparePricingVersionsMutateAsync, isPending: false }),
   useRuntimeImpactPreview: () => ({ mutateAsync: impactMutateAsync, isPending: false }),
   useRuntimeRoutingDryRun: () => ({ mutateAsync: dryRunMutateAsync, isPending: false }),
   useRuntimeUnifiedChatProbe: () => ({ mutateAsync: probeMutateAsync, isPending: false }),
@@ -170,6 +206,41 @@ describe('RuntimeControlPlanePanel', () => {
         },
       },
     });
+  });
+
+  it('creates and compares pricing versions', async () => {
+    const user = userEvent.setup();
+    render(<RuntimeControlPlanePanel workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.clear(screen.getByTestId('settings-runtime__pricing-version-name'));
+    await user.type(screen.getByTestId('settings-runtime__pricing-version-name'), 'runtime-pricing-v2');
+    await user.click(screen.getByTestId('settings-runtime__pricing-version-create'));
+
+    expect(createPricingVersionMutateAsync).toHaveBeenCalledWith({
+      scope_type: 'project',
+      version_name: 'runtime-pricing-v2',
+      description: undefined,
+      pricing_map: {
+        openai: {
+          'gpt-4o': {
+            input: 2,
+            output: 10,
+          },
+        },
+      },
+    });
+
+    await user.clear(screen.getByTestId('settings-runtime__pricing-compare-baseline'));
+    await user.type(screen.getByTestId('settings-runtime__pricing-compare-baseline'), 'rpv_1');
+    await user.clear(screen.getByTestId('settings-runtime__pricing-compare-candidate'));
+    await user.type(screen.getByTestId('settings-runtime__pricing-compare-candidate'), 'rpv_2');
+    await user.click(screen.getByTestId('settings-runtime__pricing-compare-run'));
+
+    expect(comparePricingVersionsMutateAsync).toHaveBeenCalledWith({
+      baseline_version_id: 'rpv_1',
+      candidate_version_id: 'rpv_2',
+    });
+    expect(screen.getByTestId('settings-runtime__pricing-compare-result')).toHaveTextContent('1');
   });
 
   it('runs runtime probe and renders fallback timeline', async () => {

@@ -3,6 +3,8 @@ import type {
   RuntimeModelCatalogEntryRecord,
   RuntimeModelComboRecord,
   RuntimePricingRecord,
+  RuntimePricingScopeType,
+  RuntimePricingVersionRecord,
   RuntimeProviderConnectionRecord,
 } from './runtime-store.js';
 
@@ -16,7 +18,9 @@ type ValidationErrorMessage =
   | 'runtime_alias_required_fields_missing'
   | 'runtime_combo_payload_invalid'
   | 'runtime_combo_required_fields_missing'
-  | 'runtime_pricing_payload_invalid';
+  | 'runtime_pricing_payload_invalid'
+  | 'runtime_pricing_version_payload_invalid'
+  | 'runtime_pricing_compare_payload_invalid';
 
 type ValidationResult<T> =
   | { ok: true; value: T }
@@ -272,4 +276,53 @@ export function parseRuntimePricingPayload(raw: unknown): ValidationResult<Runti
     return { ok: false, message: 'runtime_pricing_payload_invalid' };
   }
   return { ok: true, value: raw };
+}
+
+export function parseRuntimePricingVersionCreatePayload(
+  raw: unknown,
+): ValidationResult<
+  Pick<RuntimePricingVersionRecord, 'scope_type' | 'version_name' | 'description' | 'pricing_map'>
+  & { activate: boolean }
+> {
+  const body = asObject(raw);
+  if (!body) return { ok: false, message: 'runtime_pricing_payload_invalid' };
+  const scopeType = asNonEmptyString(body.scope_type) as RuntimePricingScopeType | undefined;
+  const versionName = asNonEmptyString(body.version_name);
+  const description = asNonEmptyString(body.description);
+  const activate = body.activate === true;
+  if (
+    (scopeType !== 'global' && scopeType !== 'workspace' && scopeType !== 'project')
+    || !versionName
+    || !isPricingMap(body.pricing_map)
+  ) {
+    return { ok: false, message: 'runtime_pricing_version_payload_invalid' };
+  }
+  return {
+    ok: true,
+    value: {
+      scope_type: scopeType,
+      version_name: versionName,
+      description,
+      pricing_map: body.pricing_map,
+      activate,
+    },
+  };
+}
+
+export function parseRuntimePricingVersionComparePayload(
+  raw: unknown,
+): ValidationResult<{ baseline_version_id: string; candidate_version_id: string }> {
+  const body = asObject(raw);
+  const baselineVersionId = asNonEmptyString(body?.baseline_version_id);
+  const candidateVersionId = asNonEmptyString(body?.candidate_version_id);
+  if (!baselineVersionId || !candidateVersionId) {
+    return { ok: false, message: 'runtime_pricing_compare_payload_invalid' };
+  }
+  return {
+    ok: true,
+    value: {
+      baseline_version_id: baselineVersionId,
+      candidate_version_id: candidateVersionId,
+    },
+  };
 }

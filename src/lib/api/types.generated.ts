@@ -1503,6 +1503,68 @@ export interface paths {
         patch: operations["patchRuntimePricing"];
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compare runtime pricing versions */
+        post: operations["compareRuntimePricingVersions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List runtime pricing versions in scope */
+        get: operations["listRuntimePricingVersions"];
+        put?: never;
+        /** Create runtime pricing version */
+        post: operations["createRuntimePricingVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions/{versionId}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                versionId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate runtime pricing version */
+        post: operations["activateRuntimePricingVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers": {
         parameters: {
             query?: never;
@@ -3053,11 +3115,92 @@ export interface components {
             total_errors: number;
             total_requests: number;
         };
+        RuntimePricingActivationReadiness: {
+            blockers: string[];
+            missing_targets: {
+                model: string;
+                provider: string;
+            }[];
+            /** @enum {string} */
+            release_readiness: "ready" | "blocked";
+        };
+        RuntimePricingActivationResponse: {
+            readiness: components["schemas"]["RuntimePricingActivationReadiness"];
+            version: components["schemas"]["RuntimePricingVersion"];
+        };
+        RuntimePricingCompareItem: {
+            baseline?: components["schemas"]["RuntimeModelPricing"] | null;
+            candidate?: components["schemas"]["RuntimeModelPricing"] | null;
+            /** @enum {string} */
+            change_type: "added" | "removed" | "changed" | "unchanged";
+            model: string;
+            provider: string;
+        };
+        RuntimePricingCompareResponse: {
+            baseline_version: components["schemas"]["RuntimePricingCompareVersionRef"];
+            candidate_version: components["schemas"]["RuntimePricingCompareVersionRef"];
+            items: components["schemas"]["RuntimePricingCompareItem"][];
+            summary: {
+                added: number;
+                changed: number;
+                removed: number;
+                unchanged: number;
+            };
+        };
+        RuntimePricingCompareVersionRef: {
+            id: string;
+            scope_type: components["schemas"]["RuntimePricingScopeType"];
+            version_name: string;
+        };
         RuntimePricingMap: {
             [key: string]: {
                 [key: string]: components["schemas"]["RuntimeModelPricing"];
             };
         };
+        /** @enum {string} */
+        RuntimePricingScopeType: "global" | "workspace" | "project";
+        RuntimePricingVersion: {
+            /** Format: date-time */
+            activated_at?: string;
+            /** Format: date-time */
+            created_at: string;
+            description?: string;
+            id: string;
+            pricing_map: components["schemas"]["RuntimePricingMap"];
+            project_id?: string;
+            scope_type: components["schemas"]["RuntimePricingScopeType"];
+            status: components["schemas"]["RuntimePricingVersionStatus"];
+            /** Format: date-time */
+            updated_at: string;
+            version_name: string;
+            workspace_id?: string;
+        };
+        RuntimePricingVersionCompareRequest: {
+            baseline_version_id: string;
+            candidate_version_id: string;
+        };
+        RuntimePricingVersionCreate: {
+            activate?: boolean;
+            description?: string;
+            pricing_map: components["schemas"]["RuntimePricingMap"];
+            scope_type: components["schemas"]["RuntimePricingScopeType"];
+            version_name: string;
+        };
+        RuntimePricingVersionsResponse: {
+            active_versions: {
+                global?: string | null;
+                project?: string | null;
+                workspace?: string | null;
+            };
+            effective_version?: {
+                id?: string;
+                scope_type?: components["schemas"]["RuntimePricingScopeType"];
+                version_name?: string;
+            } | null;
+            items: components["schemas"]["RuntimePricingVersion"][];
+        };
+        /** @enum {string} */
+        RuntimePricingVersionStatus: "draft" | "active" | "archived";
         RuntimeProviderConnection: {
             /** @enum {string} */
             auth_mode: "api_key" | "oauth" | "aws_sdk" | "token";
@@ -3100,7 +3243,7 @@ export interface components {
             model: string;
             pricing?: components["schemas"]["RuntimeModelPricing"];
             /** @enum {string} */
-            pricing_source: "project_override" | "model_catalog" | "missing";
+            pricing_source: "project_override" | "workspace_default" | "global_default" | "model_catalog" | "missing";
             provider: string;
             provider_connection_has_credential?: boolean;
             provider_connection_id?: string;
@@ -6719,6 +6862,144 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    compareRuntimePricingVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimePricingVersionCompareRequest"];
+            };
+        };
+        responses: {
+            /** @description Pricing version comparison */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePricingCompareResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRuntimePricingVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pricing versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePricingVersionsResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createRuntimePricingVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimePricingVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Created pricing version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePricingVersion"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Activation blocked by missing pricing */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    activateRuntimePricingVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                versionId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Activated pricing version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimePricingActivationResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Activation blocked by missing pricing */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     listRuntimeProviders: {

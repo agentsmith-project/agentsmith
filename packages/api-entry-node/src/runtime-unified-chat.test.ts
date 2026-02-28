@@ -124,6 +124,71 @@ describe('runtime-unified-chat', () => {
     expect(usageFacts[0]?.metadata_json?.attempt_trace?.map((item) => item.outcome)).toEqual(['success']);
   });
 
+  it('uses active pricing version identity when versioned pricing is enabled', async () => {
+    const deps = createDeps();
+    const now = new Date().toISOString();
+
+    await deps.docStore.upsert('runtime_provider_connections', 'rpc_1', {
+      id: 'rpc_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      provider: 'openai',
+      auth_mode: 'api_key',
+      base_url: 'https://api.openai.com/v1',
+      credential_ref: 'cred_1',
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+    });
+    await deps.docStore.upsert('runtime_pricing_versions', 'rpv_1', {
+      id: 'rpv_1',
+      scope_type: 'project',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      version_name: 'runtime-pricing-v2',
+      pricing_map: {
+        openai: {
+          'gpt-4o': {
+            input: 2,
+            output: 10,
+          },
+        },
+      },
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+      activated_at: now,
+    });
+
+    const result = await executeRuntimeUnifiedChat({
+      deps,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      rawBody: {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'hello' }],
+      },
+      endUserId: 'user_test',
+      fetchFn: (async () => new Response(
+        JSON.stringify({
+          id: 'chatcmpl_2',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'ok' } }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch,
+    });
+
+    expect(result.statusCode).toBe(200);
+    if (!('body' in result)) throw new Error('expected_json_result');
+    const runtime = (result.body as {
+      runtime?: {
+        pricing_version?: string | null;
+      };
+    }).runtime;
+    expect(runtime?.pricing_version).toBe('runtime-pricing-v2');
+  });
+
   it('falls back across combo targets when policy allows retryable provider errors', async () => {
     const deps = createDeps();
     let fetchCalls = 0;

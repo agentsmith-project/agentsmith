@@ -52,6 +52,15 @@ function formatDurationMs(value?: number): string {
   return `${Math.round(value)}ms`;
 }
 
+function buildQueryString(params: Record<string, string | undefined>): string {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) query.set(key, value);
+  });
+  const result = query.toString();
+  return result ? `?${result}` : '';
+}
+
 function downloadTextFile(filename: string, content: string, contentType: string): void {
   const blob = new Blob([content], { type: contentType });
   const url = window.URL.createObjectURL(blob);
@@ -134,6 +143,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     }),
     [releaseReports, reportSearch, reportStatusFilter],
   );
+  const recentReleaseReports = filteredReleaseReports.slice(0, 6);
+  const recentPassRate = recentReleaseReports.length > 0
+    ? recentReleaseReports.filter((item) => item.status === 'pass').length / recentReleaseReports.length
+    : undefined;
+  const recentRuntimeBlocked = recentReleaseReports.filter((item) => item.runtime_release_readiness === 'blocked').length;
+  const recentUsageBlocked = recentReleaseReports.filter((item) => item.usage_release_readiness === 'blocked').length;
 
   useEffect(() => {
     const nextReport = searchParams.get('report') ?? undefined;
@@ -239,6 +254,23 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const currentUsageReadiness = evidenceQuery.data?.release_readiness ?? '--';
   const runtimeReadinessChanged = String(currentRuntimeReadiness) !== String(latestRuntimeReadiness);
   const usageReadinessChanged = String(currentUsageReadiness) !== String(latestUsageReadiness);
+  const selectedReportTimestamp = ((reportDetailQuery.data?.report as { metadata?: { timestamp?: string } } | undefined)?.metadata?.timestamp)
+    ?? reportSummary?.runtime_release_evidence?.generated_at;
+  const contextWindowEnd = selectedReportTimestamp;
+  const contextWindowStart = selectedReportTimestamp
+    ? new Date(new Date(selectedReportTimestamp).getTime() - 24 * 60 * 60 * 1000).toISOString()
+    : undefined;
+  const runtimeContextHref = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-observability${buildQueryString({
+    start_time: contextWindowStart,
+    end_time: contextWindowEnd,
+    result: reportSummary?.runtime_release_evidence?.guardrails?.release_readiness === 'blocked' ? 'error' : undefined,
+  })}`;
+  const usageContextHref = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage${buildQueryString({
+    panel: 'usage',
+    start_time: contextWindowStart,
+    end_time: contextWindowEnd,
+    result: (reportSummary?.usage_report_evidence?.failed_deliveries_last_7d ?? 0) > 0 ? 'error' : undefined,
+  })}`;
 
   if (!resolvedParams) {
     return (
@@ -469,6 +501,54 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </button>
                   ))}
                 </div>
+                <div className="mt-4 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__timeline">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_timeline_title')}</h4>
+                      <p className="text-xs text-tertiary">{settingsT('release_ops_timeline_subtitle')}</p>
+                    </div>
+                    <Badge variant="outline">{recentReleaseReports.length}</Badge>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__timeline-pass-rate">
+                      <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_pass_rate')}</div>
+                      <div className="mt-1 text-sm font-medium text-foreground">{formatPercent(recentPassRate)}</div>
+                    </div>
+                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__timeline-runtime-blocked">
+                      <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_runtime_blocked')}</div>
+                      <div className="mt-1 text-sm font-medium text-foreground">{recentRuntimeBlocked}</div>
+                    </div>
+                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__timeline-usage-blocked">
+                      <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_usage_blocked')}</div>
+                      <div className="mt-1 text-sm font-medium text-foreground">{recentUsageBlocked}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {recentReleaseReports.map((item, index) => (
+                      <button
+                        key={`timeline-${item.name}`}
+                        type="button"
+                        className={cn(
+                          'flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left',
+                          selectedReportName === item.name
+                            ? 'border-border bg-surface'
+                            : 'border-subtle bg-bg-base/30 hover:bg-bg-base/50',
+                        )}
+                        onClick={() => setSelectedReportName(item.name)}
+                        data-testid={`release-ops__timeline-item-${index}`}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-mono text-sm text-foreground">{item.name}</div>
+                          <div className="text-xs text-tertiary">{formatDateTime(item.generated_at)}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={item.status === 'pass' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                          <Badge variant={item.runtime_release_readiness === 'ready' ? 'outline' : 'secondary'}>{item.runtime_release_readiness ?? '--'}</Badge>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 {reportDetailQuery.data ? (
                   <div className="mt-4 space-y-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__report-detail">
                     <div className="flex flex-wrap items-center gap-2">
@@ -539,7 +619,16 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </div>
                     <div className="grid gap-3" data-testid="release-ops__report-runtime-evidence">
                       <div className="rounded-md border border-subtle bg-surface p-3">
-                        <div className="mb-2 text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_runtime_evidence')}</div>
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_runtime_evidence')}</div>
+                          <Link
+                            href={runtimeContextHref}
+                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                            data-testid="release-ops__report-open-runtime-context"
+                          >
+                            {settingsT('release_ops_open_runtime_context')}
+                          </Link>
+                        </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div>
                             <div className="text-xs text-tertiary">{settingsT('release_ops_runtime_target')}</div>
@@ -562,7 +651,16 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </div>
                     <div className="grid gap-3" data-testid="release-ops__report-usage-evidence">
                       <div className="rounded-md border border-subtle bg-surface p-3">
-                        <div className="mb-2 text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_usage_evidence')}</div>
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_usage_evidence')}</div>
+                          <Link
+                            href={usageContextHref}
+                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                            data-testid="release-ops__report-open-usage-context"
+                          >
+                            {settingsT('release_ops_open_usage_context')}
+                          </Link>
+                        </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div>
                             <div className="text-xs text-tertiary">{settingsT('release_ops_usage_active_schedules')}</div>

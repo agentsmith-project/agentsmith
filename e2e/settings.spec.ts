@@ -160,6 +160,8 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__online-vs-latest')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-search')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-item-0')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__timeline')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__timeline-item-0')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-detail')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-structured-summary')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-metadata')).toBeVisible();
@@ -167,6 +169,8 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__report-runtime-evidence')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-usage-evidence')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-execution-checks')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-open-runtime-context')).toHaveAttribute('href', /runtime-observability\?/);
+    await expect(authedPage.getByTestId('release-ops__report-open-usage-context')).toHaveAttribute('href', /usage\?/);
 
     await authedPage.getByTestId('release-ops__report-search').fill('signature');
     await expect(authedPage).toHaveURL(/report_search=signature/);

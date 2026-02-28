@@ -32,6 +32,8 @@ export interface UsagePageProps {
   projectId: string;
   defaultEndUserId?: string; // When set, user can only see own usage (locked)
   currentUserId?: string; // For scope switch when user has project-wide permission
+  initialFilters?: Partial<UsageListParams>;
+  initialPanel?: 'usage' | 'dashboard';
 }
 
 function getDefaultTimeRange() {
@@ -60,7 +62,14 @@ function getBucketRange(timeBucket: string, groupBy: 'day' | 'hour'): { start: s
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUserId }: UsagePageProps) {
+export function UsagePage({
+  workspaceId,
+  projectId,
+  defaultEndUserId,
+  currentUserId,
+  initialFilters,
+  initialPanel,
+}: UsagePageProps) {
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
@@ -72,7 +81,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   // If defaultEndUserId is provided, scope is locked to the current user usage.
   const isScopeLocked = !!defaultEndUserId;
   const [scope, setScope] = React.useState<'my' | 'project'>(defaultEndUserId ? 'my' : 'project');
-  const [panel, setPanel] = React.useState<'usage' | 'dashboard'>('usage');
+  const [panel, setPanel] = React.useState<'usage' | 'dashboard'>(initialPanel ?? 'usage');
   const [selectedUsageRecord, setSelectedUsageRecord] = React.useState<UsageRecord | null>(null);
   const [detailOpen, setDetailOpen] = React.useState(false);
   const [exportingFormat, setExportingFormat] = React.useState<'csv' | 'json' | null>(null);
@@ -90,6 +99,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
     sort_by: 'time_bucket',
     sort_order: 'desc',
     group_by: 'day',
+    ...initialFilters,
     ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
   }));
 

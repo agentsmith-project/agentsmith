@@ -21,6 +21,7 @@ type RuntimeObservabilityConsoleProps = {
   projectId: string;
   locale?: string;
   embedded?: boolean;
+  initialFilters?: Partial<RuntimeObservabilityFilters>;
 };
 
 type RuntimeObservabilityFilters = {
@@ -78,10 +79,14 @@ export function RuntimeObservabilityConsole({
   projectId,
   locale,
   embedded = false,
+  initialFilters,
 }: RuntimeObservabilityConsoleProps) {
   const settingsT = useTranslations('settings');
   const commonT = useTranslations('common');
-  const [filters, setFilters] = React.useState<RuntimeObservabilityFilters>(() => defaultTimeRange());
+  const [filters, setFilters] = React.useState<RuntimeObservabilityFilters>(() => ({
+    ...defaultTimeRange(),
+    ...initialFilters,
+  }));
   const [drillDown, setDrillDown] = React.useState<RuntimeDrillDown | null>(null);
 
   const observabilityQuery = useRuntimeObservability(workspaceId, projectId, filters, {

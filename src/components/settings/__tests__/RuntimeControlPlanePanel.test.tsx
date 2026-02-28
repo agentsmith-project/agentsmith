@@ -25,8 +25,8 @@ const dryRunMutateAsync = vi.fn().mockResolvedValue({
   ],
   issues: [],
 });
-const impactMutateAsync = vi.fn().mockResolvedValue({
-  model: 'combo:prod-chat',
+const impactMutateAsync = vi.fn().mockImplementation(async ({ model }: { model: string }) => ({
+  model,
   lookback_window: {
     start: '2026-02-21T00:00:00.000Z',
     end: '2026-02-28T00:00:00.000Z',
@@ -35,29 +35,33 @@ const impactMutateAsync = vi.fn().mockResolvedValue({
   sample: {
     request_count: 42,
     total_estimated_cost: 0.1812,
-    avg_estimated_cost: 0.004314,
+    avg_estimated_cost: model === 'openai/gpt-4o' ? 0.004314 : 0.005114,
     avg_tokens_in: 812.5,
     avg_tokens_out: 296.25,
     avg_tokens_total: 1108.75,
   },
   planned_route: {
-    model: 'combo:prod-chat',
-    routed_by: 'combo',
-    combo_name: 'prod-chat',
+    model,
+    routed_by: model.startsWith('combo:') ? 'combo' : 'direct',
+    combo_name: model.startsWith('combo:') ? 'prod-chat' : undefined,
     attempts: [],
     issues: [],
   },
   projected_cost: {
-    primary_avg_cost: 0.004587,
-    primary_total_cost: 0.192654,
-    range_avg_cost: { low: 0.004587, high: 0.006881 },
-    range_total_cost: { low: 0.192654, high: 0.28899 },
+    primary_avg_cost: model === 'openai/gpt-4o' ? 0.004587 : 0.005987,
+    primary_total_cost: model === 'openai/gpt-4o' ? 0.192654 : 0.251454,
+    range_avg_cost: model === 'openai/gpt-4o'
+      ? { low: 0.004587, high: 0.006881 }
+      : { low: 0.005987, high: 0.008881 },
+    range_total_cost: model === 'openai/gpt-4o'
+      ? { low: 0.192654, high: 0.28899 }
+      : { low: 0.251454, high: 0.372999 },
   },
   assumptions: [
     'impact_preview_uses_recent_endpoint_usage_facts',
     'impact_preview_applies_average_token_mix_to_planned_pricing',
   ],
-});
+}));
 const probeMutateAsync = vi.fn().mockResolvedValue({
   ok: true,
   statusCode: 200,
@@ -200,5 +204,26 @@ describe('RuntimeControlPlanePanel', () => {
     });
     expect(screen.getByTestId('settings-runtime__impact-sample-count')).toHaveTextContent('42');
     expect(screen.getByTestId('settings-runtime__impact-assumptions')).toBeInTheDocument();
+  });
+
+  it('runs side-by-side compare and renders deltas', async () => {
+    const user = userEvent.setup();
+    render(<RuntimeControlPlanePanel workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.clear(screen.getByTestId('settings-runtime__compare-baseline'));
+    await user.type(screen.getByTestId('settings-runtime__compare-baseline'), 'openai/gpt-4o');
+    await user.clear(screen.getByTestId('settings-runtime__compare-candidate'));
+    await user.type(screen.getByTestId('settings-runtime__compare-candidate'), 'combo:prod-chat');
+    await user.click(screen.getByTestId('settings-runtime__compare-run'));
+
+    expect(impactMutateAsync).toHaveBeenCalledWith({
+      model: 'openai/gpt-4o',
+      lookback_hours: 168,
+    });
+    expect(impactMutateAsync).toHaveBeenCalledWith({
+      model: 'combo:prod-chat',
+      lookback_hours: 168,
+    });
+    expect(screen.getByTestId('settings-runtime__compare-delta')).toHaveTextContent('+$0.001400');
   });
 });

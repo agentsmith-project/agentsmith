@@ -101,6 +101,12 @@ function formatUsd(value?: number | null): string {
   return `$${value.toFixed(6)}`;
 }
 
+function formatSignedUsd(value?: number | null): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--';
+  const prefix = value > 0 ? '+' : '';
+  return `${prefix}$${value.toFixed(6)}`;
+}
+
 function summarizeProbeState(result: RuntimeUnifiedChatResult | null, runtime: UnifiedChatRuntimeMetadata | undefined) {
   if (!result) return 'idle';
   if (result.ok && (runtime?.fallback_hops ?? 0) > 0) return 'recovered';
@@ -187,6 +193,12 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const [dryRunModel, setDryRunModel] = useState('combo:prod-chat');
   const [dryRunResult, setDryRunResult] = useState<RuntimeRoutingDryRunResponse | null>(null);
   const [impactPreviewResult, setImpactPreviewResult] = useState<RuntimeImpactPreviewResponse | null>(null);
+  const [compareBaselineModel, setCompareBaselineModel] = useState('openai/gpt-4o');
+  const [compareCandidateModel, setCompareCandidateModel] = useState('combo:prod-chat');
+  const [compareResult, setCompareResult] = useState<{
+    baseline: RuntimeImpactPreviewResponse;
+    candidate: RuntimeImpactPreviewResponse;
+  } | null>(null);
   const [probeModel, setProbeModel] = useState('combo:prod-chat');
   const [probePrompt, setProbePrompt] = useState('Summarize the runtime recovery path in one sentence.');
   const [probeResult, setProbeResult] = useState<RuntimeUnifiedChatResult | null>(null);
@@ -203,6 +215,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const createCombo = useCreateRuntimeCombo(workspaceId, projectId);
   const patchPricing = usePatchRuntimePricing(workspaceId, projectId);
   const previewImpact = useRuntimeImpactPreview(workspaceId, projectId);
+  const compareImpact = useRuntimeImpactPreview(workspaceId, projectId);
   const dryRunRouting = useRuntimeRoutingDryRun(workspaceId, projectId);
   const probeRuntime = useRuntimeUnifiedChatProbe(workspaceId, projectId);
 
@@ -214,6 +227,12 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const runtimeMetadata = getRuntimeMetadata(probeResult);
   const responsePreview = getResponsePreview(probeResult);
   const probeState = summarizeProbeState(probeResult, runtimeMetadata);
+  const compareAvgDelta = compareResult
+    ? (compareResult.candidate.projected_cost.primary_avg_cost ?? 0) - (compareResult.baseline.projected_cost.primary_avg_cost ?? 0)
+    : null;
+  const compareTotalDelta = compareResult
+    ? (compareResult.candidate.projected_cost.primary_total_cost ?? 0) - (compareResult.baseline.projected_cost.primary_total_cost ?? 0)
+    : null;
 
   const handleCreateProvider = async () => {
     try {
@@ -312,6 +331,24 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
       setImpactPreviewResult(result);
     } catch {
       toast.error(t('runtime_impact_preview_failed'));
+    }
+  };
+
+  const handleRunImpactCompare = async () => {
+    try {
+      const [baseline, candidate] = await Promise.all([
+        compareImpact.mutateAsync({
+          model: compareBaselineModel.trim(),
+          lookback_hours: 24 * 7,
+        }),
+        compareImpact.mutateAsync({
+          model: compareCandidateModel.trim(),
+          lookback_hours: 24 * 7,
+        }),
+      ]);
+      setCompareResult({ baseline, candidate });
+    } catch {
+      toast.error(t('runtime_compare_failed'));
     }
   };
 
@@ -571,6 +608,89 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
             ) : (
               <div className="mt-3 text-sm text-tertiary">{t('runtime_impact_preview_empty')}</div>
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__compare">
+        <CardHeader className="pb-4">
+          <CardTitle>{t('runtime_compare_title')}</CardTitle>
+          <p className="text-sm text-tertiary">{t('runtime_compare_description')}</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+            <div className="space-y-2 rounded-xl border border-border/60 bg-surface-high/50 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_compare_baseline')}</div>
+              <Input
+                value={compareBaselineModel}
+                onChange={(e) => setCompareBaselineModel(e.target.value)}
+                disabled={disabled || compareImpact.isPending}
+                data-testid="settings-runtime__compare-baseline"
+              />
+            </div>
+            <div className="flex items-center justify-center text-xs uppercase tracking-[0.18em] text-tertiary">
+              {t('runtime_compare_against')}
+            </div>
+            <div className="space-y-2 rounded-xl border border-border/60 bg-surface-high/50 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_compare_candidate')}</div>
+              <Input
+                value={compareCandidateModel}
+                onChange={(e) => setCompareCandidateModel(e.target.value)}
+                disabled={disabled || compareImpact.isPending}
+                data-testid="settings-runtime__compare-candidate"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              onClick={handleRunImpactCompare}
+              disabled={disabled || compareImpact.isPending || !compareBaselineModel.trim() || !compareCandidateModel.trim()}
+              data-testid="settings-runtime__compare-run"
+            >
+              {compareImpact.isPending ? t('runtime_compare_running') : t('runtime_compare_run')}
+            </Button>
+            <div className="text-xs text-tertiary">{t('runtime_compare_hint')}</div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="rounded-xl border border-border/70 bg-surface-high/35 p-4" data-testid="settings-runtime__compare-baseline-card">
+              <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_compare_baseline')}</div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_requests')}</div>
+                  <div className="mt-1 text-sm font-semibold text-foreground">{compareResult?.baseline.sample.request_count ?? '--'}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_primary_cost')}</div>
+                  <div className="mt-1 text-sm font-semibold text-foreground">{formatUsd(compareResult?.baseline.projected_cost.primary_avg_cost)}</div>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border/70 bg-surface-high/35 p-4" data-testid="settings-runtime__compare-candidate-card">
+              <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_compare_candidate')}</div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_requests')}</div>
+                  <div className="mt-1 text-sm font-semibold text-foreground">{compareResult?.candidate.sample.request_count ?? '--'}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_primary_cost')}</div>
+                  <div className="mt-1 text-sm font-semibold text-foreground">{formatUsd(compareResult?.candidate.projected_cost.primary_avg_cost)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2" data-testid="settings-runtime__compare-delta">
+            <div className="rounded-lg border border-border/60 bg-surface p-4">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_compare_avg_delta')}</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{formatSignedUsd(compareAvgDelta)}</div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-surface p-4">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_compare_total_delta')}</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{formatSignedUsd(compareTotalDelta)}</div>
+            </div>
           </div>
         </CardContent>
       </Card>

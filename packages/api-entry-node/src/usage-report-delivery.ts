@@ -91,6 +91,26 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function pickResponseHeaders(headers: Headers): Record<string, string> {
+  const captured: Record<string, string> = {};
+  for (const key of ['content-type', 'x-request-id', 'x-trace-id', 'retry-after']) {
+    const value = headers.get(key);
+    if (value) captured[key] = value;
+  }
+  return captured;
+}
+
+async function readResponseSnippet(response: Response): Promise<string | undefined> {
+  try {
+    const text = await response.text();
+    const trimmed = text.trim();
+    if (!trimmed) return undefined;
+    return trimmed.slice(0, 280);
+  } catch {
+    return undefined;
+  }
+}
+
 export function createUsageReportDeliveryDispatcher(
   options?: UsageReportDeliveryDispatcherOptions,
 ): UsageReportDeliveryDispatcher {
@@ -183,6 +203,7 @@ export function createUsageReportDeliveryDispatcher(
         }
         const abortController = new AbortController();
         const timer = setTimeout(() => abortController.abort(), timeoutSeconds * 1_000);
+        const startedAt = Date.now();
         try {
           const response = await fetchImpl(webhookUrl, {
             method: 'POST',
@@ -191,6 +212,9 @@ export function createUsageReportDeliveryDispatcher(
             signal: abortController.signal,
           });
           clearTimeout(timer);
+          const durationMs = Date.now() - startedAt;
+          const responseHeaders = pickResponseHeaders(response.headers);
+          const responseSnippet = await readResponseSnippet(response.clone());
           if (!response.ok) {
             lastFailure = {
               ok: false,
@@ -200,6 +224,9 @@ export function createUsageReportDeliveryDispatcher(
                 ...deliveryMetadata,
                 response_status: response.status,
                 attempt,
+                duration_ms: durationMs,
+                response_headers: responseHeaders,
+                response_body_snippet: responseSnippet,
               },
             };
           } else {
@@ -209,11 +236,15 @@ export function createUsageReportDeliveryDispatcher(
                 ...deliveryMetadata,
                 response_status: response.status,
                 attempt,
+                duration_ms: durationMs,
+                response_headers: responseHeaders,
+                response_body_snippet: responseSnippet,
               },
             };
           }
         } catch (error) {
           clearTimeout(timer);
+          const durationMs = Date.now() - startedAt;
           if (error instanceof Error && error.name === 'AbortError') {
             lastFailure = {
               ok: false,
@@ -222,6 +253,7 @@ export function createUsageReportDeliveryDispatcher(
               delivery_metadata: {
                 ...deliveryMetadata,
                 attempt,
+                duration_ms: durationMs,
               },
             };
           } else {
@@ -232,6 +264,7 @@ export function createUsageReportDeliveryDispatcher(
               delivery_metadata: {
                 ...deliveryMetadata,
                 attempt,
+                duration_ms: durationMs,
               },
             };
           };

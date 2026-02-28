@@ -174,6 +174,15 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
               preview_filename: 'usage-report-proj_1.json',
               content_type: 'application/json; charset=utf-8',
               summary: { requests: 2, errors: 0, top_provider: 'secondaryok', estimated_cost: 0.0068 },
+              delivery_metadata: {
+                response_status: 200,
+                duration_ms: 128,
+                response_body_snippet: '{"ok":true}',
+                response_headers: {
+                  'content-type': 'application/json',
+                  'x-request-id': 'req-hook-1',
+                },
+              },
             },
           ],
         },
@@ -329,5 +338,7 @@ describe('UsagePage', () => {
     expect(runReportScheduleNowMock).toHaveBeenCalledWith('ws_1', 'proj_1', 'usage_schedule_1');
     expect(acknowledgeReportScheduleDeliveryMock).toHaveBeenCalledWith('ws_1', 'proj_1', 'usage_schedule_1', 'delivery_1');
     expect(screen.getByTestId('usage__report-evidence')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__report-delivery-response-snippet-delivery_1')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__report-delivery-response-headers-delivery_1')).toBeInTheDocument();
   });
 });

@@ -89,6 +89,11 @@ describe('usage-report-delivery', () => {
       retry_attempts: 2,
       retry_backoff_ms: 300,
       response_status: 200,
+      duration_ms: expect.any(Number),
+      response_body_snippet: '{"ok":true}',
+      response_headers: expect.objectContaining({
+        'content-type': 'application/json',
+      }),
     }));
   });
 

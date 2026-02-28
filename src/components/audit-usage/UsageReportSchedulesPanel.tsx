@@ -96,6 +96,12 @@ function formatIso(value?: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
+function formatDeliveryMetadataValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+}
+
 function buildInitialDraft(filters: UsageListParams): DraftState {
   return {
     name: '',
@@ -511,8 +517,30 @@ export function UsageReportSchedulesPanel({
                           <span>{t('report_schedules.delivery_errors')}: {delivery.summary.errors}</span>
                           <span>{t('report_schedules.delivery_attempt')}: {delivery.attempt_count}</span>
                           <span>{t('report_schedules.delivery_file')}: {delivery.preview_filename ?? '--'}</span>
+                          {formatDeliveryMetadataValue(delivery.delivery_metadata?.response_status) ? (
+                            <span>{t('report_schedules.delivery_response_status')}: {formatDeliveryMetadataValue(delivery.delivery_metadata?.response_status)}</span>
+                          ) : null}
+                          {formatDeliveryMetadataValue(delivery.delivery_metadata?.duration_ms) ? (
+                            <span>{t('report_schedules.delivery_latency')}: {formatDeliveryMetadataValue(delivery.delivery_metadata?.duration_ms)}ms</span>
+                          ) : null}
                         </div>
                         {delivery.error ? <div className="text-xs text-error">{delivery.error}</div> : null}
+                        {formatDeliveryMetadataValue(delivery.delivery_metadata?.response_body_snippet) ? (
+                          <div className="rounded border border-subtle bg-bg-base/60 px-2 py-1 text-xs text-tertiary" data-testid={`usage__report-delivery-response-snippet-${delivery.id}`}>
+                            <span className="font-medium text-foreground">{t('report_schedules.delivery_response_snippet')}:</span>{' '}
+                            {formatDeliveryMetadataValue(delivery.delivery_metadata?.response_body_snippet)}
+                          </div>
+                        ) : null}
+                        {delivery.delivery_metadata?.response_headers && typeof delivery.delivery_metadata.response_headers === 'object' ? (
+                          <div className="flex flex-wrap gap-2 text-xs text-tertiary" data-testid={`usage__report-delivery-response-headers-${delivery.id}`}>
+                            <span className="font-medium text-foreground">{t('report_schedules.delivery_response_headers')}:</span>
+                            {Object.entries(delivery.delivery_metadata.response_headers as Record<string, unknown>).map(([key, value]) => {
+                              const formatted = formatDeliveryMetadataValue(value);
+                              if (!formatted) return null;
+                              return <Badge key={key} variant="outline">{key}:{formatted}</Badge>;
+                            })}
+                          </div>
+                        ) : null}
                         {canManage ? (
                           <div className="flex flex-wrap gap-2">
                             {delivery.status === 'failed' ? (

@@ -136,8 +136,60 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
       top_end_users: [{ end_user_id: 'user_001', requests: 2, errors: 0, estimated_cost: 0.0068 }],
       anomaly_peaks: [],
       recent_requests: [{ id: 'req_1', timestamp: '2026-02-28T15:10:00.000Z', request_id: 'req_1', provider: 'secondaryok', model: 'model-b', end_user_id: 'user_001', result: 'ok', estimated_cost: 0.0068 }],
+      webhook_destinations: [{
+        host: 'hooks.example.internal',
+        path: '/usage',
+        protocol: 'https',
+        deliveries: 2,
+        successes: 1,
+        failures: 1,
+        success_rate: 0.5,
+        p95_latency_ms: 240,
+        timeout_failures: 0,
+        network_failures: 0,
+        auth_failures: 0,
+        client_failures: 0,
+        server_failures: 1,
+        last_status: 'success',
+        last_delivery_at: '2026-02-28T00:00:03.000Z',
+      }],
     },
     isLoading: false,
+  }),
+  useRuntimeObservability: () => ({
+    data: {
+      total_requests: 12,
+      total_errors: 1,
+      error_rate: 0.0833,
+      fallback_hops_histogram: { '0': 10, '1': 2 },
+      error_class_counts: {
+        provider_retryable: 1,
+        provider_non_retryable: 0,
+        system_error: 0,
+      },
+      avg_estimated_cost: 0.002,
+      p95_estimated_cost: 0.0068,
+      health_summary: {
+        recovered_requests: 2,
+        terminal_error_requests: 1,
+        missing_price_facts: 0,
+        provider_count: 2,
+        model_count: 2,
+      },
+      request_trend: [],
+      latency_distribution_ms: {},
+      cost_distribution_usd: {},
+      degradation_signals: [],
+      provider_breakdown: [],
+      model_breakdown: [],
+      time_range: {
+        start: '2026-02-27T00:00:00.000Z',
+        end: '2026-02-28T00:00:00.000Z',
+      },
+    },
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
   }),
   useUsageReportSchedules: () => ({
     data: {
@@ -232,9 +284,12 @@ describe('UsagePage', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
     expect(screen.getByTestId('usage__operations-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('release-ops__dashboard')).toBeInTheDocument();
+    expect(screen.getByTestId('release-ops__webhook-destination-0')).toBeInTheDocument();
     expect(screen.getByTestId('usage__export-trigger')).toBeInTheDocument();
     expect(screen.getByTestId('usage__report-schedules')).toBeInTheDocument();
     expect(screen.getByTestId('usage__report-evidence-runner-health')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__operations-webhook-destinations')).toBeInTheDocument();
     await user.click(screen.getByTestId('usage__table__row'));
 
     expect(screen.getByText('detail.title')).toBeInTheDocument();

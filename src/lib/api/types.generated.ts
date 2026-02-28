@@ -3835,6 +3835,27 @@ export interface components {
             top_end_users: components["schemas"]["UsageOperationsEndUserSummary"][];
             top_models: components["schemas"]["UsageOperationsModelSummary"][];
             top_providers: components["schemas"]["UsageOperationsProviderSummary"][];
+            webhook_destinations: components["schemas"]["UsageOperationsWebhookDestination"][];
+        };
+        UsageOperationsWebhookDestination: {
+            auth_failures: number;
+            avg_latency_ms?: number;
+            client_failures: number;
+            deliveries: number;
+            failures: number;
+            host: string;
+            /** Format: date-time */
+            last_delivery_at: string;
+            /** @enum {string} */
+            last_status: "success" | "failed";
+            network_failures: number;
+            p95_latency_ms?: number;
+            path?: string;
+            protocol?: string;
+            server_failures: number;
+            success_rate: number;
+            successes: number;
+            timeout_failures: number;
         };
         UsageReportDelivery: {
             /** Format: date-time */

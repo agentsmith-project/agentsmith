@@ -7004,6 +7004,7 @@ components:
         - top_end_users
         - anomaly_peaks
         - recent_requests
+        - webhook_destinations
       properties:
         top_providers:
           type: array
@@ -7025,6 +7026,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/UsageOperationsRecentRequest"
+        webhook_destinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageOperationsWebhookDestination"
     UsageOperationsProviderSummary:
       type: object
       required: [provider, requests, errors, estimated_cost]
@@ -7116,6 +7121,68 @@ components:
         estimated_cost:
           type: number
           minimum: 0
+    UsageOperationsWebhookDestination:
+      type: object
+      required:
+        - host
+        - deliveries
+        - successes
+        - failures
+        - success_rate
+        - timeout_failures
+        - network_failures
+        - auth_failures
+        - client_failures
+        - server_failures
+        - last_status
+        - last_delivery_at
+      properties:
+        host:
+          type: string
+        path:
+          type: string
+        protocol:
+          type: string
+        deliveries:
+          type: number
+          minimum: 0
+        successes:
+          type: number
+          minimum: 0
+        failures:
+          type: number
+          minimum: 0
+        success_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        avg_latency_ms:
+          type: number
+          minimum: 0
+        p95_latency_ms:
+          type: number
+          minimum: 0
+        timeout_failures:
+          type: number
+          minimum: 0
+        network_failures:
+          type: number
+          minimum: 0
+        auth_failures:
+          type: number
+          minimum: 0
+        client_failures:
+          type: number
+          minimum: 0
+        server_failures:
+          type: number
+          minimum: 0
+        last_status:
+          type: string
+          enum: [success, failed]
+        last_delivery_at:
+          type: string
+          format: date-time
     UsageReportSchedule:
       type: object
       required:

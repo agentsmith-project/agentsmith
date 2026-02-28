@@ -306,6 +306,24 @@ export type UsageOperationsSummaryResponse = {
     error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
     estimated_cost?: number;
   }>;
+  webhook_destinations: Array<{
+    host: string;
+    path?: string;
+    protocol?: string;
+    deliveries: number;
+    successes: number;
+    failures: number;
+    success_rate: number;
+    avg_latency_ms?: number;
+    p95_latency_ms?: number;
+    timeout_failures: number;
+    network_failures: number;
+    auth_failures: number;
+    client_failures: number;
+    server_failures: number;
+    last_status: 'success' | 'failed';
+    last_delivery_at: string;
+  }>;
 };
 
 export type UsageExportResponse = {
@@ -1441,6 +1459,107 @@ export async function getUsageOperationsSummary(
       estimated_cost: estimateFactCost(fact) || undefined,
     }));
 
+  const deliveries = (await docStore.list<UsageReportDeliveryRecord>(USAGE_REPORT_DELIVERIES_COLLECTION, {
+    workspace_id: query.workspaceId,
+    project_id: query.projectId,
+  }))
+    .filter((item) => inRange(item.completed_at, parseIsoMillis(query.startTime), parseIsoMillis(query.endTime)));
+
+  const webhookDestAgg = new Map<string, {
+    host: string;
+    path?: string;
+    protocol?: string;
+    deliveries: number;
+    successes: number;
+    failures: number;
+    latency: number[];
+    timeout_failures: number;
+    network_failures: number;
+    auth_failures: number;
+    client_failures: number;
+    server_failures: number;
+    last_status: 'success' | 'failed';
+    last_delivery_at: string;
+  }>();
+
+  for (const delivery of deliveries) {
+    const metadata = delivery.delivery_metadata;
+    if (!metadata || metadata.dispatch_mode !== 'webhook') continue;
+    const host = nonEmptyString(metadata.webhook_target_host) ?? 'unknown';
+    const path = nonEmptyString(metadata.webhook_target_path);
+    const protocol = nonEmptyString(metadata.webhook_target_protocol);
+    const key = `${protocol ?? ''}|${host}|${path ?? ''}`;
+    const item = webhookDestAgg.get(key) ?? {
+      host,
+      path,
+      protocol,
+      deliveries: 0,
+      successes: 0,
+      failures: 0,
+      latency: [],
+      timeout_failures: 0,
+      network_failures: 0,
+      auth_failures: 0,
+      client_failures: 0,
+      server_failures: 0,
+      last_status: delivery.status,
+      last_delivery_at: delivery.completed_at,
+    };
+    item.deliveries += 1;
+    if (delivery.status === 'success') item.successes += 1;
+    if (delivery.status === 'failed') item.failures += 1;
+    if (typeof metadata.duration_ms === 'number' && Number.isFinite(metadata.duration_ms)) {
+      item.latency.push(metadata.duration_ms);
+    }
+    switch (delivery.error_class) {
+      case 'delivery_channel_timeout':
+        item.timeout_failures += 1;
+        break;
+      case 'delivery_channel_network':
+        item.network_failures += 1;
+        break;
+      case 'delivery_channel_auth':
+        item.auth_failures += 1;
+        break;
+      case 'delivery_channel_4xx':
+        item.client_failures += 1;
+        break;
+      case 'delivery_channel_5xx':
+        item.server_failures += 1;
+        break;
+      default:
+        break;
+    }
+    if (delivery.completed_at >= item.last_delivery_at) {
+      item.last_delivery_at = delivery.completed_at;
+      item.last_status = delivery.status;
+    }
+    webhookDestAgg.set(key, item);
+  }
+
+  const webhookDestinations = Array.from(webhookDestAgg.values())
+    .map((item) => ({
+      host: item.host,
+      path: item.path,
+      protocol: item.protocol,
+      deliveries: item.deliveries,
+      successes: item.successes,
+      failures: item.failures,
+      success_rate: item.deliveries > 0 ? item.successes / item.deliveries : 0,
+      avg_latency_ms: item.latency.length > 0
+        ? Number((item.latency.reduce((sum, value) => sum + value, 0) / item.latency.length).toFixed(2))
+        : undefined,
+      p95_latency_ms: percentile95(item.latency),
+      timeout_failures: item.timeout_failures,
+      network_failures: item.network_failures,
+      auth_failures: item.auth_failures,
+      client_failures: item.client_failures,
+      server_failures: item.server_failures,
+      last_status: item.last_status,
+      last_delivery_at: item.last_delivery_at,
+    }))
+    .sort((a, b) => b.deliveries - a.deliveries || a.host.localeCompare(b.host));
+
   return {
     top_providers: Array.from(providerAgg.values())
       .sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests)
@@ -1453,6 +1572,7 @@ export async function getUsageOperationsSummary(
       .slice(0, 5),
     anomaly_peaks: anomalyPeaks.slice(0, 6),
     recent_requests: recentRequests,
+    webhook_destinations: webhookDestinations,
   };
 }
 

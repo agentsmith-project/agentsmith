@@ -134,6 +134,31 @@ export function UsageOperationsSummary({ summary, loading = false }: UsageOperat
           ))}
         </div>
       </div>
+
+      <div className="mt-3 rounded-lg border border-subtle bg-bg-base/40 p-3" data-testid="usage__operations-webhook-destinations">
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-tertiary">{t('operations.webhook_destinations')}</h4>
+        <div className="space-y-2">
+          {(summary?.webhook_destinations ?? []).length === 0 ? (
+            <p className="text-sm text-tertiary">{loading ? t('operations.loading') : t('operations.empty')}</p>
+          ) : (summary?.webhook_destinations ?? []).map((item) => (
+            <div key={`${item.host}:${item.path ?? ''}`} className="flex flex-wrap items-center justify-between gap-3 border-t border-subtle py-2 first:border-t-0 first:pt-0">
+              <div className="min-w-0">
+                <div className="truncate font-mono text-sm text-foreground">
+                  {item.protocol ? `${item.protocol}://` : ''}{item.host}{item.path ?? ''}
+                </div>
+                <div className="text-xs text-tertiary">
+                  {t('operations.webhook_delivery_counts', { deliveries: item.deliveries, failures: item.failures })}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-tertiary">
+                <Badge variant={item.last_status === 'failed' ? 'destructive' : 'outline'}>{item.last_status}</Badge>
+                <span>{t('operations.webhook_success_rate', { rate: (item.success_rate * 100).toFixed(1) })}</span>
+                <span>{t('operations.webhook_p95_latency', { latency: item.p95_latency_ms ? Math.round(item.p95_latency_ms) : '--' })}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </section>
   );
 }

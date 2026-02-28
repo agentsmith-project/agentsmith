@@ -177,6 +177,24 @@ export interface UsageOperationsSummaryResponse {
     error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
     estimated_cost?: number;
   }>;
+  webhook_destinations: Array<{
+    host: string;
+    path?: string;
+    protocol?: string;
+    deliveries: number;
+    successes: number;
+    failures: number;
+    success_rate: number;
+    avg_latency_ms?: number;
+    p95_latency_ms?: number;
+    timeout_failures: number;
+    network_failures: number;
+    auth_failures: number;
+    client_failures: number;
+    server_failures: number;
+    last_status: 'success' | 'failed';
+    last_delivery_at: string;
+  }>;
 }
 
 export interface UsageReportSchedule {

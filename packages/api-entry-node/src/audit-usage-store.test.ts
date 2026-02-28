@@ -254,6 +254,76 @@ describe('audit-usage-store runtime observability', () => {
     expect(summary.recent_requests).toEqual(
       expect.arrayContaining([expect.objectContaining({ request_id: 'req_b', result: 'error', error_class: 'provider_retryable' })]),
     );
+    expect(summary.webhook_destinations).toEqual([]);
+  });
+
+  it('aggregates webhook destination health from delivery records', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+    await store.upsert('project_usage_report_deliveries', 'delivery_webhook_1', {
+      id: 'delivery_webhook_1',
+      workspace_id: workspaceId,
+      project_id: projectId,
+      schedule_id: 'schedule_1',
+      trigger: 'manual',
+      status: 'failed',
+      attempt_count: 1,
+      report_period_start: '2026-02-27T00:00:00.000Z',
+      report_period_end: '2026-02-28T00:00:00.000Z',
+      created_at: '2026-02-28T00:00:00.000Z',
+      completed_at: '2026-02-28T00:00:01.000Z',
+      summary: { requests: 1, errors: 1 },
+      error_class: 'delivery_channel_5xx',
+      delivery_metadata: {
+        dispatch_mode: 'webhook',
+        webhook_target_protocol: 'https',
+        webhook_target_host: 'hooks.example.internal',
+        webhook_target_path: '/usage',
+        duration_ms: 240,
+      },
+    });
+    await store.upsert('project_usage_report_deliveries', 'delivery_webhook_2', {
+      id: 'delivery_webhook_2',
+      workspace_id: workspaceId,
+      project_id: projectId,
+      schedule_id: 'schedule_1',
+      trigger: 'retry',
+      status: 'success',
+      attempt_count: 2,
+      report_period_start: '2026-02-27T00:00:00.000Z',
+      report_period_end: '2026-02-28T00:00:00.000Z',
+      created_at: '2026-02-28T00:00:02.000Z',
+      completed_at: '2026-02-28T00:00:03.000Z',
+      summary: { requests: 1, errors: 0 },
+      delivery_metadata: {
+        dispatch_mode: 'webhook',
+        webhook_target_protocol: 'https',
+        webhook_target_host: 'hooks.example.internal',
+        webhook_target_path: '/usage',
+        duration_ms: 120,
+      },
+    });
+
+    const summary = await getUsageOperationsSummary(store, {
+      workspaceId,
+      projectId,
+      startTime: '2026-02-27T23:59:00.000Z',
+      endTime: '2026-02-28T00:01:00.000Z',
+      result: null,
+    });
+
+    expect(summary.webhook_destinations[0]).toEqual(expect.objectContaining({
+      host: 'hooks.example.internal',
+      path: '/usage',
+      protocol: 'https',
+      deliveries: 2,
+      successes: 1,
+      failures: 1,
+      success_rate: 0.5,
+      server_failures: 1,
+      last_status: 'success',
+    }));
   });
 
   it('exports usage data as csv and json snapshots', async () => {

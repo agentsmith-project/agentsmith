@@ -106,6 +106,14 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function sanitizeResponseSnippet(value: string): string {
+  return value
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
+    .replace(/("?(?:token|access_token|api_key|secret|password)"?\s*:\s*")([^"]+)"/gi, '$1[redacted]"')
+    .replace(/(sk-[A-Za-z0-9_-]+)/g, '[redacted]')
+    .replace(/(whsec-[A-Za-z0-9_-]+)/g, '[redacted]');
+}
+
 function pickResponseHeaders(headers: Headers): Record<string, string> {
   const captured: Record<string, string> = {};
   for (const key of ['content-type', 'x-request-id', 'x-trace-id', 'retry-after']) {
@@ -120,7 +128,7 @@ async function readResponseSnippet(response: Response): Promise<string | undefin
     const text = await response.text();
     const trimmed = text.trim();
     if (!trimmed) return undefined;
-    return trimmed.slice(0, 280);
+    return sanitizeResponseSnippet(trimmed).slice(0, 280);
   } catch {
     return undefined;
   }

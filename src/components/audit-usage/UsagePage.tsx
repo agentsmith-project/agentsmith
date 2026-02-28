@@ -9,7 +9,7 @@ import { UsageFactDetailDrawer } from './UsageFactDetailDrawer';
 import { UsageOperationsSummary } from './UsageOperationsSummary';
 import { UsageReportSchedulesPanel } from './UsageReportSchedulesPanel';
 import { UsageTable } from './UsageTable';
-import { useUsageFacts, useUsageKPI, useUsageOperationsSummary, useUsageRecords, useUsageReportEvidence, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
+import { useRuntimeObservability, useUsageFacts, useUsageKPI, useUsageOperationsSummary, useUsageRecords, useUsageReportEvidence, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -25,6 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { getApiClient, UsageAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import type { UsageReportDelivery, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
+import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -109,6 +110,16 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
     enabled: canReadUsage,
   });
   const operationsSummaryQuery = useUsageOperationsSummary(workspaceId, projectId, apiFilters, {
+    enabled: canReadUsage && panel === 'usage',
+  });
+  const runtimeOpsQuery = useRuntimeObservability(workspaceId, projectId, {
+    start_time: apiFilters.start_time,
+    end_time: apiFilters.end_time,
+    provider: apiFilters.provider,
+    model: apiFilters.model,
+    result: apiFilters.result,
+    error_class: apiFilters.error_class,
+  }, {
     enabled: canReadUsage && panel === 'usage',
   });
   const reportSchedulesQuery = useUsageReportSchedules(workspaceId, projectId, {
@@ -470,6 +481,13 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
               defaultEndUserId={effectiveEndUserId}
             />
           </div>
+
+          <ReleaseOpsDashboard
+            runtime={runtimeOpsQuery.data}
+            usageEvidence={reportEvidenceQuery.data}
+            operationsSummary={operationsSummaryQuery.data}
+            loading={runtimeOpsQuery.isLoading || operationsSummaryQuery.isLoading || reportEvidenceQuery.isLoading}
+          />
 
           <UsageOperationsSummary
             summary={operationsSummaryQuery.data}

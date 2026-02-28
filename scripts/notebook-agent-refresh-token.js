@@ -26,6 +26,42 @@ async function main() {
   const password = process.env.PASSWORD || 'dev-admin-123';
   const outFile = process.env.TOKEN_OUT_FILE || '/tmp/agentsmith_user_token.txt';
 
+  async function fetchTokenByPasswordGrant() {
+    const tokenUrl = `${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
+    const body = new URLSearchParams();
+    body.set('grant_type', 'password');
+    body.set('client_id', clientId);
+    body.set('username', username);
+    body.set('password', password);
+
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    if (!response.ok) {
+      throw new Error(`password_grant_failed_http_${response.status}`);
+    }
+    const data = await response.json();
+    const accessToken = typeof data?.access_token === 'string' ? data.access_token : '';
+    if (!accessToken) {
+      throw new Error('password_grant_missing_access_token');
+    }
+    return accessToken;
+  }
+
+  const shouldUsePasswordGrantOnly = process.env.REFRESH_TOKEN_FORCE_PASSWORD_GRANT === '1';
+  if (shouldUsePasswordGrantOnly) {
+    const token = await fetchTokenByPasswordGrant();
+    fs.writeFileSync(outFile, token, 'utf8');
+    if (process.env.PRINT_TOKEN === '1') {
+      process.stdout.write(`${token}\n`);
+    } else {
+      process.stdout.write(`[refresh-token] token written to ${outFile}\n`);
+    }
+    return;
+  }
+
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
 
@@ -79,9 +115,16 @@ async function main() {
     await usernameLocator.fill(username);
     await passwordLocator.fill(password);
     await Promise.all([
-      page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 120_000 }),
+      page.waitForURL(new RegExp(`/${locale}/(login/workspace|login/callback)`), { timeout: 120_000 }),
       loginButtonLocator.click(),
     ]);
+    dbg('post-login redirect landed', page.url());
+    if (new RegExp(`/${locale}/login/callback`).test(page.url())) {
+      await page.goto(`${baseUrl.replace(/\/+$/, '')}/${locale}/login/workspace`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+      });
+    }
   } else if (authPageState === 'app_redirect') {
     dbg('login form not visible, waiting for app route redirect', page.url());
     await page.waitForURL(
@@ -129,7 +172,11 @@ async function main() {
     dbg('already in ws_default route', page.url());
   }
 
-  const token = await page.evaluate(() => {
+  let token = await page.evaluate(() => {
+    const storeToken = window.__MBOS_AUTH_STORE__?.getState?.()?.token;
+    if (typeof storeToken === 'string' && storeToken.length > 0) {
+      return storeToken;
+    }
     const raw = localStorage.getItem('agentsmith-auth');
     if (!raw) return null;
     try {
@@ -143,7 +190,14 @@ async function main() {
   dbg('browser closed');
 
   if (!token) {
-    throw new Error('token_not_found');
+    dbg('token_not_found_in_app_state, fallback to password grant');
+    try {
+      token = await fetchTokenByPasswordGrant();
+      dbg('password grant fallback succeeded');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`token_not_found; password_grant_fallback_failed: ${message}`);
+    }
   }
   fs.writeFileSync(outFile, token, 'utf8');
   if (process.env.PRINT_TOKEN === '1') {

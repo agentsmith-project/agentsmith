@@ -57,6 +57,34 @@ refresh_member_token() {
     node ./scripts/notebook-agent-refresh-token.js >/dev/null
 }
 
+resolve_member_user_id_from_members() {
+  local members_url="$1"
+  local owner_token="$2"
+  local username="$3"
+  local out_file
+  out_file="$(mktemp)"
+  local code
+  code="$(
+    curl -sS -o "${out_file}" -w '%{http_code}' \
+      "${members_url}" -H "Authorization: Bearer ${owner_token}" || true
+  )"
+  if [[ "${code}" != "200" ]]; then
+    rm -f "${out_file}"
+    return 1
+  fi
+  cat "${out_file}" | json_get "
+    const items=Array.isArray(data.items)?data.items:[];
+    const uname='${username}';
+    const found=items.find((i)=>{
+      const email=String(i?.email||'');
+      const name=String(i?.name||'');
+      return email===uname || email.startsWith(uname+'@') || name===uname;
+    });
+    process.stdout.write(found?.id ? String(found.id) : '');
+  " || true
+  rm -f "${out_file}"
+}
+
 ensure_membership_active() {
   local membership_url="$1"
   local owner_token="$2"
@@ -99,23 +127,27 @@ main() {
   local removed_member=0
   trap 'rm -f "${member_token_file:-}" "${membership_file:-}" "${members_file:-}" "${patch_file:-}"; if [[ "${removed_member:-0}" == "1" && -n "${membership_url:-}" && -n "${owner_token:-}" ]]; then ensure_membership_active "${membership_url}" "${owner_token}" || true; fi' EXIT
 
-  info "refreshing token for ${MEMBER_USERNAME}"
-  refresh_member_token "${member_token_file}"
-  member_token="$(cat "${member_token_file}")"
-  if ! token_is_valid "${member_token}"; then
-    err "member token invalid after refresh"
-    exit 1
+  local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"
+  local members_url="${base}/members"
+
+  member_user_id="$(resolve_member_user_id_from_members "${members_url}" "${owner_token}" "${MEMBER_USERNAME}" || true)"
+  if [[ -z "${member_user_id}" ]]; then
+    info "refreshing token for ${MEMBER_USERNAME} (members list lookup missed user id)"
+    refresh_member_token "${member_token_file}"
+    member_token="$(cat "${member_token_file}")"
+    if ! token_is_valid "${member_token}"; then
+      err "member token invalid after refresh"
+      exit 1
+    fi
+    member_user_id="$(jwt_claim "${member_token}" "sub")"
   fi
-  member_user_id="$(jwt_claim "${member_token}" "sub")"
   [[ -n "${member_user_id}" ]] || {
-    err "failed to read member user sub from token"
+    err "failed to resolve member user id"
     exit 1
   }
   info "member user id = ${member_user_id}"
 
-  local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"
   local membership_url="${base}/memberships/${member_user_id}"
-  local members_url="${base}/members"
 
   info "ensuring membership is active"
   if ! ensure_membership_active "${membership_url}" "${owner_token}"; then

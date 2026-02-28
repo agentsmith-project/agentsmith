@@ -646,8 +646,8 @@ notebook-agent-release-smoke-full:
 	CHECK_RC=$$?; \
 	set -e; \
 	if [ "$$CHECK_RC" -ne 0 ]; then \
-		echo "[make] demo-check failed; attempting token refresh once (common cause: expired token)..."; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
+		echo "[make] demo-check failed; attempting full demo self-heal (start/recover api+web+runner+token/resources)..."; \
+		DEMO_INIT_RESOURCES=0 $(MAKE) notebook-agent-demo-up; \
 		$(MAKE) notebook-agent-demo-check; \
 	fi; \
 	echo "[make] running release smoke bundle..."; \

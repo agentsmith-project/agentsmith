@@ -175,6 +175,14 @@ test.describe('@lane-real integration runtime proxy billing', () => {
         expect(res.status()).toBe(201);
       };
 
+      const modelCreate = async (payload: Record<string, unknown>) => {
+        const res = await page.request.post(
+          `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/runtime/models`,
+          { headers, data: payload },
+        );
+        expect(res.status()).toBe(201);
+      };
+
       await providerCreate({
         provider: 'openai',
         auth_mode: 'api_key',
@@ -192,6 +200,22 @@ test.describe('@lane-real integration runtime proxy billing', () => {
         auth_mode: 'api_key',
         base_url: comboBackupUpstream.baseUrl,
         credential_ref: backupCred.id,
+      });
+
+      await modelCreate({
+        provider: 'openai',
+        model_id: 'gpt-4o',
+        capabilities: ['chat'],
+      });
+      await modelCreate({
+        provider: 'primaryfail',
+        model_id: 'model-a',
+        capabilities: ['chat'],
+      });
+      await modelCreate({
+        provider: 'secondaryok',
+        model_id: 'model-b',
+        capabilities: ['chat'],
       });
 
       const pricingRes = await page.request.patch(

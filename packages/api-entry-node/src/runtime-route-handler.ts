@@ -2,6 +2,12 @@ import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import { writeProjectUsageFact } from './audit-usage-recorders.js';
+import {
+  validateAliasTargetExists,
+  validateComboTargetsExist,
+  validateModelDeletionAllowed,
+  validateModelProviderMutationAllowed,
+} from './runtime-domain.js';
 import { classifyUpstreamStatus, resolveRoutingPlan, shouldFallbackByPolicy } from './runtime-routing.js';
 import {
   createRuntimeStore,
@@ -428,9 +434,26 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       return true;
     }
     const modelUpdate = parsedModelUpdate.value;
+    const nextProvider = modelUpdate.provider || existing.provider;
+    if (nextProvider !== existing.provider) {
+      const [aliases, combos] = await Promise.all([
+        runtimeStore.listAliases(projectScope),
+        runtimeStore.listCombos(projectScope),
+      ]);
+      const providerMutationCheck = validateModelProviderMutationAllowed({
+        current: existing,
+        nextProvider,
+        aliases,
+        combos,
+      });
+      if (!providerMutationCheck.ok) {
+        json(res, 409, { error_code: 'CONFLICT', message: providerMutationCheck.message });
+        return true;
+      }
+    }
     const updated: RuntimeModelCatalogEntryRecord = {
       ...existing,
-      provider: modelUpdate.provider || existing.provider,
+      provider: nextProvider,
       display_name: modelUpdate.display_name ?? existing.display_name,
       capabilities: modelUpdate.capabilities,
       context_window: modelUpdate.context_window ?? existing.context_window,
@@ -453,6 +476,19 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
       return true;
     }
+    const [aliases, combos] = await Promise.all([
+      runtimeStore.listAliases(projectScope),
+      runtimeStore.listCombos(projectScope),
+    ]);
+    const deletionCheck = validateModelDeletionAllowed({
+      model: existing,
+      aliases,
+      combos,
+    });
+    if (!deletionCheck.ok) {
+      json(res, 409, { error_code: 'CONFLICT', message: deletionCheck.message });
+      return true;
+    }
     await runtimeStore.deleteModel(existing.id);
     res.statusCode = 204;
     res.end();
@@ -472,9 +508,21 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       return true;
     }
     const aliasPayload = parsedAlias.value;
-    const existing = await runtimeStore.listAliases(projectScope);
+    const [existing, models] = await Promise.all([
+      runtimeStore.listAliases(projectScope),
+      runtimeStore.listModels(projectScope),
+    ]);
     if (existing.some((item) => item.alias === aliasPayload.alias)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'runtime_alias_already_exists' });
+      return true;
+    }
+    const aliasTargetCheck = validateAliasTargetExists({
+      models,
+      targetProvider: aliasPayload.target_provider,
+      targetModel: aliasPayload.target_model,
+    });
+    if (!aliasTargetCheck.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: aliasTargetCheck.message });
       return true;
     }
 
@@ -524,10 +572,22 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       return true;
     }
     const aliasUpdate = parsedAliasUpdate.value;
+    const nextTargetProvider = aliasUpdate.target_provider || existing.target_provider;
+    const nextTargetModel = aliasUpdate.target_model || existing.target_model;
+    const models = await runtimeStore.listModels(projectScope);
+    const aliasTargetCheck = validateAliasTargetExists({
+      models,
+      targetProvider: nextTargetProvider,
+      targetModel: nextTargetModel,
+    });
+    if (!aliasTargetCheck.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: aliasTargetCheck.message });
+      return true;
+    }
     const updated: RuntimeModelAliasRecord = {
       ...existing,
-      target_provider: aliasUpdate.target_provider || existing.target_provider,
-      target_model: aliasUpdate.target_model || existing.target_model,
+      target_provider: nextTargetProvider,
+      target_model: nextTargetModel,
       updated_at: runtimeStore.nowIso(),
     };
     await runtimeStore.upsertAlias(updated);
@@ -564,9 +624,20 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       return true;
     }
     const comboPayload = parsedCombo.value;
-    const existing = await runtimeStore.listCombos(projectScope);
+    const [existing, models] = await Promise.all([
+      runtimeStore.listCombos(projectScope),
+      runtimeStore.listModels(projectScope),
+    ]);
     if (existing.some((item) => item.name === comboPayload.name)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'runtime_combo_already_exists' });
+      return true;
+    }
+    const comboTargetCheck = validateComboTargetsExist({
+      models,
+      targets: comboPayload.targets,
+    });
+    if (!comboTargetCheck.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: comboTargetCheck.message });
       return true;
     }
 
@@ -616,6 +687,15 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       return true;
     }
     const comboUpdate = parsedComboUpdate.value;
+    const models = await runtimeStore.listModels(projectScope);
+    const comboTargetCheck = validateComboTargetsExist({
+      models,
+      targets: comboUpdate.targets,
+    });
+    if (!comboTargetCheck.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: comboTargetCheck.message });
+      return true;
+    }
     const updated: RuntimeModelComboRecord = {
       ...existing,
       targets: comboUpdate.targets,

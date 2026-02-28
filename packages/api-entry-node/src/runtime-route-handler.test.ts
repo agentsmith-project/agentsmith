@@ -20,6 +20,26 @@ function createDeps(): NodeApiDeps {
   } as unknown as NodeApiDeps;
 }
 
+async function createRuntimeModel(params: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  provider: string;
+  modelId: string;
+  capabilities?: string[];
+}) {
+  return executeRoute({
+    deps: params.deps,
+    route: { kind: 'runtimeModels', workspaceId: params.workspaceId, projectId: params.projectId },
+    method: 'POST',
+    body: {
+      provider: params.provider,
+      model_id: params.modelId,
+      capabilities: params.capabilities ?? ['chat'],
+    },
+  });
+}
+
 async function executeRoute(params: {
   deps: NodeApiDeps;
   route: {
@@ -167,6 +187,16 @@ describe('runtime-route-handler', () => {
     });
     expect(modelGet.statusCode).toBe(200);
 
+    const secondModelCreate = await createRuntimeModel({
+      deps,
+      workspaceId,
+      projectId,
+      provider: 'openai',
+      modelId: 'gpt-4.1',
+      capabilities: ['chat', 'tools'],
+    });
+    expect(secondModelCreate.statusCode).toBe(201);
+
     const modelPut = await executeRoute({
       deps,
       route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
@@ -247,6 +277,173 @@ describe('runtime-route-handler', () => {
       method: 'DELETE',
     });
     expect(modelDelete.statusCode).toBe(204);
+
+    const secondModelDelete = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4.1' },
+      method: 'DELETE',
+    });
+    expect(secondModelDelete.statusCode).toBe(204);
+  });
+
+  it('rejects alias and combo targets that do not exist in the model catalog', async () => {
+    const deps = createDeps();
+
+    const aliasCreate = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliases', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        alias: 'assistant-main',
+        target_provider: 'openai',
+        target_model: 'gpt-4o',
+      },
+    });
+    expect(aliasCreate.statusCode).toBe(422);
+    expect((aliasCreate.body as { message?: string }).message).toBe('runtime_alias_target_model_not_found');
+
+    const comboCreate = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        name: 'prod-chat',
+        targets: [{ provider: 'openai', model: 'gpt-4o' }],
+        fallback_policy: {
+          max_hops: 1,
+          retryable_error_classes: ['provider_retryable'],
+        },
+      },
+    });
+    expect(comboCreate.statusCode).toBe(422);
+    expect((comboCreate.body as { message?: string }).message).toBe('runtime_combo_target_model_not_found');
+  });
+
+  it('prevents deleting a model while aliases or combos still reference it', async () => {
+    const deps = createDeps();
+
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeModels', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        provider: 'openai',
+        model_id: 'gpt-4o',
+        capabilities: ['chat'],
+      },
+    });
+
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliases', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        alias: 'assistant-main',
+        target_provider: 'openai',
+        target_model: 'gpt-4o',
+      },
+    });
+
+    const aliasDeleteBlocked = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      method: 'DELETE',
+    });
+    expect(aliasDeleteBlocked.statusCode).toBe(409);
+    expect((aliasDeleteBlocked.body as { message?: string }).message).toBe('runtime_model_referenced_by_alias');
+
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliasItem', workspaceId, projectId, alias: 'assistant-main' },
+      method: 'DELETE',
+    });
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        name: 'prod-chat',
+        targets: [{ provider: 'openai', model: 'gpt-4o' }],
+        fallback_policy: {
+          max_hops: 1,
+          retryable_error_classes: ['provider_retryable'],
+        },
+      },
+    });
+
+    const comboDeleteBlocked = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      method: 'DELETE',
+    });
+    expect(comboDeleteBlocked.statusCode).toBe(409);
+    expect((comboDeleteBlocked.body as { message?: string }).message).toBe('runtime_model_referenced_by_combo');
+  });
+
+  it('prevents changing a model provider while aliases or combos still reference it', async () => {
+    const deps = createDeps();
+
+    await createRuntimeModel({
+      deps,
+      workspaceId,
+      projectId,
+      provider: 'openai',
+      modelId: 'gpt-4o',
+    });
+
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliases', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        alias: 'assistant-main',
+        target_provider: 'openai',
+        target_model: 'gpt-4o',
+      },
+    });
+
+    const aliasBlockedUpdate = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      method: 'PUT',
+      body: {
+        provider: 'anthropic',
+        capabilities: ['chat'],
+      },
+    });
+    expect(aliasBlockedUpdate.statusCode).toBe(409);
+    expect((aliasBlockedUpdate.body as { message?: string }).message).toBe('runtime_model_provider_change_blocked_by_alias');
+
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliasItem', workspaceId, projectId, alias: 'assistant-main' },
+      method: 'DELETE',
+    });
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        name: 'prod-chat',
+        targets: [{ provider: 'openai', model: 'gpt-4o' }],
+        fallback_policy: {
+          max_hops: 1,
+          retryable_error_classes: ['provider_retryable'],
+        },
+      },
+    });
+
+    const comboBlockedUpdate = await executeRoute({
+      deps,
+      route: { kind: 'runtimeModelItem', workspaceId, projectId, modelId: 'gpt-4o' },
+      method: 'PUT',
+      body: {
+        provider: 'anthropic',
+        capabilities: ['chat'],
+      },
+    });
+    expect(comboBlockedUpdate.statusCode).toBe(409);
+    expect((comboBlockedUpdate.body as { message?: string }).message).toBe('runtime_model_provider_change_blocked_by_combo');
   });
 
   it('returns conflict on duplicate model/alias/combo definitions', async () => {
@@ -366,6 +563,21 @@ describe('runtime-route-handler', () => {
     }) as typeof fetch;
 
     try {
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'openai',
+        modelId: 'gpt-4o',
+      });
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'anthropic',
+        modelId: 'claude-sonnet-4-5',
+      });
+
       await executeRoute({
         deps,
         route: { kind: 'runtimeProviders', workspaceId, projectId },
@@ -429,6 +641,21 @@ describe('runtime-route-handler', () => {
     }) as typeof fetch;
 
     try {
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'openai',
+        modelId: 'gpt-4o',
+      });
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'anthropic',
+        modelId: 'claude-sonnet-4-5',
+      });
+
       await executeRoute({
         deps,
         route: { kind: 'runtimeProviders', workspaceId, projectId },
@@ -506,6 +733,21 @@ describe('runtime-route-handler', () => {
     )) as typeof fetch;
 
     try {
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'openai',
+        modelId: 'gpt-4o',
+      });
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'anthropic',
+        modelId: 'claude-sonnet-4-5',
+      });
+
       await executeRoute({
         deps,
         route: { kind: 'runtimeProviders', workspaceId, projectId },
@@ -592,6 +834,28 @@ describe('runtime-route-handler', () => {
     }) as typeof fetch;
 
     try {
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'openai',
+        modelId: 'gpt-4o',
+      });
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'anthropic',
+        modelId: 'claude-sonnet-4-5',
+      });
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'deepseek',
+        modelId: 'deepseek-chat',
+      });
+
       await executeRoute({
         deps,
         route: { kind: 'runtimeProviders', workspaceId, projectId },
@@ -666,6 +930,28 @@ describe('runtime-route-handler', () => {
     }) as typeof fetch;
 
     try {
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'openai',
+        modelId: 'gpt-4o',
+      });
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'anthropic',
+        modelId: 'claude-sonnet-4-5',
+      });
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'deepseek',
+        modelId: 'deepseek-chat',
+      });
+
       await executeRoute({
         deps,
         route: { kind: 'runtimeProviders', workspaceId, projectId },
@@ -761,6 +1047,21 @@ describe('runtime-route-handler', () => {
     }) as typeof fetch;
 
     try {
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'provider_a',
+        modelId: 'model-a',
+      });
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'provider_b',
+        modelId: 'model-b',
+      });
+
       await executeRoute({
         deps,
         route: { kind: 'runtimeProviders', workspaceId, projectId },
@@ -827,6 +1128,21 @@ describe('runtime-route-handler', () => {
     }) as typeof fetch;
 
     try {
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'provider_a',
+        modelId: 'model-a',
+      });
+      await createRuntimeModel({
+        deps,
+        workspaceId,
+        projectId,
+        provider: 'provider_b',
+        modelId: 'model-b',
+      });
+
       await executeRoute({
         deps,
         route: { kind: 'runtimeProviders', workspaceId, projectId },

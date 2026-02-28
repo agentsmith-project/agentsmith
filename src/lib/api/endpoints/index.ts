@@ -57,4 +57,7 @@ export type {
   CreateRuntimeModelComboRequest,
   UpdateRuntimeModelComboRequest,
   RuntimePricingMap,
+  RuntimeAttemptTrace,
+  RuntimeAttemptOutcome,
+  UnifiedChatRuntimeMetadata,
 } from './runtime';

@@ -92,6 +92,9 @@ export type {
   CreateRuntimeModelComboRequest,
   UpdateRuntimeModelComboRequest,
   RuntimePricingMap,
+  RuntimeAttemptTrace,
+  RuntimeAttemptOutcome,
+  UnifiedChatRuntimeMetadata,
 } from './endpoints';
 
 // Adapters (for advanced usage)

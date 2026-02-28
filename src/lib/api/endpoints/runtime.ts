@@ -93,6 +93,36 @@ export interface RuntimeModelComboTarget {
   model: string;
 }
 
+export type RuntimeAttemptOutcome =
+  | 'provider_connection_missing'
+  | 'credential_ref_missing'
+  | 'credential_secret_missing'
+  | 'fallback_network_error'
+  | 'terminal_network_error'
+  | 'fallback_upstream_error'
+  | 'terminal_upstream_error'
+  | 'success';
+
+export interface RuntimeAttemptTrace {
+  index: number;
+  provider: string;
+  model: string;
+  providerConnectionId?: string;
+  outcome: RuntimeAttemptOutcome;
+  statusCode?: number;
+  errorClass?: string;
+  reason: string;
+  durationMs?: number;
+}
+
+export interface UnifiedChatRuntimeMetadata {
+  provider?: string;
+  resolved_model?: string;
+  fallback_hops?: number;
+  estimated_cost?: number | null;
+  attempts?: RuntimeAttemptTrace[];
+}
+
 export interface RuntimeModelCombo {
   id: string;
   workspace_id: string;

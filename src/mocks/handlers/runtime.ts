@@ -278,6 +278,7 @@ export const runtimeHandlers = [
     const pricing = pricingByProject.get(key) as Record<string, Record<string, Record<string, number>>> | undefined;
 
     const attempts: Array<{ provider: string; model: string }> = [];
+    const attemptTrace: Array<Record<string, unknown>> = [];
     if (modelRaw.startsWith('combo:')) {
       const comboName = modelRaw.slice('combo:'.length).trim();
       const combo = scopedCombos.find((item) => item.name === comboName);
@@ -305,15 +306,56 @@ export const runtimeHandlers = [
     for (let idx = 0; idx < attempts.length; idx += 1) {
       const attempt = attempts[idx]!;
       const provider = scopedProviders.find((item) => item.provider === attempt.provider);
-      if (!provider) continue;
+      if (!provider) {
+        attemptTrace.push({
+          index: idx,
+          provider: attempt.provider,
+          model: attempt.model,
+          outcome: 'provider_connection_missing',
+          reason: 'runtime_provider_connection_not_found',
+          durationMs: 0,
+        });
+        continue;
+      }
       const baseUrl = asString(provider.base_url) ?? '';
       if (baseUrl.includes('nonretryable')) {
+        attemptTrace.push({
+          index: idx,
+          provider: attempt.provider,
+          model: attempt.model,
+          providerConnectionId: String(provider.id),
+          outcome: 'terminal_upstream_error',
+          statusCode: 400,
+          errorClass: 'provider_non_retryable',
+          reason: 'runtime_upstream_error',
+          durationMs: 0,
+        });
         return HttpResponse.json(
-          { error_code: 'UPSTREAM_400', message: 'runtime_upstream_non_retryable' },
+          {
+            error_code: 'UPSTREAM_400',
+            message: 'runtime_upstream_non_retryable',
+            runtime: {
+              provider: attempt.provider,
+              resolved_model: attempt.model,
+              fallback_hops: idx,
+              attempts: attemptTrace,
+            },
+          },
           { status: 400 },
         );
       }
       if (baseUrl.includes('retryable') && idx < attempts.length - 1) {
+        attemptTrace.push({
+          index: idx,
+          provider: attempt.provider,
+          model: attempt.model,
+          providerConnectionId: String(provider.id),
+          outcome: 'fallback_upstream_error',
+          statusCode: 429,
+          errorClass: 'provider_retryable',
+          reason: 'runtime_upstream_error_recovered',
+          durationMs: 0,
+        });
         continue;
       }
       const inputTokens = 1000;
@@ -321,6 +363,16 @@ export const runtimeHandlers = [
       const inRate = pricing?.[attempt.provider]?.[attempt.model]?.input ?? 0;
       const outRate = pricing?.[attempt.provider]?.[attempt.model]?.output ?? 0;
       const estimatedCost = Number((((inputTokens * inRate) + (outputTokens * outRate)) / 1_000_000).toFixed(6));
+      attemptTrace.push({
+        index: idx,
+        provider: attempt.provider,
+        model: attempt.model,
+        providerConnectionId: String(provider.id),
+        outcome: 'success',
+        statusCode: 200,
+        reason: 'runtime_upstream_ok',
+        durationMs: 0,
+      });
       return HttpResponse.json({
         id: nowId('chatcmpl'),
         object: 'chat.completion',
@@ -336,12 +388,20 @@ export const runtimeHandlers = [
           resolved_model: attempt.model,
           fallback_hops: idx,
           estimated_cost: estimatedCost,
+          attempts: attemptTrace,
         },
       });
     }
 
     return HttpResponse.json(
-      { error_code: 'RUNTIME_PROVIDER_CONNECTION_NOT_FOUND', message: 'runtime_provider_connection_not_found' },
+      {
+        error_code: 'RUNTIME_PROVIDER_CONNECTION_NOT_FOUND',
+        message: 'runtime_provider_connection_not_found',
+        runtime: {
+          fallback_hops: attemptTrace.filter((item) => String(item.outcome).startsWith('fallback_')).length,
+          attempts: attemptTrace,
+        },
+      },
       { status: 502 },
     );
   }),

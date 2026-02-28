@@ -2876,6 +2876,17 @@ export interface components {
             model: string;
             provider: string;
         };
+        RuntimeAttemptTrace: {
+            durationMs?: number;
+            errorClass?: string;
+            index: number;
+            model: string;
+            outcome: "provider_connection_missing" | "credential_ref_missing" | "credential_secret_missing" | "fallback_network_error" | "terminal_network_error" | "fallback_upstream_error" | "terminal_upstream_error" | "success";
+            provider: string;
+            providerConnectionId?: string;
+            reason: string;
+            statusCode?: number;
+        };
         RuntimeModelComboUpdate: {
             fallback_policy?: components["schemas"]["RuntimeModelComboFallbackPolicy"];
             targets?: components["schemas"]["RuntimeModelComboTarget"][];
@@ -2916,6 +2927,13 @@ export interface components {
             [key: string]: {
                 [key: string]: components["schemas"]["RuntimeModelPricing"];
             };
+        };
+        UnifiedChatRuntimeMetadata: {
+            attempts?: components["schemas"]["RuntimeAttemptTrace"][];
+            estimated_cost?: number | null;
+            fallback_hops?: number;
+            provider?: string;
+            resolved_model?: string;
         };
         RuntimeProviderConnection: {
             /** @enum {string} */
@@ -3024,11 +3042,7 @@ export interface components {
             id: string;
             model?: string;
             object: string;
-            runtime?: {
-                fallback_hops?: number;
-                provider: string;
-                resolved_model: string;
-            };
+            runtime?: components["schemas"]["UnifiedChatRuntimeMetadata"];
             usage?: {
                 [key: string]: unknown;
             };

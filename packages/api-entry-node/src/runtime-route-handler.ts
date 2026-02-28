@@ -407,8 +407,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_id_required' });
       return true;
     }
-    const items = await runtimeStore.listModels(projectScope);
-    const item = items.find((entry) => entry.model_id === route.modelId);
+    const item = await runtimeStore.findModelByModelId(projectScope, route.modelId);
     if (!item) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
       return true;
@@ -427,8 +426,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_model_payload_invalid' });
       return true;
     }
-    const items = await runtimeStore.listModels(projectScope);
-    const existing = items.find((entry) => entry.model_id === route.modelId);
+    const existing = await runtimeStore.findModelByModelId(projectScope, route.modelId);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
       return true;
@@ -461,8 +459,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_id_required' });
       return true;
     }
-    const items = await runtimeStore.listModels(projectScope);
-    const existing = items.find((entry) => entry.model_id === route.modelId);
+    const existing = await runtimeStore.findModelByModelId(projectScope, route.modelId);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
       return true;
@@ -520,8 +517,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_alias_required' });
       return true;
     }
-    const items = await runtimeStore.listAliases(projectScope);
-    const existing = items.find((item) => item.alias === route.alias);
+    const existing = await runtimeStore.findAlias(projectScope, route.alias);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_alias_not_found' });
       return true;
@@ -540,8 +536,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_alias_payload_invalid' });
       return true;
     }
-    const items = await runtimeStore.listAliases(projectScope);
-    const existing = items.find((item) => item.alias === route.alias);
+    const existing = await runtimeStore.findAlias(projectScope, route.alias);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_alias_not_found' });
       return true;
@@ -564,8 +559,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_alias_required' });
       return true;
     }
-    const items = await runtimeStore.listAliases(projectScope);
-    const existing = items.find((item) => item.alias === route.alias);
+    const existing = await runtimeStore.findAlias(projectScope, route.alias);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_alias_not_found' });
       return true;
@@ -643,8 +637,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_combo_required' });
       return true;
     }
-    const items = await runtimeStore.listCombos(projectScope);
-    const existing = items.find((item) => item.name === route.combo);
+    const existing = await runtimeStore.findCombo(projectScope, route.combo);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_combo_not_found' });
       return true;
@@ -663,8 +656,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_payload_invalid' });
       return true;
     }
-    const items = await runtimeStore.listCombos(projectScope);
-    const existing = items.find((item) => item.name === route.combo);
+    const existing = await runtimeStore.findCombo(projectScope, route.combo);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_combo_not_found' });
       return true;
@@ -709,8 +701,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_combo_required' });
       return true;
     }
-    const items = await runtimeStore.listCombos(projectScope);
-    const existing = items.find((item) => item.name === route.combo);
+    const existing = await runtimeStore.findCombo(projectScope, route.combo);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_combo_not_found' });
       return true;

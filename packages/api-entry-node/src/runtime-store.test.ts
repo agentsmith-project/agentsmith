@@ -68,4 +68,47 @@ describe('runtime-store', () => {
     expect(store.pricingRecordId({ workspaceId: 'ws_default', projectId: 'proj_1' }))
       .toBe('runtime_pricing_ws_default_proj_1');
   });
+
+  it('supports domain-specific finders for models, aliases, and combos', async () => {
+    const store = createRuntimeStore(new InMemoryJsonDocStore());
+    const scope = { workspaceId: 'ws_default', projectId: 'proj_1' };
+
+    await store.upsertModel({
+      id: store.createId('rmc'),
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      provider: 'openai',
+      model_id: 'gpt-4o',
+      capabilities: ['chat'],
+      created_at: store.nowIso(),
+      updated_at: store.nowIso(),
+    });
+    await store.upsertAlias({
+      id: store.createId('rma'),
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      alias: 'assistant-main',
+      target_provider: 'openai',
+      target_model: 'gpt-4o',
+      created_at: store.nowIso(),
+      updated_at: store.nowIso(),
+    });
+    await store.upsertCombo({
+      id: store.createId('rmco'),
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      name: 'prod-chat',
+      targets: [{ provider: 'openai', model: 'gpt-4o' }],
+      fallback_policy: {
+        max_hops: 1,
+        retryable_error_classes: ['provider_retryable'],
+      },
+      created_at: store.nowIso(),
+      updated_at: store.nowIso(),
+    });
+
+    expect((await store.findModelByModelId(scope, 'gpt-4o'))?.provider).toBe('openai');
+    expect((await store.findAlias(scope, 'assistant-main'))?.target_model).toBe('gpt-4o');
+    expect((await store.findCombo(scope, 'prod-chat'))?.fallback_policy.max_hops).toBe(1);
+  });
 });

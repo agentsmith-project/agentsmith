@@ -116,6 +116,10 @@ export function createRuntimeStore(docStore: JsonDocStorePort) {
     listModels(scope: RuntimeProjectScope) {
       return listScoped<RuntimeModelCatalogEntryRecord>(MODELS_COLLECTION, scope);
     },
+    async findModelByModelId(scope: RuntimeProjectScope, modelId: string) {
+      const items = await listScoped<RuntimeModelCatalogEntryRecord>(MODELS_COLLECTION, scope);
+      return items.find((item) => item.model_id === modelId);
+    },
     upsertModel(record: RuntimeModelCatalogEntryRecord) {
       return docStore.upsert(MODELS_COLLECTION, record.id, record);
     },
@@ -125,6 +129,10 @@ export function createRuntimeStore(docStore: JsonDocStorePort) {
     listAliases(scope: RuntimeProjectScope) {
       return listScoped<RuntimeModelAliasRecord>(ALIASES_COLLECTION, scope);
     },
+    async findAlias(scope: RuntimeProjectScope, alias: string) {
+      const items = await listScoped<RuntimeModelAliasRecord>(ALIASES_COLLECTION, scope);
+      return items.find((item) => item.alias === alias);
+    },
     upsertAlias(record: RuntimeModelAliasRecord) {
       return docStore.upsert(ALIASES_COLLECTION, record.id, record);
     },
@@ -133,6 +141,10 @@ export function createRuntimeStore(docStore: JsonDocStorePort) {
     },
     listCombos(scope: RuntimeProjectScope) {
       return listScoped<RuntimeModelComboRecord>(COMBOS_COLLECTION, scope);
+    },
+    async findCombo(scope: RuntimeProjectScope, comboName: string) {
+      const items = await listScoped<RuntimeModelComboRecord>(COMBOS_COLLECTION, scope);
+      return items.find((item) => item.name === comboName);
     },
     upsertCombo(record: RuntimeModelComboRecord) {
       return docStore.upsert(COMBOS_COLLECTION, record.id, record);

@@ -75,8 +75,15 @@ make notebook-agent-release-smoke-full
 
 Behavior:
 - runs `demo-check`
-- refreshes token once automatically if needed
+- if `demo-check` fails, performs one-shot demo self-heal (`api/web/runner/token`) and re-checks readiness
 - runs bundled release smoke set
+
+### Upstream instability acceptance rule (internal release)
+- Expected transient failures (`429` / provider saturation / network jitter / timeout) are **non-blocking** only when:
+  - retry path succeeds in the same lane rerun, and
+  - no non-transient product failures remain.
+- Non-transient failures (contract/type/assertion/backend logic regressions) are **blocking**.
+- Release report must include `summary.upstream_transient` evidence when transient failures are observed.
 
 ## 3.1 Governance Release Smoke (Strict Gate)
 ```bash

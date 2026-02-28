@@ -737,62 +737,33 @@ governance-member-lifecycle-effect-smoke:
 
 governance-release-smoke:
 	@set -e; \
+	run_with_token_retry() { \
+		STEP_NAME="$$1"; \
+		if ! $(MAKE) "$$STEP_NAME"; then \
+			echo "[make] $$STEP_NAME failed; attempting token refresh and retry once"; \
+			if ! BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; then \
+				echo "[make] token refresh failed; attempting full demo self-heal before retry ($$STEP_NAME)"; \
+				DEMO_INIT_RESOURCES=0 $(MAKE) notebook-agent-demo-up; \
+			fi; \
+			$(MAKE) "$$STEP_NAME"; \
+		fi; \
+	}; \
 	$(MAKE) governance-pages-real-backend-smoke-strict; \
 	$(MAKE) governance-pages-real-backend-interaction-smoke-strict; \
-	if ! $(MAKE) governance-policy-access-effect-smoke; then \
-		echo "[make] governance-policy-access-effect-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-policy-access-effect-smoke; \
-	fi; \
-	if ! $(MAKE) governance-policy-group-access-effect-smoke; then \
-		echo "[make] governance-policy-group-access-effect-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-policy-group-access-effect-smoke; \
-	fi; \
-	if ! $(MAKE) governance-policy-update-audit-smoke; then \
-		echo "[make] governance-policy-update-audit-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-policy-update-audit-smoke; \
-	fi; \
-	if ! $(MAKE) governance-policy-effect-smoke; then \
-		echo "[make] governance-policy-effect-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-policy-effect-smoke; \
-	fi; \
-	$(MAKE) governance-policy-quota-effect-smoke; \
-	if ! $(MAKE) governance-policy-requests-quota-effect-smoke; then \
-		echo "[make] governance-policy-requests-quota-effect-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-policy-requests-quota-effect-smoke; \
-	fi; \
-	if ! $(MAKE) governance-source-library-policy-access-effect-smoke; then \
-		echo "[make] governance-source-library-policy-access-effect-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-source-library-policy-access-effect-smoke; \
-	fi; \
-	if ! $(MAKE) governance-source-library-policy-group-access-effect-smoke; then \
-		echo "[make] governance-source-library-policy-group-access-effect-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-source-library-policy-group-access-effect-smoke; \
-	fi; \
-	if ! $(MAKE) governance-source-library-policy-rate-effect-smoke; then \
-		echo "[make] governance-source-library-policy-rate-effect-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-source-library-policy-rate-effect-smoke; \
-	fi; \
-	if ! $(MAKE) governance-source-ai-ready-policy-effect-smoke; then \
-		echo "[make] governance-source-ai-ready-policy-effect-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-source-ai-ready-policy-effect-smoke; \
-	fi; \
-	if ! $(MAKE) governance-agent-policy-rate-effect-smoke; then \
-		echo "[make] governance-agent-policy-rate-effect-smoke failed; attempting token refresh and retry once"; \
-		BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; \
-		$(MAKE) governance-agent-policy-rate-effect-smoke; \
-	fi; \
-	$(MAKE) governance-member-quota-effect-smoke; \
-	$(MAKE) governance-member-permission-effect-smoke; \
-	$(MAKE) governance-member-lifecycle-effect-smoke
+	run_with_token_retry governance-policy-access-effect-smoke; \
+	run_with_token_retry governance-policy-group-access-effect-smoke; \
+	run_with_token_retry governance-policy-update-audit-smoke; \
+	run_with_token_retry governance-policy-effect-smoke; \
+	run_with_token_retry governance-policy-quota-effect-smoke; \
+	run_with_token_retry governance-policy-requests-quota-effect-smoke; \
+	run_with_token_retry governance-source-library-policy-access-effect-smoke; \
+	run_with_token_retry governance-source-library-policy-group-access-effect-smoke; \
+	run_with_token_retry governance-source-library-policy-rate-effect-smoke; \
+	run_with_token_retry governance-source-ai-ready-policy-effect-smoke; \
+	run_with_token_retry governance-agent-policy-rate-effect-smoke; \
+	run_with_token_retry governance-member-quota-effect-smoke; \
+	run_with_token_retry governance-member-permission-effect-smoke; \
+	run_with_token_retry governance-member-lifecycle-effect-smoke
 
 notebook-agent-smoke-full:
 	@set -e; \

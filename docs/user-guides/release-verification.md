@@ -6,7 +6,8 @@ The Release Verification tool automates testing and validation for releases, pro
 
 - **Automated Test Execution**: Runs smoke tests, integration tests, and validation checks
 - **Structured Reports**: JSON and Markdown reports with test results
-- **Failure Classification**: Categorizes failures by type (token, network, backend, assertion)
+- **Failure Classification**: Categorizes failures by type (token/network/backend/assertion/timeout/rate_limit/etc.)
+- **Transient Acceptance Signal**: Marks recoverable upstream instability in `summary.upstream_transient`
 - **Troubleshooting Guidance**: Actionable recommendations for fixing issues
 
 ## Quality Lanes and Gates
@@ -140,6 +141,13 @@ Structured machine-readable output:
         "checks": ["User API"]
       }
     ],
+    "upstream_transient": {
+      "count": 1,
+      "categories": ["rate_limit"],
+      "checks": ["Mainline release smoke"],
+      "acceptance": "acceptable_with_retry",
+      "note": "Only recoverable upstream instability was detected (429/timeout/network). Retry lane can be accepted once rerun succeeds."
+    },
     "recommendations": [
       "Refresh auth token",
       "Check backend service status"
@@ -243,6 +251,9 @@ Test application logic and invariants:
 | **network** | Connectivity problems | Check firewall, DNS, backend status |
 | **backend** | API/server errors | Review logs, restart services |
 | **assertion** | Test expectation failures | Update tests for new behavior |
+| **timeout** | Operation/step timeout | Increase timeout budget or fix slow path |
+| **rate_limit** | Upstream/provider throttling (429/retry limit) | Retry with backoff, validate saturation handling |
+| **authorization/quota/permission** | Governance policy denial | Verify policy and member permissions |
 
 ### Severity Levels
 
@@ -250,6 +261,18 @@ Test application logic and invariants:
 - **High**: Important but workaround exists
 - **Medium**: Nice to have fix
 - **Low**: Cosmetic or minor issue
+
+### Upstream transient acceptance
+
+Use `summary.upstream_transient.acceptance` from report JSON:
+
+- `acceptable_with_retry`:
+  - only transient categories observed (`network/timeout/rate_limit`)
+  - rerun succeeds
+  - can be accepted for internal release
+- `mixed_or_blocking`:
+  - transient failures co-exist with non-transient categories
+  - treat as blocking until non-transient failures are resolved
 
 ## Troubleshooting
 

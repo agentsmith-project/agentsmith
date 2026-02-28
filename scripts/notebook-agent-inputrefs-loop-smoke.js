@@ -24,6 +24,9 @@ const STREAM_CONFLICT_RETRY_DELAY_MS = Number(process.env.STREAM_CONFLICT_RETRY_
 const SCENARIO_ATTEMPTS = Number(process.env.SCENARIO_ATTEMPTS || 4);
 const SCENARIO_BACKOFF_MS = Number(process.env.SCENARIO_BACKOFF_MS || 45000);
 const SOFT_FAIL_EXIT_CODE = Number(process.env.SOFT_FAIL_EXIT_CODE || 75);
+const ARTIFACT_WAIT_MAX_MS = Number(process.env.ARTIFACT_WAIT_MAX_MS || 90000);
+const ARTIFACT_WAIT_INITIAL_INTERVAL_MS = Number(process.env.ARTIFACT_WAIT_INITIAL_INTERVAL_MS || 1000);
+const ARTIFACT_WAIT_MAX_INTERVAL_MS = Number(process.env.ARTIFACT_WAIT_MAX_INTERVAL_MS || 5000);
 
 function safeRead(path) {
   try {
@@ -61,6 +64,7 @@ function isRetryableScenarioError(error) {
     /429 Too Many Requests|retry limit/i.test(message) ||
     /did not reach terminal trace within timeout/i.test(message) ||
     /url-summary\.txt artifact not found/i.test(message) ||
+    /url-summary\.txt artifact content mismatch/i.test(message) ||
     /final text/i.test(message) ||
     /401|UNAUTHORIZED|invalid bearer token/i.test(message)
   );
@@ -136,6 +140,15 @@ async function runScenario() {
       throw new Error(`POST ${path} -> ${res.status}: ${text.slice(0, 500)}`);
     }
     return asJson(res, `POST ${path}`);
+  }
+
+  async function getText(path) {
+    const res = await withRetry(`GET ${path}`, () => fetch(base + path, { headers: authHeaders() }));
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`GET ${path} -> ${res.status}: ${body.slice(0, 500)}`);
+    }
+    return res.text();
   }
 
   async function postTaskMessage(taskId, body) {
@@ -230,6 +243,51 @@ async function runScenario() {
     throw new Error(`Second turn agent message did not produce expected output: ${lastContent.slice(-320)}`);
   }
 
+  async function waitForArtifactWithExactContent(taskId, artifactTitle, expectedContent) {
+    const deadline = Date.now() + ARTIFACT_WAIT_MAX_MS;
+    let intervalMs = ARTIFACT_WAIT_INITIAL_INTERVAL_MS;
+    let poll = 0;
+    let lastCount = 0;
+    let sawArtifact = false;
+    let lastDownloadedContent = '';
+    while (Date.now() < deadline) {
+      poll += 1;
+      const artifacts = await get(`/tasks/${taskId}/artifacts`);
+      const list = Array.isArray(artifacts) ? artifacts : [];
+      lastCount = list.length;
+      const match = list.find((item) => item?.title === artifactTitle);
+      process.stdout.write(
+        `[inputrefs-loop] artifact poll ${poll}: count=${lastCount} found=${Boolean(match)} interval_ms=${intervalMs}\n`,
+      );
+      if (match) {
+        sawArtifact = true;
+        try {
+          const downloaded = await getText(`/tasks/${taskId}/artifacts/${match.id}/download`);
+          const normalized = downloaded.trim();
+          lastDownloadedContent = normalized.slice(0, 200);
+          if (normalized === expectedContent) {
+            return match;
+          }
+          process.stdout.write(
+            `[inputrefs-loop] artifact present but content mismatch: expected="${expectedContent}" actual="${normalized.slice(0, 120)}"\n`,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          process.stdout.write(`[inputrefs-loop] artifact present but download not ready: ${message}\n`);
+        }
+      }
+      await sleep(intervalMs);
+      intervalMs = Math.min(ARTIFACT_WAIT_MAX_INTERVAL_MS, Math.round(intervalMs * 1.4));
+    }
+
+    if (!sawArtifact) {
+      throw new Error(`url-summary.txt artifact not found after waiting (${ARTIFACT_WAIT_MAX_MS}ms, last_count=${lastCount})`);
+    }
+    throw new Error(
+      `url-summary.txt artifact content mismatch after waiting (${ARTIFACT_WAIT_MAX_MS}ms, expected="${expectedContent}", last="${lastDownloadedContent}")`,
+    );
+  }
+
   process.stdout.write(`[inputrefs-loop] project=${PROJECT_ID} agent=${AGENT_ID}\n`);
   const task = await post('/tasks', {
     title: `inputrefs-loop-${Date.now()}`,
@@ -291,19 +349,7 @@ async function runScenario() {
     throw new Error(`First turn failed with terminal status=${firstTurnStatus || 'unknown'}`);
   }
 
-  let summaryArtifact = null;
-  for (let i = 1; i <= 15; i += 1) {
-    const artifacts = await get(`/tasks/${taskId}/artifacts`);
-    summaryArtifact = (Array.isArray(artifacts) ? artifacts : []).find((a) => a.title === 'url-summary.txt');
-    process.stdout.write(
-      `[inputrefs-loop] artifact poll ${i}: count=${Array.isArray(artifacts) ? artifacts.length : 0} found=${Boolean(summaryArtifact)}\n`,
-    );
-    if (summaryArtifact) break;
-    await sleep(1000);
-  }
-  if (!summaryArtifact) {
-    throw new Error('url-summary.txt artifact not found after waiting');
-  }
+  const summaryArtifact = await waitForArtifactWithExactContent(taskId, 'url-summary.txt', URL_INPUT);
 
   await post(`/tasks/${taskId}/inputs`, {
     inputs: [

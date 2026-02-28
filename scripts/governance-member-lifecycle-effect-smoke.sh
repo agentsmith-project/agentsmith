@@ -13,6 +13,8 @@ LOCALE="${LOCALE:-zh-CN}"
 
 MEMBER_USERNAME="${MEMBER_USERNAME:-integration-user}"
 MEMBER_PASSWORD="${MEMBER_PASSWORD:-integration-user-123}"
+MEMBER_USER_ID="${MEMBER_USER_ID:-}"
+MEMBER_USER_ID_FILE="${MEMBER_USER_ID_FILE:-/tmp/agentsmith_member_user_id.txt}"
 
 info() { echo "[gov-member-lifecycle-smoke] $*"; }
 err() { echo "[gov-member-lifecycle-smoke] ERROR: $*" >&2; }
@@ -102,6 +104,11 @@ ensure_membership_active() {
   [[ "${code}" == "204" ]]
 }
 
+is_probably_user_id() {
+  local value="$1"
+  [[ "${value}" =~ ^[a-zA-Z0-9._:-]{8,}$ ]]
+}
+
 main() {
   require_file "${OWNER_TOKEN_FILE}"
   require_file /tmp/agentsmith_project_id.txt
@@ -118,7 +125,7 @@ main() {
     exit 1
   fi
 
-  local member_token_file member_token member_user_id
+  local member_token_file member_token member_user_id=""
   member_token_file="$(mktemp)"
   local membership_file members_file patch_file
   membership_file="$(mktemp)"
@@ -130,7 +137,22 @@ main() {
   local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"
   local members_url="${base}/members"
 
-  member_user_id="$(resolve_member_user_id_from_members "${members_url}" "${owner_token}" "${MEMBER_USERNAME}" || true)"
+  if [[ -n "${MEMBER_USER_ID}" ]] && is_probably_user_id "${MEMBER_USER_ID}"; then
+    member_user_id="${MEMBER_USER_ID}"
+    info "using member user id from MEMBER_USER_ID env"
+  fi
+  if [[ -z "${member_user_id}" && -f "${MEMBER_USER_ID_FILE}" ]]; then
+    local cached_member_user_id
+    cached_member_user_id="$(cat "${MEMBER_USER_ID_FILE}" 2>/dev/null || true)"
+    if is_probably_user_id "${cached_member_user_id}"; then
+      member_user_id="${cached_member_user_id}"
+      info "using cached member user id from ${MEMBER_USER_ID_FILE}"
+    fi
+  fi
+
+  if [[ -z "${member_user_id}" ]]; then
+    member_user_id="$(resolve_member_user_id_from_members "${members_url}" "${owner_token}" "${MEMBER_USERNAME}" || true)"
+  fi
   if [[ -z "${member_user_id}" ]]; then
     info "refreshing token for ${MEMBER_USERNAME} (members list lookup missed user id)"
     refresh_member_token "${member_token_file}"
@@ -145,6 +167,7 @@ main() {
     err "failed to resolve member user id"
     exit 1
   }
+  echo "${member_user_id}" > "${MEMBER_USER_ID_FILE}" 2>/dev/null || true
   info "member user id = ${member_user_id}"
 
   local membership_url="${base}/memberships/${member_user_id}"

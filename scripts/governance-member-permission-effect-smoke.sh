@@ -13,6 +13,7 @@ LOCALE="${LOCALE:-zh-CN}"
 
 MEMBER_USERNAME="${MEMBER_USERNAME:-integration-user}"
 MEMBER_PASSWORD="${MEMBER_PASSWORD:-integration-user-123}"
+MEMBER_USER_ID_FILE="${MEMBER_USER_ID_FILE:-/tmp/agentsmith_member_user_id.txt}"
 
 info() { echo "[gov-member-perm-smoke] $*"; }
 err() { echo "[gov-member-perm-smoke] ERROR: $*" >&2; }
@@ -84,7 +85,7 @@ main() {
   get_perms_file="$(mktemp)"
   restore_file="$(mktemp)"
   local member_user_id="" original_permissions_json=""
-  trap 'rm -f "${member_token_file}" "${join_resp_file}" "${list_join_file}" "${denied_file}" "${allowed_file}" "${patch_file}" "${get_perms_file}" "${restore_file}"; if [[ -n "${owner_token:-}" && -n "${member_user_id:-}" && -n "${project_id:-}" && -f "${restore_file}" ]]; then curl -sS -o /dev/null -w "%{http_code}" -X PATCH "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/members/${member_user_id}/permissions" -H "Authorization: Bearer ${owner_token}" -H "Content-Type: application/json" --data-binary @"${restore_file}" >/dev/null || true; fi' EXIT
+  trap 'rm -f "${member_token_file:-}" "${join_resp_file:-}" "${list_join_file:-}" "${denied_file:-}" "${allowed_file:-}" "${patch_file:-}" "${get_perms_file:-}" "${restore_file:-}"; if [[ -n "${owner_token:-}" && -n "${member_user_id:-}" && -n "${project_id:-}" && -f "${restore_file:-}" ]]; then curl -sS -o /dev/null -w "%{http_code}" -X PATCH "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/members/${member_user_id}/permissions" -H "Authorization: Bearer ${owner_token}" -H "Content-Type: application/json" --data-binary @"${restore_file}" >/dev/null || true; fi' EXIT
 
   info "refreshing token for ${MEMBER_USERNAME}"
   refresh_member_token "${member_token_file}"
@@ -98,6 +99,7 @@ main() {
     err "failed to read member user sub from token"
     exit 1
   fi
+  echo "${member_user_id}" > "${MEMBER_USER_ID_FILE}" 2>/dev/null || true
   info "member user id = ${member_user_id}"
 
   local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"

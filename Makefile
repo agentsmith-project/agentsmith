@@ -333,14 +333,17 @@ gate-release:
 # Generate release report (JSON + Markdown) after verify-release
 # Use REPORT_NAME=name to customize, REPORT_COMMIT_RANGE=range to specify commits
 # Use REPORT_ARCHIVE=1 to create timestamped archive
+# Use REPORT_RUNTIME_EVIDENCE=/abs/path/runtime-release-evidence.json to reuse an existing runtime evidence artifact
 release-report:
 	@set -e; \
 	NAME=$${REPORT_NAME:-}; \
 	RANGE=$${REPORT_COMMIT_RANGE:-}; \
 	ARCHIVE=$${REPORT_ARCHIVE:-}; \
+	RUNTIME_EVIDENCE=$${REPORT_RUNTIME_EVIDENCE:-}; \
 	EXTRA_ARGS=""; \
 	[ -n "$$NAME" ] && EXTRA_ARGS="$$EXTRA_ARGS --name $$NAME"; \
 	[ -n "$$RANGE" ] && EXTRA_ARGS="$$EXTRA_ARGS --commit-range $$RANGE"; \
+	[ -n "$$RUNTIME_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --runtime-evidence $$RUNTIME_EVIDENCE"; \
 	[ "$$ARCHIVE" = "1" ] && EXTRA_ARGS="$$EXTRA_ARGS --archive"; \
 	$(NPM) run release:report -- $$EXTRA_ARGS
 

@@ -21,7 +21,7 @@
  *   --help              Show help
  */
 
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import type {
@@ -34,6 +34,7 @@ import type {
   FailureType,
   VerifyReleaseOptions,
   FailureCategory,
+  RuntimeReleaseEvidence,
 } from './types';
 import {
   classifyFailure,
@@ -42,6 +43,7 @@ import {
 
 // Default configuration
 const DEFAULT_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-reports');
+const DEFAULT_RUNTIME_EVIDENCE_FILE = 'runtime-release-evidence.json';
 
 const TRANSIENT_UPSTREAM_CATEGORIES = new Set<FailureType>(['network', 'timeout', 'rate_limit']);
 
@@ -87,6 +89,13 @@ const CHECK_DEFINITIONS: Array<{
     category: 'smoke-governance',
     command: 'make governance-release-smoke',
     timeout: 300000, // 5 minutes
+  },
+  {
+    id: 'runtime-release-evidence',
+    name: 'Runtime proxy billing release workflow',
+    category: 'e2e',
+    command: 'make e2e-int-runtime-proxy-billing-auto',
+    timeout: 600000, // 10 minutes
   },
 ];
 
@@ -172,6 +181,9 @@ function parseArgs(argv: string[]): VerifyReleaseOptions {
       case '--mock-failure':
         options.mockFailure = argv[++i] as FailureType;
         break;
+      case '--runtime-evidence':
+        options.runtimeEvidence = argv[++i];
+        break;
       case '--verbose':
         options.verbose = true;
         break;
@@ -205,6 +217,7 @@ OPTIONS:
   --archive            Create timestamped archive copy
   --dry-run            Skip actual check execution (for testing)
   --mock-failure <t>   Mock a failure type: token|network|backend|assertion|timeout|rate_limit
+  --runtime-evidence <path>  Read runtime release evidence artifact from custom path
   --verbose            Show detailed output
   --help, -h           Show this help
 
@@ -237,7 +250,7 @@ async function generateReleaseReport(options: VerifyReleaseOptions): Promise<Rel
   const execution = await runChecks(options);
 
   // Generate summary
-  const summary = generateSummary(execution);
+  const summary = generateSummary(execution, options);
 
   const duration = Date.now() - startTime;
 
@@ -315,7 +328,7 @@ function getGitInfo(commitRange?: string): ReportMetadata['git'] {
       date,
       tag,
     };
-  } catch (error) {
+  } catch {
     // Fallback if git commands fail
     return {
       commit_hash: 'unknown',
@@ -359,7 +372,7 @@ async function runChecks(options: VerifyReleaseOptions): Promise<ExecutionResult
     }
 
     // Real execution
-    const result = runCheck(def);
+    const result = runCheck(def, options);
     checks.push(result);
   }
 
@@ -381,11 +394,15 @@ async function runChecks(options: VerifyReleaseOptions): Promise<ExecutionResult
 /**
  * Run a single check
  */
-function runCheck(def: { id: string; name: string; category: CheckCategory; command: string; timeout: number }): CheckResult {
+function runCheck(
+  def: { id: string; name: string; category: CheckCategory; command: string; timeout: number },
+  options: VerifyReleaseOptions,
+): CheckResult {
   const startTime = Date.now();
+  const command = buildCommand(def, options);
 
   try {
-    execSync(def.command, {
+    execSync(command, {
       encoding: 'utf-8',
       stdio: 'pipe',
       timeout: def.timeout,
@@ -396,7 +413,7 @@ function runCheck(def: { id: string; name: string; category: CheckCategory; comm
       category: def.category,
       status: 'pass',
       duration_ms: Date.now() - startTime,
-      command: def.command,
+      command,
     };
   } catch (error: unknown) {
     const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
@@ -405,7 +422,7 @@ function runCheck(def: { id: string; name: string; category: CheckCategory; comm
       category: def.category,
       status: 'fail',
       duration_ms: Date.now() - startTime,
-      command: def.command,
+      command,
       output: err.stdout?.toString(),
       error: err.stderr?.toString() || err.message,
       exit_code: err.status || 1,
@@ -506,16 +523,31 @@ function mockCheckResult(
   };
 }
 
+function buildCommand(
+  def: { id: string; command: string },
+  options: VerifyReleaseOptions,
+): string {
+  if (def.id !== 'runtime-release-evidence') return def.command;
+
+  const evidencePath = getRuntimeEvidencePath(options);
+  return `RUNTIME_RELEASE_EVIDENCE_PATH=${shellQuote(evidencePath)} ${def.command}`;
+}
+
 /**
  * Generate report summary
  */
-function generateSummary(execution: ExecutionResults): ReportSummary {
+function generateSummary(execution: ExecutionResults, options: VerifyReleaseOptions): ReportSummary {
   const status = execution.failed === 0 ? 'pass' : 'fail';
 
   const summary: ReportSummary = {
     status,
     stats: calculateStats(execution),
   };
+
+  const runtimeEvidence = loadRuntimeReleaseEvidence(options);
+  if (runtimeEvidence) {
+    summary.runtime_release_evidence = runtimeEvidence;
+  }
 
   // Add failure categories if there are failures
   if (execution.failed > 0) {
@@ -525,6 +557,70 @@ function generateSummary(execution: ExecutionResults): ReportSummary {
   }
 
   return summary;
+}
+
+function getRuntimeEvidencePath(options: VerifyReleaseOptions): string {
+  if (options.runtimeEvidence) return options.runtimeEvidence;
+  return join(options.output ?? DEFAULT_OUTPUT_DIR, DEFAULT_RUNTIME_EVIDENCE_FILE);
+}
+
+function loadRuntimeReleaseEvidence(options: VerifyReleaseOptions): RuntimeReleaseEvidence | undefined {
+  if (options.dryRun) {
+    return createMockRuntimeReleaseEvidence();
+  }
+
+  const evidencePath = getRuntimeEvidencePath(options);
+  if (!existsSync(evidencePath)) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(evidencePath, 'utf-8')) as RuntimeReleaseEvidence;
+    return parsed;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown_error';
+    return {
+      source: 'artifact',
+      generated_at: new Date().toISOString(),
+      guardrails: {
+        target: 'unknown',
+        release_readiness: 'blocked',
+        blockers: ['runtime_release_evidence_unreadable'],
+        warnings: [],
+        planned_attempts: 0,
+      },
+      pricing_version_coverage: {
+        total_usage_facts: 0,
+        covered_usage_facts: 0,
+        missing_usage_facts: 0,
+        missing_price_facts: 0,
+        coverage_ratio: 0,
+      },
+      note: `Failed to parse runtime release evidence: ${message}`,
+    };
+  }
+}
+
+function createMockRuntimeReleaseEvidence(): RuntimeReleaseEvidence {
+  return {
+    source: 'dry_run',
+    generated_at: new Date().toISOString(),
+    guardrails: {
+      target: 'combo:prod-chat',
+      release_readiness: 'ready',
+      blockers: [],
+      warnings: ['runtime_guardrail_fallback_connection_unavailable'],
+      planned_attempts: 2,
+    },
+    pricing_version_coverage: {
+      total_usage_facts: 4,
+      covered_usage_facts: 3,
+      missing_usage_facts: 1,
+      missing_price_facts: 1,
+      coverage_ratio: 0.75,
+    },
+    note: 'Dry-run evidence uses deterministic fixture data and does not call live runtime services.',
+  };
 }
 
 /**
@@ -693,6 +789,37 @@ function generateMarkdown(report: ReleaseReport): string {
     md += `\n`;
   }
 
+  if (summary.runtime_release_evidence) {
+    const runtimeEvidence = summary.runtime_release_evidence;
+    md += `### Runtime Release Evidence\n\n`;
+    md += `- **Source:** ${runtimeEvidence.source}\n`;
+    md += `- **Generated At:** ${runtimeEvidence.generated_at}\n`;
+    md += `- **Target:** ${runtimeEvidence.guardrails.target}\n`;
+    md += `- **Guardrails:** ${runtimeEvidence.guardrails.release_readiness}\n`;
+    md += `- **Planned Attempts:** ${runtimeEvidence.guardrails.planned_attempts}\n`;
+    md += `- **Pricing Version Coverage:** ${(runtimeEvidence.pricing_version_coverage.coverage_ratio * 100).toFixed(1)}% `;
+    md += `(${runtimeEvidence.pricing_version_coverage.covered_usage_facts}/${runtimeEvidence.pricing_version_coverage.total_usage_facts})\n`;
+    md += `- **Missing Price Facts:** ${runtimeEvidence.pricing_version_coverage.missing_price_facts}\n`;
+    if (runtimeEvidence.note) {
+      md += `- **Note:** ${runtimeEvidence.note}\n`;
+    }
+    md += `\n`;
+
+    md += `| Runtime Guardrail Signal | Count |\n`;
+    md += `|--------------------------|-------|\n`;
+    md += `| Blockers | ${runtimeEvidence.guardrails.blockers.length} |\n`;
+    md += `| Warnings | ${runtimeEvidence.guardrails.warnings.length} |\n`;
+    md += `| Missing pricing coverage | ${runtimeEvidence.pricing_version_coverage.missing_usage_facts} |\n\n`;
+
+    if (runtimeEvidence.guardrails.blockers.length > 0) {
+      md += `**Guardrail Blockers:** ${runtimeEvidence.guardrails.blockers.join(', ')}\n\n`;
+    }
+
+    if (runtimeEvidence.guardrails.warnings.length > 0) {
+      md += `**Guardrail Warnings:** ${runtimeEvidence.guardrails.warnings.join(', ')}\n\n`;
+    }
+  }
+
   // Failure categories
   if (summary.failure_categories && summary.failure_categories.length > 0) {
     md += `### Failure Breakdown\n\n`;
@@ -758,6 +885,10 @@ function getTimestamp(): string {
   const date = now.toISOString().split('T')[0].replace(/-/g, '');
   const time = now.toTimeString().split(' ')[0].replace(/:/g, '');
   return `${date}-${time}`;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
 /**

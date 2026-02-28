@@ -8,6 +8,7 @@ The Release Verification tool automates testing and validation for releases, pro
 - **Structured Reports**: JSON and Markdown reports with test results
 - **Failure Classification**: Categorizes failures by type (token/network/backend/assertion/timeout/rate_limit/etc.)
 - **Transient Acceptance Signal**: Marks recoverable upstream instability in `summary.upstream_transient`
+- **Runtime Release Evidence**: Captures runtime guardrails and `pricing_version` coverage from the real-lane runtime proxy/billing workflow
 - **Troubleshooting Guidance**: Actionable recommendations for fixing issues
 
 ## Quality Lanes and Gates
@@ -72,6 +73,7 @@ npm run release:report -- --name my-release
 | `--commit-range` | Git commit range to test | Current HEAD |
 | `--dry-run` | Skip actual tests, use mock data | false |
 | `--archive` | Create timestamped archive | false |
+| `--runtime-evidence` | Reuse an existing runtime evidence JSON artifact | auto-managed |
 
 ## CI Execution
 
@@ -129,6 +131,24 @@ Structured machine-readable output:
   },
   "summary": {
     "status": "fail",
+    "runtime_release_evidence": {
+      "source": "artifact",
+      "generated_at": "2026-02-28T10:02:00Z",
+      "guardrails": {
+        "target": "combo:prod-chat",
+        "release_readiness": "ready",
+        "blockers": [],
+        "warnings": ["runtime_guardrail_fallback_connection_unavailable"],
+        "planned_attempts": 2
+      },
+      "pricing_version_coverage": {
+        "total_usage_facts": 3,
+        "covered_usage_facts": 2,
+        "missing_usage_facts": 1,
+        "missing_price_facts": 1,
+        "coverage_ratio": 0.67
+      }
+    },
     "failure_categories": [
       {
         "category": "token",
@@ -166,6 +186,11 @@ Human-readable summary for release notes:
 ## Summary
 **Status**: ❌ FAIL
 **Passed**: 18/20 tests
+
+### Runtime Release Evidence
+- Guardrails: ready
+- Pricing Version Coverage: 67.0% (2/3)
+- Missing Price Facts: 1
 
 ## Execution Results
 | Category | Status | Tests |

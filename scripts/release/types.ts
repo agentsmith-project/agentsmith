@@ -131,6 +131,8 @@ export interface ReportSummary {
   failure_categories?: FailureCategory[];
   /** Expected upstream transient instability summary (present if detected) */
   upstream_transient?: UpstreamTransientSummary;
+  /** Runtime release evidence collected from real-lane runtime workflow */
+  runtime_release_evidence?: RuntimeReleaseEvidence;
   /** Troubleshooting recommendations (present if failed > 0) */
   recommendations?: string[];
   /** Quick stats for release notes */
@@ -200,6 +202,45 @@ export interface ReleaseStats {
   by_category: Record<CheckCategory, { total: number; passed: number; failed: number }>;
 }
 
+export interface RuntimeReleaseEvidence {
+  /** Source of the evidence document */
+  source: 'dry_run' | 'artifact';
+  /** ISO timestamp when runtime evidence was generated */
+  generated_at: string;
+  /** Guardrail assessment for the primary release candidate */
+  guardrails: RuntimeReleaseGuardrailEvidence;
+  /** Request-level pricing version coverage across sampled usage facts */
+  pricing_version_coverage: RuntimePricingVersionCoverage;
+  /** Optional note for reviewers when evidence is partial */
+  note?: string;
+}
+
+export interface RuntimeReleaseGuardrailEvidence {
+  /** Route target that was evaluated */
+  target: string;
+  /** Ready or blocked state reported by the planner */
+  release_readiness: 'ready' | 'blocked';
+  /** Blocking rollout issues */
+  blockers: string[];
+  /** Warning-only rollout debt */
+  warnings: string[];
+  /** Number of planned runtime attempts */
+  planned_attempts: number;
+}
+
+export interface RuntimePricingVersionCoverage {
+  /** Total sampled usage facts included in the coverage calculation */
+  total_usage_facts: number;
+  /** Usage facts with a non-null pricing_version */
+  covered_usage_facts: number;
+  /** Usage facts missing pricing_version */
+  missing_usage_facts: number;
+  /** Usage facts explicitly marked missing_price */
+  missing_price_facts: number;
+  /** Coverage ratio in [0,1] */
+  coverage_ratio: number;
+}
+
 /**
  * CLI options for the verify-release-report script
  */
@@ -216,6 +257,8 @@ export interface VerifyReleaseOptions {
   dryRun?: boolean;
   /** Mock failure type for testing */
   mockFailure?: FailureType;
+  /** Path to runtime release evidence artifact */
+  runtimeEvidence?: string;
   /** Verbose output */
   verbose?: boolean;
   /** Skip specific checks */

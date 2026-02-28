@@ -224,6 +224,27 @@ describe('verify-release-report: TDD Suite', () => {
         expect(report.summary.recommendations.length).toBeGreaterThan(0);
       }
     });
+
+    it('should attach runtime release evidence to the summary', () => {
+      runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: {
+          runtime_release_evidence?: {
+            source?: string;
+            guardrails?: { release_readiness?: string; blockers?: string[]; warnings?: string[] };
+            pricing_version_coverage?: { coverage_ratio?: number; total_usage_facts?: number };
+          };
+        };
+      };
+
+      expect(report.summary?.runtime_release_evidence).toBeDefined();
+      expect(report.summary?.runtime_release_evidence?.source).toBe('dry_run');
+      expect(report.summary?.runtime_release_evidence?.guardrails?.release_readiness).toBe('ready');
+      expect(report.summary?.runtime_release_evidence?.guardrails?.blockers).toEqual([]);
+      expect(report.summary?.runtime_release_evidence?.guardrails?.warnings?.length).toBeGreaterThan(0);
+      expect(report.summary?.runtime_release_evidence?.pricing_version_coverage?.total_usage_facts).toBeGreaterThan(0);
+      expect(report.summary?.runtime_release_evidence?.pricing_version_coverage?.coverage_ratio).toBeGreaterThan(0);
+    });
   });
 
   describe('RED Phase 4: Markdown Report', () => {
@@ -241,6 +262,7 @@ describe('verify-release-report: TDD Suite', () => {
       expect(mdContent).toContain('## Summary');
       expect(mdContent).toContain('## Execution Results');
       expect(mdContent).toContain('## Metadata');
+      expect(mdContent).toContain('### Runtime Release Evidence');
     });
 
     it('should format markdown with status badges and tables', () => {

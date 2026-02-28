@@ -1,5 +1,7 @@
 import http, { type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { test, expect } from '@playwright/test';
 
 async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
@@ -42,6 +44,26 @@ async function getToken(page: import('@playwright/test').Page): Promise<string> 
 }
 
 type UpstreamMode = 'ok' | 'retryable_once_then_ok';
+
+type RuntimeReleaseEvidence = {
+  source: 'artifact';
+  generated_at: string;
+  guardrails: {
+    target: string;
+    release_readiness: 'ready' | 'blocked';
+    blockers: string[];
+    warnings: string[];
+    planned_attempts: number;
+  };
+  pricing_version_coverage: {
+    total_usage_facts: number;
+    covered_usage_facts: number;
+    missing_usage_facts: number;
+    missing_price_facts: number;
+    coverage_ratio: number;
+  };
+  note?: string;
+};
 
 async function startOpenAICompatibleUpstream(mode: UpstreamMode): Promise<{
   server: Server;
@@ -282,6 +304,29 @@ test.describe('@lane-real integration runtime proxy billing', () => {
       const usagePayload = (await usageRes.json()) as { total?: number };
       expect((usagePayload.total ?? 0) > 0).toBe(true);
 
+      const usageFactsRes = await page.request.get(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/facts`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            start_time: start.toISOString(),
+            end_time: end.toISOString(),
+            resource_type: 'endpoint',
+            page: '1',
+            page_size: '200',
+          },
+        },
+      );
+      expect(usageFactsRes.ok()).toBeTruthy();
+      const usageFactsPayload = (await usageFactsRes.json()) as {
+        items?: Array<{
+          runtime?: {
+            pricing_version?: string | null;
+            missing_price?: boolean;
+          };
+        }>;
+      };
+
       const timeseriesRes = await page.request.get(
         `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/timeseries`,
         {
@@ -341,6 +386,39 @@ test.describe('@lane-real integration runtime proxy billing', () => {
         },
       );
       expect(quotaRes.ok()).toBeTruthy();
+
+      const dryRunRes = await page.request.post(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/runtime/routing/dry-run`,
+        {
+          headers,
+          data: {
+            model: 'combo:prod-chat',
+          },
+        },
+      );
+      expect(dryRunRes.ok()).toBeTruthy();
+      const dryRunPayload = (await dryRunRes.json()) as {
+        attempts?: Array<unknown>;
+        guardrails?: {
+          release_readiness?: 'ready' | 'blocked';
+          blockers?: string[];
+          warnings?: string[];
+        };
+      };
+
+      maybeWriteRuntimeReleaseEvidence(process.env.RUNTIME_RELEASE_EVIDENCE_PATH, {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        guardrails: {
+          target: 'combo:prod-chat',
+          release_readiness: dryRunPayload.guardrails?.release_readiness ?? 'blocked',
+          blockers: Array.isArray(dryRunPayload.guardrails?.blockers) ? dryRunPayload.guardrails.blockers : [],
+          warnings: Array.isArray(dryRunPayload.guardrails?.warnings) ? dryRunPayload.guardrails.warnings : [],
+          planned_attempts: Array.isArray(dryRunPayload.attempts) ? dryRunPayload.attempts.length : 0,
+        },
+        pricing_version_coverage: buildPricingCoverage(usageFactsPayload.items ?? []),
+        note: 'Collected from @lane-real integration runtime proxy billing workflow.',
+      });
     } finally {
       await new Promise<void>((resolve) => directUpstream.server.close(() => resolve()));
       await new Promise<void>((resolve) => comboPrimaryUpstream.server.close(() => resolve()));
@@ -348,3 +426,24 @@ test.describe('@lane-real integration runtime proxy billing', () => {
     }
   });
 });
+
+function buildPricingCoverage(items: Array<{ runtime?: { pricing_version?: string | null; missing_price?: boolean } }>) {
+  const totalUsageFacts = items.length;
+  const coveredUsageFacts = items.filter((item) => typeof item.runtime?.pricing_version === 'string' && item.runtime.pricing_version.length > 0).length;
+  const missingPriceFacts = items.filter((item) => item.runtime?.missing_price === true).length;
+  const missingUsageFacts = Math.max(totalUsageFacts - coveredUsageFacts, 0);
+
+  return {
+    total_usage_facts: totalUsageFacts,
+    covered_usage_facts: coveredUsageFacts,
+    missing_usage_facts: missingUsageFacts,
+    missing_price_facts: missingPriceFacts,
+    coverage_ratio: totalUsageFacts > 0 ? coveredUsageFacts / totalUsageFacts : 0,
+  };
+}
+
+function maybeWriteRuntimeReleaseEvidence(pathValue: string | undefined, evidence: RuntimeReleaseEvidence) {
+  if (!pathValue) return;
+  mkdirSync(dirname(pathValue), { recursive: true });
+  writeFileSync(pathValue, JSON.stringify(evidence, null, 2), 'utf-8');
+}

@@ -5,8 +5,9 @@ import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { UsageKPICards } from './UsageKPICards';
 import { UsageFilters } from './UsageFilters';
+import { UsageFactDetailDrawer } from './UsageFactDetailDrawer';
 import { UsageTable } from './UsageTable';
-import { useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
+import { useUsageFacts, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -17,6 +18,7 @@ import type { UsageListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CostDashboardPage } from '@/components/dashboard';
+import type { UsageRecord } from '@/lib/api/types';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -34,6 +36,23 @@ function getDefaultTimeRange() {
   };
 }
 
+function getBucketRange(timeBucket: string, groupBy: 'day' | 'hour'): { start: string; end: string } | null {
+  if (groupBy === 'day') {
+    const start = new Date(`${timeBucket}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime())) return null;
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
+  const normalized = /^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/.test(timeBucket)
+    ? `${timeBucket.replace(' ', 'T')}:00.000Z`
+    : timeBucket;
+  const start = new Date(normalized);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = new Date(start.getTime() + 60 * 60 * 1000 - 1);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
 export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUserId }: UsagePageProps) {
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
@@ -44,6 +63,8 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const isScopeLocked = !!defaultEndUserId;
   const [scope, setScope] = React.useState<'my' | 'project'>(defaultEndUserId ? 'my' : 'project');
   const [panel, setPanel] = React.useState<'usage' | 'dashboard'>('usage');
+  const [selectedUsageRecord, setSelectedUsageRecord] = React.useState<UsageRecord | null>(null);
+  const [detailOpen, setDetailOpen] = React.useState(false);
 
   const effectiveEndUserId = isScopeLocked
     ? defaultEndUserId
@@ -77,6 +98,25 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const { data, isLoading, error } = useUsageRecords(workspaceId, projectId, apiFilters, {
     enabled: canReadUsage,
   });
+  const usageDetailRange = React.useMemo(
+    () => selectedUsageRecord ? getBucketRange(selectedUsageRecord.time_bucket, apiFilters.group_by === 'hour' ? 'hour' : 'day') : null,
+    [selectedUsageRecord, apiFilters.group_by],
+  );
+  const usageFactsQuery = useUsageFacts(
+    workspaceId,
+    projectId,
+    {
+      start_time: usageDetailRange?.start ?? '',
+      end_time: usageDetailRange?.end ?? '',
+      resource_type: selectedUsageRecord?.resource_type,
+      resource_id: selectedUsageRecord?.resource_id,
+      end_user_id: selectedUsageRecord?.end_user_id,
+      page: 1,
+      page_size: 20,
+      sort_order: 'desc',
+    },
+    { enabled: canReadUsage && detailOpen && !!selectedUsageRecord && !!usageDetailRange },
+  );
 
   const handleRefresh = React.useCallback(() => {
     queryClient.invalidateQueries({
@@ -133,6 +173,11 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const canGoPrev = currentPage > 1;
   const canGoNext = !!data?.has_more || currentPage < totalPages;
   const hasActiveFilters = !!apiFilters.resource_type || !!apiFilters.resource_id || !!apiFilters.end_user_id;
+
+  const handleSelectUsageRecord = React.useCallback((record: UsageRecord) => {
+    setSelectedUsageRecord(record);
+    setDetailOpen(true);
+  }, []);
 
   if (!canReadUsage) {
     return (
@@ -231,6 +276,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
                 loading={isLoading}
                 onClearFilters={handleClearFilters}
                 hasActiveFilters={hasActiveFilters}
+                onSelectRecord={handleSelectUsageRecord}
               />
               <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
                 <p className="text-xs text-tertiary">
@@ -261,6 +307,13 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
               </div>
             </div>
           </div>
+          <UsageFactDetailDrawer
+            open={detailOpen}
+            onOpenChange={setDetailOpen}
+            facts={usageFactsQuery.data?.items ?? []}
+            loading={usageFactsQuery.isLoading}
+            aggregateLabel={selectedUsageRecord?.time_bucket}
+          />
         </div>
       )}
     </PageLayout>

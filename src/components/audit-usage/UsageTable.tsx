@@ -53,9 +53,16 @@ export interface UsageTableProps {
   loading?: boolean;
   onClearFilters?: () => void;
   hasActiveFilters?: boolean;
+  onSelectRecord?: (record: UsageRecord) => void;
 }
 
-export function UsageTable({ data, loading = false, onClearFilters, hasActiveFilters = false }: UsageTableProps) {
+export function UsageTable({
+  data,
+  loading = false,
+  onClearFilters,
+  hasActiveFilters = false,
+  onSelectRecord,
+}: UsageTableProps) {
   const t = useTranslations('usage');
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'time_bucket', desc: true },
@@ -156,5 +163,12 @@ export function UsageTable({ data, loading = false, onClearFilters, hasActiveFil
     );
   }
 
-  return <DataTable table={table} testId="usage__table" />;
+  return (
+    <DataTable
+      table={table}
+      testId="usage__table"
+      onRowClick={onSelectRecord}
+      isRowClickable={() => true}
+    />
+  );
 }

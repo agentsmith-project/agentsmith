@@ -6,6 +6,7 @@
 
 import type {
   AuditEvent,
+  UsageFactRecord,
   UsageRecord,
   UsageKPI,
   AuditListParams,
@@ -195,6 +196,27 @@ export class UsageAPI {
     const query = searchParams.toString();
     return this.client.get<PaginatedResponse<UsageRecord>>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage${query ? `?${query}` : ''}`,
+    );
+  }
+
+  async listFacts(
+    workspaceId: string,
+    projectId: string,
+    params: Omit<UsageListParams, 'group_by' | 'sort_by'>,
+  ): Promise<PaginatedResponse<UsageFactRecord>> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('start_time', params.start_time);
+    searchParams.set('end_time', params.end_time);
+    if (params.page) searchParams.set('page', params.page.toString());
+    if (params.page_size) searchParams.set('page_size', params.page_size.toString());
+    if (params.resource_type) searchParams.set('resource_type', params.resource_type);
+    if (params.resource_id) searchParams.set('resource_id', params.resource_id);
+    if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
+    if (params.sort_order) searchParams.set('sort_order', params.sort_order);
+
+    const query = searchParams.toString();
+    return this.client.get<PaginatedResponse<UsageFactRecord>>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/facts?${query}`,
     );
   }
 

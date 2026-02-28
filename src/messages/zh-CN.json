@@ -769,7 +769,27 @@
     "load_failed_with_reason": "加载用量数据失败：{reason}",
     "permission_denied": "您没有权限查看用量统计。",
     "scope_my_usage": "我的用量",
-    "scope_project_usage": "项目用量"
+    "scope_project_usage": "项目用量",
+    "detail": {
+      "title": "请求运行时详情",
+      "subtitle": "查看请求级运行行为、计费证据与降级尝试。",
+      "aggregate_bucket": "聚合桶：{bucket}",
+      "requests": "请求数",
+      "recovered": "已恢复",
+      "cost": "预估成本",
+      "errors_badge": "{count} 个终态失败",
+      "recovered_badge": "{count} 个已恢复",
+      "recovered_status": "已恢复",
+      "missing_price": "缺少价格",
+      "provider": "提供商",
+      "model": "模型",
+      "tokens": "Token",
+      "estimated_cost": "预估成本",
+      "timeline_title": "降级时间线",
+      "timeline_empty": "该请求没有记录运行时尝试。",
+      "attempt_label": "第 {index} 次尝试",
+      "empty": "当前聚合桶下没有匹配的请求级运行事实。"
+    }
   },
   "dashboard": {
     "title": "成本与配额看板",

@@ -73,6 +73,15 @@ export type UsageQuery = {
   pageSize: number;
 };
 
+export type UsageFactsQuery = Pick<
+  UsageQuery,
+  'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId'
+> & {
+  sortOrder: 'asc' | 'desc';
+  page: number;
+  pageSize: number;
+};
+
 export type UsageKpiQuery = {
   workspaceId: string;
   projectId: string;
@@ -94,6 +103,36 @@ export type UsageRecord = {
   bytes_in?: number;
   bytes_out?: number;
   tokens?: number;
+};
+
+export type UsageFactListItem = {
+  id: string;
+  timestamp: string;
+  workspace_id: string;
+  project_id: string;
+  resource_type: string;
+  resource_id?: string;
+  end_user_id?: string;
+  request_id?: string;
+  requests: number;
+  duration_ms?: number;
+  bytes_in?: number;
+  bytes_out?: number;
+  tokens_in?: number;
+  tokens_out?: number;
+  tokens_total?: number;
+  result: 'ok' | 'error';
+  error_code?: string;
+  runtime?: {
+    provider?: string;
+    resolved_model?: string;
+    fallback_hops?: number;
+    pricing_version?: string | null;
+    estimated_cost?: number | null;
+    missing_price?: boolean;
+    attempts?: Array<Record<string, unknown>>;
+  };
+  metadata_json?: Record<string, unknown>;
 };
 
 export type UsageKpi = {
@@ -326,6 +365,63 @@ export async function listUsageFacts(
     if (query.endUserId && row.end_user_id !== query.endUserId) return false;
     return true;
   });
+}
+
+function mapFactToListItem(fact: UsageFactRecord): UsageFactListItem {
+  const metadata = fact.metadata_json && typeof fact.metadata_json === 'object' ? fact.metadata_json : undefined;
+  const runtimeAttempts = Array.isArray(metadata?.attempt_trace)
+    ? metadata.attempt_trace.filter((item) => item && typeof item === 'object') as Array<Record<string, unknown>>
+    : undefined;
+  return {
+    id: fact.id,
+    timestamp: fact.timestamp,
+    workspace_id: fact.workspace_id,
+    project_id: fact.project_id,
+    resource_type: fact.resource_type,
+    resource_id: fact.resource_id,
+    end_user_id: fact.end_user_id,
+    request_id: fact.request_id,
+    requests: fact.requests,
+    duration_ms: fact.duration_ms,
+    bytes_in: fact.bytes_in,
+    bytes_out: fact.bytes_out,
+    tokens_in: fact.tokens_in,
+    tokens_out: fact.tokens_out,
+    tokens_total: fact.tokens_total,
+    result: fact.result,
+    error_code: fact.error_code,
+    runtime: {
+      provider: nonEmptyString(metadata?.provider),
+      resolved_model: nonEmptyString(metadata?.resolved_model),
+      fallback_hops: typeof metadata?.fallback_hops === 'number' ? metadata.fallback_hops : undefined,
+      pricing_version: typeof metadata?.pricing_version === 'string' ? metadata.pricing_version : null,
+      estimated_cost: typeof metadata?.estimated_cost === 'number' ? metadata.estimated_cost : null,
+      missing_price: metadata?.missing_price === true,
+      attempts: runtimeAttempts,
+    },
+    metadata_json: metadata,
+  };
+}
+
+export async function listUsageFactRecords(
+  docStore: JsonDocStorePort,
+  query: UsageFactsQuery,
+): Promise<{ items: UsageFactListItem[]; total: number; page: number; page_size: number; has_more: boolean }> {
+  const facts = await listUsageFacts(docStore, query);
+  facts.sort((a, b) => {
+    const diff = parseIsoMillis(a.timestamp) - parseIsoMillis(b.timestamp);
+    if (diff !== 0) return query.sortOrder === 'asc' ? diff : -diff;
+    return query.sortOrder === 'asc' ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id);
+  });
+  const startIndex = (query.page - 1) * query.pageSize;
+  const items = facts.slice(startIndex, startIndex + query.pageSize).map(mapFactToListItem);
+  return {
+    items,
+    total: facts.length,
+    page: query.page,
+    page_size: query.pageSize,
+    has_more: startIndex + query.pageSize < facts.length,
+  };
 }
 
 export async function aggregateUsageRecords(

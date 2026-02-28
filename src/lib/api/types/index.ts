@@ -452,6 +452,38 @@ export interface UsageRecord {
   tokens?: number;
 }
 
+export interface UsageFactRuntimeMetadata {
+  provider?: string;
+  resolved_model?: string;
+  fallback_hops?: number;
+  pricing_version?: string | null;
+  estimated_cost?: number | null;
+  missing_price?: boolean;
+  attempts?: Array<Record<string, unknown>>;
+}
+
+export interface UsageFactRecord {
+  id: string;
+  timestamp: string;
+  workspace_id: string;
+  project_id: string;
+  resource_type: string;
+  resource_id?: string;
+  end_user_id?: string;
+  request_id?: string;
+  requests: number;
+  duration_ms?: number;
+  bytes_in?: number;
+  bytes_out?: number;
+  tokens_in?: number;
+  tokens_out?: number;
+  tokens_total?: number;
+  result: 'ok' | 'error';
+  error_code?: string;
+  runtime?: UsageFactRuntimeMetadata;
+  metadata_json?: Record<string, unknown>;
+}
+
 export interface UsageKPI {
   requests_today: number;
   errors_today: number;

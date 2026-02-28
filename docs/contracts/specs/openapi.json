@@ -4242,6 +4242,141 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/facts": {
+      "get": {
+        "tags": [
+          "Usage"
+        ],
+        "operationId": "get_usageFacts",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_user_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request-level usage facts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UsageFactRecord"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "page_size": {
+                      "type": "integer"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "page_size",
+                    "has_more"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi": {
       "get": {
         "tags": [
@@ -9523,6 +9658,121 @@
           "bytes_out": {
             "type": "number",
             "minimum": 0
+          }
+        }
+      },
+      "UsageFactRuntimeMetadata": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "resolved_model": {
+            "type": "string"
+          },
+          "fallback_hops": {
+            "type": "number"
+          },
+          "pricing_version": {
+            "type": "string",
+            "nullable": true
+          },
+          "estimated_cost": {
+            "type": "number",
+            "nullable": true
+          },
+          "missing_price": {
+            "type": "boolean"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "UsageFactRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "timestamp",
+          "workspace_id",
+          "project_id",
+          "resource_type",
+          "requests",
+          "result"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspace_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "end_user_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "requests": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duration_ms": {
+            "type": "number"
+          },
+          "bytes_in": {
+            "type": "number",
+            "minimum": 0
+          },
+          "bytes_out": {
+            "type": "number",
+            "minimum": 0
+          },
+          "tokens_in": {
+            "type": "number",
+            "minimum": 0
+          },
+          "tokens_out": {
+            "type": "number",
+            "minimum": 0
+          },
+          "tokens_total": {
+            "type": "number",
+            "minimum": 0
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error"
+            ]
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/UsageFactRuntimeMetadata"
+          },
+          "metadata_json": {
+            "type": "object",
+            "additionalProperties": true
           }
         }
       },

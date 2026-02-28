@@ -23,6 +23,126 @@ export const usageHandlers = [
       has_more: false,
     });
   }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/facts', ({ request }) => {
+    const url = new URL(request.url);
+    const startTime = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const endTime = url.searchParams.get('end_time') ?? new Date().toISOString();
+    const resourceType = url.searchParams.get('resource_type');
+    const resourceId = url.searchParams.get('resource_id');
+    const endUserId = url.searchParams.get('end_user_id');
+    const items = [
+      {
+        id: 'usgf_001',
+        timestamp: endTime,
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        resource_type: 'endpoint',
+        resource_id: 'endpoint_runtime_primary',
+        end_user_id: 'user_001',
+        request_id: 'req_runtime_001',
+        requests: 1,
+        duration_ms: 1840,
+        bytes_in: 2048,
+        bytes_out: 8192,
+        tokens_in: 540,
+        tokens_out: 210,
+        tokens_total: 750,
+        result: 'ok',
+        runtime: {
+          provider: 'secondaryok',
+          resolved_model: 'model-b',
+          fallback_hops: 1,
+          pricing_version: 'runtime-pricing-v1',
+          estimated_cost: 0.0068,
+          missing_price: false,
+          attempts: [
+            {
+              index: 0,
+              provider: 'primaryfail',
+              model: 'model-a',
+              outcome: 'fallback_upstream_error',
+              statusCode: 429,
+              errorClass: 'provider_retryable',
+              reason: 'runtime_upstream_error_recovered',
+              durationMs: 821,
+            },
+            {
+              index: 1,
+              provider: 'secondaryok',
+              model: 'model-b',
+              outcome: 'success',
+              reason: 'runtime_upstream_ok',
+              durationMs: 1019,
+            },
+          ],
+        },
+        metadata_json: {
+          provider: 'secondaryok',
+          resolved_model: 'model-b',
+          fallback_hops: 1,
+          pricing_version: 'runtime-pricing-v1',
+          estimated_cost: 0.0068,
+        },
+      },
+      {
+        id: 'usgf_002',
+        timestamp: startTime,
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        resource_type: 'endpoint',
+        resource_id: 'endpoint_runtime_primary',
+        end_user_id: 'user_001',
+        request_id: 'req_runtime_002',
+        requests: 1,
+        duration_ms: 932,
+        bytes_in: 1536,
+        bytes_out: 4096,
+        tokens_in: 320,
+        tokens_out: 120,
+        tokens_total: 440,
+        result: 'error',
+        error_code: 'UPSTREAM_429',
+        runtime: {
+          provider: 'primaryfail',
+          resolved_model: 'model-a',
+          fallback_hops: 0,
+          pricing_version: null,
+          estimated_cost: null,
+          missing_price: true,
+          attempts: [
+            {
+              index: 0,
+              provider: 'primaryfail',
+              model: 'model-a',
+              outcome: 'terminal_upstream_error',
+              statusCode: 429,
+              errorClass: 'provider_retryable',
+              reason: 'runtime_upstream_error',
+              durationMs: 932,
+            },
+          ],
+        },
+        metadata_json: {
+          provider: 'primaryfail',
+          resolved_model: 'model-a',
+          fallback_hops: 0,
+          missing_price: true,
+        },
+      },
+    ].filter((item) => {
+      if (resourceType && item.resource_type !== resourceType) return false;
+      if (resourceId && item.resource_id !== resourceId) return false;
+      if (endUserId && item.end_user_id !== endUserId) return false;
+      return true;
+    });
+    return HttpResponse.json({
+      items,
+      total: items.length,
+      page: 1,
+      page_size: 20,
+      has_more: false,
+    });
+  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/kpi', () => HttpResponse.json(usageKPI)),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/timeseries', ({ request }) => {
     const url = new URL(request.url);

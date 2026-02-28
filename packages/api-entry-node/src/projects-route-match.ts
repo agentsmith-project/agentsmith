@@ -59,6 +59,7 @@ export type ProjectsRoute =
   | { kind: 'taskEvents'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'audit'; workspaceId: string; projectId: string }
   | { kind: 'usage'; workspaceId: string; projectId: string }
+  | { kind: 'usageFacts'; workspaceId: string; projectId: string }
   | { kind: 'usageKpi'; workspaceId: string; projectId: string }
   | { kind: 'usageTimeseries'; workspaceId: string; projectId: string }
   | { kind: 'usageRuntimeObservability'; workspaceId: string; projectId: string }
@@ -220,6 +221,15 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'usage',
       workspaceId: decodeURIComponent(usageMatched[1]),
       projectId: decodeURIComponent(usageMatched[2]),
+    };
+  }
+
+  const usageFactsMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/facts\/?$/);
+  if (usageFactsMatched) {
+    return {
+      kind: 'usageFacts',
+      workspaceId: decodeURIComponent(usageFactsMatched[1]),
+      projectId: decodeURIComponent(usageFactsMatched[2]),
     };
   }
 

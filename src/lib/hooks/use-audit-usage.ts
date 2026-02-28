@@ -83,6 +83,28 @@ export function useUsageRecords(
   });
 }
 
+export function useUsageFacts(
+  workspaceId: string,
+  projectId: string,
+  params: Omit<UsageListParams, 'group_by' | 'sort_by'>,
+  options?: { enabled?: boolean }
+) {
+  const usageAPI = new UsageAPI(getApiClient());
+  const enabled =
+    (options?.enabled ?? true) &&
+    !!workspaceId &&
+    !!projectId &&
+    !!params.start_time &&
+    !!params.end_time;
+
+  return useQuery({
+    queryKey: queryKeys.usage.facts(workspaceId, projectId, params),
+    queryFn: () => usageAPI.listFacts(workspaceId, projectId, params),
+    enabled,
+    staleTime: 10000,
+  });
+}
+
 /**
  * Hook to query usage/cost timeseries data
  */

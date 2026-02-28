@@ -223,6 +223,8 @@ export const queryKeys = {
     ) => ['usage-kpi', workspaceId, projectId, startTime, endTime, endUserId] as const,
     list: (workspaceId: string, projectId: string, params?: object) =>
       ['usage', workspaceId, projectId, params] as const,
+    facts: (workspaceId: string, projectId: string, params?: object) =>
+      ['usage-facts', workspaceId, projectId, params] as const,
     timeseries: (workspaceId: string, projectId: string, params?: object) =>
       ['usage-timeseries', workspaceId, projectId, params] as const,
     runtimeObservability: (workspaceId: string, projectId: string, params?: object) =>

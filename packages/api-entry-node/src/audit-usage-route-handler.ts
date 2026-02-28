@@ -8,6 +8,7 @@ import {
   getUsageKpi,
   getUsageTimeseries,
   listAuditEvents,
+  listUsageFactRecords,
 } from './audit-usage-store.js';
 
 type JsonResponder = (res: http.ServerResponse, status: number, payload: unknown) => void;
@@ -102,6 +103,27 @@ export async function handleAuditUsageRoute({
       groupBy,
       sortBy,
       sortOrder,
+      page,
+      pageSize,
+    });
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageFacts' && method === 'GET') {
+    const range = requireTimeRange(requestUrl, json, res);
+    if (range === true) return true;
+    const page = parsePositiveInt(requestUrl.searchParams.get('page'), 1);
+    const pageSize = parsePositiveInt(requestUrl.searchParams.get('page_size'), 20, 200);
+    const payload = await listUsageFactRecords(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      startTime: range.start.toISOString(),
+      endTime: range.end.toISOString(),
+      resourceType: requestUrl.searchParams.get('resource_type'),
+      resourceId: requestUrl.searchParams.get('resource_id'),
+      endUserId: requestUrl.searchParams.get('end_user_id'),
+      sortOrder: requestUrl.searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc',
       page,
       pageSize,
     });

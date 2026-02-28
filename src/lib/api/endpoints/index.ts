@@ -60,4 +60,8 @@ export type {
   RuntimeAttemptTrace,
   RuntimeAttemptOutcome,
   UnifiedChatRuntimeMetadata,
+  RuntimeUnifiedChatRequest,
+  RuntimeUnifiedChatResponse,
+  RuntimeUnifiedChatErrorResponse,
+  RuntimeUnifiedChatResult,
 } from './runtime';

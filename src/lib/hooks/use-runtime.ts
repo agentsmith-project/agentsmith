@@ -7,6 +7,7 @@ import type {
   CreateRuntimeModelCatalogEntryRequest,
   CreateRuntimeModelComboRequest,
   CreateRuntimeProviderConnectionRequest,
+  RuntimeUnifiedChatRequest,
   RuntimePricingMap,
   UpdateRuntimeModelAliasRequest,
   UpdateRuntimeModelCatalogEntryRequest,
@@ -236,5 +237,13 @@ export function usePatchRuntimePricing(workspaceId: string, projectId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.runtime.pricing(workspaceId, projectId) });
     },
     onError: (error) => handleErrorForToast(error, 'usePatchRuntimePricing'),
+  });
+}
+
+export function useRuntimeUnifiedChatProbe(workspaceId: string, projectId: string) {
+  return useMutation({
+    mutationFn: (payload: RuntimeUnifiedChatRequest) =>
+      getRuntimeAPI().probeUnifiedChat(workspaceId, projectId, payload),
+    onError: (error) => handleErrorForToast(error, 'useRuntimeUnifiedChatProbe'),
   });
 }

@@ -70,4 +70,41 @@ describe('RuntimeAPI', () => {
     );
     expect(mock.delete).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/routing/combos/prod-chat');
   });
+
+  it('probes unified chat and preserves non-2xx runtime payloads', async () => {
+    const mock = createClient();
+    const api = new RuntimeAPI(toApiClient(mock));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'chatcmpl_1',
+        object: 'chat.completion',
+        choices: [],
+        runtime: { provider: 'openai', resolved_model: 'gpt-4o', fallback_hops: 0 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error_code: 'RUNTIME_PROVIDER_CONNECTION_NOT_FOUND',
+        message: 'runtime_provider_connection_not_found',
+        runtime: { attempts: [{ index: 0, provider: 'openai', model: 'gpt-4o', outcome: 'provider_connection_missing', reason: 'runtime_provider_connection_not_found' }] },
+      }), { status: 502, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+
+    try {
+      const success = await api.probeUnifiedChat('ws_1', 'proj_1', {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'hello' }],
+      });
+      const failure = await api.probeUnifiedChat('ws_1', 'proj_1', {
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'hello' }],
+      });
+
+      expect(success.ok).toBe(true);
+      expect(success.statusCode).toBe(200);
+      expect(failure.ok).toBe(false);
+      expect(failure.statusCode).toBe(502);
+      expect((failure.data as { runtime?: { attempts?: Array<{ outcome?: string }> } }).runtime?.attempts?.[0]?.outcome).toBe('provider_connection_missing');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

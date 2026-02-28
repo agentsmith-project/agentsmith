@@ -1,4 +1,6 @@
 import type { ApiClient } from '../client';
+import { API_BASE } from '../client';
+import type { ErrorResponse } from '../types';
 
 export type RuntimeAuthMode = 'api_key' | 'oauth' | 'aws_sdk' | 'token';
 
@@ -121,6 +123,33 @@ export interface UnifiedChatRuntimeMetadata {
   fallback_hops?: number;
   estimated_cost?: number | null;
   attempts?: RuntimeAttemptTrace[];
+}
+
+export interface RuntimeUnifiedChatRequest {
+  model: string;
+  messages: Array<Record<string, unknown>>;
+  stream?: boolean;
+}
+
+export interface RuntimeUnifiedChatResponse {
+  id: string;
+  object: string;
+  model?: string;
+  choices: Array<Record<string, unknown>>;
+  usage?: Record<string, unknown>;
+  runtime?: UnifiedChatRuntimeMetadata;
+}
+
+export interface RuntimeUnifiedChatErrorResponse extends Partial<ErrorResponse> {
+  error_code: string;
+  message: string;
+  runtime?: UnifiedChatRuntimeMetadata;
+}
+
+export interface RuntimeUnifiedChatResult {
+  ok: boolean;
+  statusCode: number;
+  data: RuntimeUnifiedChatResponse | RuntimeUnifiedChatErrorResponse;
 }
 
 export interface RuntimeModelCombo {
@@ -281,5 +310,37 @@ export class RuntimeAPI {
 
   async patchPricing(workspaceId: string, projectId: string, payload: RuntimePricingMap): Promise<RuntimePricingMap> {
     return this.client.patch(`/workspaces/${workspaceId}/projects/${projectId}/runtime/pricing`, payload);
+  }
+
+  async probeUnifiedChat(
+    workspaceId: string,
+    projectId: string,
+    payload: RuntimeUnifiedChatRequest,
+  ): Promise<RuntimeUnifiedChatResult> {
+    const token = this.client.getToken();
+    const response = await fetch(`${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/llm/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await response.text();
+    let data: RuntimeUnifiedChatResponse | RuntimeUnifiedChatErrorResponse;
+    try {
+      data = JSON.parse(text) as RuntimeUnifiedChatResponse | RuntimeUnifiedChatErrorResponse;
+    } catch {
+      data = {
+        error_code: response.ok ? 'INVALID_RESPONSE' : 'UNKNOWN_ERROR',
+        message: text || `HTTP ${response.status}`,
+      };
+    }
+
+    return {
+      ok: response.ok,
+      statusCode: response.status,
+      data,
+    };
   }
 }

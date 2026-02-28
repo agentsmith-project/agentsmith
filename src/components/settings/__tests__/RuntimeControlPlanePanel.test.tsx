@@ -8,6 +8,36 @@ const createModelMutateAsync = vi.fn().mockResolvedValue({});
 const createAliasMutateAsync = vi.fn().mockResolvedValue({});
 const createComboMutateAsync = vi.fn().mockResolvedValue({});
 const patchPricingMutateAsync = vi.fn().mockResolvedValue({});
+const probeMutateAsync = vi.fn().mockResolvedValue({
+  ok: true,
+  statusCode: 200,
+  data: {
+    id: 'chatcmpl_1',
+    object: 'chat.completion',
+    choices: [{ index: 0, message: { role: 'assistant', content: 'probe ok' } }],
+    runtime: {
+      provider: 'openai',
+      resolved_model: 'gpt-4o',
+      fallback_hops: 1,
+      attempts: [
+        {
+          index: 0,
+          provider: 'openai',
+          model: 'gpt-4o',
+          outcome: 'fallback_upstream_error',
+          reason: 'runtime_upstream_error_recovered',
+        },
+        {
+          index: 1,
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-5',
+          outcome: 'success',
+          reason: 'runtime_upstream_ok',
+        },
+      ],
+    },
+  },
+});
 
 vi.mock('@/lib/hooks/use-runtime', () => ({
   useRuntimeProviders: () => ({ data: { items: [] } }),
@@ -20,6 +50,7 @@ vi.mock('@/lib/hooks/use-runtime', () => ({
   useCreateRuntimeAlias: () => ({ mutateAsync: createAliasMutateAsync, isPending: false }),
   useCreateRuntimeCombo: () => ({ mutateAsync: createComboMutateAsync, isPending: false }),
   usePatchRuntimePricing: () => ({ mutateAsync: patchPricingMutateAsync, isPending: false }),
+  useRuntimeUnifiedChatProbe: () => ({ mutateAsync: probeMutateAsync, isPending: false }),
 }));
 
 vi.mock('@/components/ui/toast', () => ({
@@ -67,5 +98,26 @@ describe('RuntimeControlPlanePanel', () => {
         },
       },
     });
+  });
+
+  it('runs runtime probe and renders fallback timeline', async () => {
+    const user = userEvent.setup();
+    render(<RuntimeControlPlanePanel workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.clear(screen.getByTestId('settings-runtime__probe-model'));
+    await user.type(screen.getByTestId('settings-runtime__probe-model'), 'combo:prod-chat');
+    await user.clear(screen.getByTestId('settings-runtime__probe-prompt'));
+    await user.type(screen.getByTestId('settings-runtime__probe-prompt'), 'hello');
+    await user.click(screen.getByTestId('settings-runtime__probe-run'));
+
+    expect(probeMutateAsync).toHaveBeenCalledWith({
+      model: 'combo:prod-chat',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    expect(screen.getByTestId('settings-runtime__probe-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-runtime__probe-response')).toHaveTextContent('probe ok');
+    expect(screen.getByTestId('settings-runtime__probe-attempt-0')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-runtime__probe-attempt-1')).toBeInTheDocument();
   });
 });

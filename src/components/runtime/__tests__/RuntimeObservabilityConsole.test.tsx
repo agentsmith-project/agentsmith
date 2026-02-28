@@ -1,6 +1,36 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { RuntimeObservabilityConsole } from '../RuntimeObservabilityConsole';
+
+const useUsageFactsMock = vi.fn(() => ({
+  data: {
+    items: [
+      {
+        id: 'fact_1',
+        timestamp: '2026-02-28T14:01:00.000Z',
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        resource_type: 'endpoint',
+        resource_id: 'endpoint_runtime',
+        request_id: 'req_1',
+        requests: 1,
+        tokens_total: 128,
+        result: 'ok',
+        runtime: {
+          provider: 'secondaryok',
+          resolved_model: 'model-b',
+          estimated_cost: 0.0031,
+          fallback_hops: 1,
+          pricing_version: 'global-v1',
+          attempts: [],
+        },
+        metadata_json: {},
+      },
+    ],
+  },
+  isLoading: false,
+  isFetching: false,
+}));
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
@@ -89,6 +119,7 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
     isFetching: false,
     refetch: vi.fn(),
   }),
+  useUsageFacts: (...args: unknown[]) => useUsageFactsMock(...args),
 }));
 
 describe('RuntimeObservabilityConsole', () => {
@@ -110,5 +141,31 @@ describe('RuntimeObservabilityConsole', () => {
     expect(screen.getByTestId('runtime-observability__signals')).toBeInTheDocument();
     expect(screen.getByTestId('runtime-observability__provider-row-0')).toHaveTextContent('secondaryok');
     expect(screen.getByTestId('runtime-observability__model-row-0')).toHaveTextContent('secondaryok/model-b');
+  });
+
+  it('opens request detail drill-down from provider breakdown', () => {
+    render(
+      <RuntimeObservabilityConsole
+        workspaceId="ws_1"
+        projectId="proj_1"
+        locale="en-US"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('runtime-observability__provider-detail-0'));
+
+    expect(useUsageFactsMock).toHaveBeenCalledWith(
+      'ws_1',
+      'proj_1',
+      expect.objectContaining({
+        provider: 'secondaryok',
+        page: 1,
+        page_size: 20,
+        sort_order: 'desc',
+      }),
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByTestId('usage__detail-summary__requests')).toHaveTextContent('1');
+    expect(screen.getByTestId('usage__detail-fact-fact_1')).toHaveTextContent('secondaryok');
   });
 });

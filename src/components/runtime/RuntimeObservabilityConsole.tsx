@@ -7,11 +7,13 @@ import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button';
+import { UsageFactDetailDrawer } from '@/components/audit-usage/UsageFactDetailDrawer';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TimeRangePicker, type TimeRange } from '@/components/audit-usage/TimeRangePicker';
 import { EmptyState } from '@/components/audit-usage/EmptyState';
-import { useRuntimeObservability } from '@/lib/hooks/use-audit-usage';
+import { useRuntimeObservability, useUsageFacts } from '@/lib/hooks/use-audit-usage';
+import type { UsageListParams } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
 
 type RuntimeObservabilityConsoleProps = {
@@ -28,6 +30,11 @@ type RuntimeObservabilityFilters = {
   model?: string;
   result?: 'ok' | 'error';
   error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
+};
+
+type RuntimeDrillDown = {
+  label: string;
+  params: Omit<UsageListParams, 'group_by' | 'sort_by'>;
 };
 
 function defaultTimeRange(): RuntimeObservabilityFilters {
@@ -49,6 +56,23 @@ function formatMs(value?: number): string {
   return typeof value === 'number' ? `${Math.round(value)}ms` : '-';
 }
 
+function getBucketRange(timeBucket: string): { start: string; end: string } | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(timeBucket)) {
+    const start = new Date(`${timeBucket}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime())) return null;
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
+  const normalized = /^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/.test(timeBucket)
+    ? `${timeBucket.replace(' ', 'T')}:00.000Z`
+    : timeBucket;
+  const start = new Date(normalized);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = new Date(start.getTime() + 60 * 60 * 1000 - 1);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
 export function RuntimeObservabilityConsole({
   workspaceId,
   projectId,
@@ -58,10 +82,25 @@ export function RuntimeObservabilityConsole({
   const settingsT = useTranslations('settings');
   const commonT = useTranslations('common');
   const [filters, setFilters] = React.useState<RuntimeObservabilityFilters>(() => defaultTimeRange());
+  const [drillDown, setDrillDown] = React.useState<RuntimeDrillDown | null>(null);
 
   const observabilityQuery = useRuntimeObservability(workspaceId, projectId, filters, {
     enabled: !!workspaceId && !!projectId,
   });
+  const usageFactsQuery = useUsageFacts(
+    workspaceId,
+    projectId,
+    drillDown?.params ?? {
+      start_time: '',
+      end_time: '',
+      page: 1,
+      page_size: 20,
+      sort_order: 'desc',
+    },
+    {
+      enabled: !!workspaceId && !!projectId && !!drillDown,
+    },
+  );
   const observability = observabilityQuery.data;
   const fallbackRatio = observability && observability.total_requests > 0
     ? 1 - ((observability.fallback_hops_histogram['0'] ?? 0) / observability.total_requests)
@@ -87,9 +126,40 @@ export function RuntimeObservabilityConsole({
 
   const providerRows = observability?.provider_breakdown ?? [];
   const modelRows = observability?.model_breakdown ?? [];
+  const latestTrendBucket = observability?.request_trend.at(-1);
+
+  const openDrillDown = React.useCallback((label: string, params: Partial<RuntimeDrillDown['params']>) => {
+    setDrillDown({
+      label,
+      params: {
+        start_time: params.start_time ?? filters.start_time,
+        end_time: params.end_time ?? filters.end_time,
+        resource_type: params.resource_type,
+        resource_id: params.resource_id,
+        end_user_id: params.end_user_id,
+        provider: params.provider,
+        model: params.model,
+        result: params.result,
+        error_class: params.error_class,
+        page: 1,
+        page_size: 20,
+        sort_order: 'desc',
+      },
+    });
+  }, [filters]);
+
+  const openBucketDrillDown = React.useCallback((label: string, timeBucket: string, params: Partial<RuntimeDrillDown['params']> = {}) => {
+    const range = getBucketRange(timeBucket);
+    openDrillDown(label, {
+      ...params,
+      start_time: range?.start ?? filters.start_time,
+      end_time: range?.end ?? filters.end_time,
+    });
+  }, [filters.end_time, filters.start_time, openDrillDown]);
 
   return (
-    <div className="space-y-4">
+    <>
+      <div className="space-y-4">
       <div className="rounded-xl border border-border bg-surface p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -261,7 +331,19 @@ export function RuntimeObservabilityConsole({
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-3 text-xs text-tertiary">
                     <span>{settingsT('runtime_observability_avg_cost_label')}: {formatUsd(item.avg_estimated_cost)}</span>
-                    <span>{settingsT('runtime_observability_p95_latency_label')}: {formatMs(item.duration_p95_ms)}</span>
+                    <div className="flex items-center gap-3">
+                      <span>{settingsT('runtime_observability_p95_latency_label')}: {formatMs(item.duration_p95_ms)}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-2 py-1 text-xs"
+                        onClick={() => openBucketDrillDown(item.time_bucket, item.time_bucket)}
+                        data-testid={`runtime-observability__trend-detail-${item.time_bucket}`}
+                      >
+                        {commonT('view_details')}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -317,6 +399,28 @@ export function RuntimeObservabilityConsole({
                     {settingsT(`runtime_observability_signal_severity_${signal.severity}`)}
                   </Badge>
                 </div>
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-2 py-1 text-xs"
+                    onClick={() => {
+                      if (signal.kind === 'error_rate_spike' && latestTrendBucket) {
+                        openBucketDrillDown(signal.title, latestTrendBucket.time_bucket, { result: 'error' });
+                        return;
+                      }
+                      if ((signal.kind === 'fallback_spike' || signal.kind === 'latency_spike') && latestTrendBucket) {
+                        openBucketDrillDown(signal.title, latestTrendBucket.time_bucket);
+                        return;
+                      }
+                      openDrillDown(signal.title, {});
+                    }}
+                    data-testid={`runtime-observability__signal-detail-${signal.id}`}
+                  >
+                    {commonT('view_details')}
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -351,7 +455,21 @@ export function RuntimeObservabilityConsole({
                 <tbody>
                   {providerRows.slice(0, 8).map((row, index) => (
                     <tr key={`${row.provider}-${index}`} className="border-t border-subtle" data-testid={`runtime-observability__provider-row-${index}`}>
-                      <td className="py-3 font-mono text-foreground">{row.provider}</td>
+                      <td className="py-3 text-foreground">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-mono">{row.provider}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto px-2 py-1 text-xs"
+                            onClick={() => openDrillDown(row.provider, { provider: row.provider })}
+                            data-testid={`runtime-observability__provider-detail-${index}`}
+                          >
+                            {commonT('view_details')}
+                          </Button>
+                        </div>
+                      </td>
                       <td className="py-3 text-right text-foreground">{row.requests}</td>
                       <td className="py-3 text-right text-foreground">{formatPercent(row.error_rate)}</td>
                       <td className="py-3 text-right text-foreground">{formatPercent(row.fallback_rate)}</td>
@@ -390,7 +508,22 @@ export function RuntimeObservabilityConsole({
                   {modelRows.slice(0, 10).map((row, index) => (
                     <tr key={`${row.provider}-${row.model}-${index}`} className="border-t border-subtle" data-testid={`runtime-observability__model-row-${index}`}>
                       <td className="py-3 text-foreground">
-                        <div className="font-mono">{row.provider}/{row.model}</div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-mono">{row.provider}/{row.model}</div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto px-2 py-1 text-xs"
+                            onClick={() => openDrillDown(`${row.provider}/${row.model}`, {
+                              provider: row.provider,
+                              model: row.model,
+                            })}
+                            data-testid={`runtime-observability__model-detail-${index}`}
+                          >
+                            {commonT('view_details')}
+                          </Button>
+                        </div>
                       </td>
                       <td className="py-3 text-right text-foreground">{row.requests}</td>
                       <td className="py-3 text-right text-foreground">{formatPercent(row.error_rate)}</td>
@@ -404,6 +537,16 @@ export function RuntimeObservabilityConsole({
           )}
         </section>
       </div>
-    </div>
+      </div>
+      <UsageFactDetailDrawer
+        open={!!drillDown}
+        onOpenChange={(open) => {
+          if (!open) setDrillDown(null);
+        }}
+        facts={usageFactsQuery.data?.items ?? []}
+        loading={usageFactsQuery.isLoading || usageFactsQuery.isFetching}
+        aggregateLabel={drillDown?.label}
+      />
+    </>
   );
 }

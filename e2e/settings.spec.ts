@@ -138,6 +138,16 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('runtime-observability__model-table')).toBeVisible();
   });
 
+  test('runtime observability drill-down opens usage detail drawer', async ({ authedPage }) => {
+    await goToProject(authedPage, 'runtime-observability');
+
+    await expect(authedPage.getByTestId('runtime-observability__provider-table')).toBeVisible({ timeout: 10000 });
+    await authedPage.getByTestId('runtime-observability__provider-detail-0').click();
+
+    await expect(authedPage.getByTestId('usage__detail-summary__requests')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('usage__detail-summary__cost')).toBeVisible();
+  });
+
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {
     await goToProject(authedPage, 'settings');
     await expect(authedPage.getByTestId('settings__tab--general')).toBeVisible({ timeout: 10000 });

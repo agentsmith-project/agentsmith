@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { UsageKPICards } from './UsageKPICards';
 import { UsageFilters } from './UsageFilters';
@@ -20,6 +20,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CostDashboardPage } from '@/components/dashboard';
 import type { UsageRecord } from '@/lib/api/types';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { getApiClient, UsageAPI } from '@/lib/api';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -59,6 +61,8 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:usage:view');
+  const canExportUsage = useHasPermission('project:usage:export');
+  const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
 
   // If defaultEndUserId is provided, scope is locked to the current user usage.
   const isScopeLocked = !!defaultEndUserId;
@@ -66,6 +70,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const [panel, setPanel] = React.useState<'usage' | 'dashboard'>('usage');
   const [selectedUsageRecord, setSelectedUsageRecord] = React.useState<UsageRecord | null>(null);
   const [detailOpen, setDetailOpen] = React.useState(false);
+  const [exportingFormat, setExportingFormat] = React.useState<'csv' | 'json' | null>(null);
 
   const effectiveEndUserId = isScopeLocked
     ? defaultEndUserId
@@ -135,6 +140,41 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
     });
     toast.success(commonT('refreshed_data') || 'Refreshed usage data');
   }, [queryClient, workspaceId, projectId, commonT]);
+
+  const handleExport = React.useCallback(async (format: 'csv' | 'json') => {
+    setExportingFormat(format);
+    try {
+      const exportResult = await usageApi.exportReport(workspaceId, projectId, {
+        start_time: apiFilters.start_time,
+        end_time: apiFilters.end_time,
+        format,
+        resource_type: apiFilters.resource_type,
+        resource_id: apiFilters.resource_id,
+        end_user_id: apiFilters.end_user_id,
+        provider: apiFilters.provider,
+        model: apiFilters.model,
+        result: apiFilters.result,
+        error_class: apiFilters.error_class,
+      });
+      const url = window.URL.createObjectURL(exportResult.blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = exportResult.filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(t('export.success'));
+    } catch (error) {
+      toast.error(
+        t('export.failed_with_reason', {
+          reason: error instanceof Error ? error.message : commonT('unknown_error'),
+        }),
+      );
+    } finally {
+      setExportingFormat(null);
+    }
+  }, [usageApi, workspaceId, projectId, apiFilters, t, commonT]);
 
   const handleClearFilters = React.useCallback(() => {
     setFilters({
@@ -227,10 +267,40 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
           title={t('title')}
           subtitle={t('subtitle')}
           actions={(
-            <Button variant="action" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || kpiLoading ? 'animate-spin' : ''}`} />
-              {commonT('refresh')}
-            </Button>
+            <div className="flex items-center gap-2">
+              {canExportUsage && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      disabled={exportingFormat !== null}
+                      data-testid="usage__export-trigger"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      {t('export.label')}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => void handleExport('csv')}
+                      data-testid="usage__export-option-csv"
+                    >
+                      {t('export.csv')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => void handleExport('json')}
+                      data-testid="usage__export-option-json"
+                    >
+                      {t('export.json')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <Button variant="action" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || kpiLoading ? 'animate-spin' : ''}`} />
+                {commonT('refresh')}
+              </Button>
+            </div>
           )}
         />
       )}

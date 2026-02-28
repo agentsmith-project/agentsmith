@@ -27,7 +27,7 @@ export const PLATFORM_PERMISSIONS = {
 
   MEMBER: ['project:member:view', 'project:member:manage'] as const,
 
-  OBSERVABILITY: ['project:audit:view', 'project:usage:view'] as const,
+  OBSERVABILITY: ['project:audit:view', 'project:usage:view', 'project:usage:export'] as const,
 
   ALERT: ['project:alert:view', 'project:alert:manage', 'project:alert:notify'] as const,
 } as const;
@@ -67,6 +67,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'project:member:manage': 'Manage members and templates',
   'project:audit:view': 'View audit logs',
   'project:usage:view': 'View usage data',
+  'project:usage:export': 'Export usage data and reports',
   'project:alert:view': 'View alert center and notifications',
   'project:alert:manage': 'Create, edit, and delete alert rules',
   'project:alert:notify': 'Receive alert notifications',

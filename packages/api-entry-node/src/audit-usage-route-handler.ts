@@ -3,6 +3,7 @@ import type { ProjectsRoute } from './projects-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   aggregateUsageRecords,
+  exportUsageData,
   getQuotaSummary,
   getRuntimeObservability,
   getUsageOperationsSummary,
@@ -82,6 +83,35 @@ export async function handleAuditUsageRoute({
       endUserId: requestUrl.searchParams.get('end_user_id'),
     });
     json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageExport' && method === 'GET') {
+    const range = requireTimeRange(requestUrl, json, res);
+    if (range === true) return true;
+    const format = requestUrl.searchParams.get('format') === 'json' ? 'json' : 'csv';
+    const result = await exportUsageData(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      startTime: range.start.toISOString(),
+      endTime: range.end.toISOString(),
+      format,
+      resourceType: requestUrl.searchParams.get('resource_type'),
+      resourceId: requestUrl.searchParams.get('resource_id'),
+      endUserId: requestUrl.searchParams.get('end_user_id'),
+      provider: requestUrl.searchParams.get('provider'),
+      model: requestUrl.searchParams.get('model'),
+      result: requestUrl.searchParams.get('result') === 'error'
+        ? 'error'
+        : requestUrl.searchParams.get('result') === 'ok'
+          ? 'ok'
+          : null,
+      errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
+    });
+    res.statusCode = 200;
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${result.filename.replace(/"/g, '')}"`);
+    res.end(result.body);
     return true;
   }
 

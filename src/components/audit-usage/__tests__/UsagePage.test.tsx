@@ -24,6 +24,19 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: () => true,
 }));
 
+const exportReportMock = vi.fn();
+
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual<object>('@/lib/api');
+  return {
+    ...actual,
+    getApiClient: () => ({ getToken: () => null }),
+    UsageAPI: class {
+      exportReport = exportReportMock;
+    },
+  };
+});
+
 vi.mock('@/lib/hooks/use-audit-usage', () => ({
   useUsageKPI: () => ({ data: { requests_today: 10, errors_today: 1, tokens_today: 100 }, isLoading: false }),
   useUsageRecords: () => ({
@@ -112,6 +125,7 @@ describe('UsagePage', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
     expect(screen.getByTestId('usage__operations-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__export-trigger')).toBeInTheDocument();
     await user.click(screen.getByTestId('usage__table__row'));
 
     expect(screen.getByText('detail.title')).toBeInTheDocument();

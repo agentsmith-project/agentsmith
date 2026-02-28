@@ -726,6 +726,95 @@ export const usageHandlers = [
     });
     return HttpResponse.json(buildRuntimeObservabilitySummary([...factsResponse, ...fixtureFactsResponse], start, end));
   }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/export', ({ request, params }) => {
+    const url = new URL(request.url);
+    const format = url.searchParams.get('format') === 'json' ? 'json' : 'csv';
+    const startTime = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const endTime = url.searchParams.get('end_time') ?? new Date().toISOString();
+    const resourceType = url.searchParams.get('resource_type');
+    const resourceId = url.searchParams.get('resource_id');
+    const endUserId = url.searchParams.get('end_user_id');
+    const provider = url.searchParams.get('provider');
+    const model = url.searchParams.get('model');
+    const result = url.searchParams.get('result');
+    const errorClass = url.searchParams.get('error_class');
+    const items = listRuntimeUsageFacts({
+      startTime,
+      endTime,
+      resourceType,
+      resourceId,
+      endUserId,
+      provider,
+      model,
+      result: result === 'ok' || result === 'error' ? result : null,
+      errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
+    });
+    const projectId = typeof params.prj === 'string' ? params.prj : 'proj_001';
+    const filename = `usage-report-${projectId}.${format}`;
+
+    if (format === 'json') {
+      return new HttpResponse(JSON.stringify({
+        generated_at: new Date().toISOString(),
+        project_id: projectId,
+        filters: {
+          start_time: startTime,
+          end_time: endTime,
+          provider,
+          model,
+          result,
+        },
+        facts: items,
+      }, null, 2), {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+        },
+      });
+    }
+
+    const csvHeaders = [
+      'timestamp',
+      'request_id',
+      'resource_type',
+      'resource_id',
+      'end_user_id',
+      'provider',
+      'resolved_model',
+      'result',
+      'error_code',
+      'error_class',
+      'fallback_hops',
+      'pricing_version',
+      'estimated_cost',
+      'missing_price',
+    ];
+    const rows = items.map((item) => [
+      item.timestamp,
+      item.request_id,
+      item.resource_type,
+      item.resource_id,
+      item.end_user_id,
+      item.runtime?.provider,
+      item.runtime?.resolved_model,
+      item.result,
+      item.error_code,
+      item.runtime?.error_class,
+      item.runtime?.fallback_hops,
+      item.runtime?.pricing_version,
+      item.runtime?.estimated_cost,
+      item.runtime?.missing_price,
+    ].map((cell) => {
+      const value = cell === null || cell === undefined ? '' : String(cell);
+      return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+    }).join(','));
+
+    return new HttpResponse([csvHeaders.join(','), ...rows].join('\n'), {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
+  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/operations-summary', ({ request }) => {
     const url = new URL(request.url);
     const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

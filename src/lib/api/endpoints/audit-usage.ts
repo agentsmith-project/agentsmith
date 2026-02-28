@@ -14,6 +14,7 @@ import type {
   PaginatedResponse,
 } from '../types';
 import type { ApiClient } from '../client';
+import { API_BASE } from '../client';
 
 export interface UsageDataPoint {
   time_bucket: string;
@@ -412,5 +413,61 @@ export class UsageAPI {
     return this.client.get<UsageOperationsSummaryResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/operations-summary?${searchParams.toString()}`,
     );
+  }
+
+  async exportReport(
+    workspaceId: string,
+    projectId: string,
+    params: {
+      start_time: string;
+      end_time: string;
+      format: 'csv' | 'json';
+      resource_type?: string;
+      resource_id?: string;
+      end_user_id?: string;
+      provider?: string;
+      model?: string;
+      result?: 'ok' | 'error';
+      error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
+    },
+  ): Promise<{ blob: Blob; filename: string; contentType: string }> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('start_time', params.start_time);
+    searchParams.set('end_time', params.end_time);
+    searchParams.set('format', params.format);
+    if (params.resource_type) searchParams.set('resource_type', params.resource_type);
+    if (params.resource_id) searchParams.set('resource_id', params.resource_id);
+    if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
+    if (params.provider) searchParams.set('provider', params.provider);
+    if (params.model) searchParams.set('model', params.model);
+    if (params.result) searchParams.set('result', params.result);
+    if (params.error_class) searchParams.set('error_class', params.error_class);
+
+    const path = `/workspaces/${workspaceId}/projects/${projectId}/usage/export?${searchParams.toString()}`;
+    const token = this.client.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE}${path}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const message =
+        typeof errorData === 'object' && errorData && 'message' in errorData
+          ? String((errorData as { message?: string }).message)
+          : `Export failed: ${response.statusText}`;
+      throw new Error(message);
+    }
+
+    const disposition = response.headers.get('content-disposition') ?? '';
+    const filenameMatch = disposition.match(/filename="([^"]+)"/);
+    return {
+      blob: await response.blob(),
+      filename: filenameMatch?.[1] ?? `usage-report.${params.format}`,
+      contentType: response.headers.get('content-type') ?? 'application/octet-stream',
+    };
   }
 }

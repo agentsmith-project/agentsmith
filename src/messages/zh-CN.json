@@ -826,6 +826,13 @@
       "loading": "正在加载摘要…",
       "empty": "没有匹配的运营摘要",
       "no_anomalies": "所选时间范围内没有显著异常峰值。"
+    },
+    "export": {
+      "label": "导出",
+      "csv": "导出 CSV",
+      "json": "导出 JSON",
+      "success": "已导出用量报表",
+      "failed_with_reason": "导出用量报表失败：{reason}"
     }
   },
   "dashboard": {

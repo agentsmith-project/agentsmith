@@ -48,6 +48,13 @@ test.describe('Usage Page', () => {
 
     await expect(authedPage.getByText('Usage').first()).toBeVisible();
     await expect(authedPage.getByRole('button', { name: /refresh/i })).toBeVisible();
+    await expect(authedPage.getByTestId('usage__export-trigger')).toBeVisible();
+  });
+
+  test('export dropdown exposes csv and json actions', async ({ authedPage }) => {
+    await authedPage.getByTestId('usage__export-trigger').click();
+    await expect(authedPage.getByTestId('usage__export-option-csv')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__export-option-json')).toBeVisible();
   });
 
   test('text filter and clear filters interaction works', async ({ authedPage }) => {

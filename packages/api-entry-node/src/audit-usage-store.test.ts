@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
+  exportUsageData,
   getRuntimeObservability,
   getUsageOperationsSummary,
   listUsageFactRecords,
@@ -244,5 +245,67 @@ describe('audit-usage-store runtime observability', () => {
     expect(summary.recent_requests).toEqual(
       expect.arrayContaining([expect.objectContaining({ request_id: 'req_b', result: 'error', error_class: 'provider_retryable' })]),
     );
+  });
+
+  it('exports usage data as csv and json snapshots', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+    const now = new Date().toISOString();
+
+    await recordUsageFact(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'rpc_1',
+      end_user_id: 'user_export',
+      requests: 1,
+      result: 'ok',
+      request_id: 'req_export',
+      duration_ms: 321,
+      tokens_in: 100,
+      tokens_out: 50,
+      tokens_total: 150,
+      metadata_json: {
+        provider: 'openai',
+        resolved_model: 'gpt-4o',
+        fallback_hops: 0,
+        pricing_version: 'runtime-pricing-v1',
+        estimated_cost: 0.0042,
+      },
+    });
+
+    const csv = await exportUsageData(store, {
+      workspaceId,
+      projectId,
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      endTime: new Date(Date.now() + 60_000).toISOString(),
+      format: 'csv',
+    });
+    expect(csv.filename).toMatch(/\.csv$/);
+    expect(csv.contentType).toBe('text/csv; charset=utf-8');
+    expect(csv.body).toContain('request_id');
+    expect(csv.body).toContain('req_export');
+    expect(csv.body).toContain('openai');
+
+    const json = await exportUsageData(store, {
+      workspaceId,
+      projectId,
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      endTime: new Date(Date.now() + 60_000).toISOString(),
+      format: 'json',
+    });
+    expect(json.filename).toMatch(/\.json$/);
+    expect(json.contentType).toBe('application/json; charset=utf-8');
+    const payload = JSON.parse(json.body) as {
+      kpi: { requests_today?: number };
+      facts: Array<{ request_id?: string }>;
+      runtime_observability: { total_requests: number };
+      operations_summary: { top_providers: Array<{ provider: string }> };
+    };
+    expect(payload.facts).toEqual(expect.arrayContaining([expect.objectContaining({ request_id: 'req_export' })]));
+    expect(payload.runtime_observability.total_requests).toBe(1);
+    expect(payload.operations_summary.top_providers).toEqual(expect.arrayContaining([expect.objectContaining({ provider: 'openai' })]));
   });
 });

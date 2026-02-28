@@ -39,6 +39,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi",
     "method": "get"
   },
+  "usageExport": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/export",
+    "method": "get"
+  },
   "usageTimeseries": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/timeseries",
     "method": "get"

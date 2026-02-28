@@ -2461,6 +2461,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["export_usageReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/facts": {
         parameters: {
             query?: never;
@@ -8917,6 +8933,45 @@ export interface operations {
                         page_size: number;
                         total: number;
                     };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    export_usageReport: {
+        parameters: {
+            query: {
+                end_time: string;
+                end_user_id?: string;
+                error_class?: "provider_retryable" | "provider_non_retryable" | "system_error";
+                format: "csv" | "json";
+                model?: string;
+                provider?: string;
+                resource_id?: string;
+                resource_type?: string;
+                result?: "ok" | "error";
+                start_time: string;
+            };
+            header?: never;
+            path: {
+                projectId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage export file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "text/csv": string;
                 };
             };
             401: components["responses"]["Unauthorized"];

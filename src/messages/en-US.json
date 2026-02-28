@@ -824,6 +824,13 @@
       "loading": "Loading summary…",
       "empty": "No matching operations summary",
       "no_anomalies": "No significant anomaly peaks in the selected window."
+    },
+    "export": {
+      "label": "Export",
+      "csv": "Export CSV",
+      "json": "Export JSON",
+      "success": "Usage report exported",
+      "failed_with_reason": "Failed to export usage report: {reason}"
     }
   },
   "dashboard": {

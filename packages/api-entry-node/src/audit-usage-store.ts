@@ -308,6 +308,12 @@ export type UsageOperationsSummaryResponse = {
   }>;
 };
 
+export type UsageExportResponse = {
+  filename: string;
+  contentType: 'text/csv; charset=utf-8' | 'application/json; charset=utf-8';
+  body: string;
+};
+
 export const AUDIT_EVENTS_COLLECTION = 'project_audit_events';
 export const USAGE_FACTS_COLLECTION = 'project_usage_facts';
 
@@ -1287,5 +1293,164 @@ export async function getUsageOperationsSummary(
       .slice(0, 5),
     anomaly_peaks: anomalyPeaks.slice(0, 6),
     recent_requests: recentRequests,
+  };
+}
+
+function escapeCsvCell(value: unknown): string {
+  const normalized = value === null || value === undefined ? '' : String(value);
+  if (/[",\n]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  return normalized;
+}
+
+export async function exportUsageData(
+  docStore: JsonDocStorePort,
+  query: {
+    workspaceId: string;
+    projectId: string;
+    startTime: string;
+    endTime: string;
+    format: 'csv' | 'json';
+    resourceType?: string | null;
+    resourceId?: string | null;
+    endUserId?: string | null;
+    provider?: string | null;
+    model?: string | null;
+    result?: 'ok' | 'error' | null;
+    errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
+  },
+): Promise<UsageExportResponse> {
+  const baseFactsQuery = {
+    workspaceId: query.workspaceId,
+    projectId: query.projectId,
+    startTime: query.startTime,
+    endTime: query.endTime,
+    resourceType: query.resourceType ?? null,
+    resourceId: query.resourceId ?? null,
+    endUserId: query.endUserId ?? null,
+    provider: query.provider ?? null,
+    model: query.model ?? null,
+    result: query.result ?? null,
+    errorClass: query.errorClass ?? null,
+  };
+
+  const usageFacts = await listUsageFactRecords(docStore, {
+    ...baseFactsQuery,
+    sortOrder: 'desc',
+    page: 1,
+    pageSize: 10_000,
+  });
+
+  const filenameBase = `usage-report-${query.projectId}-${query.startTime.slice(0, 10)}-${query.endTime.slice(0, 10)}`;
+
+  if (query.format === 'csv') {
+    const headers = [
+      'timestamp',
+      'request_id',
+      'resource_type',
+      'resource_id',
+      'end_user_id',
+      'provider',
+      'resolved_model',
+      'result',
+      'error_code',
+      'error_class',
+      'fallback_hops',
+      'pricing_version',
+      'estimated_cost',
+      'missing_price',
+      'requests',
+      'duration_ms',
+      'tokens_in',
+      'tokens_out',
+      'tokens_total',
+      'bytes_in',
+      'bytes_out',
+    ];
+    const rows = usageFacts.items.map((item) => ([
+      item.timestamp,
+      item.request_id,
+      item.resource_type,
+      item.resource_id,
+      item.end_user_id,
+      item.runtime?.provider,
+      item.runtime?.resolved_model,
+      item.result,
+      item.error_code,
+      item.runtime?.error_class,
+      item.runtime?.fallback_hops,
+      item.runtime?.pricing_version,
+      item.runtime?.estimated_cost,
+      item.runtime?.missing_price,
+      item.requests,
+      item.duration_ms,
+      item.tokens_in,
+      item.tokens_out,
+      item.tokens_total,
+      item.bytes_in,
+      item.bytes_out,
+    ].map(escapeCsvCell).join(',')));
+
+    return {
+      filename: `${filenameBase}.csv`,
+      contentType: 'text/csv; charset=utf-8',
+      body: [headers.join(','), ...rows].join('\n'),
+    };
+  }
+
+  const [kpi, records, runtimeObservability, operationsSummary] = await Promise.all([
+    getUsageKpi(docStore, {
+      workspaceId: query.workspaceId,
+      projectId: query.projectId,
+      startTime: query.startTime,
+      endTime: query.endTime,
+      endUserId: query.endUserId ?? null,
+    }),
+    aggregateUsageRecords(docStore, {
+      ...baseFactsQuery,
+      groupBy: 'day',
+      sortBy: 'time_bucket',
+      sortOrder: 'desc',
+      page: 1,
+      pageSize: 10_000,
+    }),
+    getRuntimeObservability(docStore, {
+      workspaceId: query.workspaceId,
+      projectId: query.projectId,
+      startTime: query.startTime,
+      endTime: query.endTime,
+      provider: query.provider ?? null,
+      model: query.model ?? null,
+      result: query.result ?? null,
+      errorClass: query.errorClass ?? null,
+    }),
+    getUsageOperationsSummary(docStore, baseFactsQuery),
+  ]);
+
+  return {
+    filename: `${filenameBase}.json`,
+    contentType: 'application/json; charset=utf-8',
+    body: JSON.stringify({
+      generated_at: new Date().toISOString(),
+      workspace_id: query.workspaceId,
+      project_id: query.projectId,
+      filters: {
+        start_time: query.startTime,
+        end_time: query.endTime,
+        resource_type: query.resourceType ?? null,
+        resource_id: query.resourceId ?? null,
+        end_user_id: query.endUserId ?? null,
+        provider: query.provider ?? null,
+        model: query.model ?? null,
+        result: query.result ?? null,
+        error_class: query.errorClass ?? null,
+      },
+      kpi,
+      records: records.items,
+      facts: usageFacts.items,
+      runtime_observability: runtimeObservability,
+      operations_summary: operationsSummary,
+    }, null, 2),
   };
 }

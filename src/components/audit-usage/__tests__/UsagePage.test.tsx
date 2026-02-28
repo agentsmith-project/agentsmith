@@ -273,6 +273,10 @@ describe('UsagePage', () => {
     await user.click(screen.getByTestId('usage__report-schedules-form-delivery-channel'));
     await user.keyboard('{ArrowDown}{Enter}');
     await user.type(screen.getByTestId('usage__report-schedules-form-webhook-url'), 'https://example.internal/report-hook');
+    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-credential-ref'), 'cred_webhook');
+    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-secret-header'), 'x-webhook-secret');
+    await user.clear(screen.getByTestId('usage__report-schedules-form-webhook-timeout'));
+    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-timeout'), '15');
     await user.click(screen.getByTestId('usage__report-schedules-form-submit'));
 
     expect(createReportScheduleMock).toHaveBeenCalledWith(
@@ -283,6 +287,9 @@ describe('UsagePage', () => {
         delivery_channel: 'webhook',
         delivery_config: {
           webhook_url: 'https://example.internal/report-hook',
+          credential_ref: 'cred_webhook',
+          secret_header_name: 'x-webhook-secret',
+          timeout_seconds: 15,
         },
       }),
     );

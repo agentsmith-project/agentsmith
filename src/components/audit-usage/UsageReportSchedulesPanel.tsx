@@ -39,6 +39,9 @@ type UsageReportSchedulesPanelProps = {
     delivery_channel: 'in_app' | 'webhook';
     delivery_config?: {
       webhook_url?: string;
+      credential_ref?: string;
+      secret_header_name?: string;
+      timeout_seconds?: number;
     };
     filters?: UsageReportSchedule['filters'];
     release_evidence_required: boolean;
@@ -60,6 +63,9 @@ type DraftState = {
   time_window: 'last_24h' | 'last_7d' | 'last_30d';
   delivery_channel: 'in_app' | 'webhook';
   webhook_url: string;
+  credential_ref: string;
+  secret_header_name: string;
+  timeout_seconds: string;
   provider?: string;
   model?: string;
   result?: 'ok' | 'error';
@@ -92,6 +98,9 @@ function buildInitialDraft(filters: UsageListParams): DraftState {
     time_window: 'last_7d',
     delivery_channel: 'in_app',
     webhook_url: '',
+    credential_ref: '',
+    secret_header_name: '',
+    timeout_seconds: '10',
     provider: filters.provider,
     model: filters.model,
     result: filters.result,
@@ -102,6 +111,18 @@ function buildInitialDraft(filters: UsageListParams): DraftState {
 
 function deliveryStatusVariant(status: 'success' | 'failed') {
   return status === 'success' ? 'outline' : 'secondary';
+}
+
+function parseTimeoutSeconds(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function hasValidTimeout(value: string): boolean {
+  const parsed = parseTimeoutSeconds(value);
+  return parsed == null || (parsed >= 1 && parsed <= 120);
 }
 
 export function UsageReportSchedulesPanel({
@@ -143,6 +164,8 @@ export function UsageReportSchedulesPanel({
   const handleCreate = React.useCallback(async () => {
     if (!draft.name.trim()) return;
     if (draft.delivery_channel === 'webhook' && !draft.webhook_url.trim()) return;
+    if (draft.delivery_channel === 'webhook' && Boolean(draft.credential_ref.trim()) !== Boolean(draft.secret_header_name.trim())) return;
+    if (draft.delivery_channel === 'webhook' && !hasValidTimeout(draft.timeout_seconds)) return;
     setSubmitting(true);
     try {
       await onCreate({
@@ -153,7 +176,12 @@ export function UsageReportSchedulesPanel({
         time_window: draft.time_window,
         delivery_channel: draft.delivery_channel,
         delivery_config: draft.delivery_channel === 'webhook'
-          ? { webhook_url: draft.webhook_url.trim() }
+          ? {
+            webhook_url: draft.webhook_url.trim(),
+            credential_ref: draft.credential_ref.trim() || undefined,
+            secret_header_name: draft.secret_header_name.trim() || undefined,
+            timeout_seconds: parseTimeoutSeconds(draft.timeout_seconds),
+          }
           : undefined,
         filters: {
           provider: draft.provider?.trim() || undefined,
@@ -585,7 +613,7 @@ export function UsageReportSchedulesPanel({
                 </Select>
               </div>
               {draft.delivery_channel === 'webhook' ? (
-                <div className="grid gap-2">
+                <div className="grid gap-3">
                   <Label htmlFor="usage-report-webhook-url">{t('report_schedules.webhook_url')}</Label>
                   <Input
                     id="usage-report-webhook-url"
@@ -593,6 +621,36 @@ export function UsageReportSchedulesPanel({
                     onChange={(event) => setDraft((prev) => ({ ...prev, webhook_url: event.target.value }))}
                     data-testid="usage__report-schedules-form-webhook-url"
                   />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="usage-report-webhook-credential-ref">{t('report_schedules.webhook_credential_ref')}</Label>
+                      <Input
+                        id="usage-report-webhook-credential-ref"
+                        value={draft.credential_ref}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, credential_ref: event.target.value }))}
+                        data-testid="usage__report-schedules-form-webhook-credential-ref"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="usage-report-webhook-secret-header">{t('report_schedules.webhook_secret_header_name')}</Label>
+                      <Input
+                        id="usage-report-webhook-secret-header"
+                        value={draft.secret_header_name}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, secret_header_name: event.target.value }))}
+                        data-testid="usage__report-schedules-form-webhook-secret-header"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="usage-report-webhook-timeout">{t('report_schedules.webhook_timeout_seconds')}</Label>
+                    <Input
+                      id="usage-report-webhook-timeout"
+                      value={draft.timeout_seconds}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, timeout_seconds: event.target.value }))}
+                      data-testid="usage__report-schedules-form-webhook-timeout"
+                      inputMode="numeric"
+                    />
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -651,7 +709,15 @@ export function UsageReportSchedulesPanel({
             <Button
               type="button"
               onClick={() => void handleCreate()}
-              disabled={!draft.name.trim() || (draft.delivery_channel === 'webhook' && !draft.webhook_url.trim()) || submitting}
+              disabled={
+                !draft.name.trim()
+                || (draft.delivery_channel === 'webhook' && (
+                  !draft.webhook_url.trim()
+                  || Boolean(draft.credential_ref.trim()) !== Boolean(draft.secret_header_name.trim())
+                  || !hasValidTimeout(draft.timeout_seconds)
+                ))
+                || submitting
+              }
               data-testid="usage__report-schedules-form-submit"
             >
               {t('report_schedules.create_submit')}

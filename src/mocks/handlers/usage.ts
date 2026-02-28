@@ -1011,8 +1011,8 @@ export const usageHandlers = [
       format: body.format === 'csv' ? 'csv' : 'json',
       time_window: body.time_window === 'last_24h' || body.time_window === 'last_30d' ? body.time_window : 'last_7d',
       delivery_channel: body.delivery_channel === 'webhook' ? 'webhook' : 'in_app',
-      delivery_config: body.delivery_channel === 'webhook' && typeof body.webhook_url === 'string'
-        ? { webhook_url: body.webhook_url }
+      delivery_config: body.delivery_channel === 'webhook' && typeof body.delivery_config === 'object' && body.delivery_config
+        ? body.delivery_config as UsageReportSchedule['delivery_config']
         : undefined,
       filters: typeof body.filters === 'object' && body.filters ? body.filters as UsageReportSchedule['filters'] : undefined,
       release_evidence_required: body.release_evidence_required !== false,
@@ -1036,8 +1036,8 @@ export const usageHandlers = [
       ...usageReportSchedules[idx],
       ...body,
       cadence,
-      delivery_config: body.delivery_channel === 'webhook' && typeof body.webhook_url === 'string'
-        ? { webhook_url: body.webhook_url }
+      delivery_config: body.delivery_channel === 'webhook' && typeof body.delivery_config === 'object' && body.delivery_config
+        ? body.delivery_config as UsageReportSchedule['delivery_config']
         : body.delivery_channel === 'in_app'
           ? undefined
           : usageReportSchedules[idx].delivery_config,

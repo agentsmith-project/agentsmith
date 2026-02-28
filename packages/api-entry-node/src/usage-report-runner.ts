@@ -3,7 +3,7 @@ import {
   runDueUsageReportSchedulesAcrossProjects,
   type UsageReportRunnerSweepResult,
 } from './audit-usage-store.js';
-import { createUsageReportDeliveryDispatcher } from './usage-report-delivery.js';
+import type { UsageReportDeliveryDispatcher } from './usage-report-delivery.js';
 
 export type UsageReportRunnerStatus = {
   enabled: boolean;
@@ -21,6 +21,7 @@ export type UsageReportRunnerOptions = {
   enabled?: boolean;
   intervalMs?: number;
   now?: () => string;
+  deliveryDispatch?: UsageReportDeliveryDispatcher;
 };
 
 export type UsageReportRunnerController = {
@@ -48,7 +49,7 @@ export function createUsageReportRunner(
     run_count: 0,
     last_status: 'idle',
   };
-  const deliveryDispatch = createUsageReportDeliveryDispatcher();
+  const deliveryDispatch = options?.deliveryDispatch;
 
   const runOnce = async (_reason?: 'manual' | 'scheduled'): Promise<UsageReportRunnerSweepResult> => {
     if (status.running) {

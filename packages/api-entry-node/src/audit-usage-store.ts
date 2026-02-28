@@ -319,7 +319,14 @@ export type UsageReportScheduleStatus = 'active' | 'paused';
 export type UsageReportScheduleFormat = 'csv' | 'json';
 export type UsageReportScheduleWindow = 'last_24h' | 'last_7d' | 'last_30d';
 export type UsageReportScheduleDeliveryChannel = 'in_app' | 'webhook';
-export type UsageReportDeliveryErrorClass = 'empty_result' | 'delivery_channel' | 'system_error';
+export type UsageReportDeliveryErrorClass =
+  | 'empty_result'
+  | 'delivery_channel_timeout'
+  | 'delivery_channel_network'
+  | 'delivery_channel_auth'
+  | 'delivery_channel_4xx'
+  | 'delivery_channel_5xx'
+  | 'system_error';
 
 export type UsageReportScheduleRecord = {
   id: string;
@@ -333,6 +340,9 @@ export type UsageReportScheduleRecord = {
   delivery_channel: UsageReportScheduleDeliveryChannel;
   delivery_config?: {
     webhook_url?: string;
+    credential_ref?: string;
+    secret_header_name?: string;
+    timeout_seconds?: number;
   };
   filters?: {
     resource_type?: string;

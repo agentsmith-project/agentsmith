@@ -6534,7 +6534,7 @@ describe('api-entry-node projects routes', () => {
     expect(filteredBody.items[0]?.result).toBe('error');
   });
 
-  it('rejects webhook usage report schedule creation without webhook_url', async () => {
+  it('rejects webhook usage report schedule creation without delivery_config.webhook_url', async () => {
     const { baseUrl } = startServer();
 
     const response = await apiFetch(
@@ -6552,6 +6552,7 @@ describe('api-entry-node projects routes', () => {
           format: 'json',
           time_window: 'last_7d',
           delivery_channel: 'webhook',
+          delivery_config: {},
           release_evidence_required: true,
           empty_result_policy: 'deliver',
         }),
@@ -6562,7 +6563,44 @@ describe('api-entry-node projects routes', () => {
     expect(await response.json()).toEqual(
       expect.objectContaining({
         error_code: 'BAD_REQUEST',
-        message: 'webhook_url is required for webhook delivery',
+        message: 'delivery_config.webhook_url is required for webhook delivery',
+      }),
+    );
+  });
+
+  it('rejects webhook usage report schedule creation when credential_ref and secret_header_name are incomplete', async () => {
+    const { baseUrl } = startServer();
+
+    const response = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Webhook Ops',
+          cadence: 'daily',
+          status: 'active',
+          format: 'json',
+          time_window: 'last_7d',
+          delivery_channel: 'webhook',
+          delivery_config: {
+            webhook_url: 'https://example.internal/report-hook',
+            credential_ref: 'cred_webhook',
+          },
+          release_evidence_required: true,
+          empty_result_policy: 'deliver',
+        }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        error_code: 'BAD_REQUEST',
+        message: 'delivery_config.credential_ref and delivery_config.secret_header_name must be provided together',
       }),
     );
   });

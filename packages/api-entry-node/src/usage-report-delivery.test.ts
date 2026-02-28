@@ -1,149 +1,171 @@
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createUsageReportDeliveryDispatcher } from './usage-report-delivery.js';
+import type { UsageReportDeliveryDispatchArgs } from './usage-report-delivery.js';
 
-const servers: http.Server[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    servers.map(
-      (server) =>
-        new Promise<void>((resolve) => {
-          server.close(() => resolve());
-        }),
-    ),
-  );
-  servers.length = 0;
-});
-
-function startWebhookServer(statusCode = 200): Promise<{
-  url: string;
-  getRequest: () => { body: string; headers: http.IncomingHttpHeaders };
-}> {
-  let lastBody = '';
-  let lastHeaders: http.IncomingHttpHeaders = {};
-  const server = http.createServer((req, res) => {
-    void (async () => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      lastBody = Buffer.concat(chunks).toString('utf-8');
-      lastHeaders = req.headers;
-      res.statusCode = statusCode;
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ ok: statusCode >= 200 && statusCode < 300 }));
-    })();
-  });
-
-  return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      servers.push(server);
-      const address = server.address() as AddressInfo;
-      resolve({
-        url: `http://127.0.0.1:${address.port}/hook`,
-        getRequest: () => ({ body: lastBody, headers: lastHeaders }),
-      });
-    });
-  });
+function buildDispatchArgs(
+  overrides?: Partial<UsageReportDeliveryDispatchArgs>,
+): UsageReportDeliveryDispatchArgs {
+  return {
+    workspaceId: 'ws_1',
+    projectId: 'proj_1',
+    schedule: {
+      id: 'usage_schedule_1',
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      name: 'Webhook Schedule',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'webhook',
+      delivery_config: { webhook_url: 'https://example.internal/hook', timeout_seconds: 10 },
+      release_evidence_required: false,
+      empty_result_policy: 'deliver',
+      created_at: '2026-03-01T00:00:00.000Z',
+      updated_at: '2026-03-01T00:00:00.000Z',
+      next_run_at: '2026-03-02T00:00:00.000Z',
+    },
+    result: {
+      delivery_id: 'delivery_1',
+      schedule_id: 'usage_schedule_1',
+      delivery_channel: 'webhook',
+      generated_at: '2026-03-01T00:00:00.000Z',
+      preview_filename: 'usage-report.json',
+      content_type: 'application/json; charset=utf-8',
+      status: 'success',
+      summary: { requests: 4, errors: 0 },
+    },
+    trigger: 'manual',
+    reportBody: '{"ok":true}',
+    reportContentType: 'application/json; charset=utf-8',
+    ...overrides,
+  };
 }
 
 describe('usage-report-delivery', () => {
-  it('dispatches webhook payload successfully', async () => {
-    const hook = await startWebhookServer(200);
-    const dispatch = createUsageReportDeliveryDispatcher();
-
-    const result = await dispatch({
-      workspaceId: 'ws_1',
-      projectId: 'proj_1',
-      schedule: {
-        id: 'usage_schedule_1',
-        workspace_id: 'ws_1',
-        project_id: 'proj_1',
-        name: 'Webhook Schedule',
-        cadence: 'daily',
-        status: 'active',
-        format: 'json',
-        time_window: 'last_7d',
-        delivery_channel: 'webhook',
-        delivery_config: { webhook_url: hook.url },
-        release_evidence_required: false,
-        empty_result_policy: 'deliver',
-        created_at: '2026-03-01T00:00:00.000Z',
-        updated_at: '2026-03-01T00:00:00.000Z',
-        next_run_at: '2026-03-02T00:00:00.000Z',
-      },
-      result: {
-        delivery_id: 'delivery_1',
-        schedule_id: 'usage_schedule_1',
-        delivery_channel: 'webhook',
-        generated_at: '2026-03-01T00:00:00.000Z',
-        preview_filename: 'usage-report.json',
-        content_type: 'application/json; charset=utf-8',
-        status: 'success',
-        summary: { requests: 4, errors: 0 },
-      },
-      trigger: 'manual',
-      reportBody: '{"ok":true}',
-      reportContentType: 'application/json; charset=utf-8',
+  it('dispatches webhook payload successfully with credential header', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+    const getCredentialSecret = vi.fn().mockResolvedValue('secret_token');
+    const dispatch = createUsageReportDeliveryDispatcher({
+      fetchImpl,
+      getCredentialSecret,
     });
+
+    const result = await dispatch(buildDispatchArgs({
+      schedule: {
+        ...buildDispatchArgs().schedule,
+        delivery_config: {
+          webhook_url: 'https://example.internal/hook',
+          credential_ref: 'cred_webhook',
+          secret_header_name: 'x-webhook-secret',
+          timeout_seconds: 15,
+        },
+      },
+    }));
 
     expect(result.ok).toBe(true);
-    expect(result.delivery_metadata).toEqual(
-      expect.objectContaining({
-        dispatch_mode: 'webhook',
-        response_status: 200,
-      }),
-    );
-    expect(hook.getRequest().body).toBe('{"ok":true}');
-    expect(hook.getRequest().headers['x-agentsmith-report-trigger']).toBe('manual');
+    expect(getCredentialSecret).toHaveBeenCalledWith('ws_1', 'proj_1', 'cred_webhook');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toEqual(expect.objectContaining({
+      'content-type': 'application/json; charset=utf-8',
+      'x-agentsmith-report-trigger': 'manual',
+      'x-webhook-secret': 'secret_token',
+    }));
+    expect(result.delivery_metadata).toEqual(expect.objectContaining({
+      dispatch_mode: 'webhook',
+      credential_ref: 'cred_webhook',
+      secret_header_name: 'x-webhook-secret',
+      timeout_seconds: 15,
+      response_status: 200,
+    }));
   });
 
-  it('returns delivery_channel failure on webhook http error', async () => {
-    const hook = await startWebhookServer(503);
-    const dispatch = createUsageReportDeliveryDispatcher();
-
-    const result = await dispatch({
-      workspaceId: 'ws_1',
-      projectId: 'proj_1',
-      schedule: {
-        id: 'usage_schedule_1',
-        workspace_id: 'ws_1',
-        project_id: 'proj_1',
-        name: 'Webhook Schedule',
-        cadence: 'daily',
-        status: 'active',
-        format: 'json',
-        time_window: 'last_7d',
-        delivery_channel: 'webhook',
-        delivery_config: { webhook_url: hook.url },
-        release_evidence_required: false,
-        empty_result_policy: 'deliver',
-        created_at: '2026-03-01T00:00:00.000Z',
-        updated_at: '2026-03-01T00:00:00.000Z',
-        next_run_at: '2026-03-02T00:00:00.000Z',
-      },
-      result: {
-        delivery_id: 'delivery_1',
-        schedule_id: 'usage_schedule_1',
-        delivery_channel: 'webhook',
-        generated_at: '2026-03-01T00:00:00.000Z',
-        preview_filename: 'usage-report.json',
-        content_type: 'application/json; charset=utf-8',
-        status: 'success',
-        summary: { requests: 4, errors: 0 },
-      },
-      trigger: 'scheduled',
-      reportBody: '{"ok":true}',
-      reportContentType: 'application/json; charset=utf-8',
+  it('classifies webhook auth failure when credential secret is missing', async () => {
+    const dispatch = createUsageReportDeliveryDispatcher({
+      getCredentialSecret: vi.fn().mockResolvedValue(null),
+      fetchImpl: vi.fn(),
     });
 
-    expect(result).toEqual(
-      expect.objectContaining({
+    const result = await dispatch(buildDispatchArgs({
+      schedule: {
+        ...buildDispatchArgs().schedule,
+        delivery_config: {
+          webhook_url: 'https://example.internal/hook',
+          credential_ref: 'cred_missing',
+          secret_header_name: 'x-webhook-secret',
+        },
+      },
+    }));
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      error_class: 'delivery_channel_auth',
+      error: 'usage_report_webhook_credential_missing',
+    }));
+  });
+
+  it('classifies webhook timeout failures', async () => {
+    const fetchImpl = vi.fn((_input: unknown, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          const abortError = new Error('aborted');
+          abortError.name = 'AbortError';
+          reject(abortError);
+        });
+      });
+    });
+    const dispatch = createUsageReportDeliveryDispatcher({ fetchImpl });
+
+    const result = await dispatch(buildDispatchArgs({
+      schedule: {
+        ...buildDispatchArgs().schedule,
+        delivery_config: {
+          webhook_url: 'https://example.internal/hook',
+          timeout_seconds: 1,
+        },
+      },
+    }));
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      error_class: 'delivery_channel_timeout',
+      error: 'usage_report_webhook_timeout',
+    }));
+  });
+
+  it('classifies webhook http failures by status family', async () => {
+    const cases: Array<{ status: number; errorClass: string }> = [
+      { status: 401, errorClass: 'delivery_channel_auth' },
+      { status: 422, errorClass: 'delivery_channel_4xx' },
+      { status: 503, errorClass: 'delivery_channel_5xx' },
+    ];
+
+    for (const testCase of cases) {
+      const fetchImpl = vi.fn().mockResolvedValue(new Response('fail', { status: testCase.status }));
+      const dispatch = createUsageReportDeliveryDispatcher({ fetchImpl });
+      const result = await dispatch(buildDispatchArgs());
+      expect(result).toEqual(expect.objectContaining({
         ok: false,
-        error_class: 'delivery_channel',
-      }),
-    );
+        error_class: testCase.errorClass,
+        error: `usage_report_webhook_http_${testCase.status}`,
+      }));
+    }
+  });
+
+  it('classifies webhook network failures', async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED'));
+    const dispatch = createUsageReportDeliveryDispatcher({ fetchImpl });
+
+    const result = await dispatch(buildDispatchArgs());
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      error_class: 'delivery_channel_network',
+      error: 'connect ECONNREFUSED',
+    }));
   });
 });

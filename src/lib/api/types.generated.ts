@@ -3130,6 +3130,9 @@ export interface components {
             /** @enum {string} */
             delivery_channel: "in_app" | "webhook";
             delivery_config?: {
+                credential_ref?: string;
+                secret_header_name?: string;
+                timeout_seconds?: number;
                 webhook_url?: string;
             };
             /** @enum {string} */
@@ -3143,7 +3146,6 @@ export interface components {
             status: "active" | "paused";
             /** @enum {string} */
             time_window: "last_24h" | "last_7d" | "last_30d";
-            webhook_url?: string;
         };
         Endpoint: {
             base_url: string;
@@ -3710,6 +3712,9 @@ export interface components {
             /** @enum {string} */
             delivery_channel?: "in_app" | "webhook";
             delivery_config?: {
+                credential_ref?: string;
+                secret_header_name?: string;
+                timeout_seconds?: number;
                 webhook_url?: string;
             };
             /** @enum {string} */
@@ -3840,7 +3845,7 @@ export interface components {
             };
             error?: string;
             /** @enum {string} */
-            error_class?: "empty_result" | "delivery_channel" | "system_error";
+            error_class?: "empty_result" | "delivery_channel_timeout" | "delivery_channel_network" | "delivery_channel_auth" | "delivery_channel_4xx" | "delivery_channel_5xx" | "system_error";
             id: string;
             parent_delivery_id?: string;
             preview_filename?: string;
@@ -3910,6 +3915,9 @@ export interface components {
             /** @enum {string} */
             delivery_channel: "in_app" | "webhook";
             delivery_config?: {
+                credential_ref?: string;
+                secret_header_name?: string;
+                timeout_seconds?: number;
                 webhook_url?: string;
             };
             /** @enum {string} */
@@ -3937,7 +3945,6 @@ export interface components {
             time_window: "last_24h" | "last_7d" | "last_30d";
             /** Format: date-time */
             updated_at: string;
-            webhook_url?: string;
             workspace_id: string;
         };
         UsageReportScheduleDeliveryResult: {
@@ -3950,7 +3957,7 @@ export interface components {
             };
             error?: string;
             /** @enum {string} */
-            error_class?: "empty_result" | "delivery_channel" | "system_error";
+            error_class?: "empty_result" | "delivery_channel_timeout" | "delivery_channel_network" | "delivery_channel_auth" | "delivery_channel_4xx" | "delivery_channel_5xx" | "system_error";
             /** Format: date-time */
             generated_at: string;
             preview_filename: string;

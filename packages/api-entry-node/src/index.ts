@@ -9,6 +9,7 @@ import {
 } from './node-api-deps-factory.js';
 import { handleRequest } from './request-handler.js';
 import { createUsageReportRunner } from './usage-report-runner.js';
+import { createUsageReportDeliveryDispatcher } from './usage-report-delivery.js';
 
 export type { NodeApiDeps } from './node-api-deps.js';
 export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
@@ -26,9 +27,14 @@ export function createNodeApiServer(
   lifecycle?: Pick<ProjectRepoFactoryResult, 'shutdown'>,
   options?: CreateNodeApiServerOptions,
 ): http.Server {
+  const usageReportDeliveryDispatch = createUsageReportDeliveryDispatcher({
+    getCredentialSecret: (workspaceId, projectId, credentialId) =>
+      deps.endpointResourceService.getCredentialSecret(workspaceId, projectId, credentialId),
+  });
   const usageReportRunner = createUsageReportRunner(deps.docStore, {
     enabled: options?.usageReportRunner?.enabled ?? false,
     intervalMs: options?.usageReportRunner?.intervalMs,
+    deliveryDispatch: usageReportDeliveryDispatch,
   });
   deps.usageReportRunner = usageReportRunner;
 

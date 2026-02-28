@@ -7160,8 +7160,14 @@ components:
           properties:
             webhook_url:
               type: string
-        webhook_url:
-          type: string
+            credential_ref:
+              type: string
+            secret_header_name:
+              type: string
+            timeout_seconds:
+              type: integer
+              minimum: 1
+              maximum: 120
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
         release_evidence_required:
@@ -7238,8 +7244,14 @@ components:
           properties:
             webhook_url:
               type: string
-        webhook_url:
-          type: string
+            credential_ref:
+              type: string
+            secret_header_name:
+              type: string
+            timeout_seconds:
+              type: integer
+              minimum: 1
+              maximum: 120
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
         release_evidence_required:
@@ -7272,6 +7284,14 @@ components:
           properties:
             webhook_url:
               type: string
+            credential_ref:
+              type: string
+            secret_header_name:
+              type: string
+            timeout_seconds:
+              type: integer
+              minimum: 1
+              maximum: 120
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
         release_evidence_required:
@@ -7335,7 +7355,7 @@ components:
           type: string
         error_class:
           type: string
-          enum: [empty_result, delivery_channel, system_error]
+          enum: [empty_result, delivery_channel_timeout, delivery_channel_network, delivery_channel_auth, delivery_channel_4xx, delivery_channel_5xx, system_error]
         acknowledged_at:
           type: string
           format: date-time
@@ -7386,7 +7406,7 @@ components:
           type: string
         error_class:
           type: string
-          enum: [empty_result, delivery_channel, system_error]
+          enum: [empty_result, delivery_channel_timeout, delivery_channel_network, delivery_channel_auth, delivery_channel_4xx, delivery_channel_5xx, system_error]
         delivery_metadata:
           type: object
           additionalProperties: true

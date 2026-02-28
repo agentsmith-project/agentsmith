@@ -191,6 +191,9 @@ export interface UsageReportSchedule {
   delivery_channel: 'in_app' | 'webhook';
   delivery_config?: {
     webhook_url?: string;
+    credential_ref?: string;
+    secret_header_name?: string;
+    timeout_seconds?: number;
   };
   filters?: {
     resource_type?: string;
@@ -234,7 +237,14 @@ export interface UsageReportDelivery {
     estimated_cost?: number;
   };
   error?: string;
-  error_class?: 'empty_result' | 'delivery_channel' | 'system_error';
+  error_class?:
+    | 'empty_result'
+    | 'delivery_channel_timeout'
+    | 'delivery_channel_network'
+    | 'delivery_channel_auth'
+    | 'delivery_channel_4xx'
+    | 'delivery_channel_5xx'
+    | 'system_error';
   acknowledged_at?: string;
   acknowledged_by?: string;
   parent_delivery_id?: string;
@@ -256,7 +266,14 @@ export interface UsageReportScheduleDeliveryResult {
     estimated_cost?: number;
   };
   error?: string;
-  error_class?: 'empty_result' | 'delivery_channel' | 'system_error';
+  error_class?:
+    | 'empty_result'
+    | 'delivery_channel_timeout'
+    | 'delivery_channel_network'
+    | 'delivery_channel_auth'
+    | 'delivery_channel_4xx'
+    | 'delivery_channel_5xx'
+    | 'system_error';
   delivery_metadata?: Record<string, unknown>;
 }
 
@@ -595,13 +612,9 @@ export class UsageAPI {
     projectId: string,
     body: Omit<UsageReportSchedule, 'id' | 'workspace_id' | 'project_id' | 'created_at' | 'updated_at' | 'next_run_at' | 'last_run_at' | 'last_delivery_status' | 'last_delivery_at' | 'last_delivery_error' | 'recent_deliveries'>,
   ): Promise<UsageReportSchedule> {
-    const requestBody = {
-      ...body,
-      webhook_url: body.delivery_channel === 'webhook' ? body.delivery_config?.webhook_url : undefined,
-    };
     return this.client.post<UsageReportSchedule>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules`,
-      requestBody,
+      body,
     );
   }
 
@@ -611,13 +624,9 @@ export class UsageAPI {
     scheduleId: string,
     patch: Partial<Pick<UsageReportSchedule, 'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'delivery_config' | 'filters' | 'release_evidence_required' | 'empty_result_policy'>>,
   ): Promise<UsageReportSchedule> {
-    const requestBody = {
-      ...patch,
-      webhook_url: patch.delivery_channel === 'webhook' ? patch.delivery_config?.webhook_url : undefined,
-    };
     return this.client.patch<UsageReportSchedule>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}`,
-      requestBody,
+      patch,
     );
   }
 

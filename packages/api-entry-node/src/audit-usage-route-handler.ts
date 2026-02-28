@@ -67,23 +67,65 @@ function badRequest(json: JsonResponder, res: http.ServerResponse, message: stri
   return true;
 }
 
+type ParsedDeliverySettings =
+  | {
+    ok: true;
+    deliveryChannel: 'in_app' | 'webhook';
+    deliveryConfig?: {
+      webhook_url?: string;
+      credential_ref?: string;
+      secret_header_name?: string;
+      timeout_seconds?: number;
+    };
+  }
+  | {
+    ok: false;
+    message: string;
+  };
+
 function parseDeliveryChannel(
   body: Record<string, unknown>,
-): { deliveryChannel: 'in_app' | 'webhook'; deliveryConfig?: { webhook_url?: string } } | null {
+): ParsedDeliverySettings {
   const deliveryChannel = body.delivery_channel === 'webhook' ? 'webhook' : 'in_app';
+  const rawDeliveryConfig = typeof body.delivery_config === 'object' && body.delivery_config
+    ? body.delivery_config as Record<string, unknown>
+    : {};
   if (deliveryChannel === 'webhook') {
-    const webhookUrl = typeof body.webhook_url === 'string' ? body.webhook_url.trim() : '';
+    const webhookUrl = typeof rawDeliveryConfig.webhook_url === 'string' ? rawDeliveryConfig.webhook_url.trim() : '';
+    const credentialRef = typeof rawDeliveryConfig.credential_ref === 'string' ? rawDeliveryConfig.credential_ref.trim() : '';
+    const secretHeaderName = typeof rawDeliveryConfig.secret_header_name === 'string'
+      ? rawDeliveryConfig.secret_header_name.trim()
+      : '';
+    const timeoutRaw = rawDeliveryConfig.timeout_seconds;
+    const timeoutSeconds = typeof timeoutRaw === 'number'
+      ? timeoutRaw
+      : typeof timeoutRaw === 'string'
+        ? Number.parseInt(timeoutRaw, 10)
+        : undefined;
     if (!webhookUrl) {
-      return null;
+      return { ok: false, message: 'delivery_config.webhook_url is required for webhook delivery' };
+    }
+    if ((credentialRef && !secretHeaderName) || (!credentialRef && secretHeaderName)) {
+      return { ok: false, message: 'delivery_config.credential_ref and delivery_config.secret_header_name must be provided together' };
+    }
+    if (timeoutSeconds != null && (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 120)) {
+      return { ok: false, message: 'delivery_config.timeout_seconds must be between 1 and 120' };
     }
     return {
+      ok: true,
       deliveryChannel,
       deliveryConfig: {
         webhook_url: webhookUrl,
+        credential_ref: credentialRef || undefined,
+        secret_header_name: secretHeaderName || undefined,
+        timeout_seconds: timeoutSeconds != null ? Math.floor(timeoutSeconds) : undefined,
       },
     };
   }
-  return { deliveryChannel };
+  if (rawDeliveryConfig.webhook_url != null || rawDeliveryConfig.credential_ref != null || rawDeliveryConfig.secret_header_name != null || rawDeliveryConfig.timeout_seconds != null) {
+    return { ok: false, message: 'delivery_config is only supported for webhook delivery' };
+  }
+  return { ok: true, deliveryChannel };
 }
 
 function requireTimeRange(
@@ -117,7 +159,10 @@ export async function handleAuditUsageRoute({
   deps,
   user,
 }: HandlerArgs): Promise<boolean> {
-  const deliveryDispatch = createUsageReportDeliveryDispatcher();
+  const deliveryDispatch = createUsageReportDeliveryDispatcher({
+    getCredentialSecret: (workspaceId, projectId, credentialId) =>
+      deps.endpointResourceService.getCredentialSecret(workspaceId, projectId, credentialId),
+  });
 
   if (route.kind === 'usageReportSchedules' && method === 'GET') {
     const payload = await listUsageReportSchedules(deps.docStore, {
@@ -139,8 +184,8 @@ export async function handleAuditUsageRoute({
     if (!name) {
       return badRequest(json, res, 'name is required');
     }
-    if (!delivery) {
-      return badRequest(json, res, 'webhook_url is required for webhook delivery');
+    if (!delivery.ok) {
+      return badRequest(json, res, delivery.message);
     }
     const payload = await createUsageReportSchedule(deps.docStore, {
       workspace_id: route.workspaceId,
@@ -164,6 +209,7 @@ export async function handleAuditUsageRoute({
     const payload = await runDueUsageReportSchedules(deps.docStore, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      deliveryDispatch,
     });
     json(res, 200, payload);
     return true;
@@ -181,11 +227,11 @@ export async function handleAuditUsageRoute({
 
   if (route.kind === 'usageReportScheduleItem' && method === 'PATCH') {
     const body = await readJsonBody<Record<string, unknown>>(req);
-    const delivery = body.delivery_channel != null || body.webhook_url != null
+    const delivery = body.delivery_channel != null || body.delivery_config != null
       ? parseDeliveryChannel(body)
       : undefined;
-    if ((body.delivery_channel != null || body.webhook_url != null) && !delivery) {
-      return badRequest(json, res, 'webhook_url is required for webhook delivery');
+    if (delivery && !delivery.ok) {
+      return badRequest(json, res, delivery.message);
     }
     const payload = await updateUsageReportSchedule(deps.docStore, {
       workspaceId: route.workspaceId,
@@ -199,8 +245,8 @@ export async function handleAuditUsageRoute({
         time_window: body.time_window === 'last_24h' || body.time_window === 'last_7d' || body.time_window === 'last_30d'
           ? body.time_window
           : undefined,
-        delivery_channel: delivery?.deliveryChannel,
-        delivery_config: delivery?.deliveryConfig,
+        delivery_channel: delivery?.ok ? delivery.deliveryChannel : undefined,
+        delivery_config: delivery?.ok ? delivery.deliveryConfig : undefined,
         filters: typeof body.filters === 'object' && body.filters ? body.filters as Record<string, unknown> : undefined,
         release_evidence_required: typeof body.release_evidence_required === 'boolean' ? body.release_evidence_required : undefined,
         empty_result_policy: body.empty_result_policy === 'deliver' || body.empty_result_policy === 'fail' ? body.empty_result_policy : undefined,

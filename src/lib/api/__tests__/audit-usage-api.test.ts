@@ -76,7 +76,7 @@ describe('UsageAPI exportReport', () => {
 
     expect(postMock).toHaveBeenCalledWith(
       '/workspaces/ws_1/projects/proj_1/usage/report-schedules',
-      expect.objectContaining({ name: 'Daily Ops', webhook_url: undefined }),
+      expect.objectContaining({ name: 'Daily Ops', delivery_config: undefined }),
     );
     expect(result.name).toBe('Daily Ops');
   });
@@ -92,7 +92,12 @@ describe('UsageAPI exportReport', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'webhook',
-      delivery_config: { webhook_url: 'https://example.internal/report-hook' },
+      delivery_config: {
+        webhook_url: 'https://example.internal/report-hook',
+        credential_ref: 'cred_webhook',
+        secret_header_name: 'x-webhook-secret',
+        timeout_seconds: 15,
+      },
       created_at: '2026-02-28T00:00:00.000Z',
       updated_at: '2026-02-28T00:00:00.000Z',
       next_run_at: '2026-03-01T00:00:00.000Z',
@@ -110,7 +115,12 @@ describe('UsageAPI exportReport', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'webhook',
-      delivery_config: { webhook_url: 'https://example.internal/report-hook' },
+      delivery_config: {
+        webhook_url: 'https://example.internal/report-hook',
+        credential_ref: 'cred_webhook',
+        secret_header_name: 'x-webhook-secret',
+        timeout_seconds: 15,
+      },
       release_evidence_required: true,
       empty_result_policy: 'deliver',
     });
@@ -120,7 +130,12 @@ describe('UsageAPI exportReport', () => {
       expect.objectContaining({
         name: 'Webhook Ops',
         delivery_channel: 'webhook',
-        webhook_url: 'https://example.internal/report-hook',
+        delivery_config: {
+          webhook_url: 'https://example.internal/report-hook',
+          credential_ref: 'cred_webhook',
+          secret_header_name: 'x-webhook-secret',
+          timeout_seconds: 15,
+        },
       }),
     );
     expect(result.delivery_channel).toBe('webhook');

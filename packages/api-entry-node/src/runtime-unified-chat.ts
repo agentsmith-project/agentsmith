@@ -1,6 +1,12 @@
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectUsageFact } from './audit-usage-recorders.js';
-import { classifyUpstreamStatus, resolveRoutingPlan, shouldFallbackByPolicy } from './runtime-routing.js';
+import {
+  evaluateUpstreamFallback,
+  selectProviderConnection,
+  shouldFallbackAfterNetworkError,
+  toMissingCredentialFailure,
+} from './runtime-execution-policy.js';
+import { resolveRoutingPlan } from './runtime-routing.js';
 import { createRuntimeStore, type RuntimePricingRecord } from './runtime-store.js';
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -142,29 +148,22 @@ export async function executeRuntimeUnifiedChat(params: {
 
   for (let idx = 0; idx < attempts.length; idx += 1) {
     const attempt = attempts[idx]!;
-    const available = providers
-      .filter((item) => item.provider === attempt.provider && item.status === 'active')
-      .sort((a, b) => (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER));
-    if (available.length === 0) {
-      lastErrorCode = 'RUNTIME_PROVIDER_CONNECTION_NOT_FOUND';
-      lastMessage = 'runtime_provider_connection_not_found';
+    const providerSelection = selectProviderConnection({ providers, attempt });
+    if (!providerSelection.ok) {
+      lastErrorCode = providerSelection.failure.errorCode;
+      lastMessage = providerSelection.failure.message;
       continue;
     }
-
-    const providerConn = available[0]!;
-    if (!providerConn.credential_ref) {
-      lastErrorCode = 'RUNTIME_PROVIDER_CREDENTIAL_MISSING';
-      lastMessage = 'runtime_provider_credential_missing';
-      continue;
-    }
+    const providerConn = providerSelection.providerConnection;
     const apiKey = await deps.endpointResourceService.getCredentialSecret(
       workspaceId,
       projectId,
       providerConn.credential_ref,
     );
     if (!apiKey) {
-      lastErrorCode = 'RUNTIME_PROVIDER_CREDENTIAL_NOT_FOUND';
-      lastMessage = 'runtime_provider_credential_not_found';
+      const failure = toMissingCredentialFailure();
+      lastErrorCode = failure.errorCode;
+      lastMessage = failure.message;
       continue;
     }
 
@@ -181,15 +180,13 @@ export async function executeRuntimeUnifiedChat(params: {
         body: JSON.stringify(upstreamBody),
       });
     } catch {
-      if (idx < attempts.length - 1) {
-        const shouldFallback = shouldFallbackByPolicy({
-          errorClass: 'system_error',
-          hopAfterFallback: idx + 1,
-          policy: comboName ? comboFallbackPolicy : undefined,
-        });
-        if (shouldFallback) {
-          continue;
-        }
+      if (shouldFallbackAfterNetworkError({
+        attemptIndex: idx,
+        attemptCount: attempts.length,
+        comboName,
+        comboFallbackPolicy,
+      })) {
+        continue;
       }
       return {
         statusCode: 502,
@@ -197,16 +194,15 @@ export async function executeRuntimeUnifiedChat(params: {
       };
     }
 
-    const errorClass = upstreamRes.ok ? undefined : classifyUpstreamStatus(upstreamRes.status);
-    if (!upstreamRes.ok && idx < attempts.length - 1 && errorClass) {
-      const shouldFallback = shouldFallbackByPolicy({
-        errorClass,
-        hopAfterFallback: idx + 1,
-        policy: comboName ? comboFallbackPolicy : undefined,
-      });
-      if (shouldFallback) {
-        continue;
-      }
+    const upstreamDecision = evaluateUpstreamFallback({
+      attemptIndex: idx,
+      attemptCount: attempts.length,
+      upstreamStatus: upstreamRes.status,
+      comboName,
+      comboFallbackPolicy,
+    });
+    if (!upstreamRes.ok && upstreamDecision.shouldFallback) {
+      continue;
     }
 
     const contentType = upstreamRes.headers.get('content-type') ?? 'application/json';

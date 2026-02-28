@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { RefreshCw } from 'lucide-react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Download, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -41,7 +42,22 @@ function yesNoBadge(value: boolean | undefined) {
   return value ? 'outline' : 'secondary';
 }
 
+function downloadTextFile(filename: string, content: string, contentType: string): void {
+  const blob = new Blob([content], { type: contentType });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const errorsT = useTranslations('errors');
   const settingsT = useTranslations('settings');
   const usageT = useTranslations('usage');
@@ -49,9 +65,14 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const [timeRange] = useState(defaultTimeRange);
   const canReadUsage = useHasPermission('project:usage:view');
-  const [selectedReportName, setSelectedReportName] = useState<string | undefined>();
-  const [reportSearch, setReportSearch] = useState('');
-  const [reportStatusFilter, setReportStatusFilter] = useState<'all' | 'pass' | 'fail'>('all');
+  const searchParamsKey = searchParams.toString();
+  const [selectedReportName, setSelectedReportName] = useState<string | undefined>(searchParams.get('report') ?? undefined);
+  const [reportSearch, setReportSearch] = useState(searchParams.get('report_search') ?? '');
+  const [reportStatusFilter, setReportStatusFilter] = useState<'all' | 'pass' | 'fail'>(
+    searchParams.get('report_status') === 'pass' || searchParams.get('report_status') === 'fail'
+      ? searchParams.get('report_status') as 'pass' | 'fail'
+      : 'all',
+  );
 
   useEffect(() => {
     params.then((p) => setResolvedParams({
@@ -105,6 +126,17 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   );
 
   useEffect(() => {
+    const nextReport = searchParams.get('report') ?? undefined;
+    const nextSearch = searchParams.get('report_search') ?? '';
+    const nextStatus = searchParams.get('report_status') === 'pass' || searchParams.get('report_status') === 'fail'
+      ? searchParams.get('report_status') as 'pass' | 'fail'
+      : 'all';
+    setSelectedReportName((prev) => prev === nextReport ? prev : nextReport);
+    setReportSearch((prev) => prev === nextSearch ? prev : nextSearch);
+    setReportStatusFilter((prev) => prev === nextStatus ? prev : nextStatus);
+  }, [searchParams, searchParamsKey]);
+
+  useEffect(() => {
     if (!selectedReportName && filteredReleaseReports.length > 0) {
       setSelectedReportName(filteredReleaseReports[0]?.name);
       return;
@@ -113,6 +145,35 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       setSelectedReportName(filteredReleaseReports[0]?.name);
     }
   }, [filteredReleaseReports, selectedReportName]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    const nextReport = selectedReportName ?? '';
+    const nextSearch = reportSearch.trim();
+    const nextStatus = reportStatusFilter;
+    let changed = false;
+
+    if ((params.get('report') ?? '') !== nextReport) {
+      changed = true;
+      if (nextReport) params.set('report', nextReport);
+      else params.delete('report');
+    }
+    if ((params.get('report_search') ?? '') !== nextSearch) {
+      changed = true;
+      if (nextSearch) params.set('report_search', nextSearch);
+      else params.delete('report_search');
+    }
+    const currentStatus = params.get('report_status') ?? 'all';
+    if (currentStatus !== nextStatus) {
+      changed = true;
+      if (nextStatus === 'all') params.delete('report_status');
+      else params.set('report_status', nextStatus);
+    }
+
+    if (!changed) return;
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, reportSearch, reportStatusFilter, router, searchParamsKey, selectedReportName]);
 
   const reportSummary = (reportDetailQuery.data?.report as {
     summary?: {
@@ -376,6 +437,38 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       {reportDetailQuery.data.markdown ? (
                         <Badge variant="outline">{settingsT('release_ops_reports_markdown')}</Badge>
                       ) : null}
+                      {reportDetailQuery.data.markdown ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => downloadTextFile(`${reportDetailQuery.data?.name}.md`, reportDetailQuery.data?.markdown ?? '', 'text/markdown; charset=utf-8')}
+                          data-testid="release-ops__report-download-markdown"
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          {settingsT('release_ops_reports_download_markdown')}
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3" data-testid="release-ops__report-metadata">
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_reports_meta_branch')}</div>
+                        <div className="mt-1 text-sm font-medium text-foreground">
+                          {((reportDetailQuery.data.report as { metadata?: { git?: { branch?: string } } }).metadata?.git?.branch) ?? '--'}
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_reports_meta_commit')}</div>
+                        <div className="mt-1 font-mono text-sm text-foreground">
+                          {((reportDetailQuery.data.report as { metadata?: { git?: { commit_short?: string } } }).metadata?.git?.commit_short) ?? '--'}
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_reports_meta_generated_at')}</div>
+                        <div className="mt-1 text-sm text-foreground">
+                          {formatDateTime(((reportDetailQuery.data.report as { metadata?: { timestamp?: string } }).metadata?.timestamp))}
+                        </div>
+                      </div>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2" data-testid="release-ops__report-structured-summary">
                       <div className="rounded-md border border-subtle bg-surface p-3">

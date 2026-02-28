@@ -153,7 +153,7 @@ test.describe('Settings Page', () => {
 
     await authedPage.getByTestId('sidebar__nav-item--release_ops').click();
 
-    await expect(authedPage).toHaveURL(/\/release-ops$/);
+    await expect(authedPage).toHaveURL(/\/release-ops(\?|$)/);
     await expect(authedPage.getByTestId('release-ops__page')).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('release-ops__dashboard')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__evidence-summary')).toBeVisible();
@@ -162,6 +162,11 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__report-item-0')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-detail')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-structured-summary')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-metadata')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-download-markdown')).toBeVisible();
+
+    await authedPage.getByTestId('release-ops__report-search').fill('signature');
+    await expect(authedPage).toHaveURL(/report_search=signature/);
   });
 
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {

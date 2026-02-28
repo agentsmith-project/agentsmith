@@ -69,6 +69,7 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
             provider: 'secondaryok',
             resolved_model: 'model-b',
             fallback_hops: 1,
+            pricing_version: 'runtime-pricing-v1',
             estimated_cost: 0.0068,
             attempts: [
               { index: 0, provider: 'primaryfail', model: 'model-a', outcome: 'fallback_upstream_error' },
@@ -105,6 +106,7 @@ describe('UsagePage', () => {
     expect(screen.getByText('detail.title')).toBeInTheDocument();
     expect(screen.getByTestId('usage__detail-summary__cost')).toHaveTextContent('$0.006800');
     expect(screen.getByTestId('usage__detail-fact-usgf_1')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__detail-pricing-version-usgf_1')).toHaveTextContent('runtime-pricing-v1');
     expect(screen.getByTestId('usage__detail-timeline-usgf_1')).toBeInTheDocument();
   });
 });

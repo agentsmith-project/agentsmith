@@ -3179,6 +3179,7 @@ export interface components {
             attempts?: components["schemas"]["RuntimeAttemptTrace"][];
             estimated_cost?: number | null;
             fallback_hops?: number;
+            pricing_version?: string | null;
             provider?: string;
             resolved_model?: string;
         };

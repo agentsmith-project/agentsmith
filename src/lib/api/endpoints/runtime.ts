@@ -121,6 +121,7 @@ export interface UnifiedChatRuntimeMetadata {
   provider?: string;
   resolved_model?: string;
   fallback_hops?: number;
+  pricing_version?: string | null;
   estimated_cost?: number | null;
   attempts?: RuntimeAttemptTrace[];
 }

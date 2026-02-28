@@ -161,6 +161,16 @@ export function UsageFactDetailDrawer({
                     </div>
 
                     <div className="border-t border-subtle px-5 py-4">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.pricing_version')}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2" data-testid={`usage__detail-pricing-version-${fact.id}`}>
+                        <code className="rounded bg-surface-high px-2 py-1 text-xs text-foreground">
+                          {fact.runtime?.pricing_version ?? '--'}
+                        </code>
+                        {fact.runtime?.missing_price ? <Badge variant="secondary">{t('detail.missing_price')}</Badge> : null}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-subtle px-5 py-4">
                       <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('detail.timeline_title')}</div>
                       {attempts.length > 0 ? (
                         <div className="mt-3 space-y-3" data-testid={`usage__detail-timeline-${fact.id}`}>

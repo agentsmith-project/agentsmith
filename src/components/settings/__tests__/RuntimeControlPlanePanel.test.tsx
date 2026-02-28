@@ -88,6 +88,7 @@ const probeMutateAsync = vi.fn().mockResolvedValue({
       provider: 'openai',
       resolved_model: 'gpt-4o',
       fallback_hops: 1,
+      pricing_version: 'runtime-pricing-v1',
       attempts: [
         {
           index: 0,
@@ -188,6 +189,7 @@ describe('RuntimeControlPlanePanel', () => {
     });
     expect(screen.getByTestId('settings-runtime__probe-summary')).toBeInTheDocument();
     expect(screen.getByTestId('settings-runtime__probe-response')).toHaveTextContent('probe ok');
+    expect(screen.getByTestId('settings-runtime__probe-pricing-version')).toHaveTextContent('runtime-pricing-v1');
     expect(screen.getByTestId('settings-runtime__probe-attempt-0')).toBeInTheDocument();
     expect(screen.getByTestId('settings-runtime__probe-attempt-1')).toBeInTheDocument();
   });

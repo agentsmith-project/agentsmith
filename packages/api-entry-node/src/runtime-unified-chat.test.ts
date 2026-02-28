@@ -89,10 +89,18 @@ describe('runtime-unified-chat', () => {
     expect(result.statusCode).toBe(200);
     if (!('body' in result)) throw new Error('expected_json_result');
     const runtime = (result.body as {
-      runtime?: { provider?: string; resolved_model?: string; attempts?: Array<{ outcome: string; durationMs?: number }> };
+      runtime?: {
+        provider?: string;
+        resolved_model?: string;
+        pricing_version?: string | null;
+        estimated_cost?: number | null;
+        attempts?: Array<{ outcome: string; durationMs?: number }>;
+      };
     }).runtime;
     expect(runtime?.provider).toBe('openai');
     expect(runtime?.resolved_model).toBe('gpt-4o');
+    expect(runtime?.pricing_version).toBeTruthy();
+    expect(runtime?.estimated_cost).toBe(0.007);
     expect(runtime?.attempts).toHaveLength(1);
     expect(runtime?.attempts?.[0]).toMatchObject({
       index: 0,
@@ -197,11 +205,13 @@ describe('runtime-unified-chat', () => {
       runtime?: {
         provider?: string;
         fallback_hops?: number;
+        pricing_version?: string | null;
         attempts?: Array<{ outcome?: string; provider?: string; errorClass?: string }>;
       };
     }).runtime;
     expect(comboRuntime?.provider).toBe('anthropic');
     expect(comboRuntime?.fallback_hops).toBe(1);
+    expect(comboRuntime?.pricing_version).toBeNull();
     expect(comboRuntime?.attempts).toHaveLength(2);
     expect(comboRuntime?.attempts?.[0]).toMatchObject({
       index: 0,
@@ -243,9 +253,15 @@ describe('runtime-unified-chat', () => {
     if (!('body' in result)) throw new Error('expected_json_result');
     const failurePayload = result.body as {
       error_code?: string;
-      runtime?: { attempts?: Array<{ outcome?: string; reason?: string }> };
+      runtime?: {
+        pricing_version?: string | null;
+        estimated_cost?: number | null;
+        attempts?: Array<{ outcome?: string; reason?: string }>;
+      };
     };
     expect(failurePayload.error_code).toBe('RUNTIME_PROVIDER_CONNECTION_NOT_FOUND');
+    expect(failurePayload.runtime?.pricing_version).toBeNull();
+    expect(failurePayload.runtime?.estimated_cost).toBeNull();
     expect(failurePayload.runtime?.attempts).toHaveLength(1);
     expect(failurePayload.runtime?.attempts?.[0]).toMatchObject({
       index: 0,

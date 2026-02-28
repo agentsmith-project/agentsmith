@@ -881,6 +881,12 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
                       <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_probe_estimated_cost')}</div>
                       <div className="mt-2 text-sm font-semibold text-foreground">{formatUsd(runtimeMetadata?.estimated_cost)}</div>
                     </div>
+                    <div className="rounded-lg border border-border/60 bg-surface p-3">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_probe_pricing_version')}</div>
+                      <div className="mt-2 truncate font-mono text-sm text-foreground" data-testid="settings-runtime__probe-pricing-version">
+                        {typeof runtimeMetadata?.pricing_version === 'string' ? runtimeMetadata.pricing_version : '--'}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

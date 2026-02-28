@@ -611,6 +611,7 @@ export const runtimeHandlers = [
           provider: attempt.provider,
           resolved_model: attempt.model,
           fallback_hops: idx,
+          pricing_version: pricing ? 'runtime-pricing-mock' : null,
           estimated_cost: estimatedCost,
           attempts: attemptTrace,
         },
@@ -654,6 +655,8 @@ export const runtimeHandlers = [
         message: 'runtime_provider_connection_not_found',
         runtime: {
           fallback_hops: attemptTrace.filter((item) => String(item.outcome).startsWith('fallback_')).length,
+          pricing_version: null,
+          estimated_cost: null,
           attempts: attemptTrace,
         },
       },

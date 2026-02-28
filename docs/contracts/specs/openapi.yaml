@@ -6817,6 +6817,9 @@ components:
         fallback_hops:
           type: integer
           minimum: 0
+        pricing_version:
+          type: string
+          nullable: true
         estimated_cost:
           type: number
           nullable: true

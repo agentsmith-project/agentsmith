@@ -101,7 +101,15 @@ test.describe('Settings Page', () => {
   test('runtime control plane page shows observability KPIs', async ({ authedPage }) => {
     await goToProject(authedPage, 'settings');
     await authedPage.getByTestId('settings__tab--runtime').click();
-    await authedPage.getByTestId('settings__runtime-open-control-plane').click();
+    const openControlPlane = authedPage.getByTestId('settings__runtime-open-control-plane');
+    await expect(openControlPlane).toBeVisible();
+    const clickTarget = (await openControlPlane.locator('a').count()) > 0
+      ? openControlPlane.locator('a').first()
+      : openControlPlane;
+    await Promise.all([
+      authedPage.waitForURL(/\/runtime-control-plane$/, { timeout: 10000 }),
+      clickTarget.click(),
+    ]);
 
     await expect(authedPage).toHaveURL(/\/runtime-control-plane$/);
     await expect(authedPage.getByTestId('runtime-cp__kpi-total-requests')).toBeVisible();

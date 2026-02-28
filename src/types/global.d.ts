@@ -17,6 +17,15 @@ declare global {
      * Flag indicating mock auth setup is in progress (E2E testing)
      */
     __MBOS_AUTH_SETUP__?: boolean;
+
+    /**
+     * Current E2E mock auth context used for auth re-seeding after redirects.
+     */
+    __MBOS_AUTH_E2E_CONTEXT__?: {
+      wsId: string;
+      userEmail: string;
+      userId: string;
+    };
   }
 }
 

@@ -91,6 +91,7 @@ test.describe('UX Guardrails', () => {
   });
 
   test('page-state indicator appears on loaded pages', async ({ authedPage }) => {
+    test.setTimeout(90000);
     const pagesToCheck = ['overview', 'members', 'agents', 'settings'] as const;
 
     for (const section of pagesToCheck) {

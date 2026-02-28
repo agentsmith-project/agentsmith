@@ -3,6 +3,7 @@ import { Page } from '@playwright/test';
 export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'test@example.com', userId = 'user_001') {
   await page.addInitScript(({ wsId, userEmail, userId }) => {
     window.__MBOS_AUTH_SETUP__ = true;
+    window.__MBOS_AUTH_E2E_CONTEXT__ = { wsId, userEmail, userId };
 
     const user = {
       id: userId,

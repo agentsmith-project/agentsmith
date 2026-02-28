@@ -97,8 +97,8 @@ test.describe('Screenshot Capture', () => {
     await page.screenshot({ path: path.join(BASE, '01-auth', 'join-invalid.png'), fullPage: true });
 
     await mockLogin(page);
-    await page.reload();
-    await page.waitForTimeout(1500);
+    await navigateForCapture(page, '/zh-CN/login');
+    await page.waitForTimeout(800);
     await navigateForCapture(page, '/zh-CN/login/workspace');
     await page.screenshot({ path: path.join(BASE, '01-auth', 'login-workspace.png'), fullPage: true });
 
@@ -121,11 +121,7 @@ test.describe('Screenshot Capture', () => {
     await page.screenshot({ path: path.join(BASE, '04-chat', 'chat.png'), fullPage: true });
 
     // === 05-notebook ===
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 20000,
-    });
-    await page.waitForTimeout(800);
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook`);
     await page.screenshot({ path: path.join(BASE, '05-notebook', 'notebook.png'), fullPage: true });
 
     const createTaskBtn = page.getByTestId('notebook__create-task-btn');
@@ -136,14 +132,10 @@ test.describe('Screenshot Capture', () => {
       await page.keyboard.press('Escape');
     }
 
-    await page.goto(`/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook/tasks/task_001`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 25000,
-    });
+    await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/notebook/tasks/task_001`);
     await page.waitForSelector('[data-testid="page-state__success"], [data-testid="page-layout"], [data-testid="page-state__loading"]', {
       timeout: 15000,
     }).catch(() => {});
-    await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(BASE, '05-notebook', 'task-detail.png'), fullPage: true });
 
     // === 06-agents ===

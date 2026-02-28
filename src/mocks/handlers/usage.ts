@@ -1,8 +1,24 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
+import { buildRuntimeUsageRecords, listRuntimeUsageFacts } from '../state/runtime-usage';
 
 type ResourceType = 'endpoint' | 'source_library' | 'agent';
+
+type UsageLikeRecord = {
+  id: string;
+  time_bucket: string;
+  workspace_id: string;
+  project_id: string;
+  resource_type: string;
+  resource_id?: string;
+  end_user_id?: string;
+  requests: number;
+  duration_p95_ms?: number;
+  bytes_in?: number;
+  bytes_out?: number;
+  tokens?: number;
+};
 
 function resolveResourceMultiplier(resourceType?: string | null) {
   if (resourceType === 'agent') return 0.65;
@@ -10,11 +26,75 @@ function resolveResourceMultiplier(resourceType?: string | null) {
   return 1;
 }
 
+function normalizeBucket(timeBucket: string, groupBy: 'day' | 'hour'): string {
+  if (groupBy === 'hour') return timeBucket;
+  return /^\d{4}-\d{2}-\d{2}/.test(timeBucket) ? timeBucket.slice(0, 10) : timeBucket;
+}
+
+function aggregateUsageRecords(records: UsageLikeRecord[], groupBy: 'day' | 'hour'): UsageLikeRecord[] {
+  const grouped = new Map<string, UsageLikeRecord>();
+
+  for (const record of records) {
+    const timeBucket = normalizeBucket(record.time_bucket, groupBy);
+    const key = [
+      timeBucket,
+      record.resource_type,
+      record.resource_id ?? '',
+      record.end_user_id ?? '',
+    ].join('|');
+    const current = grouped.get(key) ?? {
+      ...record,
+      id: `usage_agg_${key}`,
+      time_bucket: timeBucket,
+      requests: 0,
+      duration_p95_ms: 0,
+      bytes_in: 0,
+      bytes_out: 0,
+      tokens: 0,
+    };
+
+    current.requests += record.requests ?? 0;
+    current.duration_p95_ms = Math.max(current.duration_p95_ms ?? 0, record.duration_p95_ms ?? 0);
+    current.bytes_in = (current.bytes_in ?? 0) + (record.bytes_in ?? 0);
+    current.bytes_out = (current.bytes_out ?? 0) + (record.bytes_out ?? 0);
+    current.tokens = (current.tokens ?? 0) + (record.tokens ?? 0);
+    grouped.set(key, current);
+  }
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    const bucketDiff = b.time_bucket.localeCompare(a.time_bucket);
+    if (bucketDiff !== 0) return bucketDiff;
+    return (b.requests ?? 0) - (a.requests ?? 0);
+  });
+}
+
 export const usageHandlers = [
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage', () => {
+  http.get('/api/v1/workspaces/:ws/projects/:prj/usage', ({ request }) => {
+    const url = new URL(request.url);
+    const resourceType = url.searchParams.get('resource_type');
+    const resourceId = url.searchParams.get('resource_id');
+    const endUserId = url.searchParams.get('end_user_id');
+    const groupBy = url.searchParams.get('group_by') === 'hour' ? 'hour' : 'day';
     const usageItems = p0.usage as Array<{ resource_type?: string | null }> | undefined;
     const hasStructuredUsage = Array.isArray(usageItems) && usageItems.some((item) => Boolean(item?.resource_type));
-    const items = hasStructuredUsage ? p0.usage : usageRecordFixtures;
+    const baseItems = (hasStructuredUsage ? p0.usage : usageRecordFixtures).filter((item) => {
+      if (resourceType && item.resource_type !== resourceType) return false;
+      if (resourceId && item.resource_id !== resourceId) return false;
+      if (endUserId && item.end_user_id !== endUserId) return false;
+      return true;
+    });
+    const runtimeItems = buildRuntimeUsageRecords({
+      groupBy,
+      filters: {
+        startTime: url.searchParams.get('start_time'),
+        endTime: url.searchParams.get('end_time'),
+        resourceType,
+        resourceId,
+        endUserId,
+      },
+    });
+    const aggregatedBaseItems = aggregateUsageRecords(baseItems as UsageLikeRecord[], groupBy);
+    const items = [...runtimeItems, ...aggregatedBaseItems];
     return HttpResponse.json({
       items,
       total: items.length,
@@ -30,14 +110,14 @@ export const usageHandlers = [
     const resourceType = url.searchParams.get('resource_type');
     const resourceId = url.searchParams.get('resource_id');
     const endUserId = url.searchParams.get('end_user_id');
-    const items = [
+    const fixtureItems = [
       {
         id: 'usgf_001',
         timestamp: endTime,
         workspace_id: 'ws_default',
-        project_id: 'proj_1',
+        project_id: 'proj_001',
         resource_type: 'endpoint',
-        resource_id: 'endpoint_runtime_primary',
+        resource_id: 'endpoint_001',
         end_user_id: 'user_001',
         request_id: 'req_runtime_001',
         requests: 1,
@@ -88,9 +168,9 @@ export const usageHandlers = [
         id: 'usgf_002',
         timestamp: startTime,
         workspace_id: 'ws_default',
-        project_id: 'proj_1',
+        project_id: 'proj_001',
         resource_type: 'endpoint',
-        resource_id: 'endpoint_runtime_primary',
+        resource_id: 'endpoint_001',
         end_user_id: 'user_001',
         request_id: 'req_runtime_002',
         requests: 1,
@@ -135,6 +215,14 @@ export const usageHandlers = [
       if (endUserId && item.end_user_id !== endUserId) return false;
       return true;
     });
+    const runtimeItems = listRuntimeUsageFacts({
+      startTime,
+      endTime,
+      resourceType,
+      resourceId,
+      endUserId,
+    });
+    const items = [...runtimeItems, ...fixtureItems];
     return HttpResponse.json({
       items,
       total: items.length,

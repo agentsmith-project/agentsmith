@@ -152,4 +152,91 @@ test.describe('runtime proxy billing (mock lane)', () => {
     expect(runtimeObs.error_class_counts?.system_error ?? 0).toBeGreaterThanOrEqual(0);
     expect(result.quotaSummary.status).toBe(200);
   });
+
+  test('supports runtime release workflow from planning to usage detail', async ({ authedPage }) => {
+    const suffix = `${Date.now()}`;
+    const comboName = `prod-chat-${suffix}`;
+    await goToProject(authedPage, 'runtime-control-plane');
+    await expect(authedPage.getByTestId('settings-runtime__panel')).toBeVisible({ timeout: 10000 });
+
+    await authedPage.getByTestId('settings-runtime__provider-name').fill('openai');
+    await authedPage.getByTestId('settings-runtime__provider-base-url').fill('https://api.openai.com/v1');
+    await authedPage.getByTestId('settings-runtime__provider-credential-ref').fill('cred_openai');
+    await authedPage.getByTestId('settings-runtime__provider-create').click();
+
+    await authedPage.getByTestId('settings-runtime__provider-name').fill('primaryfail');
+    await authedPage.getByTestId('settings-runtime__provider-base-url').fill('https://retryable.mock/v1');
+    await authedPage.getByTestId('settings-runtime__provider-credential-ref').fill('cred_primary');
+    await authedPage.getByTestId('settings-runtime__provider-create').click();
+
+    await authedPage.getByTestId('settings-runtime__provider-name').fill('secondaryok');
+    await authedPage.getByTestId('settings-runtime__provider-base-url').fill('https://ok2.mock/v1');
+    await authedPage.getByTestId('settings-runtime__provider-credential-ref').fill('cred_secondary');
+    await authedPage.getByTestId('settings-runtime__provider-create').click();
+
+    await authedPage.getByTestId('settings-runtime__model-provider').fill('openai');
+    await authedPage.getByTestId('settings-runtime__model-id').fill('gpt-4o');
+    await authedPage.getByTestId('settings-runtime__model-capabilities').fill('chat');
+    await authedPage.getByTestId('settings-runtime__model-create').click();
+
+    await authedPage.getByTestId('settings-runtime__model-provider').fill('primaryfail');
+    await authedPage.getByTestId('settings-runtime__model-id').fill('model-a');
+    await authedPage.getByTestId('settings-runtime__model-capabilities').fill('chat');
+    await authedPage.getByTestId('settings-runtime__model-create').click();
+
+    await authedPage.getByTestId('settings-runtime__model-provider').fill('secondaryok');
+    await authedPage.getByTestId('settings-runtime__model-id').fill('model-b');
+    await authedPage.getByTestId('settings-runtime__model-capabilities').fill('chat');
+    await authedPage.getByTestId('settings-runtime__model-create').click();
+
+    await authedPage.getByTestId('settings-runtime__pricing-json').fill(JSON.stringify({
+      openai: { 'gpt-4o': { input: 2, output: 10 } },
+      primaryfail: { 'model-a': { input: 3, output: 12 } },
+      secondaryok: { 'model-b': { input: 2, output: 8 } },
+    }, null, 2));
+    await authedPage.getByTestId('settings-runtime__pricing-save').click();
+
+    await authedPage.getByTestId('settings-runtime__combo-json').fill(JSON.stringify({
+      name: comboName,
+      targets: [
+        { provider: 'primaryfail', model: 'model-a' },
+        { provider: 'secondaryok', model: 'model-b' },
+      ],
+      fallback_policy: {
+        max_hops: 1,
+        retryable_error_classes: ['provider_retryable'],
+      },
+    }, null, 2));
+    await authedPage.getByTestId('settings-runtime__combo-create').click();
+
+    await authedPage.getByTestId('settings-runtime__dry-run-model').fill(`combo:${comboName}`);
+    await authedPage.getByTestId('settings-runtime__dry-run-run').click();
+    await expect(authedPage.getByTestId('settings-runtime__dry-run-attempt-0')).toBeVisible();
+    await expect(authedPage.getByTestId('settings-runtime__dry-run-attempt-1')).toBeVisible();
+    await expect(authedPage.getByTestId('settings-runtime__dry-run-guardrails')).toContainText(/Ready/i);
+
+    await authedPage.getByTestId('settings-runtime__compare-baseline').fill('openai/gpt-4o');
+    await authedPage.getByTestId('settings-runtime__compare-candidate').fill(`combo:${comboName}`);
+    await authedPage.getByTestId('settings-runtime__compare-run').click();
+    await expect(authedPage.getByTestId('settings-runtime__compare-baseline-card')).toBeVisible();
+    await expect(authedPage.getByTestId('settings-runtime__compare-candidate-card')).toBeVisible();
+    await expect(authedPage.getByTestId('settings-runtime__compare-delta')).toContainText('$');
+
+    await authedPage.getByTestId('settings-runtime__probe-model').fill(`combo:${comboName}`);
+    await authedPage.getByTestId('settings-runtime__probe-prompt').fill('Summarize the recovery path.');
+    await authedPage.getByTestId('settings-runtime__probe-run').click();
+    await expect(authedPage.getByTestId('settings-runtime__probe-status')).toContainText(/Recovered/i);
+    await expect(authedPage.getByTestId('settings-runtime__probe-attempt-0')).toBeVisible();
+    await expect(authedPage.getByTestId('settings-runtime__probe-attempt-1')).toBeVisible();
+
+    await goToProject(authedPage, 'usage');
+    const firstRow = authedPage.locator('[data-testid="usage__table__row"]').first();
+    await expect(firstRow).toBeVisible({ timeout: 10000 });
+    await firstRow.click();
+
+    await expect(authedPage.getByTestId('usage__detail-summary__cost')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__detail-summary__recovered')).toBeVisible();
+    await expect(authedPage.locator('[data-testid^="usage__detail-fact-"]').first()).toBeVisible();
+    await expect(authedPage.locator('[data-testid^="usage__detail-timeline-"]').first()).toBeVisible();
+  });
 });

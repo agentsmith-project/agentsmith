@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw';
+import { recordRuntimeUsageFact } from '../state/runtime-usage';
 
 const providers: Array<Record<string, unknown>> = [];
 const models: Array<Record<string, unknown>> = [];
@@ -22,6 +23,10 @@ function asString(value: unknown): string | undefined {
 
 function nowId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10_000)}`;
+}
+
+function currentEndUserId() {
+  return 'user_001';
 }
 
 export const runtimeHandlers = [
@@ -546,6 +551,7 @@ export const runtimeHandlers = [
       const inRate = pricing?.[attempt.provider]?.[attempt.model]?.input ?? 0;
       const outRate = pricing?.[attempt.provider]?.[attempt.model]?.output ?? 0;
       const estimatedCost = Number((((inputTokens * inRate) + (outputTokens * outRate)) / 1_000_000).toFixed(6));
+      const requestId = nowId('req_runtime');
       attemptTrace.push({
         index: idx,
         provider: attempt.provider,
@@ -555,6 +561,41 @@ export const runtimeHandlers = [
         statusCode: 200,
         reason: 'runtime_upstream_ok',
         durationMs: 0,
+      });
+      recordRuntimeUsageFact({
+        id: nowId('usgf'),
+        timestamp: nowIso(),
+        workspace_id: String(params.ws ?? 'ws_default'),
+        project_id: String(params.prj ?? 'proj_001'),
+        resource_type: 'endpoint',
+        resource_id: String(provider.id),
+        end_user_id: currentEndUserId(),
+        request_id: requestId,
+        requests: 1,
+        duration_ms: 0,
+        bytes_in: 2048,
+        bytes_out: 4096,
+        tokens_in: inputTokens,
+        tokens_out: outputTokens,
+        tokens_total: inputTokens + outputTokens,
+        result: 'ok',
+        runtime: {
+          provider: attempt.provider,
+          resolved_model: attempt.model,
+          fallback_hops: idx,
+          pricing_version: pricing ? 'runtime-pricing-mock' : null,
+          estimated_cost: estimatedCost,
+          missing_price: estimatedCost === 0,
+          attempts: attemptTrace,
+        },
+        metadata_json: {
+          provider: attempt.provider,
+          resolved_model: attempt.model,
+          fallback_hops: idx,
+          pricing_version: pricing ? 'runtime-pricing-mock' : null,
+          estimated_cost: estimatedCost,
+          attempt_trace: attemptTrace,
+        },
       });
       return HttpResponse.json({
         id: nowId('chatcmpl'),
@@ -576,6 +617,37 @@ export const runtimeHandlers = [
       });
     }
 
+    recordRuntimeUsageFact({
+      id: nowId('usgf'),
+      timestamp: nowIso(),
+      workspace_id: String(params.ws ?? 'ws_default'),
+      project_id: String(params.prj ?? 'proj_001'),
+      resource_type: 'endpoint',
+      resource_id: undefined,
+      end_user_id: currentEndUserId(),
+      request_id: nowId('req_runtime'),
+      requests: 1,
+      duration_ms: 0,
+      bytes_in: 2048,
+      bytes_out: 0,
+      tokens_in: 0,
+      tokens_out: 0,
+      tokens_total: 0,
+      result: 'error',
+      error_code: 'RUNTIME_PROVIDER_CONNECTION_NOT_FOUND',
+      runtime: {
+        fallback_hops: attemptTrace.filter((item) => String(item.outcome).startsWith('fallback_')).length,
+        pricing_version: null,
+        estimated_cost: null,
+        missing_price: true,
+        attempts: attemptTrace,
+      },
+      metadata_json: {
+        fallback_hops: attemptTrace.filter((item) => String(item.outcome).startsWith('fallback_')).length,
+        missing_price: true,
+        attempt_trace: attemptTrace,
+      },
+    });
     return HttpResponse.json(
       {
         error_code: 'RUNTIME_PROVIDER_CONNECTION_NOT_FOUND',

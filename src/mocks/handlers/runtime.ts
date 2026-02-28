@@ -227,6 +227,18 @@ export const runtimeHandlers = [
       fallback_policy: fallbackPolicy,
       attempts: plannedAttempts,
       issues: Array.from(issues),
+      guardrails: {
+        release_readiness: issues.size > 0 ? 'blocked' : 'ready',
+        blockers: [
+          ...(issues.has('runtime_pricing_missing') ? ['runtime_guardrail_primary_pricing_missing'] : []),
+          ...((issues.has('runtime_provider_connection_missing') || issues.has('runtime_provider_connection_disabled'))
+            ? ['runtime_guardrail_primary_connection_unavailable']
+            : []),
+          ...(issues.has('runtime_model_not_registered') ? ['runtime_guardrail_model_not_registered'] : []),
+          ...(issues.has('runtime_provider_credential_missing') ? ['runtime_guardrail_primary_credential_missing'] : []),
+        ],
+        warnings: [],
+      },
     });
   }),
 
@@ -277,6 +289,11 @@ export const runtimeHandlers = [
           },
         ],
         issues: [],
+        guardrails: {
+          release_readiness: 'ready',
+          blockers: [],
+          warnings: [],
+        },
       },
       projected_cost: {
         primary_avg_cost: 0.004587,
@@ -295,6 +312,11 @@ export const runtimeHandlers = [
         'impact_preview_applies_average_token_mix_to_planned_pricing',
         'impact_preview_does_not_model_runtime_fallback_probability',
       ],
+      guardrails: {
+        release_readiness: 'ready',
+        blockers: [],
+        warnings: [],
+      },
     });
   }),
 

@@ -48,6 +48,28 @@ describe('runtime-impact-preview', () => {
       },
       updated_at: now.toISOString(),
     });
+    await docStore.upsert('runtime_model_catalog_entries', 'rmc_1', {
+      id: 'rmc_1',
+      workspace_id: workspaceId,
+      project_id: projectId,
+      provider: 'openai',
+      model_id: 'gpt-4o',
+      capabilities: ['chat'],
+      pricing: { input: 2, output: 10 },
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    });
+    await docStore.upsert('runtime_model_catalog_entries', 'rmc_2', {
+      id: 'rmc_2',
+      workspace_id: workspaceId,
+      project_id: projectId,
+      provider: 'openai',
+      model_id: 'gpt-4.1',
+      capabilities: ['chat'],
+      pricing: { input: 4, output: 16 },
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    });
 
     await recordUsageFact(docStore, {
       timestamp: new Date(now.getTime() - 60_000).toISOString(),
@@ -95,5 +117,10 @@ describe('runtime-impact-preview', () => {
     expect(result.body.projected_cost.primary_avg_cost).toBe(0.00525);
     expect(result.body.projected_cost.range_avg_cost.low).toBe(0.00525);
     expect(result.body.projected_cost.range_avg_cost.high).toBe(0.009);
+    expect(result.body.guardrails).toMatchObject({
+      release_readiness: 'ready',
+      blockers: [],
+      warnings: [],
+    });
   });
 });

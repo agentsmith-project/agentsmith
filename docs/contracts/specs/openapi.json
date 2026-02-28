@@ -10507,6 +10507,25 @@
           }
         }
       },
+      "RuntimeFallbackPolicy": {
+        "type": "object",
+        "required": [
+          "max_hops",
+          "retryable_error_classes"
+        ],
+        "properties": {
+          "max_hops": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "retryable_error_classes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "RuntimeRoutingDryRunRequest": {
         "type": "object",
         "required": [
@@ -10550,6 +10569,9 @@
               "missing"
             ]
           },
+          "provider_connection_has_credential": {
+            "type": "boolean"
+          },
           "connection_priority": {
             "type": "integer"
           },
@@ -10569,13 +10591,43 @@
           }
         }
       },
+      "RuntimeReleaseGuardrails": {
+        "type": "object",
+        "required": [
+          "release_readiness",
+          "blockers",
+          "warnings"
+        ],
+        "properties": {
+          "release_readiness": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "blocked"
+            ]
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "RuntimeRoutingDryRunResponse": {
         "type": "object",
         "required": [
           "model",
           "routed_by",
           "attempts",
-          "issues"
+          "issues",
+          "guardrails"
         ],
         "properties": {
           "model": {
@@ -10609,6 +10661,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "guardrails": {
+            "$ref": "#/components/schemas/RuntimeReleaseGuardrails"
           }
         }
       },
@@ -10728,7 +10783,8 @@
           "sample",
           "planned_route",
           "projected_cost",
-          "assumptions"
+          "assumptions",
+          "guardrails"
         ],
         "properties": {
           "model": {
@@ -10751,6 +10807,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "guardrails": {
+            "$ref": "#/components/schemas/RuntimeReleaseGuardrails"
           }
         }
       },

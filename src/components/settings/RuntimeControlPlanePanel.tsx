@@ -11,6 +11,7 @@ import { toast } from '@/components/ui/toast';
 import type {
   RuntimeImpactPreviewResponse,
   RuntimeAttemptTrace,
+  RuntimeReleaseGuardrails,
   RuntimeRoutingDryRunAttempt,
   RuntimeRoutingDryRunResponse,
   RuntimeUnifiedChatResponse,
@@ -175,6 +176,74 @@ function mapDryRunPricingSource(t: ReturnType<typeof useTranslations>, source: R
     missing: 'runtime_dry_run_pricing_missing',
   };
   return t(keyMap[source]);
+}
+
+function mapGuardrail(t: ReturnType<typeof useTranslations>, guardrail: string): string {
+  const keyMap: Record<string, string> = {
+    runtime_guardrail_primary_connection_unavailable: 'runtime_guardrail_primary_connection_unavailable',
+    runtime_guardrail_primary_pricing_missing: 'runtime_guardrail_primary_pricing_missing',
+    runtime_guardrail_model_not_registered: 'runtime_guardrail_model_not_registered',
+    runtime_guardrail_primary_credential_missing: 'runtime_guardrail_primary_credential_missing',
+    runtime_guardrail_fallback_connection_unavailable: 'runtime_guardrail_fallback_connection_unavailable',
+    runtime_guardrail_fallback_pricing_missing: 'runtime_guardrail_fallback_pricing_missing',
+    runtime_guardrail_fallback_credential_missing: 'runtime_guardrail_fallback_credential_missing',
+  };
+  return keyMap[guardrail] ? t(keyMap[guardrail]) : guardrail.replaceAll('_', ' ');
+}
+
+function GuardrailSummary({
+  t,
+  guardrails,
+  testId,
+}: {
+  t: ReturnType<typeof useTranslations>;
+  guardrails?: RuntimeReleaseGuardrails;
+  testId: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-surface-high/35 p-4" data-testid={testId}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_guardrails_title')}</div>
+          <div className="mt-1 text-sm text-tertiary">{t('runtime_guardrails_description')}</div>
+        </div>
+        <Badge variant={guardrails?.release_readiness === 'blocked' ? 'destructive' : 'outline'}>
+          {guardrails?.release_readiness === 'blocked' ? t('runtime_guardrails_status_blocked') : t('runtime_guardrails_status_ready')}
+        </Badge>
+      </div>
+
+      {guardrails ? (
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_guardrails_blockers')}</div>
+            {guardrails.blockers.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {guardrails.blockers.map((guardrail) => (
+                  <Badge key={guardrail} variant="destructive">{mapGuardrail(t, guardrail)}</Badge>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-tertiary">{t('runtime_guardrails_blockers_empty')}</div>
+            )}
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_guardrails_warnings')}</div>
+            {guardrails.warnings.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {guardrails.warnings.map((guardrail) => (
+                  <Badge key={guardrail} variant="secondary">{mapGuardrail(t, guardrail)}</Badge>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-tertiary">{t('runtime_guardrails_warnings_empty')}</div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 text-sm text-tertiary">{t('runtime_guardrails_empty')}</div>
+      )}
+    </div>
+  );
 }
 
 export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = false }: RuntimeControlPlanePanelProps) {
@@ -550,6 +619,12 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
               </div>
             )}
           </div>
+
+          <GuardrailSummary
+            t={t}
+            guardrails={dryRunResult?.guardrails}
+            testId="settings-runtime__dry-run-guardrails"
+          />
         </CardContent>
       </Card>
 
@@ -609,6 +684,12 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
               <div className="mt-3 text-sm text-tertiary">{t('runtime_impact_preview_empty')}</div>
             )}
           </div>
+
+          <GuardrailSummary
+            t={t}
+            guardrails={impactPreviewResult?.guardrails}
+            testId="settings-runtime__impact-guardrails"
+          />
         </CardContent>
       </Card>
 
@@ -666,6 +747,13 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
                   <div className="mt-1 text-sm font-semibold text-foreground">{formatUsd(compareResult?.baseline.projected_cost.primary_avg_cost)}</div>
                 </div>
               </div>
+              <div className="mt-4">
+                <GuardrailSummary
+                  t={t}
+                  guardrails={compareResult?.baseline.guardrails}
+                  testId="settings-runtime__compare-baseline-guardrails"
+                />
+              </div>
             </div>
             <div className="rounded-xl border border-border/70 bg-surface-high/35 p-4" data-testid="settings-runtime__compare-candidate-card">
               <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_compare_candidate')}</div>
@@ -678,6 +766,13 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
                   <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_primary_cost')}</div>
                   <div className="mt-1 text-sm font-semibold text-foreground">{formatUsd(compareResult?.candidate.projected_cost.primary_avg_cost)}</div>
                 </div>
+              </div>
+              <div className="mt-4">
+                <GuardrailSummary
+                  t={t}
+                  guardrails={compareResult?.candidate.guardrails}
+                  testId="settings-runtime__compare-candidate-guardrails"
+                />
               </div>
             </div>
           </div>

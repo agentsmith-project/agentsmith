@@ -5,12 +5,19 @@ import type { NodeApiDeps } from './node-api-deps.js';
 
 type PricingSource = 'project_override' | 'model_catalog' | 'missing';
 
+export type RuntimeReleaseGuardrails = {
+  release_readiness: 'ready' | 'blocked';
+  blockers: string[];
+  warnings: string[];
+};
+
 export type RuntimeRoutingDryRunAttempt = {
   index: number;
   provider: string;
   model: string;
   provider_connection_id?: string;
   provider_connection_status: 'active' | 'disabled' | 'missing';
+  provider_connection_has_credential?: boolean;
   connection_priority?: number;
   connection_base_url?: string;
   pricing_source: PricingSource;
@@ -28,7 +35,66 @@ export type RuntimeRoutingDryRunResponse = {
   };
   attempts: RuntimeRoutingDryRunAttempt[];
   issues: string[];
+  guardrails: RuntimeReleaseGuardrails;
 };
+
+function buildRuntimeGuardrails(attempts: RuntimeRoutingDryRunAttempt[], issues: string[]): RuntimeReleaseGuardrails {
+  const blockers = new Set<string>();
+  const warnings = new Set<string>();
+
+  const primaryAttempt = attempts[0];
+  if (primaryAttempt) {
+    if (primaryAttempt.provider_connection_status !== 'active') {
+      blockers.add('runtime_guardrail_primary_connection_unavailable');
+    }
+    if (primaryAttempt.pricing_source === 'missing') {
+      blockers.add('runtime_guardrail_primary_pricing_missing');
+    }
+  }
+
+  if (issues.includes('runtime_model_not_registered')) {
+    blockers.add('runtime_guardrail_model_not_registered');
+  }
+  if (primaryAttempt?.provider_connection_status === 'active' && primaryAttempt.provider_connection_has_credential === false) {
+    blockers.add('runtime_guardrail_primary_credential_missing');
+  }
+
+  attempts.slice(1).forEach((attempt) => {
+    if (attempt.provider_connection_has_credential === false) {
+      warnings.add('runtime_guardrail_fallback_credential_missing');
+    }
+  });
+
+  attempts.slice(1).forEach((attempt) => {
+    if (attempt.provider_connection_status !== 'active') {
+      warnings.add('runtime_guardrail_fallback_connection_unavailable');
+    }
+    if (attempt.pricing_source === 'missing') {
+      warnings.add('runtime_guardrail_fallback_pricing_missing');
+    }
+  });
+
+  issues.forEach((issue) => {
+    if (issue === 'runtime_pricing_missing' && !blockers.has('runtime_guardrail_primary_pricing_missing')) {
+      warnings.add('runtime_guardrail_fallback_pricing_missing');
+      return;
+    }
+    if (
+      issue === 'runtime_provider_connection_missing'
+      || issue === 'runtime_provider_connection_disabled'
+    ) {
+      if (!blockers.has('runtime_guardrail_primary_connection_unavailable')) {
+        warnings.add('runtime_guardrail_fallback_connection_unavailable');
+      }
+    }
+  });
+
+  return {
+    release_readiness: blockers.size > 0 ? 'blocked' : 'ready',
+    blockers: Array.from(blockers),
+    warnings: Array.from(warnings),
+  };
+}
 
 function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -119,6 +185,7 @@ export async function dryRunRuntimeRouting(params: {
             model: attempt.model,
             provider_connection_id: disabledConnection.id,
             provider_connection_status: 'disabled',
+            provider_connection_has_credential: Boolean(disabledConnection.credential_ref),
             connection_priority: disabledConnection.priority,
             connection_base_url: disabledConnection.base_url,
             pricing_source: pricingSource,
@@ -131,6 +198,7 @@ export async function dryRunRuntimeRouting(params: {
           provider: attempt.provider,
           model: attempt.model,
           provider_connection_status: 'missing',
+          provider_connection_has_credential: false,
           pricing_source: pricingSource,
           pricing: projectPricing ?? modelPricing,
         };
@@ -145,6 +213,7 @@ export async function dryRunRuntimeRouting(params: {
         model: attempt.model,
         provider_connection_id: fallbackConnection?.id,
         provider_connection_status: fallbackConnection ? 'active' : 'missing',
+        provider_connection_has_credential: fallbackConnection ? Boolean(fallbackConnection.credential_ref) : false,
         connection_priority: fallbackConnection?.priority,
         connection_base_url: fallbackConnection?.base_url,
         pricing_source: pricingSource,
@@ -158,6 +227,7 @@ export async function dryRunRuntimeRouting(params: {
       model: attempt.model,
       provider_connection_id: selectedConnection.providerConnection.id,
       provider_connection_status: 'active',
+      provider_connection_has_credential: Boolean(selectedConnection.providerConnection.credential_ref),
       connection_priority: selectedConnection.providerConnection.priority,
       connection_base_url: selectedConnection.providerConnection.base_url,
       pricing_source: pricingSource,
@@ -175,6 +245,7 @@ export async function dryRunRuntimeRouting(params: {
       fallback_policy: routingPlan.fallbackPolicy,
       attempts,
       issues: Array.from(issues),
+      guardrails: buildRuntimeGuardrails(attempts, Array.from(issues)),
     },
   };
 }

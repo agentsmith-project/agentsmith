@@ -1441,6 +1441,26 @@ export interface paths {
         patch: operations["update_projectResourcePolicy"];
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/impact-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview runtime route cost impact */
+        post: operations["previewRuntimeImpact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models": {
         parameters: {
             query?: never;
@@ -1457,30 +1477,6 @@ export interface paths {
         /** Create runtime model catalog entry */
         post: operations["createRuntimeModel"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{provider}/models/{modelId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                modelId: string;
-                provider: string;
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        /** Get runtime model catalog entry */
-        get: operations["getRuntimeModel"];
-        /** Update runtime model catalog entry */
-        put: operations["updateRuntimeModel"];
-        post?: never;
-        /** Delete runtime model catalog entry */
-        delete: operations["deleteRuntimeModel"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1523,6 +1519,30 @@ export interface paths {
         /** Create runtime provider connection */
         post: operations["createRuntimeProvider"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{provider}/models/{modelId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelId: string;
+                projectId: components["parameters"]["projectId"];
+                provider: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Get runtime model catalog entry */
+        get: operations["getRuntimeModel"];
+        /** Update runtime model catalog entry */
+        put: operations["updateRuntimeModel"];
+        post?: never;
+        /** Delete runtime model catalog entry */
+        delete: operations["deleteRuntimeModel"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1633,6 +1653,26 @@ export interface paths {
         post?: never;
         /** Delete model combo */
         delete: operations["deleteRuntimeRoutingCombo"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview runtime routing plan */
+        post: operations["dryRunRuntimeRouting"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2317,6 +2357,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_usageFacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi": {
         parameters: {
             query?: never;
@@ -2825,6 +2881,61 @@ export interface components {
             resource_type: string;
             tokens?: number;
         };
+        RuntimeAttemptTrace: {
+            durationMs?: number;
+            errorClass?: string;
+            index: number;
+            model: string;
+            /** @enum {string} */
+            outcome: "provider_connection_missing" | "credential_ref_missing" | "credential_secret_missing" | "fallback_network_error" | "terminal_network_error" | "fallback_upstream_error" | "terminal_upstream_error" | "success";
+            provider: string;
+            providerConnectionId?: string;
+            reason: string;
+            statusCode?: number;
+        };
+        RuntimeFallbackPolicy: {
+            max_hops: number;
+            retryable_error_classes: string[];
+        };
+        RuntimeImpactPreviewCostRange: {
+            high?: number | null;
+            low?: number | null;
+        };
+        RuntimeImpactPreviewProjectedCost: {
+            primary_avg_cost?: number | null;
+            primary_total_cost?: number | null;
+            range_avg_cost: components["schemas"]["RuntimeImpactPreviewCostRange"];
+            range_total_cost: components["schemas"]["RuntimeImpactPreviewCostRange"];
+        };
+        RuntimeImpactPreviewRequest: {
+            lookback_hours?: number;
+            model: string;
+            resource_id?: string;
+        };
+        RuntimeImpactPreviewResponse: {
+            assumptions: string[];
+            guardrails: components["schemas"]["RuntimeReleaseGuardrails"];
+            lookback_window: components["schemas"]["RuntimeImpactPreviewWindow"];
+            model: string;
+            planned_route: components["schemas"]["RuntimeRoutingDryRunResponse"];
+            projected_cost: components["schemas"]["RuntimeImpactPreviewProjectedCost"];
+            sample: components["schemas"]["RuntimeImpactPreviewSample"];
+        };
+        RuntimeImpactPreviewSample: {
+            avg_estimated_cost?: number | null;
+            avg_tokens_in?: number | null;
+            avg_tokens_out?: number | null;
+            avg_tokens_total?: number | null;
+            request_count: number;
+            total_estimated_cost: number;
+        };
+        RuntimeImpactPreviewWindow: {
+            /** Format: date-time */
+            end: string;
+            lookback_hours: number;
+            /** Format: date-time */
+            start: string;
+        };
         RuntimeModelAlias: {
             alias: string;
             target_model: string;
@@ -2876,17 +2987,6 @@ export interface components {
             model: string;
             provider: string;
         };
-        RuntimeAttemptTrace: {
-            durationMs?: number;
-            errorClass?: string;
-            index: number;
-            model: string;
-            outcome: "provider_connection_missing" | "credential_ref_missing" | "credential_secret_missing" | "fallback_network_error" | "terminal_network_error" | "fallback_upstream_error" | "terminal_upstream_error" | "success";
-            provider: string;
-            providerConnectionId?: string;
-            reason: string;
-            statusCode?: number;
-        };
         RuntimeModelComboUpdate: {
             fallback_policy?: components["schemas"]["RuntimeModelComboFallbackPolicy"];
             targets?: components["schemas"]["RuntimeModelComboTarget"][];
@@ -2928,13 +3028,6 @@ export interface components {
                 [key: string]: components["schemas"]["RuntimeModelPricing"];
             };
         };
-        UnifiedChatRuntimeMetadata: {
-            attempts?: components["schemas"]["RuntimeAttemptTrace"][];
-            estimated_cost?: number | null;
-            fallback_hops?: number;
-            provider?: string;
-            resolved_model?: string;
-        };
         RuntimeProviderConnection: {
             /** @enum {string} */
             auth_mode: "api_key" | "oauth" | "aws_sdk" | "token";
@@ -2963,6 +3056,41 @@ export interface components {
             priority?: number;
             /** @enum {string} */
             status?: "active" | "disabled";
+        };
+        RuntimeReleaseGuardrails: {
+            blockers: string[];
+            /** @enum {string} */
+            release_readiness: "ready" | "blocked";
+            warnings: string[];
+        };
+        RuntimeRoutingDryRunAttempt: {
+            connection_base_url?: string;
+            connection_priority?: number;
+            index: number;
+            model: string;
+            pricing?: components["schemas"]["RuntimeModelPricing"];
+            /** @enum {string} */
+            pricing_source: "project_override" | "model_catalog" | "missing";
+            provider: string;
+            provider_connection_has_credential?: boolean;
+            provider_connection_id?: string;
+            /** @enum {string} */
+            provider_connection_status: "active" | "disabled" | "missing";
+        };
+        RuntimeRoutingDryRunRequest: {
+            /** @description provider/model, alias, or combo:<name> */
+            model: string;
+        };
+        RuntimeRoutingDryRunResponse: {
+            alias?: string;
+            attempts: components["schemas"]["RuntimeRoutingDryRunAttempt"][];
+            combo_name?: string;
+            fallback_policy?: components["schemas"]["RuntimeFallbackPolicy"];
+            guardrails: components["schemas"]["RuntimeReleaseGuardrails"];
+            issues: string[];
+            model: string;
+            /** @enum {string} */
+            routed_by: "direct" | "alias" | "combo";
         };
         /** @description Silence notification request */
         SilenceNotificationRequest: {
@@ -3047,6 +3175,13 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        UnifiedChatRuntimeMetadata: {
+            attempts?: components["schemas"]["RuntimeAttemptTrace"][];
+            estimated_cost?: number | null;
+            fallback_hops?: number;
+            provider?: string;
+            resolved_model?: string;
+        };
         UpdateAgentRequest: {
             description?: string;
             name?: string;
@@ -3075,6 +3210,42 @@ export interface components {
             /** @description Time bucket identifier (ISO 8601 or formatted date) */
             time_bucket: string;
             tokens?: number;
+        };
+        UsageFactRecord: {
+            bytes_in?: number;
+            bytes_out?: number;
+            duration_ms?: number;
+            end_user_id?: string;
+            error_code?: string;
+            id: string;
+            metadata_json?: {
+                [key: string]: unknown;
+            };
+            project_id: string;
+            request_id?: string;
+            requests: number;
+            resource_id?: string;
+            resource_type: string;
+            /** @enum {string} */
+            result: "ok" | "error";
+            runtime?: components["schemas"]["UsageFactRuntimeMetadata"];
+            /** Format: date-time */
+            timestamp: string;
+            tokens_in?: number;
+            tokens_out?: number;
+            tokens_total?: number;
+            workspace_id: string;
+        };
+        UsageFactRuntimeMetadata: {
+            attempts?: {
+                [key: string]: unknown;
+            }[];
+            estimated_cost?: number | null;
+            fallback_hops?: number;
+            missing_price?: boolean;
+            pricing_version?: string | null;
+            provider?: string;
+            resolved_model?: string;
         };
         /** @description Request parameters for usage time series data */
         UsageTimeseriesRequest: {
@@ -6351,6 +6522,44 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    previewRuntimeImpact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeImpactPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Runtime impact preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeImpactPreviewResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     listRuntimeModels: {
         parameters: {
             query?: never;
@@ -6414,98 +6623,6 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-        };
-    };
-    getRuntimeModel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                modelId: string;
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Model entry */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RuntimeModelCatalogEntry"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-        };
-    };
-    updateRuntimeModel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                modelId: string;
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RuntimeModelCatalogEntryUpdate"];
-            };
-        };
-        responses: {
-            /** @description Updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RuntimeModelCatalogEntry"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-        };
-    };
-    deleteRuntimeModel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                modelId: string;
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
         };
     };
     getRuntimePricing: {
@@ -6634,6 +6751,101 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getRuntimeModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelId: string;
+                projectId: components["parameters"]["projectId"];
+                provider: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelCatalogEntry"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateRuntimeModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelId: string;
+                projectId: components["parameters"]["projectId"];
+                provider: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeModelCatalogEntryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeModelCatalogEntry"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteRuntimeModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelId: string;
+                projectId: components["parameters"]["projectId"];
+                provider: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     updateRuntimeProvider: {
@@ -7013,6 +7225,44 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    dryRunRuntimeRouting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeRoutingDryRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry-run route plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeRoutingDryRunResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listSourceLibraries: {
@@ -8089,6 +8339,46 @@ export interface operations {
                             tokens?: number;
                             workspace_id: string;
                         }[];
+                        page: number;
+                        page_size: number;
+                        total: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    get_usageFacts: {
+        parameters: {
+            query: {
+                end_time: string;
+                end_user_id?: string;
+                page?: number;
+                page_size?: number;
+                resource_id?: string;
+                resource_type?: string;
+                sort_order?: "asc" | "desc";
+                start_time: string;
+            };
+            header?: never;
+            path: {
+                projectId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request-level usage facts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        has_more: boolean;
+                        items: components["schemas"]["UsageFactRecord"][];
                         page: number;
                         page_size: number;
                         total: number;

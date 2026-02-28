@@ -141,10 +141,17 @@ export interface RuntimeRoutingDryRunAttempt {
   model: string;
   provider_connection_id?: string;
   provider_connection_status: 'active' | 'disabled' | 'missing';
+  provider_connection_has_credential?: boolean;
   connection_priority?: number;
   connection_base_url?: string;
   pricing_source: 'project_override' | 'model_catalog' | 'missing';
   pricing?: Record<string, number>;
+}
+
+export interface RuntimeReleaseGuardrails {
+  release_readiness: 'ready' | 'blocked';
+  blockers: string[];
+  warnings: string[];
 }
 
 export interface RuntimeRoutingDryRunResponse {
@@ -158,6 +165,7 @@ export interface RuntimeRoutingDryRunResponse {
   };
   attempts: RuntimeRoutingDryRunAttempt[];
   issues: string[];
+  guardrails: RuntimeReleaseGuardrails;
 }
 
 export interface RuntimeImpactPreviewRequest {
@@ -195,6 +203,7 @@ export interface RuntimeImpactPreviewResponse {
     };
   };
   assumptions: string[];
+  guardrails: RuntimeReleaseGuardrails;
 }
 
 export interface RuntimeUnifiedChatResponse {

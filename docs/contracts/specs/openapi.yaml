@@ -6565,6 +6565,19 @@ components:
           type: string
         model:
           type: string
+    RuntimeFallbackPolicy:
+      type: object
+      required:
+        - max_hops
+        - retryable_error_classes
+      properties:
+        max_hops:
+          type: integer
+          minimum: 0
+        retryable_error_classes:
+          type: array
+          items:
+            type: string
     RuntimeRoutingDryRunRequest:
       type: object
       required:
@@ -6594,6 +6607,8 @@ components:
         provider_connection_status:
           type: string
           enum: [active, disabled, missing]
+        provider_connection_has_credential:
+          type: boolean
         connection_priority:
           type: integer
         connection_base_url:
@@ -6603,6 +6618,24 @@ components:
           enum: [project_override, model_catalog, missing]
         pricing:
           $ref: "#/components/schemas/RuntimeModelPricing"
+    RuntimeReleaseGuardrails:
+      type: object
+      required:
+        - release_readiness
+        - blockers
+        - warnings
+      properties:
+        release_readiness:
+          type: string
+          enum: [ready, blocked]
+        blockers:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
     RuntimeRoutingDryRunResponse:
       type: object
       required:
@@ -6610,6 +6643,7 @@ components:
         - routed_by
         - attempts
         - issues
+        - guardrails
       properties:
         model:
           type: string
@@ -6630,6 +6664,8 @@ components:
           type: array
           items:
             type: string
+        guardrails:
+          $ref: "#/components/schemas/RuntimeReleaseGuardrails"
     RuntimeImpactPreviewRequest:
       type: object
       required:
@@ -6715,6 +6751,7 @@ components:
         - planned_route
         - projected_cost
         - assumptions
+        - guardrails
       properties:
         model:
           type: string
@@ -6730,6 +6767,8 @@ components:
           type: array
           items:
             type: string
+        guardrails:
+          $ref: "#/components/schemas/RuntimeReleaseGuardrails"
     RuntimeAttemptTrace:
       type: object
       required:

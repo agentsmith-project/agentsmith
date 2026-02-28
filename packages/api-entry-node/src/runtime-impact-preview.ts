@@ -1,5 +1,9 @@
 import { listUsageFacts } from './audit-usage-store.js';
-import { dryRunRuntimeRouting, type RuntimeRoutingDryRunResponse } from './runtime-routing-dry-run.js';
+import {
+  dryRunRuntimeRouting,
+  type RuntimeReleaseGuardrails,
+  type RuntimeRoutingDryRunResponse,
+} from './runtime-routing-dry-run.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 
 export type RuntimeImpactPreviewRequest = {
@@ -37,6 +41,7 @@ export type RuntimeImpactPreviewResponse = {
     };
   };
   assumptions: string[];
+  guardrails: RuntimeReleaseGuardrails;
 };
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -170,6 +175,7 @@ export async function previewRuntimeImpact(params: {
         'impact_preview_applies_average_token_mix_to_planned_pricing',
         'impact_preview_does_not_model_runtime_fallback_probability',
       ],
+      guardrails: plannedRoute.guardrails,
     },
   };
 }

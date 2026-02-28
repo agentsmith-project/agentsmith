@@ -70,6 +70,11 @@ describe('runtime-routing-dry-run', () => {
       routed_by: 'combo',
       combo_name: 'prod-chat',
       issues: [],
+      guardrails: {
+        release_readiness: 'ready',
+        blockers: [],
+        warnings: [],
+      },
     });
     expect('attempts' in result.body && result.body.attempts[0]).toMatchObject({
       provider: 'openai',
@@ -119,12 +124,71 @@ describe('runtime-routing-dry-run', () => {
       routed_by: 'alias',
       alias: 'assistant-main',
       issues: ['runtime_pricing_missing', 'runtime_provider_connection_missing'],
+      guardrails: {
+        release_readiness: 'blocked',
+        blockers: [
+          'runtime_guardrail_primary_connection_unavailable',
+          'runtime_guardrail_primary_pricing_missing',
+        ],
+        warnings: [],
+      },
     });
     expect('attempts' in result.body && result.body.attempts[0]).toMatchObject({
       provider: 'anthropic',
       model: 'claude-sonnet-4-5',
       provider_connection_status: 'missing',
       pricing_source: 'missing',
+    });
+  });
+
+  it('blocks rollout when only a disabled primary connection exists', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+
+    await docStore.upsert('runtime_provider_connections', 'rpc_1', {
+      id: 'rpc_1',
+      workspace_id: workspaceId,
+      project_id: projectId,
+      provider: 'openai',
+      auth_mode: 'api_key',
+      base_url: 'https://api.openai.com/v1',
+      credential_ref: 'cred_1',
+      priority: 1,
+      status: 'disabled',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    await docStore.upsert('runtime_model_catalog_entries', 'rmc_1', {
+      id: 'rmc_1',
+      workspace_id: workspaceId,
+      project_id: projectId,
+      provider: 'openai',
+      model_id: 'gpt-4o',
+      capabilities: ['chat'],
+      pricing: { input: 2, output: 10 },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const result = await dryRunRuntimeRouting({
+      deps: { docStore } as never,
+      workspaceId,
+      projectId,
+      rawBody: { model: 'openai/gpt-4o' },
+    });
+
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toMatchObject({
+      issues: ['runtime_provider_connection_disabled'],
+      guardrails: {
+        release_readiness: 'blocked',
+        blockers: ['runtime_guardrail_primary_connection_unavailable'],
+      },
+    });
+    expect('attempts' in result.body && result.body.attempts[0]).toMatchObject({
+      provider_connection_status: 'disabled',
+      provider_connection_has_credential: true,
     });
   });
 });

@@ -24,6 +24,11 @@ const dryRunMutateAsync = vi.fn().mockResolvedValue({
     },
   ],
   issues: [],
+  guardrails: {
+    release_readiness: 'ready',
+    blockers: [],
+    warnings: [],
+  },
 });
 const impactMutateAsync = vi.fn().mockImplementation(async ({ model }: { model: string }) => ({
   model,
@@ -46,6 +51,11 @@ const impactMutateAsync = vi.fn().mockImplementation(async ({ model }: { model: 
     combo_name: model.startsWith('combo:') ? 'prod-chat' : undefined,
     attempts: [],
     issues: [],
+    guardrails: {
+      release_readiness: model === 'openai/gpt-4o' ? 'ready' : 'blocked',
+      blockers: model === 'openai/gpt-4o' ? [] : ['runtime_guardrail_primary_pricing_missing'],
+      warnings: model === 'openai/gpt-4o' ? [] : ['runtime_guardrail_fallback_connection_unavailable'],
+    },
   },
   projected_cost: {
     primary_avg_cost: model === 'openai/gpt-4o' ? 0.004587 : 0.005987,
@@ -61,6 +71,11 @@ const impactMutateAsync = vi.fn().mockImplementation(async ({ model }: { model: 
     'impact_preview_uses_recent_endpoint_usage_facts',
     'impact_preview_applies_average_token_mix_to_planned_pricing',
   ],
+  guardrails: {
+    release_readiness: model === 'openai/gpt-4o' ? 'ready' : 'blocked',
+    blockers: model === 'openai/gpt-4o' ? [] : ['runtime_guardrail_primary_pricing_missing'],
+    warnings: model === 'openai/gpt-4o' ? [] : ['runtime_guardrail_fallback_connection_unavailable'],
+  },
 }));
 const probeMutateAsync = vi.fn().mockResolvedValue({
   ok: true,
@@ -190,6 +205,7 @@ describe('RuntimeControlPlanePanel', () => {
     });
     expect(screen.getByTestId('settings-runtime__dry-run-summary')).toBeInTheDocument();
     expect(screen.getByTestId('settings-runtime__dry-run-attempt-0')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-runtime__dry-run-guardrails')).toHaveTextContent('runtime_guardrails_status_ready');
   });
 
   it('runs impact preview and renders projected cost cards', async () => {
@@ -204,6 +220,7 @@ describe('RuntimeControlPlanePanel', () => {
     });
     expect(screen.getByTestId('settings-runtime__impact-sample-count')).toHaveTextContent('42');
     expect(screen.getByTestId('settings-runtime__impact-assumptions')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-runtime__impact-guardrails')).toHaveTextContent('runtime_guardrails_status_blocked');
   });
 
   it('runs side-by-side compare and renders deltas', async () => {
@@ -225,5 +242,7 @@ describe('RuntimeControlPlanePanel', () => {
       lookback_hours: 168,
     });
     expect(screen.getByTestId('settings-runtime__compare-delta')).toHaveTextContent('+$0.001400');
+    expect(screen.getByTestId('settings-runtime__compare-baseline-guardrails')).toHaveTextContent('runtime_guardrails_status_ready');
+    expect(screen.getByTestId('settings-runtime__compare-candidate-guardrails')).toHaveTextContent('runtime_guardrails_status_blocked');
   });
 });

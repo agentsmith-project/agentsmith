@@ -319,6 +319,7 @@ export type UsageReportScheduleStatus = 'active' | 'paused';
 export type UsageReportScheduleFormat = 'csv' | 'json';
 export type UsageReportScheduleWindow = 'last_24h' | 'last_7d' | 'last_30d';
 export type UsageReportScheduleDeliveryChannel = 'in_app';
+export type UsageReportDeliveryErrorClass = 'empty_result' | 'delivery_channel' | 'system_error';
 
 export type UsageReportScheduleRecord = {
   id: string;
@@ -366,6 +367,8 @@ export type UsageReportScheduleDeliveryResult = {
     estimated_cost?: number;
   };
   error?: string;
+  error_class?: UsageReportDeliveryErrorClass;
+  delivery_metadata?: Record<string, unknown>;
 };
 
 export type UsageReportDeliveryRecord = {
@@ -389,9 +392,11 @@ export type UsageReportDeliveryRecord = {
     estimated_cost?: number;
   };
   error?: string;
+  error_class?: UsageReportDeliveryErrorClass;
   acknowledged_at?: string;
   acknowledged_by?: string;
   parent_delivery_id?: string;
+  delivery_metadata?: Record<string, unknown>;
 };
 
 export type UsageReportEvidence = {
@@ -405,6 +410,22 @@ export type UsageReportEvidence = {
   successful_deliveries_last_7d: number;
   failed_deliveries_last_7d: number;
   unacknowledged_required_deliveries: number;
+  runner_health?: {
+    enabled: boolean;
+    interval_ms: number;
+    running: boolean;
+    run_count: number;
+    last_status: 'idle' | 'success' | 'failed';
+    last_started_at?: string;
+    last_completed_at?: string;
+    last_error?: string;
+    last_result?: {
+      generated_at: string;
+      processed_schedules: number;
+      successful_deliveries: number;
+      failed_deliveries: number;
+    };
+  };
 };
 
 export type UsageReportRunnerProjectResult = {
@@ -422,6 +443,18 @@ export type UsageReportRunnerSweepResult = {
   failed_deliveries: number;
   projects: UsageReportRunnerProjectResult[];
 };
+
+export type UsageReportDeliveryDispatchResult =
+  | {
+    ok: true;
+    delivery_metadata?: Record<string, unknown>;
+  }
+  | {
+    ok: false;
+    error: string;
+    error_class: UsageReportDeliveryErrorClass;
+    delivery_metadata?: Record<string, unknown>;
+  };
 
 export const AUDIT_EVENTS_COLLECTION = 'project_audit_events';
 export const USAGE_FACTS_COLLECTION = 'project_usage_facts';
@@ -1722,6 +1755,14 @@ export async function executeUsageReportScheduleDelivery(
     scheduleId: string;
     trigger: UsageReportDeliveryRecord['trigger'];
     parentDeliveryId?: string;
+    deliveryDispatch?: (args: {
+      workspaceId: string;
+      projectId: string;
+      schedule: UsageReportScheduleRecord;
+      result: UsageReportScheduleDeliveryResult;
+      recipientUserId?: string;
+    }) => Promise<UsageReportDeliveryDispatchResult>;
+    recipientUserId?: string;
   },
 ): Promise<UsageReportScheduleDeliveryResult | null> {
   const schedule = await resolveSchedule(docStore, query);
@@ -1783,6 +1824,7 @@ export async function executeUsageReportScheduleDelivery(
       completed_at: now,
       summary,
       error: 'usage_report_empty_result',
+      error_class: 'empty_result',
       parent_delivery_id: query.parentDeliveryId,
     };
     await docStore.upsert(USAGE_REPORT_DELIVERIES_COLLECTION, failedDelivery.id, failedDelivery);
@@ -1805,6 +1847,7 @@ export async function executeUsageReportScheduleDelivery(
       status: 'failed',
       summary,
       error: failedDelivery.error,
+      error_class: 'empty_result',
     };
   }
 
@@ -1822,26 +1865,8 @@ export async function executeUsageReportScheduleDelivery(
     result: schedule.filters?.result ?? null,
     errorClass: schedule.filters?.error_class ?? null,
   });
-  const delivery: UsageReportDeliveryRecord = {
-    id: deliveryId,
-    workspace_id: query.workspaceId,
-    project_id: query.projectId,
-    schedule_id: schedule.id,
-    trigger: query.trigger,
-    status: 'success',
-    attempt_count: attemptCount,
-    report_period_start: range.startTime,
-    report_period_end: range.endTime,
-    created_at: now,
-    completed_at: now,
-    preview_filename: exportResult.filename,
-    content_type: exportResult.contentType,
-    summary,
-    parent_delivery_id: query.parentDeliveryId,
-  };
-  await docStore.upsert(USAGE_REPORT_DELIVERIES_COLLECTION, delivery.id, delivery);
-  const result: UsageReportScheduleDeliveryResult = {
-    delivery_id: delivery.id,
+  const baseResult: UsageReportScheduleDeliveryResult = {
+    delivery_id: deliveryId,
     schedule_id: schedule.id,
     delivery_channel: schedule.delivery_channel,
     generated_at: now,
@@ -1850,13 +1875,53 @@ export async function executeUsageReportScheduleDelivery(
     status: 'success',
     summary,
   };
+
+  const dispatchResult = query.deliveryDispatch
+    ? await query.deliveryDispatch({
+      workspaceId: query.workspaceId,
+      projectId: query.projectId,
+      schedule,
+      result: baseResult,
+      recipientUserId: query.recipientUserId,
+    })
+    : { ok: true as const };
+
+  const delivery: UsageReportDeliveryRecord = {
+    id: deliveryId,
+    workspace_id: query.workspaceId,
+    project_id: query.projectId,
+    schedule_id: schedule.id,
+    trigger: query.trigger,
+    status: dispatchResult.ok ? 'success' : 'failed',
+    attempt_count: attemptCount,
+    report_period_start: range.startTime,
+    report_period_end: range.endTime,
+    created_at: now,
+    completed_at: now,
+    preview_filename: exportResult.filename,
+    content_type: exportResult.contentType,
+    summary,
+    error: dispatchResult.ok ? undefined : dispatchResult.error,
+    error_class: dispatchResult.ok ? undefined : dispatchResult.error_class,
+    parent_delivery_id: query.parentDeliveryId,
+    delivery_metadata: dispatchResult.delivery_metadata,
+  };
+  await docStore.upsert(USAGE_REPORT_DELIVERIES_COLLECTION, delivery.id, delivery);
+  const result: UsageReportScheduleDeliveryResult = {
+    ...baseResult,
+    summary,
+    status: dispatchResult.ok ? 'success' : 'failed',
+    error: dispatchResult.ok ? undefined : dispatchResult.error,
+    error_class: dispatchResult.ok ? undefined : dispatchResult.error_class,
+    delivery_metadata: dispatchResult.delivery_metadata,
+  };
   await docStore.upsert<UsageReportScheduleRecord>(USAGE_REPORT_SCHEDULES_COLLECTION, schedule.id, {
     ...schedule,
     updated_at: now,
     last_run_at: now,
     last_delivery_at: now,
-    last_delivery_status: 'success',
-    last_delivery_error: undefined,
+    last_delivery_status: dispatchResult.ok ? 'success' : 'failed',
+    last_delivery_error: dispatchResult.ok ? undefined : dispatchResult.error,
     next_run_at: schedule.status === 'active' ? computeNextRunAt(schedule.cadence, now) : schedule.next_run_at,
   });
   return result;
@@ -1868,6 +1933,8 @@ export async function testUsageReportScheduleDelivery(
     workspaceId: string;
     projectId: string;
     scheduleId: string;
+    deliveryDispatch?: Parameters<typeof executeUsageReportScheduleDelivery>[1]['deliveryDispatch'];
+    recipientUserId?: string;
   },
 ): Promise<UsageReportScheduleDeliveryResult | null> {
   return executeUsageReportScheduleDelivery(docStore, { ...query, trigger: 'test' });
@@ -1879,6 +1946,8 @@ export async function runUsageReportScheduleNow(
     workspaceId: string;
     projectId: string;
     scheduleId: string;
+    deliveryDispatch?: Parameters<typeof executeUsageReportScheduleDelivery>[1]['deliveryDispatch'];
+    recipientUserId?: string;
   },
 ): Promise<UsageReportScheduleDeliveryResult | null> {
   return executeUsageReportScheduleDelivery(docStore, { ...query, trigger: 'manual' });
@@ -1891,6 +1960,8 @@ export async function retryUsageReportDelivery(
     projectId: string;
     scheduleId: string;
     deliveryId: string;
+    deliveryDispatch?: Parameters<typeof executeUsageReportScheduleDelivery>[1]['deliveryDispatch'];
+    recipientUserId?: string;
   },
 ): Promise<UsageReportScheduleDeliveryResult | null> {
   const existing = await docStore.get<UsageReportDeliveryRecord>(USAGE_REPORT_DELIVERIES_COLLECTION, query.deliveryId);
@@ -1903,6 +1974,8 @@ export async function retryUsageReportDelivery(
     scheduleId: query.scheduleId,
     trigger: 'retry',
     parentDeliveryId: existing.parent_delivery_id ?? existing.id,
+    deliveryDispatch: query.deliveryDispatch,
+    recipientUserId: query.recipientUserId,
   });
 }
 
@@ -1935,6 +2008,7 @@ export async function runDueUsageReportSchedules(
     workspaceId: string;
     projectId: string;
     now?: string;
+    deliveryDispatch?: Parameters<typeof executeUsageReportScheduleDelivery>[1]['deliveryDispatch'];
   },
 ): Promise<{ processed: number; deliveries: UsageReportScheduleDeliveryResult[] }> {
   const listed = await listUsageReportSchedules(docStore, query);
@@ -1947,6 +2021,7 @@ export async function runDueUsageReportSchedules(
       projectId: query.projectId,
       scheduleId: schedule.id,
       trigger: 'scheduled',
+      deliveryDispatch: query.deliveryDispatch,
     });
     if (result) deliveries.push(result);
   }
@@ -1957,6 +2032,7 @@ export async function runDueUsageReportSchedulesAcrossProjects(
   docStore: JsonDocStorePort,
   query?: {
     now?: string;
+    deliveryDispatch?: Parameters<typeof executeUsageReportScheduleDelivery>[1]['deliveryDispatch'];
   },
 ): Promise<UsageReportRunnerSweepResult> {
   const now = query?.now ?? new Date().toISOString();
@@ -1979,6 +2055,7 @@ export async function runDueUsageReportSchedulesAcrossProjects(
       workspaceId: project.workspaceId,
       projectId: project.projectId,
       now,
+      deliveryDispatch: query?.deliveryDispatch,
     });
     if (result.processed > 0 || result.deliveries.length > 0) {
       projects.push({
@@ -2007,6 +2084,7 @@ export async function getUsageReportEvidence(
     workspaceId: string;
     projectId: string;
     now?: string;
+    runnerHealth?: UsageReportEvidence['runner_health'];
   },
 ): Promise<UsageReportEvidence> {
   const listed = await listUsageReportSchedules(docStore, query);
@@ -2038,6 +2116,15 @@ export async function getUsageReportEvidence(
 
   const warnings: string[] = [];
   if (activeSchedules.length === 0) warnings.push('usage_report_no_active_schedules');
+  if (query.runnerHealth) {
+    if (!query.runnerHealth.enabled) {
+      warnings.push('usage_report_runner_disabled');
+    } else if (query.runnerHealth.last_status === 'failed') {
+      warnings.push('usage_report_runner_last_run_failed');
+    } else if (activeSchedules.length > 0 && !query.runnerHealth.last_completed_at) {
+      warnings.push('usage_report_runner_not_yet_executed');
+    }
+  }
 
   return {
     source: 'artifact',
@@ -2050,5 +2137,6 @@ export async function getUsageReportEvidence(
     successful_deliveries_last_7d: successful,
     failed_deliveries_last_7d: failed,
     unacknowledged_required_deliveries: unacknowledgedRequired,
+    runner_health: query.runnerHealth,
   };
 }

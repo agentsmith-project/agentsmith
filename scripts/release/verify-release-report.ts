@@ -672,14 +672,22 @@ function loadUsageReportEvidence(options: VerifyReleaseOptions): UsageReportEvid
         release_readiness: 'blocked',
         blockers: ['usage_report_evidence_unreadable'],
         warnings: [],
-        active_schedules: 0,
-        required_schedules: 0,
-        successful_deliveries_last_7d: 0,
-        failed_deliveries_last_7d: 0,
-        unacknowledged_required_deliveries: 0,
-        note: `Failed to parse usage report evidence: ${message}`,
-      };
-    }
+      active_schedules: 0,
+      required_schedules: 0,
+      successful_deliveries_last_7d: 0,
+      failed_deliveries_last_7d: 0,
+      unacknowledged_required_deliveries: 0,
+      runner_health: {
+        enabled: false,
+        interval_ms: 60000,
+        running: false,
+        run_count: 0,
+        last_status: 'failed',
+        last_error: message,
+      },
+      note: `Failed to parse usage report evidence: ${message}`,
+    };
+  }
   }
 
   if (options.dryRun) {
@@ -694,6 +702,21 @@ function loadUsageReportEvidence(options: VerifyReleaseOptions): UsageReportEvid
       successful_deliveries_last_7d: 1,
       failed_deliveries_last_7d: 0,
       unacknowledged_required_deliveries: 0,
+      runner_health: {
+        enabled: true,
+        interval_ms: 60000,
+        running: false,
+        run_count: 3,
+        last_status: 'success',
+        last_started_at: new Date(Date.now() - 90_000).toISOString(),
+        last_completed_at: new Date(Date.now() - 89_000).toISOString(),
+        last_result: {
+          generated_at: new Date(Date.now() - 89_000).toISOString(),
+          processed_schedules: 1,
+          successful_deliveries: 1,
+          failed_deliveries: 0,
+        },
+      },
       note: 'Dry-run evidence uses deterministic fixture data and does not call live delivery channels.',
     };
   }
@@ -973,6 +996,17 @@ function generateMarkdown(report: ReleaseReport): string {
     md += `- **Successful Deliveries (7d):** ${usageEvidence.successful_deliveries_last_7d}\n`;
     md += `- **Failed Deliveries (7d):** ${usageEvidence.failed_deliveries_last_7d}\n`;
     md += `- **Unacknowledged Required Deliveries:** ${usageEvidence.unacknowledged_required_deliveries}\n`;
+    if (usageEvidence.runner_health) {
+      md += `- **Runner Enabled:** ${usageEvidence.runner_health.enabled ? 'yes' : 'no'}\n`;
+      md += `- **Runner Status:** ${usageEvidence.runner_health.last_status}\n`;
+      md += `- **Runner Run Count:** ${usageEvidence.runner_health.run_count}\n`;
+      if (usageEvidence.runner_health.last_completed_at) {
+        md += `- **Runner Last Completed:** ${usageEvidence.runner_health.last_completed_at}\n`;
+      }
+      if (usageEvidence.runner_health.last_error) {
+        md += `- **Runner Last Error:** ${usageEvidence.runner_health.last_error}\n`;
+      }
+    }
     if (usageEvidence.note) {
       md += `- **Note:** ${usageEvidence.note}\n`;
     }

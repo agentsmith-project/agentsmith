@@ -23,7 +23,7 @@ import {
   testUsageReportScheduleDelivery,
   updateUsageReportSchedule,
 } from './audit-usage-store.js';
-import { appendUserNotification } from './me-notifications-store.js';
+import { createUsageReportDeliveryDispatcher } from './usage-report-delivery.js';
 
 type JsonResponder = (res: http.ServerResponse, status: number, payload: unknown) => void;
 
@@ -98,6 +98,8 @@ export async function handleAuditUsageRoute({
   deps,
   user,
 }: HandlerArgs): Promise<boolean> {
+  const deliveryDispatch = createUsageReportDeliveryDispatcher();
+
   if (route.kind === 'usageReportSchedules' && method === 'GET') {
     const payload = await listUsageReportSchedules(deps.docStore, {
       workspaceId: route.workspaceId,
@@ -148,6 +150,7 @@ export async function handleAuditUsageRoute({
     const payload = await getUsageReportEvidence(deps.docStore, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      runnerHealth: deps.usageReportRunner?.getStatus(),
     });
     json(res, 200, payload);
     return true;
@@ -201,20 +204,12 @@ export async function handleAuditUsageRoute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       scheduleId: route.scheduleId,
+      deliveryDispatch,
+      recipientUserId: user?.id,
     });
     if (!payload) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_schedule_not_found' });
       return true;
-    }
-    if (user) {
-      appendUserNotification(user.id, {
-        type: payload.status === 'success' ? 'usage_report_delivery' : 'usage_report_delivery_failed',
-        title: payload.status === 'success' ? 'Usage report test delivered' : 'Usage report test failed',
-        body: payload.status === 'success'
-          ? `Generated ${payload.preview_filename}`
-          : payload.error ?? 'Usage report delivery failed',
-        link_url: `/workspaces/${route.workspaceId}/projects/${route.projectId}/usage`,
-      });
     }
     json(res, 200, payload);
     return true;
@@ -225,20 +220,12 @@ export async function handleAuditUsageRoute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       scheduleId: route.scheduleId,
+      deliveryDispatch,
+      recipientUserId: user?.id,
     });
     if (!payload) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_schedule_not_found' });
       return true;
-    }
-    if (user) {
-      appendUserNotification(user.id, {
-        type: payload.status === 'success' ? 'usage_report_delivery' : 'usage_report_delivery_failed',
-        title: payload.status === 'success' ? 'Usage report delivered' : 'Usage report delivery failed',
-        body: payload.status === 'success'
-          ? `Generated ${payload.preview_filename}`
-          : payload.error ?? 'Usage report delivery failed',
-        link_url: `/workspaces/${route.workspaceId}/projects/${route.projectId}/usage`,
-      });
     }
     json(res, 200, payload);
     return true;
@@ -250,20 +237,12 @@ export async function handleAuditUsageRoute({
       projectId: route.projectId,
       scheduleId: route.scheduleId,
       deliveryId: route.deliveryId,
+      deliveryDispatch,
+      recipientUserId: user?.id,
     });
     if (!payload) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_delivery_not_found' });
       return true;
-    }
-    if (user) {
-      appendUserNotification(user.id, {
-        type: payload.status === 'success' ? 'usage_report_delivery' : 'usage_report_delivery_failed',
-        title: payload.status === 'success' ? 'Usage report retry delivered' : 'Usage report retry failed',
-        body: payload.status === 'success'
-          ? `Generated ${payload.preview_filename}`
-          : payload.error ?? 'Usage report retry failed',
-        link_url: `/workspaces/${route.workspaceId}/projects/${route.projectId}/usage`,
-      });
     }
     json(res, 200, payload);
     return true;

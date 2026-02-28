@@ -176,6 +176,14 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
       successful_deliveries_last_7d: 1,
       failed_deliveries_last_7d: 0,
       unacknowledged_required_deliveries: 0,
+      runner_health: {
+        enabled: true,
+        interval_ms: 60000,
+        running: false,
+        run_count: 3,
+        last_status: 'success',
+        last_completed_at: '2026-02-28T00:00:00.000Z',
+      },
     },
     isLoading: false,
   }),
@@ -200,6 +208,7 @@ describe('UsagePage', () => {
     expect(screen.getByTestId('usage__operations-summary')).toBeInTheDocument();
     expect(screen.getByTestId('usage__export-trigger')).toBeInTheDocument();
     expect(screen.getByTestId('usage__report-schedules')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__report-evidence-runner-health')).toBeInTheDocument();
     await user.click(screen.getByTestId('usage__table__row'));
 
     expect(screen.getByText('detail.title')).toBeInTheDocument();

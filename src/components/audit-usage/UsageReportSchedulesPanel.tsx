@@ -62,6 +62,17 @@ type DraftState = {
   empty_result_policy: 'deliver' | 'fail';
 };
 
+function formatDateTime(isoString: string): string {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return isoString;
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
 function formatIso(value?: string): string {
   if (!value) return '--';
   const date = new Date(value);
@@ -229,6 +240,32 @@ export function UsageReportSchedulesPanel({
                 <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('report_schedules.evidence_unacknowledged')}</div>
                 <div className="mt-1 text-sm font-semibold text-foreground">{evidence.unacknowledged_required_deliveries}</div>
               </div>
+            </div>
+          ) : null}
+
+          {evidence?.runner_health ? (
+            <div className="mt-3 rounded-md border border-subtle bg-surface px-3 py-3" data-testid="usage__report-evidence-runner-health">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-xs font-medium text-foreground">{t('report_schedules.runner_health_title')}</div>
+                <Badge variant={evidence.runner_health.last_status === 'failed' ? 'secondary' : 'outline'}>
+                  {t(`report_schedules.runner_status_${evidence.runner_health.last_status}`)}
+                </Badge>
+                <Badge variant="outline">
+                  {evidence.runner_health.enabled
+                    ? t('report_schedules.runner_enabled')
+                    : t('report_schedules.runner_disabled')}
+                </Badge>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-4 text-xs text-tertiary">
+                <span>{t('report_schedules.runner_runs')}: {evidence.runner_health.run_count}</span>
+                <span>{t('report_schedules.runner_interval')}: {Math.round(evidence.runner_health.interval_ms / 1000)}s</span>
+                {evidence.runner_health.last_completed_at ? (
+                  <span>{t('report_schedules.runner_last_completed')}: {formatDateTime(evidence.runner_health.last_completed_at)}</span>
+                ) : null}
+              </div>
+              {evidence.runner_health.last_error ? (
+                <div className="mt-2 text-xs text-tertiary">{evidence.runner_health.last_error}</div>
+              ) : null}
             </div>
           ) : null}
 

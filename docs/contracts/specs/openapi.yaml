@@ -7314,6 +7314,9 @@ components:
               minimum: 0
         error:
           type: string
+        error_class:
+          type: string
+          enum: [empty_result, delivery_channel, system_error]
         acknowledged_at:
           type: string
           format: date-time
@@ -7321,6 +7324,9 @@ components:
           type: string
         parent_delivery_id:
           type: string
+        delivery_metadata:
+          type: object
+          additionalProperties: true
     UsageReportScheduleDeliveryResult:
       type: object
       required: [delivery_id, schedule_id, delivery_channel, generated_at, preview_filename, content_type, status, summary]
@@ -7359,6 +7365,12 @@ components:
               minimum: 0
         error:
           type: string
+        error_class:
+          type: string
+          enum: [empty_result, delivery_channel, system_error]
+        delivery_metadata:
+          type: object
+          additionalProperties: true
     UsageReportRunDueResult:
       type: object
       required: [processed, deliveries]
@@ -7406,6 +7418,47 @@ components:
         unacknowledged_required_deliveries:
           type: integer
           minimum: 0
+        runner_health:
+          type: object
+          required: [enabled, interval_ms, running, run_count, last_status]
+          properties:
+            enabled:
+              type: boolean
+            interval_ms:
+              type: integer
+              minimum: 0
+            running:
+              type: boolean
+            run_count:
+              type: integer
+              minimum: 0
+            last_status:
+              type: string
+              enum: [idle, success, failed]
+            last_started_at:
+              type: string
+              format: date-time
+            last_completed_at:
+              type: string
+              format: date-time
+            last_error:
+              type: string
+            last_result:
+              type: object
+              required: [generated_at, processed_schedules, successful_deliveries, failed_deliveries]
+              properties:
+                generated_at:
+                  type: string
+                  format: date-time
+                processed_schedules:
+                  type: integer
+                  minimum: 0
+                successful_deliveries:
+                  type: integer
+                  minimum: 0
+                failed_deliveries:
+                  type: integer
+                  minimum: 0
         note:
           type: string
     ResourceCostBreakdown:

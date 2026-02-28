@@ -3828,7 +3828,12 @@ export interface components {
             content_type?: string;
             /** Format: date-time */
             created_at: string;
+            delivery_metadata?: {
+                [key: string]: unknown;
+            };
             error?: string;
+            /** @enum {string} */
+            error_class?: "empty_result" | "delivery_channel" | "system_error";
             id: string;
             parent_delivery_id?: string;
             preview_filename?: string;
@@ -3860,6 +3865,26 @@ export interface components {
             /** @enum {string} */
             release_readiness: "ready" | "blocked";
             required_schedules: number;
+            runner_health?: {
+                enabled: boolean;
+                interval_ms: number;
+                /** Format: date-time */
+                last_completed_at?: string;
+                last_error?: string;
+                last_result?: {
+                    failed_deliveries: number;
+                    /** Format: date-time */
+                    generated_at: string;
+                    processed_schedules: number;
+                    successful_deliveries: number;
+                };
+                /** Format: date-time */
+                last_started_at?: string;
+                /** @enum {string} */
+                last_status: "idle" | "success" | "failed";
+                run_count: number;
+                running: boolean;
+            };
             /** @enum {string} */
             source: "artifact" | "dry_run";
             successful_deliveries_last_7d: number;
@@ -3909,7 +3934,12 @@ export interface components {
             /** @enum {string} */
             delivery_channel: "in_app";
             delivery_id: string;
+            delivery_metadata?: {
+                [key: string]: unknown;
+            };
             error?: string;
+            /** @enum {string} */
+            error_class?: "empty_result" | "delivery_channel" | "system_error";
             /** Format: date-time */
             generated_at: string;
             preview_filename: string;

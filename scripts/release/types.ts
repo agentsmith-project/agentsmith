@@ -283,6 +283,23 @@ export interface UsageReportEvidence {
   failed_deliveries_last_7d: number;
   /** Required deliveries awaiting acknowledgement */
   unacknowledged_required_deliveries: number;
+  /** Optional runner health snapshot from the API process */
+  runner_health?: {
+    enabled: boolean;
+    interval_ms: number;
+    running: boolean;
+    run_count: number;
+    last_status: 'idle' | 'success' | 'failed';
+    last_started_at?: string;
+    last_completed_at?: string;
+    last_error?: string;
+    last_result?: {
+      generated_at: string;
+      processed_schedules: number;
+      successful_deliveries: number;
+      failed_deliveries: number;
+    };
+  };
   /** Optional reviewer note */
   note?: string;
 }

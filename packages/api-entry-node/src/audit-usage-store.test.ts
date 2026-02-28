@@ -604,4 +604,72 @@ describe('audit-usage-store runtime observability', () => {
       ]),
     );
   });
+
+  it('records delivery metadata from dispatcher side effects', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+
+    await recordUsageFact(store, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      requests: 1,
+      result: 'ok',
+      metadata_json: { provider: 'secondaryok', resolved_model: 'model-b', estimated_cost: 0.0031 },
+    });
+
+    const schedule = await createUsageReportSchedule(store, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: 'Metadata Schedule',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'in_app',
+      release_evidence_required: false,
+      empty_result_policy: 'deliver',
+    });
+
+    const result = await testUsageReportScheduleDelivery(store, {
+      workspaceId,
+      projectId,
+      scheduleId: schedule.id,
+      recipientUserId: 'user_admin',
+      deliveryDispatch: async () => ({
+        ok: true,
+        delivery_metadata: {
+          dispatch_mode: 'user_notification',
+          notification_id: 'notif_1',
+        },
+      }),
+    });
+
+    expect(result?.status).toBe('success');
+    expect(result?.delivery_metadata).toEqual({
+      dispatch_mode: 'user_notification',
+      notification_id: 'notif_1',
+    });
+  });
+
+  it('adds runner health warnings to usage report evidence', async () => {
+    const store = new InMemoryJsonDocStore();
+    const evidence = await getUsageReportEvidence(store, {
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      runnerHealth: {
+        enabled: true,
+        interval_ms: 60000,
+        running: false,
+        run_count: 2,
+        last_status: 'failed',
+        last_error: 'usage_report_runner_busy',
+      },
+    });
+
+    expect(evidence.runner_health?.last_status).toBe('failed');
+    expect(evidence.warnings).toContain('usage_report_no_active_schedules');
+    expect(evidence.warnings).toContain('usage_report_runner_last_run_failed');
+  });
 });

@@ -231,9 +231,11 @@ export interface UsageReportDelivery {
     estimated_cost?: number;
   };
   error?: string;
+  error_class?: 'empty_result' | 'delivery_channel' | 'system_error';
   acknowledged_at?: string;
   acknowledged_by?: string;
   parent_delivery_id?: string;
+  delivery_metadata?: Record<string, unknown>;
 }
 
 export interface UsageReportScheduleDeliveryResult {
@@ -251,6 +253,8 @@ export interface UsageReportScheduleDeliveryResult {
     estimated_cost?: number;
   };
   error?: string;
+  error_class?: 'empty_result' | 'delivery_channel' | 'system_error';
+  delivery_metadata?: Record<string, unknown>;
 }
 
 export interface UsageReportEvidence {
@@ -264,6 +268,22 @@ export interface UsageReportEvidence {
   successful_deliveries_last_7d: number;
   failed_deliveries_last_7d: number;
   unacknowledged_required_deliveries: number;
+  runner_health?: {
+    enabled: boolean;
+    interval_ms: number;
+    running: boolean;
+    run_count: number;
+    last_status: 'idle' | 'success' | 'failed';
+    last_started_at?: string;
+    last_completed_at?: string;
+    last_error?: string;
+    last_result?: {
+      generated_at: string;
+      processed_schedules: number;
+      successful_deliveries: number;
+      failed_deliveries: number;
+    };
+  };
 }
 
 export class AuditAPI {

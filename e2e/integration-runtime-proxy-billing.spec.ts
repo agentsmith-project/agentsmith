@@ -131,6 +131,10 @@ type UsageReportEvidence = {
   successful_deliveries_last_7d: number;
   failed_deliveries_last_7d: number;
   unacknowledged_required_deliveries: number;
+  runner_health?: {
+    enabled: boolean;
+    last_status: 'idle' | 'success' | 'failed';
+  };
   note?: string;
 };
 
@@ -578,6 +582,7 @@ test.describe('@lane-real integration runtime proxy billing', () => {
       const usageReportEvidence = (await usageReportEvidenceRes.json()) as UsageReportEvidence;
       expect(usageReportEvidence.release_readiness).toBe('ready');
       expect(usageReportEvidence.unacknowledged_required_deliveries).toBe(0);
+      expect(usageReportEvidence.runner_health).toBeDefined();
 
       const dryRunRes = await page.request.post(
         `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/runtime/routing/dry-run`,

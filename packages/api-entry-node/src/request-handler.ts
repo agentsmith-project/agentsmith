@@ -321,6 +321,7 @@ export async function handleRequest(
       res,
       json,
       deps,
+      user,
     });
     if (handledAuditUsageRoute) {
       return;

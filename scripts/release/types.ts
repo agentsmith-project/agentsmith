@@ -133,6 +133,8 @@ export interface ReportSummary {
   upstream_transient?: UpstreamTransientSummary;
   /** Runtime release evidence collected from real-lane runtime workflow */
   runtime_release_evidence?: RuntimeReleaseEvidence;
+  /** Usage report release evidence collected from scheduled-report workflow */
+  usage_report_evidence?: UsageReportEvidence;
   /** Troubleshooting recommendations (present if failed > 0) */
   recommendations?: string[];
   /** Quick stats for release notes */
@@ -260,6 +262,31 @@ export interface RuntimePublishedRouteCandidate {
   published_at?: string | null;
 }
 
+export interface UsageReportEvidence {
+  /** Source of the evidence document */
+  source: 'dry_run' | 'artifact';
+  /** ISO timestamp when usage report evidence was generated */
+  generated_at: string;
+  /** Release readiness derived from required schedules */
+  release_readiness: 'ready' | 'blocked';
+  /** Blocking evidence failures */
+  blockers: string[];
+  /** Warning-only evidence debt */
+  warnings: string[];
+  /** Active schedules in scope */
+  active_schedules: number;
+  /** Required schedules in scope */
+  required_schedules: number;
+  /** Recent successful required deliveries */
+  successful_deliveries_last_7d: number;
+  /** Recent failed required deliveries */
+  failed_deliveries_last_7d: number;
+  /** Required deliveries awaiting acknowledgement */
+  unacknowledged_required_deliveries: number;
+  /** Optional reviewer note */
+  note?: string;
+}
+
 /**
  * CLI options for the verify-release-report script
  */
@@ -278,6 +305,8 @@ export interface VerifyReleaseOptions {
   mockFailure?: FailureType;
   /** Path to runtime release evidence artifact */
   runtimeEvidence?: string;
+  /** Path to usage report evidence artifact */
+  usageReportEvidence?: string;
   /** Verbose output */
   verbose?: boolean;
   /** Skip specific checks */

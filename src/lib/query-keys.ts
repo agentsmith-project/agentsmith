@@ -233,6 +233,8 @@ export const queryKeys = {
       ['usage-operations-summary', workspaceId, projectId, params] as const,
     reportSchedules: (workspaceId: string, projectId: string) =>
       ['usage-report-schedules', workspaceId, projectId] as const,
+    reportEvidence: (workspaceId: string, projectId: string) =>
+      ['usage-report-evidence', workspaceId, projectId] as const,
     quotaSummary: (workspaceId: string, projectId: string) =>
       ['usage-quota-summary', workspaceId, projectId] as const,
   },

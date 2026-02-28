@@ -249,6 +249,28 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.runtime_release_evidence?.release_candidate?.approvals_complete).toBe(true);
     });
 
+    it('should attach usage report evidence to the summary', () => {
+      runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: {
+          usage_report_evidence?: {
+            source?: string;
+            release_readiness?: string;
+            active_schedules?: number;
+            required_schedules?: number;
+            warnings?: string[];
+          };
+        };
+      };
+
+      expect(report.summary?.usage_report_evidence).toBeDefined();
+      expect(report.summary?.usage_report_evidence?.source).toBe('dry_run');
+      expect(report.summary?.usage_report_evidence?.release_readiness).toBe('ready');
+      expect(report.summary?.usage_report_evidence?.active_schedules).toBeGreaterThan(0);
+      expect(report.summary?.usage_report_evidence?.required_schedules).toBeGreaterThan(0);
+      expect(report.summary?.usage_report_evidence?.warnings?.length).toBeGreaterThan(0);
+    });
+
     it('should fail when runtime release evidence reports blocked guardrails', () => {
       const runtimeEvidencePath = join(OUTPUT_DIR, 'runtime-evidence-blocked.json');
       const runtimeEvidence = {
@@ -285,6 +307,38 @@ describe('verify-release-report: TDD Suite', () => {
 
       expect(report.summary?.status).toBe('fail');
       expect(report.summary?.recommendations?.some((item) => item.includes('runtime_guardrail_primary_pricing_missing'))).toBe(true);
+    });
+
+    it('should fail when usage report evidence is blocked', () => {
+      const usageEvidencePath = join(OUTPUT_DIR, 'usage-evidence-blocked.json');
+      const usageEvidence = {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['usage_report_schedule_unacknowledged:Release Evidence Digest'],
+        warnings: [],
+        active_schedules: 1,
+        required_schedules: 1,
+        successful_deliveries_last_7d: 0,
+        failed_deliveries_last_7d: 1,
+        unacknowledged_required_deliveries: 1,
+      };
+      mkdirSync(OUTPUT_DIR, { recursive: true });
+      writeFileSync(usageEvidencePath, JSON.stringify(usageEvidence), 'utf-8');
+
+      runScript([
+        '--output', OUTPUT_DIR,
+        '--name', 'report-test',
+        '--dry-run',
+        '--usage-report-evidence', usageEvidencePath,
+      ]);
+
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: { status?: string; recommendations?: string[] };
+      };
+
+      expect(report.summary?.status).toBe('fail');
+      expect(report.summary?.recommendations?.some((item) => item.includes('usage_report_schedule_unacknowledged'))).toBe(true);
     });
   });
 

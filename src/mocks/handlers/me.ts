@@ -1,11 +1,11 @@
 import { http, HttpResponse } from 'msw';
-import { userProfileFixture, userNotificationFixtures } from '../fixtures/me';
-
-const notifications = [...userNotificationFixtures];
-
-function getUnreadCount() {
-  return notifications.filter((n) => !n.read_at).length;
-}
+import { userProfileFixture } from '../fixtures/me';
+import {
+  getMockUnreadCount,
+  listMockNotifications,
+  markAllMockNotificationsRead,
+  markMockNotificationRead,
+} from '../state/me-notifications';
 
 export const meHandlers = [
   http.get('/api/v1/me/profile', () => HttpResponse.json(userProfileFixture)),
@@ -20,36 +20,28 @@ export const meHandlers = [
     const limit = Number(url.searchParams.get('limit') ?? 20);
     const offset = Number(url.searchParams.get('offset') ?? 0);
 
+    const notifications = listMockNotifications();
     const filtered = unreadOnly ? notifications.filter((n) => !n.read_at) : notifications;
     const items = filtered.slice(offset, offset + limit);
 
     return HttpResponse.json({
       items,
       total: filtered.length,
-      unread_count: getUnreadCount(),
+      unread_count: getMockUnreadCount(),
     });
   }),
   http.get('/api/v1/me/notifications/unread-count', () =>
-    HttpResponse.json({ unread_count: getUnreadCount() }),
+    HttpResponse.json({ unread_count: getMockUnreadCount() }),
   ),
   http.post('/api/v1/me/notifications/:id/read', ({ params }) => {
     const id = params.id as string;
-    const notification = notifications.find((n) => n.id === id);
+    const notification = markMockNotificationRead(id);
     if (!notification) {
       return HttpResponse.json({ error: 'notification_not_found' }, { status: 404 });
     }
-    notification.read_at = new Date().toISOString();
     return HttpResponse.json(notification);
   }),
   http.post('/api/v1/me/notifications/read-all', () => {
-    const now = new Date().toISOString();
-    let markedCount = 0;
-    notifications.forEach((notification) => {
-      if (!notification.read_at) {
-        notification.read_at = now;
-        markedCount += 1;
-      }
-    });
-    return HttpResponse.json({ marked_count: markedCount });
+    return HttpResponse.json({ marked_count: markAllMockNotificationsRead() });
   }),
 ];

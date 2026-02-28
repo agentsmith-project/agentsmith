@@ -2,6 +2,8 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
 import { buildRuntimeUsageRecords, listRuntimeUsageFacts } from '../state/runtime-usage';
+import type { UsageReportDelivery, UsageReportEvidence, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
+import { appendMockNotification } from '../state/me-notifications';
 
 type ResourceType = 'endpoint' | 'source_library' | 'agent';
 
@@ -37,29 +39,6 @@ type RuntimeFactLike = {
   };
 };
 
-type UsageReportSchedule = {
-  id: string;
-  workspace_id: string;
-  project_id: string;
-  name: string;
-  cadence: 'daily' | 'weekly' | 'monthly';
-  status: 'active' | 'paused';
-  format: 'csv' | 'json';
-  time_window: 'last_24h' | 'last_7d' | 'last_30d';
-  delivery_channel: 'in_app';
-  filters?: {
-    provider?: string;
-    model?: string;
-    result?: 'ok' | 'error';
-  };
-  created_at: string;
-  updated_at: string;
-  next_run_at: string;
-  last_run_at?: string;
-  last_delivery_status?: 'idle' | 'success' | 'failed';
-  last_delivery_at?: string;
-};
-
 function computeNextRunAt(cadence: UsageReportSchedule['cadence'], nowIso = new Date().toISOString()) {
   const date = new Date(nowIso);
   if (cadence === 'daily') date.setUTCDate(date.getUTCDate() + 1);
@@ -70,7 +49,7 @@ function computeNextRunAt(cadence: UsageReportSchedule['cadence'], nowIso = new 
 
 const usageReportSchedules: UsageReportSchedule[] = [{
   id: 'usage_schedule_001',
-  workspace_id: 'ws_1',
+  workspace_id: 'ws_default',
   project_id: 'proj_001',
   name: 'Weekly Runtime Ops Snapshot',
   cadence: 'weekly',
@@ -81,11 +60,154 @@ const usageReportSchedules: UsageReportSchedule[] = [{
   filters: {
     provider: 'secondaryok',
   },
+  release_evidence_required: true,
+  empty_result_policy: 'deliver',
   created_at: '2026-02-27T00:00:00.000Z',
   updated_at: '2026-02-27T00:00:00.000Z',
   next_run_at: computeNextRunAt('weekly', '2026-02-27T00:00:00.000Z'),
   last_delivery_status: 'idle',
 }];
+
+const usageReportDeliveries: UsageReportDelivery[] = [];
+
+function listScheduleDeliveries(scheduleId: string) {
+  return usageReportDeliveries
+    .filter((item) => item.schedule_id === scheduleId)
+    .slice()
+    .sort((a, b) => b.completed_at.localeCompare(a.completed_at));
+}
+
+function withRecentDeliveries(schedule: UsageReportSchedule): UsageReportSchedule {
+  return {
+    ...schedule,
+    recent_deliveries: listScheduleDeliveries(schedule.id).slice(0, 5),
+  };
+}
+
+function findSchedule(ws: string, prj: string, scheduleId: string) {
+  return usageReportSchedules.find((item) => item.id === scheduleId && item.workspace_id === ws && item.project_id === prj);
+}
+
+function buildDeliveryResult(item: UsageReportSchedule, status: 'success' | 'failed', trigger: UsageReportDelivery['trigger'], facts: ReturnType<typeof listRuntimeUsageFacts>, options?: { error?: string; attemptCount?: number; parentDeliveryId?: string }) {
+  const now = new Date().toISOString();
+  const deliveryId = `usage_delivery_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const delivery: UsageReportDelivery = {
+    id: deliveryId,
+    workspace_id: item.workspace_id,
+    project_id: item.project_id,
+    schedule_id: item.id,
+    trigger,
+    status,
+    attempt_count: options?.attemptCount ?? 1,
+    report_period_start: new Date(Date.now() - (item.time_window === 'last_24h' ? 24 : item.time_window === 'last_30d' ? 30 * 24 : 7 * 24) * 60 * 60 * 1000).toISOString(),
+    report_period_end: now,
+    created_at: now,
+    completed_at: now,
+    preview_filename: status === 'success' ? `usage-report-${item.project_id}.${item.format}` : undefined,
+    content_type: item.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
+    summary: {
+      requests: facts.length,
+      errors: facts.filter((fact) => fact.result === 'error').length,
+      top_provider: facts[0]?.runtime?.provider,
+      estimated_cost: Number(facts.reduce((sum, fact) => sum + (fact.runtime?.estimated_cost ?? 0), 0).toFixed(8)),
+    },
+    error: options?.error,
+    parent_delivery_id: options?.parentDeliveryId,
+  };
+  usageReportDeliveries.unshift(delivery);
+  item.last_delivery_at = now;
+  item.last_run_at = now;
+  item.last_delivery_status = status;
+  item.last_delivery_error = options?.error;
+  item.updated_at = now;
+  item.next_run_at = item.status === 'active' ? computeNextRunAt(item.cadence, now) : item.next_run_at;
+  appendMockNotification({
+    id: `notif_usage_${delivery.id}`,
+    type: status === 'success' ? 'usage_report_delivery' : 'usage_report_delivery_failed',
+    title: status === 'success' ? 'Usage report delivered' : 'Usage report delivery failed',
+    body: status === 'success' ? `Generated ${delivery.preview_filename}` : options?.error ?? 'Usage report delivery failed',
+    link_url: `/workspaces/${item.workspace_id}/projects/${item.project_id}/usage`,
+    created_at: now,
+    read_at: null,
+  });
+  return {
+    delivery_id: delivery.id,
+    schedule_id: item.id,
+    delivery_channel: 'in_app' as const,
+    generated_at: now,
+    preview_filename: delivery.preview_filename ?? '',
+    content_type: delivery.content_type ?? 'application/json; charset=utf-8',
+    status,
+    summary: delivery.summary,
+    error: options?.error,
+  };
+}
+
+function getScheduleFacts(item: UsageReportSchedule) {
+  return listRuntimeUsageFacts({
+    startTime: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    endTime: new Date().toISOString(),
+    provider: item.filters?.provider ?? null,
+    model: item.filters?.model ?? null,
+    result: item.filters?.result ?? null,
+  });
+}
+
+function executeScheduleDelivery(item: UsageReportSchedule, trigger: UsageReportDelivery['trigger'], options?: { parentDeliveryId?: string; attemptCount?: number }) {
+  const facts = getScheduleFacts(item);
+  if (facts.length === 0 && item.empty_result_policy === 'fail') {
+    return buildDeliveryResult(item, 'failed', trigger, facts, {
+      error: 'usage_report_empty_result',
+      parentDeliveryId: options?.parentDeliveryId,
+      attemptCount: options?.attemptCount,
+    });
+  }
+  return buildDeliveryResult(item, 'success', trigger, facts, {
+    parentDeliveryId: options?.parentDeliveryId,
+    attemptCount: options?.attemptCount,
+  });
+}
+
+function buildUsageReportEvidence(ws: string, prj: string): UsageReportEvidence {
+  const activeSchedules = usageReportSchedules.filter((item) => item.workspace_id === ws && item.project_id === prj && item.status === 'active');
+  const requiredSchedules = activeSchedules.filter((item) => item.release_evidence_required);
+  const blockers: string[] = [];
+  let successful = 0;
+  let failed = 0;
+  let unacknowledged = 0;
+
+  for (const schedule of requiredSchedules) {
+    const latest = listScheduleDeliveries(schedule.id)[0];
+    if (!latest) {
+      blockers.push(`usage_report_schedule_missing_delivery:${schedule.name}`);
+      continue;
+    }
+    if (latest.status === 'success') successful += 1;
+    if (latest.status === 'failed') {
+      failed += 1;
+      blockers.push(`usage_report_schedule_latest_delivery_failed:${schedule.name}`);
+    }
+    if (!latest.acknowledged_at) {
+      unacknowledged += 1;
+      blockers.push(`usage_report_schedule_unacknowledged:${schedule.name}`);
+    }
+  }
+
+  const warnings = activeSchedules.length === 0 ? ['usage_report_no_active_schedules'] : [];
+
+  return {
+    source: 'artifact',
+    generated_at: new Date().toISOString(),
+    release_readiness: blockers.length > 0 ? 'blocked' : 'ready',
+    blockers,
+    warnings,
+    active_schedules: activeSchedules.length,
+    required_schedules: requiredSchedules.length,
+    successful_deliveries_last_7d: successful,
+    failed_deliveries_last_7d: failed,
+    unacknowledged_required_deliveries: unacknowledged,
+  };
+}
 
 function resolveResourceMultiplier(resourceType?: string | null) {
   if (resourceType === 'agent') return 0.65;
@@ -866,7 +988,9 @@ export const usageHandlers = [
     });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules', ({ params }) => {
-    const items = usageReportSchedules.filter((item) => item.workspace_id === params.ws && item.project_id === params.prj);
+    const items = usageReportSchedules
+      .filter((item) => item.workspace_id === params.ws && item.project_id === params.prj)
+      .map(withRecentDeliveries);
     return HttpResponse.json({ items });
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules', async ({ params, request }) => {
@@ -883,6 +1007,8 @@ export const usageHandlers = [
       time_window: body.time_window === 'last_24h' || body.time_window === 'last_30d' ? body.time_window : 'last_7d',
       delivery_channel: 'in_app',
       filters: typeof body.filters === 'object' && body.filters ? body.filters as UsageReportSchedule['filters'] : undefined,
+      release_evidence_required: body.release_evidence_required !== false,
+      empty_result_policy: body.empty_result_policy === 'fail' ? 'fail' : 'deliver',
       created_at: now,
       updated_at: now,
       next_run_at: computeNextRunAt(body.cadence === 'weekly' || body.cadence === 'monthly' ? body.cadence : 'daily', now),
@@ -911,37 +1037,49 @@ export const usageHandlers = [
     const idx = usageReportSchedules.findIndex((item) => item.id === params.scheduleId && item.workspace_id === params.ws && item.project_id === params.prj);
     if (idx < 0) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
     usageReportSchedules.splice(idx, 1);
+    for (let index = usageReportDeliveries.length - 1; index >= 0; index -= 1) {
+      if (usageReportDeliveries[index]?.schedule_id === params.scheduleId) {
+        usageReportDeliveries.splice(index, 1);
+      }
+    }
     return new HttpResponse(null, { status: 204 });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/test-delivery', ({ params }) => {
-    const item = usageReportSchedules.find((entry) => entry.id === params.scheduleId && entry.workspace_id === params.ws && entry.project_id === params.prj);
-    if (!item) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
+  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/run-due', ({ params }) => {
     const now = new Date().toISOString();
-    item.last_delivery_at = now;
-    item.last_run_at = now;
-    item.last_delivery_status = 'success';
-    item.updated_at = now;
-    item.next_run_at = item.status === 'active' ? computeNextRunAt(item.cadence, now) : item.next_run_at;
-    const facts = listRuntimeUsageFacts({
-      startTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      endTime: now,
-      provider: item.filters?.provider ?? null,
-      model: item.filters?.model ?? null,
-      result: item.filters?.result ?? null,
-    });
-    return HttpResponse.json({
-      schedule_id: item.id,
-      delivery_channel: 'in_app',
-      generated_at: now,
-      preview_filename: `usage-report-${item.project_id}.${item.format}`,
-      content_type: item.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
-      summary: {
-        requests: facts.length,
-        errors: facts.filter((fact) => fact.result === 'error').length,
-        top_provider: facts[0]?.runtime?.provider,
-        estimated_cost: Number(facts.reduce((sum, fact) => sum + (fact.runtime?.estimated_cost ?? 0), 0).toFixed(8)),
-      },
-    });
+    const due = usageReportSchedules.filter((item) => item.workspace_id === params.ws && item.project_id === params.prj && item.status === 'active' && item.next_run_at <= now);
+    const deliveries = due.map((item) => executeScheduleDelivery(item, 'scheduled'));
+    return HttpResponse.json({ processed: due.length, deliveries });
+  }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/report-evidence', ({ params }) => {
+    return HttpResponse.json(buildUsageReportEvidence(String(params.ws), String(params.prj)));
+  }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/test-delivery', ({ params }) => {
+    const item = findSchedule(String(params.ws), String(params.prj), String(params.scheduleId));
+    if (!item) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
+    return HttpResponse.json(executeScheduleDelivery(item, 'test'));
+  }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/run-now', ({ params }) => {
+    const item = findSchedule(String(params.ws), String(params.prj), String(params.scheduleId));
+    if (!item) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
+    return HttpResponse.json(executeScheduleDelivery(item, 'manual'));
+  }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/deliveries/:deliveryId/retry', ({ params }) => {
+    const item = findSchedule(String(params.ws), String(params.prj), String(params.scheduleId));
+    if (!item) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
+    const delivery = usageReportDeliveries.find((entry) => entry.id === params.deliveryId && entry.schedule_id === item.id);
+    if (!delivery) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
+    const siblingAttempts = usageReportDeliveries.filter((entry) => entry.schedule_id === item.id && (entry.parent_delivery_id === (delivery.parent_delivery_id ?? delivery.id) || entry.id === delivery.id));
+    return HttpResponse.json(executeScheduleDelivery(item, 'retry', {
+      parentDeliveryId: delivery.parent_delivery_id ?? delivery.id,
+      attemptCount: siblingAttempts.length + 1,
+    }));
+  }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/deliveries/:deliveryId/acknowledge', ({ params }) => {
+    const delivery = usageReportDeliveries.find((entry) => entry.id === params.deliveryId && entry.schedule_id === params.scheduleId);
+    if (!delivery) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
+    delivery.acknowledged_at = new Date().toISOString();
+    delivery.acknowledged_by = 'mock-user';
+    return HttpResponse.json(delivery);
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/operations-summary', ({ request }) => {
     const url = new URL(request.url);

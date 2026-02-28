@@ -198,6 +198,8 @@ export interface UsageReportSchedule {
     result?: 'ok' | 'error';
     error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
   };
+  release_evidence_required: boolean;
+  empty_result_policy: 'deliver' | 'fail';
   created_at: string;
   updated_at: string;
   next_run_at: string;
@@ -205,20 +207,63 @@ export interface UsageReportSchedule {
   last_delivery_status?: 'idle' | 'success' | 'failed';
   last_delivery_at?: string;
   last_delivery_error?: string;
+  recent_deliveries?: UsageReportDelivery[];
 }
 
-export interface UsageReportScheduleDeliveryResult {
+export interface UsageReportDelivery {
+  id: string;
+  workspace_id: string;
+  project_id: string;
   schedule_id: string;
-  delivery_channel: 'in_app';
-  generated_at: string;
-  preview_filename: string;
-  content_type: string;
+  trigger: 'scheduled' | 'manual' | 'retry' | 'test';
+  status: 'success' | 'failed';
+  attempt_count: number;
+  report_period_start: string;
+  report_period_end: string;
+  created_at: string;
+  completed_at: string;
+  preview_filename?: string;
+  content_type?: string;
   summary: {
     requests: number;
     errors: number;
     top_provider?: string;
     estimated_cost?: number;
   };
+  error?: string;
+  acknowledged_at?: string;
+  acknowledged_by?: string;
+  parent_delivery_id?: string;
+}
+
+export interface UsageReportScheduleDeliveryResult {
+  delivery_id: string;
+  schedule_id: string;
+  delivery_channel: 'in_app';
+  generated_at: string;
+  preview_filename: string;
+  content_type: string;
+  status: 'success' | 'failed';
+  summary: {
+    requests: number;
+    errors: number;
+    top_provider?: string;
+    estimated_cost?: number;
+  };
+  error?: string;
+}
+
+export interface UsageReportEvidence {
+  source: 'artifact' | 'dry_run';
+  generated_at: string;
+  release_readiness: 'ready' | 'blocked';
+  blockers: string[];
+  warnings: string[];
+  active_schedules: number;
+  required_schedules: number;
+  successful_deliveries_last_7d: number;
+  failed_deliveries_last_7d: number;
+  unacknowledged_required_deliveries: number;
 }
 
 export class AuditAPI {
@@ -525,7 +570,7 @@ export class UsageAPI {
   async createReportSchedule(
     workspaceId: string,
     projectId: string,
-    body: Omit<UsageReportSchedule, 'id' | 'workspace_id' | 'project_id' | 'created_at' | 'updated_at' | 'next_run_at' | 'last_run_at' | 'last_delivery_status' | 'last_delivery_at' | 'last_delivery_error'>,
+    body: Omit<UsageReportSchedule, 'id' | 'workspace_id' | 'project_id' | 'created_at' | 'updated_at' | 'next_run_at' | 'last_run_at' | 'last_delivery_status' | 'last_delivery_at' | 'last_delivery_error' | 'recent_deliveries'>,
   ): Promise<UsageReportSchedule> {
     return this.client.post<UsageReportSchedule>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules`,
@@ -537,7 +582,7 @@ export class UsageAPI {
     workspaceId: string,
     projectId: string,
     scheduleId: string,
-    patch: Partial<Pick<UsageReportSchedule, 'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'filters'>>,
+    patch: Partial<Pick<UsageReportSchedule, 'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'filters' | 'release_evidence_required' | 'empty_result_policy'>>,
   ): Promise<UsageReportSchedule> {
     return this.client.patch<UsageReportSchedule>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}`,
@@ -562,6 +607,56 @@ export class UsageAPI {
   ): Promise<UsageReportScheduleDeliveryResult> {
     return this.client.post<UsageReportScheduleDeliveryResult>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}/test-delivery`,
+    );
+  }
+
+  async runReportScheduleNow(
+    workspaceId: string,
+    projectId: string,
+    scheduleId: string,
+  ): Promise<UsageReportScheduleDeliveryResult> {
+    return this.client.post<UsageReportScheduleDeliveryResult>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}/run-now`,
+    );
+  }
+
+  async retryReportScheduleDelivery(
+    workspaceId: string,
+    projectId: string,
+    scheduleId: string,
+    deliveryId: string,
+  ): Promise<UsageReportScheduleDeliveryResult> {
+    return this.client.post<UsageReportScheduleDeliveryResult>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}/deliveries/${deliveryId}/retry`,
+    );
+  }
+
+  async acknowledgeReportScheduleDelivery(
+    workspaceId: string,
+    projectId: string,
+    scheduleId: string,
+    deliveryId: string,
+  ): Promise<UsageReportDelivery> {
+    return this.client.post<UsageReportDelivery>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}/deliveries/${deliveryId}/acknowledge`,
+    );
+  }
+
+  async runDueReportSchedules(
+    workspaceId: string,
+    projectId: string,
+  ): Promise<{ processed: number; deliveries: UsageReportScheduleDeliveryResult[] }> {
+    return this.client.post<{ processed: number; deliveries: UsageReportScheduleDeliveryResult[] }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/run-due`,
+    );
+  }
+
+  async getReportEvidence(
+    workspaceId: string,
+    projectId: string,
+  ): Promise<UsageReportEvidence> {
+    return this.client.get<UsageReportEvidence>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-evidence`,
     );
   }
 }

@@ -67,6 +67,8 @@ describe('UsageAPI exportReport', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
+      release_evidence_required: true,
+      empty_result_policy: 'deliver',
       filters: { provider: 'openai' },
     });
 
@@ -75,5 +77,62 @@ describe('UsageAPI exportReport', () => {
       expect.objectContaining({ name: 'Daily Ops' }),
     );
     expect(result.name).toBe('Daily Ops');
+  });
+
+  it('calls usage report lifecycle endpoints', async () => {
+    const getMock = vi.fn().mockResolvedValue({
+      source: 'artifact',
+      release_readiness: 'ready',
+      blockers: [],
+      warnings: [],
+    });
+    const postMock = vi.fn()
+      .mockResolvedValueOnce({
+        delivery_id: 'delivery_1',
+        schedule_id: 'usage_schedule_1',
+        delivery_channel: 'in_app',
+        generated_at: '2026-02-28T00:00:00.000Z',
+        preview_filename: 'usage-report.json',
+        content_type: 'application/json; charset=utf-8',
+        status: 'success',
+        summary: { requests: 1, errors: 0 },
+      })
+      .mockResolvedValueOnce({
+        delivery_id: 'delivery_2',
+        schedule_id: 'usage_schedule_1',
+        delivery_channel: 'in_app',
+        generated_at: '2026-02-28T00:00:00.000Z',
+        preview_filename: 'usage-report.json',
+        content_type: 'application/json; charset=utf-8',
+        status: 'success',
+        summary: { requests: 1, errors: 0 },
+      })
+      .mockResolvedValueOnce({
+        id: 'delivery_1',
+        schedule_id: 'usage_schedule_1',
+        acknowledged_by: 'user_1',
+      })
+      .mockResolvedValueOnce({
+        processed: 1,
+        deliveries: [],
+      });
+
+    const api = new UsageAPI({
+      ...client,
+      get: getMock,
+      post: postMock,
+    } as unknown as ConstructorParameters<typeof UsageAPI>[0]);
+
+    await api.runReportScheduleNow('ws_1', 'proj_1', 'usage_schedule_1');
+    await api.retryReportScheduleDelivery('ws_1', 'proj_1', 'usage_schedule_1', 'delivery_1');
+    await api.acknowledgeReportScheduleDelivery('ws_1', 'proj_1', 'usage_schedule_1', 'delivery_1');
+    await api.runDueReportSchedules('ws_1', 'proj_1');
+    await api.getReportEvidence('ws_1', 'proj_1');
+
+    expect(postMock).toHaveBeenNthCalledWith(1, '/workspaces/ws_1/projects/proj_1/usage/report-schedules/usage_schedule_1/run-now');
+    expect(postMock).toHaveBeenNthCalledWith(2, '/workspaces/ws_1/projects/proj_1/usage/report-schedules/usage_schedule_1/deliveries/delivery_1/retry');
+    expect(postMock).toHaveBeenNthCalledWith(3, '/workspaces/ws_1/projects/proj_1/usage/report-schedules/usage_schedule_1/deliveries/delivery_1/acknowledge');
+    expect(postMock).toHaveBeenNthCalledWith(4, '/workspaces/ws_1/projects/proj_1/usage/report-schedules/run-due');
+    expect(getMock).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/usage/report-evidence');
   });
 });

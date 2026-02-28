@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
+  acknowledgeUsageReportDelivery,
   createUsageReportSchedule,
   exportUsageData,
   getRuntimeObservability,
+  getUsageReportEvidence,
   getUsageOperationsSummary,
   listUsageFactRecords,
   listUsageReportSchedules,
   recordUsageFact,
+  retryUsageReportDelivery,
+  runDueUsageReportSchedules,
   testUsageReportScheduleDelivery,
+  USAGE_REPORT_SCHEDULES_COLLECTION,
 } from './audit-usage-store.js';
 
 describe('audit-usage-store runtime observability', () => {
@@ -343,6 +348,8 @@ describe('audit-usage-store runtime observability', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
+      release_evidence_required: true,
+      empty_result_policy: 'deliver',
       filters: {
         provider: 'secondaryok',
       },
@@ -358,10 +365,172 @@ describe('audit-usage-store runtime observability', () => {
     });
     expect(delivery).toEqual(expect.objectContaining({
       schedule_id: created.id,
+      status: 'success',
       summary: expect.objectContaining({
         requests: 1,
         top_provider: 'secondaryok',
       }),
     }));
+  });
+
+  it('fails empty-result schedules, supports retry, and builds evidence', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+
+    const created = await createUsageReportSchedule(store, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: 'Required Empty Guard',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_24h',
+      delivery_channel: 'in_app',
+      release_evidence_required: true,
+      empty_result_policy: 'fail',
+      filters: {
+        provider: 'secondaryok',
+      },
+    });
+
+    const failedDelivery = await testUsageReportScheduleDelivery(store, {
+      workspaceId,
+      projectId,
+      scheduleId: created.id,
+    });
+
+    expect(failedDelivery).toEqual(expect.objectContaining({
+      schedule_id: created.id,
+      status: 'failed',
+      error: 'usage_report_empty_result',
+    }));
+
+    let evidence = await getUsageReportEvidence(store, { workspaceId, projectId });
+    expect(evidence.release_readiness).toBe('blocked');
+    expect(evidence.blockers).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('usage_report_schedule_latest_delivery_failed:Required Empty Guard'),
+        expect.stringContaining('usage_report_schedule_unacknowledged:Required Empty Guard'),
+      ]),
+    );
+
+    await recordUsageFact(store, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'rpc_sched_retry',
+      requests: 1,
+      result: 'ok',
+      request_id: 'req_sched_retry',
+      metadata_json: {
+        provider: 'secondaryok',
+        resolved_model: 'model-b',
+        estimated_cost: 0.0042,
+      },
+    });
+
+    const retried = await retryUsageReportDelivery(store, {
+      workspaceId,
+      projectId,
+      scheduleId: created.id,
+      deliveryId: failedDelivery?.delivery_id ?? '',
+    });
+
+    expect(retried).toEqual(expect.objectContaining({
+      schedule_id: created.id,
+      status: 'success',
+      summary: expect.objectContaining({
+        requests: 1,
+      }),
+    }));
+
+    evidence = await getUsageReportEvidence(store, { workspaceId, projectId });
+    expect(evidence.release_readiness).toBe('blocked');
+    expect(evidence.blockers).toEqual(
+      expect.arrayContaining([expect.stringContaining('usage_report_schedule_unacknowledged:Required Empty Guard')]),
+    );
+    expect(evidence.successful_deliveries_last_7d).toBe(1);
+    expect(evidence.failed_deliveries_last_7d).toBe(0);
+
+    const listed = await listUsageReportSchedules(store, { workspaceId, projectId });
+    const latest = listed.items[0]?.recent_deliveries?.[0];
+    expect(latest?.status).toBe('success');
+
+    const acknowledged = await acknowledgeUsageReportDelivery(store, {
+      workspaceId,
+      projectId,
+      scheduleId: created.id,
+      deliveryId: latest?.id ?? '',
+      acknowledgedBy: 'user_admin',
+    });
+    expect(acknowledged?.acknowledged_by).toBe('user_admin');
+
+    evidence = await getUsageReportEvidence(store, { workspaceId, projectId });
+    expect(evidence.release_readiness).toBe('ready');
+    expect(evidence.blockers).toEqual([]);
+    expect(evidence.unacknowledged_required_deliveries).toBe(0);
+  });
+
+  it('runs due schedules and only processes active schedules with elapsed next_run_at', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+
+    await recordUsageFact(store, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'rpc_sched_due',
+      requests: 1,
+      result: 'ok',
+      request_id: 'req_sched_due',
+      metadata_json: {
+        provider: 'secondaryok',
+        resolved_model: 'model-b',
+        estimated_cost: 0.0051,
+      },
+    });
+
+    const due = await createUsageReportSchedule(store, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: 'Due Schedule',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'in_app',
+      release_evidence_required: false,
+      empty_result_policy: 'deliver',
+    });
+    await createUsageReportSchedule(store, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: 'Future Schedule',
+      cadence: 'daily',
+      status: 'paused',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'in_app',
+      release_evidence_required: false,
+      empty_result_policy: 'deliver',
+    });
+
+    const pastNow = '2026-03-02T00:00:00.000Z';
+    await store.upsert(USAGE_REPORT_SCHEDULES_COLLECTION, due.id, {
+      ...due,
+      next_run_at: '2026-03-01T00:00:00.000Z',
+    });
+
+    const result = await runDueUsageReportSchedules(store, {
+      workspaceId,
+      projectId,
+      now: pastNow,
+    });
+
+    expect(result.processed).toBe(1);
+    expect(result.deliveries).toHaveLength(1);
+    expect(result.deliveries[0]?.schedule_id).toBe(due.id);
   });
 });

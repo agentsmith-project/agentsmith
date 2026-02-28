@@ -16,11 +16,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { UsageListParams } from '@/lib/api/types';
-import type { UsageReportSchedule, UsageReportScheduleDeliveryResult } from '@/lib/api/endpoints/audit-usage';
+import type {
+  UsageReportDelivery,
+  UsageReportEvidence,
+  UsageReportSchedule,
+  UsageReportScheduleDeliveryResult,
+} from '@/lib/api/endpoints/audit-usage';
 
 type UsageReportSchedulesPanelProps = {
   schedules: UsageReportSchedule[];
   loading?: boolean;
+  evidence?: UsageReportEvidence;
+  evidenceLoading?: boolean;
   canManage: boolean;
   currentFilters: UsageListParams;
   onCreate: (payload: {
@@ -31,10 +38,16 @@ type UsageReportSchedulesPanelProps = {
     time_window: 'last_24h' | 'last_7d' | 'last_30d';
     delivery_channel: 'in_app';
     filters?: UsageReportSchedule['filters'];
+    release_evidence_required: boolean;
+    empty_result_policy: 'deliver' | 'fail';
   }) => Promise<void>;
   onUpdateStatus: (schedule: UsageReportSchedule, status: 'active' | 'paused') => Promise<void>;
   onDelete: (schedule: UsageReportSchedule) => Promise<void>;
   onTestDelivery: (schedule: UsageReportSchedule) => Promise<UsageReportScheduleDeliveryResult | null>;
+  onRunNow: (schedule: UsageReportSchedule) => Promise<UsageReportScheduleDeliveryResult | null>;
+  onRetryDelivery: (schedule: UsageReportSchedule, delivery: UsageReportDelivery) => Promise<UsageReportScheduleDeliveryResult | null>;
+  onAcknowledgeDelivery: (schedule: UsageReportSchedule, delivery: UsageReportDelivery) => Promise<void>;
+  onRunDue: () => Promise<void>;
 };
 
 type DraftState = {
@@ -45,6 +58,8 @@ type DraftState = {
   provider?: string;
   model?: string;
   result?: 'ok' | 'error';
+  release_evidence_required: boolean;
+  empty_result_policy: 'deliver' | 'fail';
 };
 
 function formatIso(value?: string): string {
@@ -62,18 +77,30 @@ function buildInitialDraft(filters: UsageListParams): DraftState {
     provider: filters.provider,
     model: filters.model,
     result: filters.result,
+    release_evidence_required: true,
+    empty_result_policy: 'deliver',
   };
+}
+
+function deliveryStatusVariant(status: 'success' | 'failed') {
+  return status === 'success' ? 'outline' : 'secondary';
 }
 
 export function UsageReportSchedulesPanel({
   schedules,
   loading = false,
+  evidence,
+  evidenceLoading = false,
   canManage,
   currentFilters,
   onCreate,
   onUpdateStatus,
   onDelete,
   onTestDelivery,
+  onRunNow,
+  onRetryDelivery,
+  onAcknowledgeDelivery,
+  onRunDue,
 }: UsageReportSchedulesPanelProps) {
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
@@ -81,9 +108,13 @@ export function UsageReportSchedulesPanel({
   const [draft, setDraft] = React.useState<DraftState>(() => buildInitialDraft(currentFilters));
   const [submitting, setSubmitting] = React.useState(false);
   const [testingId, setTestingId] = React.useState<string | null>(null);
+  const [runningId, setRunningId] = React.useState<string | null>(null);
+  const [runningDue, setRunningDue] = React.useState(false);
   const [statusId, setStatusId] = React.useState<string | null>(null);
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
-  const [lastTestResult, setLastTestResult] = React.useState<UsageReportScheduleDeliveryResult | null>(null);
+  const [retryDeliveryId, setRetryDeliveryId] = React.useState<string | null>(null);
+  const [ackDeliveryId, setAckDeliveryId] = React.useState<string | null>(null);
+  const [lastResult, setLastResult] = React.useState<UsageReportScheduleDeliveryResult | null>(null);
 
   React.useEffect(() => {
     if (!createOpen) {
@@ -107,6 +138,8 @@ export function UsageReportSchedulesPanel({
           model: draft.model?.trim() || undefined,
           result: draft.result,
         },
+        release_evidence_required: draft.release_evidence_required,
+        empty_result_policy: draft.empty_result_policy,
       });
       setCreateOpen(false);
     } finally {
@@ -116,22 +149,111 @@ export function UsageReportSchedulesPanel({
 
   return (
     <section className="rounded-xl border border-border bg-surface p-4" data-testid="usage__report-schedules">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">{t('report_schedules.title')}</h2>
-          <p className="text-xs text-tertiary">{t('report_schedules.subtitle')}</p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">{t('report_schedules.title')}</h2>
+            <p className="text-xs text-tertiary">{t('report_schedules.subtitle')}</p>
+          </div>
+          {canManage ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={runningDue}
+                onClick={async () => {
+                  setRunningDue(true);
+                  try {
+                    await onRunDue();
+                  } finally {
+                    setRunningDue(false);
+                  }
+                }}
+                data-testid="usage__report-schedules-run-due"
+              >
+                {t('report_schedules.run_due')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setCreateOpen(true)}
+                data-testid="usage__report-schedules-create"
+              >
+                {t('report_schedules.create')}
+              </Button>
+            </div>
+          ) : null}
         </div>
-        {canManage ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setCreateOpen(true)}
-            data-testid="usage__report-schedules-create"
-          >
-            {t('report_schedules.create')}
-          </Button>
-        ) : null}
+
+        <div
+          className="rounded-lg border border-subtle bg-bg-base/40 p-3"
+          data-testid="usage__report-evidence"
+        >
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-medium text-foreground">{t('report_schedules.evidence_title')}</div>
+              <div className="text-xs text-tertiary">{t('report_schedules.evidence_subtitle')}</div>
+            </div>
+            {evidenceLoading ? (
+              <div className="text-xs text-tertiary">{commonT('loading')}</div>
+            ) : evidence ? (
+              <Badge variant={evidence.release_readiness === 'ready' ? 'outline' : 'secondary'}>
+                {t(`report_schedules.release_${evidence.release_readiness}`)}
+              </Badge>
+            ) : (
+              <Badge variant="secondary">{t('report_schedules.evidence_unavailable')}</Badge>
+            )}
+          </div>
+
+          {evidence ? (
+            <div className="mt-3 grid gap-3 md:grid-cols-5">
+              <div className="rounded-md border border-subtle bg-surface px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('report_schedules.evidence_active')}</div>
+                <div className="mt-1 text-sm font-semibold text-foreground">{evidence.active_schedules}</div>
+              </div>
+              <div className="rounded-md border border-subtle bg-surface px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('report_schedules.evidence_required')}</div>
+                <div className="mt-1 text-sm font-semibold text-foreground">{evidence.required_schedules}</div>
+              </div>
+              <div className="rounded-md border border-subtle bg-surface px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('report_schedules.evidence_success')}</div>
+                <div className="mt-1 text-sm font-semibold text-foreground">{evidence.successful_deliveries_last_7d}</div>
+              </div>
+              <div className="rounded-md border border-subtle bg-surface px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('report_schedules.evidence_failed')}</div>
+                <div className="mt-1 text-sm font-semibold text-foreground">{evidence.failed_deliveries_last_7d}</div>
+              </div>
+              <div className="rounded-md border border-subtle bg-surface px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('report_schedules.evidence_unacknowledged')}</div>
+                <div className="mt-1 text-sm font-semibold text-foreground">{evidence.unacknowledged_required_deliveries}</div>
+              </div>
+            </div>
+          ) : null}
+
+          {evidence?.blockers?.length ? (
+            <div className="mt-3" data-testid="usage__report-evidence-blockers">
+              <div className="text-xs font-medium text-foreground">{t('report_schedules.evidence_blockers')}</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {evidence.blockers.map((blocker) => (
+                  <Badge key={blocker} variant="secondary">{blocker}</Badge>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {evidence?.warnings?.length ? (
+            <div className="mt-3" data-testid="usage__report-evidence-warnings">
+              <div className="text-xs font-medium text-foreground">{t('report_schedules.evidence_warnings')}</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {evidence.warnings.map((warning) => (
+                  <Badge key={warning} variant="outline">{warning}</Badge>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {loading ? (
@@ -159,6 +281,14 @@ export function UsageReportSchedulesPanel({
                     </Badge>
                     <Badge variant="secondary">{t(`report_schedules.cadence_${schedule.cadence}`)}</Badge>
                     <Badge variant="secondary">{schedule.format.toUpperCase()}</Badge>
+                    <Badge variant={schedule.release_evidence_required ? 'outline' : 'secondary'}>
+                      {schedule.release_evidence_required
+                        ? t('report_schedules.evidence_required_badge')
+                        : t('report_schedules.evidence_optional_badge')}
+                    </Badge>
+                    <Badge variant="outline">
+                      {t(`report_schedules.empty_policy_${schedule.empty_result_policy}`)}
+                    </Badge>
                   </div>
                   <div className="flex flex-wrap gap-3 text-xs text-tertiary">
                     <span>{t('report_schedules.time_window_label')}: {t(`report_schedules.window_${schedule.time_window}`)}</span>
@@ -170,9 +300,29 @@ export function UsageReportSchedulesPanel({
                     {schedule.filters?.model ? <Badge variant="outline">model:{schedule.filters.model}</Badge> : null}
                     {schedule.filters?.result ? <Badge variant="outline">result:{schedule.filters.result}</Badge> : null}
                   </div>
+                  {schedule.last_delivery_error ? (
+                    <div className="text-xs text-error">{schedule.last_delivery_error}</div>
+                  ) : null}
                 </div>
                 {canManage ? (
                   <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={runningId === schedule.id}
+                      onClick={async () => {
+                        setRunningId(schedule.id);
+                        try {
+                          setLastResult(await onRunNow(schedule));
+                        } finally {
+                          setRunningId(null);
+                        }
+                      }}
+                      data-testid={`usage__report-schedule-run-${schedule.id}`}
+                    >
+                      {t('report_schedules.run_now')}
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
@@ -181,7 +331,7 @@ export function UsageReportSchedulesPanel({
                       onClick={async () => {
                         setTestingId(schedule.id);
                         try {
-                          setLastTestResult(await onTestDelivery(schedule));
+                          setLastResult(await onTestDelivery(schedule));
                         } finally {
                           setTestingId(null);
                         }
@@ -227,19 +377,97 @@ export function UsageReportSchedulesPanel({
                   </div>
                 ) : null}
               </div>
+
+              <div className="mt-4" data-testid={`usage__report-schedule-deliveries-${schedule.id}`}>
+                <div className="text-xs font-medium text-foreground">{t('report_schedules.recent_deliveries')}</div>
+                {schedule.recent_deliveries?.length ? (
+                  <div className="mt-2 space-y-2">
+                    {schedule.recent_deliveries.map((delivery) => (
+                      <div
+                        key={delivery.id}
+                        className="flex flex-col gap-2 rounded-md border border-subtle bg-surface px-3 py-2"
+                        data-testid={`usage__report-delivery-${delivery.id}`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={deliveryStatusVariant(delivery.status)}>
+                            {t(`report_schedules.delivery_status_${delivery.status}`)}
+                          </Badge>
+                          <Badge variant="outline">{t(`report_schedules.delivery_trigger_${delivery.trigger}`)}</Badge>
+                          <span className="text-xs text-tertiary">{formatIso(delivery.completed_at)}</span>
+                          {delivery.acknowledged_at ? (
+                            <Badge variant="outline">{t('report_schedules.delivery_acknowledged')}</Badge>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap gap-3 text-xs text-tertiary">
+                          <span>{t('report_schedules.delivery_requests')}: {delivery.summary.requests}</span>
+                          <span>{t('report_schedules.delivery_errors')}: {delivery.summary.errors}</span>
+                          <span>{t('report_schedules.delivery_attempt')}: {delivery.attempt_count}</span>
+                          <span>{t('report_schedules.delivery_file')}: {delivery.preview_filename ?? '--'}</span>
+                        </div>
+                        {delivery.error ? <div className="text-xs text-error">{delivery.error}</div> : null}
+                        {canManage ? (
+                          <div className="flex flex-wrap gap-2">
+                            {delivery.status === 'failed' ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={retryDeliveryId === delivery.id}
+                                onClick={async () => {
+                                  setRetryDeliveryId(delivery.id);
+                                  try {
+                                    setLastResult(await onRetryDelivery(schedule, delivery));
+                                  } finally {
+                                    setRetryDeliveryId(null);
+                                  }
+                                }}
+                                data-testid={`usage__report-delivery-retry-${delivery.id}`}
+                              >
+                                {t('report_schedules.retry_delivery')}
+                              </Button>
+                            ) : null}
+                            {!delivery.acknowledged_at ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={ackDeliveryId === delivery.id}
+                                onClick={async () => {
+                                  setAckDeliveryId(delivery.id);
+                                  try {
+                                    await onAcknowledgeDelivery(schedule, delivery);
+                                  } finally {
+                                    setAckDeliveryId(null);
+                                  }
+                                }}
+                                data-testid={`usage__report-delivery-ack-${delivery.id}`}
+                              >
+                                {t('report_schedules.acknowledge_delivery')}
+                              </Button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-xs text-tertiary">{t('report_schedules.no_deliveries')}</div>
+                )}
+              </div>
             </article>
           ))}
         </div>
       )}
 
-      {lastTestResult ? (
+      {lastResult ? (
         <div className="mt-4 rounded-lg border border-border bg-surface-high/50 p-3 text-xs text-tertiary" data-testid="usage__report-schedules-last-test">
           <div className="font-medium text-foreground">{t('report_schedules.test_result_title')}</div>
           <div className="mt-1 flex flex-wrap gap-3">
-            <span>{t('report_schedules.test_result_file')}: {lastTestResult.preview_filename}</span>
-            <span>{t('report_schedules.test_result_requests')}: {lastTestResult.summary.requests}</span>
-            <span>{t('report_schedules.test_result_errors')}: {lastTestResult.summary.errors}</span>
-            <span>{t('report_schedules.test_result_provider')}: {lastTestResult.summary.top_provider ?? '--'}</span>
+            <span>{t('report_schedules.test_result_status')}: {lastResult.status}</span>
+            <span>{t('report_schedules.test_result_file')}: {lastResult.preview_filename || '--'}</span>
+            <span>{t('report_schedules.test_result_requests')}: {lastResult.summary.requests}</span>
+            <span>{t('report_schedules.test_result_errors')}: {lastResult.summary.errors}</span>
+            <span>{t('report_schedules.test_result_provider')}: {lastResult.summary.top_provider ?? '--'}</span>
           </div>
         </div>
       ) : null}
@@ -311,6 +539,34 @@ export function UsageReportSchedulesPanel({
                     <SelectItem value="all">{commonT('all')}</SelectItem>
                     <SelectItem value="ok">{t('filters.result_ok')}</SelectItem>
                     <SelectItem value="error">{t('filters.result_error')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>{t('report_schedules.release_evidence_required')}</Label>
+                <Select
+                  value={draft.release_evidence_required ? 'required' : 'optional'}
+                  onValueChange={(value) => setDraft((prev) => ({ ...prev, release_evidence_required: value === 'required' }))}
+                >
+                  <SelectTrigger data-testid="usage__report-schedules-form-release-evidence"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="required">{t('report_schedules.evidence_required_badge')}</SelectItem>
+                    <SelectItem value="optional">{t('report_schedules.evidence_optional_badge')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>{t('report_schedules.empty_result_policy')}</Label>
+                <Select
+                  value={draft.empty_result_policy}
+                  onValueChange={(value) => setDraft((prev) => ({ ...prev, empty_result_policy: value as DraftState['empty_result_policy'] }))}
+                >
+                  <SelectTrigger data-testid="usage__report-schedules-form-empty-policy"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="deliver">{t('report_schedules.empty_policy_deliver')}</SelectItem>
+                    <SelectItem value="fail">{t('report_schedules.empty_policy_fail')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

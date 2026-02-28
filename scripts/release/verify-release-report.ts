@@ -35,6 +35,7 @@ import type {
   VerifyReleaseOptions,
   FailureCategory,
   RuntimeReleaseEvidence,
+  UsageReportEvidence,
 } from './types';
 import {
   classifyFailure,
@@ -44,6 +45,7 @@ import {
 // Default configuration
 const DEFAULT_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-reports');
 const DEFAULT_RUNTIME_EVIDENCE_FILE = 'runtime-release-evidence.json';
+const DEFAULT_USAGE_REPORT_EVIDENCE_FILE = 'usage-report-evidence.json';
 
 const TRANSIENT_UPSTREAM_CATEGORIES = new Set<FailureType>(['network', 'timeout', 'rate_limit']);
 
@@ -184,6 +186,9 @@ function parseArgs(argv: string[]): VerifyReleaseOptions {
       case '--runtime-evidence':
         options.runtimeEvidence = argv[++i];
         break;
+      case '--usage-report-evidence':
+        options.usageReportEvidence = argv[++i];
+        break;
       case '--verbose':
         options.verbose = true;
         break;
@@ -218,6 +223,7 @@ OPTIONS:
   --dry-run            Skip actual check execution (for testing)
   --mock-failure <t>   Mock a failure type: token|network|backend|assertion|timeout|rate_limit
   --runtime-evidence <path>  Read runtime release evidence artifact from custom path
+  --usage-report-evidence <path>  Read usage report evidence artifact from custom path
   --verbose            Show detailed output
   --help, -h           Show this help
 
@@ -529,8 +535,9 @@ function buildCommand(
 ): string {
   if (def.id !== 'runtime-release-evidence') return def.command;
 
-  const evidencePath = getRuntimeEvidencePath(options);
-  return `RUNTIME_RELEASE_EVIDENCE_PATH=${shellQuote(evidencePath)} ${def.command}`;
+  const runtimeEvidencePath = getRuntimeEvidencePath(options);
+  const usageReportEvidencePath = getUsageReportEvidencePath(options);
+  return `RUNTIME_RELEASE_EVIDENCE_PATH=${shellQuote(runtimeEvidencePath)} USAGE_REPORT_EVIDENCE_PATH=${shellQuote(usageReportEvidencePath)} ${def.command}`;
 }
 
 /**
@@ -538,8 +545,10 @@ function buildCommand(
  */
 function generateSummary(execution: ExecutionResults, options: VerifyReleaseOptions): ReportSummary {
   const runtimeEvidence = loadRuntimeReleaseEvidence(options);
+  const usageReportEvidence = loadUsageReportEvidence(options);
   const runtimeBlockingReasons = getRuntimeEvidenceBlockingReasons(runtimeEvidence);
-  const status = execution.failed === 0 && runtimeBlockingReasons.length === 0 ? 'pass' : 'fail';
+  const usageReportBlockingReasons = getUsageReportEvidenceBlockingReasons(usageReportEvidence);
+  const status = execution.failed === 0 && runtimeBlockingReasons.length === 0 && usageReportBlockingReasons.length === 0 ? 'pass' : 'fail';
 
   const summary: ReportSummary = {
     status,
@@ -548,6 +557,9 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
 
   if (runtimeEvidence) {
     summary.runtime_release_evidence = runtimeEvidence;
+  }
+  if (usageReportEvidence) {
+    summary.usage_report_evidence = usageReportEvidence;
   }
 
   // Add failure categories if there are failures
@@ -561,6 +573,10 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
     const runtimeRecommendations = runtimeBlockingReasons.map((reason) => `Runtime release blocker: ${reason}`);
     summary.recommendations = [...(summary.recommendations ?? []), ...runtimeRecommendations];
   }
+  if (usageReportBlockingReasons.length > 0) {
+    const usageRecommendations = usageReportBlockingReasons.map((reason) => `Usage report release blocker: ${reason}`);
+    summary.recommendations = [...(summary.recommendations ?? []), ...usageRecommendations];
+  }
 
   return summary;
 }
@@ -568,6 +584,11 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
 function getRuntimeEvidencePath(options: VerifyReleaseOptions): string {
   if (options.runtimeEvidence) return options.runtimeEvidence;
   return join(options.output ?? DEFAULT_OUTPUT_DIR, DEFAULT_RUNTIME_EVIDENCE_FILE);
+}
+
+function getUsageReportEvidencePath(options: VerifyReleaseOptions): string {
+  if (options.usageReportEvidence) return options.usageReportEvidence;
+  return join(options.output ?? DEFAULT_OUTPUT_DIR, DEFAULT_USAGE_REPORT_EVIDENCE_FILE);
 }
 
 function loadRuntimeReleaseEvidence(options: VerifyReleaseOptions): RuntimeReleaseEvidence | undefined {
@@ -638,6 +659,48 @@ function createMockRuntimeReleaseEvidence(): RuntimeReleaseEvidence {
   };
 }
 
+function loadUsageReportEvidence(options: VerifyReleaseOptions): UsageReportEvidence | undefined {
+  const evidencePath = getUsageReportEvidencePath(options);
+  if (existsSync(evidencePath)) {
+    try {
+      return JSON.parse(readFileSync(evidencePath, 'utf-8')) as UsageReportEvidence;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_error';
+      return {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['usage_report_evidence_unreadable'],
+        warnings: [],
+        active_schedules: 0,
+        required_schedules: 0,
+        successful_deliveries_last_7d: 0,
+        failed_deliveries_last_7d: 0,
+        unacknowledged_required_deliveries: 0,
+        note: `Failed to parse usage report evidence: ${message}`,
+      };
+    }
+  }
+
+  if (options.dryRun) {
+    return {
+      source: 'dry_run',
+      generated_at: new Date().toISOString(),
+      release_readiness: 'ready',
+      blockers: [],
+      warnings: ['usage_report_no_active_schedules'],
+      active_schedules: 1,
+      required_schedules: 1,
+      successful_deliveries_last_7d: 1,
+      failed_deliveries_last_7d: 0,
+      unacknowledged_required_deliveries: 0,
+      note: 'Dry-run evidence uses deterministic fixture data and does not call live delivery channels.',
+    };
+  }
+
+  return undefined;
+}
+
 function getRuntimeEvidenceBlockingReasons(runtimeEvidence?: RuntimeReleaseEvidence): string[] {
   if (!runtimeEvidence) return [];
 
@@ -666,6 +729,26 @@ function getRuntimeEvidenceBlockingReasons(runtimeEvidence?: RuntimeReleaseEvide
   }
   if (!runtimeEvidence.release_candidate.approvals_complete) {
     reasons.push('runtime release candidate approvals incomplete');
+  }
+  return reasons;
+}
+
+function getUsageReportEvidenceBlockingReasons(usageReportEvidence?: UsageReportEvidence): string[] {
+  if (!usageReportEvidence) return [];
+
+  const reasons: string[] = [];
+  if (usageReportEvidence.release_readiness === 'blocked') {
+    reasons.push(
+      usageReportEvidence.blockers.length > 0
+        ? `usage report evidence blocked by ${usageReportEvidence.blockers.join(', ')}`
+        : 'usage report evidence reported blocked release readiness',
+    );
+  }
+  if (usageReportEvidence.required_schedules === 0) {
+    reasons.push('usage report evidence has no required schedules');
+  }
+  if (usageReportEvidence.unacknowledged_required_deliveries > 0) {
+    reasons.push(`usage report evidence has ${usageReportEvidence.unacknowledged_required_deliveries} unacknowledged required deliveries`);
   }
   return reasons;
 }
@@ -876,6 +959,36 @@ function generateMarkdown(report: ReleaseReport): string {
 
     if (runtimeEvidence.guardrails.warnings.length > 0) {
       md += `**Guardrail Warnings:** ${runtimeEvidence.guardrails.warnings.join(', ')}\n\n`;
+    }
+  }
+
+  if (summary.usage_report_evidence) {
+    const usageEvidence = summary.usage_report_evidence;
+    md += `### Usage Report Evidence\n\n`;
+    md += `- **Source:** ${usageEvidence.source}\n`;
+    md += `- **Generated At:** ${usageEvidence.generated_at}\n`;
+    md += `- **Release Readiness:** ${usageEvidence.release_readiness}\n`;
+    md += `- **Active Schedules:** ${usageEvidence.active_schedules}\n`;
+    md += `- **Required Schedules:** ${usageEvidence.required_schedules}\n`;
+    md += `- **Successful Deliveries (7d):** ${usageEvidence.successful_deliveries_last_7d}\n`;
+    md += `- **Failed Deliveries (7d):** ${usageEvidence.failed_deliveries_last_7d}\n`;
+    md += `- **Unacknowledged Required Deliveries:** ${usageEvidence.unacknowledged_required_deliveries}\n`;
+    if (usageEvidence.note) {
+      md += `- **Note:** ${usageEvidence.note}\n`;
+    }
+    md += `\n`;
+
+    md += `| Usage Report Signal | Count |\n`;
+    md += `|---------------------|-------|\n`;
+    md += `| Blockers | ${usageEvidence.blockers.length} |\n`;
+    md += `| Warnings | ${usageEvidence.warnings.length} |\n\n`;
+
+    if (usageEvidence.blockers.length > 0) {
+      md += `**Usage Report Blockers:** ${usageEvidence.blockers.join(', ')}\n\n`;
+    }
+
+    if (usageEvidence.warnings.length > 0) {
+      md += `**Usage Report Warnings:** ${usageEvidence.warnings.join(', ')}\n\n`;
     }
   }
 

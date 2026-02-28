@@ -47,12 +47,32 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules",
     "method": "get"
   },
+  "usageReportSchedulesRunDue": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/run-due",
+    "method": "post"
+  },
+  "usageReportEvidence": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-evidence",
+    "method": "get"
+  },
   "usageReportScheduleItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}",
     "method": "patch"
   },
   "usageReportScheduleTestDelivery": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/test-delivery",
+    "method": "post"
+  },
+  "usageReportScheduleRunNow": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/run-now",
+    "method": "post"
+  },
+  "usageReportScheduleDeliveryRetry": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/deliveries/{deliveryId}/retry",
+    "method": "post"
+  },
+  "usageReportScheduleDeliveryAcknowledge": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/deliveries/{deliveryId}/acknowledge",
     "method": "post"
   },
   "usageTimeseries": {

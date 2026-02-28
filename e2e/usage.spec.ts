@@ -63,6 +63,13 @@ test.describe('Usage Page', () => {
     await expect(authedPage.getByTestId('usage__report-schedules-form-name')).toBeVisible();
   });
 
+  test('scheduled report panel exposes evidence and delivery actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('usage__report-evidence')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__report-schedules-run-due')).toBeVisible();
+    await expect(authedPage.locator('[data-testid^="usage__report-schedule-run-"]').first()).toBeVisible();
+    await expect(authedPage.locator('[data-testid^="usage__report-schedule-deliveries-"]').first()).toBeVisible();
+  });
+
   test('text filter and clear filters interaction works', async ({ authedPage }) => {
     const filters = authedPage.getByTestId('usage__filters');
     await expect(filters).toBeVisible({ timeout: 10000 });

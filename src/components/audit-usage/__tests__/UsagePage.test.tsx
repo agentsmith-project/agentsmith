@@ -29,6 +29,10 @@ const createReportScheduleMock = vi.fn();
 const updateReportScheduleMock = vi.fn();
 const deleteReportScheduleMock = vi.fn();
 const testReportScheduleDeliveryMock = vi.fn();
+const runReportScheduleNowMock = vi.fn();
+const retryReportScheduleDeliveryMock = vi.fn();
+const acknowledgeReportScheduleDeliveryMock = vi.fn();
+const runDueReportSchedulesMock = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<object>('@/lib/api');
@@ -41,6 +45,10 @@ vi.mock('@/lib/api', async () => {
       updateReportSchedule = updateReportScheduleMock;
       deleteReportSchedule = deleteReportScheduleMock;
       testReportScheduleDelivery = testReportScheduleDeliveryMock;
+      runReportScheduleNow = runReportScheduleNowMock;
+      retryReportScheduleDelivery = retryReportScheduleDeliveryMock;
+      acknowledgeReportScheduleDelivery = acknowledgeReportScheduleDeliveryMock;
+      runDueReportSchedules = runDueReportSchedulesMock;
     },
   };
 });
@@ -128,11 +136,46 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
           format: 'json',
           time_window: 'last_7d',
           delivery_channel: 'in_app',
+          release_evidence_required: true,
+          empty_result_policy: 'deliver',
           created_at: '2026-02-28T00:00:00.000Z',
           updated_at: '2026-02-28T00:00:00.000Z',
           next_run_at: '2026-03-01T00:00:00.000Z',
+          recent_deliveries: [
+            {
+              id: 'delivery_1',
+              workspace_id: 'ws_1',
+              project_id: 'proj_1',
+              schedule_id: 'usage_schedule_1',
+              trigger: 'manual',
+              status: 'success',
+              attempt_count: 1,
+              report_period_start: '2026-02-27T00:00:00.000Z',
+              report_period_end: '2026-02-28T00:00:00.000Z',
+              created_at: '2026-02-28T00:00:00.000Z',
+              completed_at: '2026-02-28T00:00:00.000Z',
+              preview_filename: 'usage-report-proj_1.json',
+              content_type: 'application/json; charset=utf-8',
+              summary: { requests: 2, errors: 0, top_provider: 'secondaryok', estimated_cost: 0.0068 },
+            },
+          ],
         },
       ],
+    },
+    isLoading: false,
+  }),
+  useUsageReportEvidence: () => ({
+    data: {
+      source: 'artifact',
+      generated_at: '2026-02-28T00:00:00.000Z',
+      release_readiness: 'ready',
+      blockers: [],
+      warnings: [],
+      active_schedules: 1,
+      required_schedules: 1,
+      successful_deliveries_last_7d: 1,
+      failed_deliveries_last_7d: 0,
+      unacknowledged_required_deliveries: 0,
     },
     isLoading: false,
   }),
@@ -184,7 +227,36 @@ describe('UsagePage', () => {
       expect.objectContaining({
         name: 'Weekly Runtime Digest',
         delivery_channel: 'in_app',
+        release_evidence_required: true,
+        empty_result_policy: 'deliver',
       }),
     );
+  });
+
+  it('runs report schedule actions from the panel', async () => {
+    const user = userEvent.setup();
+    runReportScheduleNowMock.mockResolvedValue({
+      delivery_id: 'delivery_2',
+      schedule_id: 'usage_schedule_1',
+      delivery_channel: 'in_app',
+      generated_at: '2026-02-28T01:00:00.000Z',
+      preview_filename: 'usage-report-proj_1.json',
+      content_type: 'application/json; charset=utf-8',
+      status: 'success',
+      summary: { requests: 2, errors: 0, top_provider: 'secondaryok', estimated_cost: 0.0068 },
+    });
+    acknowledgeReportScheduleDeliveryMock.mockResolvedValue({ id: 'delivery_1' });
+    runDueReportSchedulesMock.mockResolvedValue({ processed: 1, deliveries: [] });
+
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    await user.click(screen.getByTestId('usage__report-schedules-run-due'));
+    await user.click(screen.getByTestId('usage__report-schedule-run-usage_schedule_1'));
+    await user.click(screen.getByTestId('usage__report-delivery-ack-delivery_1'));
+
+    expect(runDueReportSchedulesMock).toHaveBeenCalledWith('ws_1', 'proj_1');
+    expect(runReportScheduleNowMock).toHaveBeenCalledWith('ws_1', 'proj_1', 'usage_schedule_1');
+    expect(acknowledgeReportScheduleDeliveryMock).toHaveBeenCalledWith('ws_1', 'proj_1', 'usage_schedule_1', 'delivery_1');
+    expect(screen.getByTestId('usage__report-evidence')).toBeInTheDocument();
   });
 });

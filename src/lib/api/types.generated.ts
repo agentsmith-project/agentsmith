@@ -2533,6 +2533,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Get usage report release evidence summary */
+        get: operations["getUsageReportEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules": {
         parameters: {
             query?: never;
@@ -2576,6 +2596,71 @@ export interface paths {
         patch: operations["updateUsageReportSchedule"];
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/deliveries/{deliveryId}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryId: string;
+                projectId: components["parameters"]["projectId"];
+                scheduleId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge a usage report delivery for release evidence */
+        post: operations["acknowledgeUsageReportDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/deliveries/{deliveryId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryId: string;
+                projectId: components["parameters"]["projectId"];
+                scheduleId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a failed usage report delivery */
+        post: operations["retryUsageReportDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/run-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                scheduleId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a scheduled usage report immediately */
+        post: operations["runUsageReportScheduleNow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/test-delivery": {
         parameters: {
             query?: never;
@@ -2591,6 +2676,26 @@ export interface paths {
         put?: never;
         /** Test usage report schedule delivery */
         post: operations["testUsageReportScheduleDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/run-due": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run all due scheduled usage reports */
+        post: operations["runDueUsageReportSchedules"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3024,10 +3129,13 @@ export interface components {
             cadence: "daily" | "weekly" | "monthly";
             /** @enum {string} */
             delivery_channel: "in_app";
+            /** @enum {string} */
+            empty_result_policy?: "deliver" | "fail";
             filters?: components["schemas"]["UsageReportScheduleFilters"];
             /** @enum {string} */
             format: "csv" | "json";
             name: string;
+            release_evidence_required?: boolean;
             /** @enum {string} */
             status: "active" | "paused";
             /** @enum {string} */
@@ -3597,10 +3705,13 @@ export interface components {
             cadence?: "daily" | "weekly" | "monthly";
             /** @enum {string} */
             delivery_channel?: "in_app";
+            /** @enum {string} */
+            empty_result_policy?: "deliver" | "fail";
             filters?: components["schemas"]["UsageReportScheduleFilters"];
             /** @enum {string} */
             format?: "csv" | "json";
             name?: string;
+            release_evidence_required?: boolean;
             /** @enum {string} */
             status?: "active" | "paused";
             /** @enum {string} */
@@ -3707,6 +3818,58 @@ export interface components {
             top_models: components["schemas"]["UsageOperationsModelSummary"][];
             top_providers: components["schemas"]["UsageOperationsProviderSummary"][];
         };
+        UsageReportDelivery: {
+            /** Format: date-time */
+            acknowledged_at?: string;
+            acknowledged_by?: string;
+            attempt_count: number;
+            /** Format: date-time */
+            completed_at: string;
+            content_type?: string;
+            /** Format: date-time */
+            created_at: string;
+            error?: string;
+            id: string;
+            parent_delivery_id?: string;
+            preview_filename?: string;
+            project_id: string;
+            /** Format: date-time */
+            report_period_end: string;
+            /** Format: date-time */
+            report_period_start: string;
+            schedule_id: string;
+            /** @enum {string} */
+            status: "success" | "failed";
+            summary: {
+                errors: number;
+                estimated_cost?: number;
+                requests: number;
+                top_provider?: string;
+            };
+            /** @enum {string} */
+            trigger: "scheduled" | "manual" | "retry" | "test";
+            workspace_id: string;
+        };
+        UsageReportEvidence: {
+            active_schedules: number;
+            blockers: string[];
+            failed_deliveries_last_7d: number;
+            /** Format: date-time */
+            generated_at: string;
+            note?: string;
+            /** @enum {string} */
+            release_readiness: "ready" | "blocked";
+            required_schedules: number;
+            /** @enum {string} */
+            source: "artifact" | "dry_run";
+            successful_deliveries_last_7d: number;
+            unacknowledged_required_deliveries: number;
+            warnings: string[];
+        };
+        UsageReportRunDueResult: {
+            deliveries: components["schemas"]["UsageReportScheduleDeliveryResult"][];
+            processed: number;
+        };
         UsageReportSchedule: {
             /** @enum {string} */
             cadence: "daily" | "weekly" | "monthly";
@@ -3714,6 +3877,8 @@ export interface components {
             created_at: string;
             /** @enum {string} */
             delivery_channel: "in_app";
+            /** @enum {string} */
+            empty_result_policy?: "deliver" | "fail";
             filters?: components["schemas"]["UsageReportScheduleFilters"];
             /** @enum {string} */
             format: "csv" | "json";
@@ -3729,6 +3894,8 @@ export interface components {
             /** Format: date-time */
             next_run_at: string;
             project_id: string;
+            recent_deliveries?: components["schemas"]["UsageReportDelivery"][];
+            release_evidence_required?: boolean;
             /** @enum {string} */
             status: "active" | "paused";
             /** @enum {string} */
@@ -3741,10 +3908,14 @@ export interface components {
             content_type: string;
             /** @enum {string} */
             delivery_channel: "in_app";
+            delivery_id: string;
+            error?: string;
             /** Format: date-time */
             generated_at: string;
             preview_filename: string;
             schedule_id: string;
+            /** @enum {string} */
+            status: "success" | "failed";
             summary: {
                 errors: number;
                 estimated_cost?: number;
@@ -9250,6 +9421,31 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    getUsageReportEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage report release evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReportEvidence"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     listUsageReportSchedules: {
         parameters: {
             query?: never;
@@ -9387,6 +9583,113 @@ export interface operations {
             };
         };
     };
+    acknowledgeUsageReportDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryId: string;
+                projectId: components["parameters"]["projectId"];
+                scheduleId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage report delivery acknowledged */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReportDelivery"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    retryUsageReportDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryId: string;
+                projectId: components["parameters"]["projectId"];
+                scheduleId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage report delivery result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReportScheduleDeliveryResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    runUsageReportScheduleNow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                scheduleId: string;
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage report delivery result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReportScheduleDeliveryResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     testUsageReportScheduleDelivery: {
         parameters: {
             query?: never;
@@ -9420,6 +9723,31 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+        };
+    };
+    runDueUsageReportSchedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Due schedules processed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReportRunDueResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getRuntimeObservability: {

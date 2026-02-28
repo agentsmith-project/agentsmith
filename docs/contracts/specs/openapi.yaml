@@ -4397,6 +4397,42 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401": *a1
         "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/run-due:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    post:
+      tags:
+        - Governance
+      operationId: runDueUsageReportSchedules
+      summary: Run all due scheduled usage reports
+      responses:
+        "200":
+          description: Due schedules processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReportRunDueResult"
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-evidence:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - Governance
+      operationId: getUsageReportEvidence
+      summary: Get usage report release evidence summary
+      responses:
+        "200":
+          description: Usage report release evidence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReportEvidence"
+        "401": *a1
+        "403": *a2
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4448,6 +4484,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/run-now:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: scheduleId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - Governance
+      operationId: runUsageReportScheduleNow
+      summary: Run a scheduled usage report immediately
+      responses:
+        "200":
+          description: Usage report delivery result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReportScheduleDeliveryResult"
+        "401": *a1
+        "403": *a2
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/test-delivery:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4469,6 +4534,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UsageReportScheduleDeliveryResult"
+        "401": *a1
+        "403": *a2
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/deliveries/{deliveryId}/retry:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: scheduleId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: deliveryId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - Governance
+      operationId: retryUsageReportDelivery
+      summary: Retry a failed usage report delivery
+      responses:
+        "200":
+          description: Usage report delivery result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReportScheduleDeliveryResult"
+        "401": *a1
+        "403": *a2
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/deliveries/{deliveryId}/acknowledge:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: scheduleId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: deliveryId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - Governance
+      operationId: acknowledgeUsageReportDelivery
+      summary: Acknowledge a usage report delivery for release evidence
+      responses:
+        "200":
+          description: Usage report delivery acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReportDelivery"
         "401": *a1
         "403": *a2
         "404":
@@ -7024,6 +7157,11 @@ components:
           enum: [in_app]
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
+        release_evidence_required:
+          type: boolean
+        empty_result_policy:
+          type: string
+          enum: [deliver, fail]
         created_at:
           type: string
           format: date-time
@@ -7044,6 +7182,10 @@ components:
           format: date-time
         last_delivery_error:
           type: string
+        recent_deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageReportDelivery"
     UsageReportScheduleFilters:
       type: object
       properties:
@@ -7086,6 +7228,11 @@ components:
           enum: [in_app]
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
+        release_evidence_required:
+          type: boolean
+        empty_result_policy:
+          type: string
+          enum: [deliver, fail]
     UpdateUsageReportScheduleRequest:
       type: object
       properties:
@@ -7108,16 +7255,42 @@ components:
           enum: [in_app]
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
-    UsageReportScheduleDeliveryResult:
+        release_evidence_required:
+          type: boolean
+        empty_result_policy:
+          type: string
+          enum: [deliver, fail]
+    UsageReportDelivery:
       type: object
-      required: [schedule_id, delivery_channel, generated_at, preview_filename, content_type, summary]
+      required: [id, workspace_id, project_id, schedule_id, trigger, status, attempt_count, report_period_start, report_period_end, created_at, completed_at, summary]
       properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        project_id:
+          type: string
         schedule_id:
           type: string
-        delivery_channel:
+        trigger:
           type: string
-          enum: [in_app]
-        generated_at:
+          enum: [scheduled, manual, retry, test]
+        status:
+          type: string
+          enum: [success, failed]
+        attempt_count:
+          type: integer
+          minimum: 1
+        report_period_start:
+          type: string
+          format: date-time
+        report_period_end:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
           type: string
           format: date-time
         preview_filename:
@@ -7139,6 +7312,102 @@ components:
             estimated_cost:
               type: number
               minimum: 0
+        error:
+          type: string
+        acknowledged_at:
+          type: string
+          format: date-time
+        acknowledged_by:
+          type: string
+        parent_delivery_id:
+          type: string
+    UsageReportScheduleDeliveryResult:
+      type: object
+      required: [delivery_id, schedule_id, delivery_channel, generated_at, preview_filename, content_type, status, summary]
+      properties:
+        delivery_id:
+          type: string
+        schedule_id:
+          type: string
+        delivery_channel:
+          type: string
+          enum: [in_app]
+        generated_at:
+          type: string
+          format: date-time
+        preview_filename:
+          type: string
+        content_type:
+          type: string
+        status:
+          type: string
+          enum: [success, failed]
+        summary:
+          type: object
+          required: [requests, errors]
+          properties:
+            requests:
+              type: number
+              minimum: 0
+            errors:
+              type: number
+              minimum: 0
+            top_provider:
+              type: string
+            estimated_cost:
+              type: number
+              minimum: 0
+        error:
+          type: string
+    UsageReportRunDueResult:
+      type: object
+      required: [processed, deliveries]
+      properties:
+        processed:
+          type: integer
+          minimum: 0
+        deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageReportScheduleDeliveryResult"
+    UsageReportEvidence:
+      type: object
+      required: [source, generated_at, release_readiness, blockers, warnings, active_schedules, required_schedules, successful_deliveries_last_7d, failed_deliveries_last_7d, unacknowledged_required_deliveries]
+      properties:
+        source:
+          type: string
+          enum: [artifact, dry_run]
+        generated_at:
+          type: string
+          format: date-time
+        release_readiness:
+          type: string
+          enum: [ready, blocked]
+        blockers:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        active_schedules:
+          type: integer
+          minimum: 0
+        required_schedules:
+          type: integer
+          minimum: 0
+        successful_deliveries_last_7d:
+          type: integer
+          minimum: 0
+        failed_deliveries_last_7d:
+          type: integer
+          minimum: 0
+        unacknowledged_required_deliveries:
+          type: integer
+          minimum: 0
+        note:
+          type: string
     ResourceCostBreakdown:
       type: object
       required:

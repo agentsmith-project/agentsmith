@@ -120,6 +120,20 @@ type RuntimeReleaseEvidence = {
   note?: string;
 };
 
+type UsageReportEvidence = {
+  source: 'artifact';
+  generated_at: string;
+  release_readiness: 'ready' | 'blocked';
+  blockers: string[];
+  warnings: string[];
+  active_schedules: number;
+  required_schedules: number;
+  successful_deliveries_last_7d: number;
+  failed_deliveries_last_7d: number;
+  unacknowledged_required_deliveries: number;
+  note?: string;
+};
+
 async function startOpenAICompatibleUpstream(mode: UpstreamMode): Promise<{
   server: Server;
   baseUrl: string;
@@ -519,6 +533,52 @@ test.describe('@lane-real integration runtime proxy billing', () => {
       );
       expect(quotaRes.ok()).toBeTruthy();
 
+      const createScheduleRes = await page.request.post(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-schedules`,
+        {
+          headers,
+          data: {
+            name: 'Release Evidence Digest',
+            cadence: 'daily',
+            status: 'active',
+            format: 'json',
+            time_window: 'last_7d',
+            delivery_channel: 'in_app',
+            release_evidence_required: true,
+            empty_result_policy: 'deliver',
+            filters: {
+              provider: 'secondaryok',
+            },
+          },
+        },
+      );
+      expect(createScheduleRes.status()).toBe(201);
+      const schedule = (await createScheduleRes.json()) as { id: string };
+
+      const runScheduleRes = await page.request.post(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-schedules/${schedule.id}/run-now`,
+        { headers },
+      );
+      expect(runScheduleRes.ok()).toBeTruthy();
+      const runSchedulePayload = (await runScheduleRes.json()) as { delivery_id?: string; status?: 'success' | 'failed' };
+      expect(runSchedulePayload.status).toBe('success');
+      expect(typeof runSchedulePayload.delivery_id).toBe('string');
+
+      const acknowledgeRes = await page.request.post(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-schedules/${schedule.id}/deliveries/${runSchedulePayload.delivery_id}/acknowledge`,
+        { headers },
+      );
+      expect(acknowledgeRes.ok()).toBeTruthy();
+
+      const usageReportEvidenceRes = await page.request.get(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-evidence`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      expect(usageReportEvidenceRes.ok()).toBeTruthy();
+      const usageReportEvidence = (await usageReportEvidenceRes.json()) as UsageReportEvidence;
+      expect(usageReportEvidence.release_readiness).toBe('ready');
+      expect(usageReportEvidence.unacknowledged_required_deliveries).toBe(0);
+
       const dryRunRes = await page.request.post(
         `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/runtime/routing/dry-run`,
         {
@@ -562,6 +622,10 @@ test.describe('@lane-real integration runtime proxy billing', () => {
         },
         note: 'Collected from @lane-real integration runtime proxy billing workflow.',
       });
+      maybeWriteUsageReportEvidence(process.env.USAGE_REPORT_EVIDENCE_PATH, {
+        ...usageReportEvidence,
+        note: 'Collected from @lane-real integration runtime proxy billing workflow.',
+      });
     } finally {
       await new Promise<void>((resolve) => directUpstream.server.close(() => resolve()));
       await new Promise<void>((resolve) => comboPrimaryUpstream.server.close(() => resolve()));
@@ -586,6 +650,12 @@ function buildPricingCoverage(items: Array<{ runtime?: { pricing_version?: strin
 }
 
 function maybeWriteRuntimeReleaseEvidence(pathValue: string | undefined, evidence: RuntimeReleaseEvidence) {
+  if (!pathValue) return;
+  mkdirSync(dirname(pathValue), { recursive: true });
+  writeFileSync(pathValue, JSON.stringify(evidence, null, 2), 'utf-8');
+}
+
+function maybeWriteUsageReportEvidence(pathValue: string | undefined, evidence: UsageReportEvidence) {
   if (!pathValue) return;
   mkdirSync(dirname(pathValue), { recursive: true });
   writeFileSync(pathValue, JSON.stringify(evidence, null, 2), 'utf-8');

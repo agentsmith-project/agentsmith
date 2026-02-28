@@ -221,35 +221,78 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
       combo: 'prod-chat',
     });
-  expect(
-    matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing'),
-  ).toEqual({
-    kind: 'runtimePricing',
-    workspaceId: 'ws_default',
-    projectId: 'proj_1',
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing'),
+    ).toEqual({
+      kind: 'runtimePricing',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/versions'),
+    ).toEqual({
+      kind: 'runtimePricingVersions',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/versions/rpv_1/activate'),
+    ).toEqual({
+      kind: 'runtimePricingVersionActivate',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      pricingVersionId: 'rpv_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/compare'),
+    ).toEqual({
+      kind: 'runtimePricingCompare',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
   });
-  expect(
-    matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/versions'),
-  ).toEqual({
-    kind: 'runtimePricingVersions',
-    workspaceId: 'ws_default',
-    projectId: 'proj_1',
-  });
-  expect(
-    matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/versions/rpv_1/activate'),
-  ).toEqual({
-    kind: 'runtimePricingVersionActivate',
-    workspaceId: 'ws_default',
-    projectId: 'proj_1',
-    pricingVersionId: 'rpv_1',
-  });
-  expect(
-    matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/compare'),
-  ).toEqual({
-    kind: 'runtimePricingCompare',
-    workspaceId: 'ws_default',
-    projectId: 'proj_1',
-  });
+
+  it('matches usage report lifecycle routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules/run-due'),
+    ).toEqual({
+      kind: 'usageReportSchedulesRunDue',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/report-evidence'),
+    ).toEqual({
+      kind: 'usageReportEvidence',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules/sched_1/run-now'),
+    ).toEqual({
+      kind: 'usageReportScheduleRunNow',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      scheduleId: 'sched_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules/sched_1/deliveries/dlv_1/retry'),
+    ).toEqual({
+      kind: 'usageReportScheduleDeliveryRetry',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      scheduleId: 'sched_1',
+      deliveryId: 'dlv_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules/sched_1/deliveries/dlv_1/acknowledge'),
+    ).toEqual({
+      kind: 'usageReportScheduleDeliveryAcknowledge',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      scheduleId: 'sched_1',
+      deliveryId: 'dlv_1',
+    });
   });
 
   it('matches agent management and key routes', () => {

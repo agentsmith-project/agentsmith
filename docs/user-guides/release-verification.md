@@ -149,6 +149,18 @@ Structured machine-readable output:
         "coverage_ratio": 0.67
       }
     },
+    "usage_report_evidence": {
+      "source": "artifact",
+      "generated_at": "2026-02-28T10:02:30Z",
+      "release_readiness": "ready",
+      "blockers": [],
+      "warnings": [],
+      "active_schedules": 2,
+      "required_schedules": 1,
+      "successful_deliveries_last_7d": 1,
+      "failed_deliveries_last_7d": 0,
+      "unacknowledged_required_deliveries": 0
+    },
     "failure_categories": [
       {
         "category": "token",

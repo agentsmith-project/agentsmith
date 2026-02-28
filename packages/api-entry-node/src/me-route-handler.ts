@@ -1,6 +1,12 @@
 import type http from 'node:http';
 import type { AuthenticatedUser } from './auth.js';
 import { json, readBody } from './http-utils.js';
+import {
+  getUserNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  unreadNotificationsCount,
+} from './me-notifications-store.js';
 
 interface UserProfileRecord {
   display_name?: string | null;
@@ -14,18 +20,7 @@ interface UserProfileRecord {
   preferences_json?: Record<string, unknown> | null;
 }
 
-interface UserNotificationRecord {
-  id: string;
-  type: string;
-  title: string;
-  body?: string | null;
-  link_url?: string | null;
-  read_at?: string | null;
-  created_at: string;
-}
-
 const profilesByUser = new Map<string, UserProfileRecord>();
-const notificationsByUser = new Map<string, UserNotificationRecord[]>();
 
 function getUserProfile(user: AuthenticatedUser): UserProfileRecord {
   return profilesByUser.get(user.id) ?? {
@@ -43,19 +38,6 @@ function getUserProfile(user: AuthenticatedUser): UserProfileRecord {
 
 function setUserProfile(userId: string, profile: UserProfileRecord): void {
   profilesByUser.set(userId, profile);
-}
-
-function getUserNotifications(userId: string): UserNotificationRecord[] {
-  let notifications = notificationsByUser.get(userId);
-  if (!notifications) {
-    notifications = [];
-    notificationsByUser.set(userId, notifications);
-  }
-  return notifications;
-}
-
-function unreadCount(items: UserNotificationRecord[]): number {
-  return items.filter((n) => !n.read_at).length;
 }
 
 export async function handleMeRoute(args: {
@@ -104,7 +86,7 @@ export async function handleMeRoute(args: {
     json(res, 200, {
       items: filtered.slice(offset, offset + limit),
       total: filtered.length,
-      unread_count: unreadCount(all),
+      unread_count: unreadNotificationsCount(all),
     });
     return true;
   }
@@ -114,7 +96,7 @@ export async function handleMeRoute(args: {
       json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
       return true;
     }
-    json(res, 200, { unread_count: unreadCount(getUserNotifications(user.id)) });
+    json(res, 200, { unread_count: unreadNotificationsCount(getUserNotifications(user.id)) });
     return true;
   }
 
@@ -123,15 +105,7 @@ export async function handleMeRoute(args: {
       json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
       return true;
     }
-    const notifications = getUserNotifications(user.id);
-    const now = new Date().toISOString();
-    let markedCount = 0;
-    for (const n of notifications) {
-      if (!n.read_at) {
-        n.read_at = now;
-        markedCount += 1;
-      }
-    }
+    const markedCount = markAllNotificationsRead(user.id);
     json(res, 200, { marked_count: markedCount });
     return true;
   }
@@ -143,13 +117,11 @@ export async function handleMeRoute(args: {
       return true;
     }
     const id = decodeURIComponent(markReadMatch[1] ?? '');
-    const notifications = getUserNotifications(user.id);
-    const found = notifications.find((n) => n.id === id);
+    const found = markNotificationRead(user.id, id);
     if (!found) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'notification_not_found' });
       return true;
     }
-    found.read_at = new Date().toISOString();
     json(res, 200, found);
     return true;
   }

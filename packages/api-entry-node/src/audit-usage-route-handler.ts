@@ -1,12 +1,15 @@
 import type http from 'node:http';
 import type { ProjectsRoute } from './projects-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import type { AuthenticatedUser } from './auth.js';
 import {
+  acknowledgeUsageReportDelivery,
   aggregateUsageRecords,
   createUsageReportSchedule,
   deleteUsageReportSchedule,
   exportUsageData,
   getQuotaSummary,
+  getUsageReportEvidence,
   getRuntimeObservability,
   getUsageOperationsSummary,
   getUsageKpi,
@@ -14,9 +17,13 @@ import {
   listAuditEvents,
   listUsageReportSchedules,
   listUsageFactRecords,
+  retryUsageReportDelivery,
+  runDueUsageReportSchedules,
+  runUsageReportScheduleNow,
   testUsageReportScheduleDelivery,
   updateUsageReportSchedule,
 } from './audit-usage-store.js';
+import { appendUserNotification } from './me-notifications-store.js';
 
 type JsonResponder = (res: http.ServerResponse, status: number, payload: unknown) => void;
 
@@ -28,6 +35,7 @@ type HandlerArgs = {
   res: http.ServerResponse;
   json: JsonResponder;
   deps: NodeApiDeps;
+  user?: AuthenticatedUser;
 };
 
 function parseRuntimeErrorClass(value: string | null): 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null {
@@ -88,6 +96,7 @@ export async function handleAuditUsageRoute({
   res,
   json,
   deps,
+  user,
 }: HandlerArgs): Promise<boolean> {
   if (route.kind === 'usageReportSchedules' && method === 'GET') {
     const payload = await listUsageReportSchedules(deps.docStore, {
@@ -119,8 +128,28 @@ export async function handleAuditUsageRoute({
       time_window: timeWindow,
       delivery_channel: deliveryChannel,
       filters: typeof body.filters === 'object' && body.filters ? body.filters as Record<string, unknown> : undefined,
+      release_evidence_required: body.release_evidence_required !== false,
+      empty_result_policy: body.empty_result_policy === 'fail' ? 'fail' : 'deliver',
     });
     json(res, 201, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageReportSchedulesRunDue' && method === 'POST') {
+    const payload = await runDueUsageReportSchedules(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageReportEvidence' && method === 'GET') {
+    const payload = await getUsageReportEvidence(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    json(res, 200, payload);
     return true;
   }
 
@@ -140,6 +169,8 @@ export async function handleAuditUsageRoute({
           : undefined,
         delivery_channel: body.delivery_channel === 'in_app' ? 'in_app' : undefined,
         filters: typeof body.filters === 'object' && body.filters ? body.filters as Record<string, unknown> : undefined,
+        release_evidence_required: typeof body.release_evidence_required === 'boolean' ? body.release_evidence_required : undefined,
+        empty_result_policy: body.empty_result_policy === 'deliver' || body.empty_result_policy === 'fail' ? body.empty_result_policy : undefined,
       },
     });
     if (!payload) {
@@ -173,6 +204,85 @@ export async function handleAuditUsageRoute({
     });
     if (!payload) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_schedule_not_found' });
+      return true;
+    }
+    if (user) {
+      appendUserNotification(user.id, {
+        type: payload.status === 'success' ? 'usage_report_delivery' : 'usage_report_delivery_failed',
+        title: payload.status === 'success' ? 'Usage report test delivered' : 'Usage report test failed',
+        body: payload.status === 'success'
+          ? `Generated ${payload.preview_filename}`
+          : payload.error ?? 'Usage report delivery failed',
+        link_url: `/workspaces/${route.workspaceId}/projects/${route.projectId}/usage`,
+      });
+    }
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageReportScheduleRunNow' && method === 'POST') {
+    const payload = await runUsageReportScheduleNow(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      scheduleId: route.scheduleId,
+    });
+    if (!payload) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_schedule_not_found' });
+      return true;
+    }
+    if (user) {
+      appendUserNotification(user.id, {
+        type: payload.status === 'success' ? 'usage_report_delivery' : 'usage_report_delivery_failed',
+        title: payload.status === 'success' ? 'Usage report delivered' : 'Usage report delivery failed',
+        body: payload.status === 'success'
+          ? `Generated ${payload.preview_filename}`
+          : payload.error ?? 'Usage report delivery failed',
+        link_url: `/workspaces/${route.workspaceId}/projects/${route.projectId}/usage`,
+      });
+    }
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageReportScheduleDeliveryRetry' && method === 'POST') {
+    const payload = await retryUsageReportDelivery(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      scheduleId: route.scheduleId,
+      deliveryId: route.deliveryId,
+    });
+    if (!payload) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_delivery_not_found' });
+      return true;
+    }
+    if (user) {
+      appendUserNotification(user.id, {
+        type: payload.status === 'success' ? 'usage_report_delivery' : 'usage_report_delivery_failed',
+        title: payload.status === 'success' ? 'Usage report retry delivered' : 'Usage report retry failed',
+        body: payload.status === 'success'
+          ? `Generated ${payload.preview_filename}`
+          : payload.error ?? 'Usage report retry failed',
+        link_url: `/workspaces/${route.workspaceId}/projects/${route.projectId}/usage`,
+      });
+    }
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageReportScheduleDeliveryAcknowledge' && method === 'POST') {
+    if (!user) {
+      json(res, 401, { error_code: 'UNAUTHORIZED', message: 'Missing or invalid bearer token' });
+      return true;
+    }
+    const payload = await acknowledgeUsageReportDelivery(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      scheduleId: route.scheduleId,
+      deliveryId: route.deliveryId,
+      acknowledgedBy: user.id,
+    });
+    if (!payload) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_delivery_not_found' });
       return true;
     }
     json(res, 200, payload);

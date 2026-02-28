@@ -11,6 +11,7 @@ import { PageLoading } from '@/components/ui/loading';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { useRuntimeObservability, useUsageOperationsSummary, useUsageReportEvidence, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
+import { useReleaseReportDetail, useReleaseReportList } from '@/lib/hooks/use-release-ops';
 import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { UsageOperationsSummary } from '@/components/audit-usage/UsageOperationsSummary';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +43,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const [timeRange] = useState(defaultTimeRange);
   const canReadUsage = useHasPermission('project:usage:view');
+  const [selectedReportName, setSelectedReportName] = useState<string | undefined>();
 
   useEffect(() => {
     params.then((p) => setResolvedParams({
@@ -60,12 +62,22 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const summaryQuery = useUsageOperationsSummary(workspaceId, projectId, timeRange, { enabled });
   const evidenceQuery = useUsageReportEvidence(workspaceId, projectId, { enabled });
   const schedulesQuery = useUsageReportSchedules(workspaceId, projectId, { enabled });
+  const reportsQuery = useReleaseReportList({ enabled });
+  const reportDetailQuery = useReleaseReportDetail(selectedReportName, { enabled });
+
+  useEffect(() => {
+    if (!selectedReportName && (reportsQuery.data?.items?.length ?? 0) > 0) {
+      setSelectedReportName(reportsQuery.data?.items[0]?.name);
+    }
+  }, [reportsQuery.data?.items, selectedReportName]);
 
   const refresh = () => {
     runtimeQuery.refetch();
     summaryQuery.refetch();
     evidenceQuery.refetch();
     schedulesQuery.refetch();
+    reportsQuery.refetch();
+    reportDetailQuery.refetch();
   };
 
   const blockers = evidenceQuery.data?.blockers ?? [];
@@ -74,6 +86,8 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     () => (schedulesQuery.data?.items ?? []).slice(0, 5),
     [schedulesQuery.data?.items],
   );
+  const releaseReports = reportsQuery.data?.items ?? [];
+  const selectedReportSummary = JSON.stringify((reportDetailQuery.data?.report as { summary?: unknown } | undefined)?.summary ?? {}, null, 2);
 
   if (!resolvedParams) {
     return (
@@ -224,6 +238,61 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__reports">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-foreground">{settingsT('release_ops_reports_title')}</h3>
+                  <p className="text-xs text-tertiary">{settingsT('release_ops_reports_subtitle')}</p>
+                </div>
+                <div className="space-y-2">
+                  {releaseReports.length === 0 ? (
+                    <div className="text-sm text-tertiary">{settingsT('release_ops_reports_empty')}</div>
+                  ) : releaseReports.slice(0, 6).map((item, index) => (
+                    <button
+                      key={item.name}
+                      type="button"
+                      className={cn(
+                        'w-full rounded-md border px-3 py-2 text-left transition-colors',
+                        selectedReportName === item.name
+                          ? 'border-border bg-bg-base/60'
+                          : 'border-subtle bg-bg-base/40 hover:bg-bg-base/60',
+                      )}
+                      onClick={() => setSelectedReportName(item.name)}
+                      data-testid={`release-ops__report-item-${index}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-mono text-sm text-foreground">{item.name}</div>
+                          <div className="text-xs text-tertiary">
+                            {item.branch ?? '--'} · {item.commit_short ?? '--'} · {formatDateTime(item.generated_at)}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={item.status === 'pass' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {reportDetailQuery.data ? (
+                  <div className="mt-4 space-y-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__report-detail">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">{reportDetailQuery.data.name}</Badge>
+                      {reportDetailQuery.data.markdown ? (
+                        <Badge variant="outline">{settingsT('release_ops_reports_markdown')}</Badge>
+                      ) : null}
+                    </div>
+                    <pre className="overflow-x-auto rounded-md border border-subtle bg-surface p-3 text-xs text-foreground" data-testid="release-ops__report-summary-json">
+                      {selectedReportSummary}
+                    </pre>
+                    {reportDetailQuery.data.markdown ? (
+                      <div className="rounded-md border border-subtle bg-surface p-3 text-xs text-tertiary" data-testid="release-ops__report-markdown-preview">
+                        {reportDetailQuery.data.markdown.slice(0, 600)}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </section>
           </div>

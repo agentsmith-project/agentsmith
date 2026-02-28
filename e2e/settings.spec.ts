@@ -157,6 +157,8 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__page')).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('release-ops__dashboard')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__evidence-summary')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-item-0')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-detail')).toBeVisible();
   });
 
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {

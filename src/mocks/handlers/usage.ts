@@ -3,6 +3,7 @@ import p0 from '../fixtures/p0.json';
 import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
 import { buildRuntimeUsageRecords, listRuntimeUsageFacts } from '../state/runtime-usage';
 import type { UsageReportDelivery, UsageReportEvidence, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
+import type { ReleaseReportDetail, ReleaseReportListItem } from '@/lib/api/endpoints/release-ops';
 import { appendMockNotification } from '../state/me-notifications';
 
 type ResourceType = 'endpoint' | 'source_library' | 'agent';
@@ -70,6 +71,74 @@ const usageReportSchedules: UsageReportSchedule[] = [{
 }];
 
 const usageReportDeliveries: UsageReportDelivery[] = [];
+
+const releaseReports: ReleaseReportListItem[] = [
+  {
+    name: 'wp11-release-controls-final-20260228',
+    generated_at: '2026-02-28T20:35:10.000Z',
+    status: 'pass',
+    branch: 'main',
+    commit_short: '6e002bd',
+    runtime_release_readiness: 'ready',
+    usage_release_readiness: 'ready',
+    markdown_available: true,
+  },
+  {
+    name: 'usage-webhook-signature-policy-check',
+    generated_at: '2026-02-28T22:10:00.000Z',
+    status: 'pass',
+    branch: 'main',
+    commit_short: '5d1e26e',
+    runtime_release_readiness: 'ready',
+    usage_release_readiness: 'ready',
+    markdown_available: true,
+  },
+];
+
+const releaseReportDetails = new Map<string, ReleaseReportDetail>([
+  ['wp11-release-controls-final-20260228', {
+    name: 'wp11-release-controls-final-20260228',
+    report: {
+      metadata: {
+        timestamp: '2026-02-28T20:35:10.000Z',
+        git: { branch: 'main', commit_short: '6e002bd' },
+      },
+      summary: {
+        status: 'pass',
+        runtime_release_evidence: {
+          guardrails: { release_readiness: 'ready', blockers: [], warnings: [] },
+        },
+        usage_report_evidence: {
+          release_readiness: 'ready',
+          blockers: [],
+          warnings: [],
+        },
+      },
+    },
+    markdown: '# Release Report\n\nStatus: PASS\n',
+  }],
+  ['usage-webhook-signature-policy-check', {
+    name: 'usage-webhook-signature-policy-check',
+    report: {
+      metadata: {
+        timestamp: '2026-02-28T22:10:00.000Z',
+        git: { branch: 'main', commit_short: '5d1e26e' },
+      },
+      summary: {
+        status: 'pass',
+        runtime_release_evidence: {
+          guardrails: { release_readiness: 'ready', blockers: [], warnings: [] },
+        },
+        usage_report_evidence: {
+          release_readiness: 'ready',
+          blockers: [],
+          warnings: ['usage_report_webhook_signature_recommended'],
+        },
+      },
+    },
+    markdown: '# Usage Webhook Signature Policy Check\n\nStatus: PASS\n',
+  }],
+]);
 
 function listScheduleDeliveries(scheduleId: string) {
   return usageReportDeliveries
@@ -616,6 +685,16 @@ function buildUsageOperationsSummary(records: Array<Record<string, unknown>>) {
 }
 
 export const usageHandlers = [
+  http.get('/api/v1/internal/release-reports', () => {
+    return HttpResponse.json({ items: releaseReports });
+  }),
+  http.get('/api/v1/internal/release-reports/:name', ({ params }) => {
+    const detail = releaseReportDetails.get(String(params.name));
+    if (!detail) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_report_not_found' }, { status: 404 });
+    }
+    return HttpResponse.json(detail);
+  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage', ({ request }) => {
     const url = new URL(request.url);
     const resourceType = url.searchParams.get('resource_type');

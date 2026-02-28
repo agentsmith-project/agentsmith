@@ -41,6 +41,7 @@ import type { AgentRuntimeService } from './agent-runtime-service.js';
 import type { UsageReportRunnerController } from './usage-report-runner.js';
 
 export interface NodeApiDeps {
+  releaseReportsDir?: string;
   cache: CachePort;
   docStore: JsonDocStorePort;
   chatResourceService: ChatResourceService;

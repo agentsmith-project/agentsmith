@@ -20,6 +20,7 @@ import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './htt
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
 import { handleMeRoute } from './me-route-handler.js';
+import { getReleaseReportDetail, listReleaseReports } from './release-report-store.js';
 import {
   getNotebookRuntimeMetricsPrometheusText,
   getNotebookRuntimeMetricsSnapshot,
@@ -266,6 +267,34 @@ export async function handleRequest(
       const message = error instanceof Error ? error.message : 'usage_report_runner_failed';
       json(res, 409, { error_code: 'RUNNER_BUSY', message });
     }
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/v1/internal/release-reports' && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    json(res, 200, {
+      items: listReleaseReports(deps.releaseReportsDir ?? 'artifacts/release-reports'),
+    });
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith('/api/v1/internal/release-reports/') && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const reportName = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-reports/', ''));
+    const detail = getReleaseReportDetail(deps.releaseReportsDir ?? 'artifacts/release-reports', reportName);
+    if (!detail) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_report_not_found' });
+      return;
+    }
+    json(res, 200, detail);
     return;
   }
 

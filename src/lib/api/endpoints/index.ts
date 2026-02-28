@@ -18,6 +18,7 @@ export { FilesAPI } from './files';
 export { TaskAPI } from './tasks';
 export { AlertAPI } from './alerts';
 export { RuntimeAPI } from './runtime';
+export { ReleaseOpsAPI } from './release-ops';
 
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';

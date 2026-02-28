@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import {
   CancelAIReadyJobUseCase,
   BatchCancelSourceAIReadyUseCase,
@@ -95,6 +96,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   );
 
   return {
+    releaseReportsDir: join(process.cwd(), 'artifacts/release-reports'),
     cache,
     docStore,
     chatResourceService,
@@ -249,6 +251,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
 
   return {
     deps: {
+      releaseReportsDir: join(process.cwd(), 'artifacts/release-reports'),
       cache,
       docStore,
       chatResourceService,

@@ -239,6 +239,12 @@ export const queryKeys = {
       ['usage-quota-summary', workspaceId, projectId] as const,
   },
 
+  releaseOps: {
+    _def: ['release-ops'] as const,
+    list: () => ['release-ops', 'reports'] as const,
+    detail: (name: string) => ['release-ops', 'reports', name] as const,
+  },
+
   /** Chat sessions and messages */
   chat: {
     _def: ['chat'] as const,

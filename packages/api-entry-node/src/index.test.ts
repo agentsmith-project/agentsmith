@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
 import { createUsageReportSchedule, recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
@@ -4171,6 +4174,51 @@ describe('api-entry-node projects routes', () => {
     expect(metrics.task_traces_queries_total).toBeGreaterThan(0);
     expect(metrics.task_traces_queries_message_scoped_total).toBeGreaterThan(0);
     expect(metrics.trace_query_latency_by_scope?.message?.count ?? 0).toBeGreaterThan(0);
+  });
+
+  it('lists and reads internal release report artifacts', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const reportsDir = mkdtempSync(join(tmpdir(), 'agentsmith-release-reports-'));
+    deps.releaseReportsDir = reportsDir;
+    writeFileSync(join(reportsDir, 'sample-release.json'), JSON.stringify({
+      metadata: {
+        timestamp: '2026-02-28T20:35:10.000Z',
+        git: {
+          branch: 'main',
+          commit_short: 'abc1234',
+        },
+      },
+      summary: {
+        status: 'pass',
+        runtime_release_evidence: {
+          guardrails: {
+            release_readiness: 'ready',
+          },
+        },
+        usage_report_evidence: {
+          release_readiness: 'blocked',
+        },
+      },
+    }), 'utf-8');
+    writeFileSync(join(reportsDir, 'sample-release.md'), '# Sample Release\n\nPASS\n', 'utf-8');
+
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const listRes = await apiFetch(baseUrl, '/api/v1/internal/release-reports');
+    expect(listRes.status).toBe(200);
+    const listPayload = (await listRes.json()) as { items: Array<{ name: string; status: string; markdown_available: boolean }> };
+    expect(listPayload.items[0]).toEqual(expect.objectContaining({
+      name: 'sample-release',
+      status: 'pass',
+      markdown_available: true,
+    }));
+
+    const detailRes = await apiFetch(baseUrl, '/api/v1/internal/release-reports/sample-release');
+    expect(detailRes.status).toBe(200);
+    const detailPayload = (await detailRes.json()) as { name: string; markdown?: string; report?: { summary?: { status?: string } } };
+    expect(detailPayload.name).toBe('sample-release');
+    expect(detailPayload.markdown).toContain('# Sample Release');
+    expect(detailPayload.report?.summary?.status).toBe('pass');
   });
 
   it('truncates oversized notebook trace details payloads', async () => {

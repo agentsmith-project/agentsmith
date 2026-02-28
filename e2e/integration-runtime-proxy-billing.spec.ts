@@ -1,46 +1,92 @@
 import http, { type Server } from 'node:http';
+import crypto from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
-  await page.goto(`/${locale}/login`);
-  await page.getByTestId('login__keycloak-btn').click();
-
-  const keycloakError = page.getByTestId('login__keycloak-error');
-  if (await keycloakError.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    throw new Error(`Keycloak login bootstrap failed: ${await keycloakError.textContent()}`);
-  }
-
-  await page.waitForURL(/\/realms\/.+\/protocol\/openid-connect\/auth|\/login-actions\/authenticate/i, {
-    timeout: 30_000,
-  });
-  await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
-  await page.locator('input#password, input[name="password"]').first().fill(password);
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
-    page.locator('#kc-login, button[type="submit"]').first().click(),
-  ]);
-  await page.getByTestId('workspace-select__card--ws_default').click();
-  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 30_000 });
+function b64url(buffer: Buffer) {
+  return Buffer.from(buffer)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
-async function getToken(page: import('@playwright/test').Page): Promise<string> {
-  const token = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('agentsmith-auth');
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as { state?: { token?: string | null } };
-      return parsed.state?.token ?? null;
-    } catch {
-      return null;
+async function keycloakLogin(page: Page, baseUrl: string, locale: string, username: string, password: string) {
+  const keycloakBase = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
+  const realm = process.env.KEYCLOAK_REALM ?? 'mbos';
+  const clientId = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
+  const verifier = b64url(crypto.randomBytes(48));
+  const state = b64url(crypto.randomBytes(24));
+  const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+  const redirectUri = `${baseUrl.replace(/\/+$/, '')}/${locale}/login/callback`;
+  const authUrl = new URL(`${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/auth`);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('scope', 'openid profile email');
+  authUrl.searchParams.set('state', state);
+  authUrl.searchParams.set('code_challenge', challenge);
+  authUrl.searchParams.set('code_challenge_method', 'S256');
+
+  await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 60_000 });
+
+  const usernameInput = page.locator('input#username, input[name="username"], input[name="email"]').first();
+  const passwordInput = page.locator('input#password, input[name="password"]').first();
+  const submitButton = page.locator('#kc-login, button[type="submit"]').first();
+  const callbackUrlPattern = new RegExp(`/${locale}/login/callback\\?`);
+  const deadline = Date.now() + 30_000;
+  let authState: 'callback' | 'login_form' | null = null;
+  while (Date.now() < deadline) {
+    if (callbackUrlPattern.test(page.url())) {
+      authState = 'callback';
+      break;
     }
-  });
-  if (!token) {
-    throw new Error('missing_auth_token');
+    if (await usernameInput.isVisible().catch(() => false)) {
+      authState = 'login_form';
+      break;
+    }
+    await page.waitForTimeout(250);
   }
-  return token;
+
+  if (authState === 'login_form') {
+    await usernameInput.fill(username);
+    await passwordInput.fill(password);
+    await Promise.all([
+      page.waitForURL(callbackUrlPattern, { timeout: 120_000 }),
+      submitButton.click(),
+    ]);
+  } else if (authState !== 'callback') {
+    throw new Error(`auth_state_unresolved current_url=${page.url()}`);
+  }
+
+  const callbackUrl = new URL(page.url());
+  const code = callbackUrl.searchParams.get('code');
+  if (!code) {
+    throw new Error('auth_code_missing');
+  }
+
+  const tokenResponse = await fetch(`${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      code,
+      code_verifier: verifier,
+      redirect_uri: redirectUri,
+    }).toString(),
+  });
+  if (!tokenResponse.ok) {
+    throw new Error(`auth_code_exchange_failed_http_${tokenResponse.status}`);
+  }
+  const tokenPayload = (await tokenResponse.json()) as { access_token?: string };
+  const accessToken = tokenPayload.access_token?.trim();
+  if (!accessToken) {
+    throw new Error('auth_code_exchange_missing_access_token');
+  }
+  return accessToken;
 }
 
 type UpstreamMode = 'ok' | 'retryable_once_then_ok';
@@ -61,6 +107,15 @@ type RuntimeReleaseEvidence = {
     missing_usage_facts: number;
     missing_price_facts: number;
     coverage_ratio: number;
+  };
+  release_candidate?: {
+    route_type: 'alias' | 'combo';
+    route_key: string;
+    release_status: 'draft' | 'published' | 'archived';
+    rollout_mode?: 'full' | 'canary';
+    canary_percent?: number | null;
+    approvals_complete: boolean;
+    published_at?: string | null;
   };
   note?: string;
 };
@@ -132,8 +187,13 @@ test.describe('@lane-real integration runtime proxy billing', () => {
     const comboBackupUpstream = await startOpenAICompatibleUpstream('ok');
 
     try {
-      await keycloakLogin(page, locale, username, password);
-      const token = await getToken(page);
+      const token = await keycloakLogin(
+        page,
+        process.env.BASE_URL ?? 'http://localhost:3001',
+        locale,
+        username,
+        password,
+      );
       const headers = {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -277,6 +337,42 @@ test.describe('@lane-real integration runtime proxy billing', () => {
         },
       );
       expect(comboRes.status()).toBe(201);
+
+      const publishComboRes = await page.request.post(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/runtime/routing/combos/prod-chat/publish`,
+        {
+          headers,
+          data: {
+            approval_checklist: {
+              owner_verified: true,
+              observability_verified: true,
+              rollback_verified: true,
+            },
+            rollout_policy: {
+              mode: 'full',
+            },
+          },
+        },
+      );
+      expect(publishComboRes.ok()).toBeTruthy();
+
+      const publishedComboRes = await page.request.get(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/runtime/routing/combos/prod-chat`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      expect(publishedComboRes.ok()).toBeTruthy();
+      const publishedCombo = (await publishedComboRes.json()) as {
+        release?: {
+          status?: 'draft' | 'published' | 'archived';
+          rollout_policy?: { mode?: 'full' | 'canary'; canary_percent?: number };
+          approval_checklist?: {
+            owner_verified?: boolean;
+            observability_verified?: boolean;
+            rollback_verified?: boolean;
+          };
+          published_at?: string;
+        };
+      };
 
       const unifiedChat = async (model: string) => page.request.post(
         `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/llm/chat/completions`,
@@ -453,6 +549,17 @@ test.describe('@lane-real integration runtime proxy billing', () => {
           planned_attempts: Array.isArray(dryRunPayload.attempts) ? dryRunPayload.attempts.length : 0,
         },
         pricing_version_coverage: buildPricingCoverage(usageFactsPayload.items ?? []),
+        release_candidate: {
+          route_type: 'combo',
+          route_key: 'prod-chat',
+          release_status: publishedCombo.release?.status ?? 'draft',
+          rollout_mode: publishedCombo.release?.rollout_policy?.mode,
+          canary_percent: publishedCombo.release?.rollout_policy?.canary_percent ?? null,
+          approvals_complete: publishedCombo.release?.approval_checklist?.owner_verified === true
+            && publishedCombo.release?.approval_checklist?.observability_verified === true
+            && publishedCombo.release?.approval_checklist?.rollback_verified === true,
+          published_at: publishedCombo.release?.published_at ?? null,
+        },
         note: 'Collected from @lane-real integration runtime proxy billing workflow.',
       });
     } finally {

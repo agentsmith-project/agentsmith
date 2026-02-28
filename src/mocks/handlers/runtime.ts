@@ -439,6 +439,7 @@ export const runtimeHandlers = [
       alias: body.alias ?? 'prod-chat',
       target_provider: body.target_provider ?? 'openai',
       target_model: body.target_model ?? 'gpt-4o',
+      release: { status: 'draft' },
       created_at: nowIso(),
       updated_at: nowIso(),
       _scope: key,
@@ -465,6 +466,7 @@ export const runtimeHandlers = [
       ...aliases[idx],
       ...body,
       alias: aliases[idx].alias,
+      release: { status: 'draft' },
       updated_at: nowIso(),
     };
     const { _scope, ...responseItem } = aliases[idx];
@@ -477,6 +479,39 @@ export const runtimeHandlers = [
     if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
     aliases.splice(idx, 1);
     return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/aliases/:alias/publish', async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const key = projectKey(params);
+    const item = aliases.find((entry) => entry._scope === key && entry.alias === params.alias);
+    if (!item) return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'runtime_alias_not_found' }, { status: 404 });
+    const approval = (body.approval_checklist ?? {}) as Record<string, unknown>;
+    if (!(approval.owner_verified === true && approval.observability_verified === true && approval.rollback_verified === true)) {
+      return HttpResponse.json({ error_code: 'CONFLICT', message: 'runtime_route_approval_incomplete' }, { status: 409 });
+    }
+    const resolvedPricing = resolvePricingStack(key);
+    const scopedProviders = providers.filter((entry) => entry._scope === key);
+    const providerConnections = scopedProviders.filter((entry) => entry.provider === item.target_provider);
+    const connection = providerConnections.find((entry) => entry.status === 'active') ?? providerConnections[0];
+    const pricing = resolvedPricing.effectivePricing?.[String(item.target_provider)]?.[String(item.target_model)];
+    const blockers = [
+      ...(!connection || connection.status !== 'active' ? ['runtime_guardrail_primary_connection_unavailable'] : []),
+      ...(!pricing ? ['runtime_guardrail_primary_pricing_missing'] : []),
+    ];
+    const guardrails = { release_readiness: blockers.length > 0 ? 'blocked' as const : 'ready' as const, blockers, warnings: [] as string[] };
+    if (guardrails.release_readiness === 'blocked') {
+      return HttpResponse.json({ error_code: 'CONFLICT', message: 'runtime_route_publish_blocked', guardrails }, { status: 409 });
+    }
+    item.release = {
+      status: 'published',
+      approval_checklist: approval as never,
+      rollout_policy: (body.rollout_policy ?? { mode: 'full' }) as never,
+      published_at: nowIso(),
+    };
+    item.updated_at = nowIso();
+    const { _scope, ...responseItem } = item;
+    return HttpResponse.json({ item: responseItem, guardrails });
   }),
 
   http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/combos', ({ params }) => {
@@ -498,6 +533,7 @@ export const runtimeHandlers = [
       name: body.name ?? 'prod-chat',
       targets: body.targets ?? [],
       fallback_policy: body.fallback_policy ?? { max_hops: 2, retryable_error_classes: ['provider_retryable'] },
+      release: { status: 'draft' },
       created_at: nowIso(),
       updated_at: nowIso(),
       _scope: key,
@@ -524,6 +560,7 @@ export const runtimeHandlers = [
       ...combos[idx],
       ...body,
       name: combos[idx].name,
+      release: { status: 'draft' },
       updated_at: nowIso(),
     };
     const { _scope, ...responseItem } = combos[idx];
@@ -536,6 +573,42 @@ export const runtimeHandlers = [
     if (idx < 0) return HttpResponse.json({ error_code: 'NOT_FOUND' }, { status: 404 });
     combos.splice(idx, 1);
     return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/combos/:combo/publish', async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const key = projectKey(params);
+    const item = combos.find((entry) => entry._scope === key && entry.name === params.combo);
+    if (!item) return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'runtime_combo_not_found' }, { status: 404 });
+    const approval = (body.approval_checklist ?? {}) as Record<string, unknown>;
+    if (!(approval.owner_verified === true && approval.observability_verified === true && approval.rollback_verified === true)) {
+      return HttpResponse.json({ error_code: 'CONFLICT', message: 'runtime_route_approval_incomplete' }, { status: 409 });
+    }
+    const resolvedPricing = resolvePricingStack(key);
+    const scopedProviders = providers.filter((entry) => entry._scope === key);
+    const primary = Array.isArray(item.targets) ? item.targets[0] as Record<string, unknown> | undefined : undefined;
+    const primaryProvider = asString(primary?.provider);
+    const primaryModel = asString(primary?.model);
+    const providerConnections = scopedProviders.filter((entry) => entry.provider === primaryProvider);
+    const connection = providerConnections.find((entry) => entry.status === 'active') ?? providerConnections[0];
+    const pricing = primaryProvider && primaryModel ? resolvedPricing.effectivePricing?.[primaryProvider]?.[primaryModel] : undefined;
+    const blockers = [
+      ...(!connection || connection.status !== 'active' ? ['runtime_guardrail_primary_connection_unavailable'] : []),
+      ...(!pricing ? ['runtime_guardrail_primary_pricing_missing'] : []),
+    ];
+    const guardrails = { release_readiness: blockers.length > 0 ? 'blocked' as const : 'ready' as const, blockers, warnings: [] as string[] };
+    if (guardrails.release_readiness === 'blocked') {
+      return HttpResponse.json({ error_code: 'CONFLICT', message: 'runtime_route_publish_blocked', guardrails }, { status: 409 });
+    }
+    item.release = {
+      status: 'published',
+      approval_checklist: approval as never,
+      rollout_policy: (body.rollout_policy ?? { mode: 'full' }) as never,
+      published_at: nowIso(),
+    };
+    item.updated_at = nowIso();
+    const { _scope, ...responseItem } = item;
+    return HttpResponse.json({ item: responseItem, guardrails });
   }),
 
   http.get('/api/v1/workspaces/:ws/projects/:prj/runtime/pricing', ({ params }) => {

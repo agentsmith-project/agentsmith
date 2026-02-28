@@ -3,6 +3,8 @@ import type {
   RuntimeModelCatalogEntryRecord,
   RuntimeModelComboRecord,
   RuntimePricingRecord,
+  RuntimeRouteApprovalChecklist,
+  RuntimeRouteRolloutPolicy,
   RuntimePricingScopeType,
   RuntimePricingVersionRecord,
   RuntimeProviderConnectionRecord,
@@ -20,7 +22,8 @@ type ValidationErrorMessage =
   | 'runtime_combo_required_fields_missing'
   | 'runtime_pricing_payload_invalid'
   | 'runtime_pricing_version_payload_invalid'
-  | 'runtime_pricing_compare_payload_invalid';
+  | 'runtime_pricing_compare_payload_invalid'
+  | 'runtime_route_publish_payload_invalid';
 
 type ValidationResult<T> =
   | { ok: true; value: T }
@@ -323,6 +326,32 @@ export function parseRuntimePricingVersionComparePayload(
     value: {
       baseline_version_id: baselineVersionId,
       candidate_version_id: candidateVersionId,
+    },
+  };
+}
+
+export function parseRuntimeRoutePublishPayload(
+  raw: unknown,
+): ValidationResult<{ approval_checklist: RuntimeRouteApprovalChecklist; rollout_policy: RuntimeRouteRolloutPolicy }> {
+  const body = asObject(raw);
+  const approval = asObject(body?.approval_checklist);
+  const rollout = asObject(body?.rollout_policy);
+  const mode = asNonEmptyString(rollout?.mode) as RuntimeRouteRolloutPolicy['mode'] | undefined;
+  if (!approval || !rollout || (mode !== 'full' && mode !== 'canary')) {
+    return { ok: false, message: 'runtime_route_publish_payload_invalid' };
+  }
+  return {
+    ok: true,
+    value: {
+      approval_checklist: {
+        owner_verified: approval.owner_verified === true,
+        observability_verified: approval.observability_verified === true,
+        rollback_verified: approval.rollback_verified === true,
+      },
+      rollout_policy: {
+        mode,
+        canary_percent: typeof rollout.canary_percent === 'number' ? rollout.canary_percent : undefined,
+      },
     },
   };
 }

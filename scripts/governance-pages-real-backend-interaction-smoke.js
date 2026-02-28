@@ -1,16 +1,9 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 const fs = require('node:fs');
+const path = require('node:path');
 const crypto = require('node:crypto');
 const { chromium } = require('playwright');
-
-function b64url(buf) {
-  return Buffer.from(buf)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-}
 
 function requireFile(path) {
   if (!fs.existsSync(path)) throw new Error(`missing_file:${path}`);
@@ -22,39 +15,33 @@ function parseProjectIdFromHref(href) {
   return match?.[1] ?? null;
 }
 
-async function waitForPostLoginLanding(page, locale, timeoutMs = 120_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const currentUrl = page.url();
-    if (currentUrl.includes(`/${locale}/login/workspace`)) return;
-    if (currentUrl.includes(`/${locale}/workspaces/`)) return;
-    if (currentUrl.includes(`/${locale}/login/callback`)) {
-      const callbackError = await page.getByTestId('login-callback__error').isVisible().catch(() => false);
-      if (callbackError) {
-        const message = await page.getByTestId('login-callback__error').textContent().catch(() => '');
-        throw new Error(`login_callback_error:${(message || 'unknown').trim()}`);
-      }
-    }
-    await page.waitForTimeout(250);
-  }
-  throw new Error(`post_login_timeout current_url=${page.url()}`);
+function b64url(buf) {
+  return Buffer.from(buf)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
-async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, clientId, username, password }) {
+async function loginViaKeycloak(page, {
+  baseUrl,
+  locale,
+  workspaceId,
+  keycloakBase,
+  realm,
+  clientId,
+  username,
+  password,
+}) {
+  const base = baseUrl.replace(/\/+$/, '');
+  const loginUrl = `${base}/${locale}/login`;
+  const callbackPattern = new RegExp(`/${locale}/login/callback(?:\\?|$)`);
+  const workspacePattern = new RegExp(`/${locale}/login/workspace(?:\\?|$)`);
+  const projectsPattern = new RegExp(`/${locale}/workspaces/${workspaceId}/projects(?:\\?|$)`);
   const verifier = b64url(crypto.randomBytes(48));
   const state = b64url(crypto.randomBytes(24));
   const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
-  const redirectUri = `${baseUrl.replace(/\/+$/, '')}/${locale}/login/callback`;
-
-  await page.goto(`${baseUrl.replace(/\/+$/, '')}/${locale}/login`, {
-    waitUntil: 'domcontentloaded',
-    timeout: 60_000,
-  });
-  await page.evaluate((ctx) => {
-    localStorage.clear();
-    sessionStorage.setItem('mbos:keycloak:pkce', JSON.stringify(ctx));
-  }, { verifier, state, redirectUri, createdAt: Date.now() });
-
+  const redirectUri = `${base}/${locale}/login/callback`;
   const authUrl = new URL(`${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/auth`);
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('client_id', clientId);
@@ -63,40 +50,58 @@ async function loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, c
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', challenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
+
+  await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.evaluate((pkceContext) => {
+    sessionStorage.setItem('mbos:keycloak:pkce', JSON.stringify(pkceContext));
+  }, { verifier, state, redirectUri, createdAt: Date.now() });
   await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
-  const usernameLocator = page.locator('input#username, input[name="username"], input[name="email"]').first();
-  const passwordLocator = page.locator('input#password, input[name="password"]').first();
-  const loginButtonLocator = page.locator('#kc-login, button[type="submit"]').first();
+  const usernameField = page.locator('input#username, input[name="username"], input[name="email"]').first();
+  const passwordField = page.locator('input#password, input[name="password"]').first();
+  const submitButton = page.locator('#kc-login, button[type="submit"]').first();
+  await usernameField.waitFor({ state: 'visible', timeout: 30_000 });
+  await usernameField.fill(username);
+  await passwordField.fill(password);
+  await Promise.all([
+    page.waitForURL((url) => callbackPattern.test(url.href) || workspacePattern.test(url.href), { timeout: 120_000 }),
+    submitButton.click(),
+  ]);
 
-  const deadline = Date.now() + 30_000;
-  let mode = 'unknown';
-  while (Date.now() < deadline) {
-    if (page.url().includes(`/${locale}/`)) {
-      mode = 'app_redirect';
-      break;
-    }
-    if (await usernameLocator.isVisible().catch(() => false)) {
-      mode = 'login_form';
-      break;
-    }
-    await page.waitForTimeout(500);
+  if (callbackPattern.test(page.url())) {
+    await page.waitForURL(workspacePattern, { timeout: 120_000 });
   }
 
-  if (mode === 'login_form') {
-    await usernameLocator.fill(username);
-    await passwordLocator.fill(password);
-    await loginButtonLocator.click();
-    await waitForPostLoginLanding(page, locale, 120_000);
-  } else if (mode === 'app_redirect') {
-    await waitForPostLoginLanding(page, locale, 120_000);
-  } else {
-    throw new Error(`auth_state_unresolved current_url=${page.url()}`);
+  const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
+  await page.waitForLoadState('domcontentloaded');
+  await Promise.race([
+    workspaceCard.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+    page.getByTestId('workspace-select__session-expired').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+    page.getByTestId('workspace-select__error').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+    page.getByTestId('workspace-select__empty').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+  ]);
+  if (await workspaceCard.isVisible().catch(() => false)) {
+    await workspaceCard.click();
+    await page.waitForURL(projectsPattern, { timeout: 30_000 });
+  } else if (!projectsPattern.test(page.url())) {
+    throw new Error(`workspace_select_unresolved:${page.url()}`);
   }
 }
 
-async function gotoProjectPage(page, baseUrl, path) {
-  await page.goto(`${baseUrl.replace(/\/+$/, '')}${path}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+async function gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path, locale, workspaceId }) {
+  const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    const onWorkspaceSelect = page.url().includes(`/${locale}/login/workspace`);
+    const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
+    if (!onWorkspaceSelect && !await workspaceCard.isVisible().catch(() => false)) {
+      return;
+    }
+    if (await workspaceCard.isVisible().catch(() => false)) {
+      await workspaceCard.click();
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/${workspaceId}/projects`), { timeout: 30_000 });
+    }
+  }
   const staleProject = await page.getByTestId('project-shell__stale-project').isVisible().catch(() => false);
   if (staleProject) {
     throw new Error(`stale_project:${path}`);
@@ -104,30 +109,6 @@ async function gotoProjectPage(page, baseUrl, path) {
 }
 
 async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, fallbackProjectId }) {
-  try {
-    const firstProjectId = await page.evaluate(async ({ baseUrl, workspaceId }) => {
-      let token = '';
-      try {
-        const raw = localStorage.getItem('agentsmith-auth');
-        const parsed = raw ? JSON.parse(raw) : null;
-        token = parsed?.state?.token ? String(parsed.state.token) : '';
-      } catch {}
-      const resp = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/v1/workspaces/${workspaceId}/projects`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!resp.ok) return null;
-      const body = await resp.json().catch(() => null);
-      if (!body || !Array.isArray(body.items)) return null;
-      return typeof body.items[0]?.id === 'string' && body.items[0].id.length > 0
-        ? body.items[0].id
-        : null;
-    }, { baseUrl, workspaceId });
-    if (typeof firstProjectId === 'string' && firstProjectId.length > 0) return firstProjectId;
-  } catch {
-    // fallback below
-  }
   const projectsPath = `/${locale}/workspaces/${workspaceId}/projects`;
   await page.goto(`${baseUrl.replace(/\/+$/, '')}${projectsPath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   const foundFromLink = await page.evaluate(() => {
@@ -156,9 +137,12 @@ async function isVisible(locator, timeout = 0) {
   }
 }
 
-async function waitForAny(page, testIds, timeoutMs) {
+async function waitForAny(page, testIds, timeoutMs, recover) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (typeof recover === 'function') {
+      await recover();
+    }
     for (const testId of testIds) {
       if (await isVisible(page.getByTestId(testId))) return testId;
     }
@@ -188,7 +172,7 @@ async function main() {
   try {
     console.log('[gov-interact] login via keycloak...');
     console.log(`[gov-interact] mode=${smokeMode}`);
-    await loginWithKeycloak({ page, baseUrl, locale, keycloakBase, realm, clientId, username, password });
+    await loginViaKeycloak(page, { baseUrl, locale, workspaceId, keycloakBase, realm, clientId, username, password });
     const projectId = await resolveAccessibleProjectId({
       page,
       baseUrl,
@@ -201,13 +185,17 @@ async function main() {
     // Members: basic filter interactions and invite dialog UX (safe interaction).
     const membersPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/members`;
     console.log(`[gov-interact] members ${membersPath}`);
-    await gotoProjectPage(page, baseUrl, membersPath);
+    await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: membersPath, locale, workspaceId });
     const membersReady = await waitForAny(page, [
       'members__search-input',
       'members__table',
       'members__groups-section',
       ...(strictMode ? [] : ['page-state__error']),
-    ], 30_000);
+    ], 30_000, async () => {
+      if (page.url().includes(`/${locale}/login/workspace`)) {
+        await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: membersPath, locale, workspaceId });
+      }
+    });
     if (membersReady === 'page-state__error') {
       console.log('[gov-interact] members page in product error state; continue');
     } else if (membersReady === 'members__search-input') {
@@ -230,7 +218,7 @@ async function main() {
     // Resource policy: open rows and check key governance inputs are present.
     const rpPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`;
     console.log(`[gov-interact] resource-policy ${rpPath}`);
-    await gotoProjectPage(page, baseUrl, rpPath);
+    await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: rpPath, locale, workspaceId });
     const rpError = await isVisible(page.getByTestId('page-state__error'), 3_000);
     if (rpError) {
       if (strictMode) {
@@ -275,7 +263,7 @@ async function main() {
     // Audit: filters and table visible.
     const auditPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit`;
     console.log(`[gov-interact] audit ${auditPath}`);
-    await gotoProjectPage(page, baseUrl, auditPath);
+    await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: auditPath, locale, workspaceId });
     if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
       if (strictMode) {
         throw new Error('audit_error_state');
@@ -283,13 +271,17 @@ async function main() {
       console.log('[gov-interact] audit page in product error state; skip audit interactions');
     } else {
       await page.getByTestId('audit__filters').waitFor({ state: 'visible', timeout: 10_000 });
-      await waitForAny(page, ['audit__table', 'audit-usage__empty-state'], 30_000);
+      await waitForAny(page, ['audit__table', 'audit-usage__empty-state'], 30_000, async () => {
+        if (page.url().includes(`/${locale}/login/workspace`)) {
+          await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: auditPath, locale, workspaceId });
+        }
+      });
     }
 
     // Usage: filters and table visible.
     const usagePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage`;
     console.log(`[gov-interact] usage ${usagePath}`);
-    await gotoProjectPage(page, baseUrl, usagePath);
+    await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: usagePath, locale, workspaceId });
     if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
       if (strictMode) {
         throw new Error('usage_error_state');
@@ -297,7 +289,11 @@ async function main() {
       console.log('[gov-interact] usage page in product error state; skip usage interactions');
     } else {
       await page.getByTestId('usage__filters').waitFor({ state: 'visible', timeout: 10_000 });
-      await waitForAny(page, ['usage__table', 'audit-usage__empty-state'], 30_000);
+      await waitForAny(page, ['usage__table', 'audit-usage__empty-state'], 30_000, async () => {
+        if (page.url().includes(`/${locale}/login/workspace`)) {
+          await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: usagePath, locale, workspaceId });
+        }
+      });
     }
 
     console.log('[gov-interact] OK');

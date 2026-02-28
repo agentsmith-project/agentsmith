@@ -1676,6 +1676,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish runtime alias after release checks */
+        post: operations["publishRuntimeRoutingAlias"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos": {
         parameters: {
             query?: never;
@@ -1715,6 +1736,27 @@ export interface paths {
         post?: never;
         /** Delete model combo */
         delete: operations["deleteRuntimeRoutingCombo"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                combo: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish runtime combo after release checks */
+        post: operations["publishRuntimeRoutingCombo"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3000,6 +3042,7 @@ export interface components {
         };
         RuntimeModelAlias: {
             alias: string;
+            release?: components["schemas"]["RuntimeRouteRelease"];
             target_model: string;
             target_provider: string;
         };
@@ -3038,6 +3081,7 @@ export interface components {
         RuntimeModelCombo: {
             fallback_policy: components["schemas"]["RuntimeModelComboFallbackPolicy"];
             name: string;
+            release?: components["schemas"]["RuntimeRouteRelease"];
             targets: components["schemas"]["RuntimeModelComboTarget"][];
         };
         RuntimeModelComboCreate: components["schemas"]["RuntimeModelCombo"];
@@ -3235,6 +3279,38 @@ export interface components {
             /** @enum {string} */
             release_readiness: "ready" | "blocked";
             warnings: string[];
+        };
+        RuntimeRouteApprovalChecklist: {
+            observability_verified: boolean;
+            owner_verified: boolean;
+            rollback_verified: boolean;
+        };
+        RuntimeRoutePublishAliasResponse: {
+            guardrails: components["schemas"]["RuntimeReleaseGuardrails"];
+            item: components["schemas"]["RuntimeModelAlias"];
+        };
+        RuntimeRoutePublishComboResponse: {
+            guardrails: components["schemas"]["RuntimeReleaseGuardrails"];
+            item: components["schemas"]["RuntimeModelCombo"];
+        };
+        RuntimeRoutePublishRequest: {
+            approval_checklist: components["schemas"]["RuntimeRouteApprovalChecklist"];
+            rollout_policy: components["schemas"]["RuntimeRouteRolloutPolicy"];
+        };
+        RuntimeRouteRelease: {
+            approval_checklist?: components["schemas"]["RuntimeRouteApprovalChecklist"];
+            /** Format: date-time */
+            archived_at?: string;
+            /** Format: date-time */
+            published_at?: string;
+            rollout_policy?: components["schemas"]["RuntimeRouteRolloutPolicy"];
+            /** @enum {string} */
+            status: "draft" | "published" | "archived";
+        };
+        RuntimeRouteRolloutPolicy: {
+            canary_percent?: number;
+            /** @enum {string} */
+            mode: "full" | "canary";
         };
         RuntimeRoutingDryRunAttempt: {
             connection_base_url?: string;
@@ -7384,6 +7460,46 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    publishRuntimeRoutingAlias: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeRoutePublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Alias published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeRoutePublishAliasResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Publish blocked by approvals or guardrails */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     listRuntimeRoutingCombos: {
         parameters: {
             query?: never;
@@ -7539,6 +7655,46 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    publishRuntimeRoutingCombo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                combo: string;
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeRoutePublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Combo published */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeRoutePublishComboResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Publish blocked by approvals or guardrails */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     dryRunRuntimeRouting: {

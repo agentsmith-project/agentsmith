@@ -42,6 +42,7 @@ export type RuntimeModelAliasRecord = {
   alias: string;
   target_provider: string;
   target_model: string;
+  release?: RuntimeRouteReleaseRecord;
   created_at: string;
   updated_at: string;
 };
@@ -56,6 +57,7 @@ export type RuntimeModelComboRecord = {
     max_hops: number;
     retryable_error_classes: string[];
   };
+  release?: RuntimeRouteReleaseRecord;
   created_at: string;
   updated_at: string;
 };
@@ -70,6 +72,27 @@ export type RuntimePricingRecord = {
 
 export type RuntimePricingScopeType = 'global' | 'workspace' | 'project';
 export type RuntimePricingVersionStatus = 'draft' | 'active' | 'archived';
+export type RuntimeRouteReleaseStatus = 'draft' | 'published' | 'archived';
+export type RuntimeRouteRolloutMode = 'full' | 'canary';
+
+export type RuntimeRouteApprovalChecklist = {
+  owner_verified: boolean;
+  observability_verified: boolean;
+  rollback_verified: boolean;
+};
+
+export type RuntimeRouteRolloutPolicy = {
+  mode: RuntimeRouteRolloutMode;
+  canary_percent?: number;
+};
+
+export type RuntimeRouteReleaseRecord = {
+  status: RuntimeRouteReleaseStatus;
+  approval_checklist?: RuntimeRouteApprovalChecklist;
+  rollout_policy?: RuntimeRouteRolloutPolicy;
+  published_at?: string;
+  archived_at?: string;
+};
 
 export type RuntimePricingVersionRecord = {
   id: string;

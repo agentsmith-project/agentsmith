@@ -1,10 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -29,6 +30,8 @@ import {
   useActivateRuntimePricingVersion,
   useCompareRuntimePricingVersions,
   usePatchRuntimePricing,
+  usePublishRuntimeAlias,
+  usePublishRuntimeCombo,
   useRuntimeImpactPreview,
   useRuntimeAliases,
   useRuntimeCombos,
@@ -46,6 +49,10 @@ type RuntimeControlPlanePanelProps = {
   projectId: string;
   disabled?: boolean;
 };
+
+type RuntimeReleaseTarget =
+  | { kind: 'alias'; key: string }
+  | { kind: 'combo'; key: string };
 
 const DEFAULT_COMBO_JSON = JSON.stringify(
   {
@@ -199,6 +206,11 @@ function mapGuardrail(t: ReturnType<typeof useTranslations>, guardrail: string):
   return keyMap[guardrail] ? t(keyMap[guardrail]) : guardrail.replaceAll('_', ' ');
 }
 
+function routeTargetLabel(target: RuntimeReleaseTarget | null): string {
+  if (!target) return '--';
+  return target.kind === 'alias' ? target.key : `combo:${target.key}`;
+}
+
 function GuardrailSummary({
   t,
   guardrails,
@@ -273,6 +285,12 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const [compareBaselineVersionId, setCompareBaselineVersionId] = useState('');
   const [compareCandidateVersionId, setCompareCandidateVersionId] = useState('');
   const [pricingCompareResult, setPricingCompareResult] = useState<RuntimePricingCompareResponse | null>(null);
+  const [releaseTarget, setReleaseTarget] = useState<RuntimeReleaseTarget | null>(null);
+  const [ownerVerified, setOwnerVerified] = useState(false);
+  const [observabilityVerified, setObservabilityVerified] = useState(false);
+  const [rollbackVerified, setRollbackVerified] = useState(false);
+  const [rolloutMode, setRolloutMode] = useState<'full' | 'canary'>('full');
+  const [canaryPercent, setCanaryPercent] = useState('10');
   const [dryRunModel, setDryRunModel] = useState('combo:prod-chat');
   const [dryRunResult, setDryRunResult] = useState<RuntimeRoutingDryRunResponse | null>(null);
   const [impactPreviewResult, setImpactPreviewResult] = useState<RuntimeImpactPreviewResponse | null>(null);
@@ -301,6 +319,8 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const createPricingVersion = useCreateRuntimePricingVersion(workspaceId, projectId);
   const activatePricingVersion = useActivateRuntimePricingVersion(workspaceId, projectId);
   const comparePricingVersions = useCompareRuntimePricingVersions(workspaceId, projectId);
+  const publishAlias = usePublishRuntimeAlias(workspaceId, projectId);
+  const publishCombo = usePublishRuntimeCombo(workspaceId, projectId);
   const previewImpact = useRuntimeImpactPreview(workspaceId, projectId);
   const compareImpact = useRuntimeImpactPreview(workspaceId, projectId);
   const dryRunRouting = useRuntimeRoutingDryRun(workspaceId, projectId);
@@ -311,6 +331,20 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
     return JSON.stringify(pricingQuery.data, null, 2);
   }, [pricingQuery.data]);
   const pricingVersions = pricingVersionsQuery.data?.items ?? [];
+  const releaseTargets = useMemo<Array<RuntimeReleaseTarget>>(
+    () => [
+      ...(aliasesQuery.data?.items ?? []).map((item) => ({ kind: 'alias' as const, key: item.alias })),
+      ...(combosQuery.data?.items ?? []).map((item) => ({ kind: 'combo' as const, key: item.name })),
+    ],
+    [aliasesQuery.data?.items, combosQuery.data?.items],
+  );
+  const selectedAlias = releaseTarget?.kind === 'alias'
+    ? (aliasesQuery.data?.items ?? []).find((item) => item.alias === releaseTarget.key)
+    : undefined;
+  const selectedCombo = releaseTarget?.kind === 'combo'
+    ? (combosQuery.data?.items ?? []).find((item) => item.name === releaseTarget.key)
+    : undefined;
+  const selectedRelease = selectedAlias?.release ?? selectedCombo?.release;
 
   const runtimeMetadata = getRuntimeMetadata(probeResult);
   const responsePreview = getResponsePreview(probeResult);
@@ -321,6 +355,12 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const compareTotalDelta = compareResult
     ? (compareResult.candidate.projected_cost.primary_total_cost ?? 0) - (compareResult.baseline.projected_cost.primary_total_cost ?? 0)
     : null;
+
+  useEffect(() => {
+    if (!releaseTarget && releaseTargets.length > 0) {
+      setReleaseTarget(releaseTargets[0] ?? null);
+    }
+  }, [releaseTarget, releaseTargets]);
 
   const handleCreateProvider = async () => {
     try {
@@ -477,6 +517,32 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
       setPricingCompareResult(result);
     } catch {
       toast.error(t('runtime_pricing_compare_failed'));
+    }
+  };
+
+  const handlePublishRoute = async () => {
+    if (!releaseTarget) return;
+    const payload = {
+      approval_checklist: {
+        owner_verified: ownerVerified,
+        observability_verified: observabilityVerified,
+        rollback_verified: rollbackVerified,
+      },
+      rollout_policy: {
+        mode: rolloutMode,
+        ...(rolloutMode === 'canary' ? { canary_percent: Number(canaryPercent) || 10 } : {}),
+      },
+    } as const;
+
+    try {
+      if (releaseTarget.kind === 'alias') {
+        await publishAlias.mutateAsync({ alias: releaseTarget.key, payload });
+      } else {
+        await publishCombo.mutateAsync({ combo: releaseTarget.key, payload });
+      }
+      toast.success(t('runtime_release_publish_success'));
+    } catch {
+      toast.error(t('runtime_release_publish_failed'));
     }
   };
 
@@ -700,6 +766,109 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
             ) : (
               <div className="mt-3 text-sm text-tertiary">{t('runtime_pricing_compare_empty')}</div>
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__release-controls">
+        <CardHeader className="pb-4">
+          <CardTitle>{t('runtime_release_controls_title')}</CardTitle>
+          <p className="text-sm text-tertiary">{t('runtime_release_controls_description')}</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="space-y-3 rounded-xl border border-border/60 bg-surface-high/50 p-4">
+              <div className="space-y-1">
+                <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_release_target')}</div>
+                <Select
+                  value={releaseTarget ? `${releaseTarget.kind}:${releaseTarget.key}` : ''}
+                  onValueChange={(value) => {
+                    const [kind, key] = value.split(':', 2);
+                    if ((kind === 'alias' || kind === 'combo') && key) {
+                      setReleaseTarget({ kind, key });
+                    }
+                  }}
+                >
+                  <SelectTrigger data-testid="settings-runtime__release-target">
+                    <SelectValue placeholder={t('runtime_release_target_placeholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {releaseTargets.map((target) => (
+                      <SelectItem key={`${target.kind}:${target.key}`} value={`${target.kind}:${target.key}`}>
+                        {routeTargetLabel(target)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <Checkbox checked={ownerVerified} onCheckedChange={(value) => setOwnerVerified(value === true)} />
+                  <span>{t('runtime_release_check_owner')}</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <Checkbox checked={observabilityVerified} onCheckedChange={(value) => setObservabilityVerified(value === true)} />
+                  <span>{t('runtime_release_check_observability')}</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <Checkbox checked={rollbackVerified} onCheckedChange={(value) => setRollbackVerified(value === true)} />
+                  <span>{t('runtime_release_check_rollback')}</span>
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-[220px_160px]">
+                <div className="space-y-1">
+                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_release_rollout_mode')}</div>
+                  <Select value={rolloutMode} onValueChange={(value) => setRolloutMode(value as 'full' | 'canary')}>
+                    <SelectTrigger data-testid="settings-runtime__release-rollout-mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="full">{t('runtime_release_rollout_full')}</SelectItem>
+                      <SelectItem value="canary">{t('runtime_release_rollout_canary')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {rolloutMode === 'canary' ? (
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_release_canary_percent')}</div>
+                    <Input value={canaryPercent} onChange={(e) => setCanaryPercent(e.target.value)} data-testid="settings-runtime__release-canary-percent" />
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  onClick={handlePublishRoute}
+                  disabled={disabled || (!releaseTarget) || publishAlias.isPending || publishCombo.isPending}
+                  data-testid="settings-runtime__release-publish"
+                >
+                  {t('runtime_release_publish')}
+                </Button>
+                <div className="text-xs text-tertiary">{t('runtime_release_target_label', { target: routeTargetLabel(releaseTarget) })}</div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/60 bg-surface-high/50 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_release_current_status')}</div>
+              <div className="mt-3 flex items-center gap-2">
+                <Badge variant={selectedRelease?.status === 'published' ? 'default' : 'secondary'}>
+                  {selectedRelease?.status ?? 'draft'}
+                </Badge>
+                {selectedRelease?.rollout_policy?.mode ? (
+                  <Badge variant="outline">
+                    {selectedRelease.rollout_policy.mode === 'canary'
+                      ? `${t('runtime_release_rollout_canary')} ${selectedRelease.rollout_policy.canary_percent ?? 10}%`
+                      : t('runtime_release_rollout_full')}
+                  </Badge>
+                ) : null}
+              </div>
+              <div className="mt-3 space-y-2 text-sm text-tertiary">
+                <div>{t('runtime_release_published_at')}: {selectedRelease?.published_at ?? '--'}</div>
+                <div>{t('runtime_release_checklist_complete')}: {selectedRelease?.approval_checklist && selectedRelease.approval_checklist.owner_verified && selectedRelease.approval_checklist.observability_verified && selectedRelease.approval_checklist.rollback_verified ? t('runtime_release_yes') : t('runtime_release_no')}</div>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>

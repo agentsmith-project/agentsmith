@@ -183,6 +183,14 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases/assistant-main/publish'),
+    ).toEqual({
+      kind: 'runtimeRoutingAliasPublish',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      alias: 'assistant-main',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases/assistant-main'),
     ).toEqual({
       kind: 'runtimeRoutingAliasItem',
@@ -196,6 +204,14 @@ describe('matchProjectsRoute', () => {
       kind: 'runtimeRoutingCombos',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/combos/prod-chat/publish'),
+    ).toEqual({
+      kind: 'runtimeRoutingComboPublish',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      combo: 'prod-chat',
     });
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/combos/prod-chat'),

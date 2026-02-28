@@ -211,6 +211,8 @@ export interface RuntimeReleaseEvidence {
   guardrails: RuntimeReleaseGuardrailEvidence;
   /** Request-level pricing version coverage across sampled usage facts */
   pricing_version_coverage: RuntimePricingVersionCoverage;
+  /** Published release candidate details captured from runtime control plane */
+  release_candidate?: RuntimePublishedRouteCandidate;
   /** Optional note for reviewers when evidence is partial */
   note?: string;
 }
@@ -239,6 +241,23 @@ export interface RuntimePricingVersionCoverage {
   missing_price_facts: number;
   /** Coverage ratio in [0,1] */
   coverage_ratio: number;
+}
+
+export interface RuntimePublishedRouteCandidate {
+  /** alias or combo */
+  route_type: 'alias' | 'combo';
+  /** candidate key */
+  route_key: string;
+  /** current release state */
+  release_status: 'draft' | 'published' | 'archived';
+  /** rollout mode */
+  rollout_mode?: 'full' | 'canary';
+  /** canary percent when applicable */
+  canary_percent?: number | null;
+  /** all release checklist approvals completed */
+  approvals_complete: boolean;
+  /** publish timestamp */
+  published_at?: string | null;
 }
 
 /**

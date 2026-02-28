@@ -26,7 +26,7 @@ async function main() {
   const password = process.env.PASSWORD || 'dev-admin-123';
   const outFile = process.env.TOKEN_OUT_FILE || '/tmp/agentsmith_user_token.txt';
 
-  async function fetchTokenByPasswordGrant() {
+  async function fetchSessionByPasswordGrant() {
     const tokenUrl = `${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
     const body = new URLSearchParams();
     body.set('grant_type', 'password');
@@ -47,10 +47,14 @@ async function main() {
     if (!accessToken) {
       throw new Error('password_grant_missing_access_token');
     }
-    return accessToken;
+    return {
+      accessToken,
+      refreshToken: typeof data?.refresh_token === 'string' ? data.refresh_token : null,
+      expiresIn: typeof data?.expires_in === 'number' ? data.expires_in : null,
+    };
   }
 
-  async function fetchTokenByAuthCodeExchange(code, codeVerifier, redirect) {
+  async function fetchSessionByAuthCodeExchange(code, codeVerifier, redirect) {
     const tokenUrl = `${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
     const body = new URLSearchParams();
     body.set('grant_type', 'authorization_code');
@@ -72,15 +76,27 @@ async function main() {
     if (!accessToken) {
       throw new Error('auth_code_exchange_missing_access_token');
     }
-    return accessToken;
+    return {
+      accessToken,
+      refreshToken: typeof data?.refresh_token === 'string' ? data.refresh_token : null,
+      expiresIn: typeof data?.expires_in === 'number' ? data.expires_in : null,
+    };
   }
 
   const shouldUsePasswordGrantOnly = process.env.REFRESH_TOKEN_FORCE_PASSWORD_GRANT === '1';
   if (shouldUsePasswordGrantOnly) {
-    const token = await fetchTokenByPasswordGrant();
-    fs.writeFileSync(outFile, token, 'utf8');
+    const session = await fetchSessionByPasswordGrant();
+    fs.writeFileSync(outFile, session.accessToken, 'utf8');
+    if (process.env.PRINT_SESSION_JSON === '1') {
+      process.stdout.write(`${JSON.stringify({
+        access_token: session.accessToken,
+        refresh_token: session.refreshToken,
+        expires_in: session.expiresIn,
+      })}\n`);
+      return;
+    }
     if (process.env.PRINT_TOKEN === '1') {
-      process.stdout.write(`${token}\n`);
+      process.stdout.write(`${session.accessToken}\n`);
     } else {
       process.stdout.write(`[refresh-token] token written to ${outFile}\n`);
     }
@@ -118,160 +134,72 @@ async function main() {
 
     async function fetchTokenByAuthCodeFlow() {
       await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      dbg('opened auth url', page.url());
+
       const usernameField = page.locator('input#username, input[name="username"], input[name="email"]').first();
       const passwordField = page.locator('input#password, input[name="password"]').first();
       const submitButton = page.locator('#kc-login, button[type="submit"]').first();
-      if (!(await usernameField.isVisible().catch(() => false))) {
-        throw new Error('auth_code_flow_login_form_not_visible');
+      const callbackPattern = new RegExp(`/${locale}/login/callback\\?`);
+      const deadline = Date.now() + 30_000;
+      let authState = 'unknown';
+
+      while (Date.now() < deadline) {
+        if (callbackPattern.test(page.url())) {
+          authState = 'callback';
+          break;
+        }
+        if (await usernameField.isVisible().catch(() => false)) {
+          authState = 'login_form';
+          break;
+        }
+        await page.waitForTimeout(250);
       }
-      await usernameField.fill(username);
-      await passwordField.fill(password);
-      await Promise.all([
-        page.waitForURL(new RegExp(`/${locale}/login/callback\\?`), { timeout: 120_000 }),
-        submitButton.click(),
-      ]);
+
+      if (authState === 'login_form') {
+        await usernameField.fill(username);
+        await passwordField.fill(password);
+        await Promise.all([
+          page.waitForURL(callbackPattern, { timeout: 120_000 }),
+          submitButton.click(),
+        ]);
+      } else if (authState !== 'callback') {
+        throw new Error(`auth_code_flow_unresolved current_url=${page.url()}`);
+      }
+
       const callback = new URL(page.url());
       const code = callback.searchParams.get('code');
       if (!code) {
         throw new Error('auth_code_flow_missing_code');
       }
-      return fetchTokenByAuthCodeExchange(code, verifier, redirectUri);
+      return fetchSessionByAuthCodeExchange(code, verifier, redirectUri);
     }
 
-    await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    dbg('opened auth url', page.url());
-    const usernameLocator = page.locator('input#username, input[name="username"], input[name="email"]').first();
-    const passwordLocator = page.locator('input#password, input[name="password"]').first();
-    const loginButtonLocator = page.locator('#kc-login, button[type="submit"]').first();
-
-    let authPageState = 'unknown';
-    const authWaitDeadline = Date.now() + 30_000;
-    while (Date.now() < authWaitDeadline) {
-      if (page.url().includes(`/${locale}/`)) {
-        authPageState = 'app_redirect';
-        break;
-      }
-      if (await usernameLocator.isVisible().catch(() => false)) {
-        authPageState = 'login_form';
-        break;
-      }
-      await page.waitForTimeout(500);
-    }
-
-    if (authPageState === 'login_form') {
-      dbg('manual login required');
-      await usernameLocator.fill(username);
-      await passwordLocator.fill(password);
-      await Promise.all([
-        page.waitForURL(new RegExp(`/${locale}/(login/workspace|login/callback)`), { timeout: 120_000 }),
-        loginButtonLocator.click(),
-      ]);
-      dbg('post-login redirect landed', page.url());
-      if (new RegExp(`/${locale}/login/callback`).test(page.url())) {
-        await page.goto(`${baseUrl.replace(/\/+$/, '')}/${locale}/login/workspace`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 60_000,
-        });
-      }
-    } else if (authPageState === 'app_redirect') {
-      dbg('login form not visible, waiting for app route redirect', page.url());
-      await page.waitForURL(
-        (url) => {
-          try {
-            return url.pathname.startsWith(`/${locale}/`);
-          } catch {
-            return false;
-          }
-        },
-        { timeout: 120_000 },
-      );
-      dbg('redirected to app route', page.url());
-    } else {
-      if (debug) {
-        let html = '';
-        try {
-          html = (await page.content()).slice(0, 2000);
-        } catch {}
-        dbg('auth unresolved diagnostics', {
-          url: page.url(),
-          title: await page.title().catch(() => ''),
-          html,
-        });
-      }
-      throw new Error(`auth_state_unresolved current_url=${page.url()}`);
-    }
-
-    if (!new RegExp(`/${locale.replace('-', '\\-')}/workspaces/ws_default(?:/.*)?$`).test(page.url())) {
-      dbg('not in ws_default route, selecting workspace card', page.url());
-      const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
-      const cardVisible = await workspaceCard.isVisible().catch(() => false);
-      if (cardVisible) {
-        await workspaceCard.click();
-        await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 });
-      } else {
-        await page.goto(`${baseUrl.replace(/\/+$/, '')}/${locale}/workspaces/ws_default/projects`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 60_000,
-        });
-        await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 });
-      }
-      dbg('workspace selected', page.url());
-    } else {
-      dbg('already in ws_default route', page.url());
-    }
-
-    const readTokenFromPage = async () => page.evaluate(() => {
-      const storeToken = window.__MBOS_AUTH_STORE__?.getState?.()?.token;
-      if (typeof storeToken === 'string' && storeToken.length > 0) {
-        return storeToken;
-      }
-      const raw = localStorage.getItem('agentsmith-auth');
-      if (!raw) return null;
+    let session = null;
+    try {
+      session = await fetchTokenByAuthCodeFlow();
+      dbg('auth code exchange succeeded');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      dbg('auth code exchange failed, trying password grant', message);
       try {
-        return JSON.parse(raw)?.state?.token ?? null;
-      } catch {
-        return null;
-      }
-    });
-
-    let token = await readTokenFromPage();
-    if (!token) {
-      // Real backend mode does not persist auth to localStorage; wait for store hydration/callback sync.
-      const deadline = Date.now() + 30_000;
-      while (!token && Date.now() < deadline) {
-        await page.waitForTimeout(500);
-        token = await readTokenFromPage();
-        if (token) break;
-
-        const currentUrl = page.url();
-        if (new RegExp(`/${locale}/login/workspace`).test(currentUrl)) {
-          await page.goto(`${baseUrl.replace(/\/+$/, '')}/${locale}/workspaces/ws_default/projects`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 30_000,
-          }).catch(() => {});
-        }
+        session = await fetchSessionByPasswordGrant();
+        dbg('password grant fallback succeeded');
+      } catch (passwordError) {
+        const passwordMessage = passwordError instanceof Error ? passwordError.message : String(passwordError);
+        throw new Error(`token_not_found; auth_code_fallback_failed: ${message}; password_grant_fallback_failed: ${passwordMessage}`);
       }
     }
-    if (!token) {
-      dbg('token_not_found_in_app_state, trying auth code exchange fallback');
-      try {
-        token = await fetchTokenByAuthCodeFlow();
-        dbg('auth code exchange fallback succeeded');
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        dbg('auth code exchange fallback failed, trying password grant', message);
-        try {
-          token = await fetchTokenByPasswordGrant();
-          dbg('password grant fallback succeeded');
-        } catch (passwordError) {
-          const passwordMessage = passwordError instanceof Error ? passwordError.message : String(passwordError);
-          throw new Error(`token_not_found; auth_code_fallback_failed: ${message}; password_grant_fallback_failed: ${passwordMessage}`);
-        }
-      }
+    fs.writeFileSync(outFile, session.accessToken, 'utf8');
+    if (process.env.PRINT_SESSION_JSON === '1') {
+      process.stdout.write(`${JSON.stringify({
+        access_token: session.accessToken,
+        refresh_token: session.refreshToken,
+        expires_in: session.expiresIn,
+      })}\n`);
+      return;
     }
-    fs.writeFileSync(outFile, token, 'utf8');
     if (process.env.PRINT_TOKEN === '1') {
-      process.stdout.write(`${token}\n`);
+      process.stdout.write(`${session.accessToken}\n`);
     } else {
       process.stdout.write(`[refresh-token] token written to ${outFile}\n`);
     }

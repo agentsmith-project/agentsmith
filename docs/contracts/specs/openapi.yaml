@@ -4597,6 +4597,42 @@ paths:
         "401": *a1
         "403": *a2
         "404": *a3
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}/publish:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: alias
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - LLM Runtime
+      operationId: publishRuntimeRoutingAlias
+      summary: Publish runtime alias after release checks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeRoutePublishRequest"
+      responses:
+        "200":
+          description: Alias published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeRoutePublishAliasResponse"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+        "409":
+          description: Publish blocked by approvals or guardrails
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4710,6 +4746,42 @@ paths:
         "401": *a1
         "403": *a2
         "404": *a3
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}/publish:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: combo
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - LLM Runtime
+      operationId: publishRuntimeRoutingCombo
+      summary: Publish runtime combo after release checks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeRoutePublishRequest"
+      responses:
+        "200":
+          description: Combo published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeRoutePublishComboResponse"
+        "401": *a1
+        "403": *a2
+        "404": *a3
+        "409":
+          description: Publish blocked by approvals or guardrails
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -6814,6 +6886,8 @@ components:
           type: string
         target_model:
           type: string
+        release:
+          $ref: "#/components/schemas/RuntimeRouteRelease"
     RuntimeModelAliasCreate:
       $ref: "#/components/schemas/RuntimeModelAlias"
     RuntimeModelAliasUpdate:
@@ -7123,6 +7197,8 @@ components:
             $ref: "#/components/schemas/RuntimeModelComboTarget"
         fallback_policy:
           $ref: "#/components/schemas/RuntimeModelComboFallbackPolicy"
+        release:
+          $ref: "#/components/schemas/RuntimeRouteRelease"
     RuntimeModelComboCreate:
       $ref: "#/components/schemas/RuntimeModelCombo"
     RuntimeModelComboUpdate:
@@ -7140,6 +7216,79 @@ components:
         type: object
         additionalProperties:
           $ref: "#/components/schemas/RuntimeModelPricing"
+    RuntimeRouteApprovalChecklist:
+      type: object
+      required:
+        - owner_verified
+        - observability_verified
+        - rollback_verified
+      properties:
+        owner_verified:
+          type: boolean
+        observability_verified:
+          type: boolean
+        rollback_verified:
+          type: boolean
+    RuntimeRouteRolloutPolicy:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          enum: [full, canary]
+        canary_percent:
+          type: integer
+          minimum: 1
+          maximum: 100
+    RuntimeRouteRelease:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [draft, published, archived]
+        approval_checklist:
+          $ref: "#/components/schemas/RuntimeRouteApprovalChecklist"
+        rollout_policy:
+          $ref: "#/components/schemas/RuntimeRouteRolloutPolicy"
+        published_at:
+          type: string
+          format: date-time
+        archived_at:
+          type: string
+          format: date-time
+    RuntimeRoutePublishRequest:
+      type: object
+      required:
+        - approval_checklist
+        - rollout_policy
+      properties:
+        approval_checklist:
+          $ref: "#/components/schemas/RuntimeRouteApprovalChecklist"
+        rollout_policy:
+          $ref: "#/components/schemas/RuntimeRouteRolloutPolicy"
+    RuntimeRoutePublishAliasResponse:
+      type: object
+      required:
+        - item
+        - guardrails
+      properties:
+        item:
+          $ref: "#/components/schemas/RuntimeModelAlias"
+        guardrails:
+          $ref: "#/components/schemas/RuntimeReleaseGuardrails"
+    RuntimeRoutePublishComboResponse:
+      type: object
+      required:
+        - item
+        - guardrails
+      properties:
+        item:
+          $ref: "#/components/schemas/RuntimeModelCombo"
+        guardrails:
+          $ref: "#/components/schemas/RuntimeReleaseGuardrails"
     RuntimePricingScopeType:
       type: string
       enum: [global, workspace, project]

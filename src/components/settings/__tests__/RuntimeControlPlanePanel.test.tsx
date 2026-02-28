@@ -24,6 +24,25 @@ const comparePricingVersionsMutateAsync = vi.fn().mockResolvedValue({
     },
   ],
 });
+const publishAliasMutateAsync = vi.fn().mockResolvedValue({
+  item: { alias: 'assistant-main', release: { status: 'published' } },
+  guardrails: { release_readiness: 'ready', blockers: [], warnings: [] },
+});
+const publishComboMutateAsync = vi.fn().mockResolvedValue({
+  item: {
+    name: 'prod-chat',
+    release: {
+      status: 'published',
+      rollout_policy: { mode: 'canary', canary_percent: 10 },
+      approval_checklist: {
+        owner_verified: true,
+        observability_verified: true,
+        rollback_verified: true,
+      },
+    },
+  },
+  guardrails: { release_readiness: 'ready', blockers: [], warnings: [] },
+});
 const dryRunMutateAsync = vi.fn().mockResolvedValue({
   model: 'combo:prod-chat',
   routed_by: 'combo',
@@ -128,8 +147,8 @@ const probeMutateAsync = vi.fn().mockResolvedValue({
 vi.mock('@/lib/hooks/use-runtime', () => ({
   useRuntimeProviders: () => ({ data: { items: [] } }),
   useRuntimeModels: () => ({ data: { items: [] } }),
-  useRuntimeAliases: () => ({ data: { items: [] } }),
-  useRuntimeCombos: () => ({ data: { items: [] } }),
+  useRuntimeAliases: () => ({ data: { items: [{ alias: 'assistant-main', release: { status: 'draft' } }] } }),
+  useRuntimeCombos: () => ({ data: { items: [{ name: 'prod-chat', release: { status: 'draft' } }] } }),
   useRuntimePricing: () => ({ data: {} }),
   useRuntimePricingVersions: () => ({
     data: {
@@ -156,6 +175,8 @@ vi.mock('@/lib/hooks/use-runtime', () => ({
   useCreateRuntimePricingVersion: () => ({ mutateAsync: createPricingVersionMutateAsync, isPending: false }),
   useActivateRuntimePricingVersion: () => ({ mutateAsync: activatePricingVersionMutateAsync, isPending: false }),
   useCompareRuntimePricingVersions: () => ({ mutateAsync: comparePricingVersionsMutateAsync, isPending: false }),
+  usePublishRuntimeAlias: () => ({ mutateAsync: publishAliasMutateAsync, isPending: false }),
+  usePublishRuntimeCombo: () => ({ mutateAsync: publishComboMutateAsync, isPending: false }),
   useRuntimeImpactPreview: () => ({ mutateAsync: impactMutateAsync, isPending: false }),
   useRuntimeRoutingDryRun: () => ({ mutateAsync: dryRunMutateAsync, isPending: false }),
   useRuntimeUnifiedChatProbe: () => ({ mutateAsync: probeMutateAsync, isPending: false }),
@@ -317,5 +338,29 @@ describe('RuntimeControlPlanePanel', () => {
     expect(screen.getByTestId('settings-runtime__compare-delta')).toHaveTextContent('+$0.001400');
     expect(screen.getByTestId('settings-runtime__compare-baseline-guardrails')).toHaveTextContent('runtime_guardrails_status_ready');
     expect(screen.getByTestId('settings-runtime__compare-candidate-guardrails')).toHaveTextContent('runtime_guardrails_status_blocked');
+  });
+
+  it('publishes selected default route with approvals', async () => {
+    const user = userEvent.setup();
+    render(<RuntimeControlPlanePanel workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.click(screen.getByText('runtime_release_check_owner'));
+    await user.click(screen.getByText('runtime_release_check_observability'));
+    await user.click(screen.getByText('runtime_release_check_rollback'));
+    await user.click(screen.getByTestId('settings-runtime__release-publish'));
+
+    expect(publishAliasMutateAsync).toHaveBeenCalledWith({
+      alias: 'assistant-main',
+      payload: {
+        approval_checklist: {
+          owner_verified: true,
+          observability_verified: true,
+          rollback_verified: true,
+        },
+        rollout_policy: {
+          mode: 'full',
+        },
+      },
+    });
   });
 });

@@ -291,6 +291,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}",
     "method": "put"
   },
+  "runtimeRoutingAliasPublish": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}/publish",
+    "method": "post"
+  },
   "runtimeRoutingCombos": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos",
     "method": "get"
@@ -298,6 +302,10 @@
   "runtimeRoutingComboItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}",
     "method": "put"
+  },
+  "runtimeRoutingComboPublish": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}/publish",
+    "method": "post"
   },
   "runtimePricing": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing",

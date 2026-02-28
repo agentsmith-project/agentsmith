@@ -347,6 +347,176 @@ describe('runtime-route-handler', () => {
     ]);
   });
 
+  it('publishes combo route only when approvals are complete and guardrails are ready', async () => {
+    const deps = createDeps();
+
+    await createRuntimeModel({
+      deps,
+      workspaceId,
+      projectId,
+      provider: 'openai',
+      modelId: 'gpt-4o',
+    });
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeProviders', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        provider: 'openai',
+        auth_mode: 'api_key',
+        base_url: 'https://api.openai.com/v1',
+        credential_ref: 'cred_runtime',
+      },
+    });
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimePricing', workspaceId, projectId },
+      method: 'PATCH',
+      body: {
+        openai: {
+          'gpt-4o': { input: 2, output: 10 },
+        },
+      },
+    });
+    const comboCreate = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingCombos', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        name: 'prod-chat',
+        targets: [{ provider: 'openai', model: 'gpt-4o' }],
+        fallback_policy: {
+          max_hops: 1,
+          retryable_error_classes: ['provider_retryable'],
+        },
+      },
+    });
+    expect(comboCreate.statusCode).toBe(201);
+    expect((comboCreate.body as { release?: { status?: string } }).release?.status).toBe('draft');
+
+    const blockedApproval = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingComboPublish', workspaceId, projectId, combo: 'prod-chat' },
+      method: 'POST',
+      body: {
+        approval_checklist: {
+          owner_verified: true,
+          observability_verified: false,
+          rollback_verified: true,
+        },
+        rollout_policy: {
+          mode: 'full',
+        },
+      },
+    });
+    expect(blockedApproval.statusCode).toBe(409);
+    expect((blockedApproval.body as { message?: string }).message).toBe('runtime_route_approval_incomplete');
+
+    const publish = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingComboPublish', workspaceId, projectId, combo: 'prod-chat' },
+      method: 'POST',
+      body: {
+        approval_checklist: {
+          owner_verified: true,
+          observability_verified: true,
+          rollback_verified: true,
+        },
+        rollout_policy: {
+          mode: 'canary',
+          canary_percent: 15,
+        },
+      },
+    });
+    expect(publish.statusCode).toBe(200);
+    const publishPayload = publish.body as {
+      item: {
+        release?: {
+          status?: string;
+          approval_checklist?: { owner_verified?: boolean };
+          rollout_policy?: { mode?: string; canary_percent?: number };
+          published_at?: string;
+        };
+      };
+      guardrails?: { release_readiness?: string };
+    };
+    expect(publishPayload.guardrails?.release_readiness).toBe('ready');
+    expect(publishPayload.item.release?.status).toBe('published');
+    expect(publishPayload.item.release?.approval_checklist?.owner_verified).toBe(true);
+    expect(publishPayload.item.release?.rollout_policy).toEqual({
+      mode: 'canary',
+      canary_percent: 15,
+    });
+    expect(publishPayload.item.release?.published_at).toBeTruthy();
+
+    const comboGet = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingComboItem', workspaceId, projectId, combo: 'prod-chat' },
+      method: 'GET',
+    });
+    expect((comboGet.body as { release?: { status?: string } }).release?.status).toBe('published');
+
+    const comboUpdate = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingComboItem', workspaceId, projectId, combo: 'prod-chat' },
+      method: 'PUT',
+      body: {
+        fallback_policy: {
+          max_hops: 2,
+          retryable_error_classes: ['provider_retryable'],
+        },
+      },
+    });
+    expect(comboUpdate.statusCode).toBe(200);
+    expect((comboUpdate.body as { release?: { status?: string } }).release?.status).toBe('draft');
+  });
+
+  it('blocks alias publish when runtime guardrails are not ready', async () => {
+    const deps = createDeps();
+
+    await createRuntimeModel({
+      deps,
+      workspaceId,
+      projectId,
+      provider: 'openai',
+      modelId: 'gpt-4o',
+    });
+    await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliases', workspaceId, projectId },
+      method: 'POST',
+      body: {
+        alias: 'assistant-main',
+        target_provider: 'openai',
+        target_model: 'gpt-4o',
+      },
+    });
+
+    const publish = await executeRoute({
+      deps,
+      route: { kind: 'runtimeRoutingAliasPublish', workspaceId, projectId, alias: 'assistant-main' },
+      method: 'POST',
+      body: {
+        approval_checklist: {
+          owner_verified: true,
+          observability_verified: true,
+          rollback_verified: true,
+        },
+        rollout_policy: {
+          mode: 'full',
+        },
+      },
+    });
+    expect(publish.statusCode).toBe(409);
+    const payload = publish.body as {
+      message?: string;
+      guardrails?: { release_readiness?: string; blockers?: string[] };
+    };
+    expect(payload.message).toBe('runtime_route_publish_blocked');
+    expect(payload.guardrails?.release_readiness).toBe('blocked');
+    expect(payload.guardrails?.blockers).toContain('runtime_guardrail_primary_connection_unavailable');
+  });
+
   it('supports runtime model/alias/combo item CRUD operations', async () => {
     const deps = createDeps();
 

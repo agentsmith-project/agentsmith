@@ -55,6 +55,27 @@ describe('RuntimeAPI', () => {
       fallback_policy: { max_hops: 2, retryable_error_classes: ['provider_retryable'] },
     });
     await api.deleteCombo('ws_1', 'proj_1', 'prod-chat');
+    await api.publishAlias('ws_1', 'proj_1', 'assistant-main', {
+      approval_checklist: {
+        owner_verified: true,
+        observability_verified: true,
+        rollback_verified: true,
+      },
+      rollout_policy: {
+        mode: 'full',
+      },
+    });
+    await api.publishCombo('ws_1', 'proj_1', 'prod-chat', {
+      approval_checklist: {
+        owner_verified: true,
+        observability_verified: true,
+        rollback_verified: true,
+      },
+      rollout_policy: {
+        mode: 'canary',
+        canary_percent: 15,
+      },
+    });
 
     expect(mock.get).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/routing/aliases/assistant-main');
     expect(mock.put).toHaveBeenCalledWith(
@@ -62,6 +83,19 @@ describe('RuntimeAPI', () => {
       { target_model: 'gpt-4.1' },
     );
     expect(mock.delete).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/routing/aliases/assistant-main');
+    expect(mock.post).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/runtime/routing/aliases/assistant-main/publish',
+      {
+        approval_checklist: {
+          owner_verified: true,
+          observability_verified: true,
+          rollback_verified: true,
+        },
+        rollout_policy: {
+          mode: 'full',
+        },
+      },
+    );
 
     expect(mock.get).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/routing/combos/prod-chat');
     expect(mock.put).toHaveBeenCalledWith(
@@ -69,6 +103,20 @@ describe('RuntimeAPI', () => {
       { fallback_policy: { max_hops: 2, retryable_error_classes: ['provider_retryable'] } },
     );
     expect(mock.delete).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/routing/combos/prod-chat');
+    expect(mock.post).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/runtime/routing/combos/prod-chat/publish',
+      {
+        approval_checklist: {
+          owner_verified: true,
+          observability_verified: true,
+          rollback_verified: true,
+        },
+        rollout_policy: {
+          mode: 'canary',
+          canary_percent: 15,
+        },
+      },
+    );
   });
 
   it('calls runtime routing dry-run endpoint', async () => {

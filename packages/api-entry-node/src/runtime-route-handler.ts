@@ -13,6 +13,11 @@ import {
   comparePricingVersions,
   evaluatePricingActivationReadiness,
 } from './runtime-pricing-governance.js';
+import {
+  createDraftRuntimeRelease,
+  isApprovalChecklistComplete,
+  normalizeRuntimeRolloutPolicy,
+} from './runtime-release-controls.js';
 import { dryRunRuntimeRouting } from './runtime-routing-dry-run.js';
 import {
   createRuntimeStore,
@@ -33,6 +38,7 @@ import {
   parseRuntimePricingPayload,
   parseRuntimePricingVersionComparePayload,
   parseRuntimePricingVersionCreatePayload,
+  parseRuntimeRoutePublishPayload,
   parseRuntimeProviderCreatePayload,
   parseRuntimeProviderUpdatePayload,
 } from './runtime-validation.js';
@@ -70,6 +76,24 @@ function requireProjectScope(
     return null;
   }
   return { workspaceId: route.workspaceId, projectId: route.projectId };
+}
+
+async function evaluateRoutePublishGuardrails(params: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  model: string;
+}) {
+  const result = await dryRunRuntimeRouting({
+    deps: params.deps,
+    workspaceId: params.workspaceId,
+    projectId: params.projectId,
+    rawBody: { model: params.model },
+  });
+  if (result.statusCode !== 200) {
+    return null;
+  }
+  return 'guardrails' in result.body ? result.body.guardrails : null;
 }
 
 export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<boolean> {
@@ -363,6 +387,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       alias: aliasPayload.alias,
       target_provider: aliasPayload.target_provider,
       target_model: aliasPayload.target_model,
+      release: createDraftRuntimeRelease(),
       created_at: runtimeStore.nowIso(),
       updated_at: runtimeStore.nowIso(),
     };
@@ -418,10 +443,59 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       ...existing,
       target_provider: nextTargetProvider,
       target_model: nextTargetModel,
+      release: createDraftRuntimeRelease(existing.release),
       updated_at: runtimeStore.nowIso(),
     };
     await runtimeStore.upsertAlias(updated);
     json(res, 200, updated);
+    return true;
+  }
+
+  if (route.kind === 'runtimeRoutingAliasPublish' && method === 'POST') {
+    if (!route.alias) {
+      json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_alias_required' });
+      return true;
+    }
+    const existing = await runtimeStore.findAlias(projectScope, route.alias);
+    if (!existing) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_alias_not_found' });
+      return true;
+    }
+    const parsedPublish = parseRuntimeRoutePublishPayload(await readBody(req));
+    if (!parsedPublish.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedPublish.message });
+      return true;
+    }
+    if (!isApprovalChecklistComplete(parsedPublish.value.approval_checklist)) {
+      json(res, 409, { error_code: 'CONFLICT', message: 'runtime_route_approval_incomplete' });
+      return true;
+    }
+    const guardrails = await evaluateRoutePublishGuardrails({
+      deps,
+      workspaceId,
+      projectId,
+      model: existing.alias,
+    });
+    if (!guardrails || guardrails.release_readiness === 'blocked') {
+      json(res, 409, {
+        error_code: 'CONFLICT',
+        message: 'runtime_route_publish_blocked',
+        guardrails,
+      });
+      return true;
+    }
+    const published: RuntimeModelAliasRecord = {
+      ...existing,
+      release: {
+        status: 'published',
+        approval_checklist: parsedPublish.value.approval_checklist,
+        rollout_policy: normalizeRuntimeRolloutPolicy(parsedPublish.value.rollout_policy),
+        published_at: runtimeStore.nowIso(),
+      },
+      updated_at: runtimeStore.nowIso(),
+    };
+    await runtimeStore.upsertAlias(published);
+    json(res, 200, { item: published, guardrails });
     return true;
   }
 
@@ -478,6 +552,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       name: comboPayload.name,
       targets: comboPayload.targets,
       fallback_policy: comboPayload.fallback_policy,
+      release: createDraftRuntimeRelease(),
       created_at: runtimeStore.nowIso(),
       updated_at: runtimeStore.nowIso(),
     };
@@ -530,10 +605,59 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       ...existing,
       targets: comboUpdate.targets,
       fallback_policy: comboUpdate.fallback_policy,
+      release: createDraftRuntimeRelease(existing.release),
       updated_at: runtimeStore.nowIso(),
     };
     await runtimeStore.upsertCombo(updated);
     json(res, 200, updated);
+    return true;
+  }
+
+  if (route.kind === 'runtimeRoutingComboPublish' && method === 'POST') {
+    if (!route.combo) {
+      json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_combo_required' });
+      return true;
+    }
+    const existing = await runtimeStore.findCombo(projectScope, route.combo);
+    if (!existing) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_combo_not_found' });
+      return true;
+    }
+    const parsedPublish = parseRuntimeRoutePublishPayload(await readBody(req));
+    if (!parsedPublish.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: parsedPublish.message });
+      return true;
+    }
+    if (!isApprovalChecklistComplete(parsedPublish.value.approval_checklist)) {
+      json(res, 409, { error_code: 'CONFLICT', message: 'runtime_route_approval_incomplete' });
+      return true;
+    }
+    const guardrails = await evaluateRoutePublishGuardrails({
+      deps,
+      workspaceId,
+      projectId,
+      model: `combo:${existing.name}`,
+    });
+    if (!guardrails || guardrails.release_readiness === 'blocked') {
+      json(res, 409, {
+        error_code: 'CONFLICT',
+        message: 'runtime_route_publish_blocked',
+        guardrails,
+      });
+      return true;
+    }
+    const published: RuntimeModelComboRecord = {
+      ...existing,
+      release: {
+        status: 'published',
+        approval_checklist: parsedPublish.value.approval_checklist,
+        rollout_policy: normalizeRuntimeRolloutPolicy(parsedPublish.value.rollout_policy),
+        published_at: runtimeStore.nowIso(),
+      },
+      updated_at: runtimeStore.nowIso(),
+    };
+    await runtimeStore.upsertCombo(published);
+    json(res, 200, { item: published, guardrails });
     return true;
   }
 

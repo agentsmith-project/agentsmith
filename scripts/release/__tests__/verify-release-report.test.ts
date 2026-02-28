@@ -233,6 +233,7 @@ describe('verify-release-report: TDD Suite', () => {
             source?: string;
             guardrails?: { release_readiness?: string; blockers?: string[]; warnings?: string[] };
             pricing_version_coverage?: { coverage_ratio?: number; total_usage_facts?: number };
+            release_candidate?: { release_status?: string; approvals_complete?: boolean };
           };
         };
       };
@@ -244,6 +245,8 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.runtime_release_evidence?.guardrails?.warnings?.length).toBeGreaterThan(0);
       expect(report.summary?.runtime_release_evidence?.pricing_version_coverage?.total_usage_facts).toBeGreaterThan(0);
       expect(report.summary?.runtime_release_evidence?.pricing_version_coverage?.coverage_ratio).toBeGreaterThan(0);
+      expect(report.summary?.runtime_release_evidence?.release_candidate?.release_status).toBe('published');
+      expect(report.summary?.runtime_release_evidence?.release_candidate?.approvals_complete).toBe(true);
     });
 
     it('should fail when runtime release evidence reports blocked guardrails', () => {

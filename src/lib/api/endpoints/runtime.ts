@@ -75,6 +75,7 @@ export interface RuntimeModelAlias {
   alias: string;
   target_provider: string;
   target_model: string;
+  release?: RuntimeRouteRelease;
   created_at: string;
   updated_at: string;
 }
@@ -238,8 +239,46 @@ export interface RuntimeModelCombo {
     max_hops: number;
     retryable_error_classes: string[];
   };
+  release?: RuntimeRouteRelease;
   created_at: string;
   updated_at: string;
+}
+
+export type RuntimeRouteReleaseStatus = 'draft' | 'published' | 'archived';
+export type RuntimeRouteRolloutMode = 'full' | 'canary';
+
+export interface RuntimeRouteApprovalChecklist {
+  owner_verified: boolean;
+  observability_verified: boolean;
+  rollback_verified: boolean;
+}
+
+export interface RuntimeRouteRolloutPolicy {
+  mode: RuntimeRouteRolloutMode;
+  canary_percent?: number;
+}
+
+export interface RuntimeRouteRelease {
+  status: RuntimeRouteReleaseStatus;
+  approval_checklist?: RuntimeRouteApprovalChecklist;
+  rollout_policy?: RuntimeRouteRolloutPolicy;
+  published_at?: string;
+  archived_at?: string;
+}
+
+export interface PublishRuntimeRouteRequest {
+  approval_checklist: RuntimeRouteApprovalChecklist;
+  rollout_policy: RuntimeRouteRolloutPolicy;
+}
+
+export interface PublishRuntimeAliasResponse {
+  item: RuntimeModelAlias;
+  guardrails: RuntimeReleaseGuardrails;
+}
+
+export interface PublishRuntimeComboResponse {
+  item: RuntimeModelCombo;
+  guardrails: RuntimeReleaseGuardrails;
 }
 
 export interface CreateRuntimeModelComboRequest {
@@ -426,6 +465,15 @@ export class RuntimeAPI {
     return this.client.delete(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/aliases/${alias}`);
   }
 
+  async publishAlias(
+    workspaceId: string,
+    projectId: string,
+    alias: string,
+    payload: PublishRuntimeRouteRequest,
+  ): Promise<PublishRuntimeAliasResponse> {
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/aliases/${alias}/publish`, payload);
+  }
+
   async listCombos(workspaceId: string, projectId: string): Promise<{ items: RuntimeModelCombo[] }> {
     return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/combos`);
   }
@@ -453,6 +501,15 @@ export class RuntimeAPI {
 
   async deleteCombo(workspaceId: string, projectId: string, combo: string): Promise<void> {
     return this.client.delete(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/combos/${combo}`);
+  }
+
+  async publishCombo(
+    workspaceId: string,
+    projectId: string,
+    combo: string,
+    payload: PublishRuntimeRouteRequest,
+  ): Promise<PublishRuntimeComboResponse> {
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/combos/${combo}/publish`, payload);
   }
 
   async getPricing(workspaceId: string, projectId: string): Promise<RuntimePricingMap> {

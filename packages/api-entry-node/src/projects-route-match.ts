@@ -142,9 +142,21 @@ export type ProjectsRoute =
     projectId: string;
     alias: string;
   }
+  | {
+    kind: 'runtimeRoutingAliasPublish';
+    workspaceId: string;
+    projectId: string;
+    alias: string;
+  }
   | { kind: 'runtimeRoutingCombos'; workspaceId: string; projectId: string }
   | {
     kind: 'runtimeRoutingComboItem';
+    workspaceId: string;
+    projectId: string;
+    combo: string;
+  }
+  | {
+    kind: 'runtimeRoutingComboPublish';
     workspaceId: string;
     projectId: string;
     combo: string;
@@ -1044,6 +1056,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
+  const runtimeRoutingAliasPublishMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/aliases\/([^/]+)\/publish\/?$/,
+  );
+  if (runtimeRoutingAliasPublishMatched) {
+    return {
+      kind: 'runtimeRoutingAliasPublish',
+      workspaceId: decodeURIComponent(runtimeRoutingAliasPublishMatched[1]),
+      projectId: decodeURIComponent(runtimeRoutingAliasPublishMatched[2]),
+      alias: decodeURIComponent(runtimeRoutingAliasPublishMatched[3]),
+    };
+  }
+
   const runtimeRoutingAliasItemMatched = pathname.match(
     /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/aliases\/([^/]+)\/?$/,
   );
@@ -1064,6 +1088,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'runtimeRoutingCombos',
       workspaceId: decodeURIComponent(runtimeRoutingCombosMatched[1]),
       projectId: decodeURIComponent(runtimeRoutingCombosMatched[2]),
+    };
+  }
+
+  const runtimeRoutingComboPublishMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/combos\/([^/]+)\/publish\/?$/,
+  );
+  if (runtimeRoutingComboPublishMatched) {
+    return {
+      kind: 'runtimeRoutingComboPublish',
+      workspaceId: decodeURIComponent(runtimeRoutingComboPublishMatched[1]),
+      projectId: decodeURIComponent(runtimeRoutingComboPublishMatched[2]),
+      combo: decodeURIComponent(runtimeRoutingComboPublishMatched[3]),
     };
   }
 

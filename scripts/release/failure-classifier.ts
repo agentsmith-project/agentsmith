@@ -116,6 +116,7 @@ const FAILURE_PATTERNS: FailurePattern[] = [
       /expect\([^)]+\)\.toBe/i,
       /expected\s+".*"\s+to\s+be\s+"/i,
       /expected\s+\w+\s+to\s+be/i,
+      /expected\s+status\s+\d+\s+but\s+got\s+\d+/i,
       /to\s+equal.*but\s+got/i,
       /\.\.should\./i,
       /assertion.*fail/i,

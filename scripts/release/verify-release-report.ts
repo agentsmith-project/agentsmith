@@ -625,6 +625,15 @@ function createMockRuntimeReleaseEvidence(): RuntimeReleaseEvidence {
       missing_price_facts: 0,
       coverage_ratio: 1,
     },
+    release_candidate: {
+      route_type: 'combo',
+      route_key: 'prod-chat',
+      release_status: 'published',
+      rollout_mode: 'full',
+      canary_percent: null,
+      approvals_complete: true,
+      published_at: new Date().toISOString(),
+    },
     note: 'Dry-run evidence uses deterministic fixture data and does not call live runtime services.',
   };
 }
@@ -647,6 +656,16 @@ function getRuntimeEvidenceBlockingReasons(runtimeEvidence?: RuntimeReleaseEvide
   }
   if (runtimeEvidence.pricing_version_coverage.missing_price_facts > 0) {
     reasons.push(`runtime missing_price facts detected (${runtimeEvidence.pricing_version_coverage.missing_price_facts})`);
+  }
+  if (!runtimeEvidence.release_candidate) {
+    reasons.push('runtime release candidate missing');
+    return reasons;
+  }
+  if (runtimeEvidence.release_candidate.release_status !== 'published') {
+    reasons.push(`runtime release candidate not published (${runtimeEvidence.release_candidate.release_status})`);
+  }
+  if (!runtimeEvidence.release_candidate.approvals_complete) {
+    reasons.push('runtime release candidate approvals incomplete');
   }
   return reasons;
 }
@@ -825,6 +844,18 @@ function generateMarkdown(report: ReleaseReport): string {
     md += `- **Target:** ${runtimeEvidence.guardrails.target}\n`;
     md += `- **Guardrails:** ${runtimeEvidence.guardrails.release_readiness}\n`;
     md += `- **Planned Attempts:** ${runtimeEvidence.guardrails.planned_attempts}\n`;
+    if (runtimeEvidence.release_candidate) {
+      md += `- **Release Candidate:** ${runtimeEvidence.release_candidate.route_type}:${runtimeEvidence.release_candidate.route_key}\n`;
+      md += `- **Release Status:** ${runtimeEvidence.release_candidate.release_status}\n`;
+      md += `- **Approvals Complete:** ${runtimeEvidence.release_candidate.approvals_complete ? 'yes' : 'no'}\n`;
+      if (runtimeEvidence.release_candidate.rollout_mode) {
+        md += `- **Rollout Mode:** ${runtimeEvidence.release_candidate.rollout_mode}`;
+        if (runtimeEvidence.release_candidate.rollout_mode === 'canary' && typeof runtimeEvidence.release_candidate.canary_percent === 'number') {
+          md += ` (${runtimeEvidence.release_candidate.canary_percent}%)`;
+        }
+        md += `\n`;
+      }
+    }
     md += `- **Pricing Version Coverage:** ${(runtimeEvidence.pricing_version_coverage.coverage_ratio * 100).toFixed(1)}% `;
     md += `(${runtimeEvidence.pricing_version_coverage.covered_usage_facts}/${runtimeEvidence.pricing_version_coverage.total_usage_facts})\n`;
     md += `- **Missing Price Facts:** ${runtimeEvidence.pricing_version_coverage.missing_price_facts}\n`;

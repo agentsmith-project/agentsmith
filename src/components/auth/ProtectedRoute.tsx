@@ -94,6 +94,42 @@ export function ProtectedRoute({
             console.log('[ProtectedRoute] Mock auth detected, isAuthenticated:', state.isAuthenticated);
             return true;
           }
+          try {
+            const raw = window.localStorage.getItem('agentsmith-auth');
+            const parsed = raw ? JSON.parse(raw) as {
+              state?: {
+                user?: {
+                  id?: string;
+                  email?: string;
+                  name?: string;
+                  locale?: 'en-US' | 'zh-CN';
+                };
+                token?: string | null;
+                refreshToken?: string | null;
+                tokenExpiresAt?: number | null;
+                isAuthenticated?: boolean;
+              };
+            } : null;
+            const persisted = parsed?.state;
+            if (
+              persisted?.isAuthenticated
+              && persisted.user
+              && typeof persisted.token === 'string'
+              && persisted.token.length > 0
+              && typeof state.setAuth === 'function'
+            ) {
+              const expiresIn = typeof persisted.tokenExpiresAt === 'number'
+                ? Math.max(1, Math.floor((persisted.tokenExpiresAt - Date.now()) / 1000))
+                : undefined;
+              state.setAuth(persisted.user, persisted.token, {
+                refreshToken: persisted.refreshToken ?? null,
+                expiresIn,
+              });
+              return true;
+            }
+          } catch {
+            // Ignore malformed localStorage and continue normal fallback.
+          }
         }
         return false;
       };

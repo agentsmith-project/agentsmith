@@ -8,6 +8,7 @@ import type {
   CreateRuntimeModelComboRequest,
   CreateRuntimePricingVersionRequest,
   CreateRuntimeProviderConnectionRequest,
+  PublishRuntimeRouteRequest,
   RuntimeImpactPreviewRequest,
   RuntimeRoutingDryRunRequest,
   RuntimeUnifiedChatRequest,
@@ -172,6 +173,18 @@ export function useDeleteRuntimeAlias(workspaceId: string, projectId: string) {
   });
 }
 
+export function usePublishRuntimeAlias(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ alias, payload }: { alias: string; payload: PublishRuntimeRouteRequest }) =>
+      getRuntimeAPI().publishAlias(workspaceId, projectId, alias, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.aliases(workspaceId, projectId) });
+    },
+    onError: (error) => handleErrorForToast(error, 'usePublishRuntimeAlias'),
+  });
+}
+
 export function useRuntimeCombos(workspaceId: string, projectId: string) {
   return useQuery({
     queryKey: queryKeys.runtime.combos(workspaceId, projectId),
@@ -219,6 +232,18 @@ export function useDeleteRuntimeCombo(workspaceId: string, projectId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.runtime.combos(workspaceId, projectId) });
     },
     onError: (error) => handleErrorForToast(error, 'useDeleteRuntimeCombo'),
+  });
+}
+
+export function usePublishRuntimeCombo(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ combo, payload }: { combo: string; payload: PublishRuntimeRouteRequest }) =>
+      getRuntimeAPI().publishCombo(workspaceId, projectId, combo, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.runtime.combos(workspaceId, projectId) });
+    },
+    onError: (error) => handleErrorForToast(error, 'usePublishRuntimeCombo'),
   });
 }
 

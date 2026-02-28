@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getApiClient } from '@/lib/api/client';
 import { ProjectAPI } from '@/lib/api/endpoints/projects';
 import { APIError } from '@/lib/api/errors';
+import { useAuthStore } from '@/lib/stores/authStore';
 
 // Query keys factory
 export const projectKeys = {
@@ -20,6 +21,7 @@ export const projectKeys = {
  * Get all projects in a workspace
  */
 export function useProjects(workspaceId: string) {
+  const token = useAuthStore((state) => state.token);
   return useQuery({
     queryKey: projectKeys.all(workspaceId),
     queryFn: async () => {
@@ -28,7 +30,7 @@ export function useProjects(workspaceId: string) {
       const response = await api.list(workspaceId);
       return response.items;
     },
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && Boolean(token),
     staleTime: 60_000,
   });
 }
@@ -37,6 +39,7 @@ export function useProjects(workspaceId: string) {
  * Get a single project by ID
  */
 export function useProject(workspaceId: string, projectId: string) {
+  const token = useAuthStore((state) => state.token);
   return useQuery({
     queryKey: projectKeys.detail(workspaceId, projectId),
     queryFn: async () => {
@@ -44,7 +47,7 @@ export function useProject(workspaceId: string, projectId: string) {
       const api = new ProjectAPI(client);
       return api.get(workspaceId, projectId);
     },
-    enabled: !!workspaceId && !!projectId,
+    enabled: !!workspaceId && !!projectId && Boolean(token),
     staleTime: 60_000,
     retry: (failureCount, error) => {
       if (error instanceof APIError && error.isNotFoundError()) return false;

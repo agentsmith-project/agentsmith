@@ -158,10 +158,12 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__dashboard')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__evidence-summary')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__online-vs-latest')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__compare-details')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-search')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-item-0')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__timeline')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__timeline-item-0')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__history-trend')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-detail')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-structured-summary')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-metadata')).toBeVisible();
@@ -169,11 +171,20 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__report-runtime-evidence')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-usage-evidence')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-execution-checks')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-failed-checks')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-open-runtime-context')).toHaveAttribute('href', /runtime-observability\?/);
     await expect(authedPage.getByTestId('release-ops__report-open-usage-context')).toHaveAttribute('href', /usage\?/);
 
     await authedPage.getByTestId('release-ops__report-search').fill('signature');
     await expect(authedPage).toHaveURL(/report_search=signature/);
+    await authedPage.getByTestId('release-ops__report-search').fill('');
+
+    await authedPage.getByTestId('release-ops__report-status-filter').click();
+    await authedPage.getByRole('option', { name: 'Fail' }).click();
+    await expect(authedPage).toHaveURL(/report_status=fail/);
+    await expect(authedPage.getByTestId('release-ops__report-item-0')).toContainText('runtime-evidence-gate-regression-20260227');
+    await authedPage.getByTestId('release-ops__report-item-0').click();
+    await expect(authedPage.getByTestId('release-ops__report-failed-check-0')).toBeVisible();
   });
 
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {

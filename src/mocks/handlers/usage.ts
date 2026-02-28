@@ -93,6 +93,16 @@ const releaseReports: ReleaseReportListItem[] = [
     usage_release_readiness: 'ready',
     markdown_available: true,
   },
+  {
+    name: 'runtime-evidence-gate-regression-20260227',
+    generated_at: '2026-02-27T19:25:00.000Z',
+    status: 'fail',
+    branch: 'main',
+    commit_short: 'a0f74a6',
+    runtime_release_readiness: 'blocked',
+    usage_release_readiness: 'blocked',
+    markdown_available: true,
+  },
 ];
 
 const releaseReportDetails = new Map<string, ReleaseReportDetail>([
@@ -183,6 +193,58 @@ const releaseReportDetails = new Map<string, ReleaseReportDetail>([
       },
     },
     markdown: '# Usage Webhook Signature Policy Check\n\nStatus: PASS\n',
+  }],
+  ['runtime-evidence-gate-regression-20260227', {
+    name: 'runtime-evidence-gate-regression-20260227',
+    report: {
+      metadata: {
+        timestamp: '2026-02-27T19:25:00.000Z',
+        git: { branch: 'main', commit_short: 'a0f74a6' },
+      },
+      summary: {
+        status: 'fail',
+        runtime_release_evidence: {
+          generated_at: '2026-02-27T19:24:56.000Z',
+          guardrails: {
+            release_readiness: 'blocked',
+            blockers: ['runtime_guardrail_primary_pricing_missing'],
+            warnings: ['runtime_guardrail_fallback_pricing_missing'],
+            target: 'combo:prod-chat',
+            planned_attempts: 2,
+          },
+          pricing_version_coverage: {
+            total_usage_facts: 3,
+            covered_usage_facts: 2,
+            missing_usage_facts: 1,
+            missing_price_facts: 1,
+            coverage_ratio: 0.67,
+          },
+        },
+        usage_report_evidence: {
+          release_readiness: 'blocked',
+          blockers: ['usage_report_runner_not_yet_executed'],
+          warnings: ['usage_report_webhook_signature_recommended'],
+          active_schedules: 1,
+          required_schedules: 1,
+          successful_deliveries_last_7d: 0,
+          failed_deliveries_last_7d: 1,
+          unacknowledged_required_deliveries: 1,
+        },
+      },
+      execution: {
+        total_checks: 6,
+        passed: 3,
+        failed: 2,
+        skipped: 1,
+        checks: [
+          { name: 'TypeScript typecheck', category: 'typecheck', status: 'pass', duration_ms: 18100 },
+          { name: 'Governance release smoke', category: 'smoke', status: 'fail', duration_ms: 60300 },
+          { name: 'Runtime pricing coverage', category: 'runtime', status: 'fail', duration_ms: 12400 },
+          { name: 'Visual regression', category: 'visual', status: 'skipped', duration_ms: 0 },
+        ],
+      },
+    },
+    markdown: '# Runtime Evidence Gate Regression\n\nStatus: FAIL\n',
   }],
 ]);
 

@@ -52,6 +52,16 @@ function formatDurationMs(value?: number): string {
   return `${Math.round(value)}ms`;
 }
 
+function recommendationForCheck(category?: string, name?: string): string {
+  const normalized = `${category ?? ''} ${name ?? ''}`.toLowerCase();
+  if (normalized.includes('governance')) return 'Re-run governance smoke with a clean real-backend session and verify auth/workspace recovery.';
+  if (normalized.includes('pricing')) return 'Review runtime pricing coverage and clear missing-price blockers before accepting the report.';
+  if (normalized.includes('visual')) return 'Regenerate visual baselines only after confirming the UI delta is intentional.';
+  if (normalized.includes('typecheck')) return 'Fix type or contract regressions before continuing with broader verification.';
+  if (normalized.includes('runtime')) return 'Check runtime guardrails, provider routing, and fallback evidence before retrying the gate.';
+  return 'Inspect the failed check in its owning workflow and re-run the release gate after the underlying issue is corrected.';
+}
+
 function buildQueryString(params: Record<string, string | undefined>): string {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -247,6 +257,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     };
   } | undefined)?.execution;
   const selectedReportSummary = JSON.stringify(reportSummary ?? {}, null, 2);
+  const failedChecks = (reportExecution?.checks ?? []).filter((check) => check.status === 'fail');
   const latestReport = filteredReleaseReports[0];
   const latestRuntimeReadiness = latestReport?.runtime_release_readiness ?? '--';
   const latestUsageReadiness = latestReport?.usage_release_readiness ?? '--';
@@ -254,6 +265,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const currentUsageReadiness = evidenceQuery.data?.release_readiness ?? '--';
   const runtimeReadinessChanged = String(currentRuntimeReadiness) !== String(latestRuntimeReadiness);
   const usageReadinessChanged = String(currentUsageReadiness) !== String(latestUsageReadiness);
+  const currentRuntimeBlockerCount = runtimeQuery.data?.health_summary.terminal_error_requests ?? 0;
+  const currentUsageBlockerCount = blockers.length;
+  const latestRuntimeBlockerCount = reportSummary?.runtime_release_evidence?.guardrails?.blockers?.length ?? 0;
+  const latestUsageBlockerCount = reportSummary?.usage_report_evidence?.blockers?.length ?? 0;
+  const latestRuntimeWarningCount = reportSummary?.runtime_release_evidence?.guardrails?.warnings?.length ?? 0;
+  const latestUsageWarningCount = reportSummary?.usage_report_evidence?.warnings?.length ?? 0;
   const selectedReportTimestamp = ((reportDetailQuery.data?.report as { metadata?: { timestamp?: string } } | undefined)?.metadata?.timestamp)
     ?? reportSummary?.runtime_release_evidence?.generated_at;
   const contextWindowEnd = selectedReportTimestamp;
@@ -271,6 +288,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     end_time: contextWindowEnd,
     result: (reportSummary?.usage_report_evidence?.failed_deliveries_last_7d ?? 0) > 0 ? 'error' : undefined,
   })}`;
+  const longRangeReports = filteredReleaseReports.slice(0, 12);
+  const longRangePassRate = longRangeReports.length > 0
+    ? longRangeReports.filter((item) => item.status === 'pass').length / longRangeReports.length
+    : undefined;
+  const longRangeRuntimeBlocked = longRangeReports.filter((item) => item.runtime_release_readiness === 'blocked').length;
+  const longRangeUsageBlocked = longRangeReports.filter((item) => item.usage_release_readiness === 'blocked').length;
 
   if (!resolvedParams) {
     return (
@@ -418,6 +441,24 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </div>
                   </div>
                 </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2" data-testid="release-ops__compare-details">
+                  <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__compare-runtime-details">
+                    <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_runtime_details')}</div>
+                    <div className="mt-2 grid gap-2 text-sm text-foreground">
+                      <div>{settingsT('release_ops_compare_live_blockers')}: {currentRuntimeBlockerCount}</div>
+                      <div>{settingsT('release_ops_compare_report_blockers')}: {latestRuntimeBlockerCount}</div>
+                      <div>{settingsT('release_ops_compare_report_warnings')}: {latestRuntimeWarningCount}</div>
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__compare-usage-details">
+                    <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_usage_details')}</div>
+                    <div className="mt-2 grid gap-2 text-sm text-foreground">
+                      <div>{settingsT('release_ops_compare_live_blockers')}: {currentUsageBlockerCount}</div>
+                      <div>{settingsT('release_ops_compare_report_blockers')}: {latestUsageBlockerCount}</div>
+                      <div>{settingsT('release_ops_compare_report_warnings')}: {latestUsageWarningCount}</div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__schedules">
@@ -547,6 +588,29 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         </div>
                       </button>
                     ))}
+                  </div>
+                </div>
+                <div className="mt-4 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__history-trend">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_history_title')}</h4>
+                      <p className="text-xs text-tertiary">{settingsT('release_ops_history_subtitle')}</p>
+                    </div>
+                    <Badge variant="outline">{longRangeReports.length}</Badge>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__history-pass-rate">
+                      <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_pass_rate')}</div>
+                      <div className="mt-1 text-sm font-medium text-foreground">{formatPercent(longRangePassRate)}</div>
+                    </div>
+                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__history-runtime-blocked">
+                      <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_runtime_blocked')}</div>
+                      <div className="mt-1 text-sm font-medium text-foreground">{longRangeRuntimeBlocked}</div>
+                    </div>
+                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__history-usage-blocked">
+                      <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_usage_blocked')}</div>
+                      <div className="mt-1 text-sm font-medium text-foreground">{longRangeUsageBlocked}</div>
+                    </div>
                   </div>
                 </div>
                 {reportDetailQuery.data ? (
@@ -716,6 +780,33 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    </div>
+                    <div className="grid gap-3" data-testid="release-ops__report-failed-checks">
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="mb-2 text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_failed_checks')}</div>
+                        {failedChecks.length === 0 ? (
+                          <div className="text-sm text-tertiary" data-testid="release-ops__report-failed-checks-empty">
+                            {settingsT('release_ops_failed_checks_empty')}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {failedChecks.map((check, index) => (
+                              <div key={`${check.name}-${index}`} className="rounded-md border border-subtle px-3 py-2" data-testid={`release-ops__report-failed-check-${index}`}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-medium text-foreground">{check.name ?? '--'}</div>
+                                    <div className="text-xs text-tertiary">{check.category ?? '--'} · {formatDurationMs(check.duration_ms)}</div>
+                                  </div>
+                                  <Badge variant="secondary">{check.status ?? 'fail'}</Badge>
+                                </div>
+                                <div className="mt-2 text-xs text-tertiary">
+                                  {recommendationForCheck(check.category, check.name)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <pre className="overflow-x-auto rounded-md border border-subtle bg-surface p-3 text-xs text-foreground" data-testid="release-ops__report-summary-json">

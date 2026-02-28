@@ -334,3 +334,139 @@
 2. 一级导航结构
 3. unified proxy 主入口决策
 4. fallback 默认错误集合
+
+---
+
+## 11. 当前进度回顾（2026-02-28 收口后）
+
+### 11.1 已完成
+1. `WP-01 Runtime Domain & Storage`
+2. `WP-02 Unified Proxy Planner & Executor`
+3. `WP-03 Cost Engine & Usage Facts`
+4. `WP-04 Runtime Control Plane UI`
+5. `WP-05 Request Diagnostics UI`
+6. `WP-06 Usage & Cost UI`
+7. `WP-07 Routing Dry-run / Impact Preview / Compare / Recovery Probe / Rollout Guardrails`
+8. release gate 已纳入：
+   - runtime release evidence
+   - runtime guardrail blocker 判定
+   - `pricing_version` coverage 判定
+
+### 11.2 当前已具备的产品闭环
+1. runtime 对象 CRUD
+2. unified proxy direct / alias / combo
+3. fallback trace / request runtime detail
+4. Usage & Cost request-level drill-down
+5. Routing Dry-run
+6. Impact Preview
+7. Before / After Compare
+8. Recovery Probe
+9. release report 中的 runtime evidence
+
+### 11.3 当前不再是主阻塞的问题
+1. provider/model/routing/pricing 基础架构
+2. runtime contract 与 OpenAPI 对齐
+3. request-level cost/pricing_version traceability
+4. release report 对 runtime evidence 的接线
+
+---
+
+## 12. 下一阶段工作包（当前主线）
+
+下一阶段目标不再是“补齐 runtime 基础能力”，而是把产品从“可配置、可验证”推进到“可运营、可治理、可发布”。
+
+### WP-08 Runtime Observability Console（P0）
+目标：
+1. 把当前零散 observability 信息提升为独立运营页
+2. 让值班/平台管理员可以按 provider/model 快速判断健康度与失败模式
+
+交付：
+1. `Runtime > Observability` 独立页面
+2. provider/model 维度的：
+   - request volume
+   - success rate
+   - fallback rate
+   - retryable/non-retryable/system error trend
+   - latency / cost distribution
+3. provider health summary 卡片
+4. route degradation / anomaly 提示
+
+门禁：
+1. observability API contract 固定
+2. provider/model drill-down E2E 通过
+3. visual baseline 通过
+
+### WP-09 Usage & Cost Operations（P0）
+目标：
+1. 把当前 request detail 提升为真正可运营的成本分析入口
+2. 支持 provider/model/project/end_user 成本归因
+
+交付：
+1. Usage & Cost 顶层运营页
+2. 多维过滤：
+   - provider
+   - model
+   - project
+   - end_user
+   - result / error_class
+3. 成本排行、异常波峰、请求分布
+4. request timeline 与 trace 跳转联动
+
+门禁：
+1. 高成本请求归因 E2E
+2. provider/model 过滤契约测试
+3. request -> runtime detail 联动验证
+
+### WP-10 Pricing Governance & Version Lifecycle（P0）
+目标：
+1. 让价格治理从“能配”升级为“可审计、可比较、可上线”
+
+交付：
+1. pricing version lifecycle
+2. price compare / diff 视图
+3. override scope 管理：
+   - global
+   - workspace
+   - project
+4. missing-price preflight policy
+5. price change impact compare
+
+门禁：
+1. 历史请求不受后续调价污染
+2. missing-price policy E2E
+3. price compare visual / contract 通过
+
+### WP-11 Rollout Policy & Release Controls（P1）
+目标：
+1. 把 runtime planning 和 release governance 连成真正的上线流程
+
+交付：
+1. route draft / publish 状态
+2. canary / staged rollout 基础框架
+3. release approval checklist
+4. guardrail blocker 与 release report 的强一致策略
+
+门禁：
+1. blocked route 不可发布
+2. rollout policy contract tests
+3. release report 与 guardrail 状态一致
+
+---
+
+## 13. 推荐执行顺序（从现在开始）
+
+1. `WP-08 Runtime Observability Console`
+原因：
+当前控制面已能配置与预演，但运营页还不够强，优先补 observability 才能让内部持续使用者真正定位问题。
+
+2. `WP-09 Usage & Cost Operations`
+原因：
+有了 observability 后，下一步应补强“为什么贵、谁在花、按什么价格算”的运营闭环。
+
+3. `WP-10 Pricing Governance & Version Lifecycle`
+原因：
+在成本分析成立后，再做价格治理和版本生命周期，避免先做复杂价格 UI 却没有足够运营反馈。
+
+4. `WP-11 Rollout Policy & Release Controls`
+原因：
+发布控制应建立在 observability/cost/pricing 三条线都稳定后，否则会变成只会阻断、不会解释的门禁。

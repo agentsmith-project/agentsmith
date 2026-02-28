@@ -6,6 +6,7 @@
 
 2. `llm-runtime-final-implementation-plan-v2.md`
 - 已确认决策下的最终实施计划（周节奏、冻结点、门禁、切换策略）
+- 同时包含 2026-02-28 收口后的当前进度回顾与下一阶段 WP-08~WP-11 执行顺序
 
 3. `llm-provider-proxy-billing-prd-v1.md`
 - 产品目标、范围、验收主要求（基线 PRD）

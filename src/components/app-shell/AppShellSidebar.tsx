@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   Bell,
   Activity,
+  Gauge,
 } from 'lucide-react';
 
 interface AppShellSidebarProps {
@@ -48,6 +49,7 @@ const PROJECT_MENU_ITEMS = [
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:view' as const },
   { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:view' as const },
   { icon: Activity, labelKey: 'runtime_observability', href: 'runtime-observability', permission: 'project:usage:view' as const },
+  { icon: Gauge, labelKey: 'release_ops', href: 'release-ops', permission: 'project:usage:view' as const },
   { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage' as const },
 ];
 

@@ -5,7 +5,7 @@
  * and user menu interactions.
  */
 
-import { test, expect, goToProject, goTo, LOCALE, WS_ID, PROJECT_ID } from './fixtures/test-base';
+import { test, expect, goToProject } from './fixtures/test-base';
 
 const SIDEBAR_NAV_ITEMS = [
   'overview',
@@ -18,6 +18,7 @@ const SIDEBAR_NAV_ITEMS = [
   'files',
   'audit',
   'usage',
+  'release_ops',
   'settings',
 ] as const;
 
@@ -40,12 +41,16 @@ test.describe('Sidebar', () => {
     const sidebar = authedPage.getByTestId('sidebar');
     await expect(sidebar).toBeVisible({ timeout: 10000 });
 
-    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'settings'] as const;
+    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'release_ops', 'settings'] as const;
 
     for (const section of sectionsToTest) {
       const navItem = authedPage.getByTestId(`sidebar__nav-item--${section}`);
       await navItem.click();
-      const expectedPath = section === 'resource_policy' ? '/resource-policy' : `/${section}`;
+      const expectedPath = section === 'resource_policy'
+        ? '/resource-policy'
+        : section === 'release_ops'
+          ? '/release-ops'
+          : `/${section}`;
       await authedPage.waitForURL(`**${expectedPath}`, { timeout: 10000 });
       expect(authedPage.url()).toContain(expectedPath);
     }

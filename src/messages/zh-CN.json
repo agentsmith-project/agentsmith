@@ -123,6 +123,7 @@
     "audit": "审计",
     "usage": "用量",
     "runtime_observability": "运行时运营",
+    "release_ops": "Release Ops",
     "settings": "设置",
     "go_to_projects": "前往项目列表",
     "view_all_projects": "查看所有项目",

@@ -148,6 +148,17 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('usage__detail-summary__cost')).toBeVisible();
   });
 
+  test('release ops route is reachable from sidebar', async ({ authedPage }) => {
+    await goToProject(authedPage, 'overview');
+
+    await authedPage.getByTestId('sidebar__nav-item--release_ops').click();
+
+    await expect(authedPage).toHaveURL(/\/release-ops$/);
+    await expect(authedPage.getByTestId('release-ops__page')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('release-ops__dashboard')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__evidence-summary')).toBeVisible();
+  });
+
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {
     await goToProject(authedPage, 'settings');
     await expect(authedPage.getByTestId('settings__tab--general')).toBeVisible({ timeout: 10000 });

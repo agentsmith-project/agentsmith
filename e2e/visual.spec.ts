@@ -183,6 +183,11 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('runtime-observability.png', { fullPage: true });
   });
 
+  test('release ops', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('release-ops'));
+    await expect(authedPage).toHaveScreenshot('release-ops.png', { fullPage: true });
+  });
+
 });
 
 // ─── User Pages ─────────────────────────────────────────────────────────────

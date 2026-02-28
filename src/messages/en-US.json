@@ -121,6 +121,7 @@
     "audit": "Audit",
     "usage": "Usage",
     "runtime_observability": "Runtime Ops",
+    "release_ops": "Release Ops",
     "settings": "Settings",
     "go_to_projects": "Go to Projects",
     "view_all_projects": "View All Projects",

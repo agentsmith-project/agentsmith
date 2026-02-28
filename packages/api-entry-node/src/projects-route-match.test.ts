@@ -544,6 +544,29 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules'),
+    ).toEqual({
+      kind: 'usageReportSchedules',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules/sch_1'),
+    ).toEqual({
+      kind: 'usageReportScheduleItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      scheduleId: 'sch_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules/sch_1/test-delivery'),
+    ).toEqual({
+      kind: 'usageReportScheduleTestDelivery',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      scheduleId: 'sch_1',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/timeseries'),
     ).toEqual({
       kind: 'usageTimeseries',

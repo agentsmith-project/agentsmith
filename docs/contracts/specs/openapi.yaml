@@ -4347,6 +4347,136 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - Governance
+      operationId: listUsageReportSchedules
+      summary: List scheduled usage reports
+      responses:
+        "200":
+          description: Usage report schedules
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UsageReportSchedule"
+        "401": *a1
+        "403": *a2
+    post:
+      tags:
+        - Governance
+      operationId: createUsageReportSchedule
+      summary: Create a scheduled usage report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUsageReportScheduleRequest"
+      responses:
+        "201":
+          description: Usage report schedule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReportSchedule"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: scheduleId
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      tags:
+        - Governance
+      operationId: updateUsageReportSchedule
+      summary: Update a scheduled usage report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUsageReportScheduleRequest"
+      responses:
+        "200":
+          description: Usage report schedule updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReportSchedule"
+        "401": *a1
+        "403": *a2
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      tags:
+        - Governance
+      operationId: deleteUsageReportSchedule
+      summary: Delete a scheduled usage report
+      responses:
+        "204":
+          description: Deleted
+        "401": *a1
+        "403": *a2
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/test-delivery:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+      - name: scheduleId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags:
+        - Governance
+      operationId: testUsageReportScheduleDelivery
+      summary: Test usage report schedule delivery
+      responses:
+        "200":
+          description: Usage report delivery result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReportScheduleDeliveryResult"
+        "401": *a1
+        "403": *a2
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/llm/chat/completions:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -6853,6 +6983,162 @@ components:
         estimated_cost:
           type: number
           minimum: 0
+    UsageReportSchedule:
+      type: object
+      required:
+        - id
+        - workspace_id
+        - project_id
+        - name
+        - cadence
+        - status
+        - format
+        - time_window
+        - delivery_channel
+        - created_at
+        - updated_at
+        - next_run_at
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+        cadence:
+          type: string
+          enum: [daily, weekly, monthly]
+        status:
+          type: string
+          enum: [active, paused]
+        format:
+          type: string
+          enum: [csv, json]
+        time_window:
+          type: string
+          enum: [last_24h, last_7d, last_30d]
+        delivery_channel:
+          type: string
+          enum: [in_app]
+        filters:
+          $ref: "#/components/schemas/UsageReportScheduleFilters"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        next_run_at:
+          type: string
+          format: date-time
+        last_run_at:
+          type: string
+          format: date-time
+        last_delivery_status:
+          type: string
+          enum: [idle, success, failed]
+        last_delivery_at:
+          type: string
+          format: date-time
+        last_delivery_error:
+          type: string
+    UsageReportScheduleFilters:
+      type: object
+      properties:
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        end_user_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        result:
+          type: string
+          enum: [ok, error]
+        error_class:
+          type: string
+          enum: [provider_retryable, provider_non_retryable, system_error]
+    CreateUsageReportScheduleRequest:
+      type: object
+      required: [name, cadence, status, format, time_window, delivery_channel]
+      properties:
+        name:
+          type: string
+        cadence:
+          type: string
+          enum: [daily, weekly, monthly]
+        status:
+          type: string
+          enum: [active, paused]
+        format:
+          type: string
+          enum: [csv, json]
+        time_window:
+          type: string
+          enum: [last_24h, last_7d, last_30d]
+        delivery_channel:
+          type: string
+          enum: [in_app]
+        filters:
+          $ref: "#/components/schemas/UsageReportScheduleFilters"
+    UpdateUsageReportScheduleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        cadence:
+          type: string
+          enum: [daily, weekly, monthly]
+        status:
+          type: string
+          enum: [active, paused]
+        format:
+          type: string
+          enum: [csv, json]
+        time_window:
+          type: string
+          enum: [last_24h, last_7d, last_30d]
+        delivery_channel:
+          type: string
+          enum: [in_app]
+        filters:
+          $ref: "#/components/schemas/UsageReportScheduleFilters"
+    UsageReportScheduleDeliveryResult:
+      type: object
+      required: [schedule_id, delivery_channel, generated_at, preview_filename, content_type, summary]
+      properties:
+        schedule_id:
+          type: string
+        delivery_channel:
+          type: string
+          enum: [in_app]
+        generated_at:
+          type: string
+          format: date-time
+        preview_filename:
+          type: string
+        content_type:
+          type: string
+        summary:
+          type: object
+          required: [requests, errors]
+          properties:
+            requests:
+              type: number
+              minimum: 0
+            errors:
+              type: number
+              minimum: 0
+            top_provider:
+              type: string
+            estimated_cost:
+              type: number
+              minimum: 0
     ResourceCostBreakdown:
       type: object
       required:

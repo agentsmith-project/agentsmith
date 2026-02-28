@@ -39,4 +39,41 @@ describe('UsageAPI exportReport', () => {
     expect(result.contentType).toContain('text/csv');
     expect(result.blob).toBeDefined();
   });
+
+  it('creates usage report schedule via project route', async () => {
+    const postMock = vi.fn().mockResolvedValue({
+        id: 'usage_schedule_1',
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        name: 'Daily Ops',
+        cadence: 'daily',
+        status: 'active',
+        format: 'json',
+        time_window: 'last_7d',
+        delivery_channel: 'in_app',
+        created_at: '2026-02-28T00:00:00.000Z',
+        updated_at: '2026-02-28T00:00:00.000Z',
+        next_run_at: '2026-03-01T00:00:00.000Z',
+      });
+
+    const api = new UsageAPI({
+      ...client,
+      post: postMock,
+    } as unknown as ConstructorParameters<typeof UsageAPI>[0]);
+    const result = await api.createReportSchedule('ws_1', 'proj_1', {
+      name: 'Daily Ops',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'in_app',
+      filters: { provider: 'openai' },
+    });
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/usage/report-schedules',
+      expect.objectContaining({ name: 'Daily Ops' }),
+    );
+    expect(result.name).toBe('Daily Ops');
+  });
 });

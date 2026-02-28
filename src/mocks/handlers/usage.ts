@@ -37,6 +37,56 @@ type RuntimeFactLike = {
   };
 };
 
+type UsageReportSchedule = {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  name: string;
+  cadence: 'daily' | 'weekly' | 'monthly';
+  status: 'active' | 'paused';
+  format: 'csv' | 'json';
+  time_window: 'last_24h' | 'last_7d' | 'last_30d';
+  delivery_channel: 'in_app';
+  filters?: {
+    provider?: string;
+    model?: string;
+    result?: 'ok' | 'error';
+  };
+  created_at: string;
+  updated_at: string;
+  next_run_at: string;
+  last_run_at?: string;
+  last_delivery_status?: 'idle' | 'success' | 'failed';
+  last_delivery_at?: string;
+};
+
+function computeNextRunAt(cadence: UsageReportSchedule['cadence'], nowIso = new Date().toISOString()) {
+  const date = new Date(nowIso);
+  if (cadence === 'daily') date.setUTCDate(date.getUTCDate() + 1);
+  if (cadence === 'weekly') date.setUTCDate(date.getUTCDate() + 7);
+  if (cadence === 'monthly') date.setUTCMonth(date.getUTCMonth() + 1);
+  return date.toISOString();
+}
+
+const usageReportSchedules: UsageReportSchedule[] = [{
+  id: 'usage_schedule_001',
+  workspace_id: 'ws_1',
+  project_id: 'proj_001',
+  name: 'Weekly Runtime Ops Snapshot',
+  cadence: 'weekly',
+  status: 'active',
+  format: 'json',
+  time_window: 'last_7d',
+  delivery_channel: 'in_app',
+  filters: {
+    provider: 'secondaryok',
+  },
+  created_at: '2026-02-27T00:00:00.000Z',
+  updated_at: '2026-02-27T00:00:00.000Z',
+  next_run_at: computeNextRunAt('weekly', '2026-02-27T00:00:00.000Z'),
+  last_delivery_status: 'idle',
+}];
+
 function resolveResourceMultiplier(resourceType?: string | null) {
   if (resourceType === 'agent') return 0.65;
   if (resourceType === 'source_library') return 0.35;
@@ -812,6 +862,84 @@ export const usageHandlers = [
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
+  }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules', ({ params }) => {
+    const items = usageReportSchedules.filter((item) => item.workspace_id === params.ws && item.project_id === params.prj);
+    return HttpResponse.json({ items });
+  }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules', async ({ params, request }) => {
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const now = new Date().toISOString();
+    const item: UsageReportSchedule = {
+      id: `usage_schedule_${Date.now()}`,
+      workspace_id: String(params.ws),
+      project_id: String(params.prj),
+      name: typeof body.name === 'string' ? body.name : 'Scheduled Usage Report',
+      cadence: body.cadence === 'weekly' || body.cadence === 'monthly' ? body.cadence : 'daily',
+      status: body.status === 'paused' ? 'paused' : 'active',
+      format: body.format === 'csv' ? 'csv' : 'json',
+      time_window: body.time_window === 'last_24h' || body.time_window === 'last_30d' ? body.time_window : 'last_7d',
+      delivery_channel: 'in_app',
+      filters: typeof body.filters === 'object' && body.filters ? body.filters as UsageReportSchedule['filters'] : undefined,
+      created_at: now,
+      updated_at: now,
+      next_run_at: computeNextRunAt(body.cadence === 'weekly' || body.cadence === 'monthly' ? body.cadence : 'daily', now),
+      last_delivery_status: 'idle',
+    };
+    usageReportSchedules.unshift(item);
+    return HttpResponse.json(item, { status: 201 });
+  }),
+  http.patch('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId', async ({ params, request }) => {
+    const idx = usageReportSchedules.findIndex((item) => item.id === params.scheduleId && item.workspace_id === params.ws && item.project_id === params.prj);
+    if (idx < 0) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const cadence = body.cadence === 'daily' || body.cadence === 'weekly' || body.cadence === 'monthly'
+      ? body.cadence
+      : usageReportSchedules[idx].cadence;
+    usageReportSchedules[idx] = {
+      ...usageReportSchedules[idx],
+      ...body,
+      cadence,
+      updated_at: new Date().toISOString(),
+      next_run_at: computeNextRunAt(cadence),
+    };
+    return HttpResponse.json(usageReportSchedules[idx]);
+  }),
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId', ({ params }) => {
+    const idx = usageReportSchedules.findIndex((item) => item.id === params.scheduleId && item.workspace_id === params.ws && item.project_id === params.prj);
+    if (idx < 0) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
+    usageReportSchedules.splice(idx, 1);
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/test-delivery', ({ params }) => {
+    const item = usageReportSchedules.find((entry) => entry.id === params.scheduleId && entry.workspace_id === params.ws && entry.project_id === params.prj);
+    if (!item) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
+    const now = new Date().toISOString();
+    item.last_delivery_at = now;
+    item.last_run_at = now;
+    item.last_delivery_status = 'success';
+    item.updated_at = now;
+    item.next_run_at = item.status === 'active' ? computeNextRunAt(item.cadence, now) : item.next_run_at;
+    const facts = listRuntimeUsageFacts({
+      startTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      endTime: now,
+      provider: item.filters?.provider ?? null,
+      model: item.filters?.model ?? null,
+      result: item.filters?.result ?? null,
+    });
+    return HttpResponse.json({
+      schedule_id: item.id,
+      delivery_channel: 'in_app',
+      generated_at: now,
+      preview_filename: `usage-report-${item.project_id}.${item.format}`,
+      content_type: item.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
+      summary: {
+        requests: facts.length,
+        errors: facts.filter((fact) => fact.result === 'error').length,
+        top_provider: facts[0]?.runtime?.provider,
+        estimated_cost: Number(facts.reduce((sum, fact) => sum + (fact.runtime?.estimated_cost ?? 0), 0).toFixed(8)),
       },
     });
   }),

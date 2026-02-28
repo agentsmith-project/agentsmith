@@ -231,6 +231,8 @@ export const queryKeys = {
       ['usage-runtime-observability', workspaceId, projectId, params] as const,
     operationsSummary: (workspaceId: string, projectId: string, params?: object) =>
       ['usage-operations-summary', workspaceId, projectId, params] as const,
+    reportSchedules: (workspaceId: string, projectId: string) =>
+      ['usage-report-schedules', workspaceId, projectId] as const,
     quotaSummary: (workspaceId: string, projectId: string) =>
       ['usage-quota-summary', workspaceId, projectId] as const,
   },

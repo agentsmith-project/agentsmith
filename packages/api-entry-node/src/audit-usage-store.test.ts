@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
+  createUsageReportSchedule,
   exportUsageData,
   getRuntimeObservability,
   getUsageOperationsSummary,
   listUsageFactRecords,
+  listUsageReportSchedules,
   recordUsageFact,
+  testUsageReportScheduleDelivery,
 } from './audit-usage-store.js';
 
 describe('audit-usage-store runtime observability', () => {
@@ -307,5 +310,58 @@ describe('audit-usage-store runtime observability', () => {
     expect(payload.facts).toEqual(expect.arrayContaining([expect.objectContaining({ request_id: 'req_export' })]));
     expect(payload.runtime_observability.total_requests).toBe(1);
     expect(payload.operations_summary.top_providers).toEqual(expect.arrayContaining([expect.objectContaining({ provider: 'openai' })]));
+  });
+
+  it('creates and tests scheduled usage reports', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+    const now = new Date().toISOString();
+
+    await recordUsageFact(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'rpc_sched',
+      requests: 1,
+      result: 'ok',
+      request_id: 'req_sched',
+      metadata_json: {
+        provider: 'secondaryok',
+        resolved_model: 'model-b',
+        estimated_cost: 0.0033,
+      },
+    });
+
+    const created = await createUsageReportSchedule(store, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      name: 'Weekly Runtime Digest',
+      cadence: 'weekly',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'in_app',
+      filters: {
+        provider: 'secondaryok',
+      },
+    });
+
+    const listed = await listUsageReportSchedules(store, { workspaceId, projectId });
+    expect(listed.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.id, name: 'Weekly Runtime Digest' })]));
+
+    const delivery = await testUsageReportScheduleDelivery(store, {
+      workspaceId,
+      projectId,
+      scheduleId: created.id,
+    });
+    expect(delivery).toEqual(expect.objectContaining({
+      schedule_id: created.id,
+      summary: expect.objectContaining({
+        requests: 1,
+        top_provider: 'secondaryok',
+      }),
+    }));
   });
 });

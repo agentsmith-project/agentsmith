@@ -179,6 +179,48 @@ export interface UsageOperationsSummaryResponse {
   }>;
 }
 
+export interface UsageReportSchedule {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  name: string;
+  cadence: 'daily' | 'weekly' | 'monthly';
+  status: 'active' | 'paused';
+  format: 'csv' | 'json';
+  time_window: 'last_24h' | 'last_7d' | 'last_30d';
+  delivery_channel: 'in_app';
+  filters?: {
+    resource_type?: string;
+    resource_id?: string;
+    end_user_id?: string;
+    provider?: string;
+    model?: string;
+    result?: 'ok' | 'error';
+    error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
+  };
+  created_at: string;
+  updated_at: string;
+  next_run_at: string;
+  last_run_at?: string;
+  last_delivery_status?: 'idle' | 'success' | 'failed';
+  last_delivery_at?: string;
+  last_delivery_error?: string;
+}
+
+export interface UsageReportScheduleDeliveryResult {
+  schedule_id: string;
+  delivery_channel: 'in_app';
+  generated_at: string;
+  preview_filename: string;
+  content_type: string;
+  summary: {
+    requests: number;
+    errors: number;
+    top_provider?: string;
+    estimated_cost?: number;
+  };
+}
+
 export class AuditAPI {
   constructor(private client: ApiClient) {}
 
@@ -469,5 +511,57 @@ export class UsageAPI {
       filename: filenameMatch?.[1] ?? `usage-report.${params.format}`,
       contentType: response.headers.get('content-type') ?? 'application/octet-stream',
     };
+  }
+
+  async listReportSchedules(
+    workspaceId: string,
+    projectId: string,
+  ): Promise<{ items: UsageReportSchedule[] }> {
+    return this.client.get<{ items: UsageReportSchedule[] }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules`,
+    );
+  }
+
+  async createReportSchedule(
+    workspaceId: string,
+    projectId: string,
+    body: Omit<UsageReportSchedule, 'id' | 'workspace_id' | 'project_id' | 'created_at' | 'updated_at' | 'next_run_at' | 'last_run_at' | 'last_delivery_status' | 'last_delivery_at' | 'last_delivery_error'>,
+  ): Promise<UsageReportSchedule> {
+    return this.client.post<UsageReportSchedule>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules`,
+      body,
+    );
+  }
+
+  async updateReportSchedule(
+    workspaceId: string,
+    projectId: string,
+    scheduleId: string,
+    patch: Partial<Pick<UsageReportSchedule, 'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'filters'>>,
+  ): Promise<UsageReportSchedule> {
+    return this.client.patch<UsageReportSchedule>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}`,
+      patch,
+    );
+  }
+
+  async deleteReportSchedule(
+    workspaceId: string,
+    projectId: string,
+    scheduleId: string,
+  ): Promise<void> {
+    await this.client.delete<void>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}`,
+    );
+  }
+
+  async testReportScheduleDelivery(
+    workspaceId: string,
+    projectId: string,
+    scheduleId: string,
+  ): Promise<UsageReportScheduleDeliveryResult> {
+    return this.client.post<UsageReportScheduleDeliveryResult>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}/test-delivery`,
+    );
   }
 }

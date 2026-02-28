@@ -67,6 +67,8 @@ export type {
   JoinRequest,
   Member,
   UsageKPI,
+  UsageReportSchedule,
+  UsageReportScheduleDeliveryResult,
   CreateUserKeyRequest,
   CreateSessionRequest,
   CreateMessageRequest,

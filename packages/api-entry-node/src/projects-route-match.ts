@@ -59,6 +59,9 @@ export type ProjectsRoute =
   | { kind: 'taskEvents'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'audit'; workspaceId: string; projectId: string }
   | { kind: 'usageExport'; workspaceId: string; projectId: string }
+  | { kind: 'usageReportSchedules'; workspaceId: string; projectId: string }
+  | { kind: 'usageReportScheduleItem'; workspaceId: string; projectId: string; scheduleId: string }
+  | { kind: 'usageReportScheduleTestDelivery'; workspaceId: string; projectId: string; scheduleId: string }
   | { kind: 'usage'; workspaceId: string; projectId: string }
   | { kind: 'usageFacts'; workspaceId: string; projectId: string }
   | { kind: 'usageKpi'; workspaceId: string; projectId: string }
@@ -240,6 +243,35 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'usageExport',
       workspaceId: decodeURIComponent(usageExportMatched[1]),
       projectId: decodeURIComponent(usageExportMatched[2]),
+    };
+  }
+
+  const usageReportSchedulesMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/?$/);
+  if (usageReportSchedulesMatched) {
+    return {
+      kind: 'usageReportSchedules',
+      workspaceId: decodeURIComponent(usageReportSchedulesMatched[1]),
+      projectId: decodeURIComponent(usageReportSchedulesMatched[2]),
+    };
+  }
+
+  const usageReportScheduleTestMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/([^/]+)\/test-delivery\/?$/);
+  if (usageReportScheduleTestMatched) {
+    return {
+      kind: 'usageReportScheduleTestDelivery',
+      workspaceId: decodeURIComponent(usageReportScheduleTestMatched[1]),
+      projectId: decodeURIComponent(usageReportScheduleTestMatched[2]),
+      scheduleId: decodeURIComponent(usageReportScheduleTestMatched[3]),
+    };
+  }
+
+  const usageReportScheduleItemMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/([^/]+)\/?$/);
+  if (usageReportScheduleItemMatched) {
+    return {
+      kind: 'usageReportScheduleItem',
+      workspaceId: decodeURIComponent(usageReportScheduleItemMatched[1]),
+      projectId: decodeURIComponent(usageReportScheduleItemMatched[2]),
+      scheduleId: decodeURIComponent(usageReportScheduleItemMatched[3]),
     };
   }
 

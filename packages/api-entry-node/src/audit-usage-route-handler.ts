@@ -3,6 +3,8 @@ import type { ProjectsRoute } from './projects-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   aggregateUsageRecords,
+  createUsageReportSchedule,
+  deleteUsageReportSchedule,
   exportUsageData,
   getQuotaSummary,
   getRuntimeObservability,
@@ -10,7 +12,10 @@ import {
   getUsageKpi,
   getUsageTimeseries,
   listAuditEvents,
+  listUsageReportSchedules,
   listUsageFactRecords,
+  testUsageReportScheduleDelivery,
+  updateUsageReportSchedule,
 } from './audit-usage-store.js';
 
 type JsonResponder = (res: http.ServerResponse, status: number, payload: unknown) => void;
@@ -18,6 +23,7 @@ type JsonResponder = (res: http.ServerResponse, status: number, payload: unknown
 type HandlerArgs = {
   route: ProjectsRoute;
   method: string;
+  req: http.IncomingMessage;
   requestUrl: URL;
   res: http.ServerResponse;
   json: JsonResponder;
@@ -36,6 +42,16 @@ function parsePositiveInt(value: string | null, fallback: number, max?: number):
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   if (typeof max === 'number') return Math.min(parsed, max);
   return parsed;
+}
+
+async function readJsonBody<T>(req: http.IncomingMessage): Promise<T> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const raw = Buffer.concat(chunks).toString('utf8').trim();
+  if (!raw) return {} as T;
+  return JSON.parse(raw) as T;
 }
 
 function badRequest(json: JsonResponder, res: http.ServerResponse, message: string): true {
@@ -67,11 +83,102 @@ function requireTimeRange(
 export async function handleAuditUsageRoute({
   route,
   method,
+  req,
   requestUrl,
   res,
   json,
   deps,
 }: HandlerArgs): Promise<boolean> {
+  if (route.kind === 'usageReportSchedules' && method === 'GET') {
+    const payload = await listUsageReportSchedules(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageReportSchedules' && method === 'POST') {
+    const body = await readJsonBody<Record<string, unknown>>(req);
+    const cadence = body.cadence === 'weekly' || body.cadence === 'monthly' ? body.cadence : 'daily';
+    const format = body.format === 'json' ? 'json' : 'csv';
+    const timeWindow = body.time_window === 'last_24h' || body.time_window === 'last_30d' ? body.time_window : 'last_7d';
+    const status = body.status === 'paused' ? 'paused' : 'active';
+    const deliveryChannel = body.delivery_channel === 'in_app' ? 'in_app' : 'in_app';
+    const name = typeof body.name === 'string' && body.name.trim().length > 0 ? body.name.trim() : null;
+    if (!name) {
+      return badRequest(json, res, 'name is required');
+    }
+    const payload = await createUsageReportSchedule(deps.docStore, {
+      workspace_id: route.workspaceId,
+      project_id: route.projectId,
+      name,
+      cadence,
+      status,
+      format,
+      time_window: timeWindow,
+      delivery_channel: deliveryChannel,
+      filters: typeof body.filters === 'object' && body.filters ? body.filters as Record<string, unknown> : undefined,
+    });
+    json(res, 201, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageReportScheduleItem' && method === 'PATCH') {
+    const body = await readJsonBody<Record<string, unknown>>(req);
+    const payload = await updateUsageReportSchedule(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      scheduleId: route.scheduleId,
+      patch: {
+        name: typeof body.name === 'string' ? body.name.trim() : undefined,
+        cadence: body.cadence === 'daily' || body.cadence === 'weekly' || body.cadence === 'monthly' ? body.cadence : undefined,
+        status: body.status === 'active' || body.status === 'paused' ? body.status : undefined,
+        format: body.format === 'csv' || body.format === 'json' ? body.format : undefined,
+        time_window: body.time_window === 'last_24h' || body.time_window === 'last_7d' || body.time_window === 'last_30d'
+          ? body.time_window
+          : undefined,
+        delivery_channel: body.delivery_channel === 'in_app' ? 'in_app' : undefined,
+        filters: typeof body.filters === 'object' && body.filters ? body.filters as Record<string, unknown> : undefined,
+      },
+    });
+    if (!payload) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_schedule_not_found' });
+      return true;
+    }
+    json(res, 200, payload);
+    return true;
+  }
+
+  if (route.kind === 'usageReportScheduleItem' && method === 'DELETE') {
+    const deleted = await deleteUsageReportSchedule(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      scheduleId: route.scheduleId,
+    });
+    if (!deleted) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_schedule_not_found' });
+      return true;
+    }
+    res.statusCode = 204;
+    res.end();
+    return true;
+  }
+
+  if (route.kind === 'usageReportScheduleTestDelivery' && method === 'POST') {
+    const payload = await testUsageReportScheduleDelivery(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      scheduleId: route.scheduleId,
+    });
+    if (!payload) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'usage_report_schedule_not_found' });
+      return true;
+    }
+    json(res, 200, payload);
+    return true;
+  }
+
   if (route.kind === 'usageKpi' && method === 'GET') {
     const range = requireTimeRange(requestUrl, json, res);
     if (range === true) return true;

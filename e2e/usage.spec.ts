@@ -57,6 +57,12 @@ test.describe('Usage Page', () => {
     await expect(authedPage.getByTestId('usage__export-option-json')).toBeVisible();
   });
 
+  test('scheduled report panel can open create dialog', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('usage__report-schedules')).toBeVisible();
+    await authedPage.getByTestId('usage__report-schedules-create').click();
+    await expect(authedPage.getByTestId('usage__report-schedules-form-name')).toBeVisible();
+  });
+
   test('text filter and clear filters interaction works', async ({ authedPage }) => {
     const filters = authedPage.getByTestId('usage__filters');
     await expect(filters).toBeVisible({ timeout: 10000 });

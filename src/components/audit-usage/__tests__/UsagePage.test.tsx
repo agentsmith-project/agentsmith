@@ -25,6 +25,10 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 }));
 
 const exportReportMock = vi.fn();
+const createReportScheduleMock = vi.fn();
+const updateReportScheduleMock = vi.fn();
+const deleteReportScheduleMock = vi.fn();
+const testReportScheduleDeliveryMock = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<object>('@/lib/api');
@@ -33,6 +37,10 @@ vi.mock('@/lib/api', async () => {
     getApiClient: () => ({ getToken: () => null }),
     UsageAPI: class {
       exportReport = exportReportMock;
+      createReportSchedule = createReportScheduleMock;
+      updateReportSchedule = updateReportScheduleMock;
+      deleteReportSchedule = deleteReportScheduleMock;
+      testReportScheduleDelivery = testReportScheduleDeliveryMock;
     },
   };
 });
@@ -107,6 +115,27 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
     },
     isLoading: false,
   }),
+  useUsageReportSchedules: () => ({
+    data: {
+      items: [
+        {
+          id: 'usage_schedule_1',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          name: 'Daily Ops',
+          cadence: 'daily',
+          status: 'active',
+          format: 'json',
+          time_window: 'last_7d',
+          delivery_channel: 'in_app',
+          created_at: '2026-02-28T00:00:00.000Z',
+          updated_at: '2026-02-28T00:00:00.000Z',
+          next_run_at: '2026-03-01T00:00:00.000Z',
+        },
+      ],
+    },
+    isLoading: false,
+  }),
 }));
 
 vi.mock('@/components/dashboard', () => ({
@@ -116,6 +145,7 @@ vi.mock('@/components/dashboard', () => ({
 vi.mock('@/components/ui/toast', () => ({
   toast: {
     success: vi.fn(),
+    error: vi.fn(),
   },
 }));
 
@@ -126,6 +156,7 @@ describe('UsagePage', () => {
 
     expect(screen.getByTestId('usage__operations-summary')).toBeInTheDocument();
     expect(screen.getByTestId('usage__export-trigger')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__report-schedules')).toBeInTheDocument();
     await user.click(screen.getByTestId('usage__table__row'));
 
     expect(screen.getByText('detail.title')).toBeInTheDocument();
@@ -133,5 +164,27 @@ describe('UsagePage', () => {
     expect(screen.getByTestId('usage__detail-fact-usgf_1')).toBeInTheDocument();
     expect(screen.getByTestId('usage__detail-pricing-version-usgf_1')).toHaveTextContent('runtime-pricing-v1');
     expect(screen.getByTestId('usage__detail-timeline-usgf_1')).toBeInTheDocument();
+  });
+
+  it('creates a usage report schedule from dialog', async () => {
+    const user = userEvent.setup();
+    createReportScheduleMock.mockResolvedValue({
+      id: 'usage_schedule_2',
+    });
+
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    await user.click(screen.getByTestId('usage__report-schedules-create'));
+    await user.type(screen.getByTestId('usage__report-schedules-form-name'), 'Weekly Runtime Digest');
+    await user.click(screen.getByTestId('usage__report-schedules-form-submit'));
+
+    expect(createReportScheduleMock).toHaveBeenCalledWith(
+      'ws_1',
+      'proj_1',
+      expect.objectContaining({
+        name: 'Weekly Runtime Digest',
+        delivery_channel: 'in_app',
+      }),
+    );
   });
 });

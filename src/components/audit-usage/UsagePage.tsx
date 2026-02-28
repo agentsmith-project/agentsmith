@@ -7,8 +7,9 @@ import { UsageKPICards } from './UsageKPICards';
 import { UsageFilters } from './UsageFilters';
 import { UsageFactDetailDrawer } from './UsageFactDetailDrawer';
 import { UsageOperationsSummary } from './UsageOperationsSummary';
+import { UsageReportSchedulesPanel } from './UsageReportSchedulesPanel';
 import { UsageTable } from './UsageTable';
-import { useUsageFacts, useUsageKPI, useUsageOperationsSummary, useUsageRecords } from '@/lib/hooks/use-audit-usage';
+import { useUsageFacts, useUsageKPI, useUsageOperationsSummary, useUsageRecords, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -22,6 +23,7 @@ import { CostDashboardPage } from '@/components/dashboard';
 import type { UsageRecord } from '@/lib/api/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { getApiClient, UsageAPI } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -62,6 +64,7 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:usage:view');
   const canExportUsage = useHasPermission('project:usage:export');
+  const canManageReportSchedules = useHasPermission('project:usage:report_schedule');
   const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
 
   // If defaultEndUserId is provided, scope is locked to the current user usage.
@@ -107,6 +110,9 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   const operationsSummaryQuery = useUsageOperationsSummary(workspaceId, projectId, apiFilters, {
     enabled: canReadUsage && panel === 'usage',
   });
+  const reportSchedulesQuery = useUsageReportSchedules(workspaceId, projectId, {
+    enabled: canReadUsage && panel === 'usage',
+  });
   const usageDetailRange = React.useMemo(
     () => selectedUsageRecord ? getBucketRange(selectedUsageRecord.time_bucket, apiFilters.group_by === 'hour' ? 'hour' : 'day') : null,
     [selectedUsageRecord, apiFilters.group_by],
@@ -132,14 +138,9 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
   );
 
   const handleRefresh = React.useCallback(() => {
-    queryClient.invalidateQueries({
-      queryKey: ['usage-kpi', workspaceId, projectId],
-    });
-    queryClient.invalidateQueries({
-      queryKey: ['usage', workspaceId, projectId],
-    });
+    queryClient.invalidateQueries({ queryKey: queryKeys.usage._def });
     toast.success(commonT('refreshed_data') || 'Refreshed usage data');
-  }, [queryClient, workspaceId, projectId, commonT]);
+  }, [queryClient, commonT]);
 
   const handleExport = React.useCallback(async (format: 'csv' | 'json') => {
     setExportingFormat(format);
@@ -175,6 +176,66 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
       setExportingFormat(null);
     }
   }, [usageApi, workspaceId, projectId, apiFilters, t, commonT]);
+
+  const refreshUsagePanels = React.useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.usage.reportSchedules(workspaceId, projectId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.usage._def });
+  }, [projectId, queryClient, workspaceId]);
+
+  const handleCreateReportSchedule = React.useCallback(async (
+    payload: Parameters<React.ComponentProps<typeof UsageReportSchedulesPanel>['onCreate']>[0],
+  ) => {
+    try {
+      await usageApi.createReportSchedule(workspaceId, projectId, payload);
+      refreshUsagePanels();
+      toast.success(t('report_schedules.create_success'));
+    } catch (error) {
+      toast.error(t('report_schedules.failed_with_reason', {
+        reason: error instanceof Error ? error.message : commonT('unknown_error'),
+      }));
+    }
+  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
+
+  const handleUpdateScheduleStatus = React.useCallback(async (
+    schedule: { id: string },
+    status: 'active' | 'paused',
+  ) => {
+    try {
+      await usageApi.updateReportSchedule(workspaceId, projectId, schedule.id, { status });
+      refreshUsagePanels();
+      toast.success(t('report_schedules.update_success'));
+    } catch (error) {
+      toast.error(t('report_schedules.failed_with_reason', {
+        reason: error instanceof Error ? error.message : commonT('unknown_error'),
+      }));
+    }
+  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
+
+  const handleDeleteSchedule = React.useCallback(async (schedule: { id: string }) => {
+    try {
+      await usageApi.deleteReportSchedule(workspaceId, projectId, schedule.id);
+      refreshUsagePanels();
+      toast.success(t('report_schedules.delete_success'));
+    } catch (error) {
+      toast.error(t('report_schedules.failed_with_reason', {
+        reason: error instanceof Error ? error.message : commonT('unknown_error'),
+      }));
+    }
+  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
+
+  const handleTestScheduleDelivery = React.useCallback(async (schedule: { id: string }) => {
+    try {
+      const result = await usageApi.testReportScheduleDelivery(workspaceId, projectId, schedule.id);
+      refreshUsagePanels();
+      toast.success(t('report_schedules.test_success'));
+      return result;
+    } catch (error) {
+      toast.error(t('report_schedules.failed_with_reason', {
+        reason: error instanceof Error ? error.message : commonT('unknown_error'),
+      }));
+      return null;
+    }
+  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
 
   const handleClearFilters = React.useCallback(() => {
     setFilters({
@@ -356,6 +417,17 @@ export function UsagePage({ workspaceId, projectId, defaultEndUserId, currentUse
           <UsageOperationsSummary
             summary={operationsSummaryQuery.data}
             loading={operationsSummaryQuery.isLoading}
+          />
+
+          <UsageReportSchedulesPanel
+            schedules={reportSchedulesQuery.data?.items ?? []}
+            loading={reportSchedulesQuery.isLoading}
+            canManage={canManageReportSchedules}
+            currentFilters={apiFilters}
+            onCreate={handleCreateReportSchedule}
+            onUpdateStatus={handleUpdateScheduleStatus}
+            onDelete={handleDeleteSchedule}
+            onTestDelivery={handleTestScheduleDelivery}
           />
 
           <div className="flex-1 min-h-0 overflow-y-auto">

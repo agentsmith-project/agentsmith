@@ -30,6 +30,7 @@ export type {
 } from './endpoints';
 export type { UpdateMemberGroupRequest, JoinRequest, Member } from './members';
 export type { UsageKPI } from '../types';
+export type { UsageReportSchedule, UsageReportScheduleDeliveryResult } from './audit-usage';
 export type { CreateUserKeyRequest } from './user-keys';
 export type { CreateSessionRequest, CreateMessageRequest } from './chat';
 export type {

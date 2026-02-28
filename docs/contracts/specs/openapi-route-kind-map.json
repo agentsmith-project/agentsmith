@@ -43,6 +43,18 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/export",
     "method": "get"
   },
+  "usageReportSchedules": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules",
+    "method": "get"
+  },
+  "usageReportScheduleItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}",
+    "method": "patch"
+  },
+  "usageReportScheduleTestDelivery": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules/{scheduleId}/test-delivery",
+    "method": "post"
+  },
   "usageTimeseries": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/timeseries",
     "method": "get"

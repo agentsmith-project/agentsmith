@@ -164,6 +164,9 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__report-structured-summary')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-metadata')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-download-markdown')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-runtime-evidence')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-usage-evidence')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-execution-checks')).toBeVisible();
 
     await authedPage.getByTestId('release-ops__report-search').fill('signature');
     await expect(authedPage).toHaveURL(/report_search=signature/);

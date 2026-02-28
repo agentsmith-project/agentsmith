@@ -42,6 +42,16 @@ function yesNoBadge(value: boolean | undefined) {
   return value ? 'outline' : 'secondary';
 }
 
+function formatPercent(value?: number): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '--';
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatDurationMs(value?: number): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '--';
+  return `${Math.round(value)}ms`;
+}
+
 function downloadTextFile(filename: string, content: string, contentType: string): void {
   const blob = new Blob([content], { type: contentType });
   const url = window.URL.createObjectURL(blob);
@@ -179,19 +189,48 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     summary?: {
       status?: string;
       runtime_release_evidence?: {
+        generated_at?: string;
         guardrails?: {
           release_readiness?: 'ready' | 'blocked';
+          target?: string;
+          planned_attempts?: number;
           blockers?: string[];
           warnings?: string[];
+        };
+        pricing_version_coverage?: {
+          total_usage_facts?: number;
+          covered_usage_facts?: number;
+          missing_usage_facts?: number;
+          missing_price_facts?: number;
+          coverage_ratio?: number;
         };
       };
       usage_report_evidence?: {
         release_readiness?: 'ready' | 'blocked';
+        active_schedules?: number;
+        required_schedules?: number;
+        successful_deliveries_last_7d?: number;
+        failed_deliveries_last_7d?: number;
+        unacknowledged_required_deliveries?: number;
         blockers?: string[];
         warnings?: string[];
       };
     };
   } | undefined)?.summary;
+  const reportExecution = (reportDetailQuery.data?.report as {
+    execution?: {
+      total_checks?: number;
+      passed?: number;
+      failed?: number;
+      skipped?: number;
+      checks?: Array<{
+        name?: string;
+        category?: string;
+        status?: string;
+        duration_ms?: number;
+      }>;
+    };
+  } | undefined)?.execution;
   const selectedReportSummary = JSON.stringify(reportSummary ?? {}, null, 2);
   const latestReport = filteredReleaseReports[0];
   const latestRuntimeReadiness = latestReport?.runtime_release_readiness ?? '--';
@@ -495,6 +534,89 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                             {' · '}
                             w:{reportSummary?.usage_report_evidence?.warnings?.length ?? 0}
                           </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid gap-3" data-testid="release-ops__report-runtime-evidence">
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="mb-2 text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_runtime_evidence')}</div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_runtime_target')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportSummary?.runtime_release_evidence?.guardrails?.target ?? '--'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_runtime_planned_attempts')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportSummary?.runtime_release_evidence?.guardrails?.planned_attempts ?? '--'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_runtime_coverage')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{formatPercent(reportSummary?.runtime_release_evidence?.pricing_version_coverage?.coverage_ratio)}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_runtime_missing_price')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportSummary?.runtime_release_evidence?.pricing_version_coverage?.missing_price_facts ?? '--'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid gap-3" data-testid="release-ops__report-usage-evidence">
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="mb-2 text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_usage_evidence')}</div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_usage_active_schedules')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportSummary?.usage_report_evidence?.active_schedules ?? '--'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_usage_required_schedules')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportSummary?.usage_report_evidence?.required_schedules ?? '--'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_usage_successful_deliveries')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportSummary?.usage_report_evidence?.successful_deliveries_last_7d ?? '--'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_usage_failed_deliveries')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportSummary?.usage_report_evidence?.failed_deliveries_last_7d ?? '--'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid gap-3" data-testid="release-ops__report-execution-checks">
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="mb-2 text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_execution_checks')}</div>
+                        <div className="grid gap-3 sm:grid-cols-4">
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_execution_total')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportExecution?.total_checks ?? '--'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_execution_passed')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportExecution?.passed ?? '--'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_execution_failed')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportExecution?.failed ?? '--'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-tertiary">{settingsT('release_ops_execution_skipped')}</div>
+                            <div className="mt-1 text-sm font-medium text-foreground">{reportExecution?.skipped ?? '--'}</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {(reportExecution?.checks ?? []).slice(0, 5).map((check, index) => (
+                            <div key={`${check.name}-${index}`} className="flex items-center justify-between gap-3 rounded-md border border-subtle px-3 py-2" data-testid={`release-ops__report-check-${index}`}>
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium text-foreground">{check.name ?? '--'}</div>
+                                <div className="text-xs text-tertiary">{check.category ?? '--'}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant={check.status === 'pass' ? 'outline' : 'secondary'}>{check.status ?? '--'}</Badge>
+                                <span className="text-xs text-tertiary">{formatDurationMs(check.duration_ms)}</span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>

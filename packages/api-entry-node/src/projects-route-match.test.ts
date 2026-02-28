@@ -176,6 +176,13 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/impact-preview'),
+    ).toEqual({
+      kind: 'runtimeImpactPreview',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases/assistant-main'),
     ).toEqual({
       kind: 'runtimeRoutingAliasItem',

@@ -25,6 +25,39 @@ const dryRunMutateAsync = vi.fn().mockResolvedValue({
   ],
   issues: [],
 });
+const impactMutateAsync = vi.fn().mockResolvedValue({
+  model: 'combo:prod-chat',
+  lookback_window: {
+    start: '2026-02-21T00:00:00.000Z',
+    end: '2026-02-28T00:00:00.000Z',
+    lookback_hours: 168,
+  },
+  sample: {
+    request_count: 42,
+    total_estimated_cost: 0.1812,
+    avg_estimated_cost: 0.004314,
+    avg_tokens_in: 812.5,
+    avg_tokens_out: 296.25,
+    avg_tokens_total: 1108.75,
+  },
+  planned_route: {
+    model: 'combo:prod-chat',
+    routed_by: 'combo',
+    combo_name: 'prod-chat',
+    attempts: [],
+    issues: [],
+  },
+  projected_cost: {
+    primary_avg_cost: 0.004587,
+    primary_total_cost: 0.192654,
+    range_avg_cost: { low: 0.004587, high: 0.006881 },
+    range_total_cost: { low: 0.192654, high: 0.28899 },
+  },
+  assumptions: [
+    'impact_preview_uses_recent_endpoint_usage_facts',
+    'impact_preview_applies_average_token_mix_to_planned_pricing',
+  ],
+});
 const probeMutateAsync = vi.fn().mockResolvedValue({
   ok: true,
   statusCode: 200,
@@ -67,6 +100,7 @@ vi.mock('@/lib/hooks/use-runtime', () => ({
   useCreateRuntimeAlias: () => ({ mutateAsync: createAliasMutateAsync, isPending: false }),
   useCreateRuntimeCombo: () => ({ mutateAsync: createComboMutateAsync, isPending: false }),
   usePatchRuntimePricing: () => ({ mutateAsync: patchPricingMutateAsync, isPending: false }),
+  useRuntimeImpactPreview: () => ({ mutateAsync: impactMutateAsync, isPending: false }),
   useRuntimeRoutingDryRun: () => ({ mutateAsync: dryRunMutateAsync, isPending: false }),
   useRuntimeUnifiedChatProbe: () => ({ mutateAsync: probeMutateAsync, isPending: false }),
 }));
@@ -152,5 +186,19 @@ describe('RuntimeControlPlanePanel', () => {
     });
     expect(screen.getByTestId('settings-runtime__dry-run-summary')).toBeInTheDocument();
     expect(screen.getByTestId('settings-runtime__dry-run-attempt-0')).toBeInTheDocument();
+  });
+
+  it('runs impact preview and renders projected cost cards', async () => {
+    const user = userEvent.setup();
+    render(<RuntimeControlPlanePanel workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.click(screen.getByTestId('settings-runtime__impact-run'));
+
+    expect(impactMutateAsync).toHaveBeenCalledWith({
+      model: 'combo:prod-chat',
+      lookback_hours: 168,
+    });
+    expect(screen.getByTestId('settings-runtime__impact-sample-count')).toHaveTextContent('42');
+    expect(screen.getByTestId('settings-runtime__impact-assumptions')).toBeInTheDocument();
   });
 });

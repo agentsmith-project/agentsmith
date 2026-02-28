@@ -7,6 +7,7 @@ import type {
   CreateRuntimeModelCatalogEntryRequest,
   CreateRuntimeModelComboRequest,
   CreateRuntimeProviderConnectionRequest,
+  RuntimeImpactPreviewRequest,
   RuntimeRoutingDryRunRequest,
   RuntimeUnifiedChatRequest,
   RuntimePricingMap,
@@ -254,5 +255,13 @@ export function useRuntimeRoutingDryRun(workspaceId: string, projectId: string) 
     mutationFn: (payload: RuntimeRoutingDryRunRequest) =>
       getRuntimeAPI().dryRunRouting(workspaceId, projectId, payload),
     onError: (error) => handleErrorForToast(error, 'useRuntimeRoutingDryRun'),
+  });
+}
+
+export function useRuntimeImpactPreview(workspaceId: string, projectId: string) {
+  return useMutation({
+    mutationFn: (payload: RuntimeImpactPreviewRequest) =>
+      getRuntimeAPI().previewImpact(workspaceId, projectId, payload),
+    onError: (error) => handleErrorForToast(error, 'useRuntimeImpactPreview'),
   });
 }

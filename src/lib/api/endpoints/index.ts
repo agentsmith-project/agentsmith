@@ -62,6 +62,8 @@ export type {
   RuntimeRoutingDryRunAttempt,
   RuntimeRoutingDryRunRequest,
   RuntimeRoutingDryRunResponse,
+  RuntimeImpactPreviewRequest,
+  RuntimeImpactPreviewResponse,
   UnifiedChatRuntimeMetadata,
   RuntimeUnifiedChatRequest,
   RuntimeUnifiedChatResponse,

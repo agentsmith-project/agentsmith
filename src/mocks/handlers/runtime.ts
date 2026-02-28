@@ -230,6 +230,74 @@ export const runtimeHandlers = [
     });
   }),
 
+  http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/impact-preview', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const modelRaw = asString(body.model);
+    if (!modelRaw) {
+      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'runtime_unified_chat_model_required' }, { status: 422 });
+    }
+    return HttpResponse.json({
+      model: modelRaw,
+      lookback_window: {
+        start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+        end: new Date().toISOString(),
+        lookback_hours: 168,
+      },
+      sample: {
+        request_count: 42,
+        total_estimated_cost: 0.1812,
+        avg_estimated_cost: 0.004314,
+        avg_tokens_in: 812.5,
+        avg_tokens_out: 296.25,
+        avg_tokens_total: 1108.75,
+      },
+      planned_route: {
+        model: modelRaw,
+        routed_by: modelRaw.startsWith('combo:') ? 'combo' : modelRaw.includes('/') ? 'direct' : 'alias',
+        combo_name: modelRaw.startsWith('combo:') ? modelRaw.slice('combo:'.length) : undefined,
+        alias: !modelRaw.startsWith('combo:') && !modelRaw.includes('/') ? modelRaw : undefined,
+        attempts: [
+          {
+            index: 0,
+            provider: 'openai',
+            model: 'gpt-4o',
+            provider_connection_id: 'rpc_1',
+            provider_connection_status: 'active',
+            pricing_source: 'project_override',
+            pricing: { input: 2, output: 10 },
+          },
+          {
+            index: 1,
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5',
+            provider_connection_id: 'rpc_2',
+            provider_connection_status: 'active',
+            pricing_source: 'model_catalog',
+            pricing: { input: 3, output: 15 },
+          },
+        ],
+        issues: [],
+      },
+      projected_cost: {
+        primary_avg_cost: 0.004587,
+        primary_total_cost: 0.192654,
+        range_avg_cost: {
+          low: 0.004587,
+          high: 0.006881,
+        },
+        range_total_cost: {
+          low: 0.192654,
+          high: 0.28899,
+        },
+      },
+      assumptions: [
+        'impact_preview_uses_recent_endpoint_usage_facts',
+        'impact_preview_applies_average_token_mix_to_planned_pricing',
+        'impact_preview_does_not_model_runtime_fallback_probability',
+      ],
+    });
+  }),
+
   http.post('/api/v1/workspaces/:ws/projects/:prj/runtime/routing/aliases', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const key = projectKey(params);

@@ -160,6 +160,43 @@ export interface RuntimeRoutingDryRunResponse {
   issues: string[];
 }
 
+export interface RuntimeImpactPreviewRequest {
+  model: string;
+  lookback_hours?: number;
+  resource_id?: string;
+}
+
+export interface RuntimeImpactPreviewResponse {
+  model: string;
+  lookback_window: {
+    start: string;
+    end: string;
+    lookback_hours: number;
+  };
+  sample: {
+    request_count: number;
+    total_estimated_cost: number;
+    avg_estimated_cost: number | null;
+    avg_tokens_in: number | null;
+    avg_tokens_out: number | null;
+    avg_tokens_total: number | null;
+  };
+  planned_route: RuntimeRoutingDryRunResponse;
+  projected_cost: {
+    primary_avg_cost: number | null;
+    primary_total_cost: number | null;
+    range_avg_cost: {
+      low: number | null;
+      high: number | null;
+    };
+    range_total_cost: {
+      low: number | null;
+      high: number | null;
+    };
+  };
+  assumptions: string[];
+}
+
 export interface RuntimeUnifiedChatResponse {
   id: string;
   object: string;
@@ -347,6 +384,14 @@ export class RuntimeAPI {
     payload: RuntimeRoutingDryRunRequest,
   ): Promise<RuntimeRoutingDryRunResponse> {
     return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/routing/dry-run`, payload);
+  }
+
+  async previewImpact(
+    workspaceId: string,
+    projectId: string,
+    payload: RuntimeImpactPreviewRequest,
+  ): Promise<RuntimeImpactPreviewResponse> {
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/impact-preview`, payload);
   }
 
   async probeUnifiedChat(

@@ -8,6 +8,7 @@ import {
   validateModelProviderMutationAllowed,
 } from './runtime-domain.js';
 import { executeRuntimeUnifiedChat } from './runtime-unified-chat.js';
+import { previewRuntimeImpact } from './runtime-impact-preview.js';
 import { dryRunRuntimeRouting } from './runtime-routing-dry-run.js';
 import {
   createRuntimeStore,
@@ -93,6 +94,17 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
 
   if (route.kind === 'runtimeRoutingDryRun' && method === 'POST') {
     const result = await dryRunRuntimeRouting({
+      deps,
+      workspaceId,
+      projectId,
+      rawBody: await readBody(req),
+    });
+    json(res, result.statusCode, result.body);
+    return true;
+  }
+
+  if (route.kind === 'runtimeImpactPreview' && method === 'POST') {
+    const result = await previewRuntimeImpact({
       deps,
       workspaceId,
       projectId,

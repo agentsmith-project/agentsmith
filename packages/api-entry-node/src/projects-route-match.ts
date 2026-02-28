@@ -135,6 +135,7 @@ export type ProjectsRoute =
   }
   | { kind: 'runtimeRoutingAliases'; workspaceId: string; projectId: string }
   | { kind: 'runtimeRoutingDryRun'; workspaceId: string; projectId: string }
+  | { kind: 'runtimeImpactPreview'; workspaceId: string; projectId: string }
   | {
     kind: 'runtimeRoutingAliasItem';
     workspaceId: string;
@@ -1026,6 +1027,17 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'runtimeRoutingDryRun',
       workspaceId: decodeURIComponent(runtimeRoutingDryRunMatched[1]),
       projectId: decodeURIComponent(runtimeRoutingDryRunMatched[2]),
+    };
+  }
+
+  const runtimeImpactPreviewMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/impact-preview\/?$/,
+  );
+  if (runtimeImpactPreviewMatched) {
+    return {
+      kind: 'runtimeImpactPreview',
+      workspaceId: decodeURIComponent(runtimeImpactPreviewMatched[1]),
+      projectId: decodeURIComponent(runtimeImpactPreviewMatched[2]),
     };
   }
 

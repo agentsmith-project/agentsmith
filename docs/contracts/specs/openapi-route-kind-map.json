@@ -279,6 +279,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/dry-run",
     "method": "post"
   },
+  "runtimeImpactPreview": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/impact-preview",
+    "method": "post"
+  },
   "runtimeRoutingAliasItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}",
     "method": "put"

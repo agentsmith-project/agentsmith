@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import type {
+  RuntimeImpactPreviewResponse,
   RuntimeAttemptTrace,
   RuntimeRoutingDryRunAttempt,
   RuntimeRoutingDryRunResponse,
@@ -22,6 +23,7 @@ import {
   useCreateRuntimeModel,
   useCreateRuntimeProvider,
   usePatchRuntimePricing,
+  useRuntimeImpactPreview,
   useRuntimeAliases,
   useRuntimeCombos,
   useRuntimeModels,
@@ -184,6 +186,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const [pricingJson, setPricingJson] = useState(DEFAULT_PRICING_JSON);
   const [dryRunModel, setDryRunModel] = useState('combo:prod-chat');
   const [dryRunResult, setDryRunResult] = useState<RuntimeRoutingDryRunResponse | null>(null);
+  const [impactPreviewResult, setImpactPreviewResult] = useState<RuntimeImpactPreviewResponse | null>(null);
   const [probeModel, setProbeModel] = useState('combo:prod-chat');
   const [probePrompt, setProbePrompt] = useState('Summarize the runtime recovery path in one sentence.');
   const [probeResult, setProbeResult] = useState<RuntimeUnifiedChatResult | null>(null);
@@ -199,6 +202,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   const createAlias = useCreateRuntimeAlias(workspaceId, projectId);
   const createCombo = useCreateRuntimeCombo(workspaceId, projectId);
   const patchPricing = usePatchRuntimePricing(workspaceId, projectId);
+  const previewImpact = useRuntimeImpactPreview(workspaceId, projectId);
   const dryRunRouting = useRuntimeRoutingDryRun(workspaceId, projectId);
   const probeRuntime = useRuntimeUnifiedChatProbe(workspaceId, projectId);
 
@@ -296,6 +300,18 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
       setDryRunResult(result);
     } catch {
       toast.error(t('runtime_dry_run_failed'));
+    }
+  };
+
+  const handleRunImpactPreview = async () => {
+    try {
+      const result = await previewImpact.mutateAsync({
+        model: dryRunModel.trim(),
+        lookback_hours: 24 * 7,
+      });
+      setImpactPreviewResult(result);
+    } catch {
+      toast.error(t('runtime_impact_preview_failed'));
     }
   };
 
@@ -495,6 +511,65 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
               <div className="mt-4 rounded-lg border border-dashed border-border/70 bg-surface-high/40 p-4 text-sm text-tertiary">
                 {t('runtime_dry_run_plan_empty')}
               </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__probe">
+        <CardHeader className="pb-4">
+          <CardTitle>{t('runtime_impact_preview_title')}</CardTitle>
+          <p className="text-sm text-tertiary">{t('runtime_impact_preview_description')}</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              onClick={handleRunImpactPreview}
+              disabled={disabled || previewImpact.isPending || !dryRunModel.trim()}
+              data-testid="settings-runtime__impact-run"
+            >
+              {previewImpact.isPending ? t('runtime_impact_preview_running') : t('runtime_impact_preview_run')}
+            </Button>
+            <div className="text-xs text-tertiary">{t('runtime_impact_preview_hint')}</div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <div className="rounded-lg border border-border/60 bg-surface-high/50 p-3" data-testid="settings-runtime__impact-sample-count">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_requests')}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{impactPreviewResult?.sample.request_count ?? '--'}</div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-surface-high/50 p-3">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_avg_cost')}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{formatUsd(impactPreviewResult?.sample.avg_estimated_cost)}</div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-surface-high/50 p-3">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_primary_cost')}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{formatUsd(impactPreviewResult?.projected_cost.primary_avg_cost)}</div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-surface-high/50 p-3">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_range_low')}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{formatUsd(impactPreviewResult?.projected_cost.range_avg_cost.low)}</div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-surface-high/50 p-3">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_range_high')}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{formatUsd(impactPreviewResult?.projected_cost.range_avg_cost.high)}</div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-surface-high/50 p-3">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_window')}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{impactPreviewResult?.lookback_window.lookback_hours ?? '--'}h</div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-surface-high/35 p-4" data-testid="settings-runtime__impact-assumptions">
+            <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_impact_preview_assumptions_title')}</div>
+            {impactPreviewResult?.assumptions?.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {impactPreviewResult.assumptions.map((assumption) => (
+                  <Badge key={assumption} variant="secondary">{t(assumption)}</Badge>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-tertiary">{t('runtime_impact_preview_empty')}</div>
             )}
           </div>
         </CardContent>

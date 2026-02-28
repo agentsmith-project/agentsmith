@@ -82,6 +82,18 @@ describe('RuntimeAPI', () => {
     });
   });
 
+  it('calls runtime impact preview endpoint', async () => {
+    const mock = createClient();
+    const api = new RuntimeAPI(toApiClient(mock));
+
+    await api.previewImpact('ws_1', 'proj_1', { model: 'combo:prod-chat', lookback_hours: 168 });
+
+    expect(mock.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/impact-preview', {
+      model: 'combo:prod-chat',
+      lookback_hours: 168,
+    });
+  });
+
   it('probes unified chat and preserves non-2xx runtime payloads', async () => {
     const mock = createClient();
     const api = new RuntimeAPI(toApiClient(mock));

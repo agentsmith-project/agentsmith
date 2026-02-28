@@ -7234,6 +7234,61 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/impact-preview": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "LLM Runtime"
+        ],
+        "operationId": "previewRuntimeImpact",
+        "summary": "Preview runtime route cost impact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeImpactPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Runtime impact preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeImpactPreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}": {
       "parameters": [
         {
@@ -10550,6 +10605,148 @@
             }
           },
           "issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RuntimeImpactPreviewRequest": {
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "lookback_hours": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resource_id": {
+            "type": "string"
+          }
+        }
+      },
+      "RuntimeImpactPreviewSample": {
+        "type": "object",
+        "required": [
+          "request_count",
+          "total_estimated_cost"
+        ],
+        "properties": {
+          "request_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_estimated_cost": {
+            "type": "number"
+          },
+          "avg_estimated_cost": {
+            "type": "number",
+            "nullable": true
+          },
+          "avg_tokens_in": {
+            "type": "number",
+            "nullable": true
+          },
+          "avg_tokens_out": {
+            "type": "number",
+            "nullable": true
+          },
+          "avg_tokens_total": {
+            "type": "number",
+            "nullable": true
+          }
+        }
+      },
+      "RuntimeImpactPreviewCostRange": {
+        "type": "object",
+        "properties": {
+          "low": {
+            "type": "number",
+            "nullable": true
+          },
+          "high": {
+            "type": "number",
+            "nullable": true
+          }
+        }
+      },
+      "RuntimeImpactPreviewProjectedCost": {
+        "type": "object",
+        "required": [
+          "range_avg_cost",
+          "range_total_cost"
+        ],
+        "properties": {
+          "primary_avg_cost": {
+            "type": "number",
+            "nullable": true
+          },
+          "primary_total_cost": {
+            "type": "number",
+            "nullable": true
+          },
+          "range_avg_cost": {
+            "$ref": "#/components/schemas/RuntimeImpactPreviewCostRange"
+          },
+          "range_total_cost": {
+            "$ref": "#/components/schemas/RuntimeImpactPreviewCostRange"
+          }
+        }
+      },
+      "RuntimeImpactPreviewWindow": {
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "lookback_hours"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lookback_hours": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "RuntimeImpactPreviewResponse": {
+        "type": "object",
+        "required": [
+          "model",
+          "lookback_window",
+          "sample",
+          "planned_route",
+          "projected_cost",
+          "assumptions"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "lookback_window": {
+            "$ref": "#/components/schemas/RuntimeImpactPreviewWindow"
+          },
+          "sample": {
+            "$ref": "#/components/schemas/RuntimeImpactPreviewSample"
+          },
+          "planned_route": {
+            "$ref": "#/components/schemas/RuntimeRoutingDryRunResponse"
+          },
+          "projected_cost": {
+            "$ref": "#/components/schemas/RuntimeImpactPreviewProjectedCost"
+          },
+          "assumptions": {
             "type": "array",
             "items": {
               "type": "string"

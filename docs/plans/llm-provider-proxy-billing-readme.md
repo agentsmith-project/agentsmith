@@ -22,6 +22,13 @@
 7. `llm-provider-proxy-billing-contract-integration-checklist-v1.md`
 - 契约/集成检查清单（发布门禁）
 
+## Archived Materials
+1. `archive/llm-provider-proxy-billing-task-backlog-v1.md`
+2. `archive/llm-provider-proxy-billing-workbreakdown-v1.md`
+3. `../design/archive/llm-provider-proxy-billing-integration-analysis-report-v1.md`
+4. `../design/archive/llm-provider-proxy-billing-integration-reference.md`
+5. `../release/archive/llm-provider-proxy-billing-closure-progress-2026-02-27.md`
+
 ## Governance Rule
 1. 文档冲突时，先以 `llm-runtime-product-decision-memo-v1` 的产品决策为准，再以 `prd-v2-execution-blueprint` 的工程约束为准。
 2. 任何 API 或数据模型变更必须同步更新 OpenAPI 与 checklist。

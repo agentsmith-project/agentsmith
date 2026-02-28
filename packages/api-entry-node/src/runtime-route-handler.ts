@@ -1,9 +1,16 @@
-import { randomUUID } from 'node:crypto';
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import { writeProjectUsageFact } from './audit-usage-recorders.js';
 import { classifyUpstreamStatus, resolveRoutingPlan, shouldFallbackByPolicy } from './runtime-routing.js';
+import {
+  createRuntimeStore,
+  type RuntimeModelAliasRecord,
+  type RuntimeModelCatalogEntryRecord,
+  type RuntimeModelComboRecord,
+  type RuntimePricingRecord,
+  type RuntimeProviderConnectionRecord,
+} from './runtime-store.js';
 
 interface AnyRoute {
   kind: string;
@@ -24,78 +31,6 @@ interface RuntimeHandlerArgs {
   user: AuthenticatedUser;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
-}
-
-type RuntimeProviderConnectionRecord = {
-  id: string;
-  workspace_id: string;
-  project_id: string;
-  provider: string;
-  auth_mode: 'api_key' | 'oauth' | 'aws_sdk' | 'token';
-  base_url: string;
-  credential_ref?: string;
-  priority?: number;
-  status: 'active' | 'disabled';
-  created_at: string;
-  updated_at: string;
-};
-
-type RuntimeModelCatalogEntryRecord = {
-  id: string;
-  workspace_id: string;
-  project_id: string;
-  provider: string;
-  model_id: string;
-  display_name?: string;
-  capabilities: string[];
-  context_window?: number;
-  max_tokens?: number;
-  pricing?: Record<string, number>;
-  created_at: string;
-  updated_at: string;
-};
-
-type RuntimeModelAliasRecord = {
-  id: string;
-  workspace_id: string;
-  project_id: string;
-  alias: string;
-  target_provider: string;
-  target_model: string;
-  created_at: string;
-  updated_at: string;
-};
-
-type RuntimeModelComboRecord = {
-  id: string;
-  workspace_id: string;
-  project_id: string;
-  name: string;
-  targets: Array<{ provider: string; model: string }>;
-  fallback_policy: {
-    max_hops: number;
-    retryable_error_classes: string[];
-  };
-  created_at: string;
-  updated_at: string;
-};
-
-type RuntimePricingRecord = {
-  id: string;
-  workspace_id: string;
-  project_id: string;
-  pricing_map: Record<string, Record<string, Record<string, number>>>;
-  updated_at: string;
-};
-
-const PROVIDERS_COLLECTION = 'runtime_provider_connections';
-const MODELS_COLLECTION = 'runtime_model_catalog_entries';
-const ALIASES_COLLECTION = 'runtime_model_aliases';
-const COMBOS_COLLECTION = 'runtime_model_combos';
-const PRICING_COLLECTION = 'runtime_pricing_maps';
-
-function nowIso(): string {
-  return new Date().toISOString();
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -119,22 +54,6 @@ function requireProjectScope(
     return null;
   }
   return { workspaceId: route.workspaceId, projectId: route.projectId };
-}
-
-async function listScoped<T extends { workspace_id: string; project_id: string }>(
-  deps: NodeApiDeps,
-  collection: string,
-  workspaceId: string,
-  projectId: string,
-): Promise<T[]> {
-  return deps.docStore.list<T>(collection, {
-    workspace_id: workspaceId,
-    project_id: projectId,
-  });
-}
-
-function pricingRecordId(workspaceId: string, projectId: string): string {
-  return `runtime_pricing_${workspaceId}_${projectId}`;
 }
 
 function normalizeUsage(payload: Record<string, unknown> | null): {
@@ -181,6 +100,8 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   const scope = requireProjectScope(route, json, res);
   if (!scope) return false;
   const { workspaceId, projectId } = scope;
+  const runtimeStore = createRuntimeStore(deps.docStore);
+  const projectScope = { workspaceId, projectId };
 
   if (route.kind === 'llmUnifiedChat' && method === 'POST') {
     const raw = asObject(await readBody(req));
@@ -192,10 +113,10 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
     const startedAtMs = Date.now();
 
-    const providers = await listScoped<RuntimeProviderConnectionRecord>(deps, PROVIDERS_COLLECTION, workspaceId, projectId);
-    const aliases = await listScoped<RuntimeModelAliasRecord>(deps, ALIASES_COLLECTION, workspaceId, projectId);
-    const combos = await listScoped<RuntimeModelComboRecord>(deps, COMBOS_COLLECTION, workspaceId, projectId);
-    const pricing = await deps.docStore.get<RuntimePricingRecord>(PRICING_COLLECTION, pricingRecordId(workspaceId, projectId));
+    const providers = await runtimeStore.listProviders(projectScope);
+    const aliases = await runtimeStore.listAliases(projectScope);
+    const combos = await runtimeStore.listCombos(projectScope);
+    const pricing = await runtimeStore.getPricing(projectScope);
     const pricingMap = pricing?.pricing_map ?? {};
 
     const routingPlan = resolveRoutingPlan({
@@ -355,7 +276,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   }
 
   if (route.kind === 'runtimeProviders' && method === 'GET') {
-    const items = await listScoped<RuntimeProviderConnectionRecord>(deps, PROVIDERS_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listProviders(projectScope);
     json(res, 200, { items });
     return true;
   }
@@ -375,7 +296,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
     }
 
     const record: RuntimeProviderConnectionRecord = {
-      id: `rpc_${randomUUID().replace(/-/g, '')}`,
+      id: runtimeStore.createId('rpc'),
       workspace_id: workspaceId,
       project_id: projectId,
       provider,
@@ -384,20 +305,17 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       credential_ref: asNonEmptyString(body.credential_ref),
       priority: typeof body.priority === 'number' ? body.priority : undefined,
       status: (asNonEmptyString(body.status) as RuntimeProviderConnectionRecord['status']) ?? 'active',
-      created_at: nowIso(),
-      updated_at: nowIso(),
+      created_at: runtimeStore.nowIso(),
+      updated_at: runtimeStore.nowIso(),
     };
 
-    await deps.docStore.upsert(PROVIDERS_COLLECTION, record.id, record);
+    await runtimeStore.upsertProvider(record);
     json(res, 201, record);
     return true;
   }
 
   if (route.kind === 'runtimeProviderItem' && route.providerConnectionId && method === 'PUT') {
-    const existing = await deps.docStore.get<RuntimeProviderConnectionRecord>(
-      PROVIDERS_COLLECTION,
-      route.providerConnectionId,
-    );
+    const existing = await runtimeStore.getProvider(route.providerConnectionId);
     if (!existing || existing.workspace_id !== workspaceId || existing.project_id !== projectId) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'runtime_provider_not_found' });
       return true;
@@ -415,31 +333,28 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       credential_ref: asNonEmptyString(body.credential_ref) ?? existing.credential_ref,
       priority: typeof body.priority === 'number' ? body.priority : existing.priority,
       status: (asNonEmptyString(body.status) as RuntimeProviderConnectionRecord['status']) ?? existing.status,
-      updated_at: nowIso(),
+      updated_at: runtimeStore.nowIso(),
     };
 
-    await deps.docStore.upsert(PROVIDERS_COLLECTION, updated.id, updated);
+    await runtimeStore.upsertProvider(updated);
     json(res, 200, updated);
     return true;
   }
 
   if (route.kind === 'runtimeProviderItem' && route.providerConnectionId && method === 'DELETE') {
-    const existing = await deps.docStore.get<RuntimeProviderConnectionRecord>(
-      PROVIDERS_COLLECTION,
-      route.providerConnectionId,
-    );
+    const existing = await runtimeStore.getProvider(route.providerConnectionId);
     if (!existing || existing.workspace_id !== workspaceId || existing.project_id !== projectId) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'runtime_provider_not_found' });
       return true;
     }
-    await deps.docStore.delete(PROVIDERS_COLLECTION, route.providerConnectionId);
+    await runtimeStore.deleteProvider(route.providerConnectionId);
     res.statusCode = 204;
     res.end();
     return true;
   }
 
   if (route.kind === 'runtimeModels' && method === 'GET') {
-    const items = await listScoped<RuntimeModelCatalogEntryRecord>(deps, MODELS_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listModels(projectScope);
     json(res, 200, { items });
     return true;
   }
@@ -461,14 +376,14 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_model_required_fields_missing' });
       return true;
     }
-    const existing = await listScoped<RuntimeModelCatalogEntryRecord>(deps, MODELS_COLLECTION, workspaceId, projectId);
+    const existing = await runtimeStore.listModels(projectScope);
     if (existing.some((item) => item.provider === provider && item.model_id === modelId)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'runtime_model_already_exists' });
       return true;
     }
 
     const record: RuntimeModelCatalogEntryRecord = {
-      id: `rmc_${randomUUID().replace(/-/g, '')}`,
+      id: runtimeStore.createId('rmc'),
       workspace_id: workspaceId,
       project_id: projectId,
       provider,
@@ -478,11 +393,11 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       context_window: typeof body.context_window === 'number' ? body.context_window : undefined,
       max_tokens: typeof body.max_tokens === 'number' ? body.max_tokens : undefined,
       pricing: asObject(body.pricing) as Record<string, number> | undefined,
-      created_at: nowIso(),
-      updated_at: nowIso(),
+      created_at: runtimeStore.nowIso(),
+      updated_at: runtimeStore.nowIso(),
     };
 
-    await deps.docStore.upsert(MODELS_COLLECTION, record.id, record);
+    await runtimeStore.upsertModel(record);
     json(res, 201, record);
     return true;
   }
@@ -492,7 +407,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_id_required' });
       return true;
     }
-    const items = await listScoped<RuntimeModelCatalogEntryRecord>(deps, MODELS_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listModels(projectScope);
     const item = items.find((entry) => entry.model_id === route.modelId);
     if (!item) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
@@ -512,7 +427,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_model_payload_invalid' });
       return true;
     }
-    const items = await listScoped<RuntimeModelCatalogEntryRecord>(deps, MODELS_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listModels(projectScope);
     const existing = items.find((entry) => entry.model_id === route.modelId);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
@@ -534,9 +449,9 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       context_window: typeof body.context_window === 'number' ? body.context_window : existing.context_window,
       max_tokens: typeof body.max_tokens === 'number' ? body.max_tokens : existing.max_tokens,
       pricing: asObject(body.pricing) as Record<string, number> | undefined ?? existing.pricing,
-      updated_at: nowIso(),
+      updated_at: runtimeStore.nowIso(),
     };
-    await deps.docStore.upsert(MODELS_COLLECTION, updated.id, updated);
+    await runtimeStore.upsertModel(updated);
     json(res, 200, updated);
     return true;
   }
@@ -546,20 +461,20 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_model_id_required' });
       return true;
     }
-    const items = await listScoped<RuntimeModelCatalogEntryRecord>(deps, MODELS_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listModels(projectScope);
     const existing = items.find((entry) => entry.model_id === route.modelId);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_model_not_found' });
       return true;
     }
-    await deps.docStore.delete(MODELS_COLLECTION, existing.id);
+    await runtimeStore.deleteModel(existing.id);
     res.statusCode = 204;
     res.end();
     return true;
   }
 
   if (route.kind === 'runtimeRoutingAliases' && method === 'GET') {
-    const items = await listScoped<RuntimeModelAliasRecord>(deps, ALIASES_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listAliases(projectScope);
     json(res, 200, { items });
     return true;
   }
@@ -578,24 +493,24 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_alias_required_fields_missing' });
       return true;
     }
-    const existing = await listScoped<RuntimeModelAliasRecord>(deps, ALIASES_COLLECTION, workspaceId, projectId);
+    const existing = await runtimeStore.listAliases(projectScope);
     if (existing.some((item) => item.alias === alias)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'runtime_alias_already_exists' });
       return true;
     }
 
     const record: RuntimeModelAliasRecord = {
-      id: `rma_${randomUUID().replace(/-/g, '')}`,
+      id: runtimeStore.createId('rma'),
       workspace_id: workspaceId,
       project_id: projectId,
       alias,
       target_provider: targetProvider,
       target_model: targetModel,
-      created_at: nowIso(),
-      updated_at: nowIso(),
+      created_at: runtimeStore.nowIso(),
+      updated_at: runtimeStore.nowIso(),
     };
 
-    await deps.docStore.upsert(ALIASES_COLLECTION, record.id, record);
+    await runtimeStore.upsertAlias(record);
     json(res, 201, record);
     return true;
   }
@@ -605,7 +520,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_alias_required' });
       return true;
     }
-    const items = await listScoped<RuntimeModelAliasRecord>(deps, ALIASES_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listAliases(projectScope);
     const existing = items.find((item) => item.alias === route.alias);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_alias_not_found' });
@@ -625,7 +540,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_alias_payload_invalid' });
       return true;
     }
-    const items = await listScoped<RuntimeModelAliasRecord>(deps, ALIASES_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listAliases(projectScope);
     const existing = items.find((item) => item.alias === route.alias);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_alias_not_found' });
@@ -637,9 +552,9 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       ...existing,
       target_provider: targetProvider,
       target_model: targetModel,
-      updated_at: nowIso(),
+      updated_at: runtimeStore.nowIso(),
     };
-    await deps.docStore.upsert(ALIASES_COLLECTION, updated.id, updated);
+    await runtimeStore.upsertAlias(updated);
     json(res, 200, updated);
     return true;
   }
@@ -649,20 +564,20 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_alias_required' });
       return true;
     }
-    const items = await listScoped<RuntimeModelAliasRecord>(deps, ALIASES_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listAliases(projectScope);
     const existing = items.find((item) => item.alias === route.alias);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_alias_not_found' });
       return true;
     }
-    await deps.docStore.delete(ALIASES_COLLECTION, existing.id);
+    await runtimeStore.deleteAlias(existing.id);
     res.statusCode = 204;
     res.end();
     return true;
   }
 
   if (route.kind === 'runtimeRoutingCombos' && method === 'GET') {
-    const items = await listScoped<RuntimeModelComboRecord>(deps, COMBOS_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listCombos(projectScope);
     json(res, 200, { items });
     return true;
   }
@@ -698,14 +613,14 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_required_fields_missing' });
       return true;
     }
-    const existing = await listScoped<RuntimeModelComboRecord>(deps, COMBOS_COLLECTION, workspaceId, projectId);
+    const existing = await runtimeStore.listCombos(projectScope);
     if (existing.some((item) => item.name === name)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'runtime_combo_already_exists' });
       return true;
     }
 
     const record: RuntimeModelComboRecord = {
-      id: `rmco_${randomUUID().replace(/-/g, '')}`,
+      id: runtimeStore.createId('rmco'),
       workspace_id: workspaceId,
       project_id: projectId,
       name,
@@ -714,11 +629,11 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
         max_hops: maxHops,
         retryable_error_classes: retryableErrorClasses,
       },
-      created_at: nowIso(),
-      updated_at: nowIso(),
+      created_at: runtimeStore.nowIso(),
+      updated_at: runtimeStore.nowIso(),
     };
 
-    await deps.docStore.upsert(COMBOS_COLLECTION, record.id, record);
+    await runtimeStore.upsertCombo(record);
     json(res, 201, record);
     return true;
   }
@@ -728,7 +643,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_combo_required' });
       return true;
     }
-    const items = await listScoped<RuntimeModelComboRecord>(deps, COMBOS_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listCombos(projectScope);
     const existing = items.find((item) => item.name === route.combo);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_combo_not_found' });
@@ -748,7 +663,7 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'runtime_combo_payload_invalid' });
       return true;
     }
-    const items = await listScoped<RuntimeModelComboRecord>(deps, COMBOS_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listCombos(projectScope);
     const existing = items.find((item) => item.name === route.combo);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_combo_not_found' });
@@ -782,9 +697,9 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
         max_hops: maxHops,
         retryable_error_classes: retryableErrorClasses,
       },
-      updated_at: nowIso(),
+      updated_at: runtimeStore.nowIso(),
     };
-    await deps.docStore.upsert(COMBOS_COLLECTION, updated.id, updated);
+    await runtimeStore.upsertCombo(updated);
     json(res, 200, updated);
     return true;
   }
@@ -794,20 +709,20 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       json(res, 400, { error_code: 'BAD_REQUEST', message: 'runtime_combo_required' });
       return true;
     }
-    const items = await listScoped<RuntimeModelComboRecord>(deps, COMBOS_COLLECTION, workspaceId, projectId);
+    const items = await runtimeStore.listCombos(projectScope);
     const existing = items.find((item) => item.name === route.combo);
     if (!existing) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'runtime_combo_not_found' });
       return true;
     }
-    await deps.docStore.delete(COMBOS_COLLECTION, existing.id);
+    await runtimeStore.deleteCombo(existing.id);
     res.statusCode = 204;
     res.end();
     return true;
   }
 
   if (route.kind === 'runtimePricing' && method === 'GET') {
-    const record = await deps.docStore.get<RuntimePricingRecord>(PRICING_COLLECTION, pricingRecordId(workspaceId, projectId));
+    const record = await runtimeStore.getPricing(projectScope);
     json(res, 200, record?.pricing_map ?? {});
     return true;
   }
@@ -820,14 +735,14 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
     }
 
     const record: RuntimePricingRecord = {
-      id: pricingRecordId(workspaceId, projectId),
+      id: runtimeStore.pricingRecordId(projectScope),
       workspace_id: workspaceId,
       project_id: projectId,
       pricing_map: body as RuntimePricingRecord['pricing_map'],
-      updated_at: nowIso(),
+      updated_at: runtimeStore.nowIso(),
     };
 
-    await deps.docStore.upsert(PRICING_COLLECTION, record.id, record);
+    await runtimeStore.upsertPricing(record);
     json(res, 200, record.pricing_map);
     return true;
   }

@@ -32,59 +32,18 @@ import type {
   CheckResult,
   CheckCategory,
   FailureType,
-  FailurePattern,
   VerifyReleaseOptions,
+  FailureCategory,
 } from './types';
 import {
   classifyFailure,
-  getFailurePattern,
-  type ClassifiedFailure,
+  getQuickRecommendation,
 } from './failure-classifier';
 
 // Default configuration
 const DEFAULT_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-reports');
 
-// Failure classification patterns (Epic D2 preview)
-const FAILURE_PATTERNS: FailurePattern[] = [
-  {
-    category: 'token',
-    patterns: [
-      /401|unauthorized|authentication|auth failed/i,
-      /403|forbidden|permission denied/i,
-      /token.*expir|jwt.*invalid|refresh.*token/i,
-      /keycloak.*auth|oauth/i,
-    ],
-    recommendation: 'Token issue: Run `make notebook-agent-refresh-token` and retry.',
-  },
-  {
-    category: 'network',
-    patterns: [
-      /ECONNREFUSED|connection refused|connect ECONNREFUSED/i,
-      /timeout|timed out|ETIMEDOUT/i,
-      /ENOTFOUND|DNS|getaddrinfo/i,
-      /network.*error|socket.*hang/i,
-    ],
-    recommendation: 'Network issue: Check services are running (`make notebook-agent-demo-status`).',
-  },
-  {
-    category: 'backend',
-    patterns: [
-      /500|internal server error|5\d\d/i,
-      /backend.*error|api.*error|server.*error/i,
-      /database.*error|postgres.*error|redis.*error/i,
-    ],
-    recommendation: 'Backend error: Check API logs at /tmp/agentsmith_demo_api.log',
-  },
-  {
-    category: 'assertion',
-    patterns: [
-      /assertion.*fail|expected.*actual|assert/i,
-      /test.*fail|spec.*fail/i,
-      /expect.*to.*equal|should.*equal/i,
-    ],
-    recommendation: 'Assertion failure: Check test output for specific expectation mismatch.',
-  },
-];
+const TRANSIENT_UPSTREAM_CATEGORIES = new Set<FailureType>(['network', 'timeout', 'rate_limit']);
 
 // Check definitions - map to existing make targets
 const CHECK_DEFINITIONS: Array<{
@@ -245,7 +204,7 @@ OPTIONS:
   --commit-range <r>   Commit range (e.g., abc123..def456)
   --archive            Create timestamped archive copy
   --dry-run            Skip actual check execution (for testing)
-  --mock-failure <t>   Mock a failure type: token|network|backend|assertion
+  --mock-failure <t>   Mock a failure type: token|network|backend|assertion|timeout|rate_limit
   --verbose            Show detailed output
   --help, -h           Show this help
 
@@ -475,8 +434,26 @@ const MOCK_ERROR_MESSAGES: Record<FailureType, string[]> = {
   ],
   assertion: [
     'AssertionError: expected true to be false',
-    'Test failed: expected status 200 but got 500',
+    'Test failed: expected status 200 but got 201',
     'expect(received).toBe(expected) // Object types mismatch',
+  ],
+  timeout: [
+    'task t_123 did not reach terminal trace within timeout',
+    'Operation timed out after 60000ms',
+    'timeout 45000ms exceeded while waiting for response',
+  ],
+  authorization: [
+    'permission denied by policy: subject not in allow list',
+  ],
+  quota: [
+    'quota exceeded: daily limit exhausted',
+  ],
+  rate_limit: [
+    '429 Too Many Requests: retry later',
+    'provider reply failed due to retry limit',
+  ],
+  permission: [
+    'access denied: insufficient permissions',
   ],
   unknown: [
     'Unknown error occurred',
@@ -543,6 +520,7 @@ function generateSummary(execution: ExecutionResults): ReportSummary {
   // Add failure categories if there are failures
   if (execution.failed > 0) {
     summary.failure_categories = classifyFailures(execution);
+    summary.upstream_transient = summarizeUpstreamTransient(summary.failure_categories);
     summary.recommendations = generateRecommendations(summary.failure_categories);
   }
 
@@ -586,7 +564,7 @@ function calculateStats(execution: ExecutionResults) {
  * Classify failures by type (Epic D2)
  * Now uses the expanded failure classifier from failure-classifier.ts
  */
-function classifyFailures(execution: ExecutionResults) {
+function classifyFailures(execution: ExecutionResults): FailureCategory[] {
   const categories: Map<FailureType, { count: number; checks: string[] }> = new Map();
 
   for (const check of execution.checks) {
@@ -618,6 +596,32 @@ function classifyLocalFailure(check: CheckResult): FailureType {
   return result.category;
 }
 
+function summarizeUpstreamTransient(categories: FailureCategory[]) {
+  const transientCategories = categories.filter((cat) => TRANSIENT_UPSTREAM_CATEGORIES.has(cat.category));
+  if (transientCategories.length === 0) {
+    return undefined;
+  }
+
+  const transientChecks = new Set<string>();
+  for (const category of transientCategories) {
+    for (const check of category.checks) transientChecks.add(check);
+  }
+
+  const hasNonTransientFailures = categories.some((cat) => !TRANSIENT_UPSTREAM_CATEGORIES.has(cat.category));
+  const acceptance = hasNonTransientFailures ? 'mixed_or_blocking' : 'acceptable_with_retry';
+  const note = acceptance === 'acceptable_with_retry'
+    ? 'Only recoverable upstream instability was detected (429/timeout/network). Retry lane can be accepted once rerun succeeds.'
+    : 'Upstream instability exists, but non-transient failures are also present and remain blocking.';
+
+  return {
+    count: transientCategories.reduce((total, cat) => total + cat.count, 0),
+    categories: transientCategories.map((cat) => cat.category),
+    checks: Array.from(transientChecks),
+    acceptance,
+    note,
+  } as const;
+}
+
 /**
  * Generate recommendations based on failure categories
  * Now uses the expanded failure classifier from failure-classifier.ts
@@ -626,10 +630,12 @@ function generateRecommendations(categories: Array<{ category: FailureType; coun
   const recommendations: string[] = [];
 
   for (const cat of categories) {
-    // Use getQuickRecommendation from failure-classifier
-    const { getQuickRecommendation } = require('./failure-classifier');
     const recommendation = getQuickRecommendation(cat.category);
     recommendations.push(recommendation);
+  }
+
+  if (categories.some((cat) => TRANSIENT_UPSTREAM_CATEGORIES.has(cat.category))) {
+    recommendations.push('Upstream instability detected: keep retry/backoff policy enabled and use rerun acceptance gate for transient failures.');
   }
 
   return recommendations;
@@ -696,6 +702,14 @@ function generateMarkdown(report: ReleaseReport): string {
       md += `| ${cat.category} | ${cat.count} | ${cat.checks.join(', ')} |\n`;
     }
     md += `\n`;
+  }
+
+  if (summary.upstream_transient) {
+    md += `### Upstream Transient Assessment\n\n`;
+    md += `- **Count:** ${summary.upstream_transient.count}\n`;
+    md += `- **Categories:** ${summary.upstream_transient.categories.join(', ')}\n`;
+    md += `- **Acceptance:** ${summary.upstream_transient.acceptance}\n`;
+    md += `- **Note:** ${summary.upstream_transient.note}\n\n`;
   }
 
   // Execution details

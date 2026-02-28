@@ -129,6 +129,8 @@ export interface ReportSummary {
   status: 'pass' | 'fail';
   /** Failure breakdown by category (present if failed > 0) */
   failure_categories?: FailureCategory[];
+  /** Expected upstream transient instability summary (present if detected) */
+  upstream_transient?: UpstreamTransientSummary;
   /** Troubleshooting recommendations (present if failed > 0) */
   recommendations?: string[];
   /** Quick stats for release notes */
@@ -156,7 +158,33 @@ export type FailureType =
   | 'network'    // Network issues (timeout/ECONNREFUSED/DNS)
   | 'backend'    // Backend errors (5xx/API errors)
   | 'assertion'  // Test assertion failures
+  | 'timeout'    // Operation timeout
+  | 'authorization' // Governance authorization failures
+  | 'quota'      // Quota exceeded
+  | 'rate_limit' // Upstream/provider throttling
+  | 'permission' // Access control failures
   | 'unknown';   // Unclassified
+
+/**
+ * Upstream transient instability summary used by release acceptance
+ */
+export interface UpstreamTransientSummary {
+  /** Number of failed checks mapped to upstream transient causes */
+  count: number;
+  /** Categories considered transient in this run */
+  categories: FailureType[];
+  /** Failed checks influenced by transient upstream factors */
+  checks: string[];
+  /**
+   * acceptable_with_retry:
+   *   Only transient upstream failures observed, product checks can pass after retry.
+   * mixed_or_blocking:
+   *   Transient failures exist but also non-transient failures needing fixes.
+   */
+  acceptance: 'acceptable_with_retry' | 'mixed_or_blocking';
+  /** Human-readable note for release reviewers */
+  note: string;
+}
 
 /**
  * Release statistics for quick reference

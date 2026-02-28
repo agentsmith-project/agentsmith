@@ -167,7 +167,7 @@ describe('verify-release-report: TDD Suite', () => {
       }
     });
 
-    it('should categorize failures by type (token/network/backend/assertion)', () => {
+    it('should categorize failures by type', () => {
       // Arrange & Act
       const result = runScript([
         '--output', OUTPUT_DIR,
@@ -184,12 +184,28 @@ describe('verify-release-report: TDD Suite', () => {
         // Each category should have required fields
         report.summary.failure_categories.forEach((cat: unknown) => {
           expect(cat).toHaveProperty('category');
-          expect(['token', 'network', 'backend', 'assertion']).toContain(cat.category);
+          expect([
+            'token', 'network', 'backend', 'assertion', 'timeout',
+            'authorization', 'quota', 'rate_limit', 'permission', 'unknown',
+          ]).toContain(cat.category);
           expect(cat).toHaveProperty('count');
           expect(cat).toHaveProperty('checks');
           expect(Array.isArray(cat.checks)).toBe(true);
         });
       }
+    });
+
+    it('should mark rate-limit failures as acceptable upstream transient', () => {
+      runScript([
+        '--output', OUTPUT_DIR,
+        '--name', 'report-test',
+        '--mock-failure', 'rate_limit',
+      ]);
+      const report = readJsonReport(OUTPUT_DIR, 'report-test');
+
+      expect(report.summary.upstream_transient).toBeDefined();
+      expect(report.summary.upstream_transient.categories).toContain('rate_limit');
+      expect(report.summary.upstream_transient.acceptance).toBe('acceptable_with_retry');
     });
 
     it('should provide troubleshooting recommendations for failures', () => {

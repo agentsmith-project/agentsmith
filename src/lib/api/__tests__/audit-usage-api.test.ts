@@ -51,6 +51,7 @@ describe('UsageAPI exportReport', () => {
         format: 'json',
         time_window: 'last_7d',
         delivery_channel: 'in_app',
+        delivery_config: undefined,
         created_at: '2026-02-28T00:00:00.000Z',
         updated_at: '2026-02-28T00:00:00.000Z',
         next_run_at: '2026-03-01T00:00:00.000Z',
@@ -67,6 +68,7 @@ describe('UsageAPI exportReport', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
+      delivery_config: undefined,
       release_evidence_required: true,
       empty_result_policy: 'deliver',
       filters: { provider: 'openai' },
@@ -74,9 +76,54 @@ describe('UsageAPI exportReport', () => {
 
     expect(postMock).toHaveBeenCalledWith(
       '/workspaces/ws_1/projects/proj_1/usage/report-schedules',
-      expect.objectContaining({ name: 'Daily Ops' }),
+      expect.objectContaining({ name: 'Daily Ops', webhook_url: undefined }),
     );
     expect(result.name).toBe('Daily Ops');
+  });
+
+  it('creates webhook usage report schedule via project route', async () => {
+    const postMock = vi.fn().mockResolvedValue({
+      id: 'usage_schedule_2',
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      name: 'Webhook Ops',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'webhook',
+      delivery_config: { webhook_url: 'https://example.internal/report-hook' },
+      created_at: '2026-02-28T00:00:00.000Z',
+      updated_at: '2026-02-28T00:00:00.000Z',
+      next_run_at: '2026-03-01T00:00:00.000Z',
+    });
+
+    const api = new UsageAPI({
+      ...client,
+      post: postMock,
+    } as unknown as ConstructorParameters<typeof UsageAPI>[0]);
+
+    const result = await api.createReportSchedule('ws_1', 'proj_1', {
+      name: 'Webhook Ops',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'webhook',
+      delivery_config: { webhook_url: 'https://example.internal/report-hook' },
+      release_evidence_required: true,
+      empty_result_policy: 'deliver',
+    });
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/usage/report-schedules',
+      expect.objectContaining({
+        name: 'Webhook Ops',
+        delivery_channel: 'webhook',
+        webhook_url: 'https://example.internal/report-hook',
+      }),
+    );
+    expect(result.delivery_channel).toBe('webhook');
   });
 
   it('calls usage report lifecycle endpoints', async () => {

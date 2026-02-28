@@ -57,6 +57,7 @@ const usageReportSchedules: UsageReportSchedule[] = [{
   format: 'json',
   time_window: 'last_7d',
   delivery_channel: 'in_app',
+  delivery_config: undefined,
   filters: {
     provider: 'secondaryok',
   },
@@ -113,6 +114,9 @@ function buildDeliveryResult(item: UsageReportSchedule, status: 'success' | 'fai
     },
     error: options?.error,
     parent_delivery_id: options?.parentDeliveryId,
+    delivery_metadata: item.delivery_channel === 'webhook'
+      ? { dispatch_mode: 'webhook', webhook_url: item.delivery_config?.webhook_url, response_status: 200 }
+      : { dispatch_mode: 'user_notification' },
   };
   usageReportDeliveries.unshift(delivery);
   item.last_delivery_at = now;
@@ -133,13 +137,14 @@ function buildDeliveryResult(item: UsageReportSchedule, status: 'success' | 'fai
   return {
     delivery_id: delivery.id,
     schedule_id: item.id,
-    delivery_channel: 'in_app' as const,
+    delivery_channel: item.delivery_channel,
     generated_at: now,
     preview_filename: delivery.preview_filename ?? '',
     content_type: delivery.content_type ?? 'application/json; charset=utf-8',
     status,
     summary: delivery.summary,
     error: options?.error,
+    delivery_metadata: delivery.delivery_metadata,
   };
 }
 
@@ -1005,7 +1010,10 @@ export const usageHandlers = [
       status: body.status === 'paused' ? 'paused' : 'active',
       format: body.format === 'csv' ? 'csv' : 'json',
       time_window: body.time_window === 'last_24h' || body.time_window === 'last_30d' ? body.time_window : 'last_7d',
-      delivery_channel: 'in_app',
+      delivery_channel: body.delivery_channel === 'webhook' ? 'webhook' : 'in_app',
+      delivery_config: body.delivery_channel === 'webhook' && typeof body.webhook_url === 'string'
+        ? { webhook_url: body.webhook_url }
+        : undefined,
       filters: typeof body.filters === 'object' && body.filters ? body.filters as UsageReportSchedule['filters'] : undefined,
       release_evidence_required: body.release_evidence_required !== false,
       empty_result_policy: body.empty_result_policy === 'fail' ? 'fail' : 'deliver',
@@ -1028,6 +1036,11 @@ export const usageHandlers = [
       ...usageReportSchedules[idx],
       ...body,
       cadence,
+      delivery_config: body.delivery_channel === 'webhook' && typeof body.webhook_url === 'string'
+        ? { webhook_url: body.webhook_url }
+        : body.delivery_channel === 'in_app'
+          ? undefined
+          : usageReportSchedules[idx].delivery_config,
       updated_at: new Date().toISOString(),
       next_run_at: computeNextRunAt(cadence),
     };

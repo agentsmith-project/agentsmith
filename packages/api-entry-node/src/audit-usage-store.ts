@@ -318,7 +318,7 @@ export type UsageReportScheduleCadence = 'daily' | 'weekly' | 'monthly';
 export type UsageReportScheduleStatus = 'active' | 'paused';
 export type UsageReportScheduleFormat = 'csv' | 'json';
 export type UsageReportScheduleWindow = 'last_24h' | 'last_7d' | 'last_30d';
-export type UsageReportScheduleDeliveryChannel = 'in_app';
+export type UsageReportScheduleDeliveryChannel = 'in_app' | 'webhook';
 export type UsageReportDeliveryErrorClass = 'empty_result' | 'delivery_channel' | 'system_error';
 
 export type UsageReportScheduleRecord = {
@@ -331,6 +331,9 @@ export type UsageReportScheduleRecord = {
   format: UsageReportScheduleFormat;
   time_window: UsageReportScheduleWindow;
   delivery_channel: UsageReportScheduleDeliveryChannel;
+  delivery_config?: {
+    webhook_url?: string;
+  };
   filters?: {
     resource_type?: string;
     resource_id?: string;
@@ -1683,7 +1686,12 @@ export async function updateUsageReportSchedule(
     workspaceId: string;
     projectId: string;
     scheduleId: string;
-    patch: Partial<Pick<UsageReportScheduleRecord, 'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'filters' | 'release_evidence_required' | 'empty_result_policy'>>;
+    patch: Partial<
+      Pick<
+        UsageReportScheduleRecord,
+        'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'filters' | 'release_evidence_required' | 'empty_result_policy' | 'delivery_config'
+      >
+    >;
   },
 ): Promise<UsageReportScheduleRecord | null> {
   const current = await docStore.get<UsageReportScheduleRecord>(USAGE_REPORT_SCHEDULES_COLLECTION, query.scheduleId);
@@ -1760,7 +1768,10 @@ export async function executeUsageReportScheduleDelivery(
       projectId: string;
       schedule: UsageReportScheduleRecord;
       result: UsageReportScheduleDeliveryResult;
+      trigger: UsageReportDeliveryRecord['trigger'];
       recipientUserId?: string;
+      reportBody: string;
+      reportContentType: string;
     }) => Promise<UsageReportDeliveryDispatchResult>;
     recipientUserId?: string;
   },
@@ -1882,7 +1893,10 @@ export async function executeUsageReportScheduleDelivery(
       projectId: query.projectId,
       schedule,
       result: baseResult,
+      trigger: query.trigger,
       recipientUserId: query.recipientUserId,
+      reportBody: exportResult.body,
+      reportContentType: exportResult.contentType,
     })
     : { ok: true as const };
 

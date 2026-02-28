@@ -36,7 +36,10 @@ type UsageReportSchedulesPanelProps = {
     status: 'active' | 'paused';
     format: 'csv' | 'json';
     time_window: 'last_24h' | 'last_7d' | 'last_30d';
-    delivery_channel: 'in_app';
+    delivery_channel: 'in_app' | 'webhook';
+    delivery_config?: {
+      webhook_url?: string;
+    };
     filters?: UsageReportSchedule['filters'];
     release_evidence_required: boolean;
     empty_result_policy: 'deliver' | 'fail';
@@ -55,6 +58,8 @@ type DraftState = {
   cadence: 'daily' | 'weekly' | 'monthly';
   format: 'csv' | 'json';
   time_window: 'last_24h' | 'last_7d' | 'last_30d';
+  delivery_channel: 'in_app' | 'webhook';
+  webhook_url: string;
   provider?: string;
   model?: string;
   result?: 'ok' | 'error';
@@ -85,6 +90,8 @@ function buildInitialDraft(filters: UsageListParams): DraftState {
     cadence: 'daily',
     format: 'json',
     time_window: 'last_7d',
+    delivery_channel: 'in_app',
+    webhook_url: '',
     provider: filters.provider,
     model: filters.model,
     result: filters.result,
@@ -135,6 +142,7 @@ export function UsageReportSchedulesPanel({
 
   const handleCreate = React.useCallback(async () => {
     if (!draft.name.trim()) return;
+    if (draft.delivery_channel === 'webhook' && !draft.webhook_url.trim()) return;
     setSubmitting(true);
     try {
       await onCreate({
@@ -143,7 +151,10 @@ export function UsageReportSchedulesPanel({
         status: 'active',
         format: draft.format,
         time_window: draft.time_window,
-        delivery_channel: 'in_app',
+        delivery_channel: draft.delivery_channel,
+        delivery_config: draft.delivery_channel === 'webhook'
+          ? { webhook_url: draft.webhook_url.trim() }
+          : undefined,
         filters: {
           provider: draft.provider?.trim() || undefined,
           model: draft.model?.trim() || undefined,
@@ -559,6 +570,32 @@ export function UsageReportSchedulesPanel({
                 </Select>
               </div>
             </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>{t('report_schedules.delivery_channel')}</Label>
+                <Select
+                  value={draft.delivery_channel}
+                  onValueChange={(value) => setDraft((prev) => ({ ...prev, delivery_channel: value as DraftState['delivery_channel'] }))}
+                >
+                  <SelectTrigger data-testid="usage__report-schedules-form-delivery-channel"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="in_app">{t('report_schedules.delivery_channel_in_app')}</SelectItem>
+                    <SelectItem value="webhook">{t('report_schedules.delivery_channel_webhook')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {draft.delivery_channel === 'webhook' ? (
+                <div className="grid gap-2">
+                  <Label htmlFor="usage-report-webhook-url">{t('report_schedules.webhook_url')}</Label>
+                  <Input
+                    id="usage-report-webhook-url"
+                    value={draft.webhook_url}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, webhook_url: event.target.value }))}
+                    data-testid="usage__report-schedules-form-webhook-url"
+                  />
+                </div>
+              ) : null}
+            </div>
             <div className="grid gap-4 md:grid-cols-3">
               <div className="grid gap-2">
                 <Label htmlFor="usage-report-provider">{t('filters.provider')}</Label>
@@ -611,7 +648,12 @@ export function UsageReportSchedulesPanel({
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>{commonT('cancel')}</Button>
-            <Button type="button" onClick={() => void handleCreate()} disabled={!draft.name.trim() || submitting} data-testid="usage__report-schedules-form-submit">
+            <Button
+              type="button"
+              onClick={() => void handleCreate()}
+              disabled={!draft.name.trim() || (draft.delivery_channel === 'webhook' && !draft.webhook_url.trim()) || submitting}
+              data-testid="usage__report-schedules-form-submit"
+            >
               {t('report_schedules.create_submit')}
             </Button>
           </DialogFooter>

@@ -67,6 +67,25 @@ function badRequest(json: JsonResponder, res: http.ServerResponse, message: stri
   return true;
 }
 
+function parseDeliveryChannel(
+  body: Record<string, unknown>,
+): { deliveryChannel: 'in_app' | 'webhook'; deliveryConfig?: { webhook_url?: string } } | null {
+  const deliveryChannel = body.delivery_channel === 'webhook' ? 'webhook' : 'in_app';
+  if (deliveryChannel === 'webhook') {
+    const webhookUrl = typeof body.webhook_url === 'string' ? body.webhook_url.trim() : '';
+    if (!webhookUrl) {
+      return null;
+    }
+    return {
+      deliveryChannel,
+      deliveryConfig: {
+        webhook_url: webhookUrl,
+      },
+    };
+  }
+  return { deliveryChannel };
+}
+
 function requireTimeRange(
   requestUrl: URL,
   json: JsonResponder,
@@ -115,10 +134,13 @@ export async function handleAuditUsageRoute({
     const format = body.format === 'json' ? 'json' : 'csv';
     const timeWindow = body.time_window === 'last_24h' || body.time_window === 'last_30d' ? body.time_window : 'last_7d';
     const status = body.status === 'paused' ? 'paused' : 'active';
-    const deliveryChannel = body.delivery_channel === 'in_app' ? 'in_app' : 'in_app';
+    const delivery = parseDeliveryChannel(body);
     const name = typeof body.name === 'string' && body.name.trim().length > 0 ? body.name.trim() : null;
     if (!name) {
       return badRequest(json, res, 'name is required');
+    }
+    if (!delivery) {
+      return badRequest(json, res, 'webhook_url is required for webhook delivery');
     }
     const payload = await createUsageReportSchedule(deps.docStore, {
       workspace_id: route.workspaceId,
@@ -128,7 +150,8 @@ export async function handleAuditUsageRoute({
       status,
       format,
       time_window: timeWindow,
-      delivery_channel: deliveryChannel,
+      delivery_channel: delivery.deliveryChannel,
+      delivery_config: delivery.deliveryConfig,
       filters: typeof body.filters === 'object' && body.filters ? body.filters as Record<string, unknown> : undefined,
       release_evidence_required: body.release_evidence_required !== false,
       empty_result_policy: body.empty_result_policy === 'fail' ? 'fail' : 'deliver',
@@ -158,6 +181,12 @@ export async function handleAuditUsageRoute({
 
   if (route.kind === 'usageReportScheduleItem' && method === 'PATCH') {
     const body = await readJsonBody<Record<string, unknown>>(req);
+    const delivery = body.delivery_channel != null || body.webhook_url != null
+      ? parseDeliveryChannel(body)
+      : undefined;
+    if ((body.delivery_channel != null || body.webhook_url != null) && !delivery) {
+      return badRequest(json, res, 'webhook_url is required for webhook delivery');
+    }
     const payload = await updateUsageReportSchedule(deps.docStore, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -170,7 +199,8 @@ export async function handleAuditUsageRoute({
         time_window: body.time_window === 'last_24h' || body.time_window === 'last_7d' || body.time_window === 'last_30d'
           ? body.time_window
           : undefined,
-        delivery_channel: body.delivery_channel === 'in_app' ? 'in_app' : undefined,
+        delivery_channel: delivery?.deliveryChannel,
+        delivery_config: delivery?.deliveryConfig,
         filters: typeof body.filters === 'object' && body.filters ? body.filters as Record<string, unknown> : undefined,
         release_evidence_required: typeof body.release_evidence_required === 'boolean' ? body.release_evidence_required : undefined,
         empty_result_policy: body.empty_result_policy === 'deliver' || body.empty_result_policy === 'fail' ? body.empty_result_policy : undefined,

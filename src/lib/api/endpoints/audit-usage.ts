@@ -188,7 +188,10 @@ export interface UsageReportSchedule {
   status: 'active' | 'paused';
   format: 'csv' | 'json';
   time_window: 'last_24h' | 'last_7d' | 'last_30d';
-  delivery_channel: 'in_app';
+  delivery_channel: 'in_app' | 'webhook';
+  delivery_config?: {
+    webhook_url?: string;
+  };
   filters?: {
     resource_type?: string;
     resource_id?: string;
@@ -241,7 +244,7 @@ export interface UsageReportDelivery {
 export interface UsageReportScheduleDeliveryResult {
   delivery_id: string;
   schedule_id: string;
-  delivery_channel: 'in_app';
+  delivery_channel: 'in_app' | 'webhook';
   generated_at: string;
   preview_filename: string;
   content_type: string;
@@ -592,9 +595,13 @@ export class UsageAPI {
     projectId: string,
     body: Omit<UsageReportSchedule, 'id' | 'workspace_id' | 'project_id' | 'created_at' | 'updated_at' | 'next_run_at' | 'last_run_at' | 'last_delivery_status' | 'last_delivery_at' | 'last_delivery_error' | 'recent_deliveries'>,
   ): Promise<UsageReportSchedule> {
+    const requestBody = {
+      ...body,
+      webhook_url: body.delivery_channel === 'webhook' ? body.delivery_config?.webhook_url : undefined,
+    };
     return this.client.post<UsageReportSchedule>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules`,
-      body,
+      requestBody,
     );
   }
 
@@ -602,11 +609,15 @@ export class UsageAPI {
     workspaceId: string,
     projectId: string,
     scheduleId: string,
-    patch: Partial<Pick<UsageReportSchedule, 'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'filters' | 'release_evidence_required' | 'empty_result_policy'>>,
+    patch: Partial<Pick<UsageReportSchedule, 'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'delivery_config' | 'filters' | 'release_evidence_required' | 'empty_result_policy'>>,
   ): Promise<UsageReportSchedule> {
+    const requestBody = {
+      ...patch,
+      webhook_url: patch.delivery_channel === 'webhook' ? patch.delivery_config?.webhook_url : undefined,
+    };
     return this.client.patch<UsageReportSchedule>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}`,
-      patch,
+      requestBody,
     );
   }
 

@@ -3,6 +3,22 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { UsagePage } from '../UsagePage';
 
+if (!HTMLElement.prototype.hasPointerCapture) {
+  HTMLElement.prototype.hasPointerCapture = () => false;
+}
+
+if (!HTMLElement.prototype.setPointerCapture) {
+  HTMLElement.prototype.setPointerCapture = () => {};
+}
+
+if (!HTMLElement.prototype.releasePointerCapture) {
+  HTMLElement.prototype.releasePointerCapture = () => {};
+}
+
+if (!HTMLElement.prototype.scrollIntoView) {
+  HTMLElement.prototype.scrollIntoView = () => {};
+}
+
 const invalidateQueries = vi.fn();
 
 vi.mock('next-intl', () => ({
@@ -136,6 +152,7 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
           format: 'json',
           time_window: 'last_7d',
           delivery_channel: 'in_app',
+          delivery_config: undefined,
           release_evidence_required: true,
           empty_result_policy: 'deliver',
           created_at: '2026-02-28T00:00:00.000Z',
@@ -236,8 +253,37 @@ describe('UsagePage', () => {
       expect.objectContaining({
         name: 'Weekly Runtime Digest',
         delivery_channel: 'in_app',
+        delivery_config: undefined,
         release_evidence_required: true,
         empty_result_policy: 'deliver',
+      }),
+    );
+  });
+
+  it('creates a webhook usage report schedule from dialog', async () => {
+    const user = userEvent.setup();
+    createReportScheduleMock.mockResolvedValue({
+      id: 'usage_schedule_3',
+    });
+
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    await user.click(screen.getByTestId('usage__report-schedules-create'));
+    await user.type(screen.getByTestId('usage__report-schedules-form-name'), 'Webhook Digest');
+    await user.click(screen.getByTestId('usage__report-schedules-form-delivery-channel'));
+    await user.keyboard('{ArrowDown}{Enter}');
+    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-url'), 'https://example.internal/report-hook');
+    await user.click(screen.getByTestId('usage__report-schedules-form-submit'));
+
+    expect(createReportScheduleMock).toHaveBeenCalledWith(
+      'ws_1',
+      'proj_1',
+      expect.objectContaining({
+        name: 'Webhook Digest',
+        delivery_channel: 'webhook',
+        delivery_config: {
+          webhook_url: 'https://example.internal/report-hook',
+        },
       }),
     );
   });

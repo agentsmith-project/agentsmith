@@ -6533,4 +6533,37 @@ describe('api-entry-node projects routes', () => {
     expect(filteredBody.items[0]?.action).toBe('notebook.task.run.failed');
     expect(filteredBody.items[0]?.result).toBe('error');
   });
+
+  it('rejects webhook usage report schedule creation without webhook_url', async () => {
+    const { baseUrl } = startServer();
+
+    const response = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Webhook Ops',
+          cadence: 'daily',
+          status: 'active',
+          format: 'json',
+          time_window: 'last_7d',
+          delivery_channel: 'webhook',
+          release_evidence_required: true,
+          empty_result_policy: 'deliver',
+        }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        error_code: 'BAD_REQUEST',
+        message: 'webhook_url is required for webhook delivery',
+      }),
+    );
+  });
 });

@@ -7154,7 +7154,14 @@ components:
           enum: [last_24h, last_7d, last_30d]
         delivery_channel:
           type: string
-          enum: [in_app]
+          enum: [in_app, webhook]
+        delivery_config:
+          type: object
+          properties:
+            webhook_url:
+              type: string
+        webhook_url:
+          type: string
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
         release_evidence_required:
@@ -7225,7 +7232,14 @@ components:
           enum: [last_24h, last_7d, last_30d]
         delivery_channel:
           type: string
-          enum: [in_app]
+          enum: [in_app, webhook]
+        delivery_config:
+          type: object
+          properties:
+            webhook_url:
+              type: string
+        webhook_url:
+          type: string
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
         release_evidence_required:
@@ -7252,7 +7266,12 @@ components:
           enum: [last_24h, last_7d, last_30d]
         delivery_channel:
           type: string
-          enum: [in_app]
+          enum: [in_app, webhook]
+        delivery_config:
+          type: object
+          properties:
+            webhook_url:
+              type: string
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
         release_evidence_required:
@@ -7337,7 +7356,7 @@ components:
           type: string
         delivery_channel:
           type: string
-          enum: [in_app]
+          enum: [in_app, webhook]
         generated_at:
           type: string
           format: date-time

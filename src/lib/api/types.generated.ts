@@ -3128,7 +3128,10 @@ export interface components {
             /** @enum {string} */
             cadence: "daily" | "weekly" | "monthly";
             /** @enum {string} */
-            delivery_channel: "in_app";
+            delivery_channel: "in_app" | "webhook";
+            delivery_config?: {
+                webhook_url?: string;
+            };
             /** @enum {string} */
             empty_result_policy?: "deliver" | "fail";
             filters?: components["schemas"]["UsageReportScheduleFilters"];
@@ -3140,6 +3143,7 @@ export interface components {
             status: "active" | "paused";
             /** @enum {string} */
             time_window: "last_24h" | "last_7d" | "last_30d";
+            webhook_url?: string;
         };
         Endpoint: {
             base_url: string;
@@ -3704,7 +3708,10 @@ export interface components {
             /** @enum {string} */
             cadence?: "daily" | "weekly" | "monthly";
             /** @enum {string} */
-            delivery_channel?: "in_app";
+            delivery_channel?: "in_app" | "webhook";
+            delivery_config?: {
+                webhook_url?: string;
+            };
             /** @enum {string} */
             empty_result_policy?: "deliver" | "fail";
             filters?: components["schemas"]["UsageReportScheduleFilters"];
@@ -3901,7 +3908,10 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             /** @enum {string} */
-            delivery_channel: "in_app";
+            delivery_channel: "in_app" | "webhook";
+            delivery_config?: {
+                webhook_url?: string;
+            };
             /** @enum {string} */
             empty_result_policy?: "deliver" | "fail";
             filters?: components["schemas"]["UsageReportScheduleFilters"];
@@ -3927,12 +3937,13 @@ export interface components {
             time_window: "last_24h" | "last_7d" | "last_30d";
             /** Format: date-time */
             updated_at: string;
+            webhook_url?: string;
             workspace_id: string;
         };
         UsageReportScheduleDeliveryResult: {
             content_type: string;
             /** @enum {string} */
-            delivery_channel: "in_app";
+            delivery_channel: "in_app" | "webhook";
             delivery_id: string;
             delivery_metadata?: {
                 [key: string]: unknown;

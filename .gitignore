@@ -60,5 +60,7 @@ artifacts/release-reports/failed/
 # Generated local release verification snapshots / debug captures
 artifacts/release-reports/report-*.json
 artifacts/release-reports/report-*.md
+artifacts/release-reports/closure-*.json
+artifacts/release-reports/closure-*.md
 artifacts/release-reports/gov-smoke-login-failure-*.png
 artifacts/release-reports/gov-smoke-login-failure-*.html

@@ -8,6 +8,9 @@ on:
         required: false
         default: ""
         type: string
+  schedule:
+    # Daily UTC off-peak run for real-lane release regression.
+    - cron: "30 2 * * *"
 
 concurrency:
   group: release-gate-${{ github.ref }}

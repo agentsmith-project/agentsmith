@@ -382,7 +382,7 @@ async function sendExpectStreamError(
   const sendBtn = page.getByTestId('chat__send-btn');
   await expect(sendBtn).toBeEnabled({ timeout: 15_000 });
   await sendBtn.click();
-  await expect(page.getByTestId('chat__stream-status')).toHaveText('Error', { timeout: 60_000 });
+  await expect(page.getByTestId('chat__stream-status')).toHaveText(/Recovering\.\.\.|恢复中\.\.\./, { timeout: 60_000 });
   await expect(page.getByTestId('chat__stream-error-banner')).toBeVisible({ timeout: 15_000 });
 }
 

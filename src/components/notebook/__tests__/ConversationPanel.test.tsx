@@ -262,6 +262,32 @@ describe('ConversationPanel', () => {
     });
   });
 
+  describe('Connection Status UX', () => {
+    it('shows reconnecting status when disconnected', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="disconnected"
+        />
+      );
+
+      expect(screen.getByTestId('notebook__sse-status')).toHaveTextContent('Realtime connection: reconnecting...');
+    });
+
+    it('shows recovering status on connection errors', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="error"
+        />
+      );
+
+      expect(screen.getByTestId('notebook__sse-status')).toHaveTextContent('Realtime connection: recovering...');
+    });
+  });
+
   describe('Empty Messages', () => {
     it('renders with empty messages array', () => {
       render(

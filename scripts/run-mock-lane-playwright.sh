@@ -12,6 +12,7 @@ HEALTH_URL="${BASE_URL}/zh-CN/login"
 PID_FILE="/tmp/agentsmith_mock_lane_web.pid"
 LOG_FILE="/tmp/agentsmith_mock_lane_web.log"
 STARTED_BY_SCRIPT=0
+LAST_PLAYWRIGHT_LOG=""
 
 info() { echo "[mock-lane] $*"; }
 err() { echo "[mock-lane] ERROR: $*" >&2; }
@@ -31,21 +32,92 @@ cleanup() {
 trap cleanup EXIT
 
 is_port_listening() {
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -iTCP:"${PORT_WEB}" -sTCP:LISTEN -Pn >/dev/null 2>&1
-    return $?
+  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"${PORT_WEB}" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
+    return 0
   fi
-  if command -v ss >/dev/null 2>&1; then
-    ss -ltn | grep -qE "[\\[\\]:*]${PORT_WEB}[[:space:]]"
-    return $?
+  if command -v ss >/dev/null 2>&1 && ss -ltn | grep -qE "[\\[\\]:*]${PORT_WEB}[[:space:]]"; then
+    return 0
+  fi
+  if command -v fuser >/dev/null 2>&1 && fuser -n tcp "${PORT_WEB}" >/dev/null 2>&1; then
+    return 0
   fi
   return 1
+}
+
+is_port_listening_value() {
+  local port="$1"
+  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"${port}" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
+    return 0
+  fi
+  if command -v ss >/dev/null 2>&1 && ss -ltn | grep -qE "[\\[\\]:*]${port}[[:space:]]"; then
+    return 0
+  fi
+  if command -v fuser >/dev/null 2>&1 && fuser -n tcp "${port}" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+kill_port_listeners() {
+  local pids=""
+  local lsof_pids=""
+  local fuser_pids=""
+  if command -v lsof >/dev/null 2>&1; then
+    lsof_pids="$(lsof -tiTCP:${PORT_WEB} -sTCP:LISTEN -Pn 2>/dev/null || true)"
+  fi
+  if command -v fuser >/dev/null 2>&1; then
+    fuser_pids="$(fuser -n tcp "${PORT_WEB}" 2>/dev/null | tr ' ' '\n' || true)"
+  fi
+  pids="$(printf '%s\n%s\n' "${lsof_pids}" "${fuser_pids}" | awk 'NF && !seen[$0]++')"
+  if [[ -z "${pids}" ]]; then
+    return 0
+  fi
+  info "stopping existing listener(s) on :${PORT_WEB}: ${pids//$'\n'/ }"
+  while IFS= read -r pid; do
+    [[ -z "${pid}" ]] && continue
+    kill "${pid}" >/dev/null 2>&1 || true
+  done <<< "${pids}"
+  sleep 1
+  while IFS= read -r pid; do
+    [[ -z "${pid}" ]] && continue
+    kill -9 "${pid}" >/dev/null 2>&1 || true
+  done <<< "${pids}"
+}
+
+pick_free_port() {
+  local candidate="${PORT_WEB}"
+  if ! is_port_listening_value "${candidate}"; then
+    echo "${candidate}"
+    return 0
+  fi
+
+  for candidate in $(seq 3010 3099); do
+    if ! is_port_listening_value "${candidate}"; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+rebind_urls_for_port() {
+  local port="$1"
+  PORT_WEB="${port}"
+  BASE_URL="http://127.0.0.1:${PORT_WEB}"
+  HEALTH_URL="${BASE_URL}/zh-CN/login"
 }
 
 wait_http_ok() {
   local max="${1:-120}"
   local i
   for i in $(seq 1 "${max}"); do
+    if [[ "${STARTED_BY_SCRIPT}" == "1" ]] && [[ -f "${PID_FILE}" ]]; then
+      local pid
+      pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+      if [[ -n "${pid}" ]] && ! kill -0 "${pid}" >/dev/null 2>&1; then
+        return 1
+      fi
+    fi
     local code
     code="$(curl -sS -o /dev/null -w '%{http_code}' "${HEALTH_URL}" || true)"
     if [[ "${code}" == "200" ]]; then
@@ -56,9 +128,23 @@ wait_http_ok() {
   return 1
 }
 
-if is_port_listening; then
-  info "reusing existing web server on :${PORT_WEB}"
-else
+start_mock_server() {
+  if is_port_listening; then
+    info "mock lane requires deterministic MSW mode; restarting :${PORT_WEB}"
+    kill_port_listeners
+  fi
+
+  if is_port_listening; then
+    info "port :${PORT_WEB} is still busy after cleanup; finding an alternate free port"
+    fallback_port="$(pick_free_port || true)"
+    if [[ -z "${fallback_port}" ]]; then
+      err "failed to find a free port for mock lane"
+      exit 1
+    fi
+    rebind_urls_for_port "${fallback_port}"
+    info "using fallback port :${PORT_WEB}"
+  fi
+
   info "starting mock web server on :${PORT_WEB} (log: ${LOG_FILE})"
   : > "${LOG_FILE}"
   (
@@ -67,13 +153,43 @@ else
   ) >>"${LOG_FILE}" 2>&1 &
   echo $! > "${PID_FILE}"
   STARTED_BY_SCRIPT=1
+
+  if ! wait_http_ok 120; then
+    err "web server is not ready at ${HEALTH_URL}"
+    tail -n 120 "${LOG_FILE}" 2>/dev/null || true
+    exit 1
+  fi
+}
+
+run_playwright_once() {
+  LAST_PLAYWRIGHT_LOG="$(mktemp /tmp/agentsmith_mock_lane_playwright.XXXXXX.log)"
+  set +e
+  (
+    cd "${ROOT_DIR}"
+    env BASE_URL="${BASE_URL}" NEXT_PUBLIC_USE_MSW=true npx playwright test "$@"
+  ) 2>&1 | tee "${LAST_PLAYWRIGHT_LOG}"
+  local exit_code=${PIPESTATUS[0]}
+  set -e
+  return "${exit_code}"
+}
+
+is_transient_playwright_failure() {
+  [[ -n "${LAST_PLAYWRIGHT_LOG}" ]] && grep -Eq \
+    'ERR_CONNECTION_REFUSED|ERR_EMPTY_RESPONSE|ECONNRESET|EPIPE|socket hang up|Target closed' \
+    "${LAST_PLAYWRIGHT_LOG}"
+}
+start_mock_server
+
+if run_playwright_once "$@"; then
+  exit 0
 fi
 
-if ! wait_http_ok 120; then
-  err "web server is not ready at ${HEALTH_URL}"
-  tail -n 120 "${LOG_FILE}" 2>/dev/null || true
-  exit 1
+if is_transient_playwright_failure; then
+  info "detected transient web/runtime failure; restarting mock lane and retrying once"
+  kill_port_listeners
+  start_mock_server
+  run_playwright_once "$@"
+  exit $?
 fi
 
-cd "${ROOT_DIR}"
-exec env BASE_URL="${BASE_URL}" NEXT_PUBLIC_USE_MSW=true npx playwright test "$@"
+exit 1

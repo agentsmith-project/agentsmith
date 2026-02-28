@@ -13,7 +13,7 @@
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
-	runtime-proxy-stream-bench runtime-proxy-stream-bench-gate \
+	runtime-proxy-stream-bench runtime-proxy-stream-bench-gate usage-report-runner-status usage-report-run-due \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
 	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
@@ -28,6 +28,8 @@ NPM ?= npm
 
 PORT_API ?= 20000
 PORT_WEB ?= 3001
+USAGE_REPORT_RUNNER_ENABLED ?= false
+USAGE_REPORT_RUNNER_INTERVAL_MS ?= 60000
 
 KEYCLOAK_BASE_URL ?= http://localhost:18080
 KEYCLOAK_REALM ?= mbos
@@ -146,6 +148,8 @@ help:
 	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
+	@echo "  make usage-report-runner-status   # query internal usage report runner status (auth required)"
+	@echo "  make usage-report-run-due         # trigger a usage report runner sweep (auth required)"
 	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
 	@echo "  make notebook-agent-load-matrix   # run a load matrix and save CSV/JSONL summaries under /tmp"
 	@echo "  make notebook-agent-benchmark-baseline # run the standard baseline matrix profile and print summary preview"
@@ -202,6 +206,12 @@ quick-help:
 	@echo ""
 	@echo "  make verify-release-with-report"
 	@echo "    Run verify-release and generate report with archive."
+	@echo ""
+	@echo "  make usage-report-runner-status"
+	@echo "    Query the in-process usage report runner using /tmp/agentsmith_user_token.txt."
+	@echo ""
+	@echo "  make usage-report-run-due"
+	@echo "    Trigger one authenticated usage report sweep using /tmp/agentsmith_user_token.txt."
 	@echo ""
 	@echo "  make dev-down"
 	@echo "    Stop managed demo processes."
@@ -425,6 +435,8 @@ api-dev: check-api-port
 	MINIO_ACCESS_KEY=$(MINIO_ACCESS_KEY) \
 	MINIO_SECRET_KEY=$(MINIO_SECRET_KEY) \
 	MINIO_BUCKET=$(MINIO_BUCKET) \
+	USAGE_REPORT_RUNNER_ENABLED=$(USAGE_REPORT_RUNNER_ENABLED) \
+	USAGE_REPORT_RUNNER_INTERVAL_MS=$(USAGE_REPORT_RUNNER_INTERVAL_MS) \
 	$(NPM) run api:node:dev
 
 api-dev-min: check-api-port
@@ -437,6 +449,8 @@ api-dev-min: check-api-port
 	MINIO_ACCESS_KEY=$(MINIO_ACCESS_KEY) \
 	MINIO_SECRET_KEY=$(MINIO_SECRET_KEY) \
 	MINIO_BUCKET=$(MINIO_BUCKET) \
+	USAGE_REPORT_RUNNER_ENABLED=$(USAGE_REPORT_RUNNER_ENABLED) \
+	USAGE_REPORT_RUNNER_INTERVAL_MS=$(USAGE_REPORT_RUNNER_INTERVAL_MS) \
 	$(NPM) run api:node:dev
 
 web:
@@ -819,6 +833,30 @@ notebook-agent-smoke-full:
 notebook-agent-monitor:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/notebook-agent-monitor.sh
+
+usage-report-runner-status:
+	@set -e; \
+	TOKEN_FILE="$${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"; \
+	if [ ! -s "$$TOKEN_FILE" ]; then \
+		echo "[usage-report-runner-status] missing token file: $$TOKEN_FILE" >&2; \
+		exit 1; \
+	fi; \
+	TOKEN="$$(cat "$$TOKEN_FILE")"; \
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	curl -fsS "http://localhost:$(PORT_API)/api/v1/internal/usage-report-runner" \
+		-H "Authorization: Bearer $$TOKEN"
+
+usage-report-run-due:
+	@set -e; \
+	TOKEN_FILE="$${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"; \
+	if [ ! -s "$$TOKEN_FILE" ]; then \
+		echo "[usage-report-run-due] missing token file: $$TOKEN_FILE" >&2; \
+		exit 1; \
+	fi; \
+	TOKEN="$$(cat "$$TOKEN_FILE")"; \
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	curl -fsS -X POST "http://localhost:$(PORT_API)/api/v1/internal/usage-report-runner/run-due" \
+		-H "Authorization: Bearer $$TOKEN"
 
 notebook-agent-load-test:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

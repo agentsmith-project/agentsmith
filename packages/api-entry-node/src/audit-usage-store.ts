@@ -407,6 +407,22 @@ export type UsageReportEvidence = {
   unacknowledged_required_deliveries: number;
 };
 
+export type UsageReportRunnerProjectResult = {
+  workspace_id: string;
+  project_id: string;
+  processed: number;
+  deliveries: UsageReportScheduleDeliveryResult[];
+};
+
+export type UsageReportRunnerSweepResult = {
+  generated_at: string;
+  scanned_projects: number;
+  processed_schedules: number;
+  successful_deliveries: number;
+  failed_deliveries: number;
+  projects: UsageReportRunnerProjectResult[];
+};
+
 export const AUDIT_EVENTS_COLLECTION = 'project_audit_events';
 export const USAGE_FACTS_COLLECTION = 'project_usage_facts';
 export const USAGE_REPORT_SCHEDULES_COLLECTION = 'project_usage_report_schedules';
@@ -1935,6 +1951,54 @@ export async function runDueUsageReportSchedules(
     if (result) deliveries.push(result);
   }
   return { processed: due.length, deliveries };
+}
+
+export async function runDueUsageReportSchedulesAcrossProjects(
+  docStore: JsonDocStorePort,
+  query?: {
+    now?: string;
+  },
+): Promise<UsageReportRunnerSweepResult> {
+  const now = query?.now ?? new Date().toISOString();
+  const rows = await docStore.list<UsageReportScheduleRecord>(USAGE_REPORT_SCHEDULES_COLLECTION);
+  const projectKeys = new Map<string, { workspaceId: string; projectId: string }>();
+  for (const row of rows) {
+    if (!row.workspace_id || !row.project_id) continue;
+    const key = `${row.workspace_id}:${row.project_id}`;
+    if (!projectKeys.has(key)) {
+      projectKeys.set(key, {
+        workspaceId: row.workspace_id,
+        projectId: row.project_id,
+      });
+    }
+  }
+
+  const projects: UsageReportRunnerProjectResult[] = [];
+  for (const project of projectKeys.values()) {
+    const result = await runDueUsageReportSchedules(docStore, {
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+      now,
+    });
+    if (result.processed > 0 || result.deliveries.length > 0) {
+      projects.push({
+        workspace_id: project.workspaceId,
+        project_id: project.projectId,
+        processed: result.processed,
+        deliveries: result.deliveries,
+      });
+    }
+  }
+
+  const allDeliveries = projects.flatMap((item) => item.deliveries);
+  return {
+    generated_at: now,
+    scanned_projects: projectKeys.size,
+    processed_schedules: projects.reduce((sum, item) => sum + item.processed, 0),
+    successful_deliveries: allDeliveries.filter((item) => item.status === 'success').length,
+    failed_deliveries: allDeliveries.filter((item) => item.status === 'failed').length,
+    projects,
+  };
 }
 
 export async function getUsageReportEvidence(

@@ -38,6 +38,7 @@ import type { ChatResourceService } from './chat-resource-service.js';
 import type { EndpointResourceService } from './endpoint-resource-service.js';
 import type { AgentResourceService } from './agent-resource-service.js';
 import type { AgentRuntimeService } from './agent-runtime-service.js';
+import type { UsageReportRunnerController } from './usage-report-runner.js';
 
 export interface NodeApiDeps {
   cache: CachePort;
@@ -80,4 +81,5 @@ export interface NodeApiDeps {
   updateProjectUseCase: UpdateProjectUseCase;
   cancelAIReadyJobUseCase: CancelAIReadyJobUseCase;
   runQueuedAIReadyJobUseCase: RunQueuedAIReadyJobUseCase;
+  usageReportRunner?: UsageReportRunnerController;
 }

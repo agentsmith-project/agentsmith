@@ -12,6 +12,7 @@ import {
   recordUsageFact,
   retryUsageReportDelivery,
   runDueUsageReportSchedules,
+  runDueUsageReportSchedulesAcrossProjects,
   testUsageReportScheduleDelivery,
   USAGE_REPORT_SCHEDULES_COLLECTION,
 } from './audit-usage-store.js';
@@ -532,5 +533,75 @@ describe('audit-usage-store runtime observability', () => {
     expect(result.processed).toBe(1);
     expect(result.deliveries).toHaveLength(1);
     expect(result.deliveries[0]?.schedule_id).toBe(due.id);
+  });
+
+  it('runs due schedules across projects', async () => {
+    const store = new InMemoryJsonDocStore();
+
+    await recordUsageFact(store, {
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      resource_type: 'endpoint',
+      requests: 1,
+      result: 'ok',
+      metadata_json: { provider: 'secondaryok', resolved_model: 'model-b', estimated_cost: 0.0031 },
+    });
+    await recordUsageFact(store, {
+      workspace_id: 'ws_2',
+      project_id: 'proj_2',
+      resource_type: 'endpoint',
+      requests: 1,
+      result: 'ok',
+      metadata_json: { provider: 'secondaryok', resolved_model: 'model-b', estimated_cost: 0.0027 },
+    });
+
+    const first = await createUsageReportSchedule(store, {
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      name: 'Runner One',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'in_app',
+      release_evidence_required: false,
+      empty_result_policy: 'deliver',
+    });
+    const second = await createUsageReportSchedule(store, {
+      workspace_id: 'ws_2',
+      project_id: 'proj_2',
+      name: 'Runner Two',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'in_app',
+      release_evidence_required: false,
+      empty_result_policy: 'deliver',
+    });
+
+    await store.upsert(USAGE_REPORT_SCHEDULES_COLLECTION, first.id, {
+      ...first,
+      next_run_at: '2026-03-01T00:00:00.000Z',
+    });
+    await store.upsert(USAGE_REPORT_SCHEDULES_COLLECTION, second.id, {
+      ...second,
+      next_run_at: '2026-03-01T00:00:00.000Z',
+    });
+
+    const sweep = await runDueUsageReportSchedulesAcrossProjects(store, {
+      now: '2026-03-02T00:00:00.000Z',
+    });
+
+    expect(sweep.scanned_projects).toBe(2);
+    expect(sweep.processed_schedules).toBe(2);
+    expect(sweep.successful_deliveries).toBe(2);
+    expect(sweep.failed_deliveries).toBe(0);
+    expect(sweep.projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ workspace_id: 'ws_1', project_id: 'proj_1', processed: 1 }),
+        expect.objectContaining({ workspace_id: 'ws_2', project_id: 'proj_2', processed: 1 }),
+      ]),
+    );
   });
 });

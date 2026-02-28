@@ -86,6 +86,49 @@ Use GitHub Actions workflow **Release Gate** (`.github/workflows/release-gate.ym
 - `make release-report REPORT_ARCHIVE=1`
 4. Download `release-gate-artifacts` for archived reports, logs, and test outputs.
 
+## Usage Report Runner Operations
+
+The usage report scheduler now has an in-process runner inside the node API. This is the execution path that turns active schedules into delivery records and release evidence.
+
+### Startup Flags
+
+Pass these through the API process:
+
+```bash
+USAGE_REPORT_RUNNER_ENABLED=true
+USAGE_REPORT_RUNNER_INTERVAL_MS=60000
+```
+
+`make api-dev` and `make api-dev-min` now forward both variables to `npm run api:node:dev`.
+
+### Operator Endpoints
+
+These internal endpoints require a bearer token:
+
+- `GET /api/v1/internal/usage-report-runner`
+- `POST /api/v1/internal/usage-report-runner/run-due`
+
+They return runner status and a single authenticated sweep result across all projects with due schedules.
+
+### Local Operator Commands
+
+These targets use `/tmp/agentsmith_user_token.txt` by default:
+
+```bash
+make usage-report-runner-status
+make usage-report-run-due
+```
+
+If you need a fresh token first:
+
+```bash
+make notebook-agent-refresh-token
+```
+
+### Release Readiness
+
+Release verification now depends on delivery evidence, not only schedule definitions. If a required schedule is active but has failing or unacknowledged required deliveries, release evidence will surface it in `summary.usage_report_evidence`.
+
 ## Report Structure
 
 ### JSON Report

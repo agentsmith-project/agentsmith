@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
-import { recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
+import { createUsageReportSchedule, recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
 
 const servers: Server[] = [];
 const originalKeycloakIssuer = process.env.KEYCLOAK_ISSUER_URL;
@@ -4032,6 +4032,62 @@ describe('api-entry-node projects routes', () => {
     expect(text).toContain('notebook_active_runs ');
     expect(text).toContain('notebook_limit_trace_events_per_task ');
     expect(text).toContain('notebook_task_traces_query_duration_ms_bucket{scope="task",le="10"} ');
+  });
+
+  it('runs usage report runner manually and exposes status', async () => {
+    const deps = createDefaultNodeApiDeps();
+    await recordUsageFact(deps.docStore, {
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      resource_type: 'endpoint',
+      requests: 1,
+      result: 'ok',
+      metadata_json: {
+        provider: 'secondaryok',
+        resolved_model: 'model-b',
+        estimated_cost: 0.0021,
+      },
+    });
+    const created = await createUsageReportSchedule(deps.docStore, {
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      name: 'Internal Runner Schedule',
+      cadence: 'daily',
+      status: 'active',
+      format: 'json',
+      time_window: 'last_7d',
+      delivery_channel: 'in_app',
+      release_evidence_required: false,
+      empty_result_policy: 'deliver',
+    });
+    await deps.docStore.upsert('project_usage_report_schedules', created.id, {
+      ...created,
+      next_run_at: '2026-02-01T00:00:00.000Z',
+    });
+
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const runRes = await apiFetch(baseUrl, '/api/v1/internal/usage-report-runner/run-due', {
+      method: 'POST',
+    });
+    expect(runRes.status).toBe(200);
+    const runPayload = (await runRes.json()) as {
+      processed_schedules?: number;
+      successful_deliveries?: number;
+    };
+    expect(runPayload.processed_schedules).toBe(1);
+    expect(runPayload.successful_deliveries).toBe(1);
+
+    const statusRes = await apiFetch(baseUrl, '/api/v1/internal/usage-report-runner');
+    expect(statusRes.status).toBe(200);
+    const statusPayload = (await statusRes.json()) as {
+      run_count?: number;
+      last_status?: string;
+      last_result?: { processed_schedules?: number };
+    };
+    expect(statusPayload.run_count).toBe(1);
+    expect(statusPayload.last_status).toBe('success');
+    expect(statusPayload.last_result?.processed_schedules).toBe(1);
   });
 
   it('records task trace query metrics for message-scoped requests', async () => {

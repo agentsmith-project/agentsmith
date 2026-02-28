@@ -8,15 +8,30 @@ import {
   createNodeApiDepsFromEnv,
 } from './node-api-deps-factory.js';
 import { handleRequest } from './request-handler.js';
+import { createUsageReportRunner } from './usage-report-runner.js';
 
 export type { NodeApiDeps } from './node-api-deps.js';
 export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
+
+type CreateNodeApiServerOptions = {
+  usageReportRunner?: {
+    enabled?: boolean;
+    intervalMs?: number;
+  };
+};
 
 export function createNodeApiServer(
   port = 3010,
   deps = createDefaultNodeApiDeps(),
   lifecycle?: Pick<ProjectRepoFactoryResult, 'shutdown'>,
+  options?: CreateNodeApiServerOptions,
 ): http.Server {
+  const usageReportRunner = createUsageReportRunner(deps.docStore, {
+    enabled: options?.usageReportRunner?.enabled ?? false,
+    intervalMs: options?.usageReportRunner?.intervalMs,
+  });
+  deps.usageReportRunner = usageReportRunner;
+
   const server = http.createServer((req, res) => {
     void handleRequest(req, res, deps);
   });
@@ -38,12 +53,14 @@ export function createNodeApiServer(
   if (lifecycle) {
     server.on('close', () => {
       clearInterval(jobWorkerInterval);
+      usageReportRunner.stop();
       ACTIVE_CHAT_STREAMS.clear();
       void lifecycle.shutdown();
     });
   } else {
     server.on('close', () => {
       clearInterval(jobWorkerInterval);
+      usageReportRunner.stop();
       ACTIVE_CHAT_STREAMS.clear();
     });
   }
@@ -61,7 +78,12 @@ function startFromCli(): void {
   }
 
   const { deps, lifecycle, repoMode } = createNodeApiDepsFromEnv(process.env);
-  createNodeApiServer(port, deps, lifecycle);
+  createNodeApiServer(port, deps, lifecycle, {
+    usageReportRunner: {
+      enabled: process.env.USAGE_REPORT_RUNNER_ENABLED === 'true',
+      intervalMs: Number.parseInt(process.env.USAGE_REPORT_RUNNER_INTERVAL_MS ?? '60000', 10),
+    },
+  });
   // Keep log compact and machine-readable for local integration.
   process.stdout.write(`[api-entry-node] listening on ${port} (repo=${repoMode})\n`);
 }

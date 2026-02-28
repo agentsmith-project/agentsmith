@@ -16,6 +16,8 @@ import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { UsageOperationsSummary } from '@/components/audit-usage/UsageOperationsSummary';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 interface ReleaseOpsPageProps {
@@ -35,6 +37,10 @@ function formatDateTime(value?: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
+function yesNoBadge(value: boolean | undefined) {
+  return value ? 'outline' : 'secondary';
+}
+
 export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const errorsT = useTranslations('errors');
   const settingsT = useTranslations('settings');
@@ -44,6 +50,8 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const [timeRange] = useState(defaultTimeRange);
   const canReadUsage = useHasPermission('project:usage:view');
   const [selectedReportName, setSelectedReportName] = useState<string | undefined>();
+  const [reportSearch, setReportSearch] = useState('');
+  const [reportStatusFilter, setReportStatusFilter] = useState<'all' | 'pass' | 'fail'>('all');
 
   useEffect(() => {
     params.then((p) => setResolvedParams({
@@ -65,12 +73,6 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const reportsQuery = useReleaseReportList({ enabled });
   const reportDetailQuery = useReleaseReportDetail(selectedReportName, { enabled });
 
-  useEffect(() => {
-    if (!selectedReportName && (reportsQuery.data?.items?.length ?? 0) > 0) {
-      setSelectedReportName(reportsQuery.data?.items[0]?.name);
-    }
-  }, [reportsQuery.data?.items, selectedReportName]);
-
   const refresh = () => {
     runtimeQuery.refetch();
     summaryQuery.refetch();
@@ -86,8 +88,57 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     () => (schedulesQuery.data?.items ?? []).slice(0, 5),
     [schedulesQuery.data?.items],
   );
-  const releaseReports = reportsQuery.data?.items ?? [];
-  const selectedReportSummary = JSON.stringify((reportDetailQuery.data?.report as { summary?: unknown } | undefined)?.summary ?? {}, null, 2);
+  const releaseReports = useMemo(
+    () => reportsQuery.data?.items ?? [],
+    [reportsQuery.data?.items],
+  );
+  const filteredReleaseReports = useMemo(
+    () => releaseReports.filter((item) => {
+      const matchesSearch = !reportSearch.trim()
+        || item.name.toLowerCase().includes(reportSearch.trim().toLowerCase())
+        || (item.branch ?? '').toLowerCase().includes(reportSearch.trim().toLowerCase())
+        || (item.commit_short ?? '').toLowerCase().includes(reportSearch.trim().toLowerCase());
+      const matchesStatus = reportStatusFilter === 'all' || item.status === reportStatusFilter;
+      return matchesSearch && matchesStatus;
+    }),
+    [releaseReports, reportSearch, reportStatusFilter],
+  );
+
+  useEffect(() => {
+    if (!selectedReportName && filteredReleaseReports.length > 0) {
+      setSelectedReportName(filteredReleaseReports[0]?.name);
+      return;
+    }
+    if (selectedReportName && !filteredReleaseReports.some((item) => item.name === selectedReportName)) {
+      setSelectedReportName(filteredReleaseReports[0]?.name);
+    }
+  }, [filteredReleaseReports, selectedReportName]);
+
+  const reportSummary = (reportDetailQuery.data?.report as {
+    summary?: {
+      status?: string;
+      runtime_release_evidence?: {
+        guardrails?: {
+          release_readiness?: 'ready' | 'blocked';
+          blockers?: string[];
+          warnings?: string[];
+        };
+      };
+      usage_report_evidence?: {
+        release_readiness?: 'ready' | 'blocked';
+        blockers?: string[];
+        warnings?: string[];
+      };
+    };
+  } | undefined)?.summary;
+  const selectedReportSummary = JSON.stringify(reportSummary ?? {}, null, 2);
+  const latestReport = filteredReleaseReports[0];
+  const latestRuntimeReadiness = latestReport?.runtime_release_readiness ?? '--';
+  const latestUsageReadiness = latestReport?.usage_release_readiness ?? '--';
+  const currentRuntimeReadiness = runtimeQuery.data && runtimeQuery.data.health_summary.terminal_error_requests === 0 ? 'ready' : 'blocked';
+  const currentUsageReadiness = evidenceQuery.data?.release_readiness ?? '--';
+  const runtimeReadinessChanged = String(currentRuntimeReadiness) !== String(latestRuntimeReadiness);
+  const usageReadinessChanged = String(currentUsageReadiness) !== String(latestUsageReadiness);
 
   if (!resolvedParams) {
     return (
@@ -212,6 +263,31 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                 </div>
               </div>
 
+              <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__online-vs-latest">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-foreground">{settingsT('release_ops_compare_title')}</h3>
+                  <p className="text-xs text-tertiary">{settingsT('release_ops_compare_subtitle')}</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__compare-runtime">
+                    <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_runtime')}</div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Badge variant={currentRuntimeReadiness === 'ready' ? 'outline' : 'secondary'}>{String(currentRuntimeReadiness)}</Badge>
+                      <span className="text-xs text-tertiary">vs {String(latestRuntimeReadiness)}</span>
+                      <Badge variant={yesNoBadge(runtimeReadinessChanged)}>{runtimeReadinessChanged ? settingsT('runtime_release_yes') : settingsT('runtime_release_no')}</Badge>
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__compare-usage">
+                    <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_usage')}</div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Badge variant={currentUsageReadiness === 'ready' ? 'outline' : 'secondary'}>{String(currentUsageReadiness)}</Badge>
+                      <span className="text-xs text-tertiary">vs {String(latestUsageReadiness)}</span>
+                      <Badge variant={yesNoBadge(usageReadinessChanged)}>{usageReadinessChanged ? settingsT('runtime_release_yes') : settingsT('runtime_release_no')}</Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__schedules">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
@@ -245,10 +321,28 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   <h3 className="text-sm font-semibold text-foreground">{settingsT('release_ops_reports_title')}</h3>
                   <p className="text-xs text-tertiary">{settingsT('release_ops_reports_subtitle')}</p>
                 </div>
+                <div className="mb-3 grid gap-3 md:grid-cols-[1fr_180px]">
+                  <Input
+                    value={reportSearch}
+                    onChange={(event) => setReportSearch(event.target.value)}
+                    placeholder={settingsT('release_ops_reports_search_placeholder')}
+                    data-testid="release-ops__report-search"
+                  />
+                  <Select value={reportStatusFilter} onValueChange={(value: 'all' | 'pass' | 'fail') => setReportStatusFilter(value)}>
+                    <SelectTrigger data-testid="release-ops__report-status-filter">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{settingsT('release_ops_reports_filter_all')}</SelectItem>
+                      <SelectItem value="pass">{settingsT('release_ops_reports_filter_pass')}</SelectItem>
+                      <SelectItem value="fail">{settingsT('release_ops_reports_filter_fail')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-2">
-                  {releaseReports.length === 0 ? (
+                  {filteredReleaseReports.length === 0 ? (
                     <div className="text-sm text-tertiary">{settingsT('release_ops_reports_empty')}</div>
-                  ) : releaseReports.slice(0, 6).map((item, index) => (
+                  ) : filteredReleaseReports.slice(0, 6).map((item, index) => (
                     <button
                       key={item.name}
                       type="button"
@@ -282,6 +376,34 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       {reportDetailQuery.data.markdown ? (
                         <Badge variant="outline">{settingsT('release_ops_reports_markdown')}</Badge>
                       ) : null}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2" data-testid="release-ops__report-structured-summary">
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_runtime')}</div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <Badge variant={reportSummary?.runtime_release_evidence?.guardrails?.release_readiness === 'ready' ? 'outline' : 'secondary'}>
+                            {reportSummary?.runtime_release_evidence?.guardrails?.release_readiness ?? '--'}
+                          </Badge>
+                          <span className="text-xs text-tertiary">
+                            b:{reportSummary?.runtime_release_evidence?.guardrails?.blockers?.length ?? 0}
+                            {' · '}
+                            w:{reportSummary?.runtime_release_evidence?.guardrails?.warnings?.length ?? 0}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_usage')}</div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <Badge variant={reportSummary?.usage_report_evidence?.release_readiness === 'ready' ? 'outline' : 'secondary'}>
+                            {reportSummary?.usage_report_evidence?.release_readiness ?? '--'}
+                          </Badge>
+                          <span className="text-xs text-tertiary">
+                            b:{reportSummary?.usage_report_evidence?.blockers?.length ?? 0}
+                            {' · '}
+                            w:{reportSummary?.usage_report_evidence?.warnings?.length ?? 0}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     <pre className="overflow-x-auto rounded-md border border-subtle bg-surface p-3 text-xs text-foreground" data-testid="release-ops__report-summary-json">
                       {selectedReportSummary}

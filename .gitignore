@@ -70,3 +70,4 @@ artifacts/release-reports/wp11-release-controls-*.json
 artifacts/release-reports/wp11-release-controls-*.md
 artifacts/release-reports/gov-smoke-login-failure-*.png
 artifacts/release-reports/gov-smoke-login-failure-*.html
+artifacts/release-runs/*.json

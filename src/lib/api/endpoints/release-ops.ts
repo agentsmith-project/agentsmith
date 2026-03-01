@@ -20,6 +20,32 @@ export interface ReleaseReportDetail {
   markdown?: string;
 }
 
+export interface ReleaseGateRunListItem {
+  id: string;
+  report_name: string;
+  artifact_name: string;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  trigger: 'manual' | 'scheduled' | 'ci' | 'unknown';
+  status: 'pass' | 'fail';
+  branch?: string;
+  commit_short?: string;
+  release_policy_decision?: 'ready' | 'warning' | 'blocked';
+  runtime_release_readiness?: 'ready' | 'blocked';
+  usage_release_readiness?: 'ready' | 'blocked';
+  total_checks: number;
+  passed_checks: number;
+  failed_checks: number;
+  failed_step_name?: string;
+  failed_step_category?: string;
+}
+
+export interface ReleaseGateRunDetail extends ReleaseGateRunListItem {
+  failed_step_names: string[];
+  failure_categories: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'quota' | 'rate_limit' | 'permission' | 'unknown'>;
+}
+
 export interface ReleasePolicyOverrideRecord {
   id: string;
   workspace_id: string;
@@ -47,6 +73,14 @@ export class ReleaseOpsAPI {
 
   async getReport(name: string): Promise<ReleaseReportDetail> {
     return this.client.get(`/internal/release-reports/${encodeURIComponent(name)}`);
+  }
+
+  async listRuns(): Promise<{ items: ReleaseGateRunListItem[] }> {
+    return this.client.get('/internal/release-runs');
+  }
+
+  async getRun(id: string): Promise<ReleaseGateRunDetail> {
+    return this.client.get(`/internal/release-runs/${encodeURIComponent(id)}`);
   }
 
   async listOverrides(params: { workspaceId: string; projectId: string; reportName: string }): Promise<{ items: ReleasePolicyOverrideRecord[] }> {

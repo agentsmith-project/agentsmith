@@ -3,7 +3,7 @@ import p0 from '../fixtures/p0.json';
 import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
 import { buildRuntimeUsageRecords, listRuntimeUsageFacts } from '../state/runtime-usage';
 import type { UsageReportDelivery, UsageReportEvidence, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
-import type { ReleaseReportDetail, ReleaseReportListItem } from '@/lib/api/endpoints/release-ops';
+import type { ReleaseGateRunDetail, ReleaseGateRunListItem, ReleaseReportDetail, ReleaseReportListItem } from '@/lib/api/endpoints/release-ops';
 import { appendMockNotification } from '../state/me-notifications';
 
 type ResourceType = 'endpoint' | 'source_library' | 'agent';
@@ -143,6 +143,83 @@ const releaseReports: ReleaseReportListItem[] = [
     markdown_available: true,
   },
 ];
+
+const releaseRuns: ReleaseGateRunListItem[] = [
+  {
+    id: 'wp11-release-controls-final-20260228',
+    report_name: 'wp11-release-controls-final-20260228',
+    artifact_name: 'wp11-release-controls-final-20260228',
+    started_at: '2026-02-28T20:30:00.000Z',
+    completed_at: '2026-02-28T20:35:10.000Z',
+    duration_ms: 310000,
+    trigger: 'manual',
+    status: 'pass',
+    branch: 'main',
+    commit_short: '6e002bd',
+    release_policy_decision: 'ready',
+    runtime_release_readiness: 'ready',
+    usage_release_readiness: 'ready',
+    total_checks: 6,
+    passed_checks: 6,
+    failed_checks: 0,
+  },
+  {
+    id: 'usage-webhook-signature-policy-check',
+    report_name: 'usage-webhook-signature-policy-check',
+    artifact_name: 'usage-webhook-signature-policy-check',
+    started_at: '2026-02-28T22:08:00.000Z',
+    completed_at: '2026-02-28T22:10:00.000Z',
+    duration_ms: 120000,
+    trigger: 'scheduled',
+    status: 'pass',
+    branch: 'main',
+    commit_short: '5d1e26e',
+    release_policy_decision: 'warning',
+    runtime_release_readiness: 'ready',
+    usage_release_readiness: 'ready',
+    total_checks: 6,
+    passed_checks: 6,
+    failed_checks: 0,
+  },
+  {
+    id: 'runtime-evidence-gate-regression-20260227',
+    report_name: 'runtime-evidence-gate-regression-20260227',
+    artifact_name: 'runtime-evidence-gate-regression-20260227',
+    started_at: '2026-02-27T19:15:00.000Z',
+    completed_at: '2026-02-27T19:25:00.000Z',
+    duration_ms: 600000,
+    trigger: 'ci',
+    status: 'fail',
+    branch: 'main',
+    commit_short: 'a0f74a6',
+    release_policy_decision: 'blocked',
+    runtime_release_readiness: 'blocked',
+    usage_release_readiness: 'blocked',
+    total_checks: 6,
+    passed_checks: 3,
+    failed_checks: 2,
+    failed_step_name: 'Governance release smoke',
+    failed_step_category: 'smoke',
+  },
+];
+
+const releaseRunDetails = new Map<string, ReleaseGateRunDetail>([
+  ['wp11-release-controls-final-20260228', {
+    ...releaseRuns[0],
+    failed_step_names: [],
+    failure_categories: [],
+  }],
+  ['usage-webhook-signature-policy-check', {
+    ...releaseRuns[1],
+    failed_step_names: [],
+    failure_categories: [],
+  }],
+  ['runtime-evidence-gate-regression-20260227', {
+    ...releaseRuns[2],
+    failed_step_names: ['Governance release smoke', 'Runtime pricing coverage'],
+    failure_categories: ['authorization', 'unknown'],
+  }],
+]);
 
 const releaseReportDetails = new Map<string, ReleaseReportDetail>([
   ['wp11-release-controls-final-20260228', {
@@ -924,6 +1001,16 @@ export const usageHandlers = [
     const detail = releaseReportDetails.get(String(params.name));
     if (!detail) {
       return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_report_not_found' }, { status: 404 });
+    }
+    return HttpResponse.json(detail);
+  }),
+  http.get('/api/v1/internal/release-runs', () => {
+    return HttpResponse.json({ items: releaseRuns });
+  }),
+  http.get('/api/v1/internal/release-runs/:id', ({ params }) => {
+    const detail = releaseRunDetails.get(String(params.id));
+    if (!detail) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_run_not_found' }, { status: 404 });
     }
     return HttpResponse.json(detail);
   }),

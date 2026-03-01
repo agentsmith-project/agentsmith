@@ -49,6 +49,62 @@ describe('ReleaseOpsAPI', () => {
     expect(result.markdown).toContain('Sample Release');
   });
 
+  it('lists release gate runs', async () => {
+    const getMock = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: 'sample-release',
+          report_name: 'sample-release',
+          artifact_name: 'sample-release',
+          started_at: '2026-02-28T20:34:50.000Z',
+          completed_at: '2026-02-28T20:35:10.000Z',
+          duration_ms: 20000,
+          trigger: 'manual',
+          status: 'pass',
+          total_checks: 6,
+          passed_checks: 6,
+          failed_checks: 0,
+        },
+      ],
+    });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    const result = await api.listRuns();
+
+    expect(getMock).toHaveBeenCalledWith('/internal/release-runs');
+    expect(result.items[0]?.id).toBe('sample-release');
+  });
+
+  it('loads a release gate run detail', async () => {
+    const getMock = vi.fn().mockResolvedValue({
+      id: 'sample-release',
+      report_name: 'sample-release',
+      artifact_name: 'sample-release',
+      started_at: '2026-02-28T20:34:50.000Z',
+      completed_at: '2026-02-28T20:35:10.000Z',
+      duration_ms: 20000,
+      trigger: 'manual',
+      status: 'pass',
+      total_checks: 6,
+      passed_checks: 6,
+      failed_checks: 0,
+      failed_step_names: [],
+      failure_categories: [],
+    });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    const result = await api.getRun('sample-release');
+
+    expect(getMock).toHaveBeenCalledWith('/internal/release-runs/sample-release');
+    expect(result.status).toBe('pass');
+  });
+
   it('lists release policy overrides', async () => {
     const getMock = vi.fn().mockResolvedValue({ items: [] });
     const api = new ReleaseOpsAPI({

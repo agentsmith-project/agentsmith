@@ -202,6 +202,11 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__override-item-0')).toBeVisible();
     await authedPage.getByTestId('release-ops__override-approve-0').click();
     await expect(authedPage.getByTestId('release-ops__override-item-0')).toContainText('approved');
+    await expect(authedPage.getByTestId('release-ops__run-item-0')).toBeVisible();
+    await authedPage.getByTestId('release-ops__run-item-0').click();
+    await expect(authedPage.getByTestId('release-ops__run-detail')).toBeVisible();
+    await authedPage.getByTestId('release-ops__run-open-artifact').click();
+    await expect(authedPage.getByTestId('release-ops__report-detail')).toBeVisible();
   });
 
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {

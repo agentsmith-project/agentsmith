@@ -18,11 +18,15 @@ import { tmpdir } from 'node:os';
 
 const SCRIPT_PATH = join(__dirname, '../verify-release-report.ts');
 const OUTPUT_DIR = join(tmpdir(), 'release-reports-test');
+const RUNS_OUTPUT_DIR = join(tmpdir(), 'release-runs-test');
 
 beforeAll(() => {
   // Create output directory
   if (!existsSync(OUTPUT_DIR)) {
     mkdirSync(OUTPUT_DIR, { recursive: true });
+  }
+  if (!existsSync(RUNS_OUTPUT_DIR)) {
+    mkdirSync(RUNS_OUTPUT_DIR, { recursive: true });
   }
 });
 
@@ -30,6 +34,9 @@ afterAll(() => {
   // Clean up output directory
   if (existsSync(OUTPUT_DIR)) {
     rmSync(OUTPUT_DIR, { recursive: true, force: true });
+  }
+  if (existsSync(RUNS_OUTPUT_DIR)) {
+    rmSync(RUNS_OUTPUT_DIR, { recursive: true, force: true });
   }
 });
 
@@ -102,6 +109,28 @@ describe('verify-release-report: TDD Suite', () => {
 
       // Assert
       expect(report.metadata.git).toHaveProperty('commit_range', 'abc123..def456');
+    });
+
+    it('should write release gate run history alongside the report', () => {
+      const result = runScript([
+        '--output', OUTPUT_DIR,
+        '--runs-output', RUNS_OUTPUT_DIR,
+        '--name', 'report-test',
+        '--dry-run',
+        '--trigger', 'manual',
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      const run = JSON.parse(readFileSync(join(RUNS_OUTPUT_DIR, 'report-test.json'), 'utf-8')) as {
+        id?: string;
+        report_name?: string;
+        trigger?: string;
+        total_checks?: number;
+      };
+      expect(run.id).toBe('report-test');
+      expect(run.report_name).toBe('report-test');
+      expect(run.trigger).toBe('manual');
+      expect(run.total_checks).toBeGreaterThan(0);
     });
   });
 

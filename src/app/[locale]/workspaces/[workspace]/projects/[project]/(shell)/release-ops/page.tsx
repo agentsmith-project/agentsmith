@@ -12,7 +12,15 @@ import { PageLoading } from '@/components/ui/loading';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { useRuntimeObservability, useUsageOperationsSummary, useUsageReportEvidence, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
-import { useCreateReleasePolicyOverride, useDecideReleasePolicyOverride, useReleasePolicyOverrides, useReleaseReportDetail, useReleaseReportList } from '@/lib/hooks/use-release-ops';
+import {
+  useCreateReleasePolicyOverride,
+  useDecideReleasePolicyOverride,
+  useReleaseGateRunDetail,
+  useReleaseGateRunList,
+  useReleasePolicyOverrides,
+  useReleaseReportDetail,
+  useReleaseReportList,
+} from '@/lib/hooks/use-release-ops';
 import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { UsageOperationsSummary } from '@/components/audit-usage/UsageOperationsSummary';
 import { Badge } from '@/components/ui/badge';
@@ -108,10 +116,24 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const canReadUsage = useHasPermission('project:usage:view');
   const searchParamsKey = searchParams.toString();
   const [selectedReportName, setSelectedReportName] = useState<string | undefined>(searchParams.get('report') ?? undefined);
+  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(searchParams.get('run') ?? undefined);
   const [reportSearch, setReportSearch] = useState(searchParams.get('report_search') ?? '');
   const [reportStatusFilter, setReportStatusFilter] = useState<'all' | 'pass' | 'fail'>(
     searchParams.get('report_status') === 'pass' || searchParams.get('report_status') === 'fail'
       ? searchParams.get('report_status') as 'pass' | 'fail'
+      : 'all',
+  );
+  const [runStatusFilter, setRunStatusFilter] = useState<'all' | 'pass' | 'fail'>(
+    searchParams.get('run_status') === 'pass' || searchParams.get('run_status') === 'fail'
+      ? searchParams.get('run_status') as 'pass' | 'fail'
+      : 'all',
+  );
+  const [runTriggerFilter, setRunTriggerFilter] = useState<'all' | 'manual' | 'scheduled' | 'ci' | 'unknown'>(
+    searchParams.get('run_trigger') === 'manual'
+      || searchParams.get('run_trigger') === 'scheduled'
+      || searchParams.get('run_trigger') === 'ci'
+      || searchParams.get('run_trigger') === 'unknown'
+      ? searchParams.get('run_trigger') as 'manual' | 'scheduled' | 'ci' | 'unknown'
       : 'all',
   );
   const [failedCheckCategoryFilter, setFailedCheckCategoryFilter] = useState<string>(searchParams.get('failed_check_category') ?? 'all');
@@ -136,6 +158,8 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const evidenceQuery = useUsageReportEvidence(workspaceId, projectId, { enabled });
   const schedulesQuery = useUsageReportSchedules(workspaceId, projectId, { enabled });
   const reportsQuery = useReleaseReportList({ enabled });
+  const runsQuery = useReleaseGateRunList({ enabled });
+  const runDetailQuery = useReleaseGateRunDetail(selectedRunId, { enabled });
   const reportDetailQuery = useReleaseReportDetail(selectedReportName, { enabled });
   const overridesQuery = useReleasePolicyOverrides(workspaceId, projectId, selectedReportName, { enabled });
   const createOverrideMutation = useCreateReleasePolicyOverride();
@@ -147,6 +171,8 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     evidenceQuery.refetch();
     schedulesQuery.refetch();
     reportsQuery.refetch();
+    runsQuery.refetch();
+    runDetailQuery.refetch();
     reportDetailQuery.refetch();
   };
 
@@ -171,6 +197,18 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     }),
     [releaseReports, reportSearch, reportStatusFilter],
   );
+  const releaseRuns = useMemo(
+    () => runsQuery.data?.items ?? [],
+    [runsQuery.data?.items],
+  );
+  const filteredReleaseRuns = useMemo(
+    () => releaseRuns.filter((item) => {
+      const matchesStatus = runStatusFilter === 'all' || item.status === runStatusFilter;
+      const matchesTrigger = runTriggerFilter === 'all' || item.trigger === runTriggerFilter;
+      return matchesStatus && matchesTrigger;
+    }),
+    [releaseRuns, runStatusFilter, runTriggerFilter],
+  );
   const recentReleaseReports = filteredReleaseReports.slice(0, 6);
   const recentPassRate = recentReleaseReports.length > 0
     ? recentReleaseReports.filter((item) => item.status === 'pass').length / recentReleaseReports.length
@@ -180,14 +218,27 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
 
   useEffect(() => {
     const nextReport = searchParams.get('report') ?? undefined;
+    const nextRun = searchParams.get('run') ?? undefined;
     const nextSearch = searchParams.get('report_search') ?? '';
     const nextStatus = searchParams.get('report_status') === 'pass' || searchParams.get('report_status') === 'fail'
       ? searchParams.get('report_status') as 'pass' | 'fail'
       : 'all';
+    const nextRunStatus = searchParams.get('run_status') === 'pass' || searchParams.get('run_status') === 'fail'
+      ? searchParams.get('run_status') as 'pass' | 'fail'
+      : 'all';
+    const nextRunTrigger = searchParams.get('run_trigger') === 'manual'
+      || searchParams.get('run_trigger') === 'scheduled'
+      || searchParams.get('run_trigger') === 'ci'
+      || searchParams.get('run_trigger') === 'unknown'
+      ? searchParams.get('run_trigger') as 'manual' | 'scheduled' | 'ci' | 'unknown'
+      : 'all';
     const nextCategory = searchParams.get('failed_check_category') ?? 'all';
     setSelectedReportName((prev) => prev === nextReport ? prev : nextReport);
+    setSelectedRunId((prev) => prev === nextRun ? prev : nextRun);
     setReportSearch((prev) => prev === nextSearch ? prev : nextSearch);
     setReportStatusFilter((prev) => prev === nextStatus ? prev : nextStatus);
+    setRunStatusFilter((prev) => prev === nextRunStatus ? prev : nextRunStatus);
+    setRunTriggerFilter((prev) => prev === nextRunTrigger ? prev : nextRunTrigger);
     setFailedCheckCategoryFilter((prev) => prev === nextCategory ? prev : nextCategory);
   }, [searchParams, searchParamsKey]);
 
@@ -202,6 +253,16 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   }, [filteredReleaseReports, selectedReportName]);
 
   useEffect(() => {
+    if (!selectedRunId && filteredReleaseRuns.length > 0) {
+      setSelectedRunId(filteredReleaseRuns[0]?.id);
+      return;
+    }
+    if (selectedRunId && !filteredReleaseRuns.some((item) => item.id === selectedRunId)) {
+      setSelectedRunId(filteredReleaseRuns[0]?.id);
+    }
+  }, [filteredReleaseRuns, selectedRunId]);
+
+  useEffect(() => {
     const params = new URLSearchParams(searchParamsKey);
     const nextReport = selectedReportName ?? '';
     const nextSearch = reportSearch.trim();
@@ -214,6 +275,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       if (nextReport) params.set('report', nextReport);
       else params.delete('report');
     }
+    if ((params.get('run') ?? '') !== (selectedRunId ?? '')) {
+      changed = true;
+      if (selectedRunId) params.set('run', selectedRunId);
+      else params.delete('run');
+    }
     if ((params.get('report_search') ?? '') !== nextSearch) {
       changed = true;
       if (nextSearch) params.set('report_search', nextSearch);
@@ -225,6 +291,18 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       if (nextStatus === 'all') params.delete('report_status');
       else params.set('report_status', nextStatus);
     }
+    const currentRunStatus = params.get('run_status') ?? 'all';
+    if (currentRunStatus !== runStatusFilter) {
+      changed = true;
+      if (runStatusFilter === 'all') params.delete('run_status');
+      else params.set('run_status', runStatusFilter);
+    }
+    const currentRunTrigger = params.get('run_trigger') ?? 'all';
+    if (currentRunTrigger !== runTriggerFilter) {
+      changed = true;
+      if (runTriggerFilter === 'all') params.delete('run_trigger');
+      else params.set('run_trigger', runTriggerFilter);
+    }
     const currentCategory = params.get('failed_check_category') ?? 'all';
     if (currentCategory !== nextCategory) {
       changed = true;
@@ -235,7 +313,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     if (!changed) return;
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [failedCheckCategoryFilter, pathname, reportSearch, reportStatusFilter, router, searchParamsKey, selectedReportName]);
+  }, [failedCheckCategoryFilter, pathname, reportSearch, reportStatusFilter, router, runStatusFilter, runTriggerFilter, searchParamsKey, selectedReportName, selectedRunId]);
 
   const reportSummary = (reportDetailQuery.data?.report as {
     summary?: {
@@ -339,6 +417,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     : undefined;
   const longRangeRuntimeBlocked = longRangeReports.filter((item) => item.runtime_release_readiness === 'blocked').length;
   const longRangeUsageBlocked = longRangeReports.filter((item) => item.usage_release_readiness === 'blocked').length;
+  const recentReleaseRuns = filteredReleaseRuns.slice(0, 8);
+  const selectedRun = runDetailQuery.data;
+  const runPassRate = recentReleaseRuns.length > 0
+    ? recentReleaseRuns.filter((item) => item.status === 'pass').length / recentReleaseRuns.length
+    : undefined;
   const livePolicy = evaluateReleasePolicy({
     runtime: runtimeQuery.data ? {
       release_readiness: currentRuntimeReadiness === 'ready' ? 'ready' : 'blocked',
@@ -756,6 +839,140 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       </div>
                     ))}
                   </div>
+                </div>
+                <div className="mt-4 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__runs">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_runs_title')}</h4>
+                      <p className="text-xs text-tertiary">{settingsT('release_ops_runs_subtitle')}</p>
+                    </div>
+                    <Badge variant="outline">{recentReleaseRuns.length}</Badge>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-[180px_180px_1fr]">
+                    <Select value={runStatusFilter} onValueChange={(value: 'all' | 'pass' | 'fail') => setRunStatusFilter(value)}>
+                      <SelectTrigger data-testid="release-ops__run-status-filter">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{settingsT('release_ops_reports_filter_all')}</SelectItem>
+                        <SelectItem value="pass">{settingsT('release_ops_reports_filter_pass')}</SelectItem>
+                        <SelectItem value="fail">{settingsT('release_ops_reports_filter_fail')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={runTriggerFilter} onValueChange={(value: 'all' | 'manual' | 'scheduled' | 'ci' | 'unknown') => setRunTriggerFilter(value)}>
+                      <SelectTrigger data-testid="release-ops__run-trigger-filter">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{settingsT('release_ops_runs_filter_all_triggers')}</SelectItem>
+                        <SelectItem value="manual">{settingsT('release_ops_runs_trigger_manual')}</SelectItem>
+                        <SelectItem value="scheduled">{settingsT('release_ops_runs_trigger_scheduled')}</SelectItem>
+                        <SelectItem value="ci">{settingsT('release_ops_runs_trigger_ci')}</SelectItem>
+                        <SelectItem value="unknown">{settingsT('release_ops_runs_trigger_unknown')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__run-pass-rate">
+                      <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_pass_rate')}</div>
+                      <div className="mt-1 text-sm font-medium text-foreground">{formatPercent(runPassRate)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {recentReleaseRuns.length === 0 ? (
+                      <div className="text-sm text-tertiary">{settingsT('release_ops_runs_empty')}</div>
+                    ) : recentReleaseRuns.map((item, index) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={cn(
+                          'flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left',
+                          selectedRunId === item.id ? 'border-border bg-surface' : 'border-subtle bg-bg-base/30 hover:bg-bg-base/50',
+                        )}
+                        onClick={() => setSelectedRunId(item.id)}
+                        data-testid={`release-ops__run-item-${index}`}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-mono text-sm text-foreground">{item.id}</div>
+                          <div className="text-xs text-tertiary">
+                            {item.trigger} · {formatDurationMs(item.duration_ms)} · {formatDateTime(item.completed_at)}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={item.status === 'pass' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                          {item.failed_step_name ? (
+                            <Badge variant="secondary">{item.failed_step_name}</Badge>
+                          ) : null}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  {selectedRun ? (
+                    <div className="mt-3 rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__run-detail">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">{selectedRun.id}</Badge>
+                        <Badge variant={selectedRun.status === 'pass' ? 'outline' : 'secondary'}>{selectedRun.status}</Badge>
+                        <Badge variant="outline">{selectedRun.trigger}</Badge>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedReportName(selectedRun.artifact_name)}
+                          data-testid="release-ops__run-open-artifact"
+                        >
+                          {settingsT('release_ops_runs_open_artifact')}
+                        </Button>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_duration')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{formatDurationMs(selectedRun.duration_ms)}</div>
+                        </div>
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_failed_step')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.failed_step_name ?? '--'}</div>
+                        </div>
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_policy')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.release_policy_decision ?? '--'}</div>
+                        </div>
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_checks')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.passed_checks}/{selectedRun.total_checks}</div>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_runtime_readiness')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.runtime_release_readiness ?? '--'}</div>
+                        </div>
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_usage_readiness')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.usage_release_readiness ?? '--'}</div>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_failed_steps')}</div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedRun.failed_step_names.length === 0 ? (
+                              <span className="text-sm text-tertiary">{commonT('empty')}</span>
+                            ) : selectedRun.failed_step_names.map((item, index) => (
+                              <Badge key={`${item}-${index}`} variant="secondary">{item}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_failure_categories')}</div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedRun.failure_categories.length === 0 ? (
+                              <span className="text-sm text-tertiary">{commonT('empty')}</span>
+                            ) : selectedRun.failure_categories.map((item, index) => (
+                              <Badge key={`${item}-${index}`} variant="secondary">{item}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
                 {reportDetailQuery.data ? (
                   <div className="mt-4 space-y-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__report-detail">

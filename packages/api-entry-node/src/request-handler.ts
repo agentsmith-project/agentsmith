@@ -21,6 +21,7 @@ import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
 import { handleMeRoute } from './me-route-handler.js';
 import { getReleaseReportDetail, listReleaseReports } from './release-report-store.js';
+import { getReleaseGateRunDetail, listReleaseGateRuns } from './release-run-store.js';
 import { createReleasePolicyOverride, listReleasePolicyOverrides, updateReleasePolicyOverrideDecision } from './release-policy-override-store.js';
 import {
   getNotebookRuntimeMetricsPrometheusText,
@@ -293,6 +294,34 @@ export async function handleRequest(
     const detail = getReleaseReportDetail(deps.releaseReportsDir ?? 'artifacts/release-reports', reportName);
     if (!detail) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'release_report_not_found' });
+      return;
+    }
+    json(res, 200, detail);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/v1/internal/release-runs' && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    json(res, 200, {
+      items: listReleaseGateRuns(deps.releaseRunsDir ?? 'artifacts/release-runs'),
+    });
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith('/api/v1/internal/release-runs/') && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const runName = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-runs/', ''));
+    const detail = getReleaseGateRunDetail(deps.releaseRunsDir ?? 'artifacts/release-runs', runName);
+    if (!detail) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_run_not_found' });
       return;
     }
     json(res, 200, detail);

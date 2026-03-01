@@ -308,6 +308,46 @@ export interface UsageReportEvidence {
   note?: string;
 }
 
+export interface ReleaseGateRunHistory {
+  /** Unique gate run id */
+  id: string;
+  /** Release report artifact name linked to this run */
+  report_name: string;
+  /** Artifact name for browsing/report download */
+  artifact_name: string;
+  /** Trigger source for the gate execution */
+  trigger: 'manual' | 'scheduled' | 'ci' | 'unknown';
+  /** ISO timestamp when the gate started */
+  started_at: string;
+  /** ISO timestamp when the gate completed */
+  completed_at: string;
+  /** Total gate duration */
+  duration_ms: number;
+  /** Final gate status */
+  status: 'pass' | 'fail';
+  /** Git branch for this run */
+  branch?: string;
+  /** Short commit sha */
+  commit_short?: string;
+  /** Unified release policy decision */
+  release_policy_decision?: 'ready' | 'warning' | 'blocked';
+  /** Runtime readiness captured for the run */
+  runtime_release_readiness?: 'ready' | 'blocked';
+  /** Usage readiness captured for the run */
+  usage_release_readiness?: 'ready' | 'blocked';
+  /** Execution counters */
+  total_checks: number;
+  passed_checks: number;
+  failed_checks: number;
+  /** First failed step for quick triage */
+  failed_step_name?: string;
+  failed_step_category?: CheckCategory;
+  /** Full failed step names */
+  failed_step_names: string[];
+  /** Distinct failure categories */
+  failure_categories: FailureType[];
+}
+
 /**
  * CLI options for the verify-release-report script
  */
@@ -328,6 +368,10 @@ export interface VerifyReleaseOptions {
   runtimeEvidence?: string;
   /** Path to usage report evidence artifact */
   usageReportEvidence?: string;
+  /** Output directory for release run history artifacts */
+  runsOutput?: string;
+  /** Trigger source for the gate execution */
+  trigger?: 'manual' | 'scheduled' | 'ci' | 'unknown';
   /** Verbose output */
   verbose?: boolean;
   /** Skip specific checks */

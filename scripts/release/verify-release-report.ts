@@ -26,6 +26,7 @@ import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import type {
   ReleaseReport,
+  ReleaseGateRunHistory,
   ReportMetadata,
   ExecutionResults,
   ReportSummary,
@@ -45,6 +46,7 @@ import { evaluateReleasePolicy } from '../../src/lib/release-policy';
 
 // Default configuration
 const DEFAULT_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-reports');
+const DEFAULT_RUNS_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-runs');
 const DEFAULT_RUNTIME_EVIDENCE_FILE = 'runtime-release-evidence.json';
 const DEFAULT_USAGE_REPORT_EVIDENCE_FILE = 'usage-report-evidence.json';
 
@@ -119,7 +121,12 @@ async function main() {
   }
 
   const outputDir = args.output ?? DEFAULT_OUTPUT_DIR;
+  const runsOutputDir = args.runsOutput ?? DEFAULT_RUNS_OUTPUT_DIR;
   const reportName = args.name ?? `report-${getTimestamp()}`;
+
+  if (!existsSync(runsOutputDir)) {
+    mkdirSync(runsOutputDir, { recursive: true });
+  }
 
   console.log(`[verify-release-report] Generating release report...`);
   console.log(`[verify-release-report] Output: ${join(outputDir, reportName)}`);
@@ -136,6 +143,11 @@ async function main() {
   const mdPath = join(outputDir, `${reportName}.md`);
   writeFileSync(mdPath, generateMarkdown(report), 'utf-8');
   console.log(`[verify-release-report] Markdown: ${mdPath}`);
+
+  const runHistory = buildReleaseGateRunHistory(reportName, report, args);
+  const runPath = join(runsOutputDir, `${reportName}.json`);
+  writeFileSync(runPath, JSON.stringify(runHistory, null, 2), 'utf-8');
+  console.log(`[verify-release-report] Run: ${runPath}`);
 
   // Archive if requested
   let archivePath: string | undefined;
@@ -190,6 +202,14 @@ function parseArgs(argv: string[]): VerifyReleaseOptions {
       case '--usage-report-evidence':
         options.usageReportEvidence = argv[++i];
         break;
+      case '--runs-output':
+        options.runsOutput = argv[++i];
+        break;
+      case '--trigger':
+        if (argv[i + 1] === 'manual' || argv[i + 1] === 'scheduled' || argv[i + 1] === 'ci' || argv[i + 1] === 'unknown') {
+          options.trigger = argv[++i] as VerifyReleaseOptions['trigger'];
+        }
+        break;
       case '--verbose':
         options.verbose = true;
         break;
@@ -225,6 +245,8 @@ OPTIONS:
   --mock-failure <t>   Mock a failure type: token|network|backend|assertion|timeout|rate_limit
   --runtime-evidence <path>  Read runtime release evidence artifact from custom path
   --usage-report-evidence <path>  Read usage report evidence artifact from custom path
+  --runs-output <dir>  Output directory for release gate run history artifacts
+  --trigger <source>   Trigger source: manual|scheduled|ci|unknown
   --verbose            Show detailed output
   --help, -h           Show this help
 
@@ -266,6 +288,47 @@ async function generateReleaseReport(options: VerifyReleaseOptions): Promise<Rel
     execution,
     summary,
   };
+}
+
+function buildReleaseGateRunHistory(
+  reportName: string,
+  report: ReleaseReport,
+  options: VerifyReleaseOptions,
+): ReleaseGateRunHistory {
+  const failedChecks = report.execution.checks.filter((check) => check.status === 'fail');
+  const firstFailedCheck = failedChecks[0];
+  const failureCategories = Array.from(new Set((report.summary.failure_categories ?? []).map((category) => category.category)));
+  return {
+    id: reportName,
+    report_name: reportName,
+    artifact_name: reportName,
+    trigger: options.trigger ?? getTriggerSource(),
+    started_at: report.metadata.timestamp,
+    completed_at: new Date(new Date(report.metadata.timestamp).getTime() + report.metadata.duration_ms).toISOString(),
+    duration_ms: report.metadata.duration_ms,
+    status: report.summary.status,
+    branch: report.metadata.git.branch,
+    commit_short: report.metadata.git.commit_short,
+    release_policy_decision: report.summary.release_policy?.decision,
+    runtime_release_readiness: report.summary.runtime_release_evidence?.guardrails.release_readiness,
+    usage_release_readiness: report.summary.usage_report_evidence?.release_readiness,
+    total_checks: report.execution.total_checks,
+    passed_checks: report.execution.passed,
+    failed_checks: report.execution.failed,
+    failed_step_name: firstFailedCheck?.name,
+    failed_step_category: firstFailedCheck?.category,
+    failed_step_names: failedChecks.map((check) => check.name),
+    failure_categories: failureCategories,
+  };
+}
+
+function getTriggerSource(): 'manual' | 'scheduled' | 'ci' | 'unknown' {
+  const envTrigger = process.env.RELEASE_TRIGGER_SOURCE;
+  if (envTrigger === 'manual' || envTrigger === 'scheduled' || envTrigger === 'ci' || envTrigger === 'unknown') {
+    return envTrigger;
+  }
+  if (process.env.CI) return 'ci';
+  return 'manual';
 }
 
 /**

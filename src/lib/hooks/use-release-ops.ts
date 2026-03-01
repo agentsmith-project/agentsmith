@@ -22,6 +22,26 @@ export function useReleaseReportDetail(name?: string, options?: { enabled?: bool
   });
 }
 
+export function useReleaseGateRunList(options?: { enabled?: boolean }) {
+  const api = new ReleaseOpsAPI(getApiClient());
+  return useQuery({
+    queryKey: queryKeys.releaseOps.runs(),
+    queryFn: () => api.listRuns(),
+    enabled: options?.enabled ?? true,
+    staleTime: 10000,
+  });
+}
+
+export function useReleaseGateRunDetail(id?: string, options?: { enabled?: boolean }) {
+  const api = new ReleaseOpsAPI(getApiClient());
+  return useQuery({
+    queryKey: queryKeys.releaseOps.runDetail(id ?? ''),
+    queryFn: () => api.getRun(id ?? ''),
+    enabled: (options?.enabled ?? true) && !!id,
+    staleTime: 10000,
+  });
+}
+
 export function useReleasePolicyOverrides(
   workspaceId: string,
   projectId: string,

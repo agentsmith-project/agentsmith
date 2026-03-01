@@ -4179,7 +4179,9 @@ describe('api-entry-node projects routes', () => {
   it('lists and reads internal release report artifacts', async () => {
     const deps = createDefaultNodeApiDeps();
     const reportsDir = mkdtempSync(join(tmpdir(), 'agentsmith-release-reports-'));
+    const runsDir = mkdtempSync(join(tmpdir(), 'agentsmith-release-runs-'));
     deps.releaseReportsDir = reportsDir;
+    deps.releaseRunsDir = runsDir;
     writeFileSync(join(reportsDir, 'sample-release.json'), JSON.stringify({
       metadata: {
         timestamp: '2026-02-28T20:35:10.000Z',
@@ -4201,6 +4203,26 @@ describe('api-entry-node projects routes', () => {
       },
     }), 'utf-8');
     writeFileSync(join(reportsDir, 'sample-release.md'), '# Sample Release\n\nPASS\n', 'utf-8');
+    writeFileSync(join(runsDir, 'sample-release.json'), JSON.stringify({
+      id: 'sample-release',
+      report_name: 'sample-release',
+      artifact_name: 'sample-release',
+      trigger: 'manual',
+      started_at: '2026-02-28T20:34:50.000Z',
+      completed_at: '2026-02-28T20:35:10.000Z',
+      duration_ms: 20000,
+      status: 'pass',
+      branch: 'main',
+      commit_short: 'abc1234',
+      release_policy_decision: 'ready',
+      runtime_release_readiness: 'ready',
+      usage_release_readiness: 'blocked',
+      total_checks: 6,
+      passed_checks: 6,
+      failed_checks: 0,
+      failed_step_names: [],
+      failure_categories: [],
+    }), 'utf-8');
 
     const { baseUrl } = startServerWithDeps(deps);
 
@@ -4219,6 +4241,22 @@ describe('api-entry-node projects routes', () => {
     expect(detailPayload.name).toBe('sample-release');
     expect(detailPayload.markdown).toContain('# Sample Release');
     expect(detailPayload.report?.summary?.status).toBe('pass');
+
+    const runListRes = await apiFetch(baseUrl, '/api/v1/internal/release-runs');
+    expect(runListRes.status).toBe(200);
+    const runListPayload = (await runListRes.json()) as { items: Array<{ id: string; trigger: string; artifact_name: string }> };
+    expect(runListPayload.items[0]).toEqual(expect.objectContaining({
+      id: 'sample-release',
+      trigger: 'manual',
+      artifact_name: 'sample-release',
+    }));
+
+    const runDetailRes = await apiFetch(baseUrl, '/api/v1/internal/release-runs/sample-release');
+    expect(runDetailRes.status).toBe(200);
+    const runDetailPayload = (await runDetailRes.json()) as { id: string; duration_ms: number; status: string };
+    expect(runDetailPayload.id).toBe('sample-release');
+    expect(runDetailPayload.duration_ms).toBe(20000);
+    expect(runDetailPayload.status).toBe('pass');
   });
 
   it('creates and lists release policy overrides', async () => {

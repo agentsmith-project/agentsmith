@@ -521,6 +521,15 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
         run_count: evidenceQuery.data.runner_health.run_count,
       } : undefined,
     } : undefined,
+    governance: {
+      open_escalations: releaseEscalations.filter((item) => item.status !== 'resolved').length,
+      critical_unassigned: releaseEscalations.filter((item) =>
+        item.status !== 'resolved' && item.severity === 'critical' && !(item.assignee_user_id ?? '').trim()).length,
+      critical_overdue: releaseEscalations.filter((item) =>
+        item.status !== 'resolved' && item.severity === 'critical' && item.sla_status === 'overdue').length,
+      due_soon: releaseEscalations.filter((item) =>
+        item.status !== 'resolved' && item.sla_status === 'due_soon').length,
+    },
   });
   const artifactPolicy = reportSummary?.release_policy;
   const artifactPolicyEnforcement = reportDetailQuery.data?.policy_enforcement;
@@ -536,6 +545,29 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       timestamp: selectedEscalation.created_at,
       title: selectedEscalation.title,
       meta: `${selectedEscalation.event_type} · ${selectedEscalation.status}`,
+    }] : []),
+    ...(selectedEscalation?.acknowledged_at ? [{
+      id: `escalation-ack-${selectedEscalation.id}`,
+      kind: 'ack',
+      timestamp: selectedEscalation.acknowledged_at,
+      title: settingsT('release_ops_escalations_acknowledge'),
+      meta: selectedEscalation.acknowledged_by_name ?? selectedEscalation.acknowledged_by_user_id ?? '--',
+    }] : []),
+    ...(selectedEscalation?.due_at || selectedEscalation?.assignee_user_id ? [{
+      id: `escalation-assignment-${selectedEscalation?.id}`,
+      kind: 'assignment',
+      timestamp: selectedEscalation?.due_at ?? selectedEscalation?.created_at ?? new Date().toISOString(),
+      title: settingsT('release_ops_escalations_assignment'),
+      meta: `${selectedEscalation?.assignee_name ?? selectedEscalation?.assignee_user_id ?? '--'} · ${selectedEscalation?.sla_status ?? '--'}`,
+    }] : []),
+    ...(selectedEscalation?.resolved_at ? [{
+      id: `escalation-resolution-${selectedEscalation.id}`,
+      kind: 'resolution',
+      timestamp: selectedEscalation.resolved_at,
+      title: selectedEscalation.status === 'resolved'
+        ? settingsT('release_ops_escalations_resolve')
+        : settingsT('release_ops_escalations_reopen'),
+      meta: `${selectedEscalation.resolution_category ?? '--'} · ${selectedEscalation.resolved_by_name ?? selectedEscalation.resolved_by_user_id ?? '--'}`,
     }] : []),
     ...(selectedRun ? [{
       id: `run-${selectedRun.id}`,

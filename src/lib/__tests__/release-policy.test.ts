@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { enforceReleasePolicy, evaluateReleasePolicy } from '@/lib/release-policy';
+import { enforceReleasePolicy, evaluateReleasePolicy, mergeReleasePolicyEvaluations } from '@/lib/release-policy';
 
 describe('evaluateReleasePolicy', () => {
   it('returns ready when no issues are present', () => {
@@ -71,6 +71,45 @@ describe('evaluateReleasePolicy', () => {
     expect(result.decision).toBe('blocked');
     expect(result.summary.blocker_count).toBeGreaterThan(0);
     expect(result.summary.warning_count).toBeGreaterThan(0);
+  });
+
+  it('adds governance blockers and warnings for escalation ownership and sla gaps', () => {
+    const result = evaluateReleasePolicy({
+      governance: {
+        open_escalations: 2,
+        critical_unassigned: 1,
+        critical_overdue: 1,
+        due_soon: 1,
+      },
+    });
+
+    expect(result.decision).toBe('blocked');
+    expect(result.blockers.map((item) => item.id)).toContain('governance_critical_escalations_unassigned');
+    expect(result.blockers.map((item) => item.id)).toContain('governance_critical_escalations_overdue');
+    expect(result.warnings.map((item) => item.id)).toContain('governance_escalations_due_soon');
+    expect(result.warnings.map((item) => item.id)).toContain('governance_open_escalations_present');
+  });
+
+  it('merges governance evaluation into an existing release policy', () => {
+    const base = evaluateReleasePolicy({
+      runtime: {
+        release_readiness: 'ready',
+        blockers: [],
+        warnings: [],
+        missing_usage_facts: 0,
+        missing_price_facts: 0,
+      },
+    });
+    const governance = evaluateReleasePolicy({
+      governance: {
+        open_escalations: 1,
+      },
+    });
+
+    const merged = mergeReleasePolicyEvaluations(base, governance);
+
+    expect(merged.decision).toBe('warning');
+    expect(merged.warnings.map((item) => item.id)).toContain('governance_open_escalations_present');
   });
 
   it('marks a gate as pending_override when remaining blockers are waiting for approval', () => {

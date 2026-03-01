@@ -42,7 +42,12 @@ import {
   getNotebookRuntimeMetricsSnapshot,
   handleTaskRoute,
 } from './task-route-handler.js';
-import { enforceReleasePolicy, type ReleasePolicyEvaluation } from '../../../src/lib/release-policy.js';
+import {
+  enforceReleasePolicy,
+  evaluateReleasePolicy,
+  mergeReleasePolicyEvaluations,
+  type ReleasePolicyEvaluation,
+} from '../../../src/lib/release-policy.js';
 
 type ReleaseReportPolicyShape = {
   summary?: {
@@ -56,13 +61,32 @@ async function buildPolicyEnforcement(
   report: Record<string, unknown>,
   scope?: { workspaceId?: string | null; projectId?: string | null },
 ) {
-  const evaluation = (report as ReleaseReportPolicyShape).summary?.release_policy;
-  if (!evaluation) return undefined;
+  const baseEvaluation = (report as ReleaseReportPolicyShape).summary?.release_policy;
+  if (!baseEvaluation) return undefined;
   const workspaceId = scope?.workspaceId?.trim();
   const projectId = scope?.projectId?.trim();
   const overrides = workspaceId && projectId
     ? await listReleasePolicyOverrides(deps.docStore, { workspaceId, projectId, reportName })
     : [];
+  const escalations = listReleaseEscalations(deps.releaseEscalationsDir ?? 'artifacts/release-escalations')
+    .filter((item) => item.report_name === reportName);
+  const escalationStates = await listReleaseEscalationStates(deps.docStore);
+  const escalationStateById = new Map(escalationStates.map((item) => [item.id, item]));
+  const mergedEscalations = escalations.map((item) => mergeEscalationState(item, escalationStateById.get(item.id)));
+  const governanceEvaluation = mergedEscalations.length > 0
+    ? evaluateReleasePolicy({
+      governance: {
+        open_escalations: mergedEscalations.filter((item) => item.status !== 'resolved').length,
+        critical_unassigned: mergedEscalations.filter((item) =>
+          item.status !== 'resolved' && item.severity === 'critical' && !(item.assignee_user_id ?? '').trim()).length,
+        critical_overdue: mergedEscalations.filter((item) =>
+          item.status !== 'resolved' && item.severity === 'critical' && item.sla_status === 'overdue').length,
+        due_soon: mergedEscalations.filter((item) =>
+          item.status !== 'resolved' && item.sla_status === 'due_soon').length,
+      },
+    })
+    : undefined;
+  const evaluation = mergeReleasePolicyEvaluations(baseEvaluation, governanceEvaluation);
   return enforceReleasePolicy(
     evaluation,
     overrides.map((item) => {
@@ -242,8 +266,7 @@ function sseWrite(res: http.ServerResponse, event: string, data: unknown): void 
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-function mergeEscalationState(
-  event: {
+function mergeEscalationState<T extends {
     status: 'open' | 'resolved';
     acknowledged_at?: string;
     acknowledged_by_user_id?: string;
@@ -256,7 +279,8 @@ function mergeEscalationState(
     resolved_at?: string;
     resolved_by_user_id?: string;
     resolved_by_name?: string;
-  } & Record<string, unknown>,
+  } & Record<string, unknown>>(
+  event: T,
   state?: {
     acknowledged_at?: string;
     acknowledged_by_user_id?: string;
@@ -271,7 +295,22 @@ function mergeEscalationState(
     resolved_by_user_id?: string;
     resolved_by_name?: string;
   } | null,
-) {
+): T & {
+  status: 'open' | 'resolved';
+  acknowledged_at?: string;
+  acknowledged_by_user_id?: string;
+  acknowledged_by_name?: string;
+  assignee_user_id?: string;
+  assignee_name?: string;
+  due_at?: string;
+  resolution_reason?: string;
+  resolution_category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
+  resolved_at?: string;
+  resolved_by_user_id?: string;
+  resolved_by_name?: string;
+  age_ms?: number;
+  sla_status: 'on_track' | 'due_soon' | 'overdue' | 'resolved';
+} {
   const status = state?.resolution_status ?? event.status;
   const dueAt = state?.due_at ?? event.due_at;
   const now = Date.now();

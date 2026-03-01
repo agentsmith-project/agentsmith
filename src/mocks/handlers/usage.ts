@@ -172,13 +172,21 @@ const releaseReports: ReleaseReportListItem[] = [
     usage_release_readiness: 'blocked',
     markdown_available: true,
     policy_enforcement: {
-      decision: 'releasable_with_override',
+      decision: 'blocked',
       base_decision: 'blocked',
-      blocker_count: 5,
+      blocker_count: 6,
       warning_count: 2,
       pending_override_count: 0,
       approved_override_count: 1,
-      unresolved_blockers: [],
+      unresolved_blockers: [
+        {
+          id: 'governance_critical_escalations_overdue',
+          severity: 'blocker',
+          source: 'governance',
+          message: '1 critical release escalations are overdue.',
+          overridable: false,
+        },
+      ],
       overridden_blockers: [
         {
           id: 'execution_failures_present',

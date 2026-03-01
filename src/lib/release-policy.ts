@@ -1,5 +1,5 @@
 export type ReleasePolicySeverity = 'warning' | 'blocker';
-export type ReleasePolicySource = 'execution' | 'runtime' | 'usage';
+export type ReleasePolicySource = 'execution' | 'runtime' | 'usage' | 'governance';
 export type ReleasePolicyDecision = 'ready' | 'warning' | 'blocked';
 
 export type ReleasePolicyIssue = {
@@ -80,10 +80,18 @@ export type ReleasePolicyExecutionInput = {
   failure_categories?: string[];
 };
 
+export type ReleasePolicyGovernanceInput = {
+  open_escalations?: number;
+  critical_unassigned?: number;
+  critical_overdue?: number;
+  due_soon?: number;
+};
+
 export type EvaluateReleasePolicyInput = {
   execution?: ReleasePolicyExecutionInput;
   runtime?: ReleasePolicyRuntimeInput;
   usage?: ReleasePolicyUsageInput;
+  governance?: ReleasePolicyGovernanceInput;
 };
 
 function dedupe(values: Array<string | undefined>): string[] {
@@ -261,6 +269,46 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
     }
   }
 
+  const governance = input.governance;
+  if (governance) {
+    if ((governance.critical_unassigned ?? 0) > 0) {
+      pushIssue(blockers, {
+        id: 'governance_critical_escalations_unassigned',
+        severity: 'blocker',
+        source: 'governance',
+        message: `${governance.critical_unassigned} critical release escalations are unassigned.`,
+        overridable: false,
+      });
+    }
+    if ((governance.critical_overdue ?? 0) > 0) {
+      pushIssue(blockers, {
+        id: 'governance_critical_escalations_overdue',
+        severity: 'blocker',
+        source: 'governance',
+        message: `${governance.critical_overdue} critical release escalations are overdue.`,
+        overridable: false,
+      });
+    }
+    if ((governance.due_soon ?? 0) > 0) {
+      pushIssue(warnings, {
+        id: 'governance_escalations_due_soon',
+        severity: 'warning',
+        source: 'governance',
+        message: `${governance.due_soon} release escalations are approaching SLA due time.`,
+        overridable: true,
+      });
+    }
+    if ((governance.open_escalations ?? 0) > 0) {
+      pushIssue(warnings, {
+        id: 'governance_open_escalations_present',
+        severity: 'warning',
+        source: 'governance',
+        message: `${governance.open_escalations} open release escalations require follow-up.`,
+        overridable: true,
+      });
+    }
+  }
+
   const decision: ReleasePolicyDecision = blockers.length > 0 ? 'blocked' : warnings.length > 0 ? 'warning' : 'ready';
   const overridableCount = [...blockers, ...warnings].filter((issue) => issue.overridable).length;
 
@@ -273,6 +321,32 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
       blocker_count: blockers.length,
       warning_count: warnings.length,
       overridable_count: overridableCount,
+    },
+  };
+}
+
+export function mergeReleasePolicyEvaluations(
+  base: ReleasePolicyEvaluation,
+  extra?: ReleasePolicyEvaluation,
+): ReleasePolicyEvaluation {
+  if (!extra) return base;
+  const blockers = [...base.blockers];
+  const warnings = [...base.warnings];
+  for (const issue of extra.blockers) {
+    pushIssue(blockers, issue);
+  }
+  for (const issue of extra.warnings) {
+    pushIssue(warnings, issue);
+  }
+  return {
+    decision: blockers.length > 0 ? 'blocked' : warnings.length > 0 ? 'warning' : 'ready',
+    blockers,
+    warnings,
+    summary: {
+      total_issues: blockers.length + warnings.length,
+      blocker_count: blockers.length,
+      warning_count: warnings.length,
+      overridable_count: [...blockers, ...warnings].filter((issue) => issue.overridable).length,
     },
   };
 }

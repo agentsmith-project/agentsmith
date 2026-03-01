@@ -17,3 +17,4 @@ Comprehensive guides for using AgentSmith features.
 - [Getting Started](../README.md)
 - [Development Guide](../../DEVELOPMENT.md)
 - [Troubleshooting](../troubleshooting-guide-v1.md)
+- [Product/Engineering/Governance Methodology](../design/agentsmith-product-engineering-governance-methodology-v1.md)

@@ -559,13 +559,13 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       title: settingsT('release_ops_escalations_acknowledge'),
       meta: selectedEscalation.acknowledged_by_name ?? selectedEscalation.acknowledged_by_user_id ?? '--',
     }] : []),
-    ...(selectedEscalation?.due_at || selectedEscalation?.assignee_user_id ? [{
-      id: `escalation-assignment-${selectedEscalation?.id}`,
+    ...((selectedEscalation?.incident_history ?? []).map((item) => ({
+      id: `history-${item.id}`,
       kind: 'assignment',
-      timestamp: selectedEscalation?.due_at ?? selectedEscalation?.created_at ?? new Date().toISOString(),
+      timestamp: item.created_at,
       title: settingsT('release_ops_escalations_assignment'),
-      meta: `${selectedEscalation?.assignee_name ?? selectedEscalation?.assignee_user_id ?? '--'} · ${selectedEscalation?.sla_status ?? '--'}`,
-    }] : []),
+      meta: `${item.previous_assignee_name ?? item.previous_assignee_user_id ?? '--'} -> ${item.next_assignee_name ?? item.next_assignee_user_id} · ${item.actor_name ?? item.actor_user_id}`,
+    }))),
     ...(selectedEscalation?.resolved_at ? [{
       id: `escalation-resolution-${selectedEscalation.id}`,
       kind: 'resolution',

@@ -345,6 +345,20 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
     webhook_delivery: {
       status: 'skipped',
     },
+    incident_history: [
+      {
+        id: 'rih_usage_001',
+        incident_id: 'incident-usage-webhook-signature-policy-check',
+        escalation_id: 'usage-webhook-signature-policy-check',
+        event_kind: 'escalation_assignment',
+        created_at: '2026-02-28T22:15:00.000Z',
+        actor_user_id: 'mock-user',
+        actor_name: 'Mock User',
+        next_assignee_user_id: 'user_runtime_owner',
+        next_assignee_name: 'Runtime Owner',
+        next_due_at: '2026-03-02T12:00:00.000Z',
+      },
+    ],
   },
   {
     id: 'runtime-evidence-gate-regression-20260227',
@@ -376,6 +390,20 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
       error: 'http_500',
       duration_ms: 820,
     },
+    incident_history: [
+      {
+        id: 'rih_runtime_001',
+        incident_id: 'incident-runtime-evidence-gate-regression-20260227',
+        escalation_id: 'runtime-evidence-gate-regression-20260227',
+        event_kind: 'escalation_assignment',
+        created_at: '2026-02-27T19:30:00.000Z',
+        actor_user_id: 'mock-user',
+        actor_name: 'Mock User',
+        next_assignee_user_id: 'user_oncall',
+        next_assignee_name: 'Oncall Engineer',
+        next_due_at: '2026-02-27T20:00:00.000Z',
+      },
+    ],
   },
   {
     id: 'wp11-release-controls-final-20260228',
@@ -406,6 +434,7 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
       response_status: 200,
       duration_ms: 140,
     },
+    incident_history: [],
   },
 ];
 
@@ -1267,10 +1296,31 @@ export const usageHandlers = [
     if (!detail || !body.assignee_user_id?.trim()) {
       return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'assignee_user_id is required' }, { status: 422 });
     }
+    const previousAssigneeUserId = detail.assignee_user_id;
+    const previousAssigneeName = detail.assignee_name;
+    const previousDueAt = detail.due_at;
     detail.assignee_user_id = body.assignee_user_id.trim();
     detail.assignee_name = body.assignee_name?.trim() || undefined;
     detail.due_at = body.due_at?.trim() || undefined;
     detail.sla_status = detail.status === 'resolved' ? 'resolved' : 'due_soon';
+    detail.incident_history = [
+      {
+        id: `rih_${Date.now()}`,
+        incident_id: detail.incident_id,
+        escalation_id: detail.id,
+        event_kind: 'escalation_assignment',
+        created_at: new Date().toISOString(),
+        actor_user_id: 'mock-user',
+        actor_name: 'Mock User',
+        previous_assignee_user_id: previousAssigneeUserId,
+        previous_assignee_name: previousAssigneeName,
+        previous_due_at: previousDueAt,
+        next_assignee_user_id: detail.assignee_user_id,
+        next_assignee_name: detail.assignee_name,
+        next_due_at: detail.due_at,
+      },
+      ...(detail.incident_history ?? []),
+    ];
     appendMockNotification({
       id: `notif_release_escalation_assignment_${Date.now()}`,
       type: 'release_escalation_assigned',

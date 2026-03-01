@@ -4403,6 +4403,29 @@ describe('api-entry-node projects routes', () => {
     expect(assigned.assignee_user_id).toBe('user_oncall');
     expect(assigned.sla_status).toBe('due_soon');
 
+    const reassignRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/assignment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assignee_user_id: 'user_release',
+        assignee_name: 'Release Owner',
+      }),
+    });
+    expect(reassignRes.status).toBe(200);
+
+    const historyDetailRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release');
+    expect(historyDetailRes.status).toBe(200);
+    const historyDetail = (await historyDetailRes.json()) as {
+      incident_history?: Array<{
+        event_kind?: string;
+        previous_assignee_user_id?: string;
+        next_assignee_user_id?: string;
+      }>;
+    };
+    expect(historyDetail.incident_history?.[0]?.event_kind).toBe('escalation_assignment');
+    expect(historyDetail.incident_history?.[0]?.previous_assignee_user_id).toBe('user_oncall');
+    expect(historyDetail.incident_history?.[0]?.next_assignee_user_id).toBe('user_release');
+
     const resolveRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/resolution', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -29,6 +29,10 @@ import {
   listReleaseEscalationStates,
   setReleaseEscalationResolution,
 } from './release-escalation-state-store.js';
+import {
+  listReleaseIncidentHistory,
+  recordReleaseEscalationAssignmentHistory,
+} from './release-incident-history-store.js';
 import { getReleaseReportDetail, listReleaseReports } from './release-report-store.js';
 import { getReleaseGateRunDetail, listReleaseGateRuns } from './release-run-store.js';
 import {
@@ -606,7 +610,12 @@ export async function handleRequest(
       return;
     }
     const state = await getReleaseEscalationState(deps.docStore, escalationId);
-    json(res, 200, mergeEscalationState(detail, state));
+    const merged = mergeEscalationState(detail, state);
+    const incidentHistory = await listReleaseIncidentHistory(deps.docStore, { incidentId: merged.incident_id });
+    json(res, 200, {
+      ...merged,
+      incident_history: incidentHistory,
+    });
     return;
   }
 
@@ -662,11 +671,24 @@ export async function handleRequest(
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'due_at must be a valid ISO timestamp' });
       return;
     }
+    const previousState = await getReleaseEscalationState(deps.docStore, escalationId);
     const state = await assignReleaseEscalation(deps.docStore, {
       escalationId,
       assigneeUserId,
       assigneeName,
       dueAt,
+    });
+    await recordReleaseEscalationAssignmentHistory(deps.docStore, {
+      incidentId: detail.incident_id,
+      escalationId,
+      actorUserId: user.id,
+      actorName: user.name,
+      previousAssigneeUserId: previousState?.assignee_user_id,
+      previousAssigneeName: previousState?.assignee_name,
+      previousDueAt: previousState?.due_at,
+      nextAssigneeUserId: assigneeUserId,
+      nextAssigneeName: assigneeName,
+      nextDueAt: dueAt,
     });
     appendUserNotification(user.id, {
       type: 'release_escalation_assigned',

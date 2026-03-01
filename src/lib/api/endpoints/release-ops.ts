@@ -116,6 +116,21 @@ export interface ReleaseEscalationEvent {
     error?: string;
     duration_ms?: number;
   };
+  incident_history?: Array<{
+    id: string;
+    incident_id: string;
+    escalation_id: string;
+    event_kind: 'escalation_assignment';
+    created_at: string;
+    actor_user_id: string;
+    actor_name?: string;
+    previous_assignee_user_id?: string;
+    previous_assignee_name?: string;
+    previous_due_at?: string;
+    next_assignee_user_id: string;
+    next_assignee_name?: string;
+    next_due_at?: string;
+  }>;
 }
 
 export interface ReleasePolicyOverrideRecord {

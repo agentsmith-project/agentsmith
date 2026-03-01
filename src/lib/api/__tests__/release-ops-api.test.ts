@@ -222,6 +222,17 @@ describe('ReleaseOpsAPI', () => {
       severity: 'warning',
       status: 'open',
       title: 'Release gate completed with warning state',
+      incident_history: [
+        {
+          id: 'rih_1',
+          incident_id: 'incident-sample-release',
+          escalation_id: 'sample-release',
+          event_kind: 'escalation_assignment',
+          created_at: '2026-02-28T20:40:00.000Z',
+          actor_user_id: 'user_owner',
+          next_assignee_user_id: 'user_oncall',
+        },
+      ],
     });
     const api = new ReleaseOpsAPI({
       ...client,
@@ -232,6 +243,7 @@ describe('ReleaseOpsAPI', () => {
 
     expect(getMock).toHaveBeenCalledWith('/internal/release-escalations/sample-release');
     expect(result.id).toBe('sample-release');
+    expect(result.incident_history?.[0]?.event_kind).toBe('escalation_assignment');
   });
 
   it('lists release policy overrides', async () => {

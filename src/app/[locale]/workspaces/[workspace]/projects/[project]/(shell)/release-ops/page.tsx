@@ -14,6 +14,7 @@ import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { useRuntimeObservability, useUsageOperationsSummary, useUsageReportEvidence, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
 import {
   useAcknowledgeReleaseEscalation,
+  useAssignReleaseEscalation,
   useCreateReleasePolicyOverride,
   useDecideReleasePolicyOverride,
   useReleaseEscalationDetail,
@@ -76,6 +77,15 @@ function formatPercent(value?: number): string {
 function formatDurationMs(value?: number): string {
   if (typeof value !== 'number' || Number.isNaN(value)) return '--';
   return `${Math.round(value)}ms`;
+}
+
+function formatAgeMs(value?: number): string {
+  if (typeof value !== 'number' || Number.isNaN(value) || value < 0) return '--';
+  const totalMinutes = Math.round(value / 60000);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
 function recommendationForCheck(category?: string, name?: string): string {
@@ -159,6 +169,10 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const [overrideReason, setOverrideReason] = useState('');
   const [overrideExpiresAt, setOverrideExpiresAt] = useState(defaultOverrideExpiryLocal);
   const [resolutionReason, setResolutionReason] = useState('');
+  const [resolutionCategory, setResolutionCategory] = useState<'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred'>('mitigated');
+  const [escalationAssigneeUserId, setEscalationAssigneeUserId] = useState('');
+  const [escalationAssigneeName, setEscalationAssigneeName] = useState('');
+  const [escalationDueAt, setEscalationDueAt] = useState('');
   const [gateRunNotes, setGateRunNotes] = useState('');
 
   useEffect(() => {
@@ -187,6 +201,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const reportDetailQuery = useReleaseReportDetail(selectedReportName, { workspaceId, projectId }, { enabled });
   const overridesQuery = useReleasePolicyOverrides(workspaceId, projectId, selectedReportName, { enabled });
   const acknowledgeEscalationMutation = useAcknowledgeReleaseEscalation();
+  const assignEscalationMutation = useAssignReleaseEscalation();
   const resolveEscalationMutation = useResolveReleaseEscalation();
   const triggerGateRunMutation = useTriggerReleaseGateRun();
   const createOverrideMutation = useCreateReleasePolicyOverride();
@@ -471,6 +486,19 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const recentReleaseRuns = filteredReleaseRuns.slice(0, 8);
   const selectedRun = runDetailQuery.data;
   const selectedEscalation = escalationDetailQuery.data;
+  useEffect(() => {
+    setEscalationAssigneeUserId(selectedEscalation?.assignee_user_id ?? '');
+    setEscalationAssigneeName(selectedEscalation?.assignee_name ?? '');
+    setEscalationDueAt(selectedEscalation?.due_at ? selectedEscalation.due_at.slice(0, 16) : '');
+    setResolutionCategory(selectedEscalation?.resolution_category ?? 'mitigated');
+    setResolutionReason(selectedEscalation?.resolution_reason ?? '');
+  }, [
+    selectedEscalation?.assignee_name,
+    selectedEscalation?.assignee_user_id,
+    selectedEscalation?.due_at,
+    selectedEscalation?.resolution_category,
+    selectedEscalation?.resolution_reason,
+  ]);
   const runPassRate = recentReleaseRuns.length > 0
     ? recentReleaseRuns.filter((item) => item.status === 'pass').length / recentReleaseRuns.length
     : undefined;
@@ -581,14 +609,27 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     if (!selectedEscalationId) return;
     await acknowledgeEscalationMutation.mutateAsync({ escalationId: selectedEscalationId });
   };
+  const assignEscalation = async () => {
+    if (!selectedEscalationId || !escalationAssigneeUserId.trim()) return;
+    await assignEscalationMutation.mutateAsync({
+      escalationId: selectedEscalationId,
+      assignee_user_id: escalationAssigneeUserId.trim(),
+      assignee_name: escalationAssigneeName.trim() || undefined,
+      due_at: escalationDueAt ? new Date(escalationDueAt).toISOString() : undefined,
+    });
+  };
   const updateEscalationResolution = async (status: 'open' | 'resolved') => {
     if (!selectedEscalationId) return;
     await resolveEscalationMutation.mutateAsync({
       escalationId: selectedEscalationId,
       status,
       reason: resolutionReason.trim() || undefined,
+      category: status === 'resolved' ? resolutionCategory : undefined,
     });
-    if (status === 'resolved') setResolutionReason('');
+    if (status === 'resolved') {
+      setResolutionReason('');
+      setResolutionCategory('mitigated');
+    }
   };
 
   if (!resolvedParams.workspace || !resolvedParams.project) {
@@ -845,6 +886,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={selectedEscalation.severity === 'critical' ? 'secondary' : 'outline'}>{selectedEscalation.severity}</Badge>
                       <Badge variant={selectedEscalation.status === 'resolved' ? 'outline' : 'secondary'}>{selectedEscalation.status}</Badge>
+                      {selectedEscalation.sla_status ? (
+                        <Badge variant={selectedEscalation.sla_status === 'overdue' ? 'secondary' : 'outline'}>
+                          sla:{selectedEscalation.sla_status}
+                        </Badge>
+                      ) : null}
                       {selectedEscalation.webhook_delivery ? (
                         <Badge variant={selectedEscalation.webhook_delivery.status === 'success' ? 'outline' : selectedEscalation.webhook_delivery.status === 'skipped' ? 'secondary' : 'secondary'}>
                           webhook:{selectedEscalation.webhook_delivery.status}
@@ -872,13 +918,68 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_escalations_owner')}</div>
+                        <div className="mt-1 text-sm text-foreground">
+                          {selectedEscalation.assignee_name ?? selectedEscalation.assignee_user_id ?? commonT('empty')}
+                        </div>
+                        <div className="mt-1 text-xs text-tertiary">
+                          {selectedEscalation.due_at ? `${settingsT('release_ops_escalations_due_at')} · ${formatDateTime(selectedEscalation.due_at)}` : commonT('empty')}
+                          {selectedEscalation.age_ms ? ` · ${settingsT('release_ops_escalations_age')} ${formatAgeMs(selectedEscalation.age_ms)}` : ''}
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_escalations_assignment')}</div>
+                        <div className="mt-2 grid gap-2">
+                          <Input
+                            value={escalationAssigneeUserId}
+                            onChange={(event) => setEscalationAssigneeUserId(event.target.value)}
+                            placeholder={settingsT('release_ops_escalations_assignee_user_placeholder')}
+                            data-testid="release-ops__escalation-assignee-user"
+                          />
+                          <Input
+                            value={escalationAssigneeName}
+                            onChange={(event) => setEscalationAssigneeName(event.target.value)}
+                            placeholder={settingsT('release_ops_escalations_assignee_name_placeholder')}
+                            data-testid="release-ops__escalation-assignee-name"
+                          />
+                          <Input
+                            type="datetime-local"
+                            value={escalationDueAt}
+                            onChange={(event) => setEscalationDueAt(event.target.value)}
+                            data-testid="release-ops__escalation-due-at"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={assignEscalation}
+                            disabled={assignEscalationMutation.isPending || !escalationAssigneeUserId.trim()}
+                            data-testid="release-ops__escalation-assign"
+                          >
+                            {settingsT('release_ops_escalations_assign')}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px_auto_auto]">
                       <Textarea
                         value={resolutionReason}
                         onChange={(event) => setResolutionReason(event.target.value)}
                         placeholder={settingsT('release_ops_escalations_resolution_reason_placeholder')}
                         data-testid="release-ops__escalation-resolution-reason"
                       />
+                      <Select value={resolutionCategory} onValueChange={(value) => setResolutionCategory(value as typeof resolutionCategory)}>
+                        <SelectTrigger data-testid="release-ops__escalation-resolution-category">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mitigated">{settingsT('release_ops_escalations_category_mitigated')}</SelectItem>
+                          <SelectItem value="accepted_risk">{settingsT('release_ops_escalations_category_accepted_risk')}</SelectItem>
+                          <SelectItem value="false_positive">{settingsT('release_ops_escalations_category_false_positive')}</SelectItem>
+                          <SelectItem value="deferred">{settingsT('release_ops_escalations_category_deferred')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <Button
                         type="button"
                         variant="outline"
@@ -903,6 +1004,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     {selectedEscalation.resolved_at ? (
                       <div className="mt-2 text-xs text-tertiary">
                         {selectedEscalation.resolved_by_name ?? selectedEscalation.resolved_by_user_id} · {formatDateTime(selectedEscalation.resolved_at)}
+                        {selectedEscalation.resolution_category ? ` · ${selectedEscalation.resolution_category}` : ''}
                         {selectedEscalation.resolution_reason ? ` · ${selectedEscalation.resolution_reason}` : ''}
                       </div>
                     ) : null}

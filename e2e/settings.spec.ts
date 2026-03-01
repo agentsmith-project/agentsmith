@@ -209,7 +209,14 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__escalation-0')).toBeVisible();
     await authedPage.getByTestId('release-ops__escalation-0').click();
     await expect(authedPage.getByTestId('release-ops__escalation-detail')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__escalation-assignee-user')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__escalation-due-at')).toBeVisible();
+    await authedPage.getByTestId('release-ops__escalation-assignee-user').fill('user_release');
+    await authedPage.getByTestId('release-ops__escalation-assignee-name').fill('Release Owner');
+    await authedPage.getByTestId('release-ops__escalation-assign').click();
     await authedPage.getByTestId('release-ops__escalation-acknowledge').click();
+    await authedPage.getByTestId('release-ops__escalation-resolution-category').click();
+    await authedPage.getByRole('option', { name: /accepted risk|接受风险/i }).click();
     await authedPage.getByTestId('release-ops__escalation-resolution-reason').fill('Mitigated in follow-up gate');
     await authedPage.getByTestId('release-ops__escalation-resolve').click();
     await expect(authedPage.getByTestId('release-ops__incident-trace')).toBeVisible();

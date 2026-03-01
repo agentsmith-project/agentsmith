@@ -322,6 +322,11 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
     release_policy_decision: 'warning',
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
+    assignee_user_id: 'user_runtime_owner',
+    assignee_name: 'Runtime Owner',
+    due_at: '2026-03-02T12:00:00.000Z',
+    age_ms: 2 * 60 * 60 * 1000,
+    sla_status: 'due_soon',
     failure_categories: [],
     webhook_delivery: {
       status: 'skipped',
@@ -342,6 +347,11 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
     release_policy_decision: 'blocked',
     runtime_release_readiness: 'blocked',
     usage_release_readiness: 'blocked',
+    assignee_user_id: 'user_oncall',
+    assignee_name: 'Oncall Engineer',
+    due_at: '2026-02-27T20:00:00.000Z',
+    age_ms: 5 * 60 * 60 * 1000,
+    sla_status: 'overdue',
     failed_step_name: 'Governance release smoke',
     failure_categories: ['authorization', 'unknown'],
     webhook_delivery: {
@@ -367,6 +377,12 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
     release_policy_decision: 'ready',
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
+    assignee_user_id: 'user_release_mgr',
+    assignee_name: 'Release Manager',
+    due_at: '2026-02-28T20:15:00.000Z',
+    age_ms: 30 * 60 * 1000,
+    sla_status: 'resolved',
+    resolution_category: 'mitigated',
     failure_categories: [],
     webhook_delivery: {
       status: 'success',
@@ -1229,14 +1245,44 @@ export const usageHandlers = [
     });
     return HttpResponse.json(detail);
   }),
+  http.post('/api/v1/internal/release-escalations/:id/assignment', async ({ params, request }) => {
+    const body = await request.json() as { assignee_user_id?: string; assignee_name?: string; due_at?: string };
+    const detail = releaseEscalations.find((item) => item.id === String(params.id));
+    if (!detail || !body.assignee_user_id?.trim()) {
+      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'assignee_user_id is required' }, { status: 422 });
+    }
+    detail.assignee_user_id = body.assignee_user_id.trim();
+    detail.assignee_name = body.assignee_name?.trim() || undefined;
+    detail.due_at = body.due_at?.trim() || undefined;
+    detail.sla_status = detail.status === 'resolved' ? 'resolved' : 'due_soon';
+    appendMockNotification({
+      id: `notif_release_escalation_assignment_${Date.now()}`,
+      type: 'release_escalation_assigned',
+      title: 'Release escalation assigned',
+      body: detail.title,
+      link_url: null,
+      read_at: null,
+      created_at: new Date().toISOString(),
+    });
+    return HttpResponse.json(detail);
+  }),
   http.post('/api/v1/internal/release-escalations/:id/resolution', async ({ params, request }) => {
-    const body = await request.json() as { status?: 'open' | 'resolved'; reason?: string };
+    const body = await request.json() as {
+      status?: 'open' | 'resolved';
+      reason?: string;
+      category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
+    };
     const detail = releaseEscalations.find((item) => item.id === String(params.id));
     if (!detail || (body.status !== 'open' && body.status !== 'resolved')) {
       return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_escalation_not_found' }, { status: 404 });
     }
+    if (body.status === 'resolved' && !body.category) {
+      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'resolution category is required when resolving escalation' }, { status: 422 });
+    }
     detail.status = body.status;
     detail.resolution_reason = body.reason?.trim() || undefined;
+    detail.resolution_category = body.status === 'resolved' ? body.category : undefined;
+    detail.sla_status = body.status === 'resolved' ? 'resolved' : (detail.due_at ? 'due_soon' : 'on_track');
     detail.resolved_at = body.status === 'resolved' ? new Date().toISOString() : undefined;
     detail.resolved_by_user_id = body.status === 'resolved' ? 'mock-user' : undefined;
     detail.resolved_by_name = body.status === 'resolved' ? 'Mock User' : undefined;

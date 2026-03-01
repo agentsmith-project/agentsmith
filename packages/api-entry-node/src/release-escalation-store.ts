@@ -21,7 +21,13 @@ export type ReleaseEscalationEvent = {
   acknowledged_at?: string;
   acknowledged_by_user_id?: string;
   acknowledged_by_name?: string;
+  assignee_user_id?: string;
+  assignee_name?: string;
+  due_at?: string;
+  age_ms?: number;
+  sla_status?: 'on_track' | 'due_soon' | 'overdue' | 'resolved';
   resolution_reason?: string;
+  resolution_category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
   resolved_at?: string;
   resolved_by_user_id?: string;
   resolved_by_name?: string;

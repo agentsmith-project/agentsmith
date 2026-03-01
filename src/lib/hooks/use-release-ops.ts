@@ -117,8 +117,39 @@ export function useResolveReleaseEscalation() {
   const api = new ReleaseOpsAPI(getApiClient());
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { escalationId: string; status: 'open' | 'resolved'; reason?: string }) =>
-      api.resolveEscalation(payload.escalationId, { status: payload.status, reason: payload.reason }),
+    mutationFn: (payload: {
+      escalationId: string;
+      status: 'open' | 'resolved';
+      reason?: string;
+      category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
+    }) =>
+      api.resolveEscalation(payload.escalationId, {
+        status: payload.status,
+        reason: payload.reason,
+        category: payload.category,
+      }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.escalations() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.escalationDetail(result.id) });
+    },
+  });
+}
+
+export function useAssignReleaseEscalation() {
+  const api = new ReleaseOpsAPI(getApiClient());
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      escalationId: string;
+      assignee_user_id: string;
+      assignee_name?: string;
+      due_at?: string;
+    }) =>
+      api.assignEscalation(payload.escalationId, {
+        assignee_user_id: payload.assignee_user_id,
+        assignee_name: payload.assignee_name,
+        due_at: payload.due_at,
+      }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.escalations() });
       queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.escalationDetail(result.id) });

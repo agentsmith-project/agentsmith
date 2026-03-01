@@ -4388,15 +4388,31 @@ describe('api-entry-node projects routes', () => {
     const acknowledged = (await acknowledgeRes.json()) as { acknowledged_by_user_id?: string };
     expect(acknowledged.acknowledged_by_user_id).toBeTruthy();
 
+    const assignRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/assignment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assignee_user_id: 'user_oncall',
+        assignee_name: 'Oncall Engineer',
+        due_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      }),
+    });
+    expect(assignRes.status).toBe(200);
+    const assigned = (await assignRes.json()) as { assignee_user_id?: string; sla_status?: string };
+    expect(assigned.assignee_user_id).toBe('user_oncall');
+    expect(assigned.sla_status).toBe('due_soon');
+
     const resolveRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/resolution', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'resolved', reason: 'Mitigated by rerun' }),
+      body: JSON.stringify({ status: 'resolved', reason: 'Mitigated by rerun', category: 'mitigated' }),
     });
     expect(resolveRes.status).toBe(200);
-    const resolved = (await resolveRes.json()) as { status: string; resolution_reason?: string };
+    const resolved = (await resolveRes.json()) as { status: string; resolution_reason?: string; resolution_category?: string; sla_status?: string };
     expect(resolved.status).toBe('resolved');
     expect(resolved.resolution_reason).toBe('Mitigated by rerun');
+    expect(resolved.resolution_category).toBe('mitigated');
+    expect(resolved.sla_status).toBe('resolved');
 
     const notificationsRes = await apiFetch(baseUrl, '/api/v1/me/notifications');
     expect(notificationsRes.status).toBe(200);

@@ -172,6 +172,26 @@ describe('ReleaseOpsAPI', () => {
     expect(postMock).toHaveBeenCalledWith('/internal/release-escalations/sample-release/acknowledge');
   });
 
+  it('assigns a release escalation', async () => {
+    const postMock = vi.fn().mockResolvedValue({ id: 'sample-release', assignee_user_id: 'user_oncall' });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      post: postMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    await api.assignEscalation('sample-release', {
+      assignee_user_id: 'user_oncall',
+      assignee_name: 'Oncall Engineer',
+      due_at: '2026-03-01T09:00:00.000Z',
+    });
+
+    expect(postMock).toHaveBeenCalledWith('/internal/release-escalations/sample-release/assignment', {
+      assignee_user_id: 'user_oncall',
+      assignee_name: 'Oncall Engineer',
+      due_at: '2026-03-01T09:00:00.000Z',
+    });
+  });
+
   it('updates release escalation resolution', async () => {
     const postMock = vi.fn().mockResolvedValue({ id: 'sample-release', status: 'resolved' });
     const api = new ReleaseOpsAPI({
@@ -179,11 +199,12 @@ describe('ReleaseOpsAPI', () => {
       post: postMock,
     } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
 
-    await api.resolveEscalation('sample-release', { status: 'resolved', reason: 'Mitigated' });
+    await api.resolveEscalation('sample-release', { status: 'resolved', reason: 'Mitigated', category: 'mitigated' });
 
     expect(postMock).toHaveBeenCalledWith('/internal/release-escalations/sample-release/resolution', {
       status: 'resolved',
       reason: 'Mitigated',
+      category: 'mitigated',
     });
   });
 

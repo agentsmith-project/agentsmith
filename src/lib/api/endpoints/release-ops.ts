@@ -97,7 +97,13 @@ export interface ReleaseEscalationEvent {
   acknowledged_at?: string;
   acknowledged_by_user_id?: string;
   acknowledged_by_name?: string;
+  assignee_user_id?: string;
+  assignee_name?: string;
+  due_at?: string;
+  age_ms?: number;
+  sla_status?: 'on_track' | 'due_soon' | 'overdue' | 'resolved';
   resolution_reason?: string;
+  resolution_category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
   resolved_at?: string;
   resolved_by_user_id?: string;
   resolved_by_name?: string;
@@ -186,7 +192,18 @@ export class ReleaseOpsAPI {
     return this.client.post(`/internal/release-escalations/${encodeURIComponent(id)}/acknowledge`);
   }
 
-  async resolveEscalation(id: string, payload: { status: 'open' | 'resolved'; reason?: string }): Promise<ReleaseEscalationEvent> {
+  async assignEscalation(id: string, payload: { assignee_user_id: string; assignee_name?: string; due_at?: string }): Promise<ReleaseEscalationEvent> {
+    return this.client.post(`/internal/release-escalations/${encodeURIComponent(id)}/assignment`, payload);
+  }
+
+  async resolveEscalation(
+    id: string,
+    payload: {
+      status: 'open' | 'resolved';
+      reason?: string;
+      category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
+    },
+  ): Promise<ReleaseEscalationEvent> {
     return this.client.post(`/internal/release-escalations/${encodeURIComponent(id)}/resolution`, payload);
   }
 

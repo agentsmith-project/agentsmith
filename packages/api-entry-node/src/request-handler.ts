@@ -24,6 +24,7 @@ import { appendUserNotification } from './me-notifications-store.js';
 import { getReleaseEscalationDetail, listReleaseEscalations } from './release-escalation-store.js';
 import {
   acknowledgeReleaseEscalation,
+  assignReleaseEscalation,
   getReleaseEscalationState,
   listReleaseEscalationStates,
   setReleaseEscalationResolution,
@@ -247,7 +248,11 @@ function mergeEscalationState(
     acknowledged_at?: string;
     acknowledged_by_user_id?: string;
     acknowledged_by_name?: string;
+    assignee_user_id?: string;
+    assignee_name?: string;
+    due_at?: string;
     resolution_reason?: string;
+    resolution_category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
     resolved_at?: string;
     resolved_by_user_id?: string;
     resolved_by_name?: string;
@@ -256,23 +261,46 @@ function mergeEscalationState(
     acknowledged_at?: string;
     acknowledged_by_user_id?: string;
     acknowledged_by_name?: string;
+    assignee_user_id?: string;
+    assignee_name?: string;
+    due_at?: string;
     resolution_status?: 'open' | 'resolved';
     resolution_reason?: string;
+    resolution_category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
     resolved_at?: string;
     resolved_by_user_id?: string;
     resolved_by_name?: string;
   } | null,
 ) {
+  const status = state?.resolution_status ?? event.status;
+  const dueAt = state?.due_at ?? event.due_at;
+  const now = Date.now();
+  const dueTime = dueAt ? new Date(dueAt).getTime() : Number.NaN;
+  const ageMs = typeof event.created_at === 'string' ? now - new Date(event.created_at).getTime() : undefined;
+  let slaStatus: 'on_track' | 'due_soon' | 'overdue' | 'resolved' = 'on_track';
+  if (status === 'resolved') {
+    slaStatus = 'resolved';
+  } else if (!Number.isNaN(dueTime)) {
+    const remainingMs = dueTime - now;
+    if (remainingMs < 0) slaStatus = 'overdue';
+    else if (remainingMs <= 4 * 60 * 60 * 1000) slaStatus = 'due_soon';
+  }
   return {
     ...event,
-    status: state?.resolution_status ?? event.status,
+    status,
     acknowledged_at: state?.acknowledged_at ?? event.acknowledged_at,
     acknowledged_by_user_id: state?.acknowledged_by_user_id ?? event.acknowledged_by_user_id,
     acknowledged_by_name: state?.acknowledged_by_name ?? event.acknowledged_by_name,
+    assignee_user_id: state?.assignee_user_id ?? event.assignee_user_id,
+    assignee_name: state?.assignee_name ?? event.assignee_name,
+    due_at: dueAt,
     resolution_reason: state?.resolution_reason ?? event.resolution_reason,
+    resolution_category: state?.resolution_category ?? event.resolution_category,
     resolved_at: state?.resolved_at ?? event.resolved_at,
     resolved_by_user_id: state?.resolved_by_user_id ?? event.resolved_by_user_id,
     resolved_by_name: state?.resolved_by_name ?? event.resolved_by_name,
+    age_ms: Number.isNaN(ageMs) ? undefined : ageMs,
+    sla_status: slaStatus,
   };
 }
 
@@ -570,6 +598,47 @@ export async function handleRequest(
     return;
   }
 
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/release-escalations\/[^/]+\/assignment\/?$/) && method === 'POST') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-escalations/', '').replace('/assignment', '').replace(/\/$/, ''));
+    const detail = getReleaseEscalationDetail(deps.releaseEscalationsDir ?? 'artifacts/release-escalations', escalationId);
+    if (!detail) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_escalation_not_found' });
+      return;
+    }
+    const body = await readBody(req) as Record<string, unknown>;
+    const assigneeUserId = typeof body.assignee_user_id === 'string' ? body.assignee_user_id.trim() : '';
+    const assigneeName = typeof body.assignee_name === 'string' ? body.assignee_name.trim() : undefined;
+    const dueAt = typeof body.due_at === 'string' ? body.due_at.trim() : undefined;
+    const dueDate = dueAt ? new Date(dueAt) : undefined;
+    if (!assigneeUserId) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'assignee_user_id is required' });
+      return;
+    }
+    if (dueAt && (!dueDate || Number.isNaN(dueDate.getTime()))) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'due_at must be a valid ISO timestamp' });
+      return;
+    }
+    const state = await assignReleaseEscalation(deps.docStore, {
+      escalationId,
+      assigneeUserId,
+      assigneeName,
+      dueAt,
+    });
+    appendUserNotification(user.id, {
+      type: 'release_escalation_assigned',
+      title: 'Release escalation assigned',
+      body: detail.title,
+      link_url: null,
+    });
+    json(res, 200, mergeEscalationState(detail, state));
+    return;
+  }
+
   if (requestUrl.pathname.match(/^\/api\/v1\/internal\/release-escalations\/[^/]+\/resolution\/?$/) && method === 'POST') {
     const user = await verifyBearerToken(req);
     if (!user) {
@@ -585,14 +654,25 @@ export async function handleRequest(
     const body = await readBody(req) as Record<string, unknown>;
     const status = body.status === 'open' || body.status === 'resolved' ? body.status : null;
     const reason = typeof body.reason === 'string' ? body.reason.trim() : undefined;
+    const category = body.category === 'mitigated'
+      || body.category === 'accepted_risk'
+      || body.category === 'false_positive'
+      || body.category === 'deferred'
+      ? body.category
+      : undefined;
     if (!status) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'resolution status is required' });
+      return;
+    }
+    if (status === 'resolved' && !category) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'resolution category is required when resolving escalation' });
       return;
     }
     const state = await setReleaseEscalationResolution(deps.docStore, {
       escalationId,
       status,
       reason,
+      category,
       userId: user.id,
       userName: user.name,
     });

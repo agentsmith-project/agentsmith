@@ -1126,6 +1126,8 @@
     "release_ops_incident_summary_owner": "Owner",
     "release_ops_open_runtime_context": "Open Runtime Context",
     "release_ops_open_usage_context": "Open Usage Context",
+    "open_members": "Open Members",
+    "open_credentials": "Open Credentials",
     "release_ops_section_failed_checks": "Failed Checks",
     "release_ops_failed_checks_empty": "No failed checks were recorded in this artifact.",
     "release_ops_failed_checks_filter_all": "All Categories",

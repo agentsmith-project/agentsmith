@@ -7,6 +7,9 @@ test.describe('AI Ops Home', () => {
 
   test('shows project status strip and attention panel', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('overview__ai-ops-home')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('overview__open-runtime')).toHaveAttribute('href', /runtime-observability\?/);
+    await expect(authedPage.getByTestId('overview__open-usage')).toHaveAttribute('href', /usage\?/);
+    await expect(authedPage.getByTestId('overview__open-release-ops')).toHaveAttribute('href', /release-ops\?/);
     await expect(authedPage.getByTestId('overview__status-runtime')).toBeVisible();
     await expect(authedPage.getByTestId('overview__status-cost')).toBeVisible();
     await expect(authedPage.getByTestId('overview__status-release')).toBeVisible();

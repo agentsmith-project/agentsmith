@@ -1128,6 +1128,8 @@
     "release_ops_incident_summary_owner": "Owner",
     "release_ops_open_runtime_context": "打开 Runtime 上下文",
     "release_ops_open_usage_context": "打开 Usage 上下文",
+    "open_members": "打开成员",
+    "open_credentials": "打开凭据",
     "release_ops_section_failed_checks": "失败检查",
     "release_ops_failed_checks_empty": "当前 artifact 没有失败检查。",
     "release_ops_failed_checks_filter_all": "全部类别",

@@ -11,6 +11,10 @@ test.describe('Settings Page', () => {
   test('general tab is active by default with form fields', async ({ authedPage }) => {
     await goToProject(authedPage, 'settings');
 
+    await expect(authedPage.getByTestId('settings__open-runtime-control-plane')).toBeVisible();
+    await expect(authedPage.getByTestId('settings__open-members')).toBeVisible();
+    await expect(authedPage.getByTestId('settings__open-credentials')).toBeVisible();
+
     // General tab should be active by default
     const generalTab = authedPage.getByTestId('settings__tab--general');
     await expect(generalTab).toBeVisible({ timeout: 10000 });

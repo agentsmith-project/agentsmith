@@ -180,6 +180,25 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             title={settingsT('title')}
             subtitle={settingsT('subtitle')}
             className="[&>div>h1]:flex [&>div>h1]:items-center [&>div>h1]:gap-2"
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Button asChild variant="action" size="sm" data-testid="settings__open-runtime-control-plane">
+                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-control-plane`}>
+                    {settingsT('runtime_open_control_plane')}
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" size="sm" data-testid="settings__open-members">
+                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/members`}>
+                    {settingsT('open_members')}
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" size="sm" data-testid="settings__open-credentials">
+                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/credentials`}>
+                    {settingsT('open_credentials')}
+                  </Link>
+                </Button>
+              </div>
+            )}
           />
         )}
       >

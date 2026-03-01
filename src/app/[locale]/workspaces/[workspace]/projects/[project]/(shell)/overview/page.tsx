@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { buttonVariants } from '@/components/ui/button';
 import { ActivityTimeline, ProjectNavigation } from '@/components/dashboard';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -410,7 +411,37 @@ export default function OverviewPage() {
   return (
     <PageState state="success">
       <PageLayout
-        header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={runtimeHref}
+                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
+                  data-testid="overview__open-runtime"
+                >
+                  {t('open_runtime')}
+                </Link>
+                <Link
+                  href={usageHref}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="overview__open-usage"
+                >
+                  {t('open_usage')}
+                </Link>
+                <Link
+                  href={releaseOpsHref}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="overview__open-release-ops"
+                >
+                  {t('open_release_ops')}
+                </Link>
+              </div>
+            )}
+          />
+        )}
         toolbar={(
           <PageToolbar>
             <Select value={timeRangePreset} onValueChange={(value) => setTimeRangePreset(value as TimeRangePreset)}>

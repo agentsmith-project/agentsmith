@@ -150,6 +150,9 @@ describe('OverviewPage', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
+    expect(within(header).getByTestId('overview__open-runtime')).toHaveAttribute('href', expect.stringContaining('/runtime-observability?'));
+    expect(within(header).getByTestId('overview__open-usage')).toHaveAttribute('href', expect.stringContaining('/usage?'));
+    expect(within(header).getByTestId('overview__open-release-ops')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
     const toolbar = screen.getByTestId('page-layout__toolbar');
     expect(within(toolbar).getByTestId('overview__time-range')).toBeInTheDocument();
   });

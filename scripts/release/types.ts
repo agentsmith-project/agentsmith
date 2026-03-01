@@ -348,6 +348,25 @@ export interface ReleaseGateRunHistory {
   failure_categories: FailureType[];
 }
 
+export interface ReleaseEscalationEvent {
+  id: string;
+  report_name: string;
+  run_id: string;
+  created_at: string;
+  event_type: 'gate_blocked' | 'gate_warning' | 'gate_ready' | 'override_requested' | 'override_decided';
+  severity: 'critical' | 'warning' | 'info';
+  status: 'open' | 'resolved';
+  title: string;
+  body?: string;
+  artifact_name?: string;
+  trigger?: 'manual' | 'scheduled' | 'ci' | 'unknown';
+  release_policy_decision?: 'ready' | 'warning' | 'blocked';
+  runtime_release_readiness?: 'ready' | 'blocked';
+  usage_release_readiness?: 'ready' | 'blocked';
+  failed_step_name?: string;
+  failure_categories?: FailureType[];
+}
+
 /**
  * CLI options for the verify-release-report script
  */
@@ -370,6 +389,8 @@ export interface VerifyReleaseOptions {
   usageReportEvidence?: string;
   /** Output directory for release run history artifacts */
   runsOutput?: string;
+  /** Output directory for release escalation artifacts */
+  escalationsOutput?: string;
   /** Trigger source for the gate execution */
   trigger?: 'manual' | 'scheduled' | 'ci' | 'unknown';
   /** Verbose output */

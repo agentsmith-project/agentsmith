@@ -4180,8 +4180,10 @@ describe('api-entry-node projects routes', () => {
     const deps = createDefaultNodeApiDeps();
     const reportsDir = mkdtempSync(join(tmpdir(), 'agentsmith-release-reports-'));
     const runsDir = mkdtempSync(join(tmpdir(), 'agentsmith-release-runs-'));
+    const escalationsDir = mkdtempSync(join(tmpdir(), 'agentsmith-release-escalations-'));
     deps.releaseReportsDir = reportsDir;
     deps.releaseRunsDir = runsDir;
+    deps.releaseEscalationsDir = escalationsDir;
     writeFileSync(join(reportsDir, 'sample-release.json'), JSON.stringify({
       metadata: {
         timestamp: '2026-02-28T20:35:10.000Z',
@@ -4223,6 +4225,23 @@ describe('api-entry-node projects routes', () => {
       failed_step_names: [],
       failure_categories: [],
     }), 'utf-8');
+    writeFileSync(join(escalationsDir, 'sample-release.json'), JSON.stringify({
+      id: 'sample-release',
+      report_name: 'sample-release',
+      run_id: 'sample-release',
+      created_at: '2026-02-28T20:35:10.000Z',
+      event_type: 'gate_warning',
+      severity: 'warning',
+      status: 'open',
+      title: 'Release gate completed with warning state',
+      body: 'Latest release gate completed with 1 warning issues.',
+      artifact_name: 'sample-release',
+      trigger: 'manual',
+      release_policy_decision: 'warning',
+      runtime_release_readiness: 'ready',
+      usage_release_readiness: 'blocked',
+      failure_categories: [],
+    }), 'utf-8');
 
     const { baseUrl } = startServerWithDeps(deps);
 
@@ -4257,6 +4276,24 @@ describe('api-entry-node projects routes', () => {
     expect(runDetailPayload.id).toBe('sample-release');
     expect(runDetailPayload.duration_ms).toBe(20000);
     expect(runDetailPayload.status).toBe('pass');
+
+    const escalationListRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations');
+    expect(escalationListRes.status).toBe(200);
+    const escalationListPayload = (await escalationListRes.json()) as { items: Array<{ id: string; event_type: string }> };
+    expect(escalationListPayload.items[0]).toEqual(expect.objectContaining({
+      id: 'sample-release',
+      event_type: 'gate_warning',
+    }));
+
+    const escalationDetailRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release');
+    expect(escalationDetailRes.status).toBe(200);
+    const escalationDetailPayload = (await escalationDetailRes.json()) as { title: string };
+    expect(escalationDetailPayload.title).toContain('warning');
+
+    const notificationsRes = await apiFetch(baseUrl, '/api/v1/me/notifications');
+    expect(notificationsRes.status).toBe(200);
+    const notificationsPayload = (await notificationsRes.json()) as { items: Array<{ id: string; title: string }> };
+    expect(notificationsPayload.items.some((item) => item.id === 'release_escalation_sample-release')).toBe(true);
   });
 
   it('creates and lists release policy overrides', async () => {

@@ -202,6 +202,7 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__override-item-0')).toBeVisible();
     await authedPage.getByTestId('release-ops__override-approve-0').click();
     await expect(authedPage.getByTestId('release-ops__override-item-0')).toContainText('approved');
+    await expect(authedPage.getByTestId('release-ops__escalation-0')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__run-item-0')).toBeVisible();
     await authedPage.getByTestId('release-ops__run-item-0').click();
     await expect(authedPage.getByTestId('release-ops__run-detail')).toBeVisible();

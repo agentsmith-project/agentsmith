@@ -8,7 +8,7 @@
  * - Keyboard navigation
  */
 
-import { test, expect, goToProject, goTo, LOCALE, WS_ID } from './fixtures/test-base';
+import { test, expect, goToProject, goTo, WS_ID } from './fixtures/test-base';
 
 test.describe('Notification Center', () => {
   test.beforeEach(async ({ authedPage }) => {
@@ -42,6 +42,13 @@ test.describe('Notification Center', () => {
     // Should show the Notifications heading, items, or "No notifications" or "Loading"
     const heading = authedPage.getByText(/Notifications/i).first();
     await expect(heading).toBeVisible({ timeout: 5000 });
+  });
+
+  test('notification dropdown includes release escalation notifications', async ({ authedPage }) => {
+    const notificationBtn = authedPage.getByTestId('topbar__notifications');
+    await expect(notificationBtn).toBeVisible({ timeout: 10000 });
+    await notificationBtn.click();
+    await expect(authedPage.getByText(/Release gate/i).first()).toBeVisible({ timeout: 5000 });
   });
 });
 

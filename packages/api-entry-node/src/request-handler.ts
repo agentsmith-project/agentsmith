@@ -20,6 +20,8 @@ import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './htt
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
 import { handleMeRoute } from './me-route-handler.js';
+import { appendUserNotification } from './me-notifications-store.js';
+import { getReleaseEscalationDetail, listReleaseEscalations } from './release-escalation-store.js';
 import { getReleaseReportDetail, listReleaseReports } from './release-report-store.js';
 import { getReleaseGateRunDetail, listReleaseGateRuns } from './release-run-store.js';
 import { createReleasePolicyOverride, listReleasePolicyOverrides, updateReleasePolicyOverrideDecision } from './release-policy-override-store.js';
@@ -328,6 +330,34 @@ export async function handleRequest(
     return;
   }
 
+  if (requestUrl.pathname === '/api/v1/internal/release-escalations' && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    json(res, 200, {
+      items: listReleaseEscalations(deps.releaseEscalationsDir ?? 'artifacts/release-escalations'),
+    });
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith('/api/v1/internal/release-escalations/') && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-escalations/', ''));
+    const detail = getReleaseEscalationDetail(deps.releaseEscalationsDir ?? 'artifacts/release-escalations', escalationId);
+    if (!detail) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_escalation_not_found' });
+      return;
+    }
+    json(res, 200, detail);
+    return;
+  }
+
   if (requestUrl.pathname === '/api/v1/internal/release-policy-overrides' && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
@@ -381,6 +411,12 @@ export async function handleRequest(
       createdByUserId: user.id,
       createdByName: user.name,
     });
+    appendUserNotification(user.id, {
+      type: 'release_override_requested',
+      title: 'Release override requested',
+      body: `${record.issue_source}: ${record.issue_message}`,
+      link_url: null,
+    });
     json(res, 201, record);
     return;
   }
@@ -408,6 +444,12 @@ export async function handleRequest(
       json(res, 404, { error_code: 'NOT_FOUND', message: 'release_policy_override_not_found' });
       return;
     }
+    appendUserNotification(user.id, {
+      type: 'release_override_decided',
+      title: `Release override ${updated.status}`,
+      body: `${updated.issue_source}: ${updated.issue_message}`,
+      link_url: null,
+    });
     json(res, 200, updated);
     return;
   }
@@ -435,7 +477,7 @@ export async function handleRequest(
       });
       return;
     }
-    if (await handleMeRoute({ req, res, method, requestUrl, user })) {
+    if (await handleMeRoute({ req, res, method, requestUrl, user, releaseEscalationsDir: deps.releaseEscalationsDir })) {
       return;
     }
     const route = matchProjectsRoute(req.url ?? '');

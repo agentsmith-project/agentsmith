@@ -15,6 +15,15 @@ export const userProfileFixture: UserProfile = {
 
 export const userNotificationFixtures: UserNotification[] = [
   {
+    id: 'release_escalation_runtime-evidence-gate-regression-20260227',
+    type: 'release_escalation',
+    title: 'Release gate blocked',
+    body: 'Latest release gate is blocked by 4 issues.',
+    link_url: null,
+    read_at: null,
+    created_at: new Date(Date.now() - 1800000).toISOString(),
+  },
+  {
     id: 'notif_001',
     type: 'system',
     title: 'Welcome to MBOS',

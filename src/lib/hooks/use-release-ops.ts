@@ -42,6 +42,26 @@ export function useReleaseGateRunDetail(id?: string, options?: { enabled?: boole
   });
 }
 
+export function useReleaseEscalationList(options?: { enabled?: boolean }) {
+  const api = new ReleaseOpsAPI(getApiClient());
+  return useQuery({
+    queryKey: queryKeys.releaseOps.escalations(),
+    queryFn: () => api.listEscalations(),
+    enabled: options?.enabled ?? true,
+    staleTime: 10000,
+  });
+}
+
+export function useReleaseEscalationDetail(id?: string, options?: { enabled?: boolean }) {
+  const api = new ReleaseOpsAPI(getApiClient());
+  return useQuery({
+    queryKey: queryKeys.releaseOps.escalationDetail(id ?? ''),
+    queryFn: () => api.getEscalation(id ?? ''),
+    enabled: (options?.enabled ?? true) && !!id,
+    staleTime: 10000,
+  });
+}
+
 export function useReleasePolicyOverrides(
   workspaceId: string,
   projectId: string,

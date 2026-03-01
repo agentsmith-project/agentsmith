@@ -105,6 +105,32 @@ describe('ReleaseOpsAPI', () => {
     expect(result.status).toBe('pass');
   });
 
+  it('lists release escalations', async () => {
+    const getMock = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: 'sample-release',
+          report_name: 'sample-release',
+          run_id: 'sample-release',
+          created_at: '2026-02-28T20:35:10.000Z',
+          event_type: 'gate_warning',
+          severity: 'warning',
+          status: 'open',
+          title: 'Release gate completed with warning state',
+        },
+      ],
+    });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    const result = await api.listEscalations();
+
+    expect(getMock).toHaveBeenCalledWith('/internal/release-escalations');
+    expect(result.items[0]?.event_type).toBe('gate_warning');
+  });
+
   it('lists release policy overrides', async () => {
     const getMock = vi.fn().mockResolvedValue({ items: [] });
     const api = new ReleaseOpsAPI({

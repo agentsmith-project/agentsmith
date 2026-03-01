@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 const SCRIPT_PATH = join(__dirname, '../verify-release-report.ts');
 const OUTPUT_DIR = join(tmpdir(), 'release-reports-test');
 const RUNS_OUTPUT_DIR = join(tmpdir(), 'release-runs-test');
+const ESCALATIONS_OUTPUT_DIR = join(tmpdir(), 'release-escalations-test');
 
 beforeAll(() => {
   // Create output directory
@@ -27,6 +28,9 @@ beforeAll(() => {
   }
   if (!existsSync(RUNS_OUTPUT_DIR)) {
     mkdirSync(RUNS_OUTPUT_DIR, { recursive: true });
+  }
+  if (!existsSync(ESCALATIONS_OUTPUT_DIR)) {
+    mkdirSync(ESCALATIONS_OUTPUT_DIR, { recursive: true });
   }
 });
 
@@ -37,6 +41,9 @@ afterAll(() => {
   }
   if (existsSync(RUNS_OUTPUT_DIR)) {
     rmSync(RUNS_OUTPUT_DIR, { recursive: true, force: true });
+  }
+  if (existsSync(ESCALATIONS_OUTPUT_DIR)) {
+    rmSync(ESCALATIONS_OUTPUT_DIR, { recursive: true, force: true });
   }
 });
 
@@ -115,6 +122,7 @@ describe('verify-release-report: TDD Suite', () => {
       const result = runScript([
         '--output', OUTPUT_DIR,
         '--runs-output', RUNS_OUTPUT_DIR,
+        '--escalations-output', ESCALATIONS_OUTPUT_DIR,
         '--name', 'report-test',
         '--dry-run',
         '--trigger', 'manual',
@@ -131,6 +139,13 @@ describe('verify-release-report: TDD Suite', () => {
       expect(run.report_name).toBe('report-test');
       expect(run.trigger).toBe('manual');
       expect(run.total_checks).toBeGreaterThan(0);
+
+      const escalation = JSON.parse(readFileSync(join(ESCALATIONS_OUTPUT_DIR, 'report-test.json'), 'utf-8')) as {
+        id?: string;
+        event_type?: string;
+      };
+      expect(escalation.id).toBe('report-test');
+      expect(['gate_ready', 'gate_warning', 'gate_blocked']).toContain(escalation.event_type);
     });
   });
 

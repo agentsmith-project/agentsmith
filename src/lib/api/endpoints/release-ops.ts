@@ -46,6 +46,25 @@ export interface ReleaseGateRunDetail extends ReleaseGateRunListItem {
   failure_categories: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'quota' | 'rate_limit' | 'permission' | 'unknown'>;
 }
 
+export interface ReleaseEscalationEvent {
+  id: string;
+  report_name: string;
+  run_id: string;
+  created_at: string;
+  event_type: 'gate_blocked' | 'gate_warning' | 'gate_ready' | 'override_requested' | 'override_decided';
+  severity: 'critical' | 'warning' | 'info';
+  status: 'open' | 'resolved';
+  title: string;
+  body?: string;
+  artifact_name?: string;
+  trigger?: 'manual' | 'scheduled' | 'ci' | 'unknown';
+  release_policy_decision?: 'ready' | 'warning' | 'blocked';
+  runtime_release_readiness?: 'ready' | 'blocked';
+  usage_release_readiness?: 'ready' | 'blocked';
+  failed_step_name?: string;
+  failure_categories?: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'quota' | 'rate_limit' | 'permission' | 'unknown'>;
+}
+
 export interface ReleasePolicyOverrideRecord {
   id: string;
   workspace_id: string;
@@ -81,6 +100,14 @@ export class ReleaseOpsAPI {
 
   async getRun(id: string): Promise<ReleaseGateRunDetail> {
     return this.client.get(`/internal/release-runs/${encodeURIComponent(id)}`);
+  }
+
+  async listEscalations(): Promise<{ items: ReleaseEscalationEvent[] }> {
+    return this.client.get('/internal/release-escalations');
+  }
+
+  async getEscalation(id: string): Promise<ReleaseEscalationEvent> {
+    return this.client.get(`/internal/release-escalations/${encodeURIComponent(id)}`);
   }
 
   async listOverrides(params: { workspaceId: string; projectId: string; reportName: string }): Promise<{ items: ReleasePolicyOverrideRecord[] }> {

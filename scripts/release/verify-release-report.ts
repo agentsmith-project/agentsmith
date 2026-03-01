@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import type {
+  ReleaseEscalationEvent,
   ReleaseReport,
   ReleaseGateRunHistory,
   ReportMetadata,
@@ -47,6 +48,7 @@ import { evaluateReleasePolicy } from '../../src/lib/release-policy';
 // Default configuration
 const DEFAULT_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-reports');
 const DEFAULT_RUNS_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-runs');
+const DEFAULT_ESCALATIONS_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-escalations');
 const DEFAULT_RUNTIME_EVIDENCE_FILE = 'runtime-release-evidence.json';
 const DEFAULT_USAGE_REPORT_EVIDENCE_FILE = 'usage-report-evidence.json';
 
@@ -122,10 +124,14 @@ async function main() {
 
   const outputDir = args.output ?? DEFAULT_OUTPUT_DIR;
   const runsOutputDir = args.runsOutput ?? DEFAULT_RUNS_OUTPUT_DIR;
+  const escalationsOutputDir = args.escalationsOutput ?? DEFAULT_ESCALATIONS_OUTPUT_DIR;
   const reportName = args.name ?? `report-${getTimestamp()}`;
 
   if (!existsSync(runsOutputDir)) {
     mkdirSync(runsOutputDir, { recursive: true });
+  }
+  if (!existsSync(escalationsOutputDir)) {
+    mkdirSync(escalationsOutputDir, { recursive: true });
   }
 
   console.log(`[verify-release-report] Generating release report...`);
@@ -148,6 +154,11 @@ async function main() {
   const runPath = join(runsOutputDir, `${reportName}.json`);
   writeFileSync(runPath, JSON.stringify(runHistory, null, 2), 'utf-8');
   console.log(`[verify-release-report] Run: ${runPath}`);
+
+  const escalation = buildReleaseEscalationEvent(reportName, report, runHistory);
+  const escalationPath = join(escalationsOutputDir, `${reportName}.json`);
+  writeFileSync(escalationPath, JSON.stringify(escalation, null, 2), 'utf-8');
+  console.log(`[verify-release-report] Escalation: ${escalationPath}`);
 
   // Archive if requested
   let archivePath: string | undefined;
@@ -210,6 +221,9 @@ function parseArgs(argv: string[]): VerifyReleaseOptions {
           options.trigger = argv[++i] as VerifyReleaseOptions['trigger'];
         }
         break;
+      case '--escalations-output':
+        options.escalationsOutput = argv[++i];
+        break;
       case '--verbose':
         options.verbose = true;
         break;
@@ -246,6 +260,7 @@ OPTIONS:
   --runtime-evidence <path>  Read runtime release evidence artifact from custom path
   --usage-report-evidence <path>  Read usage report evidence artifact from custom path
   --runs-output <dir>  Output directory for release gate run history artifacts
+  --escalations-output <dir>  Output directory for release escalation artifacts
   --trigger <source>   Trigger source: manual|scheduled|ci|unknown
   --verbose            Show detailed output
   --help, -h           Show this help
@@ -319,6 +334,51 @@ function buildReleaseGateRunHistory(
     failed_step_category: firstFailedCheck?.category,
     failed_step_names: failedChecks.map((check) => check.name),
     failure_categories: failureCategories,
+  };
+}
+
+function buildReleaseEscalationEvent(
+  reportName: string,
+  report: ReleaseReport,
+  run: ReleaseGateRunHistory,
+): ReleaseEscalationEvent {
+  const decision = report.summary.release_policy?.decision ?? 'blocked';
+  const status = decision === 'ready' ? 'resolved' : 'open';
+  const eventType = decision === 'blocked'
+    ? 'gate_blocked'
+    : decision === 'warning'
+      ? 'gate_warning'
+      : 'gate_ready';
+  const severity = decision === 'blocked'
+    ? 'critical'
+    : decision === 'warning'
+      ? 'warning'
+      : 'info';
+  return {
+    id: reportName,
+    report_name: reportName,
+    run_id: run.id,
+    created_at: run.completed_at,
+    event_type: eventType,
+    severity,
+    status,
+    title: decision === 'ready'
+      ? 'Release gate recovered to ready state'
+      : decision === 'warning'
+        ? 'Release gate completed with warning state'
+        : 'Release gate blocked',
+    body: decision === 'ready'
+      ? 'Latest release gate completed successfully and no blocking policy issues remain.'
+      : decision === 'warning'
+        ? `Latest release gate completed with ${report.summary.release_policy?.summary.warning_count ?? 0} warning issues.`
+        : `Latest release gate is blocked by ${report.summary.release_policy?.summary.blocker_count ?? 0} issues.`,
+    artifact_name: reportName,
+    trigger: run.trigger,
+    release_policy_decision: decision,
+    runtime_release_readiness: report.summary.runtime_release_evidence?.guardrails.release_readiness,
+    usage_release_readiness: report.summary.usage_report_evidence?.release_readiness,
+    failed_step_name: run.failed_step_name,
+    failure_categories: run.failure_categories,
   };
 }
 

@@ -5,8 +5,10 @@ import {
   getUserNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  syncUserNotification,
   unreadNotificationsCount,
 } from './me-notifications-store.js';
+import { listReleaseEscalations } from './release-escalation-store.js';
 
 interface UserProfileRecord {
   display_name?: string | null;
@@ -46,8 +48,9 @@ export async function handleMeRoute(args: {
   method: string;
   requestUrl: URL;
   user: AuthenticatedUser;
+  releaseEscalationsDir?: string;
 }): Promise<boolean> {
-  const { req, res, method, requestUrl, user } = args;
+  const { req, res, method, requestUrl, user, releaseEscalationsDir } = args;
   const pathname = requestUrl.pathname;
   if (!pathname.startsWith('/api/v1/me/')) {
     return false;
@@ -77,6 +80,19 @@ export async function handleMeRoute(args: {
     if (method !== 'GET') {
       json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
       return true;
+    }
+    if (releaseEscalationsDir) {
+      for (const event of listReleaseEscalations(releaseEscalationsDir).slice(0, 20)) {
+        syncUserNotification(user.id, {
+          id: `release_escalation_${event.id}`,
+          type: 'release_escalation',
+          title: event.title,
+          body: event.body,
+          link_url: null,
+          created_at: event.created_at,
+          read_at: null,
+        });
+      }
     }
     const all = [...getUserNotifications(user.id)].sort((a, b) => b.created_at.localeCompare(a.created_at));
     const unreadOnly = requestUrl.searchParams.get('unread_only') === 'true';

@@ -37,6 +37,27 @@ export function appendUserNotification(userId: string, payload: Omit<UserNotific
   return notification;
 }
 
+export function syncUserNotification(
+  userId: string,
+  payload: UserNotificationRecord,
+): UserNotificationRecord {
+  const notifications = getUserNotifications(userId);
+  const existing = notifications.find((item) => item.id === payload.id);
+  if (existing) {
+    existing.type = payload.type;
+    existing.title = payload.title;
+    existing.body = payload.body;
+    existing.link_url = payload.link_url;
+    existing.created_at = payload.created_at;
+    if (payload.read_at !== undefined) {
+      existing.read_at = payload.read_at;
+    }
+    return existing;
+  }
+  notifications.unshift({ ...payload });
+  return payload;
+}
+
 export function markNotificationRead(userId: string, notificationId: string): UserNotificationRecord | null {
   const notifications = getUserNotifications(userId);
   const found = notifications.find((n) => n.id === notificationId);

@@ -98,6 +98,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   return {
     releaseReportsDir: join(process.cwd(), 'artifacts/release-reports'),
     releaseRunsDir: join(process.cwd(), 'artifacts/release-runs'),
+    releaseEscalationsDir: join(process.cwd(), 'artifacts/release-escalations'),
     cache,
     docStore,
     chatResourceService,
@@ -254,6 +255,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
     deps: {
       releaseReportsDir: join(process.cwd(), 'artifacts/release-reports'),
       releaseRunsDir: join(process.cwd(), 'artifacts/release-runs'),
+      releaseEscalationsDir: join(process.cwd(), 'artifacts/release-escalations'),
       cache,
       docStore,
       chatResourceService,

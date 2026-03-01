@@ -43,6 +43,7 @@ import type { UsageReportRunnerController } from './usage-report-runner.js';
 export interface NodeApiDeps {
   releaseReportsDir?: string;
   releaseRunsDir?: string;
+  releaseEscalationsDir?: string;
   cache: CachePort;
   docStore: JsonDocStorePort;
   chatResourceService: ChatResourceService;

@@ -15,6 +15,7 @@ import { useRuntimeObservability, useUsageOperationsSummary, useUsageReportEvide
 import {
   useCreateReleasePolicyOverride,
   useDecideReleasePolicyOverride,
+  useReleaseEscalationList,
   useReleaseGateRunDetail,
   useReleaseGateRunList,
   useReleasePolicyOverrides,
@@ -158,6 +159,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const evidenceQuery = useUsageReportEvidence(workspaceId, projectId, { enabled });
   const schedulesQuery = useUsageReportSchedules(workspaceId, projectId, { enabled });
   const reportsQuery = useReleaseReportList({ enabled });
+  const escalationsQuery = useReleaseEscalationList({ enabled });
   const runsQuery = useReleaseGateRunList({ enabled });
   const runDetailQuery = useReleaseGateRunDetail(selectedRunId, { enabled });
   const reportDetailQuery = useReleaseReportDetail(selectedReportName, { enabled });
@@ -171,6 +173,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     evidenceQuery.refetch();
     schedulesQuery.refetch();
     reportsQuery.refetch();
+    escalationsQuery.refetch();
     runsQuery.refetch();
     runDetailQuery.refetch();
     reportDetailQuery.refetch();
@@ -208,6 +211,10 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       return matchesStatus && matchesTrigger;
     }),
     [releaseRuns, runStatusFilter, runTriggerFilter],
+  );
+  const releaseEscalations = useMemo(
+    () => (escalationsQuery.data?.items ?? []).slice(0, 6),
+    [escalationsQuery.data?.items],
   );
   const recentReleaseReports = filteredReleaseReports.slice(0, 6);
   const recentPassRate = recentReleaseReports.length > 0
@@ -684,6 +691,46 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         {formatDateTime(schedule.next_run_at)}
                       </div>
                     </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__escalations">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">{settingsT('release_ops_escalations_title')}</h3>
+                    <p className="text-xs text-tertiary">{settingsT('release_ops_escalations_subtitle')}</p>
+                  </div>
+                  <Badge variant="outline">{releaseEscalations.length}</Badge>
+                </div>
+                <div className="space-y-2">
+                  {releaseEscalations.length === 0 ? (
+                    <div className="text-sm text-tertiary">{settingsT('release_ops_escalations_empty')}</div>
+                  ) : releaseEscalations.map((item, index) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="w-full rounded-md border border-subtle bg-bg-base/40 px-3 py-2 text-left hover:bg-bg-base/60"
+                      onClick={() => {
+                        if (item.artifact_name) setSelectedReportName(item.artifact_name);
+                        if (item.run_id) setSelectedRunId(item.run_id);
+                      }}
+                      data-testid={`release-ops__escalation-${index}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
+                          <div className="text-xs text-tertiary">{item.event_type} · {formatDateTime(item.created_at)}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={item.severity === 'critical' ? 'secondary' : 'outline'}>{item.severity}</Badge>
+                          <Badge variant={item.status === 'resolved' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                        </div>
+                      </div>
+                      {item.body ? (
+                        <div className="mt-2 text-sm text-tertiary">{item.body}</div>
+                      ) : null}
+                    </button>
                   ))}
                 </div>
               </div>

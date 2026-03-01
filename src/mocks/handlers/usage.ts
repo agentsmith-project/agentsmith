@@ -3,7 +3,7 @@ import p0 from '../fixtures/p0.json';
 import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
 import { buildRuntimeUsageRecords, listRuntimeUsageFacts } from '../state/runtime-usage';
 import type { UsageReportDelivery, UsageReportEvidence, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
-import type { ReleaseGateRunDetail, ReleaseGateRunListItem, ReleaseReportDetail, ReleaseReportListItem } from '@/lib/api/endpoints/release-ops';
+import type { ReleaseEscalationEvent, ReleaseGateRunDetail, ReleaseGateRunListItem, ReleaseReportDetail, ReleaseReportListItem } from '@/lib/api/endpoints/release-ops';
 import { appendMockNotification } from '../state/me-notifications';
 
 type ResourceType = 'endpoint' | 'source_library' | 'agent';
@@ -220,6 +220,61 @@ const releaseRunDetails = new Map<string, ReleaseGateRunDetail>([
     failure_categories: ['authorization', 'unknown'],
   }],
 ]);
+
+const releaseEscalations: ReleaseEscalationEvent[] = [
+  {
+    id: 'usage-webhook-signature-policy-check',
+    report_name: 'usage-webhook-signature-policy-check',
+    run_id: 'usage-webhook-signature-policy-check',
+    created_at: '2026-02-28T22:10:00.000Z',
+    event_type: 'gate_warning',
+    severity: 'warning',
+    status: 'open',
+    title: 'Release gate completed with warning state',
+    body: 'Latest release gate completed with 1 warning issues.',
+    artifact_name: 'usage-webhook-signature-policy-check',
+    trigger: 'scheduled',
+    release_policy_decision: 'warning',
+    runtime_release_readiness: 'ready',
+    usage_release_readiness: 'ready',
+    failure_categories: [],
+  },
+  {
+    id: 'runtime-evidence-gate-regression-20260227',
+    report_name: 'runtime-evidence-gate-regression-20260227',
+    run_id: 'runtime-evidence-gate-regression-20260227',
+    created_at: '2026-02-27T19:25:00.000Z',
+    event_type: 'gate_blocked',
+    severity: 'critical',
+    status: 'open',
+    title: 'Release gate blocked',
+    body: 'Latest release gate is blocked by 4 issues.',
+    artifact_name: 'runtime-evidence-gate-regression-20260227',
+    trigger: 'ci',
+    release_policy_decision: 'blocked',
+    runtime_release_readiness: 'blocked',
+    usage_release_readiness: 'blocked',
+    failed_step_name: 'Governance release smoke',
+    failure_categories: ['authorization', 'unknown'],
+  },
+  {
+    id: 'wp11-release-controls-final-20260228',
+    report_name: 'wp11-release-controls-final-20260228',
+    run_id: 'wp11-release-controls-final-20260228',
+    created_at: '2026-02-28T20:35:10.000Z',
+    event_type: 'gate_ready',
+    severity: 'info',
+    status: 'resolved',
+    title: 'Release gate recovered to ready state',
+    body: 'Latest release gate completed successfully and no blocking policy issues remain.',
+    artifact_name: 'wp11-release-controls-final-20260228',
+    trigger: 'manual',
+    release_policy_decision: 'ready',
+    runtime_release_readiness: 'ready',
+    usage_release_readiness: 'ready',
+    failure_categories: [],
+  },
+];
 
 const releaseReportDetails = new Map<string, ReleaseReportDetail>([
   ['wp11-release-controls-final-20260228', {
@@ -1011,6 +1066,16 @@ export const usageHandlers = [
     const detail = releaseRunDetails.get(String(params.id));
     if (!detail) {
       return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_run_not_found' }, { status: 404 });
+    }
+    return HttpResponse.json(detail);
+  }),
+  http.get('/api/v1/internal/release-escalations', () => {
+    return HttpResponse.json({ items: releaseEscalations });
+  }),
+  http.get('/api/v1/internal/release-escalations/:id', ({ params }) => {
+    const detail = releaseEscalations.find((item) => item.id === String(params.id));
+    if (!detail) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_escalation_not_found' }, { status: 404 });
     }
     return HttpResponse.json(detail);
   }),

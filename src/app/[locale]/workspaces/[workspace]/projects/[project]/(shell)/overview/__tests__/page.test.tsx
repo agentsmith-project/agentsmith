@@ -1,46 +1,26 @@
 import { render, screen, within } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
-
 import OverviewPage from '../page';
 
-const mockUseQuery = vi.fn();
 const mockUseParams = vi.fn(() => ({
   workspace: 'ws_default',
   project: 'proj_001',
-  locale: 'en',
+  locale: 'en-US',
 }));
-const STABLE_AUDIT_DATA = { items: [] };
-const STABLE_USAGE_BASE_DATA = { requests_today: 12, errors_today: 1 };
-const STABLE_USAGE_WITH_STORAGE_DATA = {
-  requests_today: 12,
-  errors_today: 1,
-  tokens_today: 800,
-};
+
+const mockUseUsageKPI = vi.fn();
+const mockUseAuditEvents = vi.fn();
+const mockUseRuntimeObservability = vi.fn();
+const mockUseUsageOperationsSummary = vi.fn();
+const mockUseUsageReportEvidence = vi.fn();
+const mockUseReleaseReportList = vi.fn();
+const mockUseReleaseGateRunList = vi.fn();
+const mockUseReleaseEscalationList = vi.fn();
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
-    prefetch: vi.fn(),
-    back: vi.fn(),
-    pathname: '/',
-    query: {},
-  }),
-  useSearchParams: () => ({
-    get: vi.fn(),
-  }),
   useParams: () => mockUseParams(),
-  usePathname: () => '/',
 }));
-
-vi.mock('@tanstack/react-query', async () => {
-  const actual = await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
-  return {
-    ...actual,
-    useQuery: (options: { queryKey: unknown[] }) => mockUseQuery(options),
-  };
-});
 
 vi.mock('@/lib/hooks/use-sync-auth-from-url', () => ({
   useSyncAuthFromUrl: () => undefined,
@@ -53,84 +33,111 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
     'project:notebook:access',
     'project:agent:use',
     'project:endpoint:use',
-    'project:member:view',
     'project:usage:view',
-    'project:settings:manage',
   ]),
 }));
 
-vi.mock('@/lib/api', () => ({
-  getApiClient: () => ({}),
-  UsageAPI: class {
-    constructor() {}
-  },
-  AuditAPI: class {
-    constructor() {}
-  },
+vi.mock('@/lib/hooks/use-audit-usage', () => ({
+  useUsageKPI: (...args: unknown[]) => mockUseUsageKPI(...args),
+  useAuditEvents: (...args: unknown[]) => mockUseAuditEvents(...args),
+  useRuntimeObservability: (...args: unknown[]) => mockUseRuntimeObservability(...args),
+  useUsageOperationsSummary: (...args: unknown[]) => mockUseUsageOperationsSummary(...args),
+  useUsageReportEvidence: (...args: unknown[]) => mockUseUsageReportEvidence(...args),
+}));
+
+vi.mock('@/lib/hooks/use-release-ops', () => ({
+  useReleaseReportList: (...args: unknown[]) => mockUseReleaseReportList(...args),
+  useReleaseGateRunList: (...args: unknown[]) => mockUseReleaseGateRunList(...args),
+  useReleaseEscalationList: (...args: unknown[]) => mockUseReleaseEscalationList(...args),
 }));
 
 describe('OverviewPage', () => {
   const mockUseHasPermission = vi.mocked(useHasPermission);
 
-  function setupQueryMocks() {
-    mockUseQuery.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
-      if (queryKey[0] === 'usage') {
-        return { data: STABLE_USAGE_BASE_DATA };
-      }
-      if (queryKey[0] === 'audit') {
-        return { data: STABLE_AUDIT_DATA };
-      }
-      return { data: undefined };
-    });
-  }
-
-  it('renders tokens card even when optional KPI fields are missing', () => {
+  beforeEach(() => {
     mockUseHasPermission.mockReturnValue(true);
-    mockUseQuery.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
-      if (queryKey[0] === 'usage') {
-        return { data: STABLE_USAGE_BASE_DATA };
-      }
-      if (queryKey[0] === 'audit') {
-        return { data: STABLE_AUDIT_DATA };
-      }
-      return { data: undefined };
+    mockUseParams.mockReturnValue({
+      workspace: 'ws_default',
+      project: 'proj_001',
+      locale: 'en-US',
     });
-
-    render(<OverviewPage />);
-
-    expect(screen.getByText('kpi.tokens_today')).toBeInTheDocument();
-    expect(screen.getByText('--')).toBeInTheDocument();
+    mockUseUsageKPI.mockReturnValue({
+      data: { requests_today: 24, errors_today: 2, tokens_today: 1024 },
+    });
+    mockUseAuditEvents.mockReturnValue({
+      data: { items: [] },
+    });
+    mockUseRuntimeObservability.mockReturnValue({
+      data: {
+        total_requests: 120,
+        error_rate: 0.02,
+        avg_estimated_cost: 0.00021,
+        p95_estimated_cost: 0.0008,
+        degradation_signals: [],
+        health_summary: {
+          recovered_requests: 3,
+          terminal_error_requests: 0,
+          missing_price_facts: 0,
+          provider_count: 2,
+          model_count: 3,
+        },
+      },
+    });
+    mockUseUsageOperationsSummary.mockReturnValue({
+      data: {
+        anomaly_peaks: [],
+        top_models: [
+          { provider: 'secondaryok', model: 'model-b', estimated_cost: 0.0009 },
+        ],
+      },
+    });
+    mockUseUsageReportEvidence.mockReturnValue({
+      data: {
+        release_readiness: 'ready',
+      },
+    });
+    mockUseReleaseReportList.mockReturnValue({
+      data: {
+        items: [{
+          name: 'report-1',
+          generated_at: '2026-03-01T00:00:00.000Z',
+          policy_enforcement: {
+            decision: 'ready',
+            blocker_count: 0,
+            warning_count: 0,
+            approved_override_count: 0,
+          },
+        }],
+      },
+    });
+    mockUseReleaseGateRunList.mockReturnValue({
+      data: {
+        items: [{
+          id: 'run-1',
+          started_at: '2026-03-01T00:00:00.000Z',
+          status: 'pass',
+        }],
+      },
+    });
+    mockUseReleaseEscalationList.mockReturnValue({
+      data: {
+        items: [],
+      },
+    });
   });
 
-  it('formats tokens when present', () => {
-    mockUseHasPermission.mockReturnValue(true);
-    mockUseQuery.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
-      if (queryKey[0] === 'usage') {
-        return { data: STABLE_USAGE_WITH_STORAGE_DATA };
-      }
-      if (queryKey[0] === 'audit') {
-        return { data: STABLE_AUDIT_DATA };
-      }
-      return { data: undefined };
-    });
-
+  it('renders ai ops home sections', () => {
     render(<OverviewPage />);
 
-    expect(screen.getByText('800')).toBeInTheDocument();
+    expect(screen.getByTestId('overview__ai-ops-home')).toBeInTheDocument();
+    expect(screen.getByTestId('overview__status-strip')).toBeInTheDocument();
+    expect(screen.getByTestId('overview__attention')).toBeInTheDocument();
+    expect(screen.getByTestId('overview__snapshot-runtime')).toBeInTheDocument();
+    expect(screen.getByTestId('overview__snapshot-release')).toBeInTheDocument();
+    expect(screen.getByTestId('overview__quick-actions')).toBeInTheDocument();
   });
 
   it('renders header and toolbar layout', () => {
-    mockUseHasPermission.mockReturnValue(true);
-    mockUseQuery.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
-      if (queryKey[0] === 'usage') {
-        return { data: STABLE_USAGE_BASE_DATA };
-      }
-      if (queryKey[0] === 'audit') {
-        return { data: STABLE_AUDIT_DATA };
-      }
-      return { data: undefined };
-    });
-
     render(<OverviewPage />);
 
     const header = screen.getByTestId('page-layout__header');
@@ -139,30 +146,37 @@ describe('OverviewPage', () => {
     expect(within(toolbar).getByTestId('overview__time-range')).toBeInTheDocument();
   });
 
-  it('renders page state container', () => {
-    mockUseHasPermission.mockReturnValue(true);
-    mockUseQuery.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
-      if (queryKey[0] === 'usage') {
-        return { data: STABLE_USAGE_BASE_DATA };
-      }
-      if (queryKey[0] === 'audit') {
-        return { data: STABLE_AUDIT_DATA };
-      }
-      return { data: undefined };
+  it('shows urgent attention items when release is blocked', () => {
+    mockUseReleaseReportList.mockReturnValue({
+      data: {
+        items: [{
+          name: 'report-2',
+          generated_at: '2026-03-01T00:00:00.000Z',
+          policy_enforcement: {
+            decision: 'blocked',
+            blocker_count: 2,
+            warning_count: 0,
+            approved_override_count: 0,
+          },
+        }],
+      },
     });
 
     render(<OverviewPage />);
 
+    expect(screen.getByTestId('overview__attention-item-0')).toBeInTheDocument();
+  });
+
+  it('renders page state container', () => {
+    render(<OverviewPage />);
     expect(screen.getByTestId('page-state__success')).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', () => {
-    mockUseHasPermission.mockReturnValue(true);
-    setupQueryMocks();
     mockUseParams.mockReturnValue({
       workspace: '<script>',
       project: 'proj_001',
-      locale: 'en',
+      locale: 'en-US',
     });
 
     render(<OverviewPage />);
@@ -173,12 +187,6 @@ describe('OverviewPage', () => {
 
   it('shows permission denied when user lacks project read permission', () => {
     mockUseHasPermission.mockReturnValue(false);
-    setupQueryMocks();
-    mockUseParams.mockReturnValue({
-      workspace: 'ws_default',
-      project: 'proj_001',
-      locale: 'en',
-    });
 
     render(<OverviewPage />);
 

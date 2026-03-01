@@ -1,45 +1,46 @@
-/**
- * Overview Page (Simplified)
- *
- * Project overview dashboard with KPI cards and navigation.
- */
-
 'use client';
 
 import * as React from 'react';
-import { KPICard, ProjectNavigation, ActivityTimeline } from '@/components/dashboard';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { Activity, AlertCircle, Clock } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { AlertCircle, ArrowRight, Bot, Clock3, Gauge, MessageSquare, Server, Sparkles, Wrench } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { UsageAPI, AuditAPI } from '@/lib/api';
-import { getApiClient } from '@/lib/api';
-import { validateUsageKPI } from '@/lib/api/validators';
-import { formatNumber } from '@/lib/utils/formatters';
-import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
-import { useHasPermission, useCurrentPermissions } from '@/lib/hooks/use-permissions';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ActivityTimeline, ProjectNavigation } from '@/components/dashboard';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
-import { PageHeader } from '@/components/layout/PageHeader';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { useRuntimeObservability, useUsageOperationsSummary, useUsageReportEvidence, useAuditEvents } from '@/lib/hooks/use-audit-usage';
+import { useCurrentPermissions, useHasPermission } from '@/lib/hooks/use-permissions';
+import { useReleaseEscalationList, useReleaseGateRunList, useReleaseReportList } from '@/lib/hooks/use-release-ops';
+import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
+import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
+import { formatNumber } from '@/lib/utils/formatters';
+import { cn } from '@/lib/utils';
+import type { NavItem } from '@/components/dashboard/ProjectNavigation';
+import type { ReleaseGateRunListItem, ReleaseReportListItem } from '@/lib/api/endpoints/release-ops';
 
-type TimeRangePreset = '7d' | '30d';
+type TimeRangePreset = '24h' | '7d';
+type HomeStatusTone = 'ready' | 'warning' | 'blocked';
+type AttentionItem = {
+  id: string;
+  tone: HomeStatusTone;
+  title: string;
+  body: string;
+  href: string;
+  actionLabel: string;
+};
 
 function getTimeRange(preset: TimeRangePreset): { start_time: string; end_time: string } {
   const end = new Date();
   const start = new Date();
-  if (preset === '7d') {
-    start.setDate(start.getDate() - 7);
+  if (preset === '24h') {
+    start.setHours(start.getHours() - 24);
   } else {
-    start.setDate(start.getDate() - 30);
+    start.setDate(start.getDate() - 7);
   }
   return {
     start_time: start.toISOString(),
@@ -47,18 +48,59 @@ function getTimeRange(preset: TimeRangePreset): { start_time: string; end_time: 
   };
 }
 
-function calculateTrend(current: number, previous?: number) {
-  if (!previous || previous === 0) return undefined;
-  const delta = ((current - previous) / previous) * 100;
-  return {
-    value: `${Math.abs(delta).toFixed(1)}%`,
-    direction: delta >= 0 ? 'up' : 'down',
-  } as const;
+function sortByNewest<T extends { generated_at?: string; started_at?: string; created_at?: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aTime = new Date(a.generated_at ?? a.started_at ?? a.created_at ?? 0).getTime();
+    const bTime = new Date(b.generated_at ?? b.started_at ?? b.created_at ?? 0).getTime();
+    return bTime - aTime;
+  });
+}
+
+function formatPercent(value?: number): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--';
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatUsd(value?: number): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--';
+  return `$${value.toFixed(6)}`;
+}
+
+function toneBadgeVariant(tone: HomeStatusTone): 'outline' | 'secondary' | 'destructive' {
+  if (tone === 'blocked') return 'destructive';
+  if (tone === 'warning') return 'secondary';
+  return 'outline';
+}
+
+function mapEnforcementTone(
+  decision?: 'ready' | 'warning' | 'blocked' | 'pending_override' | 'releasable_with_override',
+): HomeStatusTone {
+  if (!decision) return 'warning';
+  if (decision === 'blocked' || decision === 'pending_override') return 'blocked';
+  if (decision === 'warning' || decision === 'releasable_with_override') return 'warning';
+  return 'ready';
+}
+
+function latestRun(items?: ReleaseGateRunListItem[]): ReleaseGateRunListItem | null {
+  if (!items || items.length === 0) return null;
+  return sortByNewest(items)[0] ?? null;
+}
+
+function latestReport(items?: ReleaseReportListItem[]): ReleaseReportListItem | null {
+  if (!items || items.length === 0) return null;
+  return sortByNewest(items)[0] ?? null;
+}
+
+function statusToneClassName(tone: HomeStatusTone): string {
+  if (tone === 'blocked') return 'border-error/25 bg-error/5';
+  if (tone === 'warning') return 'border-accent/25 bg-accent/5';
+  return 'border-success/25 bg-success/5';
 }
 
 export default function OverviewPage() {
   const t = useTranslations('overview');
   const tErrors = useTranslations('errors');
+  const tNav = useTranslations('nav');
   const params = useParams();
   const workspaceId = validateWorkspaceParam(params.workspace);
   const projectId = validateProjectParam(params.project);
@@ -67,41 +109,35 @@ export default function OverviewPage() {
   const currentPermissions = useCurrentPermissions();
   const isValidParams = !!workspaceId && !!projectId;
 
-  // Must run on every render to keep hooks order stable
   useSyncAuthFromUrl();
 
-  const [timeRangePreset, setTimeRangePreset] = React.useState<TimeRangePreset>('7d');
+  const [timeRangePreset, setTimeRangePreset] = React.useState<TimeRangePreset>('24h');
   const timeRange = React.useMemo(() => getTimeRange(timeRangePreset), [timeRangePreset]);
 
-  const apiClient = getApiClient();
-  const usageAPI = new UsageAPI(apiClient);
-  const auditAPI = new AuditAPI(apiClient);
-
-  // Fetch KPI data with validation
-  const { data: kpiData } = useQuery({
-    queryKey: ['usage', 'kpi', workspaceId, projectId, timeRange.start_time, timeRange.end_time],
-    queryFn: async () => {
-      const data = await usageAPI.getKPI(
-        workspaceId!,
-        projectId!,
-        timeRange.start_time,
-        timeRange.end_time
-      );
-      return validateUsageKPI(data);
-    },
+  const auditEventsQuery = useAuditEvents(workspaceId ?? '', projectId ?? '', {
+    page: 1,
+    page_size: 5,
+    start_time: timeRange.start_time,
+    end_time: timeRange.end_time,
+  }, {
     enabled: isValidParams && canReadOverview,
   });
-
-  // Fetch recent activity
-  const { data: auditEvents } = useQuery({
-    queryKey: ['audit', workspaceId, projectId, timeRange.start_time, timeRange.end_time],
-    queryFn: () =>
-      auditAPI.list(workspaceId!, projectId!, {
-        page: 1,
-        page_size: 5,
-        start_time: timeRange.start_time,
-        end_time: timeRange.end_time,
-      }),
+  const runtimeQuery = useRuntimeObservability(workspaceId ?? '', projectId ?? '', timeRange, {
+    enabled: isValidParams && canReadOverview,
+  });
+  const operationsSummaryQuery = useUsageOperationsSummary(workspaceId ?? '', projectId ?? '', timeRange, {
+    enabled: isValidParams && canReadOverview,
+  });
+  const usageEvidenceQuery = useUsageReportEvidence(workspaceId ?? '', projectId ?? '', {
+    enabled: isValidParams && canReadOverview,
+  });
+  const releaseReportsQuery = useReleaseReportList({ workspaceId: workspaceId ?? '', projectId: projectId ?? '' }, {
+    enabled: isValidParams && canReadOverview,
+  });
+  const releaseRunsQuery = useReleaseGateRunList({ workspaceId: workspaceId ?? '', projectId: projectId ?? '' }, {
+    enabled: isValidParams && canReadOverview,
+  });
+  const escalationsQuery = useReleaseEscalationList({
     enabled: isValidParams && canReadOverview,
   });
 
@@ -128,25 +164,154 @@ export default function OverviewPage() {
   }
 
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
+  const runtimeHref = `${basePath}/runtime-observability`;
+  const usageHref = `${basePath}/usage`;
+  const releaseOpsHref = `${basePath}/release-ops`;
 
-  // Use validated KPI data with safe defaults
-  const kpi = kpiData || {
-    requests_today: 0,
-    errors_today: 0,
-  };
-  const requestsTrend = calculateTrend(kpi.requests_today, kpi.requests_yesterday);
-  const errorsTrend = calculateTrend(kpi.errors_today, kpi.errors_yesterday);
-  const tokensTrend = calculateTrend(kpi.tokens_today ?? 0, kpi.tokens_yesterday);
+  const runtime = runtimeQuery.data;
+  const operationsSummary = operationsSummaryQuery.data;
+  const usageEvidence = usageEvidenceQuery.data;
+  const latestReportItem = latestReport(releaseReportsQuery.data?.items);
+  const latestRunItem = latestRun(releaseRunsQuery.data?.items);
+  const openEscalations = (escalationsQuery.data?.items ?? []).filter((item) => item.status === 'open');
+  const criticalOpenEscalations = openEscalations.filter((item) => item.severity === 'critical');
+  const overdueEscalations = openEscalations.filter((item) => item.sla_status === 'overdue');
+  const dueSoonEscalations = openEscalations.filter((item) => item.sla_status === 'due_soon');
 
-  // Activity timeline items (will be replaced with real audit data)
-  const activityItems = auditEvents?.items.map((event) => ({
+  const runtimeTone: HomeStatusTone = runtime
+    ? runtime.health_summary.missing_price_facts > 0 || runtime.health_summary.terminal_error_requests > 0
+      ? 'blocked'
+      : runtime.error_rate > 0.03 || runtime.health_summary.recovered_requests > 0 || runtime.degradation_signals.length > 0
+        ? 'warning'
+        : 'ready'
+    : 'warning';
+  const costTone: HomeStatusTone = runtime?.health_summary.missing_price_facts
+    ? 'blocked'
+    : ((operationsSummary?.anomaly_peaks ?? []).some((item) => item.metric === 'cost' && item.severity === 'high')
+      ? 'warning'
+      : 'ready');
+  const releaseTone: HomeStatusTone = mapEnforcementTone(latestReportItem?.policy_enforcement?.decision);
+  const incidentTone: HomeStatusTone = overdueEscalations.length > 0 || criticalOpenEscalations.length > 0
+    ? 'blocked'
+    : openEscalations.length > 0 || dueSoonEscalations.length > 0
+      ? 'warning'
+      : 'ready';
+
+  const attentionItems: AttentionItem[] = [];
+  if (releaseTone === 'blocked') {
+    attentionItems.push({
+      id: 'release-blocked',
+      tone: 'blocked',
+      title: t('attention.release_blocked_title'),
+      body: t('attention.release_blocked_body'),
+      href: releaseOpsHref,
+      actionLabel: t('attention.open_release_ops'),
+    });
+  }
+  if (overdueEscalations.length > 0) {
+    attentionItems.push({
+      id: 'escalations-overdue',
+      tone: 'blocked',
+      title: t('attention.overdue_escalations_title', { count: overdueEscalations.length }),
+      body: t('attention.overdue_escalations_body'),
+      href: releaseOpsHref,
+      actionLabel: t('attention.handle_incident'),
+    });
+  }
+  if ((runtime?.health_summary.missing_price_facts ?? 0) > 0) {
+    attentionItems.push({
+      id: 'missing-price',
+      tone: 'blocked',
+      title: t('attention.missing_price_title', { count: runtime?.health_summary.missing_price_facts ?? 0 }),
+      body: t('attention.missing_price_body'),
+      href: runtimeHref,
+      actionLabel: t('attention.review_runtime'),
+    });
+  }
+  if (usageEvidence?.release_readiness === 'blocked') {
+    attentionItems.push({
+      id: 'usage-evidence-blocked',
+      tone: 'blocked',
+      title: t('attention.usage_evidence_blocked_title'),
+      body: t('attention.usage_evidence_blocked_body'),
+      href: usageHref,
+      actionLabel: t('attention.review_cost'),
+    });
+  }
+  if ((operationsSummary?.anomaly_peaks ?? []).some((item) => item.metric === 'cost')) {
+    attentionItems.push({
+      id: 'cost-anomaly',
+      tone: 'warning',
+      title: t('attention.cost_anomaly_title'),
+      body: t('attention.cost_anomaly_body'),
+      href: usageHref,
+      actionLabel: t('attention.review_cost'),
+    });
+  }
+  if ((runtime?.degradation_signals ?? []).some((signal) => signal.kind === 'fallback_spike' || signal.kind === 'error_rate_spike')) {
+    attentionItems.push({
+      id: 'runtime-degradation',
+      tone: 'warning',
+      title: t('attention.runtime_degradation_title'),
+      body: t('attention.runtime_degradation_body'),
+      href: runtimeHref,
+      actionLabel: t('attention.investigate_runtime'),
+    });
+  }
+
+  const quickActions: NavItem[] = [
+    {
+      icon: MessageSquare,
+      label: tNav('chat'),
+      href: '/chat',
+      description: t('actions.chat'),
+      requiresPermission: 'project:chat:access',
+    },
+    {
+      icon: Wrench,
+      label: tNav('notebook'),
+      href: '/notebook',
+      description: t('actions.notebook'),
+      requiresPermission: 'project:notebook:access',
+    },
+    {
+      icon: Bot,
+      label: tNav('agents'),
+      href: '/agents',
+      description: t('actions.agents'),
+      requiresPermission: 'project:agent:use',
+    },
+    {
+      icon: Server,
+      label: tNav('endpoints'),
+      href: '/endpoints',
+      description: t('actions.endpoints'),
+      requiresPermission: 'project:endpoint:use',
+    },
+    {
+      icon: Sparkles,
+      label: t('actions.runtime'),
+      href: '/runtime-observability',
+      description: t('actions.runtime_description'),
+      requiresPermission: 'project:usage:view',
+    },
+    {
+      icon: Gauge,
+      label: tNav('release_ops'),
+      href: '/release-ops',
+      description: t('actions.release_ops'),
+      requiresPermission: 'project:usage:view',
+    },
+  ];
+
+  const activityItems = (auditEventsQuery.data?.items ?? []).map((event) => ({
     id: event.id,
-    icon: Activity,
-    title: `${event.actor_type === 'user' ? t('recent_activity') : t('recent_activity')} ${event.action}`,
+    icon: event.result === 'error' ? AlertCircle : Clock3,
+    title: event.action,
     description: event.resource_type ? `${event.resource_type}: ${event.resource_id}` : undefined,
     timestamp: new Date(event.timestamp).toLocaleString(),
     copyableId: event.request_id,
-  })) || [];
+  }));
 
   return (
     <PageState state="success">
@@ -154,65 +319,277 @@ export default function OverviewPage() {
         header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
         toolbar={(
           <PageToolbar>
-            <Select value={timeRangePreset} onValueChange={(v) => setTimeRangePreset(v as TimeRangePreset)}>
-              <SelectTrigger className="w-[140px]" data-testid="overview__time-range">
+            <Select value={timeRangePreset} onValueChange={(value) => setTimeRangePreset(value as TimeRangePreset)}>
+              <SelectTrigger className="w-[160px]" data-testid="overview__time-range">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="7d">Last 7 days</SelectItem>
-                <SelectItem value="30d">Last 30 days</SelectItem>
+                <SelectItem value="24h">{t('time_ranges.last_24h')}</SelectItem>
+                <SelectItem value="7d">{t('time_ranges.last_7d')}</SelectItem>
               </SelectContent>
             </Select>
           </PageToolbar>
         )}
       >
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <KPICard
-            icon={Activity}
-            label={t('kpi.requests_today')}
-            value={formatNumber(kpi.requests_today)}
-            trend={requestsTrend}
-            vsLastPeriodLabel={t('kpi.vs_last_period')}
-            data-testid="overview__kpi-card--requests"
-          />
-          <KPICard
-            icon={AlertCircle}
-            label={t('kpi.errors_today')}
-            value={formatNumber(kpi.errors_today)}
-            trend={errorsTrend}
-            vsLastPeriodLabel={t('kpi.vs_last_period')}
-            data-testid="overview__kpi-card--errors"
-          />
-          <KPICard
-            icon={Clock}
-            label={t('kpi.tokens_today')}
-            value={formatNumber(kpi.tokens_today, { defaultValue: '--' })}
-            trend={tokensTrend}
-            vsLastPeriodLabel={t('kpi.vs_last_period')}
-            data-testid="overview__kpi-card--tokens"
-          />
-        </div>
+        <div className="space-y-6" data-testid="overview__ai-ops-home">
+          <div className="grid gap-4 xl:grid-cols-4" data-testid="overview__status-strip">
+            <Card className={statusToneClassName(runtimeTone)} data-testid="overview__status-runtime">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-foreground">{t('status.runtime')}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <Badge variant={toneBadgeVariant(runtimeTone)}>{t(`status_labels.${runtimeTone}`)}</Badge>
+                  <span className="text-xs text-tertiary">{formatPercent(runtime?.error_rate)}</span>
+                </div>
+                <div className="text-sm text-tertiary">
+                  {t('status.runtime_body', {
+                    requests: formatNumber(runtime?.total_requests ?? 0),
+                    recovered: formatNumber(runtime?.health_summary.recovered_requests ?? 0),
+                  })}
+                </div>
+              </CardContent>
+            </Card>
 
-        {/* Project Navigation */}
-        <div data-testid="overview__quick-access">
-          <h2 className="text-lg font-semibold text-primary mb-4">{t('quick_access')}</h2>
-          <ProjectNavigation
-            basePath={basePath}
-            columns={3}
-            translations={t}
-            userPermissions={Array.from(currentPermissions)}
-          />
-        </div>
+            <Card className={statusToneClassName(costTone)} data-testid="overview__status-cost">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-foreground">{t('status.cost')}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <Badge variant={toneBadgeVariant(costTone)}>{t(`status_labels.${costTone}`)}</Badge>
+                  <span className="text-xs text-tertiary">{formatUsd(runtime?.p95_estimated_cost)}</span>
+                </div>
+                <div className="text-sm text-tertiary">
+                  {t('status.cost_body', {
+                    avg_cost: formatUsd(runtime?.avg_estimated_cost),
+                    anomalies: formatNumber((operationsSummary?.anomaly_peaks ?? []).length),
+                  })}
+                </div>
+              </CardContent>
+            </Card>
 
-        {/* Recent Activity */}
-        <div data-testid="overview__activity-timeline">
-          <ActivityTimeline
-            items={activityItems}
-            maxItems={5}
-            viewAllLink={`${basePath}/audit`}
-            translations={t}
-          />
+            <Card className={statusToneClassName(releaseTone)} data-testid="overview__status-release">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-foreground">{t('status.release')}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <Badge variant={toneBadgeVariant(releaseTone)}>
+                    {latestReportItem?.policy_enforcement?.decision
+                      ? t(`release_labels.${latestReportItem.policy_enforcement.decision}`)
+                      : t('release_labels.unknown')}
+                  </Badge>
+                  <span className="text-xs text-tertiary">{latestReportItem?.name ?? '--'}</span>
+                </div>
+                <div className="text-sm text-tertiary">
+                  {t('status.release_body', {
+                    blockers: formatNumber(latestReportItem?.policy_enforcement?.blocker_count ?? 0),
+                    warnings: formatNumber(latestReportItem?.policy_enforcement?.warning_count ?? 0),
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className={statusToneClassName(incidentTone)} data-testid="overview__status-incidents">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-foreground">{t('status.incidents')}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <Badge variant={toneBadgeVariant(incidentTone)}>{t(`status_labels.${incidentTone}`)}</Badge>
+                  <span className="text-xs text-tertiary">{formatNumber(openEscalations.length)}</span>
+                </div>
+                <div className="text-sm text-tertiary">
+                  {t('status.incidents_body', {
+                    overdue: formatNumber(overdueEscalations.length),
+                    due_soon: formatNumber(dueSoonEscalations.length),
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card data-testid="overview__attention">
+            <CardHeader>
+              <CardTitle>{t('attention.title')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {attentionItems.length > 0 ? (
+                <div className="space-y-3">
+                  {attentionItems.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className={cn('flex flex-col gap-3 rounded-xl border p-4 md:flex-row md:items-center md:justify-between', statusToneClassName(item.tone))}
+                      data-testid={`overview__attention-item-${index}`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={toneBadgeVariant(item.tone)}>{t(`status_labels.${item.tone}`)}</Badge>
+                          <span className="text-sm font-medium text-foreground">{item.title}</span>
+                        </div>
+                        <p className="text-sm text-tertiary">{item.body}</p>
+                      </div>
+                      <Link
+                        href={item.href}
+                        className="inline-flex items-center gap-2 text-sm font-medium text-accent hover:underline"
+                      >
+                        {item.actionLabel}
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-success/25 bg-success/5 p-4 text-sm text-tertiary" data-testid="overview__attention-empty">
+                  {t('attention.empty')}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card data-testid="overview__snapshot-runtime">
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle>{t('snapshots.runtime_title')}</CardTitle>
+                <Link href={runtimeHref} className="text-sm font-medium text-accent hover:underline">{t('open_runtime')}</Link>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.requests')}</div>
+                  <div className="mt-1 text-xl font-semibold text-foreground">{formatNumber(runtime?.total_requests ?? 0)}</div>
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.error_rate')}</div>
+                  <div className="mt-1 text-xl font-semibold text-foreground">{formatPercent(runtime?.error_rate)}</div>
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.recovered_requests')}</div>
+                  <div className="mt-1 text-xl font-semibold text-foreground">{formatNumber(runtime?.health_summary.recovered_requests ?? 0)}</div>
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.missing_price')}</div>
+                  <div className="mt-1 text-xl font-semibold text-foreground">{formatNumber(runtime?.health_summary.missing_price_facts ?? 0)}</div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="overview__snapshot-cost">
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle>{t('snapshots.cost_title')}</CardTitle>
+                <Link href={usageHref} className="text-sm font-medium text-accent hover:underline">{t('open_usage')}</Link>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                    <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.avg_cost')}</div>
+                    <div className="mt-1 text-xl font-semibold text-foreground">{formatUsd(runtime?.avg_estimated_cost)}</div>
+                  </div>
+                  <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                    <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.p95_cost')}</div>
+                    <div className="mt-1 text-xl font-semibold text-foreground">{formatUsd(runtime?.p95_estimated_cost)}</div>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.top_cost_surfaces')}</div>
+                  <div className="mt-2 space-y-2 text-sm text-tertiary">
+                    {(operationsSummary?.top_models ?? []).slice(0, 2).map((item, index) => (
+                      <div key={`${item.provider}-${item.model}-${index}`} className="flex items-center justify-between gap-3">
+                        <span>{item.provider}/{item.model}</span>
+                        <span className="text-foreground">{formatUsd(item.estimated_cost)}</span>
+                      </div>
+                    ))}
+                    {(operationsSummary?.top_models ?? []).length === 0 ? <div>{t('empty_cost_snapshot')}</div> : null}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="overview__snapshot-release">
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle>{t('snapshots.release_title')}</CardTitle>
+                <Link href={releaseOpsHref} className="text-sm font-medium text-accent hover:underline">{t('open_release_ops')}</Link>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                    <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.policy')}</div>
+                    <div className="mt-1 text-sm font-semibold text-foreground">
+                      {latestReportItem?.policy_enforcement?.decision
+                        ? t(`release_labels.${latestReportItem.policy_enforcement.decision}`)
+                        : t('release_labels.unknown')}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                    <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.latest_run')}</div>
+                    <div className="mt-1 text-sm font-semibold text-foreground">{latestRunItem?.status ?? '--'}</div>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/40 p-3 text-sm text-tertiary">
+                  {t('snapshots.release_details', {
+                    blockers: formatNumber(latestReportItem?.policy_enforcement?.blocker_count ?? 0),
+                    warnings: formatNumber(latestReportItem?.policy_enforcement?.warning_count ?? 0),
+                    overrides: formatNumber(latestReportItem?.policy_enforcement?.approved_override_count ?? 0),
+                  })}
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/40 p-3 text-sm text-tertiary">
+                  {t('snapshots.usage_readiness', {
+                    status: usageEvidence?.release_readiness ? t(`status_labels.${usageEvidence.release_readiness === 'blocked' ? 'blocked' : 'ready'}`) : '--',
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="overview__snapshot-incidents">
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle>{t('snapshots.incidents_title')}</CardTitle>
+                <Link href={releaseOpsHref} className="text-sm font-medium text-accent hover:underline">{t('open_release_ops')}</Link>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                    <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.open_incidents')}</div>
+                    <div className="mt-1 text-xl font-semibold text-foreground">{formatNumber(openEscalations.length)}</div>
+                  </div>
+                  <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
+                    <div className="text-xs uppercase tracking-wide text-tertiary">{t('snapshots.critical_incidents')}</div>
+                    <div className="mt-1 text-xl font-semibold text-foreground">{formatNumber(criticalOpenEscalations.length)}</div>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/40 p-3 text-sm text-tertiary">
+                  {openEscalations[0]
+                    ? t('snapshots.incident_details', {
+                        assignee: openEscalations[0].assignee_name || openEscalations[0].assignee_user_id || '--',
+                        sla: openEscalations[0].sla_status || '--',
+                      })
+                    : t('snapshots.incident_empty')}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card data-testid="overview__quick-actions">
+            <CardHeader>
+              <CardTitle>{t('quick_actions')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ProjectNavigation
+                basePath={basePath}
+                columns={3}
+                items={quickActions}
+                userPermissions={Array.from(currentPermissions)}
+              />
+            </CardContent>
+          </Card>
+
+          <div data-testid="overview__activity-timeline">
+            <ActivityTimeline
+              items={activityItems}
+              maxItems={5}
+              viewAllLink={`${basePath}/audit`}
+              translations={t}
+            />
+          </div>
         </div>
       </PageLayout>
     </PageState>

@@ -1931,8 +1931,91 @@
     }
   },
   "overview": {
-    "title": "概览",
-    "subtitle": "项目仪表板与快速导航",
+    "title": "AI Ops Home",
+    "subtitle": "集中查看项目的运行健康、成本态势、发布状态与 incident 责任归属。",
+    "time_ranges": {
+      "last_24h": "最近 24 小时",
+      "last_7d": "最近 7 天"
+    },
+    "status": {
+      "runtime": "运行健康",
+      "runtime_body": "{requests} 次请求，{recovered} 次自动恢复",
+      "cost": "成本健康",
+      "cost_body": "平均成本 {avg_cost}，{anomalies} 个异常峰值",
+      "release": "发布就绪度",
+      "release_body": "{blockers} 个阻塞项，{warnings} 个警告项",
+      "incidents": "待处理 Incident",
+      "incidents_body": "{overdue} 个已逾期，{due_soon} 个即将到期"
+    },
+    "status_labels": {
+      "ready": "就绪",
+      "warning": "警告",
+      "blocked": "阻塞"
+    },
+    "release_labels": {
+      "ready": "就绪",
+      "warning": "警告",
+      "blocked": "阻塞",
+      "pending_override": "等待例外审批",
+      "releasable_with_override": "例外已批准",
+      "unknown": "未知"
+    },
+    "attention": {
+      "title": "今日待处理",
+      "empty": "当前没有紧急待处理事项。",
+      "release_blocked_title": "当前发布被阻断",
+      "release_blocked_body": "请先检查当前 gate enforcement、阻塞项和未闭环的例外。",
+      "overdue_escalations_title": "{count} 个升级事件已逾期",
+      "overdue_escalations_body": "当前 open incident 已超过 SLA，需要明确负责人或处理结论。",
+      "missing_price_title": "{count} 条运行事实缺少价格",
+      "missing_price_body": "价格覆盖不完整会直接影响运行治理和成本治理。",
+      "usage_evidence_blocked_title": "用量证据当前被阻断",
+      "usage_evidence_blocked_body": "定时报告证据当前不可发布，需先处理再继续。",
+      "cost_anomaly_title": "检测到成本异常",
+      "cost_anomaly_body": "近期用量存在异常成本波动，建议尽快确认原因。",
+      "runtime_degradation_title": "检测到运行退化",
+      "runtime_degradation_body": "fallback 或错误信号上升，建议优先排查。",
+      "open_release_ops": "打开 Release Ops",
+      "handle_incident": "处理 incident",
+      "review_runtime": "查看运行态",
+      "review_cost": "查看成本",
+      "investigate_runtime": "排查运行问题"
+    },
+    "snapshots": {
+      "runtime_title": "运行态摘要",
+      "cost_title": "成本摘要",
+      "release_title": "发布就绪度",
+      "incidents_title": "责任人与 incident",
+      "requests": "请求数",
+      "error_rate": "错误率",
+      "recovered_requests": "自动恢复请求",
+      "missing_price": "缺价事实",
+      "avg_cost": "平均成本",
+      "p95_cost": "P95 成本",
+      "top_cost_surfaces": "高成本目标",
+      "policy": "策略状态",
+      "latest_run": "最近一次运行",
+      "release_details": "{blockers} 个阻塞项，{warnings} 个警告项，{overrides} 个已批准例外",
+      "usage_readiness": "用量证据：{status}",
+      "open_incidents": "Open incidents",
+      "critical_incidents": "Critical incidents",
+      "incident_details": "负责人：{assignee}，SLA：{sla}",
+      "incident_empty": "当前没有 open incident。"
+    },
+    "open_runtime": "打开运行时运营",
+    "open_usage": "打开用量",
+    "open_release_ops": "打开 Release Ops",
+    "empty_cost_snapshot": "当前时间窗口内没有明显高成本 provider/model。",
+    "quick_actions": "快速入口",
+    "actions": {
+      "chat": "运行聊天工作流",
+      "notebook": "处理智能体任务",
+      "agents": "管理智能体与密钥",
+      "endpoints": "管理模型连接",
+      "runtime": "运行时运营",
+      "runtime_description": "查看运行健康和请求链路",
+      "release_ops": "查看发布门禁与 incident"
+    },
     "kpi": {
       "requests_today": "今日请求数",
       "errors_today": "今日错误数",

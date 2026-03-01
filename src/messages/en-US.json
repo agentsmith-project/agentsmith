@@ -1929,8 +1929,91 @@
     }
   },
   "overview": {
-    "title": "Overview",
-    "subtitle": "Project dashboard and quick navigation",
+    "title": "AI Ops Home",
+    "subtitle": "Runtime health, cost posture, release readiness, and incident ownership for this project.",
+    "time_ranges": {
+      "last_24h": "Last 24 hours",
+      "last_7d": "Last 7 days"
+    },
+    "status": {
+      "runtime": "Runtime health",
+      "runtime_body": "{requests} requests, {recovered} recovered",
+      "cost": "Cost health",
+      "cost_body": "{avg_cost} avg cost, {anomalies} anomaly peaks",
+      "release": "Release readiness",
+      "release_body": "{blockers} blockers, {warnings} warnings",
+      "incidents": "Open incidents",
+      "incidents_body": "{overdue} overdue, {due_soon} due soon"
+    },
+    "status_labels": {
+      "ready": "Ready",
+      "warning": "Warning",
+      "blocked": "Blocked"
+    },
+    "release_labels": {
+      "ready": "Ready",
+      "warning": "Warning",
+      "blocked": "Blocked",
+      "pending_override": "Pending override",
+      "releasable_with_override": "Approved exception",
+      "unknown": "Unknown"
+    },
+    "attention": {
+      "title": "Today needs attention",
+      "empty": "No urgent issues are active right now.",
+      "release_blocked_title": "Release is currently blocked",
+      "release_blocked_body": "Review current gate enforcement, blockers, and open exceptions before proceeding.",
+      "overdue_escalations_title": "{count} escalations are overdue",
+      "overdue_escalations_body": "Open incidents have crossed SLA and need explicit ownership or resolution.",
+      "missing_price_title": "{count} runtime facts are missing pricing",
+      "missing_price_body": "Pricing coverage is incomplete and directly affects runtime and cost governance.",
+      "usage_evidence_blocked_title": "Usage evidence is blocked",
+      "usage_evidence_blocked_body": "Scheduled report evidence is not currently releasable and needs review.",
+      "cost_anomaly_title": "Cost anomalies need review",
+      "cost_anomaly_body": "Recent usage shows abnormal cost movement and should be reviewed before it grows.",
+      "runtime_degradation_title": "Runtime degradation detected",
+      "runtime_degradation_body": "Fallback or error signals are elevated and should be investigated.",
+      "open_release_ops": "Open Release Ops",
+      "handle_incident": "Handle incident",
+      "review_runtime": "Review runtime",
+      "review_cost": "Review cost",
+      "investigate_runtime": "Investigate runtime"
+    },
+    "snapshots": {
+      "runtime_title": "Runtime snapshot",
+      "cost_title": "Cost snapshot",
+      "release_title": "Release readiness",
+      "incidents_title": "Ownership and incidents",
+      "requests": "Requests",
+      "error_rate": "Error rate",
+      "recovered_requests": "Recovered requests",
+      "missing_price": "Missing price facts",
+      "avg_cost": "Average cost",
+      "p95_cost": "P95 cost",
+      "top_cost_surfaces": "Top cost surfaces",
+      "policy": "Policy",
+      "latest_run": "Latest run",
+      "release_details": "{blockers} blockers, {warnings} warnings, {overrides} approved overrides",
+      "usage_readiness": "Usage evidence: {status}",
+      "open_incidents": "Open incidents",
+      "critical_incidents": "Critical incidents",
+      "incident_details": "Owner: {assignee}, SLA: {sla}",
+      "incident_empty": "No open incidents currently."
+    },
+    "open_runtime": "Open Runtime Ops",
+    "open_usage": "Open Usage",
+    "open_release_ops": "Open Release Ops",
+    "empty_cost_snapshot": "No cost-heavy providers or models in the current window.",
+    "quick_actions": "Quick actions",
+    "actions": {
+      "chat": "Run chat workflows",
+      "notebook": "Work through agent tasks",
+      "agents": "Manage agents and keys",
+      "endpoints": "Manage model connections",
+      "runtime": "Runtime Ops",
+      "runtime_description": "Inspect runtime health and request flow",
+      "release_ops": "Review release gate and incidents"
+    },
     "kpi": {
       "requests_today": "Requests Today",
       "errors_today": "Errors Today",

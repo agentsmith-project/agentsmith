@@ -15,7 +15,7 @@ test.describe('Controls Matrix', () => {
     test.setTimeout(120000);
     await goToProject(authedPage, 'overview');
     await expect(authedPage.getByTestId('overview__time-range')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__quick-access')).toBeVisible();
+    await expect(authedPage.getByTestId('overview__ai-ops-home')).toBeVisible();
 
     await goToProject(authedPage, 'chat');
     await expect(authedPage.getByTestId('chat__new-thread-btn')).toBeVisible();

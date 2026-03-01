@@ -16,7 +16,7 @@ export const ROUTES = {
     { path: '/zh-CN/workspaces/ws_default/settings', testId: 'ws-settings__members' },
   ],
   project: [
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', testId: 'overview__quick-access' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', testId: 'overview__ai-ops-home' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/chat', testId: 'chat__main-pane' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/notebook', testId: 'notebook__task-list' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001', testId: 'notebook__task-header' },

@@ -10,6 +10,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import {
   ArrowUp,
   ArrowDown,
@@ -30,7 +31,8 @@ import { Virtuoso } from 'react-virtuoso';
 
 import { cn } from '@/lib/utils';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
@@ -73,6 +75,7 @@ import { formatBytes } from '@/lib/utils/formatters';
 export interface FilesPageProps {
   workspaceId: string;
   projectId: string;
+  locale?: string;
 }
 
 type SelectedRowId = `p:${string}` | `o:${string}`;
@@ -127,11 +130,12 @@ function parentPrefixForPrefix(prefix: string) {
   return normalized.slice(0, idx + 1);
 }
 
-export function FilesPage({ workspaceId, projectId }: FilesPageProps) {
+export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPageProps) {
   const t = useTranslations('files');
   const tErrors = useTranslations('errors');
   const canManage = useHasPermission('project:source:manage');
   const { layoutMode } = useProjectLayoutMode();
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const { data: librariesData, isLoading: libsLoading } = useFileLibraries(workspaceId, projectId);
   const libraries = React.useMemo(() => librariesData?.items ?? [], [librariesData?.items]);
@@ -548,6 +552,37 @@ export function FilesPage({ workspaceId, projectId }: FilesPageProps) {
     <PageLayout
       density="immersive"
       contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
+      header={(
+        <PageHeader
+          title={t('title')}
+          subtitle={t('subtitle')}
+          actions={(
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={`${basePath}/chat`}
+                className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
+                data-testid="files__open-chat"
+              >
+                {t('open_chat')}
+              </Link>
+              <Link
+                href={`${basePath}/notebook`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="files__open-notebook"
+              >
+                {t('open_notebook')}
+              </Link>
+              <Link
+                href={`${basePath}/endpoints`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="files__open-endpoints"
+              >
+                {t('open_endpoints')}
+              </Link>
+            </div>
+          )}
+        />
+      )}
     >
       <input
         ref={fileInputRef}

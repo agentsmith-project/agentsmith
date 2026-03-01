@@ -30,6 +30,12 @@ test.describe('Agents Page', () => {
     await expect(authedPage.getByText('Research Agent')).toBeVisible();
   });
 
+  test('shows build header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('agents__open-chat')).toHaveAttribute('href', /\/chat$/);
+    await expect(authedPage.getByTestId('agents__open-notebook')).toHaveAttribute('href', /\/notebook$/);
+    await expect(authedPage.getByTestId('agents__open-endpoints')).toHaveAttribute('href', /\/endpoints$/);
+  });
+
   test('create dialog opens with form fields', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
 

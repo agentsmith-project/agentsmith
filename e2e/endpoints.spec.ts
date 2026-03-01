@@ -72,6 +72,12 @@ test.describe('Endpoints Page', () => {
     await expect(authedPage.getByText('Tokens/day:').first()).toBeVisible();
   });
 
+  test('shows build header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('endpoints__open-chat')).toHaveAttribute('href', /\/chat$/);
+    await expect(authedPage.getByTestId('endpoints__open-notebook')).toHaveAttribute('href', /\/notebook$/);
+    await expect(authedPage.getByTestId('endpoints__open-agents')).toHaveAttribute('href', /\/agents$/);
+  });
+
   test('create dialog opens with form fields', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
 

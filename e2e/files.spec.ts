@@ -35,6 +35,12 @@ test.describe('Files Page (object browser)', () => {
     await expect(authedPage.getByTestId('files__object-row').first()).toBeVisible();
   });
 
+  test('shows build header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('files__open-chat')).toHaveAttribute('href', /\/chat$/);
+    await expect(authedPage.getByTestId('files__open-notebook')).toHaveAttribute('href', /\/notebook$/);
+    await expect(authedPage.getByTestId('files__open-endpoints')).toHaveAttribute('href', /\/endpoints$/);
+  });
+
   test('search filters objects via backend query', async ({ authedPage }) => {
     await authedPage.getByTestId('files__search').fill('readme');
     await expect(authedPage.getByTestId('files__search')).toHaveValue('readme');

@@ -524,6 +524,9 @@
   "agents": {
     "title": "智能体",
     "subtitle": "管理 AI 智能体",
+    "open_chat": "打开聊天",
+    "open_notebook": "打开 Notebook",
+    "open_endpoints": "打开 Endpoints",
     "create": "创建智能体",
     "create_dialog": {
       "title": "创建智能体",
@@ -643,6 +646,9 @@
   "endpoints": {
     "title": "端点",
     "subtitle": "管理 LLM 端点",
+    "open_chat": "打开聊天",
+    "open_notebook": "打开 Notebook",
+    "open_agents": "打开 Agents",
     "create": "创建端点",
     "create_dialog": {
       "title": "创建端点",
@@ -2187,6 +2193,10 @@
   },
   "files": {
     "title": "文件",
+    "subtitle": "在一个文件操作视图中浏览项目文件库、目录和对象。",
+    "open_chat": "打开聊天",
+    "open_notebook": "打开 Notebook",
+    "open_endpoints": "打开 Endpoints",
     "upload": "上传",
     "upload_files": "上传文件",
     "search_placeholder": "搜索文件...",

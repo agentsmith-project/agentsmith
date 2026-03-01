@@ -17,6 +17,7 @@ export default function FilesPage({ params }: FilesPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{
     workspace?: string;
     project?: string;
+    locale?: string;
   } | null>(null);
   const canUseFiles = useHasPermission('project:source:use');
 
@@ -25,6 +26,7 @@ export default function FilesPage({ params }: FilesPageProps) {
       setResolvedParams({
         workspace: validateWorkspaceParam(p.workspace),
         project: validateProjectParam(p.project),
+        locale: p.locale,
       }),
     );
   }, [params]);
@@ -64,6 +66,7 @@ export default function FilesPage({ params }: FilesPageProps) {
       <FilesPageComponent
         workspaceId={resolvedParams.workspace}
         projectId={resolvedParams.project}
+        locale={resolvedParams.locale}
       />
     </PageState>
   );

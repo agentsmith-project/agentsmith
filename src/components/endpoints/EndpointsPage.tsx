@@ -7,6 +7,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { Server, Plus, Upload, Download } from 'lucide-react';
@@ -14,7 +15,7 @@ import { APIError, resolveApiErrorPresentation } from '@/lib/api/errors';
 import type { Endpoint } from '@/lib/api/types';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { DataTable } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { CreateEndpointDialog } from '@/components/endpoints/CreateEndpointDialog';
 import { EditEndpointDialog } from '@/components/endpoints/EditEndpointDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -24,6 +25,7 @@ import { PageToolbar } from '@/components/layout/PageToolbar';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { toast } from '@/components/ui/toast';
+import { cn } from '@/lib/utils';
 import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
 import { useEndpointsMutations } from '@/lib/endpoints/use-endpoints-mutations';
 import type { ImportOpenAICompatiblePayload } from '@/lib/endpoints/types';
@@ -46,7 +48,7 @@ export interface EndpointsPageProps {
 export function EndpointsPageView({ params }: EndpointsPageProps) {
   const t = useTranslations('endpoints');
   const tErrors = useTranslations('errors');
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
@@ -68,12 +70,14 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
     params.then((p) => {
       const workspace = validateWorkspaceParam(p.workspace);
       const project = validateProjectParam(p.project);
-      setResolvedParams({ workspace, project });
+      setResolvedParams({ workspace, project, locale: p.locale });
     });
   }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
+  const locale = resolvedParams?.locale ?? 'en-US';
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const { endpoints, endpointsLoading } = useEndpointsData({
     workspaceId,
@@ -250,7 +254,37 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
   return (
     <PageState state="success">
       <PageLayout
-        header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`${basePath}/chat`}
+                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
+                  data-testid="endpoints__open-chat"
+                >
+                  {t('open_chat')}
+                </Link>
+                <Link
+                  href={`${basePath}/notebook`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="endpoints__open-notebook"
+                >
+                  {t('open_notebook')}
+                </Link>
+                <Link
+                  href={`${basePath}/agents`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="endpoints__open-agents"
+                >
+                  {t('open_agents')}
+                </Link>
+              </div>
+            )}
+          />
+        )}
         toolbar={(
           <PageToolbar>
             <Button

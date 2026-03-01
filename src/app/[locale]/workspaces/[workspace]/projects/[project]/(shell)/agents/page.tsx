@@ -7,6 +7,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
@@ -17,7 +18,7 @@ import { toast } from '@/components/ui/toast';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DataTable } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { AgentKeysDialog } from '@/components/api-keys/AgentKeysDialog';
 import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { EditAgentDialog } from '@/components/agents/EditAgentDialog';
@@ -28,6 +29,7 @@ import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { cn } from '@/lib/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -250,7 +252,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const tToast = useTranslations('common.toast');
   const tErrors = useTranslations('errors');
   const queryClient = useQueryClient();
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogAgent, setEditDialogAgent] = useState<Agent | null>(null);
   const [keysDialogAgent, setKeysDialogAgent] = useState<Agent | null>(null);
@@ -272,12 +274,14 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     params.then((p) => {
       const workspace = validateWorkspaceParam(p.workspace);
       const project = validateProjectParam(p.project);
-      setResolvedParams({ workspace, project });
+      setResolvedParams({ workspace, project, locale: p.locale });
     });
   }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
+  const locale = resolvedParams?.locale ?? 'en-US';
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const agentAPI = new AgentAPI(getApiClient());
 
@@ -378,7 +382,37 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   return (
     <PageState state="success">
       <PageLayout
-        header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`${basePath}/chat`}
+                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
+                  data-testid="agents__open-chat"
+                >
+                  {t('open_chat')}
+                </Link>
+                <Link
+                  href={`${basePath}/notebook`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="agents__open-notebook"
+                >
+                  {t('open_notebook')}
+                </Link>
+                <Link
+                  href={`${basePath}/endpoints`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="agents__open-endpoints"
+                >
+                  {t('open_endpoints')}
+                </Link>
+              </div>
+            )}
+          />
+        )}
         toolbar={(
           <PageToolbar>
             <Button

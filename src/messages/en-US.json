@@ -522,6 +522,9 @@
   "agents": {
     "title": "Agents",
     "subtitle": "Manage AI agents",
+    "open_chat": "Open Chat",
+    "open_notebook": "Open Notebook",
+    "open_endpoints": "Open Endpoints",
     "create": "Create Agent",
     "create_dialog": {
       "title": "Create Agent",
@@ -641,6 +644,9 @@
   "endpoints": {
     "title": "Endpoints",
     "subtitle": "Manage LLM endpoints",
+    "open_chat": "Open Chat",
+    "open_notebook": "Open Notebook",
+    "open_agents": "Open Agents",
     "create": "Create Endpoint",
     "create_dialog": {
       "title": "Create Endpoint",
@@ -2185,6 +2191,10 @@
   },
   "files": {
     "title": "Files",
+    "subtitle": "Browse project libraries, folders, and objects with a single file operations view.",
+    "open_chat": "Open Chat",
+    "open_notebook": "Open Notebook",
+    "open_endpoints": "Open Endpoints",
     "upload": "Upload",
     "upload_files": "Upload Files",
     "search_placeholder": "Search files...",

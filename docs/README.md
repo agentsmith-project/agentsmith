@@ -44,6 +44,7 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 
 - [next-release-product-roadmap-prd-v1](./plans/next-release-product-roadmap-prd-v1.md) — 下一期产品路线图 PRD（目标、里程碑、验收指标、风险与依赖）
 - [ai-ops-home-implementation-plan-v1](./plans/ai-ops-home-implementation-plan-v1.md) — `AI Ops Home` 与任务化导航的实施顺序与验收门禁
+- [governance-execution-closure-security-hardening-plan-v1](./plans/governance-execution-closure-security-hardening-plan-v1.md) — 下一主线：治理执行闭环与安全链路收口的实施顺序与验收门禁
 
 ## Other
 

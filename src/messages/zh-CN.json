@@ -993,6 +993,8 @@
   "settings": {
     "release_ops_title": "Release Ops",
     "release_ops_subtitle": "统一查看 runtime、报表证据和 webhook 目标健康状态，用于发布运营决策。",
+    "release_ops_dashboard_title": "当前发布态势",
+    "release_ops_dashboard_subtitle": "先读取实时运行状态，再决定是否执行 gate、重跑或介入处理。",
     "release_ops_runtime_error_rate": "Runtime 错误率",
     "release_ops_runtime_recovered": "已恢复请求",
     "release_ops_usage_release": "用量证据",
@@ -1169,6 +1171,8 @@
     "runtime_control_plane_subtitle": "提供商路由、定价与运行时可观测性",
     "runtime_observability_console_title": "运行时可观测性控制台",
     "runtime_observability_console_subtitle": "基于最近运行事实观察 provider 健康度、降级压力、定价覆盖与热点模型。",
+    "runtime_observability_scope_title": "当前运行观察范围",
+    "runtime_observability_scope_subtitle": "先收紧当前运行时间窗，再继续查看 provider、model 和失败压力。",
     "runtime_observability_open_control_plane": "打开控制面",
     "runtime_observability_filter_provider": "提供商",
     "runtime_observability_filter_provider_placeholder": "按提供商筛选",

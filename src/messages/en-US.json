@@ -991,6 +991,8 @@
   "settings": {
     "release_ops_title": "Release Ops",
     "release_ops_subtitle": "Unified runtime, report evidence, and webhook destination health for release operations.",
+    "release_ops_dashboard_title": "Current release posture",
+    "release_ops_dashboard_subtitle": "Read the live operational state before deciding whether to run, rerun, or intervene.",
     "release_ops_runtime_error_rate": "Runtime Error Rate",
     "release_ops_runtime_recovered": "Recovered Requests",
     "release_ops_usage_release": "Usage Evidence",
@@ -1167,6 +1169,8 @@
     "runtime_control_plane_subtitle": "Provider routing, pricing, and runtime observability",
     "runtime_observability_console_title": "Runtime Observability Console",
     "runtime_observability_console_subtitle": "Track provider health, fallback pressure, pricing coverage, and hot models from recent runtime facts.",
+    "runtime_observability_scope_title": "Current runtime scope",
+    "runtime_observability_scope_subtitle": "Filter the active runtime window, then drill into provider, model, and failure pressure.",
     "runtime_observability_open_control_plane": "Open Control Plane",
     "runtime_observability_filter_provider": "Provider",
     "runtime_observability_filter_provider_placeholder": "Filter by provider",

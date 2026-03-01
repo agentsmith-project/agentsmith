@@ -41,8 +41,8 @@ export function ReleaseOpsDashboard({
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <SectionHeading
           eyebrow={commonT('decide')}
-          title={t('release_ops_title')}
-          subtitle={t('release_ops_subtitle')}
+          title={t('release_ops_dashboard_title')}
+          subtitle={t('release_ops_dashboard_subtitle')}
         />
         {loading ? <div className="text-xs text-tertiary">{commonT('loading')}</div> : null}
       </div>

@@ -767,7 +767,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
           />
         )}
       >
-        <div className="space-y-4" data-testid="release-ops__page">
+        <div className="space-y-3" data-testid="release-ops__page">
           <ReleaseOpsDashboard
             runtime={runtimeQuery.data}
             usageEvidence={evidenceQuery.data}
@@ -775,13 +775,13 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
             loading={runtimeQuery.isLoading || summaryQuery.isLoading || evidenceQuery.isLoading}
           />
 
-          <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
+          <div className="grid gap-3 xl:grid-cols-[1.38fr_1fr]">
             <UsageOperationsSummary
               summary={summaryQuery.data}
               loading={summaryQuery.isLoading}
             />
 
-            <section className="space-y-4">
+            <section className="space-y-3">
               <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__evidence-summary">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <SectionHeading
@@ -796,11 +796,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   ) : null}
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__evidence-blockers">
+                  <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__evidence-blockers">
                     <div className="text-[11px] uppercase tracking-wide text-tertiary">{usageT('report_schedules.evidence_failed')}</div>
                     <div className="mt-1 text-sm font-semibold text-foreground">{blockers.length}</div>
                   </div>
-                  <div className="rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__evidence-warnings">
+                  <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__evidence-warnings">
                     <div className="text-[11px] uppercase tracking-wide text-tertiary">{usageT('report_schedules.evidence_unacknowledged')}</div>
                     <div className="mt-1 text-sm font-semibold text-foreground">{warnings.length}</div>
                   </div>
@@ -810,12 +810,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     <div>{settingsT('release_ops_webhook_empty')}</div>
                   ) : null}
                   {blockers.map((item, index) => (
-                    <div key={`${item}-${index}`} className="rounded-md border border-subtle bg-bg-base/40 px-3 py-2" data-testid={`release-ops__blocker-${index}`}>
+                    <div key={`${item}-${index}`} className="rounded-lg border border-subtle bg-bg-base/10 px-3 py-2" data-testid={`release-ops__blocker-${index}`}>
                       {item}
                     </div>
                   ))}
                   {warnings.map((item, index) => (
-                    <div key={`${item}-${index}`} className="rounded-md border border-subtle bg-bg-base/40 px-3 py-2" data-testid={`release-ops__warning-${index}`}>
+                    <div key={`${item}-${index}`} className="rounded-lg border border-subtle bg-bg-base/10 px-3 py-2" data-testid={`release-ops__warning-${index}`}>
                       {item}
                     </div>
                   ))}
@@ -830,7 +830,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   className="mb-3"
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__compare-runtime">
+                  <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__compare-runtime">
                     <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_runtime')}</div>
                     <div className="mt-2 flex items-center gap-2">
                       <Badge variant={currentRuntimeReadiness === 'ready' ? 'outline' : 'secondary'}>{String(currentRuntimeReadiness)}</Badge>
@@ -838,7 +838,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       <Badge variant={yesNoBadge(runtimeReadinessChanged)}>{runtimeReadinessChanged ? settingsT('runtime_release_yes') : settingsT('runtime_release_no')}</Badge>
                     </div>
                   </div>
-                  <div className="rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__compare-usage">
+                  <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__compare-usage">
                     <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_usage')}</div>
                     <div className="mt-2 flex items-center gap-2">
                       <Badge variant={currentUsageReadiness === 'ready' ? 'outline' : 'secondary'}>{String(currentUsageReadiness)}</Badge>
@@ -848,7 +848,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   </div>
                 </div>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2" data-testid="release-ops__compare-details">
-                  <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__compare-runtime-details">
+                  <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__compare-runtime-details">
                     <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_runtime_details')}</div>
                     <div className="mt-2 grid gap-2 text-sm text-foreground">
                       <div>{settingsT('release_ops_compare_live_blockers')}: {currentRuntimeBlockerCount}</div>
@@ -856,7 +856,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       <div>{settingsT('release_ops_compare_report_warnings')}: {latestRuntimeWarningCount}</div>
                     </div>
                   </div>
-                  <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__compare-usage-details">
+                  <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__compare-usage-details">
                     <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_usage_details')}</div>
                     <div className="mt-2 grid gap-2 text-sm text-foreground">
                       <div>{settingsT('release_ops_compare_live_blockers')}: {currentUsageBlockerCount}</div>
@@ -864,7 +864,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       <div>{settingsT('release_ops_compare_report_warnings')}: {latestUsageWarningCount}</div>
                     </div>
                   </div>
-                  <div className="rounded-md border border-subtle bg-surface p-3 sm:col-span-2" data-testid="release-ops__compare-policy-details">
+                  <div className="rounded-lg border border-subtle bg-bg-base/20 p-3 sm:col-span-2" data-testid="release-ops__compare-policy-details">
                     <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_policy_details')}</div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Badge variant={livePolicy.decision === 'ready' ? 'outline' : 'secondary'}>{livePolicy.decision}</Badge>
@@ -901,7 +901,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   {topSchedules.length === 0 ? (
                     <div className="text-sm text-tertiary">{commonT('empty')}</div>
                   ) : topSchedules.map((schedule, index) => (
-                    <div key={schedule.id} className="rounded-md border border-subtle bg-bg-base/40 px-3 py-2" data-testid={`release-ops__schedule-${index}`}>
+                    <div key={schedule.id} className="rounded-lg border border-subtle bg-bg-base/10 px-3 py-2" data-testid={`release-ops__schedule-${index}`}>
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium text-foreground">{schedule.name}</div>
@@ -961,7 +961,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   ))}
                 </div>
                 {selectedEscalation ? (
-                  <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__escalation-detail">
+                  <div className="mt-3 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__escalation-detail">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={selectedEscalation.severity === 'critical' ? 'secondary' : 'outline'}>{selectedEscalation.severity}</Badge>
                       <StatusBadge status={selectedEscalation.status === 'resolved' ? 'ready' : 'warning'}>{selectedEscalation.status}</StatusBadge>
@@ -977,7 +977,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       ) : null}
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_escalations_delivery')}</div>
                         <div className="mt-1 text-sm text-foreground">
                           {selectedEscalation.webhook_delivery?.status ?? '--'}
@@ -988,7 +988,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           <div className="mt-1 text-xs text-tertiary">{selectedEscalation.webhook_delivery.error}</div>
                         ) : null}
                       </div>
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_escalations_ack')}</div>
                         <div className="mt-1 text-sm text-foreground">
                           {selectedEscalation.acknowledged_at
@@ -998,7 +998,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       </div>
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_escalations_owner')}</div>
                         <div className="mt-1 text-sm text-foreground">
                           {selectedEscalation.assignee_name ?? selectedEscalation.assignee_user_id ?? commonT('empty')}
@@ -1008,7 +1008,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           {selectedEscalation.age_ms ? ` · ${settingsT('release_ops_escalations_age')} ${formatAgeMs(selectedEscalation.age_ms)}` : ''}
                         </div>
                       </div>
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_escalations_assignment')}</div>
                         <div className="mt-2 grid gap-2">
                           <Input
@@ -1090,7 +1090,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   </div>
                 ) : null}
                 {incidentSummary ? (
-                  <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__incident-summary">
+                  <div className="mt-3 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__incident-summary">
                     <SectionHeading
                       eyebrow={commonT('review')}
                       title={settingsT('release_ops_incident_summary_title')}
@@ -1098,26 +1098,26 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       className="mb-3"
                     />
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__incident-summary-escalations">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__incident-summary-escalations">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_incident_summary_escalations')}</div>
                         <div className="mt-1 text-sm text-foreground">
                           {incidentSummary.openEscalations} open · {incidentSummary.resolvedEscalations} resolved
                         </div>
                       </div>
-                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__incident-summary-overrides">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__incident-summary-overrides">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_incident_summary_overrides')}</div>
                         <div className="mt-1 text-sm text-foreground">
                           {incidentSummary.pendingOverrides} pending · {incidentSummary.approvedOverrides} approved
                         </div>
                       </div>
-                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__incident-summary-run">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__incident-summary-run">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_incident_summary_latest_run')}</div>
                         <div className="mt-1 text-sm text-foreground">
                           {incidentSummary.latestRunId ?? '--'}
                         </div>
                         <div className="mt-1 text-xs text-tertiary">{incidentSummary.latestRunStatus ?? '--'}</div>
                       </div>
-                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__incident-summary-owner">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__incident-summary-owner">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_incident_summary_owner')}</div>
                         <div className="mt-1 text-sm text-foreground">{incidentSummary.owner ?? commonT('empty')}</div>
                         <div className="mt-1 text-xs text-tertiary">
@@ -1128,7 +1128,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </div>
                   </div>
                 ) : null}
-                <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__incident-trace">
+                <div className="mt-3 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__incident-trace">
                   <SectionHeading
                     eyebrow={commonT('monitor')}
                     title={settingsT('release_ops_incident_trace_title')}
@@ -1139,7 +1139,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     {incidentTrace.length === 0 ? (
                       <div className="text-sm text-tertiary">{commonT('empty')}</div>
                     ) : incidentTrace.map((item, index) => (
-                      <div key={item.id} className="rounded-md border border-subtle bg-surface px-3 py-2" data-testid={`release-ops__incident-trace-item-${index}`}>
+                      <div key={item.id} className="rounded-lg border border-subtle bg-bg-base/10 px-3 py-2" data-testid={`release-ops__incident-trace-item-${index}`}>
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
@@ -1213,7 +1213,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </button>
                   ))}
                 </div>
-                <div className="mt-4 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__timeline">
+                <div className="mt-4 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__timeline">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <SectionHeading
                       eyebrow={commonT('monitor')}
@@ -1223,15 +1223,15 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     <Badge variant="outline">{recentReleaseReports.length}</Badge>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__timeline-pass-rate">
+                    <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__timeline-pass-rate">
                       <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_pass_rate')}</div>
                       <div className="mt-1 text-sm font-medium text-foreground">{formatPercent(recentPassRate)}</div>
                     </div>
-                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__timeline-runtime-blocked">
+                    <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__timeline-runtime-blocked">
                       <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_runtime_blocked')}</div>
                       <div className="mt-1 text-sm font-medium text-foreground">{recentRuntimeBlocked}</div>
                     </div>
-                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__timeline-usage-blocked">
+                    <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__timeline-usage-blocked">
                       <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_usage_blocked')}</div>
                       <div className="mt-1 text-sm font-medium text-foreground">{recentUsageBlocked}</div>
                     </div>
@@ -1262,7 +1262,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     ))}
                   </div>
                 </div>
-                <div className="mt-4 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__history-trend">
+                <div className="mt-4 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__history-trend">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <SectionHeading
                       eyebrow={commonT('monitor')}
@@ -1272,15 +1272,15 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     <Badge variant="outline">{longRangeReports.length}</Badge>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__history-pass-rate">
+                    <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__history-pass-rate">
                       <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_pass_rate')}</div>
                       <div className="mt-1 text-sm font-medium text-foreground">{formatPercent(longRangePassRate)}</div>
                     </div>
-                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__history-runtime-blocked">
+                    <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__history-runtime-blocked">
                       <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_runtime_blocked')}</div>
                       <div className="mt-1 text-sm font-medium text-foreground">{longRangeRuntimeBlocked}</div>
                     </div>
-                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__history-usage-blocked">
+                    <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__history-usage-blocked">
                       <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_timeline_usage_blocked')}</div>
                       <div className="mt-1 text-sm font-medium text-foreground">{longRangeUsageBlocked}</div>
                     </div>
@@ -1289,7 +1289,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     {longRangeReports.map((item, index) => (
                       <div
                         key={`history-${item.name}`}
-                        className="flex items-center justify-between gap-3 rounded-md border border-subtle bg-surface px-3 py-2"
+                        className="flex items-center justify-between gap-3 rounded-lg border border-subtle bg-bg-base/10 px-3 py-2"
                         data-testid={`release-ops__history-item-${index}`}
                       >
                         <div className="min-w-0">
@@ -1309,7 +1309,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     ))}
                   </div>
                 </div>
-                <div className="mt-4 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__runs">
+                <div className="mt-4 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__runs">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <SectionHeading
                       eyebrow={commonT('act')}
@@ -1318,7 +1318,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     />
                     <Badge variant="outline">{recentReleaseRuns.length}</Badge>
                   </div>
-                  <div className="mb-4 rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__runner">
+                  <div className="mb-4 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__runner">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runner_title')}</div>
@@ -1360,7 +1360,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     {gateRunnerQuery.data?.recent_operations?.length ? (
                       <div className="mt-3 space-y-2">
                         {gateRunnerQuery.data.recent_operations.slice(0, 3).map((item, index) => (
-                          <div key={item.id} className="rounded-md border border-subtle bg-bg-base/40 px-3 py-2 text-xs text-tertiary" data-testid={`release-ops__runner-operation-${index}`}>
+                          <div key={item.id} className="rounded-lg border border-subtle bg-bg-base/10 px-3 py-2 text-xs text-tertiary" data-testid={`release-ops__runner-operation-${index}`}>
                             {item.mode} · {item.status} · {item.report_name}
                             {item.source_run_id ? ` · source:${item.source_run_id}` : ''}
                             {item.notes ? ` · ${item.notes}` : ''}
@@ -1392,7 +1392,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         <SelectItem value="unknown">{settingsT('release_ops_runs_trigger_unknown')}</SelectItem>
                       </SelectContent>
                     </Select>
-                    <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__run-pass-rate">
+                    <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__run-pass-rate">
                       <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_pass_rate')}</div>
                       <div className="mt-1 text-sm font-medium text-foreground">{formatPercent(runPassRate)}</div>
                     </div>
@@ -1427,7 +1427,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     ))}
                   </div>
                   {selectedRun ? (
-                    <div className="mt-3 rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__run-detail">
+                    <div className="mt-3 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__run-detail">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline">{selectedRun.id}</Badge>
                         <StatusBadge status={selectedRun.status === 'pass' ? 'ready' : 'blocked'}>{selectedRun.status}</StatusBadge>
@@ -1443,45 +1443,45 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         </Button>
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_duration')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">{formatDurationMs(selectedRun.duration_ms)}</div>
                         </div>
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_failed_step')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.failed_step_name ?? '--'}</div>
                         </div>
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_policy')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">
                             {selectedRun.policy_enforcement?.decision ?? selectedRun.release_policy_decision ?? '--'}
                           </div>
                         </div>
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_checks')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.passed_checks}/{selectedRun.total_checks}</div>
                         </div>
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_actor')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.actor_name ?? selectedRun.actor_user_id ?? '--'}</div>
                         </div>
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3 lg:col-span-2">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3 lg:col-span-2">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_notes')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.notes ?? '--'}</div>
                         </div>
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_runtime_readiness')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.runtime_release_readiness ?? '--'}</div>
                         </div>
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_usage_readiness')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.usage_release_readiness ?? '--'}</div>
                         </div>
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_failed_steps')}</div>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {selectedRun.failed_step_names.length === 0 ? (
@@ -1491,7 +1491,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                             ))}
                           </div>
                         </div>
-                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_failure_categories')}</div>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {selectedRun.failure_categories.length === 0 ? (
@@ -1506,7 +1506,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   ) : null}
                 </div>
                 {reportDetailQuery.data ? (
-                  <div className="mt-4 space-y-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__report-detail">
+                  <div className="mt-4 space-y-3 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__report-detail">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline">{reportDetailQuery.data.name}</Badge>
                       {reportDetailQuery.data.markdown ? (
@@ -1526,19 +1526,19 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       ) : null}
                     </div>
                     <div className="grid gap-3 sm:grid-cols-3" data-testid="release-ops__report-metadata">
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_reports_meta_branch')}</div>
                         <div className="mt-1 text-sm font-medium text-foreground">
                           {((reportDetailQuery.data.report as { metadata?: { git?: { branch?: string } } }).metadata?.git?.branch) ?? '--'}
                         </div>
                       </div>
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_reports_meta_commit')}</div>
                         <div className="mt-1 font-mono text-sm text-foreground">
                           {((reportDetailQuery.data.report as { metadata?: { git?: { commit_short?: string } } }).metadata?.git?.commit_short) ?? '--'}
                         </div>
                       </div>
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_reports_meta_generated_at')}</div>
                         <div className="mt-1 text-sm text-foreground">
                           {formatDateTime(((reportDetailQuery.data.report as { metadata?: { timestamp?: string } }).metadata?.timestamp))}
@@ -1546,7 +1546,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       </div>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2" data-testid="release-ops__report-structured-summary">
-                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__report-policy">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__report-policy">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_policy_title')}</div>
                         <div className="mt-2 flex items-center gap-2">
                           <StatusBadge status={mapReleaseDecisionStatus(artifactPolicy?.decision)}>
@@ -1559,7 +1559,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           </span>
                         </div>
                         {artifactPolicyEnforcement ? (
-                          <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 px-3 py-2" data-testid="release-ops__report-policy-enforcement">
+                          <div className="mt-3 rounded-lg border border-subtle bg-bg-base/10 px-3 py-2" data-testid="release-ops__report-policy-enforcement">
                             <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_policy_enforcement')}</div>
                             <div className="mt-2 flex flex-wrap items-center gap-2">
                               <StatusBadge status={mapReleaseDecisionStatus(artifactPolicyEnforcement.decision)}>
@@ -1581,7 +1581,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           </div>
                         ) : null}
                       </div>
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_runtime')}</div>
                         <div className="mt-2 flex items-center gap-2">
                           <StatusBadge status={reportSummary?.runtime_release_evidence?.guardrails?.release_readiness === 'ready' ? 'ready' : 'blocked'}>
@@ -1594,7 +1594,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           </span>
                         </div>
                       </div>
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_usage')}</div>
                         <div className="mt-2 flex items-center gap-2">
                           <StatusBadge status={reportSummary?.usage_report_evidence?.release_readiness === 'ready' ? 'ready' : 'blocked'}>
@@ -1609,7 +1609,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       </div>
                     </div>
                     <div className="grid gap-3" data-testid="release-ops__report-overrides">
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_overrides_title')}</div>
                           <Badge variant="outline">{overridesQuery.data?.items.length ?? 0}</Badge>
@@ -1717,7 +1717,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       </div>
                     </div>
                     <div className="grid gap-3" data-testid="release-ops__report-runtime-evidence">
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="mb-2 flex items-center justify-between gap-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_runtime_evidence')}</div>
                           <Link
@@ -1749,7 +1749,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       </div>
                     </div>
                     <div className="grid gap-3" data-testid="release-ops__report-usage-evidence">
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="mb-2 flex items-center justify-between gap-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_usage_evidence')}</div>
                           <Link
@@ -1781,7 +1781,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       </div>
                     </div>
                     <div className="grid gap-3" data-testid="release-ops__report-execution-checks">
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="mb-2 text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_execution_checks')}</div>
                         <div className="grid gap-3 sm:grid-cols-4">
                           <div>
@@ -1818,7 +1818,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       </div>
                     </div>
                     <div className="grid gap-3" data-testid="release-ops__report-failed-checks">
-                      <div className="rounded-md border border-subtle bg-surface p-3">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_failed_checks')}</div>
                           <Select value={failedCheckCategoryFilter} onValueChange={setFailedCheckCategoryFilter}>
@@ -1889,11 +1889,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         )}
                       </div>
                     </div>
-                    <pre className="overflow-x-auto rounded-md border border-subtle bg-surface p-3 text-xs text-foreground" data-testid="release-ops__report-summary-json">
+                    <pre className="overflow-x-auto rounded-lg border border-subtle bg-bg-base/20 p-3 text-xs text-foreground" data-testid="release-ops__report-summary-json">
                       {selectedReportSummary}
                     </pre>
                     {reportDetailQuery.data.markdown ? (
-                      <div className="rounded-md border border-subtle bg-surface p-3 text-xs text-tertiary" data-testid="release-ops__report-markdown-preview">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3 text-xs text-tertiary" data-testid="release-ops__report-markdown-preview">
                         {reportDetailQuery.data.markdown.slice(0, 600)}
                       </div>
                     ) : null}

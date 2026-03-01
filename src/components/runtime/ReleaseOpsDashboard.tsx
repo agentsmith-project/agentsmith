@@ -48,15 +48,15 @@ export function ReleaseOpsDashboard({
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-4">
-        <div className="rounded-lg border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__runtime-errors">
+        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__runtime-errors">
           <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('release_ops_runtime_error_rate')}</div>
           <div className="mt-1 text-sm font-semibold text-foreground">{formatPercent(runtime?.error_rate)}</div>
         </div>
-        <div className="rounded-lg border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__runtime-recovered">
+        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__runtime-recovered">
           <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('release_ops_runtime_recovered')}</div>
           <div className="mt-1 text-sm font-semibold text-foreground">{runtime?.health_summary.recovered_requests ?? 0}</div>
         </div>
-        <div className="rounded-lg border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__usage-release">
+        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__usage-release">
           <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('release_ops_usage_release')}</div>
           <div className="mt-1">
             <StatusBadge status={usageEvidence?.release_readiness === 'ready' ? 'ready' : 'blocked'}>
@@ -64,13 +64,13 @@ export function ReleaseOpsDashboard({
             </StatusBadge>
           </div>
         </div>
-        <div className="rounded-lg border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__runner-status">
+        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__runner-status">
           <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('release_ops_runner_status')}</div>
           <div className="mt-1 text-sm font-semibold text-foreground">{usageEvidence?.runner_health?.last_status ?? '--'}</div>
         </div>
       </div>
 
-      <div className="mt-4 rounded-lg border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__webhook-health">
+      <div className="mt-4 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__webhook-health">
         <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-tertiary">{t('release_ops_webhook_destinations')}</div>
         {destinations.length === 0 ? (
           <div className="text-sm text-tertiary">{t('release_ops_webhook_empty')}</div>
@@ -79,7 +79,7 @@ export function ReleaseOpsDashboard({
             {destinations.slice(0, 5).map((item, index) => (
               <div
                 key={`${item.host}-${item.path ?? ''}-${index}`}
-                className="rounded-md border border-subtle bg-surface px-3 py-2"
+                className="rounded-lg border border-subtle bg-bg-base/10 px-3 py-2"
                 data-testid={`release-ops__webhook-destination-${index}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">

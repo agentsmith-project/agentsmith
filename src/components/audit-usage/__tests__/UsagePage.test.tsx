@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { UsagePage } from '../UsagePage';
 
+const replaceMock = vi.fn();
+
 if (!HTMLElement.prototype.hasPointerCapture) {
   HTMLElement.prototype.hasPointerCapture = () => false;
 }
@@ -24,6 +26,12 @@ const invalidateQueries = vi.fn();
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, params?: Record<string, string | number>) =>
     params ? `${key}:${JSON.stringify(params)}` : key,
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: replaceMock }),
+  usePathname: () => '/en-US/workspaces/ws_1/projects/proj_1/usage',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@tanstack/react-query', async () => {
@@ -290,6 +298,8 @@ describe('UsagePage', () => {
     expect(screen.getByTestId('usage__report-schedules')).toBeInTheDocument();
     expect(screen.getByTestId('usage__report-evidence-runner-health')).toBeInTheDocument();
     expect(screen.getByTestId('usage__operations-webhook-destinations')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__open-runtime-observability')).toHaveAttribute('href', expect.stringContaining('/runtime-observability?'));
+    expect(screen.getByTestId('usage__open-release-ops')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
     await user.click(screen.getByTestId('usage__table__row'));
 
     expect(screen.getByText('detail.title')).toBeInTheDocument();

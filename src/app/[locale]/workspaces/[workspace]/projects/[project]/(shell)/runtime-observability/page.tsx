@@ -10,6 +10,7 @@ import { PageState } from '@/components/layout/PageState';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { RuntimeObservabilityConsole } from '@/components/runtime/RuntimeObservabilityConsole';
+import { parseSharedOpsFilterContext } from '@/lib/ops-filter-context';
 
 interface RuntimeObservabilityPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -21,20 +22,7 @@ export default function RuntimeObservabilityPage({ params }: RuntimeObservabilit
   const searchParams = useSearchParams();
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const canReadUsage = useHasPermission('project:usage:view');
-  const initialFilters = {
-    start_time: searchParams.get('start_time') ?? undefined,
-    end_time: searchParams.get('end_time') ?? undefined,
-    provider: searchParams.get('provider') ?? undefined,
-    model: searchParams.get('model') ?? undefined,
-    result: searchParams.get('result') === 'ok' || searchParams.get('result') === 'error'
-      ? searchParams.get('result') as 'ok' | 'error'
-      : undefined,
-    error_class: searchParams.get('error_class') === 'provider_retryable'
-      || searchParams.get('error_class') === 'provider_non_retryable'
-      || searchParams.get('error_class') === 'system_error'
-      ? searchParams.get('error_class') as 'provider_retryable' | 'provider_non_retryable' | 'system_error'
-      : undefined,
-  };
+  const initialFilters = parseSharedOpsFilterContext(searchParams);
 
   useEffect(() => {
     params.then((p) => setResolvedParams({

@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { RuntimeObservabilityConsole } from '../RuntimeObservabilityConsole';
 
+const replaceMock = vi.fn();
+
 const useUsageFactsMock = vi.fn(() => ({
   data: {
     items: [
@@ -34,6 +36,12 @@ const useUsageFactsMock = vi.fn(() => ({
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: replaceMock }),
+  usePathname: () => '/en-US/workspaces/ws_1/projects/proj_1/runtime-observability',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/lib/hooks/use-audit-usage', () => ({
@@ -129,6 +137,10 @@ describe('RuntimeObservabilityConsole', () => {
         workspaceId="ws_1"
         projectId="proj_1"
         locale="en-US"
+        initialFilters={{
+          start_time: '2026-02-27T00:00:00.000Z',
+          end_time: '2026-02-28T00:00:00.000Z',
+        }}
       />,
     );
 
@@ -141,6 +153,10 @@ describe('RuntimeObservabilityConsole', () => {
     expect(screen.getByTestId('runtime-observability__signals')).toBeInTheDocument();
     expect(screen.getByTestId('runtime-observability__provider-row-0')).toHaveTextContent('secondaryok');
     expect(screen.getByTestId('runtime-observability__model-row-0')).toHaveTextContent('secondaryok/model-b');
+    expect(screen.getByTestId('runtime-observability__open-usage')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_1/projects/proj_1/usage?start_time=2026-02-27T00%3A00%3A00.000Z&end_time=2026-02-28T00%3A00%3A00.000Z&panel=usage',
+    );
   });
 
   it('opens request detail drill-down from provider breakdown', () => {

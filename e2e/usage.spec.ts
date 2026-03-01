@@ -49,6 +49,8 @@ test.describe('Usage Page', () => {
     await expect(authedPage.getByText('Usage').first()).toBeVisible();
     await expect(authedPage.getByRole('button', { name: /refresh/i })).toBeVisible();
     await expect(authedPage.getByTestId('usage__export-trigger')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__open-runtime-observability')).toHaveAttribute('href', /runtime-observability\?/);
+    await expect(authedPage.getByTestId('usage__open-release-ops')).toHaveAttribute('href', /release-ops\?/);
   });
 
   test('export dropdown exposes csv and json actions', async ({ authedPage }) => {

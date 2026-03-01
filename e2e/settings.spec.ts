@@ -129,13 +129,16 @@ test.describe('Settings Page', () => {
       : openObservability;
 
     await Promise.all([
-      authedPage.waitForURL(/\/runtime-observability$/, { timeout: 10000 }),
+      authedPage.waitForURL(/\/runtime-observability(\?|$)/, { timeout: 10000 }),
       clickTarget.click(),
     ]);
 
-    await expect(authedPage).toHaveURL(/\/runtime-observability$/);
-    await expect(authedPage.getByTestId('runtime-observability__provider-table')).toBeVisible();
-    await expect(authedPage.getByTestId('runtime-observability__model-table')).toBeVisible();
+    await expect(authedPage).toHaveURL(/\/runtime-observability(\?|$)/);
+    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('runtime-observability__provider-table')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('runtime-observability__model-table')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('runtime-observability__open-usage')).toHaveAttribute('href', /usage\?/);
+    await expect(authedPage.getByTestId('runtime-observability__open-release-ops')).toHaveAttribute('href', /release-ops\?/);
   });
 
   test('runtime observability drill-down opens usage detail drawer', async ({ authedPage }) => {

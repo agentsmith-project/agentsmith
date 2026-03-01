@@ -2015,6 +2015,7 @@
     },
     "open_runtime": "打开运行时运营",
     "open_usage": "打开用量",
+    "open_release_ops": "打开发布运营",
     "open_release_ops": "打开 Release Ops",
     "empty_cost_snapshot": "当前时间窗口内没有明显高成本 provider/model。",
     "quick_actions": "快速入口",

@@ -38,6 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils';
 import { evaluateReleasePolicy } from '@/lib/release-policy';
 import { Textarea } from '@/components/ui/textarea';
+import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 
 interface ReleaseOpsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -122,15 +123,6 @@ function commandForCheck(category?: string, name?: string): string {
   if (normalized.includes('typecheck')) return 'npm run ws:typecheck';
   if (normalized.includes('runtime')) return 'make notebook-agent-release-smoke-full';
   return 'npm run release:report -- --name rerun-release-check';
-}
-
-function buildQueryString(params: Record<string, string | undefined>): string {
-  const query = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value) query.set(key, value);
-  });
-  const result = query.toString();
-  return result ? `?${result}` : '';
 }
 
 function downloadTextFile(filename: string, content: string, contentType: string): void {
@@ -482,17 +474,16 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const contextWindowStart = selectedReportTimestamp
     ? new Date(new Date(selectedReportTimestamp).getTime() - 24 * 60 * 60 * 1000).toISOString()
     : undefined;
-  const runtimeContextHref = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-observability${buildQueryString({
+  const runtimeContextHref = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-observability${buildSharedOpsFilterQuery({
     start_time: contextWindowStart,
     end_time: contextWindowEnd,
     result: reportSummary?.runtime_release_evidence?.guardrails?.release_readiness === 'blocked' ? 'error' : undefined,
   })}`;
-  const usageContextHref = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage${buildQueryString({
-    panel: 'usage',
+  const usageContextHref = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage${buildSharedOpsFilterQuery({
     start_time: contextWindowStart,
     end_time: contextWindowEnd,
     result: (reportSummary?.usage_report_evidence?.failed_deliveries_last_7d ?? 0) > 0 ? 'error' : undefined,
-  })}`;
+  }, { panel: 'usage' })}`;
   const longRangeReports = filteredReleaseReports.slice(0, 12);
   const longRangePassRate = longRangeReports.length > 0
     ? longRangeReports.filter((item) => item.status === 'pass').length / longRangeReports.length

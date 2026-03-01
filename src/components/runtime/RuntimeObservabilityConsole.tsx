@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +16,7 @@ import { EmptyState } from '@/components/audit-usage/EmptyState';
 import { useRuntimeObservability, useUsageFacts } from '@/lib/hooks/use-audit-usage';
 import type { UsageListParams } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
+import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 
 type RuntimeObservabilityConsoleProps = {
   workspaceId: string;
@@ -83,6 +85,9 @@ export function RuntimeObservabilityConsole({
 }: RuntimeObservabilityConsoleProps) {
   const settingsT = useTranslations('settings');
   const commonT = useTranslations('common');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [filters, setFilters] = React.useState<RuntimeObservabilityFilters>(() => ({
     ...defaultTimeRange(),
     ...initialFilters,
@@ -132,6 +137,12 @@ export function RuntimeObservabilityConsole({
   const providerRows = observability?.provider_breakdown ?? [];
   const modelRows = observability?.model_breakdown ?? [];
   const latestTrendBucket = observability?.request_trend.at(-1);
+  const usageHref = locale
+    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage${buildSharedOpsFilterQuery(filters, { panel: 'usage' })}`
+    : null;
+  const releaseOpsHref = locale
+    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/release-ops${buildSharedOpsFilterQuery(filters)}`
+    : null;
 
   const openDrillDown = React.useCallback((label: string, params: Partial<RuntimeDrillDown['params']>) => {
     setDrillDown({
@@ -162,6 +173,14 @@ export function RuntimeObservabilityConsole({
     });
   }, [filters.end_time, filters.start_time, openDrillDown]);
 
+  React.useEffect(() => {
+    const nextQuery = buildSharedOpsFilterQuery(filters);
+    const currentQuery = searchParams.toString();
+    const normalizedCurrent = currentQuery ? `?${currentQuery}` : '';
+    if (nextQuery === normalizedCurrent) return;
+    router.replace(`${pathname}${nextQuery}`, { scroll: false });
+  }, [filters, pathname, router, searchParams]);
+
   return (
     <>
       <div className="space-y-4">
@@ -179,6 +198,24 @@ export function RuntimeObservabilityConsole({
                 data-testid="runtime-observability__open-control-plane"
               >
                 {settingsT('runtime_observability_open_control_plane')}
+              </Link>
+            )}
+            {usageHref && !embedded && (
+              <Link
+                href={usageHref}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="runtime-observability__open-usage"
+              >
+                {commonT('open_usage')}
+              </Link>
+            )}
+            {releaseOpsHref && !embedded && (
+              <Link
+                href={releaseOpsHref}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="runtime-observability__open-release-ops"
+              >
+                {commonT('open_release_ops')}
               </Link>
             )}
             <Button

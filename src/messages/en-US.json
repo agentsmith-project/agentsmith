@@ -2014,6 +2014,7 @@
     "open_runtime": "Open Runtime Ops",
     "open_usage": "Open Usage",
     "open_release_ops": "Open Release Ops",
+    "open_release_ops": "Open Release Ops",
     "empty_cost_snapshot": "No cost-heavy providers or models in the current window.",
     "quick_actions": "Quick actions",
     "actions": {

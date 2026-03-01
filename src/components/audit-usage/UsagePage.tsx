@@ -1,6 +1,8 @@
 'use client';
 import * as React from 'react';
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Download, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { UsageKPICards } from './UsageKPICards';
@@ -26,6 +28,8 @@ import { getApiClient, UsageAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import type { UsageReportDelivery, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
 import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
+import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
+import { cn } from '@/lib/utils';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -72,6 +76,9 @@ export function UsagePage({
 }: UsagePageProps) {
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:usage:view');
   const canExportUsage = useHasPermission('project:usage:export');
@@ -366,6 +373,22 @@ export function UsagePage({
     || !!apiFilters.model
     || !!apiFilters.result
     || !!apiFilters.error_class;
+  const pathSegments = pathname.split('/');
+  const locale = pathSegments[1] || undefined;
+  const runtimeObservabilityHref = locale
+    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-observability${buildSharedOpsFilterQuery(apiFilters)}`
+    : null;
+  const releaseOpsHref = locale
+    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/release-ops${buildSharedOpsFilterQuery(apiFilters)}`
+    : null;
+
+  React.useEffect(() => {
+    const nextQuery = buildSharedOpsFilterQuery(apiFilters, { panel });
+    const currentQuery = searchParams.toString();
+    const normalizedCurrent = currentQuery ? `?${currentQuery}` : '';
+    if (nextQuery === normalizedCurrent) return;
+    router.replace(`${pathname}${nextQuery}`, { scroll: false });
+  }, [apiFilters, panel, pathname, router, searchParams]);
 
   const handleSelectUsageRecord = React.useCallback((record: UsageRecord) => {
     setSelectedUsageRecord(record);
@@ -407,6 +430,24 @@ export function UsagePage({
           subtitle={t('subtitle')}
           actions={(
             <div className="flex items-center gap-2">
+              {runtimeObservabilityHref && (
+                <Link
+                  href={runtimeObservabilityHref}
+                  className={cn(buttonVariants({ variant: 'outline' }))}
+                  data-testid="usage__open-runtime-observability"
+                >
+                  {commonT('open_runtime')}
+                </Link>
+              )}
+              {releaseOpsHref && (
+                <Link
+                  href={releaseOpsHref}
+                  className={cn(buttonVariants({ variant: 'outline' }))}
+                  data-testid="usage__open-release-ops"
+                >
+                  {commonT('open_release_ops')}
+                </Link>
+              )}
               {canExportUsage && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

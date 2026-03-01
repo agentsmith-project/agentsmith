@@ -267,6 +267,32 @@ function GuardrailSummary({
   );
 }
 
+function RuntimeSectionIntro({
+  title,
+  description,
+  count,
+  testId,
+  className,
+}: {
+  title: string;
+  description: string;
+  count?: string;
+  testId: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn('rounded-xl border border-border/70 bg-surface p-4 shadow-sm', className)} data-testid={testId}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-base font-semibold text-foreground">{title}</div>
+          <p className="mt-1 text-sm text-tertiary">{description}</p>
+        </div>
+        {count ? <Badge variant="outline">{count}</Badge> : null}
+      </div>
+    </div>
+  );
+}
+
 export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = false }: RuntimeControlPlanePanelProps) {
   const t = useTranslations('settings');
   const [provider, setProvider] = useState('openai');
@@ -548,7 +574,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
   };
 
   return (
-    <div className="space-y-4 rounded-xl border border-border bg-surface-high/70 p-4" data-testid="settings-runtime__panel">
+    <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface-high/70 p-4" data-testid="settings-runtime__panel">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h3 className="text-sm font-semibold text-foreground">{t('runtime_panel_title')}</h3>
@@ -559,7 +585,15 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <RuntimeSectionIntro
+        title={t('runtime_section_catalog_title')}
+        description={t('runtime_section_catalog_description')}
+        count={`P ${providersQuery.data?.items.length ?? 0} · M ${modelsQuery.data?.items.length ?? 0} · A ${aliasesQuery.data?.items.length ?? 0} · C ${combosQuery.data?.items.length ?? 0}`}
+        testId="settings-runtime__catalog-section"
+        className="order-1"
+      />
+
+      <div className="order-2 grid gap-3 md:grid-cols-2">
         <div className="space-y-2 rounded-lg border border-border/60 p-3">
           <div className="text-xs font-medium text-primary">{t('runtime_create_provider_title')}</div>
           <Input value={provider} onChange={(e) => setProvider(e.target.value)} disabled={disabled} data-testid="settings-runtime__provider-name" />
@@ -599,7 +633,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
         </div>
       </div>
 
-      <div className="space-y-2 rounded-lg border border-border/60 p-3">
+      <div className="order-3 space-y-2 rounded-lg border border-border/60 p-3">
         <div className="flex items-center justify-between">
           <div className="text-xs font-medium text-primary">{t('runtime_pricing_overrides_title')}</div>
           {pricingPretty ? <div className="text-[11px] text-tertiary">{t('runtime_pricing_loaded')}</div> : null}
@@ -610,7 +644,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
         </Button>
       </div>
 
-      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__pricing-governance">
+      <Card className="order-4 border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__pricing-governance">
         <CardHeader className="pb-4">
           <CardTitle>{t('runtime_pricing_governance_title')}</CardTitle>
           <p className="text-sm text-tertiary">{t('runtime_pricing_governance_description')}</p>
@@ -771,7 +805,15 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
         </CardContent>
       </Card>
 
-      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__release-controls">
+      <RuntimeSectionIntro
+        title={t('runtime_section_routing_title')}
+        description={t('runtime_section_routing_description')}
+        count={dryRunResult?.attempts?.length ? `${dryRunResult.attempts.length} ${t('runtime_section_attempts_count')}` : undefined}
+        testId="settings-runtime__routing-section"
+        className="order-5"
+      />
+
+      <Card className="order-9 border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__release-controls">
         <CardHeader className="pb-4">
           <CardTitle>{t('runtime_release_controls_title')}</CardTitle>
           <p className="text-sm text-tertiary">{t('runtime_release_controls_description')}</p>
@@ -874,7 +916,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
         </CardContent>
       </Card>
 
-      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__probe">
+      <Card className="order-6 border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__dry-run">
         <CardHeader className="pb-4">
           <CardTitle>{t('runtime_dry_run_title')}</CardTitle>
           <p className="text-sm text-tertiary">{t('runtime_dry_run_description')}</p>
@@ -1018,7 +1060,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
         </CardContent>
       </Card>
 
-      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__probe">
+      <Card className="order-7 border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__impact">
         <CardHeader className="pb-4">
           <CardTitle>{t('runtime_impact_preview_title')}</CardTitle>
           <p className="text-sm text-tertiary">{t('runtime_impact_preview_description')}</p>
@@ -1083,7 +1125,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
         </CardContent>
       </Card>
 
-      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__compare">
+      <Card className="order-8 border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__compare">
         <CardHeader className="pb-4">
           <CardTitle>{t('runtime_compare_title')}</CardTitle>
           <p className="text-sm text-tertiary">{t('runtime_compare_description')}</p>
@@ -1180,7 +1222,15 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
         </CardContent>
       </Card>
 
-      <Card className="border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__probe">
+      <RuntimeSectionIntro
+        title={t('runtime_section_release_readiness_title')}
+        description={t('runtime_section_release_readiness_description')}
+        count={releaseTarget ? routeTargetLabel(releaseTarget) : undefined}
+        testId="settings-runtime__release-readiness-section"
+        className="order-10"
+      />
+
+      <Card className="order-11 border-border/70 bg-surface shadow-sm" data-testid="settings-runtime__probe">
         <CardHeader className="pb-4">
           <CardTitle>{t('runtime_probe_title')}</CardTitle>
           <p className="text-sm text-tertiary">{t('runtime_probe_description')}</p>

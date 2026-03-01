@@ -190,6 +190,14 @@ vi.mock('@/components/ui/toast', () => ({
 }));
 
 describe('RuntimeControlPlanePanel', () => {
+  it('groups controls into catalog, routing, and release readiness sections', () => {
+    render(<RuntimeControlPlanePanel workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(screen.getByTestId('settings-runtime__catalog-section')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-runtime__routing-section')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-runtime__release-readiness-section')).toBeInTheDocument();
+  });
+
   it('creates provider with expected payload', async () => {
     const user = userEvent.setup();
     render(<RuntimeControlPlanePanel workspaceId="ws_1" projectId="proj_1" />);

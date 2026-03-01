@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
+import { SectionHeading } from '@/components/ui/section-heading';
 import { StatusBadge } from '@/components/ui/status-badge';
 import type {
   RuntimeObservabilityResponse,
@@ -38,10 +39,11 @@ export function ReleaseOpsDashboard({
   return (
     <section className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__dashboard">
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">{t('release_ops_title')}</h3>
-          <p className="text-xs text-tertiary">{t('release_ops_subtitle')}</p>
-        </div>
+        <SectionHeading
+          eyebrow={commonT('decide')}
+          title={t('release_ops_title')}
+          subtitle={t('release_ops_subtitle')}
+        />
         {loading ? <div className="text-xs text-tertiary">{commonT('loading')}</div> : null}
       </div>
 

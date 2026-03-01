@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
+import { SectionHeading } from '@/components/ui/section-heading';
 import type { UsageOperationsSummaryResponse } from '@/lib/api/endpoints/audit-usage';
 
 type UsageOperationsSummaryProps = {
@@ -19,6 +20,7 @@ function severityVariant(severity: 'medium' | 'high'): 'outline' | 'destructive'
 
 export function UsageOperationsSummary({ summary, loading = false }: UsageOperationsSummaryProps) {
   const t = useTranslations('usage');
+  const commonT = useTranslations('common');
 
   const topProviders = summary?.top_providers ?? [];
   const topModels = summary?.top_models ?? [];
@@ -29,10 +31,11 @@ export function UsageOperationsSummary({ summary, loading = false }: UsageOperat
   return (
     <section className="rounded-xl border border-border bg-surface p-4" data-testid="usage__operations-summary">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">{t('operations.title')}</h3>
-          <p className="text-xs text-tertiary">{t('operations.subtitle')}</p>
-        </div>
+        <SectionHeading
+          eyebrow={commonT('review')}
+          title={t('operations.title')}
+          subtitle={t('operations.subtitle')}
+        />
       </div>
 
       <div className="grid gap-3 xl:grid-cols-2">

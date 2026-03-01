@@ -57,6 +57,10 @@
     "next": "Next",
     "view": "View",
     "download": "Download",
+    "monitor": "Monitor",
+    "review": "Review",
+    "decide": "Decide",
+    "act": "Act",
     "feature_availability": {
       "mock_only_title": "Demo / mock-backed feature",
       "mock_only_description": "This page is available in MSW demo mode, but the local API backend does not implement this feature yet.",

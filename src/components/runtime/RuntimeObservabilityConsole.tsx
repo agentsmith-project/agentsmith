@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TimeRangePicker, type TimeRange } from '@/components/audit-usage/TimeRangePicker';
 import { EmptyState } from '@/components/audit-usage/EmptyState';
+import { SectionHeading } from '@/components/ui/section-heading';
 import { useRuntimeObservability, useUsageFacts } from '@/lib/hooks/use-audit-usage';
 import type { UsageListParams } from '@/lib/api/types';
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
@@ -303,10 +304,12 @@ export function RuntimeObservabilityConsole({
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <section className="rounded-xl border border-border bg-surface p-4">
-          <div className="mb-3">
-            <h3 className="text-sm font-semibold text-foreground">{settingsT('runtime_observability_request_trend_title')}</h3>
-            <p className="text-xs text-tertiary">{settingsT('runtime_observability_request_trend_subtitle')}</p>
-          </div>
+          <SectionHeading
+            eyebrow={commonT('monitor')}
+            title={settingsT('runtime_observability_request_trend_title')}
+            subtitle={settingsT('runtime_observability_request_trend_subtitle')}
+            className="mb-3"
+          />
           {(observability?.request_trend?.length ?? 0) === 0 ? (
             <EmptyState
               title={settingsT('runtime_observability_empty_title')}
@@ -349,10 +352,12 @@ export function RuntimeObservabilityConsole({
         </section>
 
         <section className="rounded-xl border border-border bg-surface p-4">
-          <div className="mb-3">
-            <h3 className="text-sm font-semibold text-foreground">{settingsT('runtime_observability_distribution_title')}</h3>
-            <p className="text-xs text-tertiary">{settingsT('runtime_observability_distribution_subtitle')}</p>
-          </div>
+          <SectionHeading
+            eyebrow={commonT('monitor')}
+            title={settingsT('runtime_observability_distribution_title')}
+            subtitle={settingsT('runtime_observability_distribution_subtitle')}
+            className="mb-3"
+          />
           <div className="space-y-3" data-testid="runtime-observability__distributions">
             <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
               <div className="text-xs text-tertiary">{settingsT('runtime_observability_distribution_latency')}</div>
@@ -375,10 +380,12 @@ export function RuntimeObservabilityConsole({
       </div>
 
       <section className="rounded-xl border border-border bg-surface p-4">
-        <div className="mb-3">
-          <h3 className="text-sm font-semibold text-foreground">{settingsT('runtime_observability_signals_title')}</h3>
-          <p className="text-xs text-tertiary">{settingsT('runtime_observability_signals_subtitle')}</p>
-        </div>
+        <SectionHeading
+          eyebrow={commonT('act')}
+          title={settingsT('runtime_observability_signals_title')}
+          subtitle={settingsT('runtime_observability_signals_subtitle')}
+          className="mb-3"
+        />
         {(observability?.degradation_signals?.length ?? 0) === 0 ? (
           <div className="rounded-lg border border-subtle bg-bg-base/40 px-3 py-4 text-sm text-tertiary" data-testid="runtime-observability__signals-empty">
             {settingsT('runtime_observability_signals_empty')}
@@ -426,12 +433,12 @@ export function RuntimeObservabilityConsole({
 
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="rounded-xl border border-border bg-surface p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">{settingsT('runtime_observability_provider_breakdown_title')}</h3>
-              <p className="text-xs text-tertiary">{settingsT('runtime_observability_provider_breakdown_subtitle')}</p>
-            </div>
-          </div>
+          <SectionHeading
+            eyebrow={commonT('review')}
+            title={settingsT('runtime_observability_provider_breakdown_title')}
+            subtitle={settingsT('runtime_observability_provider_breakdown_subtitle')}
+            className="mb-3"
+          />
           {providerRows.length === 0 ? (
             <EmptyState
               title={settingsT('runtime_observability_empty_title')}
@@ -480,10 +487,12 @@ export function RuntimeObservabilityConsole({
         </section>
 
         <section className="rounded-xl border border-border bg-surface p-4">
-          <div className="mb-3">
-            <h3 className="text-sm font-semibold text-foreground">{settingsT('runtime_observability_model_breakdown_title')}</h3>
-            <p className="text-xs text-tertiary">{settingsT('runtime_observability_model_breakdown_subtitle')}</p>
-          </div>
+          <SectionHeading
+            eyebrow={commonT('review')}
+            title={settingsT('runtime_observability_model_breakdown_title')}
+            subtitle={settingsT('runtime_observability_model_breakdown_subtitle')}
+            className="mb-3"
+          />
           {modelRows.length === 0 ? (
             <EmptyState
               title={settingsT('runtime_observability_empty_title')}

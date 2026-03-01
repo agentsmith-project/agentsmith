@@ -33,6 +33,7 @@ import { UsageOperationsSummary } from '@/components/audit-usage/UsageOperations
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { SectionHeading } from '@/components/ui/section-heading';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -783,10 +784,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
             <section className="space-y-4">
               <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__evidence-summary">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">{usageT('report_schedules.evidence_title')}</h3>
-                    <p className="text-xs text-tertiary">{usageT('report_schedules.evidence_subtitle')}</p>
-                  </div>
+                  <SectionHeading
+                    eyebrow={commonT('review')}
+                    title={usageT('report_schedules.evidence_title')}
+                    subtitle={usageT('report_schedules.evidence_subtitle')}
+                  />
                   {evidenceQuery.data ? (
                     <Badge variant={evidenceQuery.data.release_readiness === 'ready' ? 'outline' : 'secondary'}>
                       {usageT(`report_schedules.release_${evidenceQuery.data.release_readiness}`)}
@@ -821,10 +823,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
               </div>
 
               <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__online-vs-latest">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-foreground">{settingsT('release_ops_compare_title')}</h3>
-                  <p className="text-xs text-tertiary">{settingsT('release_ops_compare_subtitle')}</p>
-                </div>
+                <SectionHeading
+                  eyebrow={commonT('decide')}
+                  title={settingsT('release_ops_compare_title')}
+                  subtitle={settingsT('release_ops_compare_subtitle')}
+                  className="mb-3"
+                />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__compare-runtime">
                     <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_runtime')}</div>
@@ -886,10 +890,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
 
               <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__schedules">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">{usageT('report_schedules.title')}</h3>
-                    <p className="text-xs text-tertiary">{usageT('report_schedules.subtitle')}</p>
-                  </div>
+                  <SectionHeading
+                    eyebrow={commonT('act')}
+                    title={usageT('report_schedules.title')}
+                    subtitle={usageT('report_schedules.subtitle')}
+                  />
                   <Badge variant="outline">{topSchedules.length}</Badge>
                 </div>
                 <div className="space-y-2">
@@ -914,10 +919,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
 
               <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__escalations">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">{settingsT('release_ops_escalations_title')}</h3>
-                    <p className="text-xs text-tertiary">{settingsT('release_ops_escalations_subtitle')}</p>
-                  </div>
+                  <SectionHeading
+                    eyebrow={commonT('act')}
+                    title={settingsT('release_ops_escalations_title')}
+                    subtitle={settingsT('release_ops_escalations_subtitle')}
+                  />
                   <Badge variant="outline">{releaseEscalations.length}</Badge>
                 </div>
                 <div className="space-y-2">
@@ -1085,10 +1091,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                 ) : null}
                 {incidentSummary ? (
                   <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__incident-summary">
-                    <div className="mb-3">
-                      <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_incident_summary_title')}</h4>
-                      <p className="text-xs text-tertiary">{selectedIncidentId}</p>
-                    </div>
+                    <SectionHeading
+                      eyebrow={commonT('review')}
+                      title={settingsT('release_ops_incident_summary_title')}
+                      subtitle={selectedIncidentId}
+                      className="mb-3"
+                    />
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__incident-summary-escalations">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_incident_summary_escalations')}</div>
@@ -1121,10 +1129,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   </div>
                 ) : null}
                 <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__incident-trace">
-                  <div className="mb-3">
-                    <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_incident_trace_title')}</h4>
-                    <p className="text-xs text-tertiary">{settingsT('release_ops_incident_trace_subtitle')}</p>
-                  </div>
+                  <SectionHeading
+                    eyebrow={commonT('monitor')}
+                    title={settingsT('release_ops_incident_trace_title')}
+                    subtitle={settingsT('release_ops_incident_trace_subtitle')}
+                    className="mb-3"
+                  />
                   <div className="space-y-2">
                     {incidentTrace.length === 0 ? (
                       <div className="text-sm text-tertiary">{commonT('empty')}</div>
@@ -1144,10 +1154,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
               </div>
 
               <div className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__reports">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-foreground">{settingsT('release_ops_reports_title')}</h3>
-                  <p className="text-xs text-tertiary">{settingsT('release_ops_reports_subtitle')}</p>
-                </div>
+                <SectionHeading
+                  eyebrow={commonT('review')}
+                  title={settingsT('release_ops_reports_title')}
+                  subtitle={settingsT('release_ops_reports_subtitle')}
+                  className="mb-3"
+                />
                 <div className="mb-3 grid gap-3 md:grid-cols-[1fr_180px]">
                   <Input
                     value={reportSearch}
@@ -1203,10 +1215,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                 </div>
                 <div className="mt-4 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__timeline">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_timeline_title')}</h4>
-                      <p className="text-xs text-tertiary">{settingsT('release_ops_timeline_subtitle')}</p>
-                    </div>
+                    <SectionHeading
+                      eyebrow={commonT('monitor')}
+                      title={settingsT('release_ops_timeline_title')}
+                      subtitle={settingsT('release_ops_timeline_subtitle')}
+                    />
                     <Badge variant="outline">{recentReleaseReports.length}</Badge>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3">
@@ -1251,10 +1264,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                 </div>
                 <div className="mt-4 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__history-trend">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_history_title')}</h4>
-                      <p className="text-xs text-tertiary">{settingsT('release_ops_history_subtitle')}</p>
-                    </div>
+                    <SectionHeading
+                      eyebrow={commonT('monitor')}
+                      title={settingsT('release_ops_history_title')}
+                      subtitle={settingsT('release_ops_history_subtitle')}
+                    />
                     <Badge variant="outline">{longRangeReports.length}</Badge>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3">
@@ -1297,10 +1311,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                 </div>
                 <div className="mt-4 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__runs">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_runs_title')}</h4>
-                      <p className="text-xs text-tertiary">{settingsT('release_ops_runs_subtitle')}</p>
-                    </div>
+                    <SectionHeading
+                      eyebrow={commonT('act')}
+                      title={settingsT('release_ops_runs_title')}
+                      subtitle={settingsT('release_ops_runs_subtitle')}
+                    />
                     <Badge variant="outline">{recentReleaseRuns.length}</Badge>
                   </div>
                   <div className="mb-4 rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__runner">

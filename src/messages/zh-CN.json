@@ -57,6 +57,10 @@
     "next": "下一个",
     "view": "查看",
     "download": "下载",
+    "monitor": "监控",
+    "review": "审查",
+    "decide": "决策",
+    "act": "执行",
     "feature_availability": {
       "mock_only_title": "演示 / Mock 功能",
       "mock_only_description": "该页面在 MSW 演示模式下可用，但本地 API 后端尚未实现此功能。",

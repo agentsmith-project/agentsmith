@@ -542,9 +542,24 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     ?? selectedRun?.incident_id
     ?? overridesQuery.data?.items[0]?.incident_id
     ?? (selectedReportName ? `incident-${selectedReportName}` : undefined);
+  const incidentEscalations = releaseEscalations.filter((item) => !selectedIncidentId || item.incident_id === selectedIncidentId);
+  const incidentRuns = releaseRuns.filter((item) => !selectedIncidentId || item.incident_id === selectedIncidentId);
+  const incidentOverrides = (overridesQuery.data?.items ?? []).filter((item) => !selectedIncidentId || item.incident_id === selectedIncidentId);
+  const incidentLatestRun = [...incidentRuns].sort((a, b) => b.completed_at.localeCompare(a.completed_at))[0];
+  const incidentPrimaryEscalation = selectedEscalation ?? incidentEscalations[0];
+  const incidentSummary = selectedIncidentId ? {
+    openEscalations: incidentEscalations.filter((item) => item.status !== 'resolved').length,
+    resolvedEscalations: incidentEscalations.filter((item) => item.status === 'resolved').length,
+    pendingOverrides: incidentOverrides.filter((item) => item.effective_status === 'pending' || item.status === 'pending').length,
+    approvedOverrides: incidentOverrides.filter((item) => item.effective_status === 'approved' || item.status === 'approved').length,
+    latestRunStatus: incidentLatestRun?.status,
+    latestRunId: incidentLatestRun?.id,
+    owner: incidentPrimaryEscalation?.assignee_name ?? incidentPrimaryEscalation?.assignee_user_id,
+    slaStatus: incidentPrimaryEscalation?.sla_status,
+    resolutionCategory: incidentPrimaryEscalation?.resolution_category,
+  } : null;
   const incidentTrace = [
-    ...releaseEscalations
-      .filter((item) => !selectedIncidentId || item.incident_id === selectedIncidentId)
+    ...incidentEscalations
       .map((item) => ({
         id: `escalation-${item.id}`,
         kind: 'escalation',
@@ -575,8 +590,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
         : settingsT('release_ops_escalations_reopen'),
       meta: `${selectedEscalation.resolution_category ?? '--'} · ${selectedEscalation.resolved_by_name ?? selectedEscalation.resolved_by_user_id ?? '--'}`,
     }] : []),
-    ...releaseRuns
-      .filter((item) => !selectedIncidentId || item.incident_id === selectedIncidentId)
+    ...incidentRuns
       .map((item) => ({
         id: `run-${item.id}`,
         kind: 'run',
@@ -584,8 +598,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
         title: item.id,
         meta: `${item.trigger} · ${item.status}`,
       })),
-    ...((overridesQuery.data?.items ?? [])
-      .filter((item) => !selectedIncidentId || item.incident_id === selectedIncidentId)
+    ...(incidentOverrides
       .map((item) => ({
       id: `override-${item.id}`,
       kind: 'override',
@@ -1051,6 +1064,43 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         {selectedEscalation.resolution_reason ? ` · ${selectedEscalation.resolution_reason}` : ''}
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+                {incidentSummary ? (
+                  <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__incident-summary">
+                    <div className="mb-3">
+                      <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_incident_summary_title')}</h4>
+                      <p className="text-xs text-tertiary">{selectedIncidentId}</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__incident-summary-escalations">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_incident_summary_escalations')}</div>
+                        <div className="mt-1 text-sm text-foreground">
+                          {incidentSummary.openEscalations} open · {incidentSummary.resolvedEscalations} resolved
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__incident-summary-overrides">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_incident_summary_overrides')}</div>
+                        <div className="mt-1 text-sm text-foreground">
+                          {incidentSummary.pendingOverrides} pending · {incidentSummary.approvedOverrides} approved
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__incident-summary-run">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_incident_summary_latest_run')}</div>
+                        <div className="mt-1 text-sm text-foreground">
+                          {incidentSummary.latestRunId ?? '--'}
+                        </div>
+                        <div className="mt-1 text-xs text-tertiary">{incidentSummary.latestRunStatus ?? '--'}</div>
+                      </div>
+                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__incident-summary-owner">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_incident_summary_owner')}</div>
+                        <div className="mt-1 text-sm text-foreground">{incidentSummary.owner ?? commonT('empty')}</div>
+                        <div className="mt-1 text-xs text-tertiary">
+                          {incidentSummary.slaStatus ?? '--'}
+                          {incidentSummary.resolutionCategory ? ` · ${incidentSummary.resolutionCategory}` : ''}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
                 <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__incident-trace">

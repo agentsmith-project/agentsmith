@@ -219,6 +219,11 @@ test.describe('Settings Page', () => {
     await authedPage.getByRole('option', { name: /accepted risk|接受风险/i }).click();
     await authedPage.getByTestId('release-ops__escalation-resolution-reason').fill('Mitigated in follow-up gate');
     await authedPage.getByTestId('release-ops__escalation-resolve').click();
+    await expect(authedPage.getByTestId('release-ops__incident-summary')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__incident-summary-escalations')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__incident-summary-overrides')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__incident-summary-run')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__incident-summary-owner')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__incident-trace')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__run-item-0')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__runner')).toBeVisible();

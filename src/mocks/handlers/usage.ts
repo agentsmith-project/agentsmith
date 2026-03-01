@@ -73,6 +73,7 @@ const usageReportSchedules: UsageReportSchedule[] = [{
 const usageReportDeliveries: UsageReportDelivery[] = [];
 const releasePolicyOverrides = [{
   id: 'rpo_001',
+  incident_id: 'incident-usage-webhook-signature-policy-check',
   workspace_id: 'ws_default',
   project_id: 'proj_001',
   report_name: 'usage-webhook-signature-policy-check',
@@ -89,6 +90,7 @@ const releasePolicyOverrides = [{
   effective_status: 'pending',
 }] as Array<{
   id: string;
+  incident_id: string;
   workspace_id: string;
   project_id: string;
   report_name: string;
@@ -205,6 +207,7 @@ const releaseReports: ReleaseReportListItem[] = [
 const releaseRuns: ReleaseGateRunListItem[] = [
   {
     id: 'wp11-release-controls-final-20260228',
+    incident_id: 'incident-wp11-release-controls-final-20260228',
     report_name: 'wp11-release-controls-final-20260228',
     artifact_name: 'wp11-release-controls-final-20260228',
     started_at: '2026-02-28T20:30:00.000Z',
@@ -224,6 +227,7 @@ const releaseRuns: ReleaseGateRunListItem[] = [
   },
   {
     id: 'usage-webhook-signature-policy-check',
+    incident_id: 'incident-usage-webhook-signature-policy-check',
     report_name: 'usage-webhook-signature-policy-check',
     artifact_name: 'usage-webhook-signature-policy-check',
     started_at: '2026-02-28T22:08:00.000Z',
@@ -243,6 +247,7 @@ const releaseRuns: ReleaseGateRunListItem[] = [
   },
   {
     id: 'runtime-evidence-gate-regression-20260227',
+    incident_id: 'incident-runtime-evidence-gate-regression-20260227',
     report_name: 'runtime-evidence-gate-regression-20260227',
     artifact_name: 'runtime-evidence-gate-regression-20260227',
     started_at: '2026-02-27T19:15:00.000Z',
@@ -317,6 +322,7 @@ let releaseGateRunnerStatus = {
 const releaseEscalations: ReleaseEscalationEvent[] = [
   {
     id: 'usage-webhook-signature-policy-check',
+    incident_id: 'incident-usage-webhook-signature-policy-check',
     report_name: 'usage-webhook-signature-policy-check',
     run_id: 'usage-webhook-signature-policy-check',
     created_at: '2026-02-28T22:10:00.000Z',
@@ -342,6 +348,7 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
   },
   {
     id: 'runtime-evidence-gate-regression-20260227',
+    incident_id: 'incident-runtime-evidence-gate-regression-20260227',
     report_name: 'runtime-evidence-gate-regression-20260227',
     run_id: 'runtime-evidence-gate-regression-20260227',
     created_at: '2026-02-27T19:25:00.000Z',
@@ -372,6 +379,7 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
   },
   {
     id: 'wp11-release-controls-final-20260228',
+    incident_id: 'incident-wp11-release-controls-final-20260228',
     report_name: 'wp11-release-controls-final-20260228',
     run_id: 'wp11-release-controls-final-20260228',
     created_at: '2026-02-28T20:35:10.000Z',
@@ -1320,6 +1328,7 @@ export const usageHandlers = [
       workspace_id: string;
       project_id: string;
       report_name: string;
+      incident_id: string;
       issue_id: string;
       issue_source: 'execution' | 'runtime' | 'usage';
       issue_message: string;

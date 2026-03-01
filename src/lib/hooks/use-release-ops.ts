@@ -180,6 +180,7 @@ export function useCreateReleasePolicyOverride() {
       workspace_id: string;
       project_id: string;
       report_name: string;
+      incident_id: string;
       issue_id: string;
       issue_source: 'execution' | 'runtime' | 'usage';
       issue_message: string;

@@ -337,8 +337,10 @@ function buildReleaseGateRunHistory(
   const failedChecks = report.execution.checks.filter((check) => check.status === 'fail');
   const firstFailedCheck = failedChecks[0];
   const failureCategories = Array.from(new Set((report.summary.failure_categories ?? []).map((category) => category.category)));
+  const incidentId = options.rerunOfRunId ? `incident-${options.rerunOfRunId}` : `incident-${reportName}`;
   return {
     id: reportName,
+    incident_id: incidentId,
     report_name: reportName,
     artifact_name: reportName,
     trigger: options.trigger ?? getTriggerSource(),
@@ -386,6 +388,7 @@ async function buildReleaseEscalationEvent(
       : 'info';
   const event: ReleaseEscalationEvent = {
     id: reportName,
+    incident_id: run.incident_id,
     report_name: reportName,
     run_id: run.id,
     created_at: run.completed_at,

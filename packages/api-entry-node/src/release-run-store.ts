@@ -3,6 +3,7 @@ import { basename, join } from 'node:path';
 
 export type ReleaseGateRunListItem = {
   id: string;
+  incident_id: string;
   report_name: string;
   artifact_name: string;
   started_at: string;
@@ -61,6 +62,7 @@ export function listReleaseGateRuns(dir: string): ReleaseGateRunListItem[] {
     .filter((item): item is ReleaseGateRunShape => item !== null)
     .map((item) => ({
       id: item.id,
+      incident_id: item.incident_id,
       report_name: item.report_name,
       artifact_name: item.artifact_name,
       started_at: item.started_at,

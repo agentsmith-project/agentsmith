@@ -145,6 +145,7 @@ describe('verify-release-report: TDD Suite', () => {
         notes?: string;
         rerun_of_run_id?: string;
       };
+      expect(run.incident_id).toBe('incident-prior-run');
       expect(run.id).toBe('report-test');
       expect(run.report_name).toBe('report-test');
       expect(run.trigger).toBe('manual');
@@ -157,9 +158,11 @@ describe('verify-release-report: TDD Suite', () => {
 
       const escalation = JSON.parse(readFileSync(join(ESCALATIONS_OUTPUT_DIR, 'report-test.json'), 'utf-8')) as {
         id?: string;
+        incident_id?: string;
         event_type?: string;
       };
       expect(escalation.id).toBe('report-test');
+      expect(escalation.incident_id).toBe('incident-prior-run');
       expect(['gate_ready', 'gate_warning', 'gate_blocked']).toContain(escalation.event_type);
     });
   });

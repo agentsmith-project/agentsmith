@@ -757,6 +757,7 @@ export async function handleRequest(
     const workspaceId = typeof body.workspace_id === 'string' ? body.workspace_id.trim() : '';
     const projectId = typeof body.project_id === 'string' ? body.project_id.trim() : '';
     const reportName = typeof body.report_name === 'string' ? body.report_name.trim() : '';
+    const incidentId = typeof body.incident_id === 'string' ? body.incident_id.trim() : '';
     const issueId = typeof body.issue_id === 'string' ? body.issue_id.trim() : '';
     const issueSource = body.issue_source === 'execution' || body.issue_source === 'runtime' || body.issue_source === 'usage'
       ? body.issue_source
@@ -771,8 +772,8 @@ export async function handleRequest(
     const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
     const expiresAt = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
     const expiresDate = expiresAt ? new Date(expiresAt) : null;
-    if (!workspaceId || !projectId || !reportName || !issueId || !issueSource || !issueMessage || !reasonCategory || !reason || !expiresAt) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_id, project_id, report_name, issue_id, issue_source, issue_message, reason_category, reason, and expires_at are required' });
+    if (!workspaceId || !projectId || !reportName || !incidentId || !issueId || !issueSource || !issueMessage || !reasonCategory || !reason || !expiresAt) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_id, project_id, report_name, incident_id, issue_id, issue_source, issue_message, reason_category, reason, and expires_at are required' });
       return;
     }
     if (!expiresDate || Number.isNaN(expiresDate.getTime()) || expiresDate.getTime() <= Date.now()) {
@@ -783,6 +784,7 @@ export async function handleRequest(
       workspaceId,
       projectId,
       reportName,
+      incidentId,
       issueId,
       issueSource,
       issueMessage,

@@ -538,14 +538,20 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     ...(artifactPolicy?.warnings ?? []),
     ...(artifactPolicy?.blockers ?? []).filter((issue) => issue.overridable),
   ];
+  const selectedIncidentId = selectedEscalation?.incident_id
+    ?? selectedRun?.incident_id
+    ?? overridesQuery.data?.items[0]?.incident_id
+    ?? (selectedReportName ? `incident-${selectedReportName}` : undefined);
   const incidentTrace = [
-    ...(selectedEscalation ? [{
-      id: `escalation-${selectedEscalation.id}`,
-      kind: 'escalation',
-      timestamp: selectedEscalation.created_at,
-      title: selectedEscalation.title,
-      meta: `${selectedEscalation.event_type} · ${selectedEscalation.status}`,
-    }] : []),
+    ...releaseEscalations
+      .filter((item) => !selectedIncidentId || item.incident_id === selectedIncidentId)
+      .map((item) => ({
+        id: `escalation-${item.id}`,
+        kind: 'escalation',
+        timestamp: item.created_at,
+        title: item.title,
+        meta: `${item.event_type} · ${item.status}`,
+      })),
     ...(selectedEscalation?.acknowledged_at ? [{
       id: `escalation-ack-${selectedEscalation.id}`,
       kind: 'ack',
@@ -569,14 +575,18 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
         : settingsT('release_ops_escalations_reopen'),
       meta: `${selectedEscalation.resolution_category ?? '--'} · ${selectedEscalation.resolved_by_name ?? selectedEscalation.resolved_by_user_id ?? '--'}`,
     }] : []),
-    ...(selectedRun ? [{
-      id: `run-${selectedRun.id}`,
-      kind: 'run',
-      timestamp: selectedRun.completed_at,
-      title: selectedRun.id,
-      meta: `${selectedRun.trigger} · ${selectedRun.status}`,
-    }] : []),
-    ...((overridesQuery.data?.items ?? []).map((item) => ({
+    ...releaseRuns
+      .filter((item) => !selectedIncidentId || item.incident_id === selectedIncidentId)
+      .map((item) => ({
+        id: `run-${item.id}`,
+        kind: 'run',
+        timestamp: item.completed_at,
+        title: item.id,
+        meta: `${item.trigger} · ${item.status}`,
+      })),
+    ...((overridesQuery.data?.items ?? [])
+      .filter((item) => !selectedIncidentId || item.incident_id === selectedIncidentId)
+      .map((item) => ({
       id: `override-${item.id}`,
       kind: 'override',
       timestamp: item.decided_at ?? item.created_at,
@@ -607,6 +617,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       workspace_id: workspaceId,
       project_id: projectId,
       report_name: selectedReportName,
+      incident_id: selectedIncidentId ?? `incident-${selectedReportName}`,
       issue_id: selectedIssue.id ?? 'unknown_issue',
       issue_source: (selectedIssue.source as 'execution' | 'runtime' | 'usage') ?? 'runtime',
       issue_message: selectedIssue.message ?? '',

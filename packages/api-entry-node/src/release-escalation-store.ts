@@ -3,6 +3,7 @@ import { basename, join } from 'node:path';
 
 export type ReleaseEscalationEvent = {
   id: string;
+  incident_id: string;
   report_name: string;
   run_id: string;
   created_at: string;

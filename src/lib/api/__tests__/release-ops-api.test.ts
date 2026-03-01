@@ -54,6 +54,7 @@ describe('ReleaseOpsAPI', () => {
       items: [
         {
           id: 'sample-release',
+          incident_id: 'incident-sample-release',
           report_name: 'sample-release',
           artifact_name: 'sample-release',
           started_at: '2026-02-28T20:34:50.000Z',
@@ -81,6 +82,7 @@ describe('ReleaseOpsAPI', () => {
   it('loads a release gate run detail', async () => {
     const getMock = vi.fn().mockResolvedValue({
       id: 'sample-release',
+      incident_id: 'incident-sample-release',
       report_name: 'sample-release',
       artifact_name: 'sample-release',
       started_at: '2026-02-28T20:34:50.000Z',
@@ -139,6 +141,7 @@ describe('ReleaseOpsAPI', () => {
       items: [
         {
           id: 'sample-release',
+          incident_id: 'incident-sample-release',
           report_name: 'sample-release',
           run_id: 'sample-release',
           created_at: '2026-02-28T20:35:10.000Z',
@@ -211,6 +214,7 @@ describe('ReleaseOpsAPI', () => {
   it('loads a release escalation detail', async () => {
     const getMock = vi.fn().mockResolvedValue({
       id: 'sample-release',
+      incident_id: 'incident-sample-release',
       report_name: 'sample-release',
       run_id: 'sample-release',
       created_at: '2026-02-28T20:35:10.000Z',
@@ -257,6 +261,7 @@ describe('ReleaseOpsAPI', () => {
       workspace_id: 'ws_default',
       project_id: 'proj_001',
       report_name: 'sample-release',
+      incident_id: 'incident-sample-release',
       issue_id: 'usage_warning',
       issue_source: 'usage',
       issue_message: 'usage_report_webhook_signature_recommended',
@@ -269,6 +274,7 @@ describe('ReleaseOpsAPI', () => {
       workspace_id: 'ws_default',
       project_id: 'proj_001',
       report_name: 'sample-release',
+      incident_id: 'incident-sample-release',
       issue_id: 'usage_warning',
       issue_source: 'usage',
       issue_message: 'usage_report_webhook_signature_recommended',

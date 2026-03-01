@@ -313,6 +313,8 @@ export interface UsageReportEvidence {
 export interface ReleaseGateRunHistory {
   /** Unique gate run id */
   id: string;
+  /** Logical incident lineage id for gate/escalation/override correlation */
+  incident_id: string;
   /** Release report artifact name linked to this run */
   report_name: string;
   /** Artifact name for browsing/report download */
@@ -363,6 +365,7 @@ export interface ReleaseGateRunHistory {
 
 export interface ReleaseEscalationEvent {
   id: string;
+  incident_id: string;
   report_name: string;
   run_id: string;
   created_at: string;

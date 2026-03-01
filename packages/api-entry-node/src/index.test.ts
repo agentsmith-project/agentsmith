@@ -4312,6 +4312,7 @@ describe('api-entry-node projects routes', () => {
         workspace_id: 'ws_default',
         project_id: 'proj_1',
         report_name: 'sample-release',
+        incident_id: 'incident-sample-release',
         issue_id: 'execution_failures_present',
         issue_source: 'execution',
         issue_message: 'Execution has 1 failed checks.',
@@ -4430,6 +4431,7 @@ describe('api-entry-node projects routes', () => {
         workspace_id: 'ws_default',
         project_id: 'proj_1',
         report_name: 'sample-release',
+        incident_id: 'incident-sample-release',
         issue_id: 'usage_warning',
         issue_source: 'usage',
         issue_message: 'usage_report_webhook_signature_recommended',
@@ -4439,10 +4441,11 @@ describe('api-entry-node projects routes', () => {
       }),
     });
     expect(createRes.status).toBe(201);
-    const created = (await createRes.json()) as { issue_id: string; reason: string; effective_status?: string };
+    const created = (await createRes.json()) as { issue_id: string; reason: string; effective_status?: string; incident_id?: string };
     expect(created.issue_id).toBe('usage_warning');
     expect(created.reason).toBe('Accepted for staged rollout');
     expect(created.effective_status).toBe('pending');
+    expect(created.incident_id).toBe('incident-sample-release');
 
     const listRes = await apiFetch(
       baseUrl,
@@ -4463,6 +4466,7 @@ describe('api-entry-node projects routes', () => {
         workspace_id: 'ws_default',
         project_id: 'proj_1',
         report_name: 'sample-release',
+        incident_id: 'incident-sample-release',
         issue_id: 'usage_warning',
         issue_source: 'usage',
         issue_message: 'usage_report_webhook_signature_recommended',

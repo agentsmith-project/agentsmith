@@ -11,6 +11,7 @@ export type ReleasePolicyOverrideReasonCategory =
 
 export type ReleasePolicyOverrideRecord = {
   id: string;
+  incident_id: string;
   workspace_id: string;
   project_id: string;
   report_name: string;
@@ -59,6 +60,7 @@ export async function createReleasePolicyOverride(
     workspaceId: string;
     projectId: string;
     reportName: string;
+    incidentId: string;
     issueId: string;
     issueSource: 'execution' | 'runtime' | 'usage';
     issueMessage: string;
@@ -82,6 +84,7 @@ export async function createReleasePolicyOverride(
 
   const record: ReleasePolicyOverrideRecord = {
     id: `rpo_${randomUUID()}`,
+    incident_id: params.incidentId,
     workspace_id: params.workspaceId,
     project_id: params.projectId,
     report_name: params.reportName,

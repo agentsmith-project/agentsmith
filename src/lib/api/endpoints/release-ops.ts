@@ -25,6 +25,7 @@ export interface ReleaseReportDetail {
 
 export interface ReleaseGateRunListItem {
   id: string;
+  incident_id: string;
   report_name: string;
   artifact_name: string;
   started_at: string;
@@ -79,6 +80,7 @@ export interface ReleaseGateRunnerStatus {
 
 export interface ReleaseEscalationEvent {
   id: string;
+  incident_id: string;
   report_name: string;
   run_id: string;
   created_at: string;
@@ -118,6 +120,7 @@ export interface ReleaseEscalationEvent {
 
 export interface ReleasePolicyOverrideRecord {
   id: string;
+  incident_id: string;
   workspace_id: string;
   project_id: string;
   report_name: string;
@@ -220,6 +223,7 @@ export class ReleaseOpsAPI {
     workspace_id: string;
     project_id: string;
     report_name: string;
+    incident_id: string;
     issue_id: string;
     issue_source: 'execution' | 'runtime' | 'usage';
     issue_message: string;

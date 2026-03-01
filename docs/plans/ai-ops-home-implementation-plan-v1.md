@@ -1,7 +1,7 @@
 # AI Ops Home Implementation Plan v1
 
 更新时间：2026-03-01  
-状态：`proposed`
+状态：`baseline-complete`
 
 前置文档：
 
@@ -166,3 +166,24 @@
 2. `ux: regroup project navigation by task model`
 3. `ux: unify runtime usage release state semantics`
 4. `ux: restructure runtime control plane layout`
+
+---
+
+## 8. 完成情况
+
+截至 2026-03-01，本计划已完成并收口。
+
+已完成：
+
+1. `WP-01 AI Ops Home`：完成
+2. `WP-02 项目导航分组重构`：完成
+3. `WP-03 共享状态语言与过滤语义`：完成
+4. `WP-04 Runtime Control Plane 信息分层`：完成
+5. `Build / Govern / Operate` 跨组页头动作统一：完成
+6. `Overview / Settings / Alerts / Notebook task detail` 等入口与孤页补齐：完成
+
+收口结论：
+
+1. 本计划的结构性目标已达成
+2. 剩余事项已降为低优先级 polish
+3. 后续若继续做 UX，应视为新主线而不是本计划的延续

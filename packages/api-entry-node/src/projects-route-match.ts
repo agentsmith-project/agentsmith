@@ -6,6 +6,7 @@ export type ProjectsRoute =
   | { kind: 'workspaceMembers'; workspaceId: string }
   | { kind: 'collection'; workspaceId: string }
   | { kind: 'item'; workspaceId: string; projectId: string }
+  | { kind: 'projectAuthorize'; workspaceId: string; projectId: string }
   | { kind: 'sources'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibraries'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibrariesDefaultPersonal'; workspaceId: string; projectId: string }
@@ -212,6 +213,15 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'item',
       workspaceId: decodeURIComponent(itemMatched[1]),
       projectId: decodeURIComponent(itemMatched[2]),
+    };
+  }
+
+  const projectAuthorizeMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/authorize\/?$/);
+  if (projectAuthorizeMatched) {
+    return {
+      kind: 'projectAuthorize',
+      workspaceId: decodeURIComponent(projectAuthorizeMatched[1]),
+      projectId: decodeURIComponent(projectAuthorizeMatched[2]),
     };
   }
 

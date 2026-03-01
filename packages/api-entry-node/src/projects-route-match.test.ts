@@ -13,6 +13,11 @@ describe('matchProjectsRoute', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
     });
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/authorize')).toEqual({
+      kind: 'projectAuthorize',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
   });
 
   it('matches chat stream and stop routes', () => {

@@ -15,7 +15,11 @@ import {
   buildWorkspaceRecords,
   resolveProjectPermissions,
 } from './workspace-permissions.js';
-import { resolveProjectPermissionsForRequest } from './project-authz-resolver.js';
+import {
+  evaluateProjectPermissions,
+  evaluateResourcePolicyAuthorization,
+  mapAuthorizationRequestToPermission,
+} from './project-authz-engine.js';
 import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './http-utils.js';
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
@@ -56,6 +60,22 @@ import {
 type ReleaseReportPolicyShape = {
   summary?: {
     release_policy?: ReleasePolicyEvaluation;
+  };
+};
+
+type AuthorizationRequestBody = {
+  subject?: {
+    type?: 'user' | 'group' | 'agent';
+    id?: string;
+  };
+  action?: string;
+  resource?: {
+    type?: 'project' | 'endpoint' | 'source_library' | 'agent';
+    id?: string;
+  };
+  context?: {
+    end_user_id?: string;
+    metadata?: Record<string, unknown>;
   };
 };
 
@@ -138,6 +158,10 @@ function routeHasProjectScope(route: ProjectsRoute): route is ProjectsRoute & { 
 }
 
 function requiredProjectPermissions(route: ProjectsRoute, method: string): string[] {
+  if (route.kind === 'projectAuthorize') {
+    return [];
+  }
+
   if (isTaskRoute(route)) {
     if (route.kind === 'taskMessages' && method === 'POST') {
       return ['project:notebook:access', 'project:agent:use', 'project:endpoint:use'];
@@ -910,21 +934,144 @@ export async function handleRequest(
             workspaceId: route.workspaceId,
             projectId: route.projectId,
           });
-          const granted = new Set(resolveProjectPermissionsForRequest({
+          const evaluation = evaluateProjectPermissions({
             workspaceId: route.workspaceId,
             projectId: route.projectId,
             projectOwnerId: project.owner_id,
             actorUserId: user.id,
-          }));
-          const missing = required.filter((permission) => !granted.has(permission));
+            requiredPermissions: required,
+          });
+          const missing = evaluation.decisions.filter((item) => !item.granted).map((item) => item.permission);
           if (missing.length > 0) {
-            json(res, 403, { error_code: 'FORBIDDEN', message: 'forbidden', missing_permissions: missing });
+            json(res, 403, {
+              error_code: 'FORBIDDEN',
+              message: 'forbidden',
+              missing_permissions: missing,
+              authz_decision: {
+                membership_status: evaluation.membership_status,
+                decisions: evaluation.decisions,
+              },
+            });
             return;
           }
         } catch {
           // Keep compatibility with in-memory local routes that are not yet tied to project repo records.
         }
       }
+    }
+
+    if (route.kind === 'projectAuthorize' && method === 'POST') {
+      const body = await readBody(req) as AuthorizationRequestBody;
+      if (
+        !body
+        || typeof body !== 'object'
+        || !body.subject
+        || !body.resource
+        || typeof body.action !== 'string'
+        || (body.subject.type !== 'user' && body.subject.type !== 'group' && body.subject.type !== 'agent')
+        || typeof body.subject.id !== 'string'
+        || (body.resource.type !== 'project' && body.resource.type !== 'endpoint'
+          && body.resource.type !== 'source_library' && body.resource.type !== 'agent')
+        || typeof body.resource.id !== 'string'
+      ) {
+        json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_authorization_request' });
+        return;
+      }
+
+      const project = await deps.getProjectUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      });
+      const actorGate = evaluateProjectPermissions({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        projectOwnerId: project.owner_id,
+        actorUserId: user.id,
+        requiredPermissions:
+          body.subject.type === 'user' && body.subject.id === user.id
+            ? ['project:read']
+            : ['project:member:view'],
+      });
+      if (actorGate.decisions.some((item) => !item.granted)) {
+        json(res, 403, { error_code: 'FORBIDDEN', message: 'forbidden' });
+        return;
+      }
+
+      const permission = mapAuthorizationRequestToPermission({
+        resourceType: body.resource.type,
+        action: body.action,
+      });
+      if (!permission) {
+        json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'unsupported_authorization_action' });
+        return;
+      }
+
+      const permissionEvaluation = evaluateProjectPermissions({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        projectOwnerId: project.owner_id,
+        actorUserId: body.subject.id,
+        requiredPermissions: [permission],
+      });
+      const permissionDecision = permissionEvaluation.decisions[0];
+      if (!permissionDecision) {
+        json(res, 500, { error_code: 'INTERNAL_ERROR', message: 'authorization_decision_missing' });
+        return;
+      }
+      if (!permissionDecision.granted) {
+        json(res, 200, {
+          allowed: false,
+          decision: {
+            source: permissionDecision.source,
+            rule_id: permissionDecision.permission,
+            reason: permissionDecision.reason,
+          },
+        });
+        return;
+      }
+
+      if (body.resource.type === 'endpoint' || body.resource.type === 'source_library' || body.resource.type === 'agent') {
+        const policyDecision = evaluateResourcePolicyAuthorization({
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          resourceType: body.resource.type,
+          resourceId: body.resource.id,
+          subjectType: body.subject.type,
+          subjectId: body.subject.id,
+        });
+        if (!policyDecision.allowed) {
+          json(res, 200, {
+            allowed: false,
+            decision: {
+              source: 'resource_policy',
+              rule_id: policyDecision.matched_policy?.id,
+              reason: policyDecision.reason ?? 'resource_policy_denied',
+            },
+            matched_policy: policyDecision.matched_policy,
+          });
+          return;
+        }
+        json(res, 200, {
+          allowed: true,
+          decision: {
+            source: policyDecision.matched_policy ? 'resource_policy' : permissionDecision.source,
+            rule_id: policyDecision.matched_policy?.id ?? permissionDecision.permission,
+            reason: policyDecision.matched_policy ? 'resource_policy_allowed' : permissionDecision.reason,
+          },
+          matched_policy: policyDecision.matched_policy,
+        });
+        return;
+      }
+
+      json(res, 200, {
+        allowed: true,
+        decision: {
+          source: permissionDecision.source,
+          rule_id: permissionDecision.permission,
+          reason: permissionDecision.reason,
+        },
+      });
+      return;
     }
 
     const handledProjectSourceRoute = await handleProjectSourceRoute({

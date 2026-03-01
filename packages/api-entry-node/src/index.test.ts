@@ -1448,6 +1448,204 @@ describe('api-entry-node projects routes', () => {
     expect(allowedRes.status).toBe(200);
   });
 
+  it('returns unified authorization decisions with permission and resource policy explain', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Authz Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const deniedRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          subject: { type: 'user', id: 'user_test' },
+          action: 'project.member.manage',
+          resource: { type: 'project', id: project.id },
+        }),
+      },
+    );
+    expect(deniedRes.status).toBe(200);
+    expect(await deniedRes.json()).toEqual({
+      allowed: false,
+      decision: {
+        source: 'permission',
+        rule_id: 'project:member:manage',
+        reason: 'permission_not_granted',
+      },
+    });
+
+    const createTemplateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Managers',
+          permissions: ['project:member:manage'],
+        }),
+      },
+    );
+    expect(createTemplateRes.status).toBe(200);
+    const createdTemplate = (await createTemplateRes.json()) as { id: string };
+
+    const createGroupRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/groups`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Managers',
+          permission_template_id: createdTemplate.id,
+          member_ids: ['user_test'],
+        }),
+      },
+    );
+    expect(createGroupRes.status).toBe(200);
+
+    const allowRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          subject: { type: 'user', id: 'user_test' },
+          action: 'project.member.manage',
+          resource: { type: 'project', id: project.id },
+        }),
+      },
+    );
+    expect(allowRes.status).toBe(200);
+    expect(await allowRes.json()).toEqual({
+      allowed: true,
+      decision: {
+        source: 'permission',
+        rule_id: 'project:member:manage',
+        reason: 'granted_by_member_governance',
+      },
+    });
+  });
+
+  it('denies suspended memberships in route authz and authorize endpoint', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Suspended Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createTemplateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Managers',
+          permissions: ['project:member:manage'],
+        }),
+      },
+    );
+    const createdTemplate = (await createTemplateRes.json()) as { id: string };
+
+    await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/groups`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Managers',
+          permission_template_id: createdTemplate.id,
+          member_ids: ['user_test'],
+        }),
+      },
+    );
+
+    const activateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_test`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      },
+    );
+    expect(activateRes.status).toBe(204);
+
+    const suspendRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_test`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'suspended' }),
+      },
+    );
+    expect(suspendRes.status).toBe(204);
+
+    const blockedRouteRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Should Fail Suspended',
+          permissions: ['project:member:view'],
+        }),
+      },
+    );
+    expect(blockedRouteRes.status).toBe(403);
+    const blockedRouteBody = (await blockedRouteRes.json()) as {
+      authz_decision?: { membership_status?: string; decisions?: Array<{ reason: string }> };
+    };
+    expect(blockedRouteBody.authz_decision?.membership_status).toBe('suspended');
+    expect(blockedRouteBody.authz_decision?.decisions?.[0]?.reason).toBe('membership_suspended');
+
+    const blockedAuthorizeRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          subject: { type: 'user', id: 'user_test' },
+          action: 'project.member.manage',
+          resource: { type: 'project', id: project.id },
+        }),
+      },
+    );
+    expect(blockedAuthorizeRes.status).toBe(403);
+    expect(await blockedAuthorizeRes.json()).toEqual({
+      error_code: 'FORBIDDEN',
+      message: 'forbidden',
+    });
+  });
+
   it('supports minimal quota template CRUD endpoints', async () => {
     const { baseUrl } = startServer();
 
@@ -4422,9 +4620,12 @@ describe('api-entry-node projects routes', () => {
         next_assignee_user_id?: string;
       }>;
     };
-    expect(historyDetail.incident_history?.[0]?.event_kind).toBe('escalation_assignment');
-    expect(historyDetail.incident_history?.[0]?.previous_assignee_user_id).toBe('user_oncall');
-    expect(historyDetail.incident_history?.[0]?.next_assignee_user_id).toBe('user_release');
+    const reassignment = historyDetail.incident_history?.find(
+      (item) => item.next_assignee_user_id === 'user_release',
+    );
+    expect(reassignment?.event_kind).toBe('escalation_assignment');
+    expect(reassignment?.previous_assignee_user_id).toBe('user_oncall');
+    expect(reassignment?.next_assignee_user_id).toBe('user_release');
 
     const resolveRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/resolution', {
       method: 'POST',

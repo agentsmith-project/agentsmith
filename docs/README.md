@@ -9,6 +9,7 @@ Central index for AgentSmith documentation. Product scope and principles are in 
 | [项目宪法 (Project Constitution)](./项目宪法.md) | 产品目标、设计风格与功能范围之最高指导；防漂移 |
 | [AI Ops Home UX Strategy v1](./design/ai-ops-home-ux-strategy-v1.md) | 下一条 UX/UI 主线：统一企业 AI 运营首页与任务化信息架构 |
 | [AI Ops Home UX Closure Review v1](./design/ai-ops-home-ux-closure-review-v1.md) | 当前 UX 主线的收口结论、残余低优先级债与基线定义 |
+| [Next Mainline Priority Review v1](./design/next-mainline-priority-review-v1.md) | 基于当前代码/宪章/能力矩阵的下一条产品工程主线优先级评估 |
 
 ## Contracts (`./contracts/`)
 

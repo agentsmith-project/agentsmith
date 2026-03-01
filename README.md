@@ -10,7 +10,7 @@ Core product positioning:
 
 - enterprise AI agent usage and management platform
 - AI resource governance platform
-- runtime and release control plane
+- AI runtime and release governance surface
 
 ## Tech Stack
 

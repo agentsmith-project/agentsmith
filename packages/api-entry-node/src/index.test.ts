@@ -1734,6 +1734,55 @@ describe('api-entry-node projects routes', () => {
       error_code: 'FORBIDDEN',
       message: 'forbidden',
     });
+
+    const restoreRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_test`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      },
+    );
+    expect(restoreRes.status).toBe(204);
+
+    const restoredRouteRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Recovered Access',
+          permissions: ['project:member:view'],
+        }),
+      },
+    );
+    expect(restoredRouteRes.status).toBe(200);
+
+    const restoredAuthorizeRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          subject: { type: 'user', id: 'user_test' },
+          action: 'project.member.manage',
+          resource: { type: 'project', id: project.id },
+        }),
+      },
+    );
+    expect(restoredAuthorizeRes.status).toBe(200);
+    expect(await restoredAuthorizeRes.json()).toEqual({
+      allowed: true,
+      decision: {
+        source: 'permission',
+        rule_id: 'project:member:manage',
+        reason: 'granted_by_member_governance',
+      },
+    });
   });
 
   it('supports minimal quota template CRUD endpoints', async () => {

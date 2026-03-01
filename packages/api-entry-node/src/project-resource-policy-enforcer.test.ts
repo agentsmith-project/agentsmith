@@ -4,6 +4,7 @@ import {
   __resetProjectResourcePolicyRateCountersForTests,
   checkAndConsumeProjectResourceRateLimitsForUser,
   checkProjectResourceQuotaLimitsForUser,
+  checkProjectSourceLibraryQuotaLimits,
 } from './project-resource-policy-enforcer.js';
 import { getProjectGroupsState } from './project-groups-store.js';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
@@ -142,6 +143,7 @@ describe('project-resource-policy-enforcer', () => {
       end_user_id: 'user_1',
       requests: 2,
       result: 'ok',
+      timestamp: new Date(Date.UTC(2026, 1, 26, 8, 0, 0, 0)).toISOString(),
     });
 
     const decision = await checkProjectResourceQuotaLimitsForUser({
@@ -162,6 +164,53 @@ describe('project-resource-policy-enforcer', () => {
       effective_requests_per_day: 2,
       current_requests_today: 2,
       usage_unit: 'requests',
+    });
+  });
+
+  it('enforces source library file count and file size quotas', () => {
+    const policy: ProjectResourcePolicyRecord = {
+      resource_type: 'source_library',
+      resource_id: 'lib_quota',
+      access_mode: 'allow_all_members',
+      allowed_subjects: [],
+      quota_limits: {
+        rules: [
+          { key: 'source_library.max_total_files', value: 1 },
+          { key: 'source_library.max_file_size_bytes', value: 4 },
+        ],
+      },
+    };
+
+    const oversized = checkProjectSourceLibraryQuotaLimits({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      userId: 'user_1',
+      policy,
+      currentFileCount: 0,
+      nextFileSizeBytes: 5,
+    });
+    expect(oversized).toMatchObject({
+      allowed: false,
+      quota_key: 'source_library.max_file_size_bytes',
+      effective_max_file_size_bytes: 4,
+      current_file_size_bytes: 5,
+      usage_unit: 'bytes',
+    });
+
+    const tooMany = checkProjectSourceLibraryQuotaLimits({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      userId: 'user_1',
+      policy,
+      currentFileCount: 1,
+      nextFileSizeBytes: 1,
+    });
+    expect(tooMany).toMatchObject({
+      allowed: false,
+      quota_key: 'source_library.max_total_files',
+      effective_max_total_files: 1,
+      current_total_files: 1,
+      usage_unit: 'files',
     });
   });
 });

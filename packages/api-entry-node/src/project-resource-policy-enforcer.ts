@@ -14,7 +14,11 @@ type RateLimitDecision =
   | { allowed: true; effective_limit_per_minute?: number; scope?: 'policy' | 'subject' }
   | { allowed: false; reason: 'rate_limited'; retry_after_seconds: number; effective_limit_per_minute: number; scope: 'policy' | 'subject' };
 
-type QuotaRuleKey = 'endpoint.daily_token_limit' | 'endpoint.requests_per_day';
+type QuotaRuleKey =
+  | 'endpoint.daily_token_limit'
+  | 'endpoint.requests_per_day'
+  | 'source_library.max_total_files'
+  | 'source_library.max_file_size_bytes';
 
 type QuotaLimitDecision =
   | {
@@ -311,6 +315,111 @@ export async function checkProjectResourceQuotaLimitsForUser(args: {
           current_tokens_today: currentUsage,
         }),
     scope: effective.scope,
+  };
+}
+
+type SourceLibraryQuotaDecision =
+  | {
+    allowed: true;
+    effective_max_total_files?: number;
+    current_total_files?: number;
+    effective_max_file_size_bytes?: number;
+    current_file_size_bytes?: number;
+    scope?: 'policy' | 'subject';
+  }
+  | {
+    allowed: false;
+    reason: 'quota_exceeded';
+    quota_key: 'source_library.max_total_files' | 'source_library.max_file_size_bytes';
+    effective_limit: number;
+    current_usage: number;
+    usage_unit: 'files' | 'bytes';
+    retry_after_seconds: number;
+    effective_max_total_files?: number;
+    current_total_files?: number;
+    effective_max_file_size_bytes?: number;
+    current_file_size_bytes?: number;
+    scope: 'policy' | 'subject';
+  };
+
+function getEffectiveSourceLibraryQuotaRule(args: {
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  policy: ProjectResourcePolicyRecord;
+  key: 'source_library.max_total_files' | 'source_library.max_file_size_bytes';
+}): { value?: number; scope?: 'policy' | 'subject' } {
+  const baseRules = readPolicyRules(args.policy.quota_limits);
+  const subject = getMatchingSubjectQuotaRules(args);
+  const effective = subject.matched ? mergeQuotaRules(baseRules, subject.rules) : baseRules;
+  const rule = effective.find((item) => item.key === args.key);
+  if (!rule) return {};
+  return { value: rule.value, scope: subject.matched ? 'subject' : 'policy' };
+}
+
+export function checkProjectSourceLibraryQuotaLimits(args: {
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  policy: ProjectResourcePolicyRecord | null;
+  currentFileCount: number;
+  nextFileSizeBytes: number;
+}): SourceLibraryQuotaDecision {
+  if (!args.policy) {
+    return { allowed: true };
+  }
+
+  const maxTotalFiles = getEffectiveSourceLibraryQuotaRule({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.userId,
+    policy: args.policy,
+    key: 'source_library.max_total_files',
+  });
+  if (maxTotalFiles.value && args.currentFileCount + 1 > maxTotalFiles.value) {
+    return {
+      allowed: false,
+      reason: 'quota_exceeded',
+      quota_key: 'source_library.max_total_files',
+      effective_limit: maxTotalFiles.value,
+      current_usage: args.currentFileCount + 1,
+      usage_unit: 'files',
+      retry_after_seconds: 86_400,
+      effective_max_total_files: maxTotalFiles.value,
+      current_total_files: args.currentFileCount,
+      scope: maxTotalFiles.scope ?? 'policy',
+    };
+  }
+
+  const maxFileSize = getEffectiveSourceLibraryQuotaRule({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.userId,
+    policy: args.policy,
+    key: 'source_library.max_file_size_bytes',
+  });
+  if (maxFileSize.value && args.nextFileSizeBytes > maxFileSize.value) {
+    return {
+      allowed: false,
+      reason: 'quota_exceeded',
+      quota_key: 'source_library.max_file_size_bytes',
+      effective_limit: maxFileSize.value,
+      current_usage: args.nextFileSizeBytes,
+      usage_unit: 'bytes',
+      retry_after_seconds: 86_400,
+      effective_max_file_size_bytes: maxFileSize.value,
+      current_file_size_bytes: args.nextFileSizeBytes,
+      scope: maxFileSize.scope ?? 'policy',
+    };
+  }
+
+  return {
+    allowed: true,
+    effective_max_total_files: maxTotalFiles.value,
+    current_total_files: args.currentFileCount,
+    effective_max_file_size_bytes: maxFileSize.value,
+    current_file_size_bytes: args.nextFileSizeBytes,
+    scope: maxTotalFiles.scope ?? maxFileSize.scope,
   };
 }
 

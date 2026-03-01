@@ -26,7 +26,10 @@ import {
   isProjectResourceAccessAllowedForUser,
   upsertProjectResourcePolicy,
 } from './project-resource-policy-store.js';
-import { checkAndConsumeProjectResourceRateLimitsForUser } from './project-resource-policy-enforcer.js';
+import {
+  checkAndConsumeProjectResourceRateLimitsForUser,
+  checkProjectSourceLibraryQuotaLimits,
+} from './project-resource-policy-enforcer.js';
 import {
   getProjectGroupsState,
   setProjectGroupsState,
@@ -412,6 +415,89 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }): Promise<boolean> => {
     if (!(await enforceSourceLibraryAccess(params))) return false;
     return enforceSourceLibraryRateLimit(params);
+  };
+
+  const enforceSourceLibraryQuota = async (params: {
+    workspaceId: string;
+    projectId: string;
+    libraryId: string;
+    routeKind: string;
+    currentFileCount: number;
+    nextFileSizeBytes: number;
+  }): Promise<boolean> => {
+    const policy = getProjectResourcePolicyOrDefault(
+      params.workspaceId,
+      params.projectId,
+      'source_library',
+      params.libraryId,
+    );
+    const quotaCheck = checkProjectSourceLibraryQuotaLimits({
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      userId: user.id,
+      policy,
+      currentFileCount: params.currentFileCount,
+      nextFileSizeBytes: params.nextFileSizeBytes,
+    });
+    if (quotaCheck.allowed) return true;
+    await writeProjectAuditEvent(deps, {
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'resource_policy.quota_exceeded',
+      result: 'error',
+      requestId,
+      resourceType: 'source_library',
+      resourceId: params.libraryId,
+      errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      errorMessage: 'resource_policy_quota_exceeded',
+      metadata: {
+        governance_kind: 'resource_policy',
+        enforcement_kind: 'quota_limit',
+        route_kind: params.routeKind,
+        quota_key: quotaCheck.quota_key,
+        effective_limit: quotaCheck.effective_limit,
+        current_usage: quotaCheck.current_usage,
+        usage_unit: quotaCheck.usage_unit,
+        scope: quotaCheck.scope,
+        effective_max_total_files: quotaCheck.effective_max_total_files,
+        current_total_files: quotaCheck.current_total_files,
+        effective_max_file_size_bytes: quotaCheck.effective_max_file_size_bytes,
+        current_file_size_bytes: quotaCheck.current_file_size_bytes,
+      },
+    });
+    await writeProjectUsageFact(deps, {
+      workspaceId: params.workspaceId,
+      projectId: params.projectId,
+      resourceType: 'source_library',
+      resourceId: params.libraryId,
+      endUserId: user.id,
+      requestId,
+      requests: 1,
+      result: 'error',
+      errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      metadata: {
+        stage: 'preflight',
+        governance_kind: 'resource_policy',
+        enforcement_kind: 'quota_limit',
+        route_kind: params.routeKind,
+        quota_key: quotaCheck.quota_key,
+        effective_limit: quotaCheck.effective_limit,
+        current_usage: quotaCheck.current_usage,
+        usage_unit: quotaCheck.usage_unit,
+        scope: quotaCheck.scope,
+      },
+    });
+    res.setHeader('Retry-After', String(quotaCheck.retry_after_seconds));
+    json(res, 429, {
+      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      message: 'resource_policy_quota_exceeded',
+      resource_type: 'source_library',
+      resource_id: params.libraryId,
+      quota_key: quotaCheck.quota_key,
+      retry_after_seconds: quotaCheck.retry_after_seconds,
+    });
+    return false;
   };
 
   const enforceSourceLibraryAccessBySourceId = async (params: {
@@ -1531,6 +1617,22 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'sources' && method === 'POST' && route.workspaceId && route.projectId) {
     const raw = await readBody(req);
     const input = CreateSourceRequestSchema.parse(raw);
+    const sourceBytes = Buffer.from(input.content_base64, 'base64').byteLength;
+    const listed = await deps.listSourcesUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: input.library_id,
+    });
+    if (!(await enforceSourceLibraryQuota({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      libraryId: input.library_id,
+      routeKind: route.kind,
+      currentFileCount: listed.items.length,
+      nextFileSizeBytes: sourceBytes,
+    }))) {
+      return true;
+    }
     const created = await deps.createSourceUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -1684,10 +1786,25 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     const workspaceId = route.workspaceId;
     const projectId = route.projectId;
     const libraryId = route.libraryId;
+    const listed = await deps.listSourcesUseCase.execute({
+      workspaceId,
+      projectId,
+      libraryId,
+    });
     const rawContentType = req.headers['content-type'];
     const contentType = Array.isArray(rawContentType) ? rawContentType.join(';') : rawContentType ?? '';
     if (!contentType.toLowerCase().includes('multipart/form-data')) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'multipart_form_data_required' });
+      return true;
+    }
+    if (!(await enforceSourceLibraryQuota({
+      workspaceId,
+      projectId,
+      libraryId,
+      routeKind: route.kind,
+      currentFileCount: listed.items.length,
+      nextFileSizeBytes: 0,
+    }))) {
       return true;
     }
 

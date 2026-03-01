@@ -2424,6 +2424,122 @@ describe('api-entry-node projects routes', () => {
     ).toBe(true);
   });
 
+  it('enforces source_library quota limits on source create and records governance evidence', async () => {
+    const { baseUrl } = startServer();
+
+    const createLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Quota Policy Library', visibility: 'shared' }),
+      },
+    );
+    expect(createLibraryRes.status).toBe(201);
+    const library = (await createLibraryRes.json()) as { id: string };
+
+    const patchPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          quota_limits: {
+            rules: [
+              { key: 'source_library.max_total_files', value: 1 },
+              { key: 'source_library.max_file_size_bytes', value: 4 },
+            ],
+          },
+        }),
+      },
+    );
+    expect(patchPolicyRes.status).toBe(204);
+
+    const oversizedRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'too-large.txt',
+          library_id: library.id,
+          content_type: 'text/plain',
+          content_base64: Buffer.from('hello', 'utf-8').toString('base64'),
+        }),
+      },
+    );
+    expect(oversizedRes.status).toBe(429);
+    expect(await oversizedRes.json()).toMatchObject({
+      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      resource_type: 'source_library',
+      resource_id: library.id,
+      quota_key: 'source_library.max_file_size_bytes',
+    });
+
+    const allowedRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'fits.txt',
+          library_id: library.id,
+          content_type: 'text/plain',
+          content_base64: Buffer.from('1234', 'utf-8').toString('base64'),
+        }),
+      },
+    );
+    expect(allowedRes.status).toBe(201);
+
+    const tooManyRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'too-many.txt',
+          library_id: library.id,
+          content_type: 'text/plain',
+          content_base64: Buffer.from('1', 'utf-8').toString('base64'),
+        }),
+      },
+    );
+    expect(tooManyRes.status).toBe(429);
+    expect(await tooManyRes.json()).toMatchObject({
+      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      resource_type: 'source_library',
+      resource_id: library.id,
+      quota_key: 'source_library.max_total_files',
+    });
+
+    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.quota_exceeded&resource_type=source_library&resource_id=${library.id}&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const auditBody = (await auditRes.json()) as {
+      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string; metadata_json?: Record<string, unknown> }>;
+    };
+    expect(
+      auditBody.items.filter(
+        (item) =>
+          item.action === 'resource_policy.quota_exceeded'
+          && item.resource_type === 'source_library'
+          && item.resource_id === library.id
+          && item.error_code === 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      ),
+    ).toHaveLength(2);
+  });
+
   it('supports credentials and endpoints CRUD plus openai-compatible proxy', async () => {
     const { baseUrl, deps } = startServer();
     const upstream = startUpstreamServer();

@@ -84,6 +84,8 @@ export interface GovernanceEvidenceDetails extends GovernanceQuotaExceededDetail
   enforcement_kind?: 'allow_list' | 'quota_limit' | 'rate_limit';
   route_kind?: string;
   reason?: string;
+  missing_permissions?: string[];
+  authz_decision?: GovernanceRouteForbiddenDetails['authz_decision'];
 }
 
 export interface GovernanceRouteForbiddenDetails {
@@ -136,7 +138,18 @@ export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidence
       ? value.enforcement_kind
       : undefined;
 
-  if (!governanceKind && !enforcementKind && errorCode !== 'RESOURCE_POLICY_QUOTA_EXCEEDED' && errorCode !== 'MEMBER_QUOTA_EXCEEDED' && errorCode !== 'RESOURCE_POLICY_DENIED') {
+  const hasForbiddenAuthz =
+    errorCode === 'FORBIDDEN'
+    && (Array.isArray(value.missing_permissions) || isRecord(value.authz_decision));
+
+  if (
+    !governanceKind
+    && !enforcementKind
+    && errorCode !== 'RESOURCE_POLICY_QUOTA_EXCEEDED'
+    && errorCode !== 'MEMBER_QUOTA_EXCEEDED'
+    && errorCode !== 'RESOURCE_POLICY_DENIED'
+    && !hasForbiddenAuthz
+  ) {
     return null;
   }
 

@@ -227,6 +227,30 @@ export function UsageFactDetailDrawer({
                             <div className="mt-2 text-sm text-foreground">{formatGovernanceValue(governance.reason)}</div>
                           </div>
                         </div>
+                        {governance.authz_decision?.membership_status || (governance.missing_permissions?.length ?? 0) > 0 ? (
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <div>
+                              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.membership_status')}</div>
+                              <div className="mt-2 text-sm text-foreground">
+                                {formatGovernanceValue(governance.authz_decision?.membership_status)}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.missing_permissions')}</div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {(governance.missing_permissions ?? []).length > 0 ? (
+                                  governance.missing_permissions?.map((permission) => (
+                                    <code key={permission} className="rounded bg-surface-high px-2 py-1 text-xs text-foreground">
+                                      {permission}
+                                    </code>
+                                  ))
+                                ) : (
+                                  <span className="text-sm text-foreground">--</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
 

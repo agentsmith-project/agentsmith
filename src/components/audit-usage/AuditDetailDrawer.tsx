@@ -178,6 +178,30 @@ export function AuditDetailDrawer({
                   <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.reason)}</p>
                 </div>
               </div>
+              {governance.authz_decision?.membership_status || (governance.missing_permissions?.length ?? 0) > 0 ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <span className="text-sm text-tertiary">{t('detail.membership_status')}:</span>
+                    <p className="mt-1 text-sm text-foreground">
+                      {formatGovernanceValue(governance.authz_decision?.membership_status)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-tertiary">{t('detail.missing_permissions')}:</span>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {(governance.missing_permissions ?? []).length > 0 ? (
+                        governance.missing_permissions?.map((permission) => (
+                          <code key={permission} className="rounded bg-surface-high px-2 py-1 text-xs text-foreground">
+                            {permission}
+                          </code>
+                        ))
+                      ) : (
+                        <span className="text-sm text-foreground">--</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

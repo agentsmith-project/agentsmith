@@ -51,4 +51,37 @@ describe('UsageFactDetailDrawer', () => {
     expect(governance).toHaveTextContent('201');
     expect(governance).toHaveTextContent('quota_exceeded');
   });
+
+  it('renders forbidden membership and missing permission evidence', () => {
+    render(
+      <UsageFactDetailDrawer
+        open
+        onOpenChange={() => {}}
+        facts={[
+          {
+            id: 'fact_forbidden_1',
+            timestamp: '2026-03-01T00:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            resource_type: 'project',
+            resource_id: 'proj_1',
+            request_id: 'req_forbidden_1',
+            requests: 1,
+            result: 'error',
+            error_code: 'FORBIDDEN',
+            metadata_json: {
+              missing_permissions: ['project:member:view'],
+              authz_decision: {
+                membership_status: 'suspended',
+              },
+            },
+          },
+        ]}
+      />
+    );
+
+    const governance = screen.getByTestId('usage__detail-governance-fact_forbidden_1');
+    expect(governance).toHaveTextContent('project:member:view');
+    expect(governance).toHaveTextContent('suspended');
+  });
 });

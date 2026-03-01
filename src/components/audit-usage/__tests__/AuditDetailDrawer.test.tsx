@@ -53,4 +53,38 @@ describe('AuditDetailDrawer', () => {
     expect(governance).toHaveTextContent('1048577');
     expect(governance).toHaveTextContent('quota_exceeded');
   });
+
+  it('renders forbidden explainability details from audit metadata', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_2',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          actor_type: 'user',
+          actor_id: 'user_1',
+          action: 'members.update',
+          resource_type: 'project',
+          resource_id: 'proj_1',
+          result: 'error',
+          error_code: 'FORBIDDEN',
+          error_message: 'forbidden',
+          request_id: 'req_2',
+          metadata_json: {
+            missing_permissions: ['project:member:manage'],
+            authz_decision: {
+              membership_status: 'suspended',
+            },
+          },
+        }}
+      />
+    );
+
+    const governance = screen.getByTestId('audit__detail-governance');
+    expect(governance).toHaveTextContent('project:member:manage');
+    expect(governance).toHaveTextContent('suspended');
+  });
 });

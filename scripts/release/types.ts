@@ -91,6 +91,8 @@ export interface ExecutionResults {
  * Individual check result
  */
 export interface CheckResult {
+  /** Check identifier */
+  id?: string;
   /** Check name (e.g., "TypeScript typecheck") */
   name: string;
   /** Check category */
@@ -344,8 +346,19 @@ export interface ReleaseGateRunHistory {
   failed_step_category?: CheckCategory;
   /** Full failed step names */
   failed_step_names: string[];
+  /** Full failed step ids */
+  failed_check_ids?: string[];
   /** Distinct failure categories */
   failure_categories: FailureType[];
+  /** Execution subset for this run */
+  requested_check_ids?: string[];
+  /** Manual rerun source run id when applicable */
+  rerun_of_run_id?: string;
+  /** Optional operator notes */
+  notes?: string;
+  /** Actor metadata for manual trigger flows */
+  actor_user_id?: string;
+  actor_name?: string;
 }
 
 export interface ReleaseEscalationEvent {
@@ -407,6 +420,16 @@ export interface VerifyReleaseOptions {
   escalationsOutput?: string;
   /** Trigger source for the gate execution */
   trigger?: 'manual' | 'scheduled' | 'ci' | 'unknown';
+  /** Execute only these check ids */
+  checks?: string[];
+  /** Manual trigger actor user id */
+  actorUserId?: string;
+  /** Manual trigger actor name */
+  actorName?: string;
+  /** Optional run notes */
+  notes?: string;
+  /** Source run id when this run is a rerun */
+  rerunOfRunId?: string;
   /** Verbose output */
   verbose?: boolean;
   /** Skip specific checks */

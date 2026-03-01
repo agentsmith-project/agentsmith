@@ -247,6 +247,7 @@ export const queryKeys = {
     runs: (workspaceId = '', projectId = '') => ['release-ops', 'runs', workspaceId, projectId] as const,
     runDetail: (id: string, workspaceId = '', projectId = '') =>
       ['release-ops', 'runs', workspaceId, projectId, id] as const,
+    runner: () => ['release-ops', 'runner'] as const,
     escalations: () => ['release-ops', 'escalations'] as const,
     escalationDetail: (id: string) => ['release-ops', 'escalations', id] as const,
     overrides: (workspaceId: string, projectId: string, reportName: string) =>

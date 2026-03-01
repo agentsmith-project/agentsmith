@@ -214,6 +214,12 @@ test.describe('Settings Page', () => {
     await authedPage.getByTestId('release-ops__escalation-resolve').click();
     await expect(authedPage.getByTestId('release-ops__incident-trace')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__run-item-0')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__runner')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__runner-trigger-full')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__runner-trigger-failed-only')).toBeVisible();
+    await authedPage.getByTestId('release-ops__runner-notes').fill('Rerun after approval');
+    await authedPage.getByTestId('release-ops__runner-trigger-failed-only').click();
+    await expect(authedPage.getByTestId('release-ops__runner-operation-0')).toBeVisible();
     await authedPage.getByTestId('release-ops__run-item-0').click();
     await expect(authedPage.getByTestId('release-ops__run-detail')).toBeVisible();
     await authedPage.getByTestId('release-ops__run-open-artifact').click();

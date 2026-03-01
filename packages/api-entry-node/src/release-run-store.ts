@@ -20,10 +20,16 @@ export type ReleaseGateRunListItem = {
   failed_checks: number;
   failed_step_name?: string;
   failed_step_category?: string;
+  actor_user_id?: string;
+  actor_name?: string;
+  notes?: string;
+  rerun_of_run_id?: string;
 };
 
 export type ReleaseGateRunDetail = ReleaseGateRunListItem & {
   failed_step_names: string[];
+  failed_check_ids?: string[];
+  requested_check_ids?: string[];
   failure_categories: string[];
 };
 
@@ -72,6 +78,10 @@ export function listReleaseGateRuns(dir: string): ReleaseGateRunListItem[] {
       failed_checks: item.failed_checks,
       failed_step_name: item.failed_step_name,
       failed_step_category: item.failed_step_category,
+      actor_user_id: item.actor_user_id,
+      actor_name: item.actor_name,
+      notes: item.notes,
+      rerun_of_run_id: item.rerun_of_run_id,
     }))
     .sort((a, b) => b.completed_at.localeCompare(a.completed_at));
 }

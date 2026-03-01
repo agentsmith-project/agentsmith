@@ -105,6 +105,35 @@ describe('ReleaseOpsAPI', () => {
     expect(result.status).toBe('pass');
   });
 
+  it('loads release gate runner status', async () => {
+    const getMock = vi.fn().mockResolvedValue({ running: false, recent_operations: [] });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    const result = await api.getGateRunnerStatus();
+
+    expect(getMock).toHaveBeenCalledWith('/internal/release-gate-runner');
+    expect(result.running).toBe(false);
+  });
+
+  it('triggers a release gate run', async () => {
+    const postMock = vi.fn().mockResolvedValue({ id: 'runner_1', status: 'running' });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      post: postMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    await api.triggerGateRun({ mode: 'failed_only', source_run_id: 'sample-release', notes: 'rerun failing checks' });
+
+    expect(postMock).toHaveBeenCalledWith('/internal/release-gate-runner/trigger', {
+      mode: 'failed_only',
+      source_run_id: 'sample-release',
+      notes: 'rerun failing checks',
+    });
+  });
+
   it('lists release escalations', async () => {
     const getMock = vi.fn().mockResolvedValue({
       items: [

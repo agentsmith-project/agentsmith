@@ -39,6 +39,7 @@ import type { EndpointResourceService } from './endpoint-resource-service.js';
 import type { AgentResourceService } from './agent-resource-service.js';
 import type { AgentRuntimeService } from './agent-runtime-service.js';
 import type { UsageReportRunnerController } from './usage-report-runner.js';
+import type { ReleaseGateRunnerController } from './release-gate-runner.js';
 
 export interface NodeApiDeps {
   releaseReportsDir?: string;
@@ -85,4 +86,5 @@ export interface NodeApiDeps {
   cancelAIReadyJobUseCase: CancelAIReadyJobUseCase;
   runQueuedAIReadyJobUseCase: RunQueuedAIReadyJobUseCase;
   usageReportRunner?: UsageReportRunnerController;
+  releaseGateRunner?: ReleaseGateRunnerController;
 }

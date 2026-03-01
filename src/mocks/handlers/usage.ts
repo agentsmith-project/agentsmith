@@ -274,6 +274,38 @@ const releaseRunDetails = new Map<string, ReleaseGateRunDetail>([
   }],
 ]);
 
+let releaseGateRunnerStatus = {
+  running: false,
+  current_operation: undefined as undefined | {
+    id: string;
+    status: 'running' | 'completed' | 'failed';
+    mode: 'full' | 'failed_only';
+    started_at: string;
+    completed_at?: string;
+    report_name: string;
+    source_run_id?: string;
+    requested_check_ids?: string[];
+    actor_user_id?: string;
+    actor_name?: string;
+    notes?: string;
+    error?: string;
+  },
+  recent_operations: [] as Array<{
+    id: string;
+    status: 'running' | 'completed' | 'failed';
+    mode: 'full' | 'failed_only';
+    started_at: string;
+    completed_at?: string;
+    report_name: string;
+    source_run_id?: string;
+    requested_check_ids?: string[];
+    actor_user_id?: string;
+    actor_name?: string;
+    notes?: string;
+    error?: string;
+  }>,
+};
+
 const releaseEscalations: ReleaseEscalationEvent[] = [
   {
     id: 'usage-webhook-signature-policy-check',
@@ -1140,6 +1172,33 @@ export const usageHandlers = [
       return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_run_not_found' }, { status: 404 });
     }
     return HttpResponse.json(detail);
+  }),
+  http.get('/api/v1/internal/release-gate-runner', () => {
+    return HttpResponse.json(releaseGateRunnerStatus);
+  }),
+  http.post('/api/v1/internal/release-gate-runner/trigger', async ({ request }) => {
+    const body = await request.json() as { mode?: 'full' | 'failed_only'; source_run_id?: string; notes?: string };
+    if (releaseGateRunnerStatus.running) {
+      return HttpResponse.json({ error_code: 'RELEASE_GATE_RUNNER_ERROR', message: 'release_gate_runner_busy' }, { status: 409 });
+    }
+    if (body.mode !== 'full' && body.mode !== 'failed_only') {
+      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'mode is required' }, { status: 422 });
+    }
+    const operation = {
+      id: `runner_${Date.now()}`,
+      status: 'running' as const,
+      mode: body.mode,
+      started_at: new Date().toISOString(),
+      report_name: body.mode === 'failed_only' && body.source_run_id ? `release-rerun-${body.source_run_id}` : `release-manual-${Date.now()}`,
+      source_run_id: body.source_run_id,
+      notes: body.notes,
+    };
+    releaseGateRunnerStatus = {
+      running: true,
+      current_operation: operation,
+      recent_operations: [operation, ...releaseGateRunnerStatus.recent_operations].slice(0, 10),
+    };
+    return HttpResponse.json(operation, { status: 202 });
   }),
   http.get('/api/v1/internal/release-escalations', () => {
     return HttpResponse.json({ items: releaseEscalations });

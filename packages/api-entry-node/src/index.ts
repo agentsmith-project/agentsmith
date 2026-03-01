@@ -10,6 +10,7 @@ import {
 import { handleRequest } from './request-handler.js';
 import { createUsageReportRunner } from './usage-report-runner.js';
 import { createUsageReportDeliveryDispatcher } from './usage-report-delivery.js';
+import { createReleaseGateRunner } from './release-gate-runner.js';
 
 export type { NodeApiDeps } from './node-api-deps.js';
 export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
@@ -37,6 +38,9 @@ export function createNodeApiServer(
     deliveryDispatch: usageReportDeliveryDispatch,
   });
   deps.usageReportRunner = usageReportRunner;
+  deps.releaseGateRunner = createReleaseGateRunner({
+    releaseRunsDir: deps.releaseRunsDir ?? 'artifacts/release-runs',
+  });
 
   const server = http.createServer((req, res) => {
     void handleRequest(req, res, deps);

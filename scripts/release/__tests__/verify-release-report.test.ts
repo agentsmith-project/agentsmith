@@ -126,6 +126,11 @@ describe('verify-release-report: TDD Suite', () => {
         '--name', 'report-test',
         '--dry-run',
         '--trigger', 'manual',
+        '--checks', 'typecheck,smoke-governance',
+        '--actor-user-id', 'user_owner',
+        '--actor-name', 'Owner User',
+        '--notes', 'rerun failed checks',
+        '--rerun-of-run-id', 'prior-run',
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -134,11 +139,21 @@ describe('verify-release-report: TDD Suite', () => {
         report_name?: string;
         trigger?: string;
         total_checks?: number;
+        requested_check_ids?: string[];
+        actor_user_id?: string;
+        actor_name?: string;
+        notes?: string;
+        rerun_of_run_id?: string;
       };
       expect(run.id).toBe('report-test');
       expect(run.report_name).toBe('report-test');
       expect(run.trigger).toBe('manual');
       expect(run.total_checks).toBeGreaterThan(0);
+      expect(run.requested_check_ids).toEqual(['typecheck', 'smoke-governance']);
+      expect(run.actor_user_id).toBe('user_owner');
+      expect(run.actor_name).toContain('Owner');
+      expect(run.notes).toContain('rerun');
+      expect(run.rerun_of_run_id).toBe('prior-run');
 
       const escalation = JSON.parse(readFileSync(join(ESCALATIONS_OUTPUT_DIR, 'report-test.json'), 'utf-8')) as {
         id?: string;

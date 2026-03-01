@@ -20,10 +20,12 @@ import {
   useReleaseEscalationList,
   useReleaseGateRunDetail,
   useReleaseGateRunList,
+  useReleaseGateRunnerStatus,
   useReleasePolicyOverrides,
   useReleaseReportDetail,
   useReleaseReportList,
   useResolveReleaseEscalation,
+  useTriggerReleaseGateRun,
 } from '@/lib/hooks/use-release-ops';
 import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { UsageOperationsSummary } from '@/components/audit-usage/UsageOperationsSummary';
@@ -157,6 +159,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const [overrideReason, setOverrideReason] = useState('');
   const [overrideExpiresAt, setOverrideExpiresAt] = useState(defaultOverrideExpiryLocal);
   const [resolutionReason, setResolutionReason] = useState('');
+  const [gateRunNotes, setGateRunNotes] = useState('');
 
   useEffect(() => {
     params.then((p) => setResolvedParams({
@@ -180,10 +183,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const escalationDetailQuery = useReleaseEscalationDetail(selectedEscalationId, { enabled });
   const runsQuery = useReleaseGateRunList({ workspaceId, projectId }, { enabled });
   const runDetailQuery = useReleaseGateRunDetail(selectedRunId, { workspaceId, projectId }, { enabled });
+  const gateRunnerQuery = useReleaseGateRunnerStatus({ enabled, refetchInterval: 3000 });
   const reportDetailQuery = useReleaseReportDetail(selectedReportName, { workspaceId, projectId }, { enabled });
   const overridesQuery = useReleasePolicyOverrides(workspaceId, projectId, selectedReportName, { enabled });
   const acknowledgeEscalationMutation = useAcknowledgeReleaseEscalation();
   const resolveEscalationMutation = useResolveReleaseEscalation();
+  const triggerGateRunMutation = useTriggerReleaseGateRun();
   const createOverrideMutation = useCreateReleasePolicyOverride();
   const decideOverrideMutation = useDecideReleasePolicyOverride();
 
@@ -197,6 +202,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     escalationDetailQuery.refetch();
     runsQuery.refetch();
     runDetailQuery.refetch();
+    gateRunnerQuery.refetch();
     reportDetailQuery.refetch();
   };
 
@@ -562,6 +568,14 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       reportName: selectedReportName,
       status,
     });
+  };
+  const triggerGateRun = async (mode: 'full' | 'failed_only') => {
+    await triggerGateRunMutation.mutateAsync({
+      mode,
+      source_run_id: mode === 'failed_only' ? selectedRunId : undefined,
+      notes: gateRunNotes.trim() || undefined,
+    });
+    setGateRunNotes('');
   };
   const acknowledgeEscalation = async () => {
     if (!selectedEscalationId) return;
@@ -1077,6 +1091,57 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </div>
                     <Badge variant="outline">{recentReleaseRuns.length}</Badge>
                   </div>
+                  <div className="mb-4 rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__runner">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runner_title')}</div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <Badge variant={gateRunnerQuery.data?.running ? 'secondary' : 'outline'}>
+                            {gateRunnerQuery.data?.running ? settingsT('release_ops_runner_running') : settingsT('release_ops_runner_idle')}
+                          </Badge>
+                          <span className="text-xs text-tertiary">{gateRunnerQuery.data?.current_operation?.report_name ?? '--'}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => triggerGateRun('full')}
+                          disabled={gateRunnerQuery.data?.running || triggerGateRunMutation.isPending}
+                          data-testid="release-ops__runner-trigger-full"
+                        >
+                          {settingsT('release_ops_runner_trigger_full')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => triggerGateRun('failed_only')}
+                          disabled={gateRunnerQuery.data?.running || triggerGateRunMutation.isPending || !selectedRunId}
+                          data-testid="release-ops__runner-trigger-failed-only"
+                        >
+                          {settingsT('release_ops_runner_trigger_failed_only')}
+                        </Button>
+                      </div>
+                    </div>
+                    <Textarea
+                      className="mt-3"
+                      value={gateRunNotes}
+                      onChange={(event) => setGateRunNotes(event.target.value)}
+                      placeholder={settingsT('release_ops_runner_notes_placeholder')}
+                      data-testid="release-ops__runner-notes"
+                    />
+                    {gateRunnerQuery.data?.recent_operations?.length ? (
+                      <div className="mt-3 space-y-2">
+                        {gateRunnerQuery.data.recent_operations.slice(0, 3).map((item, index) => (
+                          <div key={item.id} className="rounded-md border border-subtle bg-bg-base/40 px-3 py-2 text-xs text-tertiary" data-testid={`release-ops__runner-operation-${index}`}>
+                            {item.mode} · {item.status} · {item.report_name}
+                            {item.source_run_id ? ` · source:${item.source_run_id}` : ''}
+                            {item.notes ? ` · ${item.notes}` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <div className="grid gap-3 md:grid-cols-[180px_180px_1fr]">
                     <Select value={runStatusFilter} onValueChange={(value: 'all' | 'pass' | 'fail') => setRunStatusFilter(value)}>
                       <SelectTrigger data-testid="release-ops__run-status-filter">
@@ -1168,6 +1233,14 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_checks')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.passed_checks}/{selectedRun.total_checks}</div>
+                        </div>
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_actor')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.actor_name ?? selectedRun.actor_user_id ?? '--'}</div>
+                        </div>
+                        <div className="rounded-md border border-subtle bg-bg-base/40 p-3 lg:col-span-2">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_runs_notes')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{selectedRun.notes ?? '--'}</div>
                         </div>
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">

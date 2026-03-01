@@ -389,6 +389,58 @@ export async function handleRequest(
     return;
   }
 
+  if (requestUrl.pathname === '/api/v1/internal/release-gate-runner' && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    json(res, 200, deps.releaseGateRunner?.getStatus() ?? {
+      running: false,
+      recent_operations: [],
+    });
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/v1/internal/release-gate-runner/trigger' && method === 'POST') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    if (!deps.releaseGateRunner) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'release_gate_runner_unavailable' });
+      return;
+    }
+    const body = await readBody(req) as Record<string, unknown>;
+    const mode = body.mode === 'full' || body.mode === 'failed_only' ? body.mode : null;
+    const sourceRunId = typeof body.source_run_id === 'string' ? body.source_run_id.trim() : undefined;
+    const notes = typeof body.notes === 'string' ? body.notes.trim() : undefined;
+    if (!mode) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'mode is required' });
+      return;
+    }
+    if (mode === 'failed_only' && !sourceRunId) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'source_run_id is required for failed_only rerun' });
+      return;
+    }
+    try {
+      const operation = await deps.releaseGateRunner.triggerRun({
+        mode,
+        sourceRunId,
+        notes,
+        actorUserId: user.id,
+        actorName: user.name,
+      });
+      json(res, 202, operation);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'release_gate_runner_failed';
+      const status = message === 'release_gate_runner_busy' ? 409 : 422;
+      json(res, status, { error_code: 'RELEASE_GATE_RUNNER_ERROR', message });
+    }
+    return;
+  }
+
   if (requestUrl.pathname.startsWith('/api/v1/internal/release-reports/') && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {

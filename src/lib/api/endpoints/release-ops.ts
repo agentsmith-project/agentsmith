@@ -42,12 +42,39 @@ export interface ReleaseGateRunListItem {
   failed_checks: number;
   failed_step_name?: string;
   failed_step_category?: string;
+  actor_user_id?: string;
+  actor_name?: string;
+  notes?: string;
+  rerun_of_run_id?: string;
   policy_enforcement?: ReleasePolicyEnforcement;
 }
 
 export interface ReleaseGateRunDetail extends ReleaseGateRunListItem {
   failed_step_names: string[];
+  failed_check_ids?: string[];
+  requested_check_ids?: string[];
   failure_categories: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'quota' | 'rate_limit' | 'permission' | 'unknown'>;
+}
+
+export interface ReleaseGateRunnerOperation {
+  id: string;
+  status: 'running' | 'completed' | 'failed';
+  mode: 'full' | 'failed_only';
+  started_at: string;
+  completed_at?: string;
+  report_name: string;
+  source_run_id?: string;
+  requested_check_ids?: string[];
+  actor_user_id?: string;
+  actor_name?: string;
+  notes?: string;
+  error?: string;
+}
+
+export interface ReleaseGateRunnerStatus {
+  running: boolean;
+  current_operation?: ReleaseGateRunnerOperation;
+  recent_operations: ReleaseGateRunnerOperation[];
 }
 
 export interface ReleaseEscalationEvent {
@@ -133,6 +160,18 @@ export class ReleaseOpsAPI {
     if (params?.workspaceId) query.set('workspace_id', params.workspaceId);
     if (params?.projectId) query.set('project_id', params.projectId);
     return this.client.get(`/internal/release-runs/${encodeURIComponent(id)}${query.size > 0 ? `?${query.toString()}` : ''}`);
+  }
+
+  async getGateRunnerStatus(): Promise<ReleaseGateRunnerStatus> {
+    return this.client.get('/internal/release-gate-runner');
+  }
+
+  async triggerGateRun(payload: {
+    mode: 'full' | 'failed_only';
+    source_run_id?: string;
+    notes?: string;
+  }): Promise<ReleaseGateRunnerOperation> {
+    return this.client.post('/internal/release-gate-runner/trigger', payload);
   }
 
   async listEscalations(): Promise<{ items: ReleaseEscalationEvent[] }> {

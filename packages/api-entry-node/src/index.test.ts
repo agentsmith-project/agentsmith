@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
 import { createUsageReportSchedule, recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
+import type { ReleaseGateRunnerController } from './release-gate-runner.js';
 
 const servers: Server[] = [];
 const originalKeycloakIssuer = process.env.KEYCLOAK_ISSUER_URL;
@@ -4473,6 +4474,48 @@ describe('api-entry-node projects routes', () => {
     expect(decided.status).toBe('approved');
     expect(decided.decided_by_user_id).toBeTruthy();
     expect(decided.effective_status).toBe('approved');
+  });
+
+  it('returns release gate runner status and triggers a manual rerun request', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const mockRunner: ReleaseGateRunnerController = {
+      getStatus: () => ({
+        running: false,
+        recent_operations: [],
+      }),
+      triggerRun: async (params) => ({
+        id: 'runner_1',
+        status: 'running',
+        mode: params.mode,
+        started_at: '2026-03-01T00:00:00.000Z',
+        report_name: 'release-manual-20260301T000000Z',
+        source_run_id: params.sourceRunId,
+        notes: params.notes,
+        actor_user_id: params.actorUserId,
+        actor_name: params.actorName,
+      }),
+    };
+    const { baseUrl } = startServerWithDeps(deps);
+    deps.releaseGateRunner = mockRunner;
+
+    const statusRes = await apiFetch(baseUrl, '/api/v1/internal/release-gate-runner');
+    expect(statusRes.status).toBe(200);
+    const statusPayload = (await statusRes.json()) as { running: boolean };
+    expect(statusPayload.running).toBe(false);
+
+    const triggerRes = await apiFetch(baseUrl, '/api/v1/internal/release-gate-runner/trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'failed_only',
+        source_run_id: 'sample-release',
+        notes: 'rerun failing checks',
+      }),
+    });
+    expect(triggerRes.status).toBe(202);
+    const triggerPayload = (await triggerRes.json()) as { mode: string; source_run_id?: string };
+    expect(triggerPayload.mode).toBe('failed_only');
+    expect(triggerPayload.source_run_id).toBe('sample-release');
   });
 
   it('truncates oversized notebook trace details payloads', async () => {

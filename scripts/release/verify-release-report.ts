@@ -222,6 +222,24 @@ function parseArgs(argv: string[]): VerifyReleaseOptions {
           options.trigger = argv[++i] as VerifyReleaseOptions['trigger'];
         }
         break;
+      case '--checks':
+        options.checks = (argv[++i] ?? '')
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean);
+        break;
+      case '--actor-user-id':
+        options.actorUserId = argv[++i];
+        break;
+      case '--actor-name':
+        options.actorName = argv[++i];
+        break;
+      case '--notes':
+        options.notes = argv[++i];
+        break;
+      case '--rerun-of-run-id':
+        options.rerunOfRunId = argv[++i];
+        break;
       case '--escalations-output':
         options.escalationsOutput = argv[++i];
         break;
@@ -263,6 +281,11 @@ OPTIONS:
   --runs-output <dir>  Output directory for release gate run history artifacts
   --escalations-output <dir>  Output directory for release escalation artifacts
   --trigger <source>   Trigger source: manual|scheduled|ci|unknown
+  --checks <ids>       Comma-separated check ids to execute
+  --actor-user-id <id> Manual trigger actor user id
+  --actor-name <name>  Manual trigger actor display name
+  --notes <text>       Optional run notes
+  --rerun-of-run-id <id>  Source run id when rerunning failed checks
   --verbose            Show detailed output
   --help, -h           Show this help
 
@@ -334,7 +357,13 @@ function buildReleaseGateRunHistory(
     failed_step_name: firstFailedCheck?.name,
     failed_step_category: firstFailedCheck?.category,
     failed_step_names: failedChecks.map((check) => check.name),
+    failed_check_ids: failedChecks.map((check) => check.id).filter((value): value is string => Boolean(value)),
     failure_categories: failureCategories,
+    requested_check_ids: options.checks,
+    rerun_of_run_id: options.rerunOfRunId,
+    notes: options.notes,
+    actor_user_id: options.actorUserId,
+    actor_name: options.actorName,
   };
 }
 
@@ -542,9 +571,20 @@ async function runChecks(options: VerifyReleaseOptions): Promise<ExecutionResult
   }
 
   for (const def of CHECK_DEFINITIONS) {
+    if (options.checks && options.checks.length > 0 && !options.checks.includes(def.id)) {
+      checks.push({
+        id: def.id,
+        name: def.name,
+        category: def.category,
+        status: 'skip',
+        duration_ms: 0,
+      });
+      continue;
+    }
     // Skip if in skip list
     if (options.skip?.includes(def.category)) {
       checks.push({
+        id: def.id,
         name: def.name,
         category: def.category,
         status: 'skip',
@@ -598,6 +638,7 @@ function runCheck(
     });
 
     return {
+      id: def.id,
       name: def.name,
       category: def.category,
       status: 'pass',
@@ -607,6 +648,7 @@ function runCheck(
   } catch (error: unknown) {
     const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
     return {
+      id: def.id,
       name: def.name,
       category: def.category,
       status: 'fail',

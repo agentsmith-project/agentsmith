@@ -56,6 +56,31 @@ export function useReleaseGateRunDetail(
   });
 }
 
+export function useReleaseGateRunnerStatus(options?: { enabled?: boolean; refetchInterval?: number }) {
+  const api = new ReleaseOpsAPI(getApiClient());
+  return useQuery({
+    queryKey: queryKeys.releaseOps.runner(),
+    queryFn: () => api.getGateRunnerStatus(),
+    enabled: options?.enabled ?? true,
+    staleTime: 5000,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
+export function useTriggerReleaseGateRun() {
+  const api = new ReleaseOpsAPI(getApiClient());
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { mode: 'full' | 'failed_only'; source_run_id?: string; notes?: string }) =>
+      api.triggerGateRun(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.runner() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.runs() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.list() });
+    },
+  });
+}
+
 export function useReleaseEscalationList(options?: { enabled?: boolean }) {
   const api = new ReleaseOpsAPI(getApiClient());
   return useQuery({

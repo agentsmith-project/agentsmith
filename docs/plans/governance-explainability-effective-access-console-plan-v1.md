@@ -1,7 +1,7 @@
 # Governance Explainability & Effective Access Console Plan v1
 
 更新时间：2026-03-01  
-状态：`approved-recommendation`
+状态：`baseline-complete`
 
 前置文档：
 
@@ -242,3 +242,25 @@
 3. quota explain 与 evidence drill-down 已打通
 4. cross-surface explain workflow 的 e2e 已通过
 5. explainability 基线已写入文档
+
+---
+
+## 9. 完成状态
+
+当前阶段已完成：
+
+1. `WP-01 Effective Access Contract`
+2. `WP-02 Members Effective Access Console`
+3. `WP-03 Resource Policy Explain Console`
+4. `WP-04 Quota Explain & Evidence Drill-down`
+5. `WP-05 Cross-Surface Explain Workflow`
+
+本轮已形成的正式基线：
+
+1. `Members` 可以展示成员的 effective access、membership 状态、effective permissions 与 quota overrides
+2. `Resource Policy` 可以对当前资源执行 subject access explain，并展示 matched policy / source / reason
+3. `Usage / Audit` 对 quota exceeded、resource policy denied、route forbidden 已提供结构化治理证据展示
+4. `Usage / Audit -> Members / Resource Policy` 的 explain drill-down 已带上下文打通
+5. explainability 关键路径已经具备 typed contract、组件测试、目标 e2e 和 visual 回归验证
+
+后续若继续推进，应视为 explainability 第二阶段，而不是继续沿用本计划作为活动主线。

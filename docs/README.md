@@ -7,6 +7,7 @@ Central index for AgentSmith documentation. Product scope and principles are in 
 | Doc | Description |
 |-----|-------------|
 | [项目宪法 (Project Constitution)](./项目宪法.md) | 产品目标、设计风格与功能范围之最高指导；防漂移 |
+| [AI Ops Home UX Strategy v1](./design/ai-ops-home-ux-strategy-v1.md) | 下一条 UX/UI 主线：统一企业 AI 运营首页与任务化信息架构 |
 
 ## Contracts (`./contracts/`)
 
@@ -40,6 +41,7 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 ## Product Plans
 
 - [next-release-product-roadmap-prd-v1](./plans/next-release-product-roadmap-prd-v1.md) — 下一期产品路线图 PRD（目标、里程碑、验收指标、风险与依赖）
+- [ai-ops-home-implementation-plan-v1](./plans/ai-ops-home-implementation-plan-v1.md) — `AI Ops Home` 与任务化导航的实施顺序与验收门禁
 
 ## Other
 

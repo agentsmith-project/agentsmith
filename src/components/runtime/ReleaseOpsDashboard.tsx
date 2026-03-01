@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import type {
   RuntimeObservabilityResponse,
   UsageOperationsSummaryResponse,
@@ -56,9 +57,9 @@ export function ReleaseOpsDashboard({
         <div className="rounded-lg border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__usage-release">
           <div className="text-[11px] uppercase tracking-wide text-tertiary">{t('release_ops_usage_release')}</div>
           <div className="mt-1">
-            <Badge variant={usageEvidence?.release_readiness === 'ready' ? 'outline' : 'secondary'}>
+            <StatusBadge status={usageEvidence?.release_readiness === 'ready' ? 'ready' : 'blocked'}>
               {usageEvidence ? usageT(`report_schedules.release_${usageEvidence.release_readiness}`) : '--'}
-            </Badge>
+            </StatusBadge>
           </div>
         </div>
         <div className="rounded-lg border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__runner-status">
@@ -92,9 +93,9 @@ export function ReleaseOpsDashboard({
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={item.last_status === 'failed' ? 'secondary' : 'outline'}>
+                    <StatusBadge status={item.last_status === 'failed' ? 'blocked' : 'ready'}>
                       {item.last_status}
-                    </Badge>
+                    </StatusBadge>
                     <Badge variant="outline">{formatPercent(item.success_rate)}</Badge>
                   </div>
                 </div>

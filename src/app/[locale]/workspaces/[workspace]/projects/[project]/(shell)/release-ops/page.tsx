@@ -32,6 +32,7 @@ import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { UsageOperationsSummary } from '@/components/audit-usage/UsageOperationsSummary';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -67,6 +68,21 @@ function formatDateTime(value?: string): string {
 
 function yesNoBadge(value: boolean | undefined) {
   return value ? 'outline' : 'secondary';
+}
+
+function mapReleaseDecisionStatus(value?: string): React.ComponentProps<typeof StatusBadge>['status'] {
+  if (value === 'blocked') return 'blocked';
+  if (value === 'warning') return 'warning';
+  if (value === 'pending_override') return 'pending_override';
+  if (value === 'releasable_with_override') return 'releasable_with_override';
+  return 'ready';
+}
+
+function mapSlaStatus(value?: string): React.ComponentProps<typeof StatusBadge>['status'] {
+  if (value === 'overdue') return 'overdue';
+  if (value === 'due_soon') return 'due_soon';
+  if (value === 'resolved') return 'ready';
+  return 'info';
 }
 
 function formatPercent(value?: number): string {
@@ -885,7 +901,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           <div className="truncate text-sm font-medium text-foreground">{schedule.name}</div>
                           <div className="text-xs text-tertiary">{schedule.delivery_channel} · {schedule.format} · {schedule.cadence}</div>
                         </div>
-                        <Badge variant={schedule.status === 'active' ? 'outline' : 'secondary'}>{schedule.status}</Badge>
+                        <StatusBadge status={schedule.status === 'active' ? 'active' : 'paused'}>{schedule.status}</StatusBadge>
                       </div>
                       <div className="mt-2 text-xs text-tertiary">
                         {formatDateTime(schedule.next_run_at)}
@@ -928,7 +944,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant={item.severity === 'critical' ? 'secondary' : 'outline'}>{item.severity}</Badge>
-                          <Badge variant={item.status === 'resolved' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                          <StatusBadge status={item.status === 'resolved' ? 'ready' : 'warning'}>{item.status}</StatusBadge>
                         </div>
                       </div>
                       {item.body ? (
@@ -941,16 +957,16 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__escalation-detail">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={selectedEscalation.severity === 'critical' ? 'secondary' : 'outline'}>{selectedEscalation.severity}</Badge>
-                      <Badge variant={selectedEscalation.status === 'resolved' ? 'outline' : 'secondary'}>{selectedEscalation.status}</Badge>
+                      <StatusBadge status={selectedEscalation.status === 'resolved' ? 'ready' : 'warning'}>{selectedEscalation.status}</StatusBadge>
                       {selectedEscalation.sla_status ? (
-                        <Badge variant={selectedEscalation.sla_status === 'overdue' ? 'secondary' : 'outline'}>
+                        <StatusBadge status={mapSlaStatus(selectedEscalation.sla_status)}>
                           sla:{selectedEscalation.sla_status}
-                        </Badge>
+                        </StatusBadge>
                       ) : null}
                       {selectedEscalation.webhook_delivery ? (
-                        <Badge variant={selectedEscalation.webhook_delivery.status === 'success' ? 'outline' : selectedEscalation.webhook_delivery.status === 'skipped' ? 'secondary' : 'secondary'}>
+                        <StatusBadge status={selectedEscalation.webhook_delivery.status === 'success' ? 'ready' : selectedEscalation.webhook_delivery.status === 'skipped' ? 'warning' : 'blocked'}>
                           webhook:{selectedEscalation.webhook_delivery.status}
-                        </Badge>
+                        </StatusBadge>
                       ) : null}
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1173,7 +1189,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant={item.status === 'pass' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                          <StatusBadge status={item.status === 'pass' ? 'ready' : 'blocked'}>{item.status}</StatusBadge>
                           {item.policy_enforcement?.decision ?? item.release_policy_decision ? (
                             <Badge variant={(item.policy_enforcement?.decision ?? item.release_policy_decision) === 'ready' ? 'outline' : 'secondary'}>
                               {item.policy_enforcement?.decision ?? item.release_policy_decision}
@@ -1225,7 +1241,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           <div className="text-xs text-tertiary">{formatDateTime(item.generated_at)}</div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant={item.status === 'pass' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                          <StatusBadge status={item.status === 'pass' ? 'ready' : 'blocked'}>{item.status}</StatusBadge>
                           <Badge variant={item.runtime_release_readiness === 'ready' ? 'outline' : 'secondary'}>{item.runtime_release_readiness ?? '--'}</Badge>
                         </div>
                       </button>
@@ -1266,7 +1282,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           <div className="text-xs text-tertiary">{formatDateTime(item.generated_at)}</div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant={item.status === 'pass' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                          <StatusBadge status={item.status === 'pass' ? 'ready' : 'blocked'}>{item.status}</StatusBadge>
                           <Badge variant={item.runtime_release_readiness === 'ready' ? 'outline' : 'secondary'}>
                             {item.runtime_release_readiness ?? '--'}
                           </Badge>
@@ -1386,7 +1402,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant={item.status === 'pass' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                          <StatusBadge status={item.status === 'pass' ? 'ready' : 'blocked'}>{item.status}</StatusBadge>
                           {item.failed_step_name ? (
                             <Badge variant="secondary">{item.failed_step_name}</Badge>
                           ) : null}
@@ -1398,7 +1414,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     <div className="mt-3 rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__run-detail">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline">{selectedRun.id}</Badge>
-                        <Badge variant={selectedRun.status === 'pass' ? 'outline' : 'secondary'}>{selectedRun.status}</Badge>
+                        <StatusBadge status={selectedRun.status === 'pass' ? 'ready' : 'blocked'}>{selectedRun.status}</StatusBadge>
                         <Badge variant="outline">{selectedRun.trigger}</Badge>
                         <Button
                           type="button"
@@ -1517,9 +1533,9 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__report-policy">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_policy_title')}</div>
                         <div className="mt-2 flex items-center gap-2">
-                          <Badge variant={artifactPolicy?.decision === 'ready' ? 'outline' : 'secondary'}>
+                          <StatusBadge status={mapReleaseDecisionStatus(artifactPolicy?.decision)}>
                             {artifactPolicy?.decision ?? '--'}
-                          </Badge>
+                          </StatusBadge>
                           <span className="text-xs text-tertiary">
                             b:{artifactPolicy?.summary?.blocker_count ?? 0}
                             {' · '}
@@ -1530,9 +1546,9 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 px-3 py-2" data-testid="release-ops__report-policy-enforcement">
                             <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_policy_enforcement')}</div>
                             <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <Badge variant={artifactPolicyEnforcement.decision === 'ready' ? 'outline' : 'secondary'}>
+                              <StatusBadge status={mapReleaseDecisionStatus(artifactPolicyEnforcement.decision)}>
                                 {artifactPolicyEnforcement.decision}
-                              </Badge>
+                              </StatusBadge>
                               <span className="text-xs text-tertiary">
                                 base:{artifactPolicyEnforcement.base_decision}
                                 {' · '}
@@ -1552,9 +1568,9 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       <div className="rounded-md border border-subtle bg-surface p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_runtime')}</div>
                         <div className="mt-2 flex items-center gap-2">
-                          <Badge variant={reportSummary?.runtime_release_evidence?.guardrails?.release_readiness === 'ready' ? 'outline' : 'secondary'}>
+                          <StatusBadge status={reportSummary?.runtime_release_evidence?.guardrails?.release_readiness === 'ready' ? 'ready' : 'blocked'}>
                             {reportSummary?.runtime_release_evidence?.guardrails?.release_readiness ?? '--'}
-                          </Badge>
+                          </StatusBadge>
                           <span className="text-xs text-tertiary">
                             b:{reportSummary?.runtime_release_evidence?.guardrails?.blockers?.length ?? 0}
                             {' · '}
@@ -1565,9 +1581,9 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       <div className="rounded-md border border-subtle bg-surface p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_usage')}</div>
                         <div className="mt-2 flex items-center gap-2">
-                          <Badge variant={reportSummary?.usage_report_evidence?.release_readiness === 'ready' ? 'outline' : 'secondary'}>
+                          <StatusBadge status={reportSummary?.usage_report_evidence?.release_readiness === 'ready' ? 'ready' : 'blocked'}>
                             {reportSummary?.usage_report_evidence?.release_readiness ?? '--'}
-                          </Badge>
+                          </StatusBadge>
                           <span className="text-xs text-tertiary">
                             b:{reportSummary?.usage_report_evidence?.blockers?.length ?? 0}
                             {' · '}
@@ -1642,7 +1658,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                                   <div className="text-xs text-tertiary">{item.created_by_name ?? item.created_by_user_id} · {formatDateTime(item.created_at)}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <Badge variant={item.effective_status === 'approved' ? 'outline' : 'secondary'}>{item.effective_status ?? item.status}</Badge>
+                                  <StatusBadge status={item.effective_status === 'approved' ? 'releasable_with_override' : item.effective_status === 'expired' ? 'overdue' : item.status === 'pending' ? 'pending_override' : 'warning'}>{item.effective_status ?? item.status}</StatusBadge>
                                   <Badge variant="outline">{item.issue_id}</Badge>
                                 </div>
                               </div>
@@ -1777,7 +1793,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                                 <div className="text-xs text-tertiary">{check.category ?? '--'}</div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Badge variant={check.status === 'pass' ? 'outline' : 'secondary'}>{check.status ?? '--'}</Badge>
+                                <StatusBadge status={check.status === 'pass' ? 'ready' : 'blocked'}>{check.status ?? '--'}</StatusBadge>
                                 <span className="text-xs text-tertiary">{formatDurationMs(check.duration_ms)}</span>
                               </div>
                             </div>
@@ -1814,7 +1830,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                                     <div className="truncate text-sm font-medium text-foreground">{check.name ?? '--'}</div>
                                     <div className="text-xs text-tertiary">{check.category ?? '--'} · {formatDurationMs(check.duration_ms)}</div>
                                   </div>
-                                  <Badge variant="secondary">{check.status ?? 'fail'}</Badge>
+                                  <StatusBadge status="blocked">{check.status ?? 'fail'}</StatusBadge>
                                 </div>
                                 <div className="mt-2 text-xs text-tertiary">
                                   {recommendationForCheck(check.category, check.name)}

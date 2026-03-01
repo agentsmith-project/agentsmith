@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -227,9 +228,9 @@ function GuardrailSummary({
           <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('runtime_guardrails_title')}</div>
           <div className="mt-1 text-sm text-tertiary">{t('runtime_guardrails_description')}</div>
         </div>
-        <Badge variant={guardrails?.release_readiness === 'blocked' ? 'destructive' : 'outline'}>
+        <StatusBadge status={guardrails?.release_readiness === 'blocked' ? 'blocked' : 'ready'}>
           {guardrails?.release_readiness === 'blocked' ? t('runtime_guardrails_status_blocked') : t('runtime_guardrails_status_ready')}
-        </Badge>
+        </StatusBadge>
       </div>
 
       {guardrails ? (
@@ -1233,9 +1234,8 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
                     </div>
                   </div>
                   {probeState !== 'idle' ? (
-                    <Badge
-                      variant={probeState === 'terminal' ? 'destructive' : probeState === 'recovered' ? 'default' : 'outline'}
-                      className={probeState === 'completed' ? 'border-success/30 bg-success/10 text-success' : undefined}
+                    <StatusBadge
+                      status={probeState === 'terminal' ? 'terminal' : probeState === 'recovered' ? 'recovered' : 'ready'}
                       data-testid="settings-runtime__probe-status"
                     >
                       {probeState === 'completed'
@@ -1243,7 +1243,7 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
                         : probeState === 'recovered'
                           ? t('runtime_probe_status_recovered')
                           : t('runtime_probe_status_terminal')}
-                    </Badge>
+                    </StatusBadge>
                   ) : null}
                 </div>
 
@@ -1330,9 +1330,9 @@ export function RuntimeControlPlanePanel({ workspaceId, projectId, disabled = fa
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={tone.badgeVariant} className={tone.badgeClassName}>
+                          <StatusBadge status={attempt.outcome === 'success' ? 'ready' : attempt.outcome.startsWith('fallback_') ? 'recovered' : 'terminal'} className={tone.badgeClassName}>
                             {t(tone.labelKey)}
-                          </Badge>
+                          </StatusBadge>
                           {typeof attempt.statusCode === 'number' ? (
                             <Badge variant="secondary">HTTP {attempt.statusCode}</Badge>
                           ) : null}

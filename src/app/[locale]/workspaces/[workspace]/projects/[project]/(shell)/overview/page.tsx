@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { AlertCircle, ArrowRight, Bot, Clock3, Gauge, MessageSquare, Server, Sparkles, Wrench } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ActivityTimeline, ProjectNavigation } from '@/components/dashboard';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -64,12 +64,6 @@ function formatPercent(value?: number): string {
 function formatUsd(value?: number): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '--';
   return `$${value.toFixed(6)}`;
-}
-
-function toneBadgeVariant(tone: HomeStatusTone): 'outline' | 'secondary' | 'destructive' {
-  if (tone === 'blocked') return 'destructive';
-  if (tone === 'warning') return 'secondary';
-  return 'outline';
 }
 
 function mapEnforcementTone(
@@ -339,7 +333,7 @@ export default function OverviewPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <Badge variant={toneBadgeVariant(runtimeTone)}>{t(`status_labels.${runtimeTone}`)}</Badge>
+                  <StatusBadge status={runtimeTone}>{t(`status_labels.${runtimeTone}`)}</StatusBadge>
                   <span className="text-xs text-tertiary">{formatPercent(runtime?.error_rate)}</span>
                 </div>
                 <div className="text-sm text-tertiary">
@@ -357,7 +351,7 @@ export default function OverviewPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <Badge variant={toneBadgeVariant(costTone)}>{t(`status_labels.${costTone}`)}</Badge>
+                  <StatusBadge status={costTone}>{t(`status_labels.${costTone}`)}</StatusBadge>
                   <span className="text-xs text-tertiary">{formatUsd(runtime?.p95_estimated_cost)}</span>
                 </div>
                 <div className="text-sm text-tertiary">
@@ -375,11 +369,11 @@ export default function OverviewPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <Badge variant={toneBadgeVariant(releaseTone)}>
+                  <StatusBadge status={latestReportItem?.policy_enforcement?.decision ?? releaseTone}>
                     {latestReportItem?.policy_enforcement?.decision
                       ? t(`release_labels.${latestReportItem.policy_enforcement.decision}`)
                       : t('release_labels.unknown')}
-                  </Badge>
+                  </StatusBadge>
                   <span className="text-xs text-tertiary">{latestReportItem?.name ?? '--'}</span>
                 </div>
                 <div className="text-sm text-tertiary">
@@ -397,7 +391,7 @@ export default function OverviewPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <Badge variant={toneBadgeVariant(incidentTone)}>{t(`status_labels.${incidentTone}`)}</Badge>
+                  <StatusBadge status={incidentTone}>{t(`status_labels.${incidentTone}`)}</StatusBadge>
                   <span className="text-xs text-tertiary">{formatNumber(openEscalations.length)}</span>
                 </div>
                 <div className="text-sm text-tertiary">
@@ -425,7 +419,7 @@ export default function OverviewPage() {
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <Badge variant={toneBadgeVariant(item.tone)}>{t(`status_labels.${item.tone}`)}</Badge>
+                          <StatusBadge status={item.tone}>{t(`status_labels.${item.tone}`)}</StatusBadge>
                           <span className="text-sm font-medium text-foreground">{item.title}</span>
                         </div>
                         <p className="text-sm text-tertiary">{item.body}</p>

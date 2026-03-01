@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -122,10 +123,6 @@ function buildInitialDraft(filters: UsageListParams): DraftState {
     release_evidence_required: true,
     empty_result_policy: 'deliver',
   };
-}
-
-function deliveryStatusVariant(status: 'success' | 'failed') {
-  return status === 'success' ? 'outline' : 'secondary';
 }
 
 function parseTimeoutSeconds(value: string): number | undefined {
@@ -287,11 +284,11 @@ export function UsageReportSchedulesPanel({
             {evidenceLoading ? (
               <div className="text-xs text-tertiary">{commonT('loading')}</div>
             ) : evidence ? (
-              <Badge variant={evidence.release_readiness === 'ready' ? 'outline' : 'secondary'}>
+              <StatusBadge status={evidence.release_readiness === 'ready' ? 'ready' : 'blocked'}>
                 {t(`report_schedules.release_${evidence.release_readiness}`)}
-              </Badge>
+              </StatusBadge>
             ) : (
-              <Badge variant="secondary">{t('report_schedules.evidence_unavailable')}</Badge>
+              <StatusBadge status="warning">{t('report_schedules.evidence_unavailable')}</StatusBadge>
             )}
           </div>
 
@@ -324,14 +321,14 @@ export function UsageReportSchedulesPanel({
             <div className="mt-3 rounded-md border border-subtle bg-surface px-3 py-3" data-testid="usage__report-evidence-runner-health">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="text-xs font-medium text-foreground">{t('report_schedules.runner_health_title')}</div>
-                <Badge variant={evidence.runner_health.last_status === 'failed' ? 'secondary' : 'outline'}>
+                <StatusBadge status={evidence.runner_health.last_status === 'failed' ? 'blocked' : evidence.runner_health.last_status === 'idle' ? 'warning' : 'ready'}>
                   {t(`report_schedules.runner_status_${evidence.runner_health.last_status}`)}
-                </Badge>
-                <Badge variant="outline">
+                </StatusBadge>
+                <StatusBadge status={evidence.runner_health.enabled ? 'active' : 'paused'}>
                   {evidence.runner_health.enabled
                     ? t('report_schedules.runner_enabled')
                     : t('report_schedules.runner_disabled')}
-                </Badge>
+                </StatusBadge>
               </div>
               <div className="mt-2 flex flex-wrap gap-4 text-xs text-tertiary">
                 <span>{t('report_schedules.runner_runs')}: {evidence.runner_health.run_count}</span>
@@ -351,7 +348,7 @@ export function UsageReportSchedulesPanel({
               <div className="text-xs font-medium text-foreground">{t('report_schedules.evidence_blockers')}</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {evidence.blockers.map((blocker) => (
-                  <Badge key={blocker} variant="secondary">{blocker}</Badge>
+                  <StatusBadge key={blocker} status="blocked">{blocker}</StatusBadge>
                 ))}
               </div>
             </div>
@@ -362,7 +359,7 @@ export function UsageReportSchedulesPanel({
               <div className="text-xs font-medium text-foreground">{t('report_schedules.evidence_warnings')}</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {evidence.warnings.map((warning) => (
-                  <Badge key={warning} variant="outline">{warning}</Badge>
+                  <StatusBadge key={warning} status="warning">{warning}</StatusBadge>
                 ))}
               </div>
             </div>
@@ -390,9 +387,9 @@ export function UsageReportSchedulesPanel({
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-sm font-semibold text-foreground">{schedule.name}</div>
-                    <Badge variant={schedule.status === 'active' ? 'outline' : 'secondary'}>
+                    <StatusBadge status={schedule.status === 'active' ? 'active' : 'paused'}>
                       {t(`report_schedules.status_${schedule.status}`)}
-                    </Badge>
+                    </StatusBadge>
                     <Badge variant="secondary">{t(`report_schedules.cadence_${schedule.cadence}`)}</Badge>
                     <Badge variant="secondary">{schedule.format.toUpperCase()}</Badge>
                     <Badge variant={schedule.release_evidence_required ? 'outline' : 'secondary'}>
@@ -503,9 +500,9 @@ export function UsageReportSchedulesPanel({
                         data-testid={`usage__report-delivery-${delivery.id}`}
                       >
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={deliveryStatusVariant(delivery.status)}>
+                          <StatusBadge status={delivery.status === 'failed' ? 'blocked' : 'ready'}>
                             {t(`report_schedules.delivery_status_${delivery.status}`)}
-                          </Badge>
+                          </StatusBadge>
                           <Badge variant="outline">{t(`report_schedules.delivery_trigger_${delivery.trigger}`)}</Badge>
                           <span className="text-xs text-tertiary">{formatIso(delivery.completed_at)}</span>
                           {delivery.acknowledged_at ? (

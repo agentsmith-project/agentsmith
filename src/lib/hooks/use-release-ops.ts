@@ -62,6 +62,31 @@ export function useReleaseEscalationDetail(id?: string, options?: { enabled?: bo
   });
 }
 
+export function useAcknowledgeReleaseEscalation() {
+  const api = new ReleaseOpsAPI(getApiClient());
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { escalationId: string }) => api.acknowledgeEscalation(payload.escalationId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.escalations() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.escalationDetail(result.id) });
+    },
+  });
+}
+
+export function useResolveReleaseEscalation() {
+  const api = new ReleaseOpsAPI(getApiClient());
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { escalationId: string; status: 'open' | 'resolved'; reason?: string }) =>
+      api.resolveEscalation(payload.escalationId, { status: payload.status, reason: payload.reason }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.escalations() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.releaseOps.escalationDetail(result.id) });
+    },
+  });
+}
+
 export function useReleasePolicyOverrides(
   workspaceId: string,
   projectId: string,

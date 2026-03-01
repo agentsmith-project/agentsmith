@@ -203,6 +203,12 @@ test.describe('Settings Page', () => {
     await authedPage.getByTestId('release-ops__override-approve-0').click();
     await expect(authedPage.getByTestId('release-ops__override-item-0')).toContainText('approved');
     await expect(authedPage.getByTestId('release-ops__escalation-0')).toBeVisible();
+    await authedPage.getByTestId('release-ops__escalation-0').click();
+    await expect(authedPage.getByTestId('release-ops__escalation-detail')).toBeVisible();
+    await authedPage.getByTestId('release-ops__escalation-acknowledge').click();
+    await authedPage.getByTestId('release-ops__escalation-resolution-reason').fill('Mitigated in follow-up gate');
+    await authedPage.getByTestId('release-ops__escalation-resolve').click();
+    await expect(authedPage.getByTestId('release-ops__incident-trace')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__run-item-0')).toBeVisible();
     await authedPage.getByTestId('release-ops__run-item-0').click();
     await expect(authedPage.getByTestId('release-ops__run-detail')).toBeVisible();

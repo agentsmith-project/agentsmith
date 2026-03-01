@@ -238,6 +238,9 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
     failure_categories: [],
+    webhook_delivery: {
+      status: 'skipped',
+    },
   },
   {
     id: 'runtime-evidence-gate-regression-20260227',
@@ -256,6 +259,13 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
     usage_release_readiness: 'blocked',
     failed_step_name: 'Governance release smoke',
     failure_categories: ['authorization', 'unknown'],
+    webhook_delivery: {
+      status: 'failed',
+      attempted_at: '2026-02-27T19:25:00.000Z',
+      response_status: 500,
+      error: 'http_500',
+      duration_ms: 820,
+    },
   },
   {
     id: 'wp11-release-controls-final-20260228',
@@ -273,6 +283,12 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
     failure_categories: [],
+    webhook_delivery: {
+      status: 'success',
+      attempted_at: '2026-02-28T20:35:10.000Z',
+      response_status: 200,
+      duration_ms: 140,
+    },
   },
 ];
 
@@ -1077,6 +1093,47 @@ export const usageHandlers = [
     if (!detail) {
       return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_escalation_not_found' }, { status: 404 });
     }
+    return HttpResponse.json(detail);
+  }),
+  http.post('/api/v1/internal/release-escalations/:id/acknowledge', ({ params }) => {
+    const detail = releaseEscalations.find((item) => item.id === String(params.id));
+    if (!detail) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_escalation_not_found' }, { status: 404 });
+    }
+    detail.acknowledged_at = new Date().toISOString();
+    detail.acknowledged_by_user_id = 'mock-user';
+    detail.acknowledged_by_name = 'Mock User';
+    appendMockNotification({
+      id: `notif_release_escalation_ack_${Date.now()}`,
+      type: 'release_escalation_acknowledged',
+      title: 'Release escalation acknowledged',
+      body: detail.title,
+      link_url: null,
+      read_at: null,
+      created_at: new Date().toISOString(),
+    });
+    return HttpResponse.json(detail);
+  }),
+  http.post('/api/v1/internal/release-escalations/:id/resolution', async ({ params, request }) => {
+    const body = await request.json() as { status?: 'open' | 'resolved'; reason?: string };
+    const detail = releaseEscalations.find((item) => item.id === String(params.id));
+    if (!detail || (body.status !== 'open' && body.status !== 'resolved')) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_escalation_not_found' }, { status: 404 });
+    }
+    detail.status = body.status;
+    detail.resolution_reason = body.reason?.trim() || undefined;
+    detail.resolved_at = body.status === 'resolved' ? new Date().toISOString() : undefined;
+    detail.resolved_by_user_id = body.status === 'resolved' ? 'mock-user' : undefined;
+    detail.resolved_by_name = body.status === 'resolved' ? 'Mock User' : undefined;
+    appendMockNotification({
+      id: `notif_release_escalation_resolution_${Date.now()}`,
+      type: body.status === 'resolved' ? 'release_escalation_resolved' : 'release_escalation_reopened',
+      title: body.status === 'resolved' ? 'Release escalation resolved' : 'Release escalation reopened',
+      body: detail.title,
+      link_url: null,
+      read_at: null,
+      created_at: new Date().toISOString(),
+    });
     return HttpResponse.json(detail);
   }),
   http.get('/api/v1/internal/release-policy-overrides', ({ request }) => {

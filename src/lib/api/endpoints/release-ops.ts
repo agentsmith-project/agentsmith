@@ -63,6 +63,20 @@ export interface ReleaseEscalationEvent {
   usage_release_readiness?: 'ready' | 'blocked';
   failed_step_name?: string;
   failure_categories?: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'quota' | 'rate_limit' | 'permission' | 'unknown'>;
+  acknowledged_at?: string;
+  acknowledged_by_user_id?: string;
+  acknowledged_by_name?: string;
+  resolution_reason?: string;
+  resolved_at?: string;
+  resolved_by_user_id?: string;
+  resolved_by_name?: string;
+  webhook_delivery?: {
+    status: 'success' | 'failed' | 'skipped';
+    attempted_at?: string;
+    response_status?: number;
+    error?: string;
+    duration_ms?: number;
+  };
 }
 
 export interface ReleasePolicyOverrideRecord {
@@ -108,6 +122,14 @@ export class ReleaseOpsAPI {
 
   async getEscalation(id: string): Promise<ReleaseEscalationEvent> {
     return this.client.get(`/internal/release-escalations/${encodeURIComponent(id)}`);
+  }
+
+  async acknowledgeEscalation(id: string): Promise<ReleaseEscalationEvent> {
+    return this.client.post(`/internal/release-escalations/${encodeURIComponent(id)}/acknowledge`);
+  }
+
+  async resolveEscalation(id: string, payload: { status: 'open' | 'resolved'; reason?: string }): Promise<ReleaseEscalationEvent> {
+    return this.client.post(`/internal/release-escalations/${encodeURIComponent(id)}/resolution`, payload);
   }
 
   async listOverrides(params: { workspaceId: string; projectId: string; reportName: string }): Promise<{ items: ReleasePolicyOverrideRecord[] }> {

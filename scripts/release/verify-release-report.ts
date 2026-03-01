@@ -24,6 +24,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import type {
   ReleaseEscalationEvent,
   ReleaseReport,
@@ -155,7 +156,7 @@ async function main() {
   writeFileSync(runPath, JSON.stringify(runHistory, null, 2), 'utf-8');
   console.log(`[verify-release-report] Run: ${runPath}`);
 
-  const escalation = buildReleaseEscalationEvent(reportName, report, runHistory);
+  const escalation = await buildReleaseEscalationEvent(reportName, report, runHistory);
   const escalationPath = join(escalationsOutputDir, `${reportName}.json`);
   writeFileSync(escalationPath, JSON.stringify(escalation, null, 2), 'utf-8');
   console.log(`[verify-release-report] Escalation: ${escalationPath}`);
@@ -337,11 +338,11 @@ function buildReleaseGateRunHistory(
   };
 }
 
-function buildReleaseEscalationEvent(
+async function buildReleaseEscalationEvent(
   reportName: string,
   report: ReleaseReport,
   run: ReleaseGateRunHistory,
-): ReleaseEscalationEvent {
+): Promise<ReleaseEscalationEvent> {
   const decision = report.summary.release_policy?.decision ?? 'blocked';
   const status = decision === 'ready' ? 'resolved' : 'open';
   const eventType = decision === 'blocked'
@@ -354,7 +355,7 @@ function buildReleaseEscalationEvent(
     : decision === 'warning'
       ? 'warning'
       : 'info';
-  return {
+  const event: ReleaseEscalationEvent = {
     id: reportName,
     report_name: reportName,
     run_id: run.id,
@@ -380,6 +381,64 @@ function buildReleaseEscalationEvent(
     failed_step_name: run.failed_step_name,
     failure_categories: run.failure_categories,
   };
+  event.webhook_delivery = await deliverReleaseEscalationWebhook(event);
+  return event;
+}
+
+async function deliverReleaseEscalationWebhook(
+  event: ReleaseEscalationEvent,
+): Promise<ReleaseEscalationEvent['webhook_delivery']> {
+  const webhookUrl = process.env.RELEASE_ESCALATION_WEBHOOK_URL?.trim();
+  if (!webhookUrl) {
+    return { status: 'skipped' };
+  }
+
+  const startedAt = Date.now();
+  const body = JSON.stringify(event);
+  const headers: Record<string, string> = {
+    'content-type': 'application/json; charset=utf-8',
+    'x-agentsmith-release-event-type': event.event_type,
+    'x-agentsmith-release-event-id': event.id,
+  };
+  const secret = process.env.RELEASE_ESCALATION_WEBHOOK_SECRET?.trim();
+  const secretHeader = process.env.RELEASE_ESCALATION_WEBHOOK_SECRET_HEADER?.trim();
+  const signatureHeader = process.env.RELEASE_ESCALATION_WEBHOOK_SIGNATURE_HEADER?.trim();
+  if (secret && secretHeader) {
+    headers[secretHeader] = secret;
+  }
+  if (secret && signatureHeader) {
+    const timestamp = new Date().toISOString();
+    const signature = createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+    headers[signatureHeader] = `sha256=${signature}`;
+    headers['x-agentsmith-signature-timestamp'] = timestamp;
+  }
+  const timeoutSeconds = Math.max(1, Math.min(60, Number.parseInt(process.env.RELEASE_ESCALATION_WEBHOOK_TIMEOUT_SECONDS ?? '10', 10) || 10));
+  const abortController = new AbortController();
+  const timer = setTimeout(() => abortController.abort(), timeoutSeconds * 1000);
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers,
+      body,
+      signal: abortController.signal,
+    });
+    clearTimeout(timer);
+    return {
+      status: response.ok ? 'success' : 'failed',
+      attempted_at: new Date().toISOString(),
+      response_status: response.status,
+      duration_ms: Date.now() - startedAt,
+      error: response.ok ? undefined : `http_${response.status}`,
+    };
+  } catch (error) {
+    clearTimeout(timer);
+    return {
+      status: 'failed',
+      attempted_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : 'release_escalation_webhook_failed',
+    };
+  }
 }
 
 function getTriggerSource(): 'manual' | 'scheduled' | 'ci' | 'unknown' {

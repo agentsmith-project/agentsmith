@@ -13,14 +13,17 @@ import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/valida
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { useRuntimeObservability, useUsageOperationsSummary, useUsageReportEvidence, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
 import {
+  useAcknowledgeReleaseEscalation,
   useCreateReleasePolicyOverride,
   useDecideReleasePolicyOverride,
+  useReleaseEscalationDetail,
   useReleaseEscalationList,
   useReleaseGateRunDetail,
   useReleaseGateRunList,
   useReleasePolicyOverrides,
   useReleaseReportDetail,
   useReleaseReportList,
+  useResolveReleaseEscalation,
 } from '@/lib/hooks/use-release-ops';
 import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { UsageOperationsSummary } from '@/components/audit-usage/UsageOperationsSummary';
@@ -118,6 +121,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const searchParamsKey = searchParams.toString();
   const [selectedReportName, setSelectedReportName] = useState<string | undefined>(searchParams.get('report') ?? undefined);
   const [selectedRunId, setSelectedRunId] = useState<string | undefined>(searchParams.get('run') ?? undefined);
+  const [selectedEscalationId, setSelectedEscalationId] = useState<string | undefined>(searchParams.get('escalation') ?? undefined);
   const [reportSearch, setReportSearch] = useState(searchParams.get('report_search') ?? '');
   const [reportStatusFilter, setReportStatusFilter] = useState<'all' | 'pass' | 'fail'>(
     searchParams.get('report_status') === 'pass' || searchParams.get('report_status') === 'fail'
@@ -140,6 +144,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const [failedCheckCategoryFilter, setFailedCheckCategoryFilter] = useState<string>(searchParams.get('failed_check_category') ?? 'all');
   const [overrideIssueId, setOverrideIssueId] = useState<string>('none');
   const [overrideReason, setOverrideReason] = useState('');
+  const [resolutionReason, setResolutionReason] = useState('');
 
   useEffect(() => {
     params.then((p) => setResolvedParams({
@@ -160,10 +165,13 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const schedulesQuery = useUsageReportSchedules(workspaceId, projectId, { enabled });
   const reportsQuery = useReleaseReportList({ enabled });
   const escalationsQuery = useReleaseEscalationList({ enabled });
+  const escalationDetailQuery = useReleaseEscalationDetail(selectedEscalationId, { enabled });
   const runsQuery = useReleaseGateRunList({ enabled });
   const runDetailQuery = useReleaseGateRunDetail(selectedRunId, { enabled });
   const reportDetailQuery = useReleaseReportDetail(selectedReportName, { enabled });
   const overridesQuery = useReleasePolicyOverrides(workspaceId, projectId, selectedReportName, { enabled });
+  const acknowledgeEscalationMutation = useAcknowledgeReleaseEscalation();
+  const resolveEscalationMutation = useResolveReleaseEscalation();
   const createOverrideMutation = useCreateReleasePolicyOverride();
   const decideOverrideMutation = useDecideReleasePolicyOverride();
 
@@ -174,6 +182,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     schedulesQuery.refetch();
     reportsQuery.refetch();
     escalationsQuery.refetch();
+    escalationDetailQuery.refetch();
     runsQuery.refetch();
     runDetailQuery.refetch();
     reportDetailQuery.refetch();
@@ -226,6 +235,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   useEffect(() => {
     const nextReport = searchParams.get('report') ?? undefined;
     const nextRun = searchParams.get('run') ?? undefined;
+    const nextEscalation = searchParams.get('escalation') ?? undefined;
     const nextSearch = searchParams.get('report_search') ?? '';
     const nextStatus = searchParams.get('report_status') === 'pass' || searchParams.get('report_status') === 'fail'
       ? searchParams.get('report_status') as 'pass' | 'fail'
@@ -242,6 +252,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     const nextCategory = searchParams.get('failed_check_category') ?? 'all';
     setSelectedReportName((prev) => prev === nextReport ? prev : nextReport);
     setSelectedRunId((prev) => prev === nextRun ? prev : nextRun);
+    setSelectedEscalationId((prev) => prev === nextEscalation ? prev : nextEscalation);
     setReportSearch((prev) => prev === nextSearch ? prev : nextSearch);
     setReportStatusFilter((prev) => prev === nextStatus ? prev : nextStatus);
     setRunStatusFilter((prev) => prev === nextRunStatus ? prev : nextRunStatus);
@@ -270,6 +281,16 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   }, [filteredReleaseRuns, selectedRunId]);
 
   useEffect(() => {
+    if (!selectedEscalationId && releaseEscalations.length > 0) {
+      setSelectedEscalationId(releaseEscalations[0]?.id);
+      return;
+    }
+    if (selectedEscalationId && !releaseEscalations.some((item) => item.id === selectedEscalationId)) {
+      setSelectedEscalationId(releaseEscalations[0]?.id);
+    }
+  }, [releaseEscalations, selectedEscalationId]);
+
+  useEffect(() => {
     const params = new URLSearchParams(searchParamsKey);
     const nextReport = selectedReportName ?? '';
     const nextSearch = reportSearch.trim();
@@ -286,6 +307,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       changed = true;
       if (selectedRunId) params.set('run', selectedRunId);
       else params.delete('run');
+    }
+    if ((params.get('escalation') ?? '') !== (selectedEscalationId ?? '')) {
+      changed = true;
+      if (selectedEscalationId) params.set('escalation', selectedEscalationId);
+      else params.delete('escalation');
     }
     if ((params.get('report_search') ?? '') !== nextSearch) {
       changed = true;
@@ -320,7 +346,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     if (!changed) return;
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [failedCheckCategoryFilter, pathname, reportSearch, reportStatusFilter, router, runStatusFilter, runTriggerFilter, searchParamsKey, selectedReportName, selectedRunId]);
+  }, [failedCheckCategoryFilter, pathname, reportSearch, reportStatusFilter, router, runStatusFilter, runTriggerFilter, searchParamsKey, selectedEscalationId, selectedReportName, selectedRunId]);
 
   const reportSummary = (reportDetailQuery.data?.report as {
     summary?: {
@@ -426,6 +452,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const longRangeUsageBlocked = longRangeReports.filter((item) => item.usage_release_readiness === 'blocked').length;
   const recentReleaseRuns = filteredReleaseRuns.slice(0, 8);
   const selectedRun = runDetailQuery.data;
+  const selectedEscalation = escalationDetailQuery.data;
   const runPassRate = recentReleaseRuns.length > 0
     ? recentReleaseRuns.filter((item) => item.status === 'pass').length / recentReleaseRuns.length
     : undefined;
@@ -454,6 +481,29 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     ...(artifactPolicy?.warnings ?? []),
     ...(artifactPolicy?.blockers ?? []).filter(() => false),
   ];
+  const incidentTrace = [
+    ...(selectedEscalation ? [{
+      id: `escalation-${selectedEscalation.id}`,
+      kind: 'escalation',
+      timestamp: selectedEscalation.created_at,
+      title: selectedEscalation.title,
+      meta: `${selectedEscalation.event_type} · ${selectedEscalation.status}`,
+    }] : []),
+    ...(selectedRun ? [{
+      id: `run-${selectedRun.id}`,
+      kind: 'run',
+      timestamp: selectedRun.completed_at,
+      title: selectedRun.id,
+      meta: `${selectedRun.trigger} · ${selectedRun.status}`,
+    }] : []),
+    ...((overridesQuery.data?.items ?? []).map((item) => ({
+      id: `override-${item.id}`,
+      kind: 'override',
+      timestamp: item.decided_at ?? item.created_at,
+      title: item.issue_message,
+      meta: `${item.issue_source} · ${item.status}`,
+    }))),
+  ].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
   if (!resolvedParams) {
     return (
@@ -493,6 +543,19 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       reportName: selectedReportName,
       status,
     });
+  };
+  const acknowledgeEscalation = async () => {
+    if (!selectedEscalationId) return;
+    await acknowledgeEscalationMutation.mutateAsync({ escalationId: selectedEscalationId });
+  };
+  const updateEscalationResolution = async (status: 'open' | 'resolved') => {
+    if (!selectedEscalationId) return;
+    await resolveEscalationMutation.mutateAsync({
+      escalationId: selectedEscalationId,
+      status,
+      reason: resolutionReason.trim() || undefined,
+    });
+    if (status === 'resolved') setResolutionReason('');
   };
 
   if (!resolvedParams.workspace || !resolvedParams.project) {
@@ -710,8 +773,12 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     <button
                       key={item.id}
                       type="button"
-                      className="w-full rounded-md border border-subtle bg-bg-base/40 px-3 py-2 text-left hover:bg-bg-base/60"
+                      className={cn(
+                        'w-full rounded-md border px-3 py-2 text-left',
+                        selectedEscalationId === item.id ? 'border-border bg-bg-base/60' : 'border-subtle bg-bg-base/40 hover:bg-bg-base/60',
+                      )}
                       onClick={() => {
+                        setSelectedEscalationId(item.id);
                         if (item.artifact_name) setSelectedReportName(item.artifact_name);
                         if (item.run_id) setSelectedRunId(item.run_id);
                       }}
@@ -732,6 +799,95 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       ) : null}
                     </button>
                   ))}
+                </div>
+                {selectedEscalation ? (
+                  <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__escalation-detail">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={selectedEscalation.severity === 'critical' ? 'secondary' : 'outline'}>{selectedEscalation.severity}</Badge>
+                      <Badge variant={selectedEscalation.status === 'resolved' ? 'outline' : 'secondary'}>{selectedEscalation.status}</Badge>
+                      {selectedEscalation.webhook_delivery ? (
+                        <Badge variant={selectedEscalation.webhook_delivery.status === 'success' ? 'outline' : selectedEscalation.webhook_delivery.status === 'skipped' ? 'secondary' : 'secondary'}>
+                          webhook:{selectedEscalation.webhook_delivery.status}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_escalations_delivery')}</div>
+                        <div className="mt-1 text-sm text-foreground">
+                          {selectedEscalation.webhook_delivery?.status ?? '--'}
+                          {selectedEscalation.webhook_delivery?.response_status ? ` · ${selectedEscalation.webhook_delivery.response_status}` : ''}
+                          {selectedEscalation.webhook_delivery?.duration_ms ? ` · ${formatDurationMs(selectedEscalation.webhook_delivery.duration_ms)}` : ''}
+                        </div>
+                        {selectedEscalation.webhook_delivery?.error ? (
+                          <div className="mt-1 text-xs text-tertiary">{selectedEscalation.webhook_delivery.error}</div>
+                        ) : null}
+                      </div>
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_escalations_ack')}</div>
+                        <div className="mt-1 text-sm text-foreground">
+                          {selectedEscalation.acknowledged_at
+                            ? `${selectedEscalation.acknowledged_by_name ?? selectedEscalation.acknowledged_by_user_id ?? '--'} · ${formatDateTime(selectedEscalation.acknowledged_at)}`
+                            : commonT('empty')}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                      <Textarea
+                        value={resolutionReason}
+                        onChange={(event) => setResolutionReason(event.target.value)}
+                        placeholder={settingsT('release_ops_escalations_resolution_reason_placeholder')}
+                        data-testid="release-ops__escalation-resolution-reason"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={acknowledgeEscalation}
+                        disabled={acknowledgeEscalationMutation.isPending}
+                        data-testid="release-ops__escalation-acknowledge"
+                      >
+                        {settingsT('release_ops_escalations_acknowledge')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => updateEscalationResolution(selectedEscalation.status === 'resolved' ? 'open' : 'resolved')}
+                        disabled={resolveEscalationMutation.isPending}
+                        data-testid="release-ops__escalation-resolve"
+                      >
+                        {selectedEscalation.status === 'resolved'
+                          ? settingsT('release_ops_escalations_reopen')
+                          : settingsT('release_ops_escalations_resolve')}
+                      </Button>
+                    </div>
+                    {selectedEscalation.resolved_at ? (
+                      <div className="mt-2 text-xs text-tertiary">
+                        {selectedEscalation.resolved_by_name ?? selectedEscalation.resolved_by_user_id} · {formatDateTime(selectedEscalation.resolved_at)}
+                        {selectedEscalation.resolution_reason ? ` · ${selectedEscalation.resolution_reason}` : ''}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="mt-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__incident-trace">
+                  <div className="mb-3">
+                    <h4 className="text-sm font-semibold text-foreground">{settingsT('release_ops_incident_trace_title')}</h4>
+                    <p className="text-xs text-tertiary">{settingsT('release_ops_incident_trace_subtitle')}</p>
+                  </div>
+                  <div className="space-y-2">
+                    {incidentTrace.length === 0 ? (
+                      <div className="text-sm text-tertiary">{commonT('empty')}</div>
+                    ) : incidentTrace.map((item, index) => (
+                      <div key={item.id} className="rounded-md border border-subtle bg-surface px-3 py-2" data-testid={`release-ops__incident-trace-item-${index}`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
+                            <div className="text-xs text-tertiary">{item.meta}</div>
+                          </div>
+                          <Badge variant="outline">{formatDateTime(item.timestamp)}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 

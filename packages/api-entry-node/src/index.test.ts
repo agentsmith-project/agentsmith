@@ -4290,6 +4290,24 @@ describe('api-entry-node projects routes', () => {
     const escalationDetailPayload = (await escalationDetailRes.json()) as { title: string };
     expect(escalationDetailPayload.title).toContain('warning');
 
+    const acknowledgeRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/acknowledge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(acknowledgeRes.status).toBe(200);
+    const acknowledged = (await acknowledgeRes.json()) as { acknowledged_by_user_id?: string };
+    expect(acknowledged.acknowledged_by_user_id).toBeTruthy();
+
+    const resolveRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/resolution', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'resolved', reason: 'Mitigated by rerun' }),
+    });
+    expect(resolveRes.status).toBe(200);
+    const resolved = (await resolveRes.json()) as { status: string; resolution_reason?: string };
+    expect(resolved.status).toBe('resolved');
+    expect(resolved.resolution_reason).toBe('Mitigated by rerun');
+
     const notificationsRes = await apiFetch(baseUrl, '/api/v1/me/notifications');
     expect(notificationsRes.status).toBe(200);
     const notificationsPayload = (await notificationsRes.json()) as { items: Array<{ id: string; title: string }> };

@@ -49,7 +49,7 @@ export function syncUserNotification(
     existing.body = payload.body;
     existing.link_url = payload.link_url;
     existing.created_at = payload.created_at;
-    if (payload.read_at !== undefined) {
+    if (payload.read_at !== undefined && !(existing.read_at && payload.read_at === null)) {
       existing.read_at = payload.read_at;
     }
     return existing;

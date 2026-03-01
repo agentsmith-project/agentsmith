@@ -22,6 +22,12 @@ import { handleApiDocsRoute } from './api-docs-handler.js';
 import { handleMeRoute } from './me-route-handler.js';
 import { appendUserNotification } from './me-notifications-store.js';
 import { getReleaseEscalationDetail, listReleaseEscalations } from './release-escalation-store.js';
+import {
+  acknowledgeReleaseEscalation,
+  getReleaseEscalationState,
+  listReleaseEscalationStates,
+  setReleaseEscalationResolution,
+} from './release-escalation-state-store.js';
 import { getReleaseReportDetail, listReleaseReports } from './release-report-store.js';
 import { getReleaseGateRunDetail, listReleaseGateRuns } from './release-run-store.js';
 import { createReleasePolicyOverride, listReleasePolicyOverrides, updateReleasePolicyOverrideDecision } from './release-policy-override-store.js';
@@ -198,6 +204,41 @@ function sseWrite(res: http.ServerResponse, event: string, data: unknown): void 
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+function mergeEscalationState(
+  event: {
+    status: 'open' | 'resolved';
+    acknowledged_at?: string;
+    acknowledged_by_user_id?: string;
+    acknowledged_by_name?: string;
+    resolution_reason?: string;
+    resolved_at?: string;
+    resolved_by_user_id?: string;
+    resolved_by_name?: string;
+  } & Record<string, unknown>,
+  state?: {
+    acknowledged_at?: string;
+    acknowledged_by_user_id?: string;
+    acknowledged_by_name?: string;
+    resolution_status?: 'open' | 'resolved';
+    resolution_reason?: string;
+    resolved_at?: string;
+    resolved_by_user_id?: string;
+    resolved_by_name?: string;
+  } | null,
+) {
+  return {
+    ...event,
+    status: state?.resolution_status ?? event.status,
+    acknowledged_at: state?.acknowledged_at ?? event.acknowledged_at,
+    acknowledged_by_user_id: state?.acknowledged_by_user_id ?? event.acknowledged_by_user_id,
+    acknowledged_by_name: state?.acknowledged_by_name ?? event.acknowledged_by_name,
+    resolution_reason: state?.resolution_reason ?? event.resolution_reason,
+    resolved_at: state?.resolved_at ?? event.resolved_at,
+    resolved_by_user_id: state?.resolved_by_user_id ?? event.resolved_by_user_id,
+    resolved_by_name: state?.resolved_by_name ?? event.resolved_by_name,
+  };
+}
+
 export async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -336,8 +377,11 @@ export async function handleRequest(
       unauthorized(res);
       return;
     }
+    const items = listReleaseEscalations(deps.releaseEscalationsDir ?? 'artifacts/release-escalations');
+    const states = await listReleaseEscalationStates(deps.docStore);
+    const stateById = new Map(states.map((item) => [item.id, item]));
     json(res, 200, {
-      items: listReleaseEscalations(deps.releaseEscalationsDir ?? 'artifacts/release-escalations'),
+      items: items.map((item) => mergeEscalationState(item, stateById.get(item.id))),
     });
     return;
   }
@@ -354,7 +398,71 @@ export async function handleRequest(
       json(res, 404, { error_code: 'NOT_FOUND', message: 'release_escalation_not_found' });
       return;
     }
-    json(res, 200, detail);
+    const state = await getReleaseEscalationState(deps.docStore, escalationId);
+    json(res, 200, mergeEscalationState(detail, state));
+    return;
+  }
+
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/release-escalations\/[^/]+\/acknowledge\/?$/) && method === 'POST') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-escalations/', '').replace('/acknowledge', '').replace(/\/$/, ''));
+    const detail = getReleaseEscalationDetail(deps.releaseEscalationsDir ?? 'artifacts/release-escalations', escalationId);
+    if (!detail) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_escalation_not_found' });
+      return;
+    }
+    const state = await acknowledgeReleaseEscalation(deps.docStore, {
+      escalationId,
+      userId: user.id,
+      userName: user.name,
+    });
+    appendUserNotification(user.id, {
+      type: 'release_escalation_acknowledged',
+      title: 'Release escalation acknowledged',
+      body: detail.title,
+      link_url: null,
+    });
+    json(res, 200, mergeEscalationState(detail, state));
+    return;
+  }
+
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/release-escalations\/[^/]+\/resolution\/?$/) && method === 'POST') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-escalations/', '').replace('/resolution', '').replace(/\/$/, ''));
+    const detail = getReleaseEscalationDetail(deps.releaseEscalationsDir ?? 'artifacts/release-escalations', escalationId);
+    if (!detail) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_escalation_not_found' });
+      return;
+    }
+    const body = await readBody(req) as Record<string, unknown>;
+    const status = body.status === 'open' || body.status === 'resolved' ? body.status : null;
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : undefined;
+    if (!status) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'resolution status is required' });
+      return;
+    }
+    const state = await setReleaseEscalationResolution(deps.docStore, {
+      escalationId,
+      status,
+      reason,
+      userId: user.id,
+      userName: user.name,
+    });
+    appendUserNotification(user.id, {
+      type: 'release_escalation_resolved',
+      title: status === 'resolved' ? 'Release escalation resolved' : 'Release escalation reopened',
+      body: detail.title,
+      link_url: null,
+    });
+    json(res, 200, mergeEscalationState(detail, state));
     return;
   }
 

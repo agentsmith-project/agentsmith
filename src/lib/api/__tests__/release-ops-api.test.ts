@@ -131,6 +131,55 @@ describe('ReleaseOpsAPI', () => {
     expect(result.items[0]?.event_type).toBe('gate_warning');
   });
 
+  it('acknowledges a release escalation', async () => {
+    const postMock = vi.fn().mockResolvedValue({ id: 'sample-release', status: 'open' });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      post: postMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    await api.acknowledgeEscalation('sample-release');
+
+    expect(postMock).toHaveBeenCalledWith('/internal/release-escalations/sample-release/acknowledge');
+  });
+
+  it('updates release escalation resolution', async () => {
+    const postMock = vi.fn().mockResolvedValue({ id: 'sample-release', status: 'resolved' });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      post: postMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    await api.resolveEscalation('sample-release', { status: 'resolved', reason: 'Mitigated' });
+
+    expect(postMock).toHaveBeenCalledWith('/internal/release-escalations/sample-release/resolution', {
+      status: 'resolved',
+      reason: 'Mitigated',
+    });
+  });
+
+  it('loads a release escalation detail', async () => {
+    const getMock = vi.fn().mockResolvedValue({
+      id: 'sample-release',
+      report_name: 'sample-release',
+      run_id: 'sample-release',
+      created_at: '2026-02-28T20:35:10.000Z',
+      event_type: 'gate_warning',
+      severity: 'warning',
+      status: 'open',
+      title: 'Release gate completed with warning state',
+    });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    const result = await api.getEscalation('sample-release');
+
+    expect(getMock).toHaveBeenCalledWith('/internal/release-escalations/sample-release');
+    expect(result.id).toBe('sample-release');
+  });
+
   it('lists release policy overrides', async () => {
     const getMock = vi.fn().mockResolvedValue({ items: [] });
     const api = new ReleaseOpsAPI({

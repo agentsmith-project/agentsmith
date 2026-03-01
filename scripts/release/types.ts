@@ -365,6 +365,20 @@ export interface ReleaseEscalationEvent {
   usage_release_readiness?: 'ready' | 'blocked';
   failed_step_name?: string;
   failure_categories?: FailureType[];
+  acknowledged_at?: string;
+  acknowledged_by_user_id?: string;
+  acknowledged_by_name?: string;
+  resolution_reason?: string;
+  resolved_at?: string;
+  resolved_by_user_id?: string;
+  resolved_by_name?: string;
+  webhook_delivery?: {
+    status: 'success' | 'failed' | 'skipped';
+    attempted_at?: string;
+    response_status?: number;
+    error?: string;
+    duration_ms?: number;
+  };
 }
 
 /**

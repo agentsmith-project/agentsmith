@@ -157,6 +157,7 @@ describe('verify-release-report: TDD Suite', () => {
 
       // Assert
       expect(report.summary).toHaveProperty('status');
+      expect(report.summary).toHaveProperty('release_policy');
       expect(['pass', 'fail']).toContain(report.summary.status);
 
       // Status should be 'fail' if any checks failed
@@ -493,10 +494,12 @@ describe('verify-release-report: TDD Suite', () => {
 
       // Assert - Recommendations should include specific fixes
       expect(report.summary.recommendations).toBeDefined();
+      expect(report.summary.release_policy).toBeDefined();
       const tokenRecommendation = report.summary.recommendations.find((r: string) =>
         r.includes('token') || r.includes('refresh') || r.includes('auth')
       );
       expect(tokenRecommendation).toBeDefined();
+      expect(['warning', 'blocked']).toContain(report.summary.release_policy.decision);
     });
   });
 });

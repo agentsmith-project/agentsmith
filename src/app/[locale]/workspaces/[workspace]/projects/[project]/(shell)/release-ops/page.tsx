@@ -20,6 +20,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { evaluateReleasePolicy } from '@/lib/release-policy';
 
 interface ReleaseOpsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -259,6 +260,22 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
         unacknowledged_required_deliveries?: number;
         blockers?: string[];
         warnings?: string[];
+        runner_health?: {
+          enabled?: boolean;
+          last_status?: 'idle' | 'success' | 'failed';
+          run_count?: number;
+        };
+      };
+      release_policy?: {
+        decision?: 'ready' | 'warning' | 'blocked';
+        blockers?: Array<{ id?: string; source?: string; message?: string }>;
+        warnings?: Array<{ id?: string; source?: string; message?: string }>;
+        summary?: {
+          total_issues?: number;
+          blocker_count?: number;
+          warning_count?: number;
+          overridable_count?: number;
+        };
       };
     };
   } | undefined)?.summary;
@@ -316,6 +333,27 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     : undefined;
   const longRangeRuntimeBlocked = longRangeReports.filter((item) => item.runtime_release_readiness === 'blocked').length;
   const longRangeUsageBlocked = longRangeReports.filter((item) => item.usage_release_readiness === 'blocked').length;
+  const livePolicy = evaluateReleasePolicy({
+    runtime: runtimeQuery.data ? {
+      release_readiness: currentRuntimeReadiness === 'ready' ? 'ready' : 'blocked',
+      blockers: currentRuntimeReadiness === 'blocked' ? ['live_runtime_terminal_errors_present'] : [],
+      warnings: [],
+      missing_price_facts: runtimeQuery.data.health_summary.missing_price_facts,
+    } : undefined,
+    usage: evidenceQuery.data ? {
+      release_readiness: evidenceQuery.data.release_readiness,
+      blockers: evidenceQuery.data.blockers,
+      warnings: evidenceQuery.data.warnings,
+      required_schedules: evidenceQuery.data.required_schedules,
+      unacknowledged_required_deliveries: evidenceQuery.data.unacknowledged_required_deliveries,
+      runner_health: evidenceQuery.data.runner_health ? {
+        enabled: evidenceQuery.data.runner_health.enabled,
+        last_status: evidenceQuery.data.runner_health.last_status,
+        run_count: evidenceQuery.data.runner_health.run_count,
+      } : undefined,
+    } : undefined,
+  });
+  const artifactPolicy = reportSummary?.release_policy;
 
   if (!resolvedParams) {
     return (
@@ -488,6 +526,20 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       <div>{settingsT('release_ops_compare_report_warnings')}: {latestUsageWarningCount}</div>
                     </div>
                   </div>
+                  <div className="rounded-md border border-subtle bg-surface p-3 sm:col-span-2" data-testid="release-ops__compare-policy-details">
+                    <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_policy_details')}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Badge variant={livePolicy.decision === 'ready' ? 'outline' : 'secondary'}>{livePolicy.decision}</Badge>
+                      <span className="text-xs text-tertiary">vs {artifactPolicy?.decision ?? '--'}</span>
+                      <span className="text-xs text-tertiary">
+                        {settingsT('release_ops_compare_live_blockers')}: {livePolicy.summary.blocker_count}
+                        {' · '}
+                        {settingsT('release_ops_compare_report_blockers')}: {artifactPolicy?.summary?.blocker_count ?? 0}
+                        {' · '}
+                        {settingsT('release_ops_compare_report_warnings')}: {artifactPolicy?.summary?.warning_count ?? 0}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -567,6 +619,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant={item.status === 'pass' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                          {item.release_policy_decision ? (
+                            <Badge variant={item.release_policy_decision === 'ready' ? 'outline' : 'secondary'}>
+                              {item.release_policy_decision}
+                            </Badge>
+                          ) : null}
                         </div>
                       </div>
                     </button>
@@ -707,6 +764,19 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       </div>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2" data-testid="release-ops__report-structured-summary">
+                      <div className="rounded-md border border-subtle bg-surface p-3" data-testid="release-ops__report-policy">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_policy_title')}</div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <Badge variant={artifactPolicy?.decision === 'ready' ? 'outline' : 'secondary'}>
+                            {artifactPolicy?.decision ?? '--'}
+                          </Badge>
+                          <span className="text-xs text-tertiary">
+                            b:{artifactPolicy?.summary?.blocker_count ?? 0}
+                            {' · '}
+                            w:{artifactPolicy?.summary?.warning_count ?? 0}
+                          </span>
+                        </div>
+                      </div>
                       <div className="rounded-md border border-subtle bg-surface p-3">
                         <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_compare_runtime')}</div>
                         <div className="mt-2 flex items-center gap-2">

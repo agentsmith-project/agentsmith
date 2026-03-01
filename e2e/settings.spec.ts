@@ -159,6 +159,7 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__evidence-summary')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__online-vs-latest')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__compare-details')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__compare-policy-details')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-search')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-item-0')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__timeline')).toBeVisible();
@@ -166,6 +167,7 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__history-trend')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-detail')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-structured-summary')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-policy')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-metadata')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-download-markdown')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-runtime-evidence')).toBeVisible();

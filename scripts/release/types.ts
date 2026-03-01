@@ -1,3 +1,5 @@
+import type { ReleasePolicyEvaluation } from '../../src/lib/release-policy';
+
 /**
  * Release Report Type Definitions (Epic D1)
  *
@@ -127,6 +129,8 @@ export type CheckStatus = 'pass' | 'fail' | 'skip' | 'timeout';
 export interface ReportSummary {
   /** Overall status (pass if all checks pass, fail otherwise) */
   status: 'pass' | 'fail';
+  /** Unified release-policy evaluation across execution/runtime/usage signals */
+  release_policy?: ReleasePolicyEvaluation;
   /** Failure breakdown by category (present if failed > 0) */
   failure_categories?: FailureCategory[];
   /** Expected upstream transient instability summary (present if detected) */

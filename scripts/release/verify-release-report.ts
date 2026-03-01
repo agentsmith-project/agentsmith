@@ -41,6 +41,7 @@ import {
   classifyFailure,
   getQuickRecommendation,
 } from './failure-classifier';
+import { evaluateReleasePolicy } from '../../src/lib/release-policy';
 
 // Default configuration
 const DEFAULT_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-reports');
@@ -569,6 +570,37 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
     summary.recommendations = generateRecommendations(summary.failure_categories);
   }
 
+  summary.release_policy = evaluateReleasePolicy({
+    execution: {
+      failed_count: execution.failed,
+      transient_acceptance: summary.upstream_transient?.acceptance,
+      failure_categories: summary.failure_categories?.map((category) => category.category),
+    },
+    runtime: runtimeEvidence ? {
+      release_readiness: runtimeEvidence.guardrails.release_readiness,
+      blockers: runtimeEvidence.guardrails.blockers,
+      warnings: runtimeEvidence.guardrails.warnings,
+      missing_usage_facts: runtimeEvidence.pricing_version_coverage.missing_usage_facts,
+      missing_price_facts: runtimeEvidence.pricing_version_coverage.missing_price_facts,
+      release_candidate: runtimeEvidence.release_candidate ? {
+        release_status: runtimeEvidence.release_candidate.release_status,
+        approvals_complete: runtimeEvidence.release_candidate.approvals_complete,
+      } : undefined,
+    } : undefined,
+    usage: usageReportEvidence ? {
+      release_readiness: usageReportEvidence.release_readiness,
+      blockers: usageReportEvidence.blockers,
+      warnings: usageReportEvidence.warnings,
+      required_schedules: usageReportEvidence.required_schedules,
+      unacknowledged_required_deliveries: usageReportEvidence.unacknowledged_required_deliveries,
+      runner_health: usageReportEvidence.runner_health ? {
+        enabled: usageReportEvidence.runner_health.enabled,
+        last_status: usageReportEvidence.runner_health.last_status,
+        run_count: usageReportEvidence.runner_health.run_count,
+      } : undefined,
+    } : undefined,
+  });
+
   if (runtimeBlockingReasons.length > 0) {
     const runtimeRecommendations = runtimeBlockingReasons.map((reason) => `Runtime release blocker: ${reason}`);
     summary.recommendations = [...(summary.recommendations ?? []), ...runtimeRecommendations];
@@ -576,6 +608,10 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
   if (usageReportBlockingReasons.length > 0) {
     const usageRecommendations = usageReportBlockingReasons.map((reason) => `Usage report release blocker: ${reason}`);
     summary.recommendations = [...(summary.recommendations ?? []), ...usageRecommendations];
+  }
+  if (summary.release_policy) {
+    const policyRecommendations = summary.release_policy.blockers.map((issue) => `Release policy blocker: ${issue.message}`);
+    summary.recommendations = [...(summary.recommendations ?? []), ...policyRecommendations];
   }
 
   return summary;
@@ -940,6 +976,30 @@ function generateMarkdown(report: ReleaseReport): string {
       md += `- ${rec}\n`;
     }
     md += `\n`;
+  }
+
+  if (summary.release_policy) {
+    md += `### Release Policy\n\n`;
+    md += `- **Decision:** ${summary.release_policy.decision}\n`;
+    md += `- **Blockers:** ${summary.release_policy.summary.blocker_count}\n`;
+    md += `- **Warnings:** ${summary.release_policy.summary.warning_count}\n`;
+    md += `- **Overridable:** ${summary.release_policy.summary.overridable_count}\n\n`;
+
+    if (summary.release_policy.blockers.length > 0) {
+      md += `**Policy Blockers:**\n`;
+      for (const issue of summary.release_policy.blockers) {
+        md += `- [${issue.source}] ${issue.message}\n`;
+      }
+      md += `\n`;
+    }
+
+    if (summary.release_policy.warnings.length > 0) {
+      md += `**Policy Warnings:**\n`;
+      for (const issue of summary.release_policy.warnings) {
+        md += `- [${issue.source}] ${issue.message}\n`;
+      }
+      md += `\n`;
+    }
   }
 
   if (summary.runtime_release_evidence) {

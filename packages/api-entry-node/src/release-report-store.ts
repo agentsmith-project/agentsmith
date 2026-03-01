@@ -11,6 +11,13 @@ type ReleaseReportShape = {
   };
   summary?: {
     status?: 'pass' | 'fail';
+    release_policy?: {
+      decision?: 'ready' | 'warning' | 'blocked';
+      summary?: {
+        blocker_count?: number;
+        warning_count?: number;
+      };
+    };
     runtime_release_evidence?: {
       guardrails?: {
         release_readiness?: 'ready' | 'blocked';
@@ -28,6 +35,9 @@ export type ReleaseReportListItem = {
   status: 'pass' | 'fail' | 'unknown';
   branch?: string;
   commit_short?: string;
+  release_policy_decision?: 'ready' | 'warning' | 'blocked';
+  policy_blocker_count?: number;
+  policy_warning_count?: number;
   runtime_release_readiness?: 'ready' | 'blocked';
   usage_release_readiness?: 'ready' | 'blocked';
   markdown_available: boolean;
@@ -80,6 +90,9 @@ export function listReleaseReports(dir: string): ReleaseReportListItem[] {
         status: parsed?.summary?.status ?? 'unknown',
         branch: parsed?.metadata?.git?.branch,
         commit_short: parsed?.metadata?.git?.commit_short,
+        release_policy_decision: parsed?.summary?.release_policy?.decision,
+        policy_blocker_count: parsed?.summary?.release_policy?.summary?.blocker_count,
+        policy_warning_count: parsed?.summary?.release_policy?.summary?.warning_count,
         runtime_release_readiness: parsed?.summary?.runtime_release_evidence?.guardrails?.release_readiness,
         usage_release_readiness: parsed?.summary?.usage_report_evidence?.release_readiness,
         markdown_available: existsSync(getMarkdownPath(dir, base)),

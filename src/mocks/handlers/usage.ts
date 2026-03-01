@@ -79,6 +79,9 @@ const releaseReports: ReleaseReportListItem[] = [
     status: 'pass',
     branch: 'main',
     commit_short: '6e002bd',
+    release_policy_decision: 'ready',
+    policy_blocker_count: 0,
+    policy_warning_count: 0,
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
     markdown_available: true,
@@ -89,6 +92,9 @@ const releaseReports: ReleaseReportListItem[] = [
     status: 'pass',
     branch: 'main',
     commit_short: '5d1e26e',
+    release_policy_decision: 'warning',
+    policy_blocker_count: 0,
+    policy_warning_count: 1,
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
     markdown_available: true,
@@ -99,6 +105,9 @@ const releaseReports: ReleaseReportListItem[] = [
     status: 'fail',
     branch: 'main',
     commit_short: 'a0f74a6',
+    release_policy_decision: 'blocked',
+    policy_blocker_count: 5,
+    policy_warning_count: 2,
     runtime_release_readiness: 'blocked',
     usage_release_readiness: 'blocked',
     markdown_available: true,
@@ -115,6 +124,17 @@ const releaseReportDetails = new Map<string, ReleaseReportDetail>([
       },
       summary: {
         status: 'pass',
+        release_policy: {
+          decision: 'ready',
+          blockers: [],
+          warnings: [],
+          summary: {
+            total_issues: 0,
+            blocker_count: 0,
+            warning_count: 0,
+            overridable_count: 0,
+          },
+        },
         runtime_release_evidence: {
           generated_at: '2026-02-28T20:35:09.000Z',
           guardrails: { release_readiness: 'ready', blockers: [], warnings: [], target: 'combo:prod-chat', planned_attempts: 2 },
@@ -159,6 +179,25 @@ const releaseReportDetails = new Map<string, ReleaseReportDetail>([
       },
       summary: {
         status: 'pass',
+        release_policy: {
+          decision: 'warning',
+          blockers: [],
+          warnings: [
+            {
+              id: 'usage_usage_report_webhook_signature_recommended',
+              severity: 'warning',
+              source: 'usage',
+              message: 'usage_report_webhook_signature_recommended',
+              overridable: true,
+            },
+          ],
+          summary: {
+            total_issues: 1,
+            blocker_count: 0,
+            warning_count: 1,
+            overridable_count: 1,
+          },
+        },
         runtime_release_evidence: {
           generated_at: '2026-02-28T22:09:58.000Z',
           guardrails: { release_readiness: 'ready', blockers: [], warnings: [], target: 'combo:prod-chat', planned_attempts: 2 },
@@ -203,6 +242,61 @@ const releaseReportDetails = new Map<string, ReleaseReportDetail>([
       },
       summary: {
         status: 'fail',
+        release_policy: {
+          decision: 'blocked',
+          blockers: [
+            {
+              id: 'execution_failures_present',
+              severity: 'blocker',
+              source: 'execution',
+              message: 'Execution has 2 failed checks.',
+              overridable: false,
+            },
+            {
+              id: 'runtime_runtime_guardrail_primary_pricing_missing',
+              severity: 'blocker',
+              source: 'runtime',
+              message: 'runtime_guardrail_primary_pricing_missing',
+              overridable: false,
+            },
+            {
+              id: 'runtime_missing_price_facts',
+              severity: 'blocker',
+              source: 'runtime',
+              message: 'Runtime contains 1 missing-price facts.',
+              overridable: false,
+            },
+            {
+              id: 'usage_usage_report_runner_not_yet_executed',
+              severity: 'blocker',
+              source: 'usage',
+              message: 'usage_report_runner_not_yet_executed',
+              overridable: false,
+            },
+          ],
+          warnings: [
+            {
+              id: 'runtime_runtime_guardrail_fallback_pricing_missing',
+              severity: 'warning',
+              source: 'runtime',
+              message: 'runtime_guardrail_fallback_pricing_missing',
+              overridable: true,
+            },
+            {
+              id: 'usage_usage_report_webhook_signature_recommended',
+              severity: 'warning',
+              source: 'usage',
+              message: 'usage_report_webhook_signature_recommended',
+              overridable: true,
+            },
+          ],
+          summary: {
+            total_issues: 6,
+            blocker_count: 4,
+            warning_count: 2,
+            overridable_count: 2,
+          },
+        },
         runtime_release_evidence: {
           generated_at: '2026-02-27T19:24:56.000Z',
           guardrails: {

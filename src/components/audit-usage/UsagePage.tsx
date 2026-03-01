@@ -430,29 +430,11 @@ export function UsagePage({
           subtitle={t('subtitle')}
           actions={(
             <div className="flex items-center gap-2">
-              {runtimeObservabilityHref && (
-                <Link
-                  href={runtimeObservabilityHref}
-                  className={cn(buttonVariants({ variant: 'outline' }))}
-                  data-testid="usage__open-runtime-observability"
-                >
-                  {commonT('open_runtime')}
-                </Link>
-              )}
-              {releaseOpsHref && (
-                <Link
-                  href={releaseOpsHref}
-                  className={cn(buttonVariants({ variant: 'outline' }))}
-                  data-testid="usage__open-release-ops"
-                >
-                  {commonT('open_release_ops')}
-                </Link>
-              )}
               {canExportUsage && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      variant="outline"
+                      variant="action"
                       disabled={exportingFormat !== null}
                       data-testid="usage__export-trigger"
                     >
@@ -476,7 +458,25 @@ export function UsagePage({
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              <Button variant="action" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
+              {runtimeObservabilityHref && (
+                <Link
+                  href={runtimeObservabilityHref}
+                  className={cn(buttonVariants({ variant: 'outline' }))}
+                  data-testid="usage__open-runtime-observability"
+                >
+                  {commonT('open_runtime')}
+                </Link>
+              )}
+              {releaseOpsHref && (
+                <Link
+                  href={releaseOpsHref}
+                  className={cn(buttonVariants({ variant: 'outline' }))}
+                  data-testid="usage__open-release-ops"
+                >
+                  {commonT('open_release_ops')}
+                </Link>
+              )}
+              <Button variant="outline" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || kpiLoading ? 'animate-spin' : ''}`} />
                 {commonT('refresh')}
               </Button>

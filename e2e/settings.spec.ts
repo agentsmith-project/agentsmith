@@ -137,6 +137,7 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('runtime-observability__provider-table')).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('runtime-observability__model-table')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('runtime-observability__open-control-plane')).toHaveAttribute('href', /settings\?tab=runtime$/);
     await expect(authedPage.getByTestId('runtime-observability__open-usage')).toHaveAttribute('href', /usage\?/);
     await expect(authedPage.getByTestId('runtime-observability__open-release-ops')).toHaveAttribute('href', /release-ops\?/);
   });
@@ -158,6 +159,7 @@ test.describe('Settings Page', () => {
 
     await expect(authedPage).toHaveURL(/\/release-ops(\?|$)/);
     await expect(authedPage.getByTestId('release-ops__page')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('release-ops__header-trigger-full')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__dashboard')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__evidence-summary')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__online-vs-latest')).toBeVisible();

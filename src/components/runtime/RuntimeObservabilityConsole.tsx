@@ -1,13 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { buttonVariants } from '@/components/ui/button';
 import { UsageFactDetailDrawer } from '@/components/audit-usage/UsageFactDetailDrawer';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,14 +13,11 @@ import { TimeRangePicker, type TimeRange } from '@/components/audit-usage/TimeRa
 import { EmptyState } from '@/components/audit-usage/EmptyState';
 import { useRuntimeObservability, useUsageFacts } from '@/lib/hooks/use-audit-usage';
 import type { UsageListParams } from '@/lib/api/types';
-import { cn } from '@/lib/utils';
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 
 type RuntimeObservabilityConsoleProps = {
   workspaceId: string;
   projectId: string;
-  locale?: string;
-  embedded?: boolean;
   initialFilters?: Partial<RuntimeObservabilityFilters>;
 };
 
@@ -79,8 +74,6 @@ function getBucketRange(timeBucket: string): { start: string; end: string } | nu
 export function RuntimeObservabilityConsole({
   workspaceId,
   projectId,
-  locale,
-  embedded = false,
   initialFilters,
 }: RuntimeObservabilityConsoleProps) {
   const settingsT = useTranslations('settings');
@@ -115,10 +108,6 @@ export function RuntimeObservabilityConsole({
   const fallbackRatio = observability && observability.total_requests > 0
     ? 1 - ((observability.fallback_hops_histogram['0'] ?? 0) / observability.total_requests)
     : 0;
-  const controlPlaneHref = locale
-    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-control-plane`
-    : null;
-
   const handleTimeRangeChange = React.useCallback((range: TimeRange) => {
     setFilters((prev) => ({
       ...prev,
@@ -137,13 +126,6 @@ export function RuntimeObservabilityConsole({
   const providerRows = observability?.provider_breakdown ?? [];
   const modelRows = observability?.model_breakdown ?? [];
   const latestTrendBucket = observability?.request_trend.at(-1);
-  const usageHref = locale
-    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage${buildSharedOpsFilterQuery(filters, { panel: 'usage' })}`
-    : null;
-  const releaseOpsHref = locale
-    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/release-ops${buildSharedOpsFilterQuery(filters)}`
-    : null;
-
   const openDrillDown = React.useCallback((label: string, params: Partial<RuntimeDrillDown['params']>) => {
     setDrillDown({
       label,
@@ -191,33 +173,6 @@ export function RuntimeObservabilityConsole({
             <p className="text-sm text-tertiary">{settingsT('runtime_observability_console_subtitle')}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {controlPlaneHref && !embedded && (
-              <Link
-                href={controlPlaneHref}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="runtime-observability__open-control-plane"
-              >
-                {settingsT('runtime_observability_open_control_plane')}
-              </Link>
-            )}
-            {usageHref && !embedded && (
-              <Link
-                href={usageHref}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="runtime-observability__open-usage"
-              >
-                {commonT('open_usage')}
-              </Link>
-            )}
-            {releaseOpsHref && !embedded && (
-              <Link
-                href={releaseOpsHref}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="runtime-observability__open-release-ops"
-              >
-                {commonT('open_release_ops')}
-              </Link>
-            )}
             <Button
               type="button"
               variant="outline"

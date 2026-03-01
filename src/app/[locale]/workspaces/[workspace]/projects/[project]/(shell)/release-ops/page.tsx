@@ -726,6 +726,16 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
             subtitle={settingsT('release_ops_subtitle')}
             actions={(
               <>
+                <Button
+                  type="button"
+                  variant="action"
+                  size="sm"
+                  onClick={() => void triggerGateRun('full')}
+                  disabled={gateRunnerQuery.data?.running || triggerGateRunMutation.isPending}
+                  data-testid="release-ops__header-trigger-full"
+                >
+                  {settingsT('release_ops_runner_trigger_full')}
+                </Button>
                 <Link
                   href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-observability`}
                   className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}

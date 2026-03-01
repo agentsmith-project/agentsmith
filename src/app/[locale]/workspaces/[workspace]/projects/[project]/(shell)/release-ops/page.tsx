@@ -12,7 +12,7 @@ import { PageLoading } from '@/components/ui/loading';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { useRuntimeObservability, useUsageOperationsSummary, useUsageReportEvidence, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
-import { useCreateReleasePolicyOverride, useReleasePolicyOverrides, useReleaseReportDetail, useReleaseReportList } from '@/lib/hooks/use-release-ops';
+import { useCreateReleasePolicyOverride, useDecideReleasePolicyOverride, useReleasePolicyOverrides, useReleaseReportDetail, useReleaseReportList } from '@/lib/hooks/use-release-ops';
 import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { UsageOperationsSummary } from '@/components/audit-usage/UsageOperationsSummary';
 import { Badge } from '@/components/ui/badge';
@@ -139,6 +139,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const reportDetailQuery = useReleaseReportDetail(selectedReportName, { enabled });
   const overridesQuery = useReleasePolicyOverrides(workspaceId, projectId, selectedReportName, { enabled });
   const createOverrideMutation = useCreateReleasePolicyOverride();
+  const decideOverrideMutation = useDecideReleasePolicyOverride();
 
   const refresh = () => {
     runtimeQuery.refetch();
@@ -392,6 +393,16 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       reason: overrideReason.trim(),
     });
     setOverrideReason('');
+  };
+  const decideOverride = async (overrideId: string, status: 'approved' | 'rejected') => {
+    if (!selectedReportName) return;
+    await decideOverrideMutation.mutateAsync({
+      overrideId,
+      workspaceId,
+      projectId,
+      reportName: selectedReportName,
+      status,
+    });
   };
 
   if (!resolvedParams.workspace || !resolvedParams.project) {
@@ -875,9 +886,41 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                                   <div className="truncate text-sm font-medium text-foreground">{item.issue_source}: {item.issue_message}</div>
                                   <div className="text-xs text-tertiary">{item.created_by_name ?? item.created_by_user_id} · {formatDateTime(item.created_at)}</div>
                                 </div>
-                                <Badge variant="outline">{item.issue_id}</Badge>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant={item.status === 'approved' ? 'outline' : item.status === 'rejected' ? 'secondary' : 'secondary'}>{item.status}</Badge>
+                                  <Badge variant="outline">{item.issue_id}</Badge>
+                                </div>
                               </div>
                               <div className="mt-2 text-sm text-tertiary">{item.reason}</div>
+                              {item.decided_at ? (
+                                <div className="mt-2 text-xs text-tertiary">
+                                  {item.decided_by_name ?? item.decided_by_user_id} · {formatDateTime(item.decided_at)}
+                                </div>
+                              ) : null}
+                              {item.status === 'pending' ? (
+                                <div className="mt-3 flex items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => decideOverride(item.id, 'approved')}
+                                    disabled={decideOverrideMutation.isPending}
+                                    data-testid={`release-ops__override-approve-${index}`}
+                                  >
+                                    {settingsT('release_ops_overrides_approve')}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => decideOverride(item.id, 'rejected')}
+                                    disabled={decideOverrideMutation.isPending}
+                                    data-testid={`release-ops__override-reject-${index}`}
+                                  >
+                                    {settingsT('release_ops_overrides_reject')}
+                                  </Button>
+                                </div>
+                              ) : null}
                             </div>
                           ))}
                         </div>

@@ -200,6 +200,8 @@ test.describe('Settings Page', () => {
     await authedPage.getByTestId('release-ops__report-search').fill('signature');
     await authedPage.getByTestId('release-ops__report-item-0').click();
     await expect(authedPage.getByTestId('release-ops__override-item-0')).toBeVisible();
+    await authedPage.getByTestId('release-ops__override-approve-0').click();
+    await expect(authedPage.getByTestId('release-ops__override-item-0')).toContainText('approved');
   });
 
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {

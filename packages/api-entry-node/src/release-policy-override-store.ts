@@ -12,9 +12,13 @@ export type ReleasePolicyOverrideRecord = {
   issue_source: 'execution' | 'runtime' | 'usage';
   issue_message: string;
   reason: string;
+  status: 'pending' | 'approved' | 'rejected';
   created_at: string;
   created_by_user_id: string;
   created_by_name?: string;
+  decided_at?: string;
+  decided_by_user_id?: string;
+  decided_by_name?: string;
 };
 
 export async function listReleasePolicyOverrides(
@@ -67,10 +71,33 @@ export async function createReleasePolicyOverride(
     issue_source: params.issueSource,
     issue_message: params.issueMessage,
     reason: params.reason,
+    status: 'pending',
     created_at: now,
     created_by_user_id: params.createdByUserId,
     created_by_name: params.createdByName,
   };
   await docStore.upsert(COLLECTION, record.id, record);
   return record;
+}
+
+export async function updateReleasePolicyOverrideDecision(
+  docStore: JsonDocStorePort,
+  params: {
+    overrideId: string;
+    status: 'approved' | 'rejected';
+    decidedByUserId: string;
+    decidedByName?: string;
+  },
+): Promise<ReleasePolicyOverrideRecord | null> {
+  const existing = await docStore.get<ReleasePolicyOverrideRecord>(COLLECTION, params.overrideId);
+  if (!existing) return null;
+  const next: ReleasePolicyOverrideRecord = {
+    ...existing,
+    status: params.status,
+    decided_at: new Date().toISOString(),
+    decided_by_user_id: params.decidedByUserId,
+    decided_by_name: params.decidedByName,
+  };
+  await docStore.upsert(COLLECTION, next.id, next);
+  return next;
 }

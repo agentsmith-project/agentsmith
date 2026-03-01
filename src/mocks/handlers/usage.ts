@@ -80,10 +80,27 @@ const releasePolicyOverrides = [{
   issue_source: 'usage',
   issue_message: 'usage_report_webhook_signature_recommended',
   reason: 'Accepted temporarily while the webhook receiver rollout is being staged.',
+  status: 'pending',
   created_at: '2026-02-28T22:20:00.000Z',
   created_by_user_id: 'mock-user',
   created_by_name: 'Mock User',
-}];
+}] as Array<{
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  report_name: string;
+  issue_id: string;
+  issue_source: 'execution' | 'runtime' | 'usage';
+  issue_message: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  created_by_user_id: string;
+  created_by_name?: string;
+  decided_at?: string;
+  decided_by_user_id?: string;
+  decided_by_name?: string;
+}>;
 
 const releaseReports: ReleaseReportListItem[] = [
   {
@@ -942,12 +959,25 @@ export const usageHandlers = [
     const created = {
       id: `rpo_${Date.now()}`,
       ...body,
+      status: 'pending' as const,
       created_at: new Date().toISOString(),
       created_by_user_id: 'mock-user',
       created_by_name: 'Mock User',
     };
     releasePolicyOverrides.unshift(created);
     return HttpResponse.json(created, { status: 201 });
+  }),
+  http.post('/api/v1/internal/release-policy-overrides/:overrideId/decision', async ({ params, request }) => {
+    const body = await request.json() as { status?: 'approved' | 'rejected' };
+    const record = releasePolicyOverrides.find((item) => item.id === String(params.overrideId));
+    if (!record || (body.status !== 'approved' && body.status !== 'rejected')) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_policy_override_not_found' }, { status: 404 });
+    }
+    record.status = body.status;
+    record.decided_at = new Date().toISOString();
+    record.decided_by_user_id = 'mock-approver';
+    record.decided_by_name = 'Mock Approver';
+    return HttpResponse.json(record);
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage', ({ request }) => {
     const url = new URL(request.url);

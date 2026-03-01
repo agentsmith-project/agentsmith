@@ -92,4 +92,18 @@ describe('ReleaseOpsAPI', () => {
       reason: 'Accepted for staged rollout',
     });
   });
+
+  it('decides a release policy override', async () => {
+    const postMock = vi.fn().mockResolvedValue({ id: 'rpo_1', status: 'approved' });
+    const api = new ReleaseOpsAPI({
+      ...client,
+      post: postMock,
+    } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
+
+    await api.decideOverride('rpo_1', { status: 'approved' });
+
+    expect(postMock).toHaveBeenCalledWith('/internal/release-policy-overrides/rpo_1/decision', {
+      status: 'approved',
+    });
+  });
 });

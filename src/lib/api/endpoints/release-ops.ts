@@ -29,9 +29,13 @@ export interface ReleasePolicyOverrideRecord {
   issue_source: 'execution' | 'runtime' | 'usage';
   issue_message: string;
   reason: string;
+  status: 'pending' | 'approved' | 'rejected';
   created_at: string;
   created_by_user_id: string;
   created_by_name?: string;
+  decided_at?: string;
+  decided_by_user_id?: string;
+  decided_by_name?: string;
 }
 
 export class ReleaseOpsAPI {
@@ -64,5 +68,9 @@ export class ReleaseOpsAPI {
     reason: string;
   }): Promise<ReleasePolicyOverrideRecord> {
     return this.client.post('/internal/release-policy-overrides', payload);
+  }
+
+  async decideOverride(overrideId: string, payload: { status: 'approved' | 'rejected' }): Promise<ReleasePolicyOverrideRecord> {
+    return this.client.post(`/internal/release-policy-overrides/${encodeURIComponent(overrideId)}/decision`, payload);
   }
 }

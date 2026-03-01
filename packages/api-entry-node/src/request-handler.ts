@@ -21,7 +21,7 @@ import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
 import { handleMeRoute } from './me-route-handler.js';
 import { getReleaseReportDetail, listReleaseReports } from './release-report-store.js';
-import { createReleasePolicyOverride, listReleasePolicyOverrides } from './release-policy-override-store.js';
+import { createReleasePolicyOverride, listReleasePolicyOverrides, updateReleasePolicyOverrideDecision } from './release-policy-override-store.js';
 import {
   getNotebookRuntimeMetricsPrometheusText,
   getNotebookRuntimeMetricsSnapshot,
@@ -353,6 +353,33 @@ export async function handleRequest(
       createdByName: user.name,
     });
     json(res, 201, record);
+    return;
+  }
+
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/release-policy-overrides\/[^/]+\/decision\/?$/) && method === 'POST') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const overrideId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-policy-overrides/', '').replace('/decision', '').replace(/\/$/, ''));
+    const body = await readBody(req) as Record<string, unknown>;
+    const status = body.status === 'approved' || body.status === 'rejected' ? body.status : null;
+    if (!overrideId || !status) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'override id and decision status are required' });
+      return;
+    }
+    const updated = await updateReleasePolicyOverrideDecision(deps.docStore, {
+      overrideId,
+      status,
+      decidedByUserId: user.id,
+      decidedByName: user.name,
+    });
+    if (!updated) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_policy_override_not_found' });
+      return;
+    }
+    json(res, 200, updated);
     return;
   }
 

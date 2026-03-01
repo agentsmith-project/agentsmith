@@ -1050,6 +1050,8 @@
     "release_ops_overrides_reason_placeholder": "Why is this issue being overridden?",
     "release_ops_overrides_submit": "Create Override",
     "release_ops_overrides_empty": "No overrides have been recorded for this artifact.",
+    "release_ops_overrides_approve": "Approve",
+    "release_ops_overrides_reject": "Reject",
     "title": "Project Settings",
     "subtitle": "Manage project configuration",
     "workspace_title": "Workspace Settings",

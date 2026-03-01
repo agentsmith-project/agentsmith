@@ -57,3 +57,22 @@ export function useCreateReleasePolicyOverride() {
     },
   });
 }
+
+export function useDecideReleasePolicyOverride() {
+  const api = new ReleaseOpsAPI(getApiClient());
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      overrideId: string;
+      workspaceId: string;
+      projectId: string;
+      reportName: string;
+      status: 'approved' | 'rejected';
+    }) => api.decideOverride(payload.overrideId, { status: payload.status }),
+    onSuccess: (_result, payload) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.releaseOps.overrides(payload.workspaceId, payload.projectId, payload.reportName),
+      });
+    },
+  });
+}

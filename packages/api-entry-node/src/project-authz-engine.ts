@@ -243,6 +243,19 @@ export function evaluateProjectPermissions(args: {
   };
 }
 
+export function resolveVisibleProjectPermissionsForActor(args: {
+  workspaceId: string;
+  projectId: string;
+  projectOwnerId: string;
+  actorUserId: string;
+}): readonly string[] {
+  const snapshot = collectPermissionSources(args);
+  if (snapshot.membership_status === 'pending' || snapshot.membership_status === 'suspended') {
+    return [];
+  }
+  return snapshot.effective_permissions;
+}
+
 function mapProjectActionToPermission(action: string): string | null {
   if (action.startsWith('project.member.')) {
     return action.endsWith('.view') ? 'project:member:view' : 'project:member:manage';

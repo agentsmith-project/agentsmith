@@ -13,7 +13,6 @@ import type { ChatRoute } from './chat-route-match.js';
 import {
   OWNER_WORKSPACE_PERMISSIONS,
   buildWorkspaceRecords,
-  resolveProjectPermissions,
 } from './workspace-permissions.js';
 import {
   evaluateProjectPermissions,
@@ -1087,7 +1086,6 @@ export async function handleRequest(
       json,
       readBody,
       ownerWorkspacePermissions: OWNER_WORKSPACE_PERMISSIONS,
-      resolveProjectPermissions,
     });
     if (handledProjectSourceRoute) {
       return;

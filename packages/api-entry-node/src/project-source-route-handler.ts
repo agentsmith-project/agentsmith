@@ -20,6 +20,7 @@ import { drainJobQueue } from '@mbos/application';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
+import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
 import {
   getProjectResourcePolicyOrDefault,
   isProjectResourceAccessAllowedForUser,
@@ -78,7 +79,6 @@ interface ProjectSourceHandlerArgs {
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
   ownerWorkspacePermissions: readonly string[];
-  resolveProjectPermissions: (ownerId: string, actorId: string) => readonly string[];
 }
 
 const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
@@ -273,7 +273,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     json,
     readBody,
     ownerWorkspacePermissions,
-    resolveProjectPermissions,
   } = args;
   const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
 
@@ -480,12 +479,20 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'collection' && method === 'GET' && route.workspaceId) {
+    const workspaceId = route.workspaceId;
     const listed = await deps.listProjectsUseCase.execute(route.workspaceId);
     json(res, 200, {
       items: listed.items.map((item) => ({
         ...item,
         role: item.owner_id === user.id ? 'owner' : 'developer',
-        permissions: [...resolveProjectPermissions(item.owner_id, user.id)],
+        permissions: [
+          ...resolveVisibleProjectPermissionsForActor({
+            workspaceId,
+            projectId: item.id,
+            projectOwnerId: item.owner_id,
+            actorUserId: user.id,
+          }),
+        ],
       })),
     });
     return true;
@@ -511,7 +518,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     json(res, 200, {
       ...found,
       role: found.owner_id === user.id ? 'owner' : 'developer',
-      permissions: [...resolveProjectPermissions(found.owner_id, user.id)],
+      permissions: [
+        ...resolveVisibleProjectPermissionsForActor({
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          projectOwnerId: found.owner_id,
+          actorUserId: user.id,
+        }),
+      ],
     });
     return true;
   }
@@ -539,12 +553,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectMembers' && method === 'GET' && route.workspaceId && route.projectId) {
+    const workspaceId = route.workspaceId;
+    const projectId = route.projectId;
     let projectOwnerId: string | null = null;
     let projectCreatedAt: string | null = null;
     try {
       const project = await deps.getProjectUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
+        workspaceId,
+        projectId,
       });
       projectOwnerId = project.owner_id;
       projectCreatedAt = project.created_at;
@@ -552,13 +568,22 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       // Keep minimal members read endpoint usable in local/dev environments even
       // when membership/governance backend is not fully wired to project repo fixtures.
     }
-    const memberships = Array.from(getProjectMembershipsState(route.workspaceId, route.projectId).values());
+    const memberships = Array.from(getProjectMembershipsState(workspaceId, projectId).values());
     const items = memberships.map((m) => ({
       id: m.user_id,
       email: m.user_id === user.id ? user.email : `${m.user_id}@example.com`,
       name: m.user_id === user.id ? user.name : m.user_id,
       role: m.role,
-      permissions: m.user_id === user.id ? [...resolveProjectPermissions(projectOwnerId ?? user.id, user.id)] : [],
+      permissions: m.user_id === user.id
+        ? [
+          ...resolveVisibleProjectPermissionsForActor({
+            workspaceId,
+            projectId,
+            projectOwnerId: projectOwnerId ?? user.id,
+            actorUserId: user.id,
+          }),
+        ]
+        : [],
       status: m.status,
       joined_at: m.joined_at,
     }));
@@ -569,7 +594,16 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
         email: ownerId === user.id ? user.email : `${ownerId}@example.com`,
         name: ownerId === user.id ? user.name : ownerId,
         role: 'owner',
-        permissions: ownerId === user.id ? [...resolveProjectPermissions(ownerId, user.id)] : [],
+        permissions: ownerId === user.id
+          ? [
+            ...resolveVisibleProjectPermissionsForActor({
+              workspaceId,
+              projectId,
+              projectOwnerId: ownerId,
+              actorUserId: user.id,
+            }),
+          ]
+          : [],
         status: 'active',
         joined_at: projectCreatedAt ?? new Date().toISOString(),
       });
@@ -1064,7 +1098,16 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       project_id: membershipRoute.projectId,
       user_id: membershipRoute.userId,
       role,
-      permissions: isCurrentUser ? [...resolveProjectPermissions(projectOwnerId ?? user.id, user.id)] : [],
+      permissions: isCurrentUser
+        ? [
+          ...resolveVisibleProjectPermissionsForActor({
+            workspaceId: membershipRoute.workspaceId,
+            projectId: membershipRoute.projectId,
+            projectOwnerId: projectOwnerId ?? user.id,
+            actorUserId: user.id,
+          }),
+        ]
+        : [],
       status: membership?.status ?? 'active',
       joined_at: membership?.joined_at ?? projectCreatedAt ?? new Date().toISOString(),
     });

@@ -9,6 +9,7 @@ import {
   evaluateResourcePolicyAuthorization,
   mapAuthorizationRequestToPermission,
   resolveProjectPermissionsForActor,
+  resolveVisibleProjectPermissionsForActor,
 } from './project-authz-engine.js';
 
 describe('project-authz-engine', () => {
@@ -70,6 +71,14 @@ describe('project-authz-engine', () => {
     expect(evaluation.membership_status).toBe('suspended');
     expect(evaluation.decisions.every((item) => item.granted === false)).toBe(true);
     expect(evaluation.decisions[0]?.reason).toBe('membership_suspended');
+    expect(
+      resolveVisibleProjectPermissionsForActor({
+        workspaceId,
+        projectId,
+        projectOwnerId: 'user_owner',
+        actorUserId: 'user_test',
+      }),
+    ).toEqual([]);
   });
 
   it('evaluates resource policy allow-list for user and group subjects', () => {

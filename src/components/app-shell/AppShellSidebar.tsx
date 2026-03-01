@@ -71,6 +71,7 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:credential:manage', section: 'govern' },
   { icon: Users, labelKey: 'members', href: 'members', permission: 'project:member:view', section: 'govern' },
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:view', section: 'govern' },
+  { icon: Wrench, labelKey: 'runtime', href: 'runtime-control-plane', permission: 'project:settings:manage', section: 'operate' },
   { icon: Activity, labelKey: 'runtime_observability', href: 'runtime-observability', permission: 'project:usage:view', section: 'operate' },
   { icon: Gauge, labelKey: 'release_ops', href: 'release-ops', permission: 'project:usage:view', section: 'operate' },
   { icon: Bell, labelKey: 'alerts', href: 'alerts', permission: 'project:alert:view', section: 'operate' },

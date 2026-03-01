@@ -116,6 +116,7 @@
   },
   "nav": {
     "overview": "AI Ops Home",
+    "runtime": "运行时",
     "chat": "聊天",
     "agents": "智能体",
     "endpoints": "端点",

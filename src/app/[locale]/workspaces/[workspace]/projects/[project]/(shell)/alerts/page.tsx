@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCenterPage } from '@/components/alerts/AlertCenterPage';
@@ -8,10 +9,13 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
+import { buttonVariants } from '@/components/ui/button';
 import { getApiClient, AlertAPI } from '@/lib/api';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
+import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
+import { cn } from '@/lib/utils';
 import type {
   Alert,
   AlertNotification,
@@ -21,6 +25,13 @@ import type {
 
 interface AlertsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
+}
+
+function defaultTimeRange() {
+  return {
+    start_time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    end_time: new Date().toISOString(),
+  };
 }
 
 function toInAppAlert(
@@ -113,20 +124,24 @@ export default function AlertsPage({ params }: AlertsPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{
     workspace?: string;
     project?: string;
+    locale?: string;
   } | null>(null);
   const queryClient = useQueryClient();
   const alertAPI = useMemo(() => new AlertAPI(getApiClient()), []);
+  const timeRange = useMemo(() => defaultTimeRange(), []);
   const [localAlerts, setLocalAlerts] = useState<Alert[]>([]);
   const canViewAlerts = useHasPermission('project:alert:view');
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
+  const locale = resolvedParams?.locale ?? 'en-US';
 
   useEffect(() => {
     params.then((p) =>
       setResolvedParams({
         workspace: validateWorkspaceParam(p.workspace),
         project: validateProjectParam(p.project),
+        locale: p.locale,
       }),
     );
   }, [params]);
@@ -182,12 +197,50 @@ export default function AlertsPage({ params }: AlertsPageProps) {
     );
   }
 
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
+  const runtimeHref = `${basePath}/runtime-observability${buildSharedOpsFilterQuery(timeRange)}`;
+  const releaseOpsHref = `${basePath}/release-ops${buildSharedOpsFilterQuery(timeRange)}`;
+  const usageHref = `${basePath}/usage${buildSharedOpsFilterQuery(timeRange, { panel: 'usage' })}`;
+
   return (
     <PageState state="success">
-      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
+      <PageLayout
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={releaseOpsHref}
+                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
+                  data-testid="alerts__open-release-ops"
+                >
+                  {tCommon('open_release_ops')}
+                </Link>
+                <Link
+                  href={runtimeHref}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="alerts__open-runtime"
+                >
+                  {tCommon('open_runtime')}
+                </Link>
+                <Link
+                  href={usageHref}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="alerts__open-usage"
+                >
+                  {tCommon('open_usage')}
+                </Link>
+              </div>
+            )}
+          />
+        )}
+      >
         <AlertCenterPage
           workspaceId={workspaceId}
           projectId={projectId}
+          embedded
           rules={rules}
           alerts={localAlerts}
           onRuleCreate={async (rule) => {

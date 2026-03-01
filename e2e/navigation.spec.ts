@@ -18,6 +18,7 @@ const SIDEBAR_NAV_ITEMS = [
   'files',
   'audit',
   'usage',
+  'runtime',
   'release_ops',
   'settings',
 ] as const;
@@ -48,13 +49,15 @@ test.describe('Sidebar', () => {
     const sidebar = authedPage.getByTestId('sidebar');
     await expect(sidebar).toBeVisible({ timeout: 10000 });
 
-    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'release_ops', 'settings'] as const;
+    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'runtime', 'release_ops', 'settings'] as const;
 
     for (const section of sectionsToTest) {
       const navItem = authedPage.getByTestId(`sidebar__nav-item--${section}`);
       await navItem.click();
       const expectedPath = section === 'resource_policy'
         ? '/resource-policy'
+        : section === 'runtime'
+          ? '/runtime-control-plane'
         : section === 'release_ops'
           ? '/release-ops'
           : `/${section}`;

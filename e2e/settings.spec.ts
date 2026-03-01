@@ -107,11 +107,11 @@ test.describe('Settings Page', () => {
       ? openControlPlane.locator('a').first()
       : openControlPlane;
     await Promise.all([
-      authedPage.waitForURL(/\/runtime-control-plane$/, { timeout: 10000 }),
+      authedPage.waitForURL(/\/runtime-control-plane(\?|$)/, { timeout: 10000 }),
       clickTarget.click(),
     ]);
 
-    await expect(authedPage).toHaveURL(/\/runtime-control-plane$/);
+    await expect(authedPage).toHaveURL(/\/runtime-control-plane(\?|$)/);
     await expect(authedPage.getByTestId('runtime-observability__kpi-total-requests')).toBeVisible();
     await expect(authedPage.getByTestId('runtime-observability__kpi-error-rate')).toBeVisible();
     await expect(authedPage.getByTestId('runtime-observability__kpi-fallback-rate')).toBeVisible();
@@ -241,6 +241,18 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__run-detail')).toBeVisible();
     await authedPage.getByTestId('release-ops__run-open-artifact').click();
     await expect(authedPage.getByTestId('release-ops__report-detail')).toBeVisible();
+  });
+
+  test('alerts route keeps ops header actions', async ({ authedPage }) => {
+    await goToProject(authedPage, 'overview');
+
+    await authedPage.getByTestId('sidebar__nav-item--alerts').click();
+
+    await expect(authedPage).toHaveURL(/\/alerts$/);
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('alerts__open-release-ops')).toHaveAttribute('href', /release-ops\?/);
+    await expect(authedPage.getByTestId('alerts__open-runtime')).toHaveAttribute('href', /runtime-observability\?/);
+    await expect(authedPage.getByTestId('alerts__open-usage')).toHaveAttribute('href', /usage\?/);
   });
 
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {

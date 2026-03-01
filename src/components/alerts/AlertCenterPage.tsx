@@ -25,6 +25,7 @@ import type { Alert } from '@/lib/types/alerts';
 export interface AlertCenterPageProps {
   workspaceId: string;
   projectId: string;
+  embedded?: boolean;
   rules?: AlertRule[];
   alerts?: Alert[];
   onRuleCreate?: (rule: Omit<AlertRule, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
@@ -53,6 +54,7 @@ type TabValue = 'rules' | 'notifications';
 export function AlertCenterPage({
   workspaceId,
   projectId,
+  embedded = false,
   rules = [],
   alerts = [],
   onRuleCreate,
@@ -155,13 +157,14 @@ export function AlertCenterPage({
 
   return (
     <div className="w-full space-y-4" data-testid="alert-center-page">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-          <p className="text-sm text-tertiary mt-1">{t('subtitle')}</p>
+      {!embedded ? (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
+            <p className="mt-1 text-sm text-tertiary">{t('subtitle')}</p>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>

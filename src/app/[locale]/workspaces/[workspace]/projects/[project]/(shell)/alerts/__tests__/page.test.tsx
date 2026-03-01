@@ -62,6 +62,9 @@ describe('AlertsPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('alerts__center')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('alerts__open-release-ops')).toBeInTheDocument();
+    expect(screen.getByTestId('alerts__open-runtime')).toBeInTheDocument();
+    expect(screen.getByTestId('alerts__open-usage')).toBeInTheDocument();
   });
 
   it('shows permission denied when user lacks alert view permission', async () => {

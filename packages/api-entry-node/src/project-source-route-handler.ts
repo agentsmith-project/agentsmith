@@ -173,6 +173,22 @@ function getMemberChangeHistoryState(workspaceId: string, projectId: string) {
   return map;
 }
 
+function clearMemberGovernanceState(workspaceId: string, projectId: string, userId: string): void {
+  const groups = getProjectGroupsState(workspaceId, projectId);
+  let groupsChanged = false;
+  for (const group of groups) {
+    if (!group.member_ids.includes(userId)) continue;
+    group.member_ids = group.member_ids.filter((memberId) => memberId !== userId);
+    group.updated_at = new Date().toISOString();
+    groupsChanged = true;
+  }
+  if (groupsChanged) {
+    setProjectGroupsState(workspaceId, projectId, groups);
+  }
+  getProjectMemberPermissionsState(workspaceId, projectId).delete(userId);
+  getMemberQuotaState(workspaceId, projectId).delete(userId);
+}
+
 function isDefaultPersonalLibraryForUser(
   library: { name: string; created_by_user_id: string; system_managed_kind?: string },
   userId: string,
@@ -1314,6 +1330,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       return true;
     }
     memberships.delete(route.userId);
+    clearMemberGovernanceState(route.workspaceId, route.projectId, route.userId);
 
     const historyState = getMemberChangeHistoryState(route.workspaceId, route.projectId);
     const items = historyState.get(route.userId) ?? [];

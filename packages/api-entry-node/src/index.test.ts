@@ -1184,6 +1184,46 @@ describe('api-entry-node projects routes', () => {
       status: 'active',
     });
 
+    const patchAltPermissionsRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/permissions',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'custom',
+          permissions: ['project:usage:view'],
+        }),
+      },
+    );
+    expect(patchAltPermissionsRes.status).toBe(204);
+
+    const patchAltQuotaRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/quota-overrides',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          overrides: { endpoint: { daily_token_limit: 50 } },
+        }),
+      },
+    );
+    expect(patchAltQuotaRes.status).toBe(200);
+
+    const patchGroupForAltRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          member_ids: ['user_test', 'user_alt'],
+        }),
+      },
+    );
+    expect(patchGroupForAltRes.status).toBe(200);
+
     const rejectJoinRequestRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/join-requests/${createdJoinRequest.id}/reject`,
@@ -1227,6 +1267,56 @@ describe('api-entry-node projects routes', () => {
       'member.join_request.rejected',
     ]));
 
+    const deleteMembershipRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
+      { method: 'DELETE' },
+    );
+    expect(deleteMembershipRes.status).toBe(204);
+
+    const deletedMembershipRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
+    );
+    expect(deletedMembershipRes.status).toBe(200);
+    const deletedMembership = (await deletedMembershipRes.json()) as {
+      user_id: string;
+      status: string;
+      permissions: string[];
+    };
+    expect(deletedMembership).toMatchObject({
+      user_id: 'user_alt',
+      status: 'active',
+      permissions: [],
+    });
+
+    const altPermissionsRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/permissions',
+    );
+    expect(altPermissionsRes.status).toBe(200);
+    expect(await altPermissionsRes.json()).toEqual({
+      platform_permissions: [],
+      resource_permissions: undefined,
+    });
+
+    const altQuotaRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/quota-overrides',
+    );
+    expect(altQuotaRes.status).toBe(200);
+    expect(await altQuotaRes.json()).toEqual({ overrides: {} });
+
+    const groupsAfterDeleteRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/groups',
+    );
+    expect(groupsAfterDeleteRes.status).toBe(200);
+    const groupsAfterDelete = (await groupsAfterDeleteRes.json()) as {
+      items: Array<{ id: string; member_ids: string[] }>;
+    };
+    expect(groupsAfterDelete.items.find((item) => item.id === createdGroup.id)?.member_ids).toEqual(['user_test']);
+
     const deleteGroupRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,
@@ -1236,8 +1326,8 @@ describe('api-entry-node projects routes', () => {
 
     const listGroupsAfterDeleteRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/groups');
     expect(listGroupsAfterDeleteRes.status).toBe(200);
-    const groupsAfterDelete = (await listGroupsAfterDeleteRes.json()) as { items: Array<{ id: string }> };
-    expect(groupsAfterDelete.items.map((g) => g.id)).not.toContain(createdGroup.id);
+    const groupsAfterDeleteList = (await listGroupsAfterDeleteRes.json()) as { items: Array<{ id: string }> };
+    expect(groupsAfterDeleteList.items.map((g) => g.id)).not.toContain(createdGroup.id);
   });
 
   it('supports minimal permission template CRUD endpoints', async () => {

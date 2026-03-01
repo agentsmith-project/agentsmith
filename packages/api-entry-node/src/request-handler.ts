@@ -55,6 +55,7 @@ import {
   mergeReleasePolicyEvaluations,
   type ReleasePolicyEvaluation,
 } from '../../../src/lib/release-policy.js';
+import { issueSSETicket } from './sse-ticket-store.js';
 
 type ReleaseReportPolicyShape = {
   summary?: {
@@ -901,14 +902,14 @@ export async function handleRequest(
         unauthorized(res);
         return;
       }
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const issued = issueSSETicket({ bearerToken, maxConnections: 1 });
       const host = req.headers.host || 'localhost';
       const protocol = (req.headers['x-forwarded-proto'] as string | undefined) || 'http';
       json(res, 200, {
-        ticket: bearerToken,
-        expires_at: expiresAt,
-        max_connections: 1,
-        sso_url: `${protocol}://${host}/api/v1/events?ticket=${encodeURIComponent(bearerToken)}`,
+        ticket: issued.ticket,
+        expires_at: issued.expiresAt,
+        max_connections: issued.maxConnections,
+        sso_url: `${protocol}://${host}/api/v1/events?ticket=${encodeURIComponent(issued.ticket)}`,
       });
       return;
     }

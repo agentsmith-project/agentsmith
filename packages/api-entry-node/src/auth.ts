@@ -1,4 +1,5 @@
 import type http from 'node:http';
+import { resolveSSETicket } from './sse-ticket-store.js';
 
 export interface AuthenticatedUser {
   id: string;
@@ -39,27 +40,38 @@ function keycloakRealmBaseFromEnv(): string | null {
 export function extractBearerToken(req: http.IncomingMessage): string | null {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
-    // SSE/EventSource cannot send Authorization headers; frontend falls back to `?ticket=...`
-    // (currently the ticket is the JWT itself until backend issues short-lived SSE tickets).
-    try {
-      const url = new URL(req.url ?? '', 'http://localhost');
-      const ticket = url.searchParams.get('ticket')?.trim();
-      if (ticket) return ticket;
-      const token = url.searchParams.get('token')?.trim();
-      if (token) return token;
-    } catch {
-      // ignore URL parse errors and return null
-    }
     return null;
   }
   const token = authHeader.slice('bearer '.length).trim();
   return token || null;
 }
 
+function extractSSETicket(req: http.IncomingMessage): string | null {
+  try {
+    const url = new URL(req.url ?? '', 'http://localhost');
+    const ticket = url.searchParams.get('ticket')?.trim();
+    return ticket || null;
+  } catch {
+    return null;
+  }
+}
+
+function canUseTicketQuery(req: http.IncomingMessage): boolean {
+  try {
+    const pathname = new URL(req.url ?? '', 'http://localhost').pathname;
+    return pathname === '/api/v1/events' || /\/tasks\/[^/]+\/events\/?$/.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
 const userInfoCache = new Map<string, { user: AuthenticatedUser; expiresAt: number }>();
 
 export async function verifyBearerToken(req: http.IncomingMessage): Promise<AuthenticatedUser | null> {
-  const token = extractBearerToken(req);
+  const headerToken = extractBearerToken(req);
+  const token =
+    headerToken
+    ?? (canUseTicketQuery(req) ? resolveSSETicket(extractSSETicket(req) ?? '')?.bearerToken ?? null : null);
   if (!token) {
     return null;
   }

@@ -363,9 +363,10 @@ describe('api-entry-node sse ticket routes', () => {
       max_connections: number;
       sso_url: string;
     };
-    expect(body.ticket).toBe('test-token');
+    expect(body.ticket).toMatch(/^sse_/);
+    expect(body.ticket).not.toBe('test-token');
     expect(body.max_connections).toBe(1);
-    expect(body.sso_url).toContain('/api/v1/events?ticket=');
+    expect(body.sso_url).toContain(`/api/v1/events?ticket=${encodeURIComponent(body.ticket)}`);
     expect(typeof body.expires_at).toBe('string');
     expect(Number.isNaN(Date.parse(body.expires_at))).toBe(false);
   });

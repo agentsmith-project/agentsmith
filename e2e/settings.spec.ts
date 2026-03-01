@@ -185,6 +185,11 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__report-item-0')).toContainText('runtime-evidence-gate-regression-20260227');
     await authedPage.getByTestId('release-ops__report-item-0').click();
     await expect(authedPage.getByTestId('release-ops__report-failed-check-0')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-failed-check-command-0')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-failed-check-open-context-0')).toBeVisible();
+    await authedPage.getByTestId('release-ops__failed-check-category-filter').click();
+    await authedPage.getByRole('option', { name: 'runtime' }).click();
+    await expect(authedPage).toHaveURL(/failed_check_category=runtime/);
   });
 
   test('legacy governance and limits tabs are not present', async ({ authedPage }) => {

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Download, RefreshCw } from 'lucide-react';
+import { Copy, Download, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -62,6 +62,16 @@ function recommendationForCheck(category?: string, name?: string): string {
   return 'Inspect the failed check in its owning workflow and re-run the release gate after the underlying issue is corrected.';
 }
 
+function commandForCheck(category?: string, name?: string): string {
+  const normalized = `${category ?? ''} ${name ?? ''}`.toLowerCase();
+  if (normalized.includes('governance')) return 'make governance-release-smoke';
+  if (normalized.includes('pricing')) return 'npm run release:report -- --name pricing-coverage-recheck';
+  if (normalized.includes('visual')) return 'BASE_URL=http://localhost:3002 npx playwright test --project=visual e2e/visual.spec.ts --update-snapshots';
+  if (normalized.includes('typecheck')) return 'npm run ws:typecheck';
+  if (normalized.includes('runtime')) return 'make notebook-agent-release-smoke-full';
+  return 'npm run release:report -- --name rerun-release-check';
+}
+
 function buildQueryString(params: Record<string, string | undefined>): string {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -102,6 +112,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       ? searchParams.get('report_status') as 'pass' | 'fail'
       : 'all',
   );
+  const [failedCheckCategoryFilter, setFailedCheckCategoryFilter] = useState<string>(searchParams.get('failed_check_category') ?? 'all');
 
   useEffect(() => {
     params.then((p) => setResolvedParams({
@@ -166,9 +177,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     const nextStatus = searchParams.get('report_status') === 'pass' || searchParams.get('report_status') === 'fail'
       ? searchParams.get('report_status') as 'pass' | 'fail'
       : 'all';
+    const nextCategory = searchParams.get('failed_check_category') ?? 'all';
     setSelectedReportName((prev) => prev === nextReport ? prev : nextReport);
     setReportSearch((prev) => prev === nextSearch ? prev : nextSearch);
     setReportStatusFilter((prev) => prev === nextStatus ? prev : nextStatus);
+    setFailedCheckCategoryFilter((prev) => prev === nextCategory ? prev : nextCategory);
   }, [searchParams, searchParamsKey]);
 
   useEffect(() => {
@@ -186,6 +199,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     const nextReport = selectedReportName ?? '';
     const nextSearch = reportSearch.trim();
     const nextStatus = reportStatusFilter;
+    const nextCategory = failedCheckCategoryFilter;
     let changed = false;
 
     if ((params.get('report') ?? '') !== nextReport) {
@@ -204,11 +218,17 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       if (nextStatus === 'all') params.delete('report_status');
       else params.set('report_status', nextStatus);
     }
+    const currentCategory = params.get('failed_check_category') ?? 'all';
+    if (currentCategory !== nextCategory) {
+      changed = true;
+      if (nextCategory === 'all') params.delete('failed_check_category');
+      else params.set('failed_check_category', nextCategory);
+    }
 
     if (!changed) return;
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [pathname, reportSearch, reportStatusFilter, router, searchParamsKey, selectedReportName]);
+  }, [failedCheckCategoryFilter, pathname, reportSearch, reportStatusFilter, router, searchParamsKey, selectedReportName]);
 
   const reportSummary = (reportDetailQuery.data?.report as {
     summary?: {
@@ -258,6 +278,8 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   } | undefined)?.execution;
   const selectedReportSummary = JSON.stringify(reportSummary ?? {}, null, 2);
   const failedChecks = (reportExecution?.checks ?? []).filter((check) => check.status === 'fail');
+  const failedCheckCategories = Array.from(new Set(failedChecks.map((check) => check.category ?? 'uncategorized')));
+  const filteredFailedChecks = failedChecks.filter((check) => failedCheckCategoryFilter === 'all' || (check.category ?? 'uncategorized') === failedCheckCategoryFilter);
   const latestReport = filteredReleaseReports[0];
   const latestRuntimeReadiness = latestReport?.runtime_release_readiness ?? '--';
   const latestUsageReadiness = latestReport?.usage_release_readiness ?? '--';
@@ -302,6 +324,14 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       </PageState>
     );
   }
+
+  const copyCommand = async (command: string) => {
+    try {
+      await navigator.clipboard.writeText(command);
+    } catch {
+      // no-op; command is still visible inline
+    }
+  };
 
   if (!resolvedParams.workspace || !resolvedParams.project) {
     return (
@@ -612,6 +642,29 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       <div className="mt-1 text-sm font-medium text-foreground">{longRangeUsageBlocked}</div>
                     </div>
                   </div>
+                  <div className="mt-3 space-y-2">
+                    {longRangeReports.map((item, index) => (
+                      <div
+                        key={`history-${item.name}`}
+                        className="flex items-center justify-between gap-3 rounded-md border border-subtle bg-surface px-3 py-2"
+                        data-testid={`release-ops__history-item-${index}`}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-mono text-sm text-foreground">{item.name}</div>
+                          <div className="text-xs text-tertiary">{formatDateTime(item.generated_at)}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={item.status === 'pass' ? 'outline' : 'secondary'}>{item.status}</Badge>
+                          <Badge variant={item.runtime_release_readiness === 'ready' ? 'outline' : 'secondary'}>
+                            {item.runtime_release_readiness ?? '--'}
+                          </Badge>
+                          <Badge variant={item.usage_release_readiness === 'ready' ? 'outline' : 'secondary'}>
+                            {item.usage_release_readiness ?? '--'}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 {reportDetailQuery.data ? (
                   <div className="mt-4 space-y-3 rounded-md border border-subtle bg-bg-base/40 p-3" data-testid="release-ops__report-detail">
@@ -784,14 +837,27 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </div>
                     <div className="grid gap-3" data-testid="release-ops__report-failed-checks">
                       <div className="rounded-md border border-subtle bg-surface p-3">
-                        <div className="mb-2 text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_failed_checks')}</div>
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_section_failed_checks')}</div>
+                          <Select value={failedCheckCategoryFilter} onValueChange={setFailedCheckCategoryFilter}>
+                            <SelectTrigger className="w-[200px]" data-testid="release-ops__failed-check-category-filter">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">{settingsT('release_ops_failed_checks_filter_all')}</SelectItem>
+                              {failedCheckCategories.map((category) => (
+                                <SelectItem key={category} value={category}>{category}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         {failedChecks.length === 0 ? (
                           <div className="text-sm text-tertiary" data-testid="release-ops__report-failed-checks-empty">
                             {settingsT('release_ops_failed_checks_empty')}
                           </div>
                         ) : (
                           <div className="space-y-2">
-                            {failedChecks.map((check, index) => (
+                            {filteredFailedChecks.map((check, index) => (
                               <div key={`${check.name}-${index}`} className="rounded-md border border-subtle px-3 py-2" data-testid={`release-ops__report-failed-check-${index}`}>
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="min-w-0">
@@ -802,6 +868,38 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                                 </div>
                                 <div className="mt-2 text-xs text-tertiary">
                                   {recommendationForCheck(check.category, check.name)}
+                                </div>
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                  <code className="rounded bg-bg-base/60 px-2 py-1 text-[11px] text-foreground" data-testid={`release-ops__report-failed-check-command-${index}`}>
+                                    {commandForCheck(check.category, check.name)}
+                                  </code>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => copyCommand(commandForCheck(check.category, check.name))}
+                                    data-testid={`release-ops__report-failed-check-copy-${index}`}
+                                  >
+                                    <Copy className="mr-2 h-4 w-4" />
+                                    {settingsT('release_ops_copy_command')}
+                                  </Button>
+                                  {String(check.category ?? '').includes('governance') ? (
+                                    <Link
+                                      href={usageContextHref}
+                                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                      data-testid={`release-ops__report-failed-check-open-context-${index}`}
+                                    >
+                                      {settingsT('release_ops_open_usage_context')}
+                                    </Link>
+                                  ) : (
+                                    <Link
+                                      href={runtimeContextHref}
+                                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                      data-testid={`release-ops__report-failed-check-open-context-${index}`}
+                                    >
+                                      {settingsT('release_ops_open_runtime_context')}
+                                    </Link>
+                                  )}
                                 </div>
                               </div>
                             ))}

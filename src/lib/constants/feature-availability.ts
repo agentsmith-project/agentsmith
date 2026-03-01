@@ -5,8 +5,8 @@ export type GovernedFeature = 'audit' | 'usage' | 'members' | 'resource_policy';
 export const FEATURE_AVAILABILITY: Record<GovernedFeature, FeatureAvailability> = {
   audit: 'available',
   usage: 'available',
-  members: 'partial',
-  resource_policy: 'partial',
+  members: 'available',
+  resource_policy: 'available',
 };
 
 export function isRealBackendMode(): boolean {

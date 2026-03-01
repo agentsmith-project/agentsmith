@@ -4,7 +4,7 @@
 
 This runbook covers the supported internal release path focused on `Files + Notebook + External Agent + Trace + Artifacts`.
 
-Governance surfaces such as `Members` and `Resource Policy` are now partially implemented in the local `api-entry-node` backend (real routes exist for baseline reads/writes), but are not fully closed-loop. In real-backend mode, treat them as `partial` and verify scope/limitations before demos. `Resource Policy` partial now includes endpoint/agent allow-list enforcement (user + group), endpoint `requests_per_minute` rate limiting, and endpoint `daily_token_limit` quota enforcement baseline. Members partial also includes a first-stage endpoint `daily_token_limit` effect via member quota overrides/templates.
+Governance surfaces such as `Members` and `Resource Policy` are now part of the current internal real-backend baseline. They already support effective access explain, matched policy explain, downstream membership lifecycle effects, and the enforced governance paths documented in the release capability matrix. For demos, use the release capability matrix as the source of truth for exact enforcement scope rather than treating these pages as `partial`.
 
 `Audit` and `Usage` are now backed by real `api-entry-node` routes with persisted governance data (first-stage coverage) and are available in real-backend mode for internal workflows.
 
@@ -17,17 +17,16 @@ Governance surfaces such as `Members` and `Resource Policy` are now partially im
   - persisted usage facts aggregated by `day|hour`
   - first-stage coverage: notebook task runs, chat runs, endpoint proxy requests
 - `Members`
-  - partial backend coverage (baseline reads + selected writes)
-  - advanced governance workflows and enforcement still incomplete
-  - backend route authz now partially reflects groups + permission templates (allow-only union)
-  - member quota overrides/templates now provide baseline endpoint `daily_token_limit` runtime effect
+  - real backend coverage for reads/writes, effective access explain, membership lifecycle cleanup, and permission/quota visibility
+  - backend route authz reflects unified backend authorization decisions
+  - member quota overrides/templates provide enforced runtime quota effects within the documented scope
 - `Resource Policy`
-  - partial backend coverage (read/write + minimal endpoint/agent enforcement)
+  - real backend coverage for reads/writes, matched policy explain, and enforced governance paths in the current internal baseline
   - current enforcement scope covers allow-all / allow-list checks for `endpoint` and notebook/chat `agent` paths
-  - allow-list matching supports user and group subjects (baseline)
+  - allow-list matching supports user and group subjects
   - endpoint `requests_per_minute` rate limiting is enforced
-  - endpoint `daily_token_limit` quota enforcement baseline is supported
-  - broader policy enforcement (`rate_limits`, `quota_limits`) across all resource types remains pending
+  - endpoint `daily_token_limit` quota enforcement is enforced
+  - `source_library.max_total_files` and `source_library.max_file_size_bytes` are enforced on create/upload flows
 
 ## 1. Scope
 - Target: external agent for Notebook task execution/testing.

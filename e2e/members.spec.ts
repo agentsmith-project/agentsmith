@@ -63,6 +63,12 @@ test.describe('Members Page', () => {
     await expect(authedPage.getByText('alice@example.com')).toBeVisible();
   });
 
+  test('shows govern header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('members__open-credentials')).toHaveAttribute('href', /\/credentials$/);
+    await expect(authedPage.getByTestId('members__open-resource-policy')).toHaveAttribute('href', /\/resource-policy$/);
+    await expect(authedPage.getByTestId('members__open-audit')).toHaveAttribute('href', /\/audit$/);
+  });
+
   test('invite dialog opens with email field', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
 

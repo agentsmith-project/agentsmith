@@ -25,7 +25,7 @@ interface MembersPageProps {
 export default function MembersRoute({ params }: MembersPageProps) {
   const tErrors = useTranslations('errors');
   const t = useTranslations('members');
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const canProjectMemberRead = useHasPermission('project:member:view');
   const canProjectAdminGrant = useHasPermission('project:member:manage');
   const canProjectAdminRevoke = useHasPermission('project:member:manage');
@@ -38,6 +38,7 @@ export default function MembersRoute({ params }: MembersPageProps) {
       setResolvedParams({
         workspace: validateWorkspaceParam(p.workspace),
         project: validateProjectParam(p.project),
+        locale: p.locale,
       });
     });
   }, [params]);
@@ -86,7 +87,11 @@ export default function MembersRoute({ params }: MembersPageProps) {
 
   return (
     <PageState state="success">
-      <MembersPage workspaceId={resolvedParams.workspace} projectId={resolvedParams.project} />
+      <MembersPage
+        workspaceId={resolvedParams.workspace}
+        projectId={resolvedParams.project}
+        locale={resolvedParams.locale}
+      />
     </PageState>
   );
 }

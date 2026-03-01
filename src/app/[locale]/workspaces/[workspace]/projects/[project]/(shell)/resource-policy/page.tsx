@@ -7,6 +7,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { AgentAPI, AuditAPI, EndpointAPI, MemberAPI, FilesAPI, getApiClient } from '@/lib/api';
@@ -26,7 +27,7 @@ import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
 import { ResourcePolicyTable, type ResourceRow } from '@/components/resource-policy/ResourcePolicyTable';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   useMembers,
   useProjectGroups,
@@ -55,6 +56,7 @@ import {
   mergeRuleSources,
 } from '@/lib/resource-policy/editor-utils';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
+import { cn } from '@/lib/utils';
 
 interface ResourcePolicyPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -75,7 +77,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const tResource = useTranslations('resource_policy');
   const featureAvailability = getFeatureAvailability('resource_policy');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('resource_policy');
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const [selectedResource, setSelectedResource] = useState<ResourceRow | null>(null);
   const [accessMode, setAccessMode] = useState<'allow_all_members' | 'allow_list'>('allow_all_members');
   const [rootDraftRules, setRootDraftRules] = useState<Partial<Record<PolicyRuleKey, string>>>({});
@@ -87,12 +89,14 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     params.then((p) => {
       const workspace = validateWorkspaceParam(p.workspace);
       const project = validateProjectParam(p.project);
-      setResolvedParams({ workspace, project });
+      setResolvedParams({ workspace, project, locale: p.locale });
     });
   }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
+  const locale = resolvedParams?.locale ?? 'en-US';
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const endpointAPI = useMemo(() => new EndpointAPI(getApiClient()), []);
   const sourcesAPI = useMemo(() => new FilesAPI(getApiClient()), []);
   const agentAPI = useMemo(() => new AgentAPI(getApiClient()), []);
@@ -381,6 +385,31 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
             <PageHeader
               title={tNav('resource_policy')}
               subtitle={tResource('subtitle')}
+              actions={(
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`${basePath}/members`}
+                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                    data-testid="resource-policy__open-members"
+                  >
+                    {tResource('open_members')}
+                  </Link>
+                  <Link
+                    href={`${basePath}/credentials`}
+                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                    data-testid="resource-policy__open-credentials"
+                  >
+                    {tResource('open_credentials')}
+                  </Link>
+                  <Link
+                    href={`${basePath}/audit`}
+                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                    data-testid="resource-policy__open-audit"
+                  >
+                    {tResource('open_audit')}
+                  </Link>
+                </div>
+              )}
             />
           )}
         >
@@ -407,6 +436,31 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
           <PageHeader
             title={tNav('resource_policy')}
             subtitle={tResource('subtitle')}
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`${basePath}/members`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="resource-policy__open-members"
+                >
+                  {tResource('open_members')}
+                </Link>
+                <Link
+                  href={`${basePath}/credentials`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="resource-policy__open-credentials"
+                >
+                  {tResource('open_credentials')}
+                </Link>
+                <Link
+                  href={`${basePath}/audit`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="resource-policy__open-audit"
+                >
+                  {tResource('open_audit')}
+                </Link>
+              </div>
+            )}
           />
         )}
       >

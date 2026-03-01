@@ -8,6 +8,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
@@ -20,12 +21,13 @@ import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
 import { DataTable } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { CreateCredentialDialog } from '@/components/credentials/CreateCredentialDialog';
 import { RotateCredentialDialog } from '@/components/credentials/RotateCredentialDialog';
 import { DeleteCredentialDialog } from '@/components/credentials/DeleteCredentialDialog';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { cn } from '@/lib/utils';
 
 interface CredentialsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -125,6 +127,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{
     workspace?: string;
     project?: string;
+    locale?: string;
   } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [rotateDialogOpen, setRotateDialogOpen] = useState(false);
@@ -138,12 +141,14 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
     params.then((p) => {
       const workspace = validateWorkspaceParam(p.workspace);
       const project = validateProjectParam(p.project);
-      setResolvedParams({ workspace, project });
+      setResolvedParams({ workspace, project, locale: p.locale });
     });
   }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
+  const locale = resolvedParams?.locale ?? 'en-US';
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const credentialsAPI = new CredentialsAPI(getApiClient());
   const queryClient = useQueryClient();
@@ -229,7 +234,37 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   return (
     <PageState state="success">
       <PageLayout
-        header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`${basePath}/members`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="credentials__open-members"
+                >
+                  {t('open_members')}
+                </Link>
+                <Link
+                  href={`${basePath}/resource-policy`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="credentials__open-resource-policy"
+                >
+                  {t('open_resource_policy')}
+                </Link>
+                <Link
+                  href={`${basePath}/audit`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="credentials__open-audit"
+                >
+                  {t('open_audit')}
+                </Link>
+              </div>
+            )}
+          />
+        )}
         toolbar={(
           <PageToolbar>
             <Button

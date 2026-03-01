@@ -606,6 +606,9 @@
   "credentials": {
     "title": "凭据",
     "subtitle": "管理端点使用的 API 密钥和密钥",
+    "open_members": "打开成员",
+    "open_resource_policy": "打开资源策略",
+    "open_audit": "打开审计",
     "create": "创建凭据",
     "fingerprint": "指纹",
     "rotate": "轮换",
@@ -722,6 +725,9 @@
   "audit": {
     "title": "审计",
     "subtitle": "审计事件与合规日志",
+    "open_members": "打开成员",
+    "open_resource_policy": "打开资源策略",
+    "open_usage": "打开用量",
     "filters": {
       "time_range": "时间范围",
       "action": "操作",
@@ -1542,6 +1548,9 @@
   },
   "resource_policy": {
     "subtitle": "统一配置资源策略基线与按主体覆盖规则。",
+    "open_members": "打开成员",
+    "open_credentials": "打开凭据",
+    "open_audit": "打开审计",
     "default_model_hint": "默认模型：所有成员可访问资源。新资源继承项目默认策略。",
     "inherits_defaults": "继承默认策略",
     "select_resource": "请选择资源以编辑策略。",
@@ -1651,6 +1660,9 @@
     "title": "成员",
     "join_requests_title": "加入申请",
     "invite_member": "邀请成员",
+    "open_credentials": "打开凭据",
+    "open_resource_policy": "打开资源策略",
+    "open_audit": "打开审计",
     "invite": {
       "title": "邀请成员",
       "email_label": "邮箱",

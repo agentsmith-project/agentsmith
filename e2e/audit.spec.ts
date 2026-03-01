@@ -48,6 +48,12 @@ test.describe('Audit Page', () => {
     await expect(authedPage.getByRole('button', { name: /refresh/i })).toBeVisible();
   });
 
+  test('shows govern header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('audit__open-members')).toHaveAttribute('href', /\/members$/);
+    await expect(authedPage.getByTestId('audit__open-resource-policy')).toHaveAttribute('href', /\/resource-policy$/);
+    await expect(authedPage.getByTestId('audit__open-usage')).toHaveAttribute('href', /\/usage$/);
+  });
+
   test('text filter and clear filters interaction works', async ({ authedPage }) => {
     const filters = authedPage.getByTestId('audit__filters');
     await expect(filters).toBeVisible({ timeout: 10000 });

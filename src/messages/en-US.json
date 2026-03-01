@@ -604,6 +604,9 @@
   "credentials": {
     "title": "Credentials",
     "subtitle": "Manage API keys and secrets for endpoints",
+    "open_members": "Open Members",
+    "open_resource_policy": "Open Resource Policy",
+    "open_audit": "Open Audit",
     "create": "Create Credential",
     "fingerprint": "Fingerprint",
     "rotate": "Rotate",
@@ -720,6 +723,9 @@
   "audit": {
     "title": "Audit",
     "subtitle": "Audit events and compliance logs",
+    "open_members": "Open Members",
+    "open_resource_policy": "Open Resource Policy",
+    "open_usage": "Open Usage",
     "filters": {
       "time_range": "Time Range",
       "action": "Action",
@@ -1540,6 +1546,9 @@
   },
   "resource_policy": {
     "subtitle": "Unified resource policy baseline and per-subject overrides.",
+    "open_members": "Open Members",
+    "open_credentials": "Open Credentials",
+    "open_audit": "Open Audit",
     "default_model_hint": "Default model: all members can access resources. New resources inherit project defaults.",
     "inherits_defaults": "inherits defaults",
     "select_resource": "Select a resource to edit policy.",
@@ -1649,6 +1658,9 @@
     "title": "Members",
     "join_requests_title": "Join Requests",
     "invite_member": "Invite Member",
+    "open_credentials": "Open Credentials",
+    "open_resource_policy": "Open Resource Policy",
+    "open_audit": "Open Audit",
     "invite": {
       "title": "Invite Member",
       "email_label": "Email",

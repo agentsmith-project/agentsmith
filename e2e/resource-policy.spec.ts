@@ -6,6 +6,12 @@ test.describe('Resource Policy Page', () => {
     await expect(authedPage.getByTestId('resource-policy__table')).toBeVisible({ timeout: 10000 });
   });
 
+  test('shows govern header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('resource-policy__open-members')).toHaveAttribute('href', /\/members$/);
+    await expect(authedPage.getByTestId('resource-policy__open-credentials')).toHaveAttribute('href', /\/credentials$/);
+    await expect(authedPage.getByTestId('resource-policy__open-audit')).toHaveAttribute('href', /\/audit$/);
+  });
+
   test('blocks save when allow_list has no subject', async ({ authedPage }) => {
     const accessMode = authedPage.getByTestId('resource-policy__access-mode');
     await accessMode.selectOption('allow_list');

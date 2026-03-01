@@ -226,6 +226,24 @@ describe('ResourcePolicyPage', () => {
     );
   });
 
+  it('renders govern header actions', async () => {
+    render(
+      <ResourcePolicyPage
+        params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
+    });
+
+    const header = screen.getByTestId('page-layout__header');
+    expect(within(header).getByTestId('resource-policy__open-members')).toHaveAttribute('href', '/en-US/workspaces/ws_1/projects/prj_1/members');
+    expect(within(header).getByTestId('resource-policy__open-credentials')).toHaveAttribute('href', '/en-US/workspaces/ws_1/projects/prj_1/credentials');
+    expect(within(header).getByTestId('resource-policy__open-audit')).toHaveAttribute('href', '/en-US/workspaces/ws_1/projects/prj_1/audit');
+  });
+
   it('blocks save for allow_list when subject list is empty', async () => {
     mockUseHasPermission.mockReturnValue(true);
     const user = userEvent.setup();

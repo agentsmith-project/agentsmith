@@ -22,6 +22,7 @@ export default function AuditPage({ params }: AuditPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{
     workspace?: string;
     project?: string;
+    locale?: string;
   } | null>(null);
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
@@ -34,6 +35,7 @@ export default function AuditPage({ params }: AuditPageProps) {
       setResolvedParams({
         workspace: validateWorkspaceParam(p.workspace),
         project: validateProjectParam(p.project),
+        locale: p.locale,
       }),
     );
   }, [params]);
@@ -85,6 +87,7 @@ export default function AuditPage({ params }: AuditPageProps) {
       <AuditPageComponent
         workspaceId={workspaceId}
         projectId={projectId}
+        locale={resolvedParams.locale}
       />
     </PageState>
   );

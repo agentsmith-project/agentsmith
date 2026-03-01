@@ -29,6 +29,12 @@ test.describe('Credentials Page', () => {
     await expect(authedPage.getByText('Anthropic API Key')).toBeVisible();
   });
 
+  test('shows govern header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('credentials__open-members')).toHaveAttribute('href', /\/members$/);
+    await expect(authedPage.getByTestId('credentials__open-resource-policy')).toHaveAttribute('href', /\/resource-policy$/);
+    await expect(authedPage.getByTestId('credentials__open-audit')).toHaveAttribute('href', /\/audit$/);
+  });
+
   test('create dialog opens with name field', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('credentials__table')).toBeVisible({ timeout: 10000 });
 

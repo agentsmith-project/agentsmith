@@ -3,9 +3,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 vi.mock('@/components/members/MembersPage', () => ({
-  MembersPage: ({ workspaceId, projectId }: { workspaceId: string; projectId: string }) => (
+  MembersPage: ({ workspaceId, projectId, locale }: { workspaceId: string; projectId: string; locale?: string }) => (
     <div data-testid="members__route-page">
-      {workspaceId}:{projectId}
+      {workspaceId}:{projectId}:{locale ?? 'missing'}
     </div>
   ),
 }));
@@ -34,7 +34,7 @@ describe('MembersRoute', () => {
     await waitFor(() => {
       expect(screen.getByTestId('members__route-page')).toBeInTheDocument();
     });
-    expect(screen.getByText('ws_1:proj_1')).toBeInTheDocument();
+    expect(screen.getByText('ws_1:proj_1:en')).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe params', async () => {

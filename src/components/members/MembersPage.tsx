@@ -7,9 +7,10 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import {
@@ -36,15 +37,18 @@ import { GroupsTab } from './GroupsTab';
 import { JoinRequestsTab } from './JoinRequestsTab';
 import { BatchApplyPermissionDialog } from './BatchApplyPermissionDialog';
 import { BatchApplyQuotaDialog } from './BatchApplyQuotaDialog';
+import { cn } from '@/lib/utils';
 
 export interface MembersPageProps {
   workspaceId: string;
   projectId: string;
+  locale?: string;
 }
 
-function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
+function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: MembersPageProps) {
   const t = useTranslations('members');
   const canManageMembers = useCanManageMemberGovernance();
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const contextValue = useMembersList({ workspaceId, projectId });
   const [activeTab, setActiveTab] = React.useState<'people' | 'requests' | 'templates' | 'groups'>('people');
@@ -58,16 +62,39 @@ function MembersPageContent({ workspaceId, projectId }: MembersPageProps) {
             title={t('title')}
             subtitle={t('description')}
             actions={(
-              <Button
-                variant="action"
-                className="gap-2"
-                onClick={() => contextValue.setInviteDialogOpen(true)}
-                disabled={!canManageMembers}
-                data-testid="members__invite-btn"
-              >
-                <Plus className="h-4 w-4" />
-                {t('invite_member')}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="action"
+                  className="gap-2"
+                  onClick={() => contextValue.setInviteDialogOpen(true)}
+                  disabled={!canManageMembers}
+                  data-testid="members__invite-btn"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t('invite_member')}
+                </Button>
+                <Link
+                  href={`${basePath}/credentials`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="members__open-credentials"
+                >
+                  {t('open_credentials')}
+                </Link>
+                <Link
+                  href={`${basePath}/resource-policy`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="members__open-resource-policy"
+                >
+                  {t('open_resource_policy')}
+                </Link>
+                <Link
+                  href={`${basePath}/audit`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="members__open-audit"
+                >
+                  {t('open_audit')}
+                </Link>
+              </div>
             )}
           />
         )}

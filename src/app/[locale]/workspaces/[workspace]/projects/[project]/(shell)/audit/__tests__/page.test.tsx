@@ -119,6 +119,9 @@ describe('AuditPage route', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
+    expect(within(header).getByTestId('audit__open-members')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/members');
+    expect(within(header).getByTestId('audit__open-resource-policy')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/resource-policy');
+    expect(within(header).getByTestId('audit__open-usage')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/usage');
     const toolbar = screen.getByTestId('page-layout__toolbar');
     expect(within(toolbar).getByRole('button', { name: 'refresh' })).toBeInTheDocument();
   });

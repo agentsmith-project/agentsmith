@@ -1,6 +1,8 @@
 'use client';
 import * as React from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { AuditFilters } from './AuditFilters';
@@ -15,11 +17,13 @@ import { PageToolbar } from '@/components/layout/PageToolbar';
 import { ErrorState } from '@/components/ui/error-state';
 import type { AuditEvent, AuditListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
+import { cn } from '@/lib/utils';
 
 export interface AuditPageProps {
   workspaceId: string;
   projectId: string;
   defaultEndUserId?: string;
+  locale?: string;
 }
 
 function getDefaultTimeRange() {
@@ -29,11 +33,12 @@ function getDefaultTimeRange() {
   };
 }
 
-export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPageProps) {
+export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = 'en-US' }: AuditPageProps) {
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
   const canReadAudit = useHasPermission('project:audit:view');
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const [filters, setFilters] = React.useState<AuditListParams>(() => ({
     ...getDefaultTimeRange(),
@@ -52,7 +57,39 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
 
   if (!canReadAudit) {
     return (
-      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
+      <PageLayout
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`${basePath}/members`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="audit__open-members"
+                >
+                  {t('open_members')}
+                </Link>
+                <Link
+                  href={`${basePath}/resource-policy`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="audit__open-resource-policy"
+                >
+                  {t('open_resource_policy')}
+                </Link>
+                <Link
+                  href={`${basePath}/usage`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="audit__open-usage"
+                >
+                  {t('open_usage')}
+                </Link>
+              </div>
+            )}
+          />
+        )}
+      >
         <div className="flex flex-col items-center justify-center flex-1">
           <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
             <p className="text-sm text-tertiary">{t('permission_denied')}</p>
@@ -94,7 +131,39 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
 
   if (error) {
     return (
-      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
+      <PageLayout
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`${basePath}/members`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="audit__open-members"
+                >
+                  {t('open_members')}
+                </Link>
+                <Link
+                  href={`${basePath}/resource-policy`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="audit__open-resource-policy"
+                >
+                  {t('open_resource_policy')}
+                </Link>
+                <Link
+                  href={`${basePath}/usage`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="audit__open-usage"
+                >
+                  {t('open_usage')}
+                </Link>
+              </div>
+            )}
+          />
+        )}
+      >
         <ErrorState
           title={commonT('something_went_wrong')}
           message={t('load_failed_with_reason', {
@@ -109,7 +178,37 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId }: AuditPag
 
   return (
     <PageLayout
-      header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
+      header={(
+        <PageHeader
+          title={t('title')}
+          subtitle={t('subtitle')}
+          actions={(
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={`${basePath}/members`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="audit__open-members"
+              >
+                {t('open_members')}
+              </Link>
+              <Link
+                href={`${basePath}/resource-policy`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="audit__open-resource-policy"
+              >
+                {t('open_resource_policy')}
+              </Link>
+              <Link
+                href={`${basePath}/usage`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="audit__open-usage"
+              >
+                {t('open_usage')}
+              </Link>
+            </div>
+          )}
+        />
+      )}
       toolbar={(
         <PageToolbar>
           <Button variant="outline" onClick={handleRefresh} disabled={isLoading}>

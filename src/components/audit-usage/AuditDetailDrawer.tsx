@@ -13,6 +13,7 @@ import { JSONViewer } from './JSONViewer';
 import { Copy } from 'lucide-react';
 import { toast } from '@/components/ui/toast';
 import type { AuditEvent } from '@/lib/api/types';
+import { getGovernanceEvidenceDetails } from '@/lib/api/endpoints/governance-explainability';
 
 export interface AuditDetailDrawerProps {
   open: boolean;
@@ -24,6 +25,11 @@ function formatFullTimestamp(timestamp: string): string {
   return new Date(timestamp).toISOString();
 }
 
+function formatGovernanceValue(value?: number | string | null): string {
+  if (value === undefined || value === null || value === '') return '--';
+  return String(value);
+}
+
 export function AuditDetailDrawer({
   open,
   onOpenChange,
@@ -33,6 +39,10 @@ export function AuditDetailDrawer({
   const commonT = useTranslations('common');
   const toastT = useTranslations('common.toast');
   if (!event) return null;
+  const governance = getGovernanceEvidenceDetails({
+    error_code: event.error_code,
+    ...(event.metadata_json ?? {}),
+  });
 
   const handleCopyRequestId = () => {
     navigator.clipboard.writeText(event.request_id);
@@ -130,6 +140,46 @@ export function AuditDetailDrawer({
               )}
             </div>
           )}
+
+          {governance ? (
+            <div className="bg-surface border border-border rounded-md p-4 space-y-3" data-testid="audit__detail-governance">
+              <h4 className="text-sm font-semibold text-foreground">{t('detail.governance_title')}</h4>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.governance_kind')}:</span>
+                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.governance_kind)}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.enforcement_kind')}:</span>
+                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.enforcement_kind)}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.quota_key')}:</span>
+                  <p className="mt-1 text-sm font-mono text-foreground">{formatGovernanceValue(governance.quota_key)}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.scope')}:</span>
+                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.scope)}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.effective_limit')}:</span>
+                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.effective_limit)}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.current_usage')}:</span>
+                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.current_usage)}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.usage_unit')}:</span>
+                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.usage_unit)}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.reason_label')}:</span>
+                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.reason)}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {/* Metadata JSON Card */}
           <JSONViewer data={event.metadata_json || {}} />

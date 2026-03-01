@@ -1,0 +1,54 @@
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { UsageFactDetailDrawer } from '../UsageFactDetailDrawer';
+
+vi.mock('next-intl', () => ({
+  useTranslations: () => (key: string, params?: Record<string, string | number>) =>
+    params ? `${key}:${JSON.stringify(params)}` : key,
+}));
+
+describe('UsageFactDetailDrawer', () => {
+  it('renders governance quota evidence details from fact metadata', () => {
+    render(
+      <UsageFactDetailDrawer
+        open
+        onOpenChange={() => {}}
+        facts={[
+          {
+            id: 'fact_quota_1',
+            timestamp: '2026-03-01T00:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            resource_type: 'source_library',
+            resource_id: 'lib_1',
+            request_id: 'req_quota_1',
+            requests: 1,
+            result: 'error',
+            error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+            runtime: {
+              provider: 'secondaryok',
+              resolved_model: 'model-b',
+            },
+            metadata_json: {
+              governance_kind: 'resource_policy',
+              enforcement_kind: 'quota_limit',
+              quota_key: 'source_library.max_total_files',
+              effective_limit: 200,
+              current_usage: 201,
+              usage_unit: 'files',
+              scope: 'resource',
+              reason: 'quota_exceeded',
+            },
+          },
+        ]}
+      />
+    );
+
+    const governance = screen.getByTestId('usage__detail-governance-fact_quota_1');
+    expect(governance).toHaveTextContent('detail.governance_title');
+    expect(governance).toHaveTextContent('source_library.max_total_files');
+    expect(governance).toHaveTextContent('200');
+    expect(governance).toHaveTextContent('201');
+    expect(governance).toHaveTextContent('quota_exceeded');
+  });
+});

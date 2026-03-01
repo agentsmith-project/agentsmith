@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/sheet';
 import { JSONViewer } from './JSONViewer';
 import type { UsageFactRecord } from '@/lib/api/types';
+import { getGovernanceEvidenceDetails } from '@/lib/api/endpoints/governance-explainability';
 
 type AttemptTrace = {
   index?: number;
@@ -46,6 +47,11 @@ function getAttempts(fact: UsageFactRecord): AttemptTrace[] {
   return Array.isArray(fact.runtime?.attempts)
     ? fact.runtime.attempts.filter((item) => item && typeof item === 'object') as AttemptTrace[]
     : [];
+}
+
+function formatGovernanceValue(value?: number | string | null): string {
+  if (value === undefined || value === null || value === '') return '--';
+  return String(value);
 }
 
 export function UsageFactDetailDrawer({
@@ -115,6 +121,10 @@ export function UsageFactDetailDrawer({
             <div className="mt-6 space-y-4">
               {facts.map((fact) => {
                 const attempts = getAttempts(fact);
+                const governance = getGovernanceEvidenceDetails({
+                  error_code: fact.error_code,
+                  ...(fact.metadata_json ?? {}),
+                });
                 return (
                   <section
                     key={fact.id}
@@ -179,6 +189,46 @@ export function UsageFactDetailDrawer({
                         {fact.runtime?.missing_price ? <Badge variant="secondary">{t('detail.missing_price')}</Badge> : null}
                       </div>
                     </div>
+
+                    {governance ? (
+                      <div className="border-t border-subtle px-5 py-4" data-testid={`usage__detail-governance-${fact.id}`}>
+                        <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('detail.governance_title')}</div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.governance_kind')}</div>
+                            <div className="mt-2 text-sm text-foreground">{formatGovernanceValue(governance.governance_kind)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.enforcement_kind')}</div>
+                            <div className="mt-2 text-sm text-foreground">{formatGovernanceValue(governance.enforcement_kind)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.quota_key')}</div>
+                            <div className="mt-2 font-mono text-sm text-foreground">{formatGovernanceValue(governance.quota_key)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.scope')}</div>
+                            <div className="mt-2 text-sm text-foreground">{formatGovernanceValue(governance.scope)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.effective_limit')}</div>
+                            <div className="mt-2 text-sm text-foreground">{formatGovernanceValue(governance.effective_limit)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.current_usage')}</div>
+                            <div className="mt-2 text-sm text-foreground">{formatGovernanceValue(governance.current_usage)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.usage_unit')}</div>
+                            <div className="mt-2 text-sm text-foreground">{formatGovernanceValue(governance.usage_unit)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.reason_label')}</div>
+                            <div className="mt-2 text-sm text-foreground">{formatGovernanceValue(governance.reason)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="border-t border-subtle px-5 py-4">
                       <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('detail.timeline_title')}</div>

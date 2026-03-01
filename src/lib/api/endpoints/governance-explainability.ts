@@ -79,6 +79,13 @@ export interface GovernanceQuotaExceededDetails {
   current_file_size_bytes?: number;
 }
 
+export interface GovernanceEvidenceDetails extends GovernanceQuotaExceededDetails {
+  governance_kind?: 'resource_policy' | 'member_quota';
+  enforcement_kind?: 'allow_list' | 'quota_limit' | 'rate_limit';
+  route_kind?: string;
+  reason?: string;
+}
+
 export interface GovernanceRouteForbiddenDetails {
   error_code: 'FORBIDDEN';
   message: string;
@@ -113,6 +120,27 @@ export interface GovernanceEffectiveAccessSnapshot {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidenceDetails | null {
+  if (!isRecord(value)) return null;
+  const errorCode = typeof value.error_code === 'string' ? value.error_code : undefined;
+  const governanceKind =
+    value.governance_kind === 'resource_policy' || value.governance_kind === 'member_quota'
+      ? value.governance_kind
+      : undefined;
+  const enforcementKind =
+    value.enforcement_kind === 'allow_list'
+    || value.enforcement_kind === 'quota_limit'
+    || value.enforcement_kind === 'rate_limit'
+      ? value.enforcement_kind
+      : undefined;
+
+  if (!governanceKind && !enforcementKind && errorCode !== 'RESOURCE_POLICY_QUOTA_EXCEEDED' && errorCode !== 'MEMBER_QUOTA_EXCEEDED' && errorCode !== 'RESOURCE_POLICY_DENIED') {
+    return null;
+  }
+
+  return value as unknown as GovernanceEvidenceDetails;
 }
 
 export function getGovernanceQuotaExceededDetails(error: unknown): GovernanceQuotaExceededDetails | null {

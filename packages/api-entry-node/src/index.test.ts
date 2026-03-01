@@ -1224,6 +1224,57 @@ describe('api-entry-node projects routes', () => {
     );
     expect(patchGroupForAltRes.status).toBe(200);
 
+    const suspendAltMembershipRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'suspended' }),
+      },
+    );
+    expect(suspendAltMembershipRes.status).toBe(204);
+
+    const suspendedAltPermissionsRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/permissions',
+    );
+    expect(suspendedAltPermissionsRes.status).toBe(200);
+    expect(await suspendedAltPermissionsRes.json()).toEqual({
+      platform_permissions: ['project:usage:view'],
+      resource_permissions: undefined,
+    });
+
+    const suspendedAltQuotaRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/quota-overrides',
+    );
+    expect(suspendedAltQuotaRes.status).toBe(200);
+    expect(await suspendedAltQuotaRes.json()).toEqual({
+      overrides: { endpoint: { daily_token_limit: 50 } },
+    });
+
+    const groupsWhileSuspendedRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/groups',
+    );
+    expect(groupsWhileSuspendedRes.status).toBe(200);
+    const groupsWhileSuspended = (await groupsWhileSuspendedRes.json()) as {
+      items: Array<{ id: string; member_ids: string[] }>;
+    };
+    expect(groupsWhileSuspended.items.find((item) => item.id === createdGroup.id)?.member_ids).toContain('user_alt');
+
+    const restoreAltMembershipRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      },
+    );
+    expect(restoreAltMembershipRes.status).toBe(204);
+
     const rejectJoinRequestRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/join-requests/${createdJoinRequest.id}/reject`,
@@ -1783,6 +1834,180 @@ describe('api-entry-node projects routes', () => {
         reason: 'granted_by_member_governance',
       },
     });
+  });
+
+  it('preserves member governance state across suspend and restore on repo-backed projects', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Member Lifecycle Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createTemplateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Lifecycle Managers',
+          permissions: ['project:member:manage'],
+        }),
+      },
+    );
+    expect(createTemplateRes.status).toBe(200);
+    const createdTemplate = (await createTemplateRes.json()) as { id: string };
+
+    const createGroupRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/groups`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Lifecycle Group',
+          permission_template_id: createdTemplate.id,
+          member_ids: ['user_alt'],
+        }),
+      },
+    );
+    expect(createGroupRes.status).toBe(200);
+    const createdGroup = (await createGroupRes.json()) as { id: string };
+
+    const activateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_alt`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      },
+    );
+    expect(activateRes.status).toBe(204);
+
+    const patchAltPermissionsRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_alt/permissions`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'custom',
+          permissions: ['project:usage:view'],
+        }),
+      },
+    );
+    expect(patchAltPermissionsRes.status).toBe(204);
+
+    const patchAltQuotaRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_alt/quota-overrides`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          overrides: { endpoint: { daily_token_limit: 50 } },
+        }),
+      },
+    );
+    expect(patchAltQuotaRes.status).toBe(200);
+
+    const suspendRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_alt`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'suspended' }),
+      },
+    );
+    expect(suspendRes.status).toBe(204);
+
+    const suspendedRouteRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'alt-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Suspended Should Fail',
+          permissions: ['project:member:view'],
+        }),
+      },
+    );
+    expect(suspendedRouteRes.status).toBe(403);
+
+    const suspendedPermissionsRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_alt/permissions`,
+      'owner-token',
+    );
+    expect(suspendedPermissionsRes.status).toBe(200);
+    expect(await suspendedPermissionsRes.json()).toEqual({
+      platform_permissions: ['project:usage:view'],
+      resource_permissions: undefined,
+    });
+
+    const suspendedQuotaRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_alt/quota-overrides`,
+      'owner-token',
+    );
+    expect(suspendedQuotaRes.status).toBe(200);
+    expect(await suspendedQuotaRes.json()).toEqual({
+      overrides: { endpoint: { daily_token_limit: 50 } },
+    });
+
+    const groupsWhileSuspendedRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/groups`,
+      'owner-token',
+    );
+    expect(groupsWhileSuspendedRes.status).toBe(200);
+    const groupsWhileSuspended = (await groupsWhileSuspendedRes.json()) as {
+      items: Array<{ id: string; member_ids: string[] }>;
+    };
+    expect(groupsWhileSuspended.items.find((item) => item.id === createdGroup.id)?.member_ids).toContain('user_alt');
+
+    const restoreRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_alt`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      },
+    );
+    expect(restoreRes.status).toBe(204);
+
+    const restoredRouteRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'alt-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Restored Should Pass',
+          permissions: ['project:member:view'],
+        }),
+      },
+    );
+    expect(restoredRouteRes.status).toBe(200);
   });
 
   it('supports minimal quota template CRUD endpoints', async () => {

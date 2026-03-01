@@ -9,6 +9,7 @@ The Release Verification tool automates testing and validation for releases, pro
 - **Failure Classification**: Categorizes failures by type (token/network/backend/assertion/timeout/rate_limit/etc.)
 - **Transient Acceptance Signal**: Marks recoverable upstream instability in `summary.upstream_transient`
 - **Runtime Release Evidence**: Captures runtime guardrails and `pricing_version` coverage from the real-lane runtime proxy/billing workflow
+- **Release Governance Control**: feeds `Release Ops` with gate runs, escalations, incident linkage, and policy enforcement state
 - **Troubleshooting Guidance**: Actionable recommendations for fixing issues
 
 ## Quality Lanes and Gates
@@ -38,6 +39,26 @@ Gate levels:
 - `make gate-pr`: recommended PR gate (L1)
 - `make gate-premerge`: recommended pre-merge gate (L2)
 - `make gate-release`: recommended release gate (L0 + L2 + L3)
+
+## Release Ops Linkage
+
+`release:report` no longer only writes report artifacts. It also feeds the release-governance control plane with:
+
+1. `artifacts/release-reports/*.json`
+2. `artifacts/release-runs/*.json`
+3. `artifacts/release-escalations/*.json`
+
+These artifacts are correlated by `incident_id` so `Release Ops` can show:
+
+1. policy enforcement
+2. gate run history
+3. escalation ownership and SLA
+4. override workflow
+5. incident trace and incident summary
+
+Operational guide:
+
+- [Release Governance Control Plane](./release-governance-control-plane.md)
 
 ## Running Release Verification
 

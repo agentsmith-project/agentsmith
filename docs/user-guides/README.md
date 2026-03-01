@@ -10,6 +10,7 @@ Comprehensive guides for using AgentSmith features.
 | [Alert Center](./alert-center.md) | Configure alert rules and manage notifications |
 | [Audit & Usage Reports](./audit-usage-reports.md) | View audit logs and generate usage reports |
 | [Release Verification](./release-verification.md) | Generate and verify release reports |
+| [Release Governance Control Plane](./release-governance-control-plane.md) | Operate release policy, overrides, gate runs, escalations, and incidents |
 
 ## Quick Links
 

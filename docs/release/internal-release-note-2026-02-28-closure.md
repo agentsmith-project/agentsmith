@@ -26,6 +26,28 @@
 2. `wp11-release-controls-final-20260228` is frozen as the final runtime/governance hardening baseline for this cycle.
 3. Daily real-lane regression is enforced via `release-gate` scheduled workflow (UTC daily).
 4. Generated local closure/runtime report snapshots in `artifacts/release-reports/` are treated as local artifacts and ignored by git; curated release notes stay in `docs/release/`.
+5. Post-closure governance control-plane baseline is now part of the product baseline, not an experiment:
+   - unified release policy engine
+   - override approval workflow
+   - release gate run history
+   - release escalations with ownership/SLA
+   - incident linkage / handoff history / incident summary
+
+## Governance Baseline (Post-Closure)
+The release workflow is now governed through the in-product `Release Ops` control plane.
+
+Current accepted governance capabilities:
+1. release artifact browser
+2. gate run history
+3. policy enforcement with approved exceptions
+4. override expiry and approval separation
+5. escalation acknowledgment / assignment / resolution
+6. SLA-aware escalation governance
+7. incident trace and incident summary
+
+Operational reference:
+1. `docs/user-guides/release-verification.md`
+2. `docs/user-guides/release-governance-control-plane.md`
 
 ## Follow-up Governance
 1. If scheduled release-gate fails with only upstream transient classes (`429/timeout/network`) and rerun passes, classify as non-blocking transient.

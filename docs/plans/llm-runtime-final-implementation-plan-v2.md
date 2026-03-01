@@ -470,3 +470,60 @@
 4. `WP-11 Rollout Policy & Release Controls`
 原因：
 发布控制应建立在 observability/cost/pricing 三条线都稳定后，否则会变成只会阻断、不会解释的门禁。
+
+---
+
+## 14. 已完成落地基线（2026-03-01）
+
+以下工作包已完成并进入主干基线：
+
+1. `WP-08 Runtime Observability Console`
+2. `WP-09 Usage & Cost Operations`
+3. `WP-10 Pricing Governance & Version Lifecycle`
+4. `WP-11 Rollout Policy & Release Controls`
+5. `WP-12 Release Policy Engine`
+6. `WP-13 Approval / Override Workflow`
+7. `WP-14 Release Gate Run History`
+8. `WP-15 Notification & Escalation`
+9. `WP-16 Release Execution Control`
+
+### 14.1 当前产品化结果
+
+当前 `Release Governance Control Plane` 已具备：
+
+1. unified release policy evaluation / enforcement
+2. override request / approval / expiry / self-approval prevention
+3. gate runner:
+   - full run
+   - failed-only rerun
+   - operation history
+4. escalation workflow:
+   - acknowledge
+   - assign / reassign
+   - SLA state
+   - resolution taxonomy
+   - webhook delivery metadata
+5. incident model:
+   - `incident_id` across report / run / escalation / override
+   - incident trace
+   - incident summary
+   - handoff history
+
+### 14.2 当前正式运营入口
+
+1. `Runtime Observability`
+2. `Usage`
+3. `Release Ops`
+
+### 14.3 当前主线收口判断
+
+当前这条 runtime + release governance 主线已完成从：
+
+1. runtime control plane
+2. usage/cost operations
+3. pricing governance
+4. release governance control plane
+
+到统一治理基线的闭环交付。
+
+后续如果继续，应视为新主线，而不是继续补当前基线的缺口。

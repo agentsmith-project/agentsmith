@@ -58,6 +58,30 @@ describe('auth', () => {
     );
   });
 
+  it('consumes single-use sse tickets after the first successful resolve', async () => {
+    const bearerToken = 'jwt-token-single-use';
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        sub: 'user_single_use',
+        email: 'test@example.com',
+        name: 'Test User',
+      }),
+    } as Response);
+    const issued = issueSSETicket({ bearerToken });
+
+    const first = await verifyBearerToken(makeRequest({
+      url: `/api/v1/events?ticket=${encodeURIComponent(issued.ticket)}`,
+    }));
+    const second = await verifyBearerToken(makeRequest({
+      url: `/api/v1/events?ticket=${encodeURIComponent(issued.ticket)}`,
+    }));
+
+    expect(first).toMatchObject({ id: 'user_single_use' });
+    expect(second).toBeNull();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects legacy token query fallback', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,

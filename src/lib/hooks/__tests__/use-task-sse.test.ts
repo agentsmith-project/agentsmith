@@ -28,8 +28,7 @@ vi.mock('@/lib/api', () => {
 });
 
 vi.mock('@/lib/api/sse-client', () => ({
-  fetchSSETicket: vi.fn(async () => 'ticket-123'),
-  createAuthenticatedSSE: vi.fn((_path: string, _ticket: string) => {
+  createAuthenticatedSSEAsync: vi.fn(async (_path: string, _ticket: string) => {
     currentEventSource = {
       readyState: 0,
       onopen: null,
@@ -153,5 +152,56 @@ describe('useTaskSSE', () => {
     await waitFor(() => {
       expect(currentEventSource).not.toBe(first);
     }, { timeout: 1000 });
+  });
+
+  it('emits replay gap debug events when reconnecting with last_event_id', async () => {
+    const onDebug = vi.fn();
+
+    renderHook(() =>
+      useTaskSSE('ws_default', 'proj_1', 'task_3', {
+        onDebug,
+        reconnectInterval: 10,
+        maxReconnectAttempts: 1,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(currentEventSource).not.toBeNull();
+    });
+
+    act(() => {
+      currentEventSource?.onmessage?.({
+        data: JSON.stringify({
+          type: 'message',
+          data: {
+            id: 'msg_1',
+            task_id: 'task_3',
+            role: 'agent',
+            content: 'hello',
+            created_at: new Date().toISOString(),
+          },
+        }),
+        lastEventId: 'evt-42',
+      } as unknown as MessageEvent);
+    });
+
+    act(() => {
+      if (currentEventSource) currentEventSource.readyState = 2;
+      currentEventSource?.onerror?.({} as Event);
+    });
+
+    await waitFor(() => {
+      expect(onDebug).toHaveBeenCalledWith(
+        expect.objectContaining({ phase: 'trace_gap_fill_start', summary: 'last_event_id=evt-42' }),
+      );
+    });
+
+    act(() => {
+      currentEventSource?.onopen?.();
+    });
+
+    expect(onDebug).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'trace_gap_fill_done', summary: 'last_event_id=evt-42' }),
+    );
   });
 });

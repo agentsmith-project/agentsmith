@@ -447,7 +447,7 @@
       "agent_working": "Agent 正在执行...",
       "realtime_connecting": "实时连接：连接中...",
       "realtime_reconnecting": "实时连接：重连中...",
-      "realtime_disconnected": "实时连接：重连中...",
+      "realtime_disconnected": "实时连接：已断开。",
       "realtime_error": "实时连接：恢复中...",
       "sse_debug_title": "SSE 调试（最近 5 条）",
       "trace_view": "查看执行详情",

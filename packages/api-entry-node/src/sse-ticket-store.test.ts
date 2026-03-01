@@ -19,6 +19,20 @@ describe('sse-ticket-store', () => {
       bearerToken: 'jwt-token-123',
       maxConnections: 1,
     });
+    expect(resolveSSETicket(issued.ticket)).toBeNull();
+  });
+
+  it('supports multiple resolves when maxConnections is greater than one', () => {
+    const issued = issueSSETicket({ bearerToken: 'jwt-token-123', maxConnections: 2 });
+    expect(resolveSSETicket(issued.ticket)).toMatchObject({
+      bearerToken: 'jwt-token-123',
+      maxConnections: 2,
+    });
+    expect(resolveSSETicket(issued.ticket)).toMatchObject({
+      bearerToken: 'jwt-token-123',
+      maxConnections: 2,
+    });
+    expect(resolveSSETicket(issued.ticket)).toBeNull();
   });
 
   it('expires tickets after ttl', async () => {

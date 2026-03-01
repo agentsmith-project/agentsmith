@@ -445,7 +445,7 @@
       "agent_working": "Agent is working...",
       "realtime_connecting": "Realtime connection: connecting...",
       "realtime_reconnecting": "Realtime connection: reconnecting...",
-      "realtime_disconnected": "Realtime connection: reconnecting...",
+      "realtime_disconnected": "Realtime connection: disconnected.",
       "realtime_error": "Realtime connection: recovering...",
       "sse_debug_title": "SSE Debug (latest 5)",
       "trace_view": "View execution details",

@@ -127,7 +127,7 @@ const TEST_TRANSLATIONS: Record<string, string> = {
   'notebook.conversation.input_placeholder': 'Type your message...',
   'notebook.conversation.send': 'Send',
   'notebook.conversation.hotkey_compose': 'Enter to send · Shift+Enter for newline',
-  'notebook.conversation.realtime_disconnected': 'Realtime connection: reconnecting...',
+  'notebook.conversation.realtime_disconnected': 'Realtime connection: disconnected.',
   'notebook.conversation.realtime_error': 'Realtime connection: recovering...',
   'notebook.task.important': 'Important:',
   'notebook.artifacts.title': 'Artifacts',

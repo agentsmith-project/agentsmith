@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { TaskAPI, API_BASE, getApiClient } from '@/lib/api';
 import type { TaskMessage, Artifact, Task, TaskTraceEvent } from '@/lib/types/task';
-import { createAuthenticatedSSE, fetchSSETicket } from '@/lib/api/sse-client';
+import { createAuthenticatedSSEAsync } from '@/lib/api/sse-client';
 
 export interface TaskSSEEvent {
   type: 'message' | 'artifact' | 'task_update' | 'trace_event' | 'error';
@@ -133,17 +133,31 @@ export function useTaskSSE(
     setConnectionStatus('connecting');
     emitDebug({ phase: 'connect_start', summary: `connecting task=${taskId}` });
 
-    const token = client.getToken();
-    // Try ticket exchange first; JWT URL fallback only happens when NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK=true.
     void (async () => {
       try {
-        const ticket = await fetchSSETicket(token, API_BASE);
-        const eventSource = createAuthenticatedSSE(urlWithLastEventId, ticket);
+        if (lastEventIdRef.current) {
+          emitDebug({
+            phase: 'trace_gap_fill_start',
+            summary: `last_event_id=${lastEventIdRef.current}`,
+          });
+        }
+        const eventSource = await createAuthenticatedSSEAsync(
+          urlWithLastEventId,
+          client.getToken(),
+          undefined,
+          API_BASE,
+        );
 
         eventSource.onopen = () => {
           setConnectionStatus('connected');
           reconnectAttemptsRef.current = 0;
           emitDebug({ phase: 'open', summary: 'sse_open' });
+          if (lastEventIdRef.current) {
+            emitDebug({
+              phase: 'trace_gap_fill_done',
+              summary: `last_event_id=${lastEventIdRef.current}`,
+            });
+          }
         };
 
         eventSource.onmessage = (event) => {
@@ -218,6 +232,12 @@ export function useTaskSSE(
       } catch (err) {
         setConnectionStatus('error');
         emitDebug({ phase: 'ticket_error', summary: 'sse_ticket_or_connect_failed' });
+        if (lastEventIdRef.current) {
+          emitDebug({
+            phase: 'trace_gap_fill_error',
+            summary: `last_event_id=${lastEventIdRef.current}`,
+          });
+        }
         callbacksRef.current.onError?.(err instanceof Error ? err : new Error('SSE connection failed'));
       }
     })();

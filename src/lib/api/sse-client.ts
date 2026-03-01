@@ -1,53 +1,13 @@
 /**
- * Authenticated SSE Client
+ * Authenticated SSE client.
  *
- * ================================================================================
- * SECURITY WARNING: JWT TOKEN EXPOSURE IN SSE URLS
- * ================================================================================
+ * Current baseline:
+ * - The browser still cannot attach Authorization headers to EventSource.
+ * - AgentSmith exchanges the bearer token for an opaque `/api/v1/sse-ticket`.
+ * - SSE URLs carry only the opaque ticket, not the JWT.
  *
- * This implementation currently passes JWT tokens via URL query parameters.
- * This is a KNOWN SECURITY VULNERABILITY because:
- *
- * 1. **Server Access Logs**: JWT tokens appear in web server access logs
- * 2. **Browser History**: Tokens are visible in browser history
- * 3. **Referer Headers**: Tokens leak to external sites via Referer headers
- * 4. **Network Monitoring**: Tokens visible in proxy/load balancer logs
- *
- * Why this exists:
- * - The browser EventSource API does NOT support custom HTTP headers
- * - There is no native way to pass Authorization headers to SSE connections
- *
- * PRODUCTION SOLUTION (requires backend changes):
- * --------------------------------------------------------------------
- * Implement a ticket-based authentication system:
- *
- * 1. Client sends POST request to /api/v1/sse-ticket with Authorization header
- *    Request: POST /api/v1/sse-ticket
- *             Authorization: Bearer <jwt_token>
- *
- * 2. Backend validates JWT and returns short-lived ticket
- *    Response: { ticket: "abc123", expires_in: 300 }
- *              - ticket: Random, single-use, short-lived (5 min)
- *              - expires_in: Seconds until expiration
- *
- * 3. Client connects to SSE endpoint with ticket (not JWT)
- *    new EventSource('/api/v1/events?ticket=abc123')
- *
- * 4. Backend validates ticket independently without exposing sensitive data
- *    - Ticket is stored in Redis/memory with expiration
- *    - Ticket can only be used once (optional)
- *    - No sensitive data in URL or logs
- *
- * MIGRATION STATUS:
- * --------------------------------------------------------------------
- * - Ticket mode is controlled by NEXT_PUBLIC_SSE_TICKET_ENABLED env var
- * - Grayscale rollout controlled by NEXT_PUBLIC_SSE_TICKET_PERCENTAGE (0-100)
- * - JWT fallback is disabled by default; only enabled via NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK=true
- *   and it is always ignored in production (NODE_ENV=production).
- * - Use shouldUseTicket(userId) for grayscale rollout decision
- *
- * Related: https://developer.mozilla.org/en-US/docs/Web/API/EventSource
- *          (EventSource does not support custom headers)
+ * Temporary JWT fallback remains available only through explicit env flags in
+ * controlled local/test environments.
  */
 
 // Environment variables for SSE ticket migration
@@ -134,7 +94,7 @@ export interface SSEOptions {
  * Create an authenticated SSE connection
  *
  * @param path - The SSE endpoint path (e.g., '/api/v1/events')
- * @param token - JWT token for authentication (will be encoded for URL)
+ * @param token - Opaque SSE ticket (or null for unauthenticated streams)
  * @param options - SSE event handlers
  * @returns EventSource instance
  *
@@ -155,7 +115,6 @@ export function createAuthenticatedSSE(
   let url = path;
 
   if (token) {
-    // NOTE: When using createAuthenticatedSSEAsync + fetchSSETicket, this may be a short-lived ticket.
     const separator = url.includes('?') ? '&' : '?';
     url += `${separator}ticket=${encodeURIComponent(getSSETicket(token))}`;
   }
@@ -185,7 +144,7 @@ export function createAuthenticatedSSE(
 
 /**
  * Exchange JWT for a short-lived SSE ticket when backend supports it.
- * Call this before createAuthenticatedSSE to avoid putting the JWT in the SSE URL.
+ * Call this before `createAuthenticatedSSE` to avoid putting the JWT in the SSE URL.
  *
  * By default this function does NOT fall back to JWT on failure.
  * To temporarily enable fallback in controlled environments, set:
@@ -193,7 +152,8 @@ export function createAuthenticatedSSE(
  *
  * @param token - JWT (Bearer); if null, returns null
  * @param apiBase - Base URL for the API (e.g. https://api.example.com/api/v1)
- * @returns Ticket to use in SSE URL, null if no ticket available, or JWT when explicit fallback is enabled
+ * @returns Opaque ticket to use in the SSE URL, null if no ticket is available,
+ * or JWT when explicit fallback is enabled in controlled environments
  */
 export async function fetchSSETicket(
   token: string | null,
@@ -224,7 +184,8 @@ export async function fetchSSETicket(
 
 /**
  * Create an authenticated SSE connection, using a short-lived ticket when the backend
- * provides POST /api/v1/sse-ticket. Otherwise falls back to token in URL (see module docs).
+ * provides POST /api/v1/sse-ticket. Otherwise falls back only when the explicit
+ * local/test JWT fallback switch is enabled.
  *
  * @param path - Full SSE URL
  * @param token - JWT (or null for unauthenticated)
@@ -243,8 +204,9 @@ export async function createAuthenticatedSSEAsync(
 }
 
 /**
- * Get an SSE ticket for the connection (sync path).
- * Returns the token as-is; use fetchSSETicket + createAuthenticatedSSE for secure ticket flow.
+ * Returns the ticket string as-is.
+ * `createAuthenticatedSSE` should only receive an opaque ticket generated by
+ * `fetchSSETicket`, unless local/test fallback is explicitly enabled.
  */
 function getSSETicket(token: string): string {
   return token;

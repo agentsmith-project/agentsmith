@@ -4,6 +4,7 @@ type SSETicketRecord = {
   bearerToken: string;
   expiresAtMs: number;
   maxConnections: number;
+  remainingConnections: number;
 };
 
 const SSE_TICKETS = new Map<string, SSETicketRecord>();
@@ -36,6 +37,7 @@ export function issueSSETicket(args: {
     bearerToken: args.bearerToken,
     expiresAtMs,
     maxConnections,
+    remainingConnections: maxConnections,
   });
   return {
     ticket,
@@ -52,6 +54,12 @@ export function resolveSSETicket(ticket: string): {
   sweepExpiredTickets();
   const record = SSE_TICKETS.get(ticket);
   if (!record) return null;
+  record.remainingConnections -= 1;
+  if (record.remainingConnections <= 0) {
+    SSE_TICKETS.delete(ticket);
+  } else {
+    SSE_TICKETS.set(ticket, record);
+  }
   return {
     bearerToken: record.bearerToken,
     expiresAt: new Date(record.expiresAtMs).toISOString(),

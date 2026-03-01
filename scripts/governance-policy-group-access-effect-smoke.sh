@@ -14,6 +14,21 @@ GROUP_PERMISSION_TEMPLATE_ID="${GROUP_PERMISSION_TEMPLATE_ID:-perm_tpl_default}"
 info() { echo "[gov-policy-group-smoke] $*"; }
 err() { echo "[gov-policy-group-smoke] ERROR: $*" >&2; }
 
+refresh_token() {
+  local refreshed
+  refreshed="$(
+    BASE_URL="${BASE_URL:-http://localhost:3001}" \
+    KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+    KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+    TOKEN_OUT_FILE="${TOKEN_FILE}" \
+    PRINT_TOKEN=1 \
+    node ./scripts/notebook-agent-refresh-token.js 2>/dev/null || true
+  )"
+  [[ -n "${refreshed}" ]] || return 1
+  printf '%s' "${refreshed}" > "${TOKEN_FILE}"
+  printf '%s' "${refreshed}"
+}
+
 require_file() {
   local path="$1"
   [[ -f "${path}" ]] || { err "missing file: ${path}"; return 1; }
@@ -62,8 +77,13 @@ main() {
     exit 1
   }
   if ! token_is_valid "${token}"; then
-    err "token invalid/expired; run: BASE_URL=http://localhost:3001 make notebook-agent-refresh-token"
-    exit 1
+    info "token invalid/expired; refreshing automatically"
+    token="$(refresh_token)"
+    user_id="$(jwt_claim "${token}" "sub")"
+    if [[ -z "${token}" || -z "${user_id}" ]] || ! token_is_valid "${token}"; then
+      err "token refresh failed"
+      exit 1
+    fi
   fi
 
   local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"

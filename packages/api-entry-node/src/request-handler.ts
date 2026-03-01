@@ -45,16 +45,16 @@ import {
   updateReleasePolicyOverrideDecision,
 } from './release-policy-override-store.js';
 import {
-  getNotebookRuntimeMetricsPrometheusText,
-  getNotebookRuntimeMetricsSnapshot,
-  handleTaskRoute,
-} from './task-route-handler.js';
-import {
   enforceReleasePolicy,
   evaluateReleasePolicy,
   mergeReleasePolicyEvaluations,
   type ReleasePolicyEvaluation,
-} from '../../../src/lib/release-policy.js';
+} from './release-policy-bridge.js';
+import {
+  getNotebookRuntimeMetricsPrometheusText,
+  getNotebookRuntimeMetricsSnapshot,
+  handleTaskRoute,
+} from './task-route-handler.js';
 import { issueSSETicket } from './sse-ticket-store.js';
 
 type ReleaseReportPolicyShape = {

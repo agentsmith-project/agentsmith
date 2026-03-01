@@ -5,6 +5,9 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 PORT_API="${PORT_API:-20000}"
 OWNER_TOKEN_FILE="${OWNER_TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+ticket_file=""
+probe_file=""
+legacy_probe_file=""
 
 info() { echo "[gov-sse-ticket-smoke] $*"; }
 err() { echo "[gov-sse-ticket-smoke] ERROR: $*" >&2; }
@@ -30,11 +33,10 @@ main() {
   }
 
   local base="http://localhost:${PORT_API}/api/v1"
-  local ticket_file probe_file legacy_probe_file
   ticket_file="$(mktemp)"
   probe_file="$(mktemp)"
   legacy_probe_file="$(mktemp)"
-  trap 'rm -f "${ticket_file}" "${probe_file}" "${legacy_probe_file}"' EXIT
+  trap 'rm -f "${ticket_file:-}" "${probe_file:-}" "${legacy_probe_file:-}"' EXIT
 
   info "requesting opaque sse ticket"
   local ticket_code

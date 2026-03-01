@@ -25,6 +25,7 @@ async function main() {
   const username = process.env.USERNAME || 'dev-admin';
   const password = process.env.PASSWORD || 'dev-admin-123';
   const outFile = process.env.TOKEN_OUT_FILE || '/tmp/agentsmith_user_token.txt';
+  const shouldReadAppSession = process.env.REFRESH_TOKEN_READ_APP_SESSION === '1';
 
   async function fetchSessionByPasswordGrant() {
     const tokenUrl = `${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
@@ -174,19 +175,79 @@ async function main() {
       return fetchSessionByAuthCodeExchange(code, verifier, redirectUri);
     }
 
+    async function fetchSessionFromAppStorage() {
+      await page.goto(authUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      dbg('opened auth url for app session', page.url());
+
+      const usernameField = page.locator('input#username, input[name="username"], input[name="email"]').first();
+      const passwordField = page.locator('input#password, input[name="password"]').first();
+      const submitButton = page.locator('#kc-login, button[type="submit"]').first();
+      const workspacePattern = new RegExp(`/${locale}/login/workspace(?:\\?|$)`);
+      const projectsPattern = new RegExp(`/${locale}/workspaces/[^/]+/projects(?:\\?|$)`);
+      const callbackPattern = new RegExp(`/${locale}/login/callback(?:\\?|$)`);
+
+      await usernameField.waitFor({ state: 'visible', timeout: 30_000 });
+      await usernameField.fill(username);
+      await passwordField.fill(password);
+      await Promise.all([
+        page.waitForURL((url) => (
+          workspacePattern.test(url.href)
+          || projectsPattern.test(url.href)
+          || callbackPattern.test(url.href)
+        ), { timeout: 120_000 }),
+        submitButton.click(),
+      ]);
+
+      if (callbackPattern.test(page.url())) {
+        await page.waitForURL((url) => workspacePattern.test(url.href) || projectsPattern.test(url.href), {
+          timeout: 120_000,
+        });
+      }
+
+      const token = await page.evaluate(() => {
+        const raw = localStorage.getItem('agentsmith-auth');
+        if (!raw) return '';
+        try {
+          const parsed = JSON.parse(raw);
+          return typeof parsed?.state?.token === 'string'
+            ? parsed.state.token
+            : typeof parsed?.token === 'string'
+              ? parsed.token
+              : '';
+        } catch {
+          return '';
+        }
+      });
+
+      if (!token) {
+        throw new Error('app_session_missing_token');
+      }
+
+      return {
+        accessToken: token,
+        refreshToken: null,
+        expiresIn: null,
+      };
+    }
+
     let session = null;
     try {
-      session = await fetchTokenByAuthCodeFlow();
-      dbg('auth code exchange succeeded');
+      if (shouldReadAppSession) {
+        session = await fetchSessionFromAppStorage();
+        dbg('app session token read succeeded');
+      } else {
+        session = await fetchTokenByAuthCodeFlow();
+        dbg('auth code exchange succeeded');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      dbg('auth code exchange failed, trying password grant', message);
+      dbg('primary token fetch failed, trying password grant', message);
       try {
         session = await fetchSessionByPasswordGrant();
         dbg('password grant fallback succeeded');
       } catch (passwordError) {
         const passwordMessage = passwordError instanceof Error ? passwordError.message : String(passwordError);
-        throw new Error(`token_not_found; auth_code_fallback_failed: ${message}; password_grant_fallback_failed: ${passwordMessage}`);
+        throw new Error(`token_not_found; primary_fetch_failed: ${message}; password_grant_fallback_failed: ${passwordMessage}`);
       }
     }
     fs.writeFileSync(outFile, session.accessToken, 'utf8');

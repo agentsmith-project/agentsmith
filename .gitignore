@@ -66,6 +66,10 @@ artifacts/release-reports/closure-*.md
 artifacts/release-reports/runtime-evidence-*.json
 artifacts/release-reports/runtime-evidence-*.md
 artifacts/release-reports/runtime-release-evidence.json
+artifacts/release-reports/governance-release-evidence.json
+artifacts/release-reports/usage-report-evidence.json
+artifacts/release-reports/governance-execution-closure-*.json
+artifacts/release-reports/governance-execution-closure-*.md
 artifacts/release-reports/wp11-release-controls-*.json
 artifacts/release-reports/wp11-release-controls-*.md
 artifacts/release-reports/gov-smoke-login-failure-*.png

@@ -69,15 +69,14 @@ test.describe('Language Switching', () => {
     await goToProject(authedPage, 'overview');
 
     // Verify we're in English
-    await expect(authedPage.getByText(/Overview/i).first()).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByText(/AI Ops Home/i).first()).toBeVisible({ timeout: 10000 });
 
     // Navigate to Chinese version directly
     await goTo(authedPage, `/zh-CN/workspaces/${WS_ID}/projects/proj_001/overview`);
 
     // Page should show Chinese content
     await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
-    // The overview heading in Chinese is "概览"
-    await expect(authedPage.getByText('概览').first()).toBeVisible({ timeout: 5000 });
+    await expect(authedPage.getByText('AI Ops Home').first()).toBeVisible({ timeout: 5000 });
   });
 
   test('login page displays correctly in Chinese', async ({ page }) => {

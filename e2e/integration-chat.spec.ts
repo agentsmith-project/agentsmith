@@ -879,7 +879,7 @@ test.describe('@lane-real integration chat flow', () => {
       expect(firstThreadId).toBeTruthy();
       expect(selectedThreadId).toBe(firstThreadId);
 
-      await page.getByRole('link', { name: /overview|概览/i }).first().click();
+      await page.getByRole('link', { name: /ai ops home|overview|概览/i }).first().click();
       await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`), {
         timeout: 30_000,
       });
@@ -1561,7 +1561,7 @@ test.describe('@lane-real integration chat flow', () => {
       await renameThreadInChat(page, threadAId, renamedTitle);
       await deleteThreadInChat(page, threadBId);
 
-      await page.getByRole('link', { name: /overview|概览/i }).first().click();
+      await page.getByRole('link', { name: /ai ops home|overview|概览/i }).first().click();
       await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`), {
         timeout: 30_000,
       });

@@ -111,7 +111,7 @@
     }
   },
   "nav": {
-    "overview": "概览",
+    "overview": "AI Ops Home",
     "chat": "聊天",
     "agents": "智能体",
     "endpoints": "端点",
@@ -139,7 +139,11 @@
     "sidebar": {
       "collapse": "收起侧栏",
       "expand": "展开侧栏",
-      "projects": "项目"
+      "projects": "项目",
+      "home": "Home",
+      "build": "Build",
+      "govern": "Govern",
+      "operate": "Operate"
     },
     "notebook": "Notebook",
     "files": "文件"

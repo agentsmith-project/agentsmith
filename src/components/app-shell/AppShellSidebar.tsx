@@ -10,6 +10,7 @@ import { useProject } from '@/lib/hooks/use-projects-queries';
 import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard,
+  LucideIcon,
   MessageSquare,
   Wrench,
   FolderOpen,
@@ -35,22 +36,52 @@ interface AppShellSidebarProps {
   className?: string;
 }
 
-const PROJECT_MENU_ITEMS = [
-  { icon: LayoutDashboard, labelKey: 'overview', href: 'overview', permission: 'project:read' as const },
-  { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:chat:access' as const },
-  { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:notebook:access' as const },
-  { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:source:use' as const },
-  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use' as const },
-  { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use' as const },
-  { icon: Bell, labelKey: 'alerts', href: 'alerts', permission: 'project:alert:view' as const },
-  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:resource_policy:manage' as const },
-  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:credential:manage' as const },
-  { icon: Users, labelKey: 'members', href: 'members', permission: 'project:member:view' as const },
-  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:view' as const },
-  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:view' as const },
-  { icon: Activity, labelKey: 'runtime_observability', href: 'runtime-observability', permission: 'project:usage:view' as const },
-  { icon: Gauge, labelKey: 'release_ops', href: 'release-ops', permission: 'project:usage:view' as const },
-  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage' as const },
+type ProjectMenuSection = 'home' | 'build' | 'govern' | 'operate';
+
+type ProjectMenuItem = {
+  icon: LucideIcon;
+  labelKey: string;
+  href: string;
+  permission:
+    | 'project:read'
+    | 'project:chat:access'
+    | 'project:notebook:access'
+    | 'project:source:use'
+    | 'project:agent:use'
+    | 'project:endpoint:use'
+    | 'project:alert:view'
+    | 'project:resource_policy:manage'
+    | 'project:credential:manage'
+    | 'project:member:view'
+    | 'project:audit:view'
+    | 'project:usage:view'
+    | 'project:settings:manage';
+  section: ProjectMenuSection;
+};
+
+const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
+  { icon: LayoutDashboard, labelKey: 'overview', href: 'overview', permission: 'project:read', section: 'home' },
+  { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:chat:access', section: 'build' },
+  { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:notebook:access', section: 'build' },
+  { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:source:use', section: 'build' },
+  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use', section: 'build' },
+  { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use', section: 'build' },
+  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:resource_policy:manage', section: 'govern' },
+  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:view', section: 'govern' },
+  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:credential:manage', section: 'govern' },
+  { icon: Users, labelKey: 'members', href: 'members', permission: 'project:member:view', section: 'govern' },
+  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:view', section: 'govern' },
+  { icon: Activity, labelKey: 'runtime_observability', href: 'runtime-observability', permission: 'project:usage:view', section: 'operate' },
+  { icon: Gauge, labelKey: 'release_ops', href: 'release-ops', permission: 'project:usage:view', section: 'operate' },
+  { icon: Bell, labelKey: 'alerts', href: 'alerts', permission: 'project:alert:view', section: 'operate' },
+  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage', section: 'operate' },
+];
+
+const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }> = [
+  { id: 'home', labelKey: 'sidebar.home' },
+  { id: 'build', labelKey: 'sidebar.build' },
+  { id: 'govern', labelKey: 'sidebar.govern' },
+  { id: 'operate', labelKey: 'sidebar.operate' },
 ];
 
 const WORKSPACE_MENU_ITEMS = [
@@ -88,24 +119,28 @@ export function AppShellSidebar({
 
   const projectMenuItems = currentProject
     ? PROJECT_MENU_ITEMS.filter((item) => {
-        if ('permission' in item && item.permission) {
-          if (item.permission === 'project:read') return canReadOverview;
-          if (item.permission === 'project:chat:access') return canAccessChat;
-          if (item.permission === 'project:notebook:access') return canAccessNotebook;
-          if (item.permission === 'project:source:use') return canUseSources;
-          if (item.permission === 'project:endpoint:use') return canUseEndpoints;
-          if (item.permission === 'project:alert:view') return canViewAlerts;
-          if (item.permission === 'project:audit:view') return canReadAudit;
-          if (item.permission === 'project:usage:view') return canReadUsage;
-          if (item.permission === 'project:resource_policy:manage') return canManageResourcePolicy;
-          if (item.permission === 'project:agent:use') return canReadAgents;
-          if (item.permission === 'project:credential:manage') return canManageCredentials;
-          if (item.permission === 'project:member:view') return canViewMembers;
-          if (item.permission === 'project:settings:manage') return canManageSettings;
-        }
+        if (item.permission === 'project:read') return canReadOverview;
+        if (item.permission === 'project:chat:access') return canAccessChat;
+        if (item.permission === 'project:notebook:access') return canAccessNotebook;
+        if (item.permission === 'project:source:use') return canUseSources;
+        if (item.permission === 'project:endpoint:use') return canUseEndpoints;
+        if (item.permission === 'project:alert:view') return canViewAlerts;
+        if (item.permission === 'project:audit:view') return canReadAudit;
+        if (item.permission === 'project:usage:view') return canReadUsage;
+        if (item.permission === 'project:resource_policy:manage') return canManageResourcePolicy;
+        if (item.permission === 'project:agent:use') return canReadAgents;
+        if (item.permission === 'project:credential:manage') return canManageCredentials;
+        if (item.permission === 'project:member:view') return canViewMembers;
+        if (item.permission === 'project:settings:manage') return canManageSettings;
         return true;
       })
     : [];
+  const groupedProjectMenuItems = PROJECT_MENU_SECTIONS
+    .map((section) => ({
+      ...section,
+      items: projectMenuItems.filter((item) => item.section === section.id),
+    }))
+    .filter((section) => section.items.length > 0);
   const menuItems = currentProject ? projectMenuItems : WORKSPACE_MENU_ITEMS;
 
   const baseProjectPath =
@@ -160,36 +195,83 @@ export function AppShellSidebar({
         className,
       )}
     >
-      <nav className="flex-1 px-2 py-4 space-y-1">
-        {menuItems.map((item) => {
-          const isActive = pathname?.split('/').includes(item.href);
-          const label = t(item.labelKey);
-          return (
-            <Link
-              key={item.href}
-              href={resolveItemHref(item.href)}
-              data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
-              title={collapsed ? label : undefined}
-              className={cn(
-                'relative flex items-center h-10 rounded-sm text-sm transition-colors duration-200',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
-                collapsed ? 'justify-center px-0' : 'gap-3 px-3',
-                isActive
-                  ? 'bg-hover text-foreground'
-                  : 'text-primary hover:bg-hover hover:text-foreground',
-              )}
-            >
-              <item.icon className={cn('w-5 h-5', isActive ? 'text-accent' : 'text-icon-default')} />
-              <span className={cn('truncate', collapsed && 'hidden')}>{label}</span>
-              {isActive && (
-                <div
-                  className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full"
-                  style={{ backgroundColor: 'rgb(var(--accent))' }}
-                />
-          )}
-        </Link>
-      );
-        })}
+      <nav className="flex-1 overflow-y-auto px-2 py-4">
+        {currentProject ? (
+          <div className="space-y-4">
+            {groupedProjectMenuItems.map((section) => (
+              <div key={section.id} data-testid={`sidebar__section--${section.id}`}>
+                {!collapsed ? (
+                  <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
+                    {t(section.labelKey)}
+                  </div>
+                ) : null}
+                <div className="space-y-1">
+                  {section.items.map((item) => {
+                    const isActive = pathname?.split('/').includes(item.href);
+                    const label = t(item.labelKey);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={resolveItemHref(item.href)}
+                        data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
+                        title={collapsed ? label : undefined}
+                        className={cn(
+                          'relative flex items-center h-10 rounded-sm text-sm transition-colors duration-200',
+                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+                          collapsed ? 'justify-center px-0' : 'gap-3 px-3',
+                          isActive
+                            ? 'bg-hover text-foreground'
+                            : 'text-primary hover:bg-hover hover:text-foreground',
+                        )}
+                      >
+                        <item.icon className={cn('w-5 h-5', isActive ? 'text-accent' : 'text-icon-default')} />
+                        <span className={cn('truncate', collapsed && 'hidden')}>{label}</span>
+                        {isActive ? (
+                          <div
+                            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full"
+                            style={{ backgroundColor: 'rgb(var(--accent))' }}
+                          />
+                        ) : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {menuItems.map((item) => {
+              const isActive = pathname?.split('/').includes(item.href);
+              const label = t(item.labelKey);
+              return (
+                <Link
+                  key={item.href}
+                  href={resolveItemHref(item.href)}
+                  data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
+                  title={collapsed ? label : undefined}
+                  className={cn(
+                    'relative flex items-center h-10 rounded-sm text-sm transition-colors duration-200',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+                    collapsed ? 'justify-center px-0' : 'gap-3 px-3',
+                    isActive
+                      ? 'bg-hover text-foreground'
+                      : 'text-primary hover:bg-hover hover:text-foreground',
+                  )}
+                >
+                  <item.icon className={cn('w-5 h-5', isActive ? 'text-accent' : 'text-icon-default')} />
+                  <span className={cn('truncate', collapsed && 'hidden')}>{label}</span>
+                  {isActive ? (
+                    <div
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full"
+                      style={{ backgroundColor: 'rgb(var(--accent))' }}
+                    />
+                  ) : null}
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </nav>
 
       <div className={cn('p-2 border-t border-subtle', collapsed ? 'flex justify-center' : 'flex justify-end')}>

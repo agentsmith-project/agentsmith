@@ -109,7 +109,7 @@
     }
   },
   "nav": {
-    "overview": "Overview",
+    "overview": "AI Ops Home",
     "chat": "Chat",
     "agents": "Agents",
     "endpoints": "Endpoints",
@@ -137,7 +137,11 @@
     "sidebar": {
       "collapse": "Collapse sidebar",
       "expand": "Expand sidebar",
-      "projects": "Projects"
+      "projects": "Projects",
+      "home": "Home",
+      "build": "Build",
+      "govern": "Govern",
+      "operate": "Operate"
     },
     "notebook": "Notebook",
     "files": "Files"

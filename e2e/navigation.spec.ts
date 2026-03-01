@@ -22,12 +22,19 @@ const SIDEBAR_NAV_ITEMS = [
   'settings',
 ] as const;
 
+const SIDEBAR_SECTIONS = ['home', 'build', 'govern', 'operate'] as const;
+
 test.describe('Sidebar', () => {
   test('renders with all nav items', async ({ authedPage }) => {
     await goToProject(authedPage, 'overview');
 
     const sidebar = authedPage.getByTestId('sidebar');
     await expect(sidebar).toBeVisible({ timeout: 10000 });
+
+    for (const section of SIDEBAR_SECTIONS) {
+      const sectionHeading = authedPage.getByTestId(`sidebar__section--${section}`);
+      await expect(sectionHeading, `Sidebar section "${section}" should be visible`).toBeVisible();
+    }
 
     for (const name of SIDEBAR_NAV_ITEMS) {
       const navItem = authedPage.getByTestId(`sidebar__nav-item--${name}`);

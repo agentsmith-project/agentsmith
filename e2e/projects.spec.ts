@@ -135,7 +135,7 @@ test.describe('Projects Page', () => {
 
     // Should navigate to the project overview page
     await authedPage.waitForURL(/\/projects\/.*\/overview/, { timeout: 15000 });
-    await expect(authedPage.getByRole('heading', { name: /Overview/i })).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByRole('heading', { name: /AI Ops Home/i })).toBeVisible({ timeout: 10000 });
   });
 
   test('should open project settings from actions', async ({ authedPage }) => {

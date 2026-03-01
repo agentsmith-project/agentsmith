@@ -560,7 +560,7 @@ Required to run verification:
 
 - [Testing Guide](../../DEVELOPMENT.md#testing) - Unit and E2E tests
 - [Release Checklist](../release/internal-release-checklist.md) - Manual release steps
-- [Beginner FAQ](../release/新手FAQ-v1.md) - Common release questions
+- [Documentation Index](../README.md) - Current active guides and baselines
 
 ## FAQ
 

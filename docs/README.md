@@ -7,9 +7,9 @@ Central index for AgentSmith documentation. Product scope and principles are in 
 | Doc | Description |
 |-----|-------------|
 | [项目宪法 (Project Constitution)](./项目宪法.md) | 产品目标、设计风格与功能范围之最高指导；防漂移 |
-| [AI Ops Home UX Strategy v1](./design/ai-ops-home-ux-strategy-v1.md) | 下一条 UX/UI 主线：统一企业 AI 运营首页与任务化信息架构 |
+| [Product Engineering Governance Methodology](./design/agentsmith-product-engineering-governance-methodology-v1.md) | 产品设计、工程交付与治理方法论基线 |
+| [AI Ops Home UX Strategy v1](./design/ai-ops-home-ux-strategy-v1.md) | 当前 UX 基线的设计原则与任务化信息架构 |
 | [AI Ops Home UX Closure Review v1](./design/ai-ops-home-ux-closure-review-v1.md) | 当前 UX 主线的收口结论、残余低优先级债与基线定义 |
-| [Next Mainline Priority Review v1](./design/next-mainline-priority-review-v1.md) | 基于当前代码/宪章/能力矩阵的下一条产品工程主线优先级评估 |
 
 ## Contracts (`./contracts/`)
 
@@ -34,18 +34,19 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 
 ## Release / Validation
 
-- [测试与发布验证指南-v1](./release/测试与发布验证指南-v1.md) — 面向开发/测试/实施的通俗指南（术语解释、推荐命令、发布前后流程、排障顺序）
-- [新手FAQ-v1](./release/新手FAQ-v1.md) — 面向资浅同学的常见问题速查（命令选择、报错处理、发布最小标准）
+- [Release Verification](./user-guides/release-verification.md) — 当前发布验证、lane/gate、report、runner 与排障入口
+- [Release Governance Control Plane](./user-guides/release-governance-control-plane.md) — 运行与发布治理控制面的操作基线
 - [internal-release-checklist](./release/internal-release-checklist.md) — 内部发布检查清单
-- [internal-release-note-2026-02-24-governance-rc](./release/internal-release-note-2026-02-24-governance-rc.md) — 治理发布记录（历史留档）
 - [internal-release-capability-matrix](./release/internal-release-capability-matrix.md) — 当前内部发布能力边界（主线 + 治理）
+- [internal-release-note-2026-02-28-closure](./release/internal-release-note-2026-02-28-closure.md) — 当前 release 基线与最终收口记录
 
-## Product Plans
+## Current Baselines
 
-- [next-release-product-roadmap-prd-v1](./plans/next-release-product-roadmap-prd-v1.md) — 下一期产品路线图 PRD（目标、里程碑、验收指标、风险与依赖）
-- [ai-ops-home-implementation-plan-v1](./plans/ai-ops-home-implementation-plan-v1.md) — `AI Ops Home` 与任务化导航的实施顺序与验收门禁
-- [governance-execution-closure-security-hardening-plan-v1](./plans/governance-execution-closure-security-hardening-plan-v1.md) — 下一主线：治理执行闭环与安全链路收口的实施顺序与验收门禁
+- [llm-runtime-final-implementation-plan-v2](./plans/llm-runtime-final-implementation-plan-v2.md) — Runtime / Usage / Release Governance 产品与工程基线
+- [ai-ops-home-ux-closure-review-v1](./design/ai-ops-home-ux-closure-review-v1.md) — 当前 UX 主线收口与基线定义
+- [internal-release-note-2026-02-28-closure](./release/internal-release-note-2026-02-28-closure.md) — 当前 release closure 基线
 
 ## Other
 
 - [Agent Collaboration Playbook](./agent-collaboration-playbook.md) — contract-first workflow for human/agent collaboration
+- 历史计划、旧版发布说明和过程性评审已归档到 `design/archive`、`plans/archive`、`release/archive`

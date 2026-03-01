@@ -91,8 +91,11 @@ export interface ReleasePolicyOverrideRecord {
   issue_id: string;
   issue_source: 'execution' | 'runtime' | 'usage';
   issue_message: string;
+  reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'rollout_exception' | 'governance_window';
   reason: string;
+  expires_at: string;
   status: 'pending' | 'approved' | 'rejected';
+  effective_status?: 'pending' | 'approved' | 'rejected' | 'expired';
   created_at: string;
   created_by_user_id: string;
   created_by_name?: string;
@@ -164,7 +167,9 @@ export class ReleaseOpsAPI {
     issue_id: string;
     issue_source: 'execution' | 'runtime' | 'usage';
     issue_message: string;
+    reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'rollout_exception' | 'governance_window';
     reason: string;
+    expires_at: string;
   }): Promise<ReleasePolicyOverrideRecord> {
     return this.client.post('/internal/release-policy-overrides', payload);
   }

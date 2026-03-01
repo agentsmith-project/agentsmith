@@ -3,6 +3,12 @@ import type { JsonDocStorePort } from '@mbos/ports';
 
 const COLLECTION = 'release_policy_overrides';
 
+export type ReleasePolicyOverrideReasonCategory =
+  | 'upstream_transient'
+  | 'known_acceptable_risk'
+  | 'rollout_exception'
+  | 'governance_window';
+
 export type ReleasePolicyOverrideRecord = {
   id: string;
   workspace_id: string;
@@ -11,7 +17,9 @@ export type ReleasePolicyOverrideRecord = {
   issue_id: string;
   issue_source: 'execution' | 'runtime' | 'usage';
   issue_message: string;
+  reason_category: ReleasePolicyOverrideReasonCategory;
   reason: string;
+  expires_at: string;
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
   created_by_user_id: string;
@@ -20,6 +28,14 @@ export type ReleasePolicyOverrideRecord = {
   decided_by_user_id?: string;
   decided_by_name?: string;
 };
+
+export function getReleasePolicyOverrideEffectiveStatus(
+  record: ReleasePolicyOverrideRecord,
+  nowIso = new Date().toISOString(),
+): 'pending' | 'approved' | 'rejected' | 'expired' {
+  if (record.status !== 'approved') return record.status;
+  return record.expires_at.localeCompare(nowIso) < 0 ? 'expired' : 'approved';
+}
 
 export async function listReleasePolicyOverrides(
   docStore: JsonDocStorePort,
@@ -46,7 +62,9 @@ export async function createReleasePolicyOverride(
     issueId: string;
     issueSource: 'execution' | 'runtime' | 'usage';
     issueMessage: string;
+    reasonCategory: ReleasePolicyOverrideReasonCategory;
     reason: string;
+    expiresAt: string;
     createdByUserId: string;
     createdByName?: string;
   },
@@ -70,7 +88,9 @@ export async function createReleasePolicyOverride(
     issue_id: params.issueId,
     issue_source: params.issueSource,
     issue_message: params.issueMessage,
+    reason_category: params.reasonCategory,
     reason: params.reason,
+    expires_at: params.expiresAt,
     status: 'pending',
     created_at: now,
     created_by_user_id: params.createdByUserId,

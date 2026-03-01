@@ -4314,16 +4314,25 @@ describe('api-entry-node projects routes', () => {
         issue_id: 'execution_failures_present',
         issue_source: 'execution',
         issue_message: 'Execution has 1 failed checks.',
+        reason_category: 'governance_window',
         reason: 'Accepted during controlled release window',
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
       }),
     });
+    expect(createOverrideRes.status).toBe(201);
     const createdOverride = (await createOverrideRes.json()) as { id: string };
     const approveOverrideRes = await apiFetch(baseUrl, `/api/v1/internal/release-policy-overrides/${createdOverride.id}/decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'approved' }),
     });
-    expect(approveOverrideRes.status).toBe(200);
+    expect(approveOverrideRes.status).toBe(409);
+    const ownerApproveOverrideRes = await apiFetchWithToken(baseUrl, `/api/v1/internal/release-policy-overrides/${createdOverride.id}/decision`, 'owner-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' }),
+    });
+    expect(ownerApproveOverrideRes.status).toBe(200);
 
     const runListRes = await apiFetch(baseUrl, '/api/v1/internal/release-runs?workspace_id=ws_default&project_id=proj_1');
     expect(runListRes.status).toBe(200);
@@ -4407,13 +4416,16 @@ describe('api-entry-node projects routes', () => {
         issue_id: 'usage_warning',
         issue_source: 'usage',
         issue_message: 'usage_report_webhook_signature_recommended',
+        reason_category: 'rollout_exception',
         reason: 'Accepted for staged rollout',
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
       }),
     });
     expect(createRes.status).toBe(201);
-    const created = (await createRes.json()) as { issue_id: string; reason: string };
+    const created = (await createRes.json()) as { issue_id: string; reason: string; effective_status?: string };
     expect(created.issue_id).toBe('usage_warning');
     expect(created.reason).toBe('Accepted for staged rollout');
+    expect(created.effective_status).toBe('pending');
 
     const listRes = await apiFetch(
       baseUrl,
@@ -4437,7 +4449,9 @@ describe('api-entry-node projects routes', () => {
         issue_id: 'usage_warning',
         issue_source: 'usage',
         issue_message: 'usage_report_webhook_signature_recommended',
+        reason_category: 'rollout_exception',
         reason: 'Accepted for staged rollout',
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
       }),
     });
     const created = (await createRes.json()) as { id: string };
@@ -4447,10 +4461,18 @@ describe('api-entry-node projects routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'approved' }),
     });
-    expect(decideRes.status).toBe(200);
-    const decided = (await decideRes.json()) as { status: string; decided_by_user_id?: string };
+    expect(decideRes.status).toBe(409);
+
+    const ownerApproveRes = await apiFetchWithToken(baseUrl, `/api/v1/internal/release-policy-overrides/${created.id}/decision`, 'owner-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' }),
+    });
+    expect(ownerApproveRes.status).toBe(200);
+    const decided = (await ownerApproveRes.json()) as { status: string; decided_by_user_id?: string; effective_status?: string };
     expect(decided.status).toBe('approved');
     expect(decided.decided_by_user_id).toBeTruthy();
+    expect(decided.effective_status).toBe('approved');
   });
 
   it('truncates oversized notebook trace details payloads', async () => {

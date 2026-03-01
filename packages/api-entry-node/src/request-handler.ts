@@ -32,6 +32,7 @@ import { getReleaseReportDetail, listReleaseReports } from './release-report-sto
 import { getReleaseGateRunDetail, listReleaseGateRuns } from './release-run-store.js';
 import {
   createReleasePolicyOverride,
+  getReleasePolicyOverrideEffectiveStatus,
   listReleasePolicyOverrides,
   updateReleasePolicyOverrideDecision,
 } from './release-policy-override-store.js';
@@ -63,10 +64,13 @@ async function buildPolicyEnforcement(
     : [];
   return enforceReleasePolicy(
     evaluation,
-    overrides.map((item) => ({
-      issue_id: item.issue_id,
-      status: item.status,
-    })),
+    overrides.map((item) => {
+      const effectiveStatus = getReleasePolicyOverrideEffectiveStatus(item);
+      return {
+        issue_id: item.issue_id,
+        status: effectiveStatus === 'expired' ? 'rejected' : effectiveStatus,
+      };
+    }),
   );
 }
 
@@ -269,6 +273,18 @@ function mergeEscalationState(
     resolved_at: state?.resolved_at ?? event.resolved_at,
     resolved_by_user_id: state?.resolved_by_user_id ?? event.resolved_by_user_id,
     resolved_by_name: state?.resolved_by_name ?? event.resolved_by_name,
+  };
+}
+
+function withOverrideEffectiveStatus<T extends { status: 'pending' | 'approved' | 'rejected'; expires_at: string }>(
+  record: T,
+): T & { effective_status: 'pending' | 'approved' | 'rejected' | 'expired' } {
+  const effectiveStatus = record.status === 'approved' && record.expires_at.localeCompare(new Date().toISOString()) < 0
+    ? 'expired'
+    : record.status;
+  return {
+    ...record,
+    effective_status: effectiveStatus,
   };
 }
 
@@ -556,7 +572,7 @@ export async function handleRequest(
       projectId,
       reportName,
     });
-    json(res, 200, { items });
+    json(res, 200, { items: items.map((item) => withOverrideEffectiveStatus(item)) });
     return;
   }
 
@@ -575,9 +591,21 @@ export async function handleRequest(
       ? body.issue_source
       : null;
     const issueMessage = typeof body.issue_message === 'string' ? body.issue_message.trim() : '';
+    const reasonCategory = body.reason_category === 'upstream_transient'
+      || body.reason_category === 'known_acceptable_risk'
+      || body.reason_category === 'rollout_exception'
+      || body.reason_category === 'governance_window'
+      ? body.reason_category
+      : null;
     const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
-    if (!workspaceId || !projectId || !reportName || !issueId || !issueSource || !issueMessage || !reason) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_id, project_id, report_name, issue_id, issue_source, issue_message, and reason are required' });
+    const expiresAt = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
+    const expiresDate = expiresAt ? new Date(expiresAt) : null;
+    if (!workspaceId || !projectId || !reportName || !issueId || !issueSource || !issueMessage || !reasonCategory || !reason || !expiresAt) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_id, project_id, report_name, issue_id, issue_source, issue_message, reason_category, reason, and expires_at are required' });
+      return;
+    }
+    if (!expiresDate || Number.isNaN(expiresDate.getTime()) || expiresDate.getTime() <= Date.now()) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'expires_at must be a future ISO timestamp' });
       return;
     }
     const record = await createReleasePolicyOverride(deps.docStore, {
@@ -587,7 +615,9 @@ export async function handleRequest(
       issueId,
       issueSource,
       issueMessage,
+      reasonCategory,
       reason,
+      expiresAt: expiresDate.toISOString(),
       createdByUserId: user.id,
       createdByName: user.name,
     });
@@ -597,7 +627,7 @@ export async function handleRequest(
       body: `${record.issue_source}: ${record.issue_message}`,
       link_url: null,
     });
-    json(res, 201, record);
+    json(res, 201, withOverrideEffectiveStatus(record));
     return;
   }
 
@@ -612,6 +642,13 @@ export async function handleRequest(
     const status = body.status === 'approved' || body.status === 'rejected' ? body.status : null;
     if (!overrideId || !status) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'override id and decision status are required' });
+      return;
+    }
+    const existing = await deps.docStore.get<{
+      created_by_user_id?: string;
+    }>('release_policy_overrides', overrideId);
+    if (existing?.created_by_user_id === user.id) {
+      json(res, 409, { error_code: 'OVERRIDE_SELF_APPROVAL_FORBIDDEN', message: 'override requester cannot approve or reject their own override' });
       return;
     }
     const updated = await updateReleasePolicyOverrideDecision(deps.docStore, {
@@ -630,7 +667,7 @@ export async function handleRequest(
       body: `${updated.issue_source}: ${updated.issue_message}`,
       link_url: null,
     });
-    json(res, 200, updated);
+    json(res, 200, withOverrideEffectiveStatus(updated));
     return;
   }
 

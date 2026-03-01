@@ -79,11 +79,14 @@ const releasePolicyOverrides = [{
   issue_id: 'usage_usage_report_webhook_signature_recommended',
   issue_source: 'usage',
   issue_message: 'usage_report_webhook_signature_recommended',
+  reason_category: 'rollout_exception',
   reason: 'Accepted temporarily while the webhook receiver rollout is being staged.',
+  expires_at: '2026-03-07T22:20:00.000Z',
   status: 'pending',
   created_at: '2026-02-28T22:20:00.000Z',
-  created_by_user_id: 'mock-user',
-  created_by_name: 'Mock User',
+  created_by_user_id: 'requester-user',
+  created_by_name: 'Requester User',
+  effective_status: 'pending',
 }] as Array<{
   id: string;
   workspace_id: string;
@@ -92,8 +95,11 @@ const releasePolicyOverrides = [{
   issue_id: string;
   issue_source: 'execution' | 'runtime' | 'usage';
   issue_message: string;
+  reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'rollout_exception' | 'governance_window';
   reason: string;
+  expires_at: string;
   status: 'pending' | 'approved' | 'rejected';
+  effective_status?: 'pending' | 'approved' | 'rejected' | 'expired';
   created_at: string;
   created_by_user_id: string;
   created_by_name?: string;
@@ -1204,7 +1210,9 @@ export const usageHandlers = [
       issue_id: string;
       issue_source: 'execution' | 'runtime' | 'usage';
       issue_message: string;
+      reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'rollout_exception' | 'governance_window';
       reason: string;
+      expires_at: string;
     };
     const existing = releasePolicyOverrides.find((item) =>
       item.workspace_id === body.workspace_id
@@ -1219,6 +1227,7 @@ export const usageHandlers = [
       id: `rpo_${Date.now()}`,
       ...body,
       status: 'pending' as const,
+      effective_status: 'pending' as const,
       created_at: new Date().toISOString(),
       created_by_user_id: 'mock-user',
       created_by_name: 'Mock User',
@@ -1233,6 +1242,7 @@ export const usageHandlers = [
       return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_policy_override_not_found' }, { status: 404 });
     }
     record.status = body.status;
+    record.effective_status = body.status;
     record.decided_at = new Date().toISOString();
     record.decided_by_user_id = 'mock-approver';
     record.decided_by_name = 'Mock Approver';

@@ -46,6 +46,16 @@ function defaultTimeRange() {
   };
 }
 
+function defaultOverrideExpiryLocal() {
+  const date = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  const hours = `${date.getHours()}`.padStart(2, '0');
+  const minutes = `${date.getMinutes()}`.padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 function formatDateTime(value?: string): string {
   if (!value) return '--';
   const date = new Date(value);
@@ -143,7 +153,9 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   );
   const [failedCheckCategoryFilter, setFailedCheckCategoryFilter] = useState<string>(searchParams.get('failed_check_category') ?? 'all');
   const [overrideIssueId, setOverrideIssueId] = useState<string>('none');
+  const [overrideReasonCategory, setOverrideReasonCategory] = useState<'upstream_transient' | 'known_acceptable_risk' | 'rollout_exception' | 'governance_window'>('rollout_exception');
   const [overrideReason, setOverrideReason] = useState('');
+  const [overrideExpiresAt, setOverrideExpiresAt] = useState(defaultOverrideExpiryLocal);
   const [resolutionReason, setResolutionReason] = useState('');
 
   useEffect(() => {
@@ -524,7 +536,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   };
   const submitOverride = async () => {
     const selectedIssue = overridablePolicyIssues.find((issue) => issue.id === overrideIssueId);
-    if (!selectedIssue || !selectedReportName || !overrideReason.trim()) return;
+    if (!selectedIssue || !selectedReportName || !overrideReason.trim() || !overrideExpiresAt) return;
     await createOverrideMutation.mutateAsync({
       workspace_id: workspaceId,
       project_id: projectId,
@@ -532,9 +544,14 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       issue_id: selectedIssue.id ?? 'unknown_issue',
       issue_source: (selectedIssue.source as 'execution' | 'runtime' | 'usage') ?? 'runtime',
       issue_message: selectedIssue.message ?? '',
+      reason_category: overrideReasonCategory,
       reason: overrideReason.trim(),
+      expires_at: new Date(overrideExpiresAt).toISOString(),
     });
+    setOverrideIssueId('none');
+    setOverrideReasonCategory('rollout_exception');
     setOverrideReason('');
+    setOverrideExpiresAt(defaultOverrideExpiryLocal());
   };
   const decideOverride = async (overrideId: string, status: 'approved' | 'rejected') => {
     if (!selectedReportName) return;
@@ -1297,7 +1314,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_overrides_title')}</div>
                           <Badge variant="outline">{overridesQuery.data?.items.length ?? 0}</Badge>
                         </div>
-                        <div className="grid gap-3 lg:grid-cols-[240px_1fr_auto]">
+                        <div className="grid gap-3 lg:grid-cols-[220px_220px_200px_1fr_auto]">
                           <Select value={overrideIssueId} onValueChange={setOverrideIssueId}>
                             <SelectTrigger data-testid="release-ops__override-issue-select">
                               <SelectValue />
@@ -1311,6 +1328,23 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                               ))}
                             </SelectContent>
                           </Select>
+                          <Select value={overrideReasonCategory} onValueChange={(value) => setOverrideReasonCategory(value as typeof overrideReasonCategory)}>
+                            <SelectTrigger data-testid="release-ops__override-reason-category">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="upstream_transient">{settingsT('release_ops_overrides_reason_category_upstream_transient')}</SelectItem>
+                              <SelectItem value="known_acceptable_risk">{settingsT('release_ops_overrides_reason_category_known_acceptable_risk')}</SelectItem>
+                              <SelectItem value="rollout_exception">{settingsT('release_ops_overrides_reason_category_rollout_exception')}</SelectItem>
+                              <SelectItem value="governance_window">{settingsT('release_ops_overrides_reason_category_governance_window')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="datetime-local"
+                            value={overrideExpiresAt}
+                            onChange={(event) => setOverrideExpiresAt(event.target.value)}
+                            data-testid="release-ops__override-expires-at"
+                          />
                           <Textarea
                             value={overrideReason}
                             onChange={(event) => setOverrideReason(event.target.value)}
@@ -1340,11 +1374,14 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                                   <div className="text-xs text-tertiary">{item.created_by_name ?? item.created_by_user_id} · {formatDateTime(item.created_at)}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <Badge variant={item.status === 'approved' ? 'outline' : item.status === 'rejected' ? 'secondary' : 'secondary'}>{item.status}</Badge>
+                                  <Badge variant={item.effective_status === 'approved' ? 'outline' : 'secondary'}>{item.effective_status ?? item.status}</Badge>
                                   <Badge variant="outline">{item.issue_id}</Badge>
                                 </div>
                               </div>
                               <div className="mt-2 text-sm text-tertiary">{item.reason}</div>
+                              <div className="mt-1 text-xs text-tertiary">
+                                {item.reason_category} · expires {formatDateTime(item.expires_at)}
+                              </div>
                               {item.decided_at ? (
                                 <div className="mt-2 text-xs text-tertiary">
                                   {item.decided_by_name ?? item.decided_by_user_id} · {formatDateTime(item.decided_at)}

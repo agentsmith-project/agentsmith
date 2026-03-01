@@ -210,7 +210,9 @@ describe('ReleaseOpsAPI', () => {
       issue_id: 'usage_warning',
       issue_source: 'usage',
       issue_message: 'usage_report_webhook_signature_recommended',
+      reason_category: 'rollout_exception',
       reason: 'Accepted for staged rollout',
+      expires_at: '2026-03-05T00:00:00.000Z',
     });
 
     expect(postMock).toHaveBeenCalledWith('/internal/release-policy-overrides', {
@@ -220,7 +222,9 @@ describe('ReleaseOpsAPI', () => {
       issue_id: 'usage_warning',
       issue_source: 'usage',
       issue_message: 'usage_report_webhook_signature_recommended',
+      reason_category: 'rollout_exception',
       reason: 'Accepted for staged rollout',
+      expires_at: '2026-03-05T00:00:00.000Z',
     });
   });
 

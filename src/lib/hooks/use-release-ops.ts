@@ -127,11 +127,22 @@ export function useCreateReleasePolicyOverride() {
       issue_id: string;
       issue_source: 'execution' | 'runtime' | 'usage';
       issue_message: string;
+      reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'rollout_exception' | 'governance_window';
       reason: string;
+      expires_at: string;
     }) => api.createOverride(payload),
     onSuccess: (_result, payload) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.releaseOps.overrides(payload.workspace_id, payload.project_id, payload.report_name),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.releaseOps.list(payload.workspace_id, payload.project_id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.releaseOps.detail(payload.report_name, payload.workspace_id, payload.project_id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.releaseOps.runs(payload.workspace_id, payload.project_id),
       });
     },
   });
@@ -151,6 +162,15 @@ export function useDecideReleasePolicyOverride() {
     onSuccess: (_result, payload) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.releaseOps.overrides(payload.workspaceId, payload.projectId, payload.reportName),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.releaseOps.list(payload.workspaceId, payload.projectId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.releaseOps.detail(payload.reportName, payload.workspaceId, payload.projectId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.releaseOps.runs(payload.workspaceId, payload.projectId),
       });
     },
   });

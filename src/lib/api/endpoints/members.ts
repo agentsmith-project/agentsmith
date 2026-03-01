@@ -71,7 +71,7 @@ export interface Membership {
   user_id: string;
   role: 'owner' | 'admin' | 'developer' | 'user'; // group alias id
   permissions: string[];
-  status: 'active' | 'removed';
+  status: 'active' | 'pending' | 'suspended';
   joined_at: string;
 }
 

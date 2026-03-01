@@ -19,6 +19,7 @@ export { TaskAPI } from './tasks';
 export { AlertAPI } from './alerts';
 export { RuntimeAPI } from './runtime';
 export { ReleaseOpsAPI } from './release-ops';
+export { GovernanceExplainabilityAPI } from './governance-explainability';
 
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';
@@ -72,3 +73,15 @@ export type {
   RuntimeUnifiedChatErrorResponse,
   RuntimeUnifiedChatResult,
 } from './runtime';
+export type {
+  GovernanceAuthorizationRequest,
+  GovernanceAuthorizationResponse,
+  GovernanceAuthorizationDecision,
+  GovernanceMatchedPolicy,
+  GovernanceQuotaCheckRequest,
+  GovernanceQuotaCheckResponse,
+  GovernanceQuotaExceededDetails,
+  GovernanceRouteForbiddenDetails,
+  GovernanceEffectiveAccessSnapshot,
+  GovernanceMembershipStatus,
+} from './governance-explainability';

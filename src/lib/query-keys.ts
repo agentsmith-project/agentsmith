@@ -115,6 +115,12 @@ export const queryKeys = {
       ['resource-policy', workspaceId, projectId, resourceType, resourceId] as const,
   },
 
+  governanceExplainability: {
+    _def: ['governance-explainability'] as const,
+    effectiveAccess: (workspaceId: string, projectId: string, memberId: string) =>
+      ['governance-explainability', 'effective-access', workspaceId, projectId, memberId] as const,
+  },
+
   /** Project governance defaults */
   governanceDefaults: {
     _def: ['governance-defaults'] as const,

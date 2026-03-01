@@ -95,6 +95,9 @@ export class FetchApiClient implements ApiClient {
           data.message || `HTTP ${response.status}`,
           data.request_id,
           response.status,
+          typeof data === 'object' && data !== null
+            ? ((data as Record<string, unknown>).details as Record<string, unknown> | undefined) ?? (data as Record<string, unknown>)
+            : undefined,
         );
       }
 

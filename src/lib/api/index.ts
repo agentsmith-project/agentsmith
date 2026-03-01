@@ -55,6 +55,7 @@ export {
   AlertAPI,
   RuntimeAPI,
   ReleaseOpsAPI,
+  GovernanceExplainabilityAPI,
 } from './endpoints';
 
 export type {
@@ -107,6 +108,16 @@ export type {
   RuntimeUnifiedChatResponse,
   RuntimeUnifiedChatErrorResponse,
   RuntimeUnifiedChatResult,
+  GovernanceAuthorizationRequest,
+  GovernanceAuthorizationResponse,
+  GovernanceAuthorizationDecision,
+  GovernanceMatchedPolicy,
+  GovernanceQuotaCheckRequest,
+  GovernanceQuotaCheckResponse,
+  GovernanceQuotaExceededDetails,
+  GovernanceRouteForbiddenDetails,
+  GovernanceEffectiveAccessSnapshot,
+  GovernanceMembershipStatus,
 } from './endpoints';
 
 // Adapters (for advanced usage)

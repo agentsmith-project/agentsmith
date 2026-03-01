@@ -103,6 +103,9 @@ export class MSWApiClient implements ApiClient {
           err?.message || (err?.error as string) || `HTTP ${response.status}`,
           err?.request_id,
           response.status,
+          isRecord(data)
+            ? ((data as Record<string, unknown>).details as Record<string, unknown> | undefined) ?? (data as Record<string, unknown>)
+            : undefined,
         );
       }
 
@@ -186,4 +189,8 @@ export class MSWApiClient implements ApiClient {
       }),
     );
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

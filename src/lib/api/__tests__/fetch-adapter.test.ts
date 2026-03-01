@@ -395,6 +395,11 @@ describe('FetchApiClient', () => {
 
     beforeEach(() => {
       capturedUrl = '';
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ ticket: 'test-sse-ticket' }),
+      });
 
       // Mock EventSource constructor
       class MockEventSource {
@@ -441,7 +446,11 @@ describe('FetchApiClient', () => {
       client.setToken(testToken);
       const eventSource = await client.connectSSE('/events');
 
-      expect(capturedUrl).toBe(`${API_BASE}/events?ticket=${encodeURIComponent(testToken)}`);
+      expect(mockFetch).toHaveBeenCalledWith(`${API_BASE}/sse-ticket`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${testToken}` },
+      });
+      expect(capturedUrl).toBe(`${API_BASE}/events?ticket=test-sse-ticket`);
       expect(eventSource).toBeInstanceOf(EventSource);
     });
 
@@ -460,7 +469,7 @@ describe('FetchApiClient', () => {
         params: { channel: 'updates' },
       });
 
-      expect(capturedUrl).toContain(`ticket=${encodeURIComponent(testToken)}`);
+      expect(capturedUrl).toContain('ticket=test-sse-ticket');
       expect(capturedUrl).toContain('channel=updates');
       expect(eventSource).toBeInstanceOf(EventSource);
     });
@@ -469,7 +478,7 @@ describe('FetchApiClient', () => {
       client.setToken(testToken);
       const eventSource = await client.connectSSE('/events?initial=true');
 
-      expect(capturedUrl).toMatch(/events\?initial=true&ticket=/);
+      expect(capturedUrl).toBe(`${API_BASE}/events?initial=true&ticket=test-sse-ticket`);
       expect(eventSource).toBeInstanceOf(EventSource);
     });
   });

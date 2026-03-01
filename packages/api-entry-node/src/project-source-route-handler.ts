@@ -196,9 +196,15 @@ async function parseUploadAndExecute(
     prefix?: string;
     overwrite?: boolean;
   }) => Promise<unknown>,
+  options?: {
+    maxFileSizeBytes?: number;
+  },
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const busboy = Busboy({ headers: req.headers });
+    const busboy = Busboy({
+      headers: req.headers,
+      limits: options?.maxFileSizeBytes ? { fileSize: options.maxFileSizeBytes } : undefined,
+    });
     let prefix: string | undefined;
     let overwrite = false;
     let uploadPromise: Promise<unknown> | null = null;
@@ -224,6 +230,16 @@ async function parseUploadAndExecute(
         file.resume();
         return;
       }
+      file.on('limit', () => {
+        settle(() =>
+          reject(
+            Object.assign(new Error('source_library_max_file_size_exceeded'), {
+              code: 'SOURCE_LIBRARY_MAX_FILE_SIZE_EXCEEDED',
+              maxFileSizeBytes: options?.maxFileSizeBytes,
+            }),
+          ),
+        );
+      });
       fileSeen = true;
       const fileStream = Readable.toWeb(file) as unknown as WebReadableStream<Uint8Array>;
       const originalFileName = info.filename || 'upload.bin';
@@ -1807,20 +1823,102 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     }))) {
       return true;
     }
-
-    const uploaded = await parseUploadAndExecute(req, (input) =>
-      deps.uploadSourceObjectUseCase.execute({
+    const uploadQuotaSnapshot = checkProjectSourceLibraryQuotaLimits({
+      workspaceId,
+      projectId,
+      userId: user.id,
+      policy: getProjectResourcePolicyOrDefault(
         workspaceId,
         projectId,
+        'source_library',
         libraryId,
-        fileName: input.fileName,
-        fileStream: input.fileStream,
-        contentType: input.contentType,
-        contentLength: input.contentLength,
-        prefix: input.prefix,
-        overwrite: input.overwrite,
-      }),
-    );
+      ),
+      currentFileCount: listed.items.length,
+      nextFileSizeBytes: 0,
+    });
+
+    let uploaded: unknown;
+    try {
+      uploaded = await parseUploadAndExecute(
+        req,
+        (input) =>
+          deps.uploadSourceObjectUseCase.execute({
+            workspaceId,
+            projectId,
+            libraryId,
+            fileName: input.fileName,
+            fileStream: input.fileStream,
+            contentType: input.contentType,
+            contentLength: input.contentLength,
+            prefix: input.prefix,
+            overwrite: input.overwrite,
+          }),
+        {
+          maxFileSizeBytes: uploadQuotaSnapshot.effective_max_file_size_bytes,
+        },
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === 'source_library_max_file_size_exceeded') {
+        const effectiveLimit = uploadQuotaSnapshot.effective_max_file_size_bytes ?? 0;
+        await writeProjectAuditEvent(deps, {
+          workspaceId,
+          projectId,
+          actor: { type: 'user', id: user.id },
+          action: 'resource_policy.quota_exceeded',
+          result: 'error',
+          requestId,
+          resourceType: 'source_library',
+          resourceId: libraryId,
+          errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+          errorMessage: 'resource_policy_quota_exceeded',
+          metadata: {
+            governance_kind: 'resource_policy',
+            enforcement_kind: 'quota_limit',
+            route_kind: route.kind,
+            quota_key: 'source_library.max_file_size_bytes',
+            effective_limit: effectiveLimit,
+            current_usage: effectiveLimit + 1,
+            usage_unit: 'bytes',
+            effective_max_file_size_bytes: effectiveLimit,
+            current_file_size_bytes: effectiveLimit + 1,
+            scope: uploadQuotaSnapshot.scope,
+          },
+        });
+        await writeProjectUsageFact(deps, {
+          workspaceId,
+          projectId,
+          resourceType: 'source_library',
+          resourceId: libraryId,
+          endUserId: user.id,
+          requestId,
+          requests: 1,
+          result: 'error',
+          errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+          metadata: {
+            stage: 'preflight',
+            governance_kind: 'resource_policy',
+            enforcement_kind: 'quota_limit',
+            route_kind: route.kind,
+            quota_key: 'source_library.max_file_size_bytes',
+            effective_limit: effectiveLimit,
+            current_usage: effectiveLimit + 1,
+            usage_unit: 'bytes',
+            scope: uploadQuotaSnapshot.scope,
+          },
+        });
+        res.setHeader('Retry-After', '86400');
+        json(res, 429, {
+          error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+          message: 'resource_policy_quota_exceeded',
+          resource_type: 'source_library',
+          resource_id: libraryId,
+          quota_key: 'source_library.max_file_size_bytes',
+          retry_after_seconds: 86_400,
+        });
+        return true;
+      }
+      throw error;
+    }
     json(res, 201, uploaded);
     return true;
   }

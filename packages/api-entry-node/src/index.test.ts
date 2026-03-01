@@ -2540,6 +2540,66 @@ describe('api-entry-node projects routes', () => {
     ).toHaveLength(2);
   });
 
+  it('enforces source_library max_file_size_bytes on multipart upload', async () => {
+    const { baseUrl } = startServer();
+
+    const createLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Upload Quota Library', visibility: 'shared' }),
+      },
+    );
+    expect(createLibraryRes.status).toBe(201);
+    const library = (await createLibraryRes.json()) as { id: string };
+
+    const patchPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          quota_limits: {
+            rules: [{ key: 'source_library.max_file_size_bytes', value: 4 }],
+          },
+        }),
+      },
+    );
+    expect(patchPolicyRes.status).toBe(204);
+
+    const form = buildMultipartBody(
+      [{ name: 'prefix', value: '' }],
+      {
+        fieldName: 'file',
+        filename: 'oversized.txt',
+        contentType: 'text/plain',
+        content: new TextEncoder().encode('hello'),
+      },
+    );
+
+    const uploadRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
+      {
+        method: 'POST',
+        headers: { 'content-type': form.contentType },
+        body: Buffer.from(form.body),
+      },
+    );
+    expect(uploadRes.status).toBe(429);
+    expect(await uploadRes.json()).toMatchObject({
+      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      resource_type: 'source_library',
+      resource_id: library.id,
+      quota_key: 'source_library.max_file_size_bytes',
+    });
+  });
+
   it('supports credentials and endpoints CRUD plus openai-compatible proxy', async () => {
     const { baseUrl, deps } = startServer();
     const upstream = startUpstreamServer();

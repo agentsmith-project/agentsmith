@@ -1,6 +1,16 @@
 # AgentSmith
 
-AgentSmith is the admin interface for the Microservices-Based Agent System (MBOS). It provides workspace/project isolation, intelligent agent management, and multilingual support (English/Chinese).
+AgentSmith is the enterprise control plane for the Microservices-Based Agent System (MBOS). It is used to:
+
+- operate AI agents through project-scoped Chat and Notebook workflows
+- manage AI resources such as files, endpoints, credentials, and agents
+- govern runtime behavior, usage, cost, and release readiness
+
+Core product positioning:
+
+- enterprise AI agent usage and management platform
+- AI resource governance platform
+- runtime and release control plane
 
 ## Tech Stack
 
@@ -66,6 +76,8 @@ src/
 ## Documentation
 
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
+- [Release Governance Control Plane](./docs/user-guides/release-governance-control-plane.md) — 运行与发布治理控制面的操作基线
+- [Product Engineering Governance Methodology](./docs/design/agentsmith-product-engineering-governance-methodology-v1.md) — 产品设计、工程交付与治理方法论基线
 - [Design System](./DESIGN_SYSTEM.md)
 - [Development Guide](./DEVELOPMENT.md)
 - [Documentation Index](./docs/README.md) — contracts, UXUI, and other docs

@@ -243,6 +243,8 @@ export const queryKeys = {
     _def: ['release-ops'] as const,
     list: () => ['release-ops', 'reports'] as const,
     detail: (name: string) => ['release-ops', 'reports', name] as const,
+    overrides: (workspaceId: string, projectId: string, reportName: string) =>
+      ['release-ops', 'overrides', workspaceId, projectId, reportName] as const,
   },
 
   /** Chat sessions and messages */

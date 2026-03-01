@@ -12,7 +12,7 @@ import { PageLoading } from '@/components/ui/loading';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { useRuntimeObservability, useUsageOperationsSummary, useUsageReportEvidence, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
-import { useReleaseReportDetail, useReleaseReportList } from '@/lib/hooks/use-release-ops';
+import { useCreateReleasePolicyOverride, useReleasePolicyOverrides, useReleaseReportDetail, useReleaseReportList } from '@/lib/hooks/use-release-ops';
 import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { UsageOperationsSummary } from '@/components/audit-usage/UsageOperationsSummary';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { evaluateReleasePolicy } from '@/lib/release-policy';
+import { Textarea } from '@/components/ui/textarea';
 
 interface ReleaseOpsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -114,6 +115,8 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       : 'all',
   );
   const [failedCheckCategoryFilter, setFailedCheckCategoryFilter] = useState<string>(searchParams.get('failed_check_category') ?? 'all');
+  const [overrideIssueId, setOverrideIssueId] = useState<string>('none');
+  const [overrideReason, setOverrideReason] = useState('');
 
   useEffect(() => {
     params.then((p) => setResolvedParams({
@@ -134,6 +137,8 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const schedulesQuery = useUsageReportSchedules(workspaceId, projectId, { enabled });
   const reportsQuery = useReleaseReportList({ enabled });
   const reportDetailQuery = useReleaseReportDetail(selectedReportName, { enabled });
+  const overridesQuery = useReleasePolicyOverrides(workspaceId, projectId, selectedReportName, { enabled });
+  const createOverrideMutation = useCreateReleasePolicyOverride();
 
   const refresh = () => {
     runtimeQuery.refetch();
@@ -354,6 +359,10 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     } : undefined,
   });
   const artifactPolicy = reportSummary?.release_policy;
+  const overridablePolicyIssues = [
+    ...(artifactPolicy?.warnings ?? []),
+    ...(artifactPolicy?.blockers ?? []).filter(() => false),
+  ];
 
   if (!resolvedParams) {
     return (
@@ -369,6 +378,20 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     } catch {
       // no-op; command is still visible inline
     }
+  };
+  const submitOverride = async () => {
+    const selectedIssue = overridablePolicyIssues.find((issue) => issue.id === overrideIssueId);
+    if (!selectedIssue || !selectedReportName || !overrideReason.trim()) return;
+    await createOverrideMutation.mutateAsync({
+      workspace_id: workspaceId,
+      project_id: projectId,
+      report_name: selectedReportName,
+      issue_id: selectedIssue.id ?? 'unknown_issue',
+      issue_source: (selectedIssue.source as 'execution' | 'runtime' | 'usage') ?? 'runtime',
+      issue_message: selectedIssue.message ?? '',
+      reason: overrideReason.trim(),
+    });
+    setOverrideReason('');
   };
 
   if (!resolvedParams.workspace || !resolvedParams.project) {
@@ -801,6 +824,62 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                             {' · '}
                             w:{reportSummary?.usage_report_evidence?.warnings?.length ?? 0}
                           </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid gap-3" data-testid="release-ops__report-overrides">
+                      <div className="rounded-md border border-subtle bg-surface p-3">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_overrides_title')}</div>
+                          <Badge variant="outline">{overridesQuery.data?.items.length ?? 0}</Badge>
+                        </div>
+                        <div className="grid gap-3 lg:grid-cols-[240px_1fr_auto]">
+                          <Select value={overrideIssueId} onValueChange={setOverrideIssueId}>
+                            <SelectTrigger data-testid="release-ops__override-issue-select">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">{settingsT('release_ops_overrides_select_issue')}</SelectItem>
+                              {overridablePolicyIssues.map((issue) => (
+                                <SelectItem key={issue.id} value={issue.id ?? 'unknown_issue'}>
+                                  {issue.source}: {issue.message}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Textarea
+                            value={overrideReason}
+                            onChange={(event) => setOverrideReason(event.target.value)}
+                            placeholder={settingsT('release_ops_overrides_reason_placeholder')}
+                            data-testid="release-ops__override-reason"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={submitOverride}
+                            disabled={overrideIssueId === 'none' || !overrideReason.trim() || createOverrideMutation.isPending}
+                            data-testid="release-ops__override-submit"
+                          >
+                            {settingsT('release_ops_overrides_submit')}
+                          </Button>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {(overridesQuery.data?.items ?? []).length === 0 ? (
+                            <div className="text-sm text-tertiary" data-testid="release-ops__override-empty">
+                              {settingsT('release_ops_overrides_empty')}
+                            </div>
+                          ) : (overridesQuery.data?.items ?? []).map((item, index) => (
+                            <div key={item.id} className="rounded-md border border-subtle px-3 py-2" data-testid={`release-ops__override-item-${index}`}>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-medium text-foreground">{item.issue_source}: {item.issue_message}</div>
+                                  <div className="text-xs text-tertiary">{item.created_by_name ?? item.created_by_user_id} · {formatDateTime(item.created_at)}</div>
+                                </div>
+                                <Badge variant="outline">{item.issue_id}</Badge>
+                              </div>
+                              <div className="mt-2 text-sm text-tertiary">{item.reason}</div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>

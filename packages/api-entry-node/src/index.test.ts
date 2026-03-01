@@ -4221,6 +4221,36 @@ describe('api-entry-node projects routes', () => {
     expect(detailPayload.report?.summary?.status).toBe('pass');
   });
 
+  it('creates and lists release policy overrides', async () => {
+    const { baseUrl } = startServer();
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/internal/release-policy-overrides', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        report_name: 'sample-release',
+        issue_id: 'usage_warning',
+        issue_source: 'usage',
+        issue_message: 'usage_report_webhook_signature_recommended',
+        reason: 'Accepted for staged rollout',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { issue_id: string; reason: string };
+    expect(created.issue_id).toBe('usage_warning');
+    expect(created.reason).toBe('Accepted for staged rollout');
+
+    const listRes = await apiFetch(
+      baseUrl,
+      '/api/v1/internal/release-policy-overrides?workspace_id=ws_default&project_id=proj_1&report_name=sample-release',
+    );
+    expect(listRes.status).toBe(200);
+    const listPayload = (await listRes.json()) as { items: Array<{ issue_id: string }> };
+    expect(listPayload.items[0]?.issue_id).toBe('usage_warning');
+  });
+
   it('truncates oversized notebook trace details payloads', async () => {
     const { baseUrl } = startServer();
 

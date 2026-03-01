@@ -20,6 +20,20 @@ export interface ReleaseReportDetail {
   markdown?: string;
 }
 
+export interface ReleasePolicyOverrideRecord {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  report_name: string;
+  issue_id: string;
+  issue_source: 'execution' | 'runtime' | 'usage';
+  issue_message: string;
+  reason: string;
+  created_at: string;
+  created_by_user_id: string;
+  created_by_name?: string;
+}
+
 export class ReleaseOpsAPI {
   constructor(private readonly client: ApiClient) {}
 
@@ -29,5 +43,26 @@ export class ReleaseOpsAPI {
 
   async getReport(name: string): Promise<ReleaseReportDetail> {
     return this.client.get(`/internal/release-reports/${encodeURIComponent(name)}`);
+  }
+
+  async listOverrides(params: { workspaceId: string; projectId: string; reportName: string }): Promise<{ items: ReleasePolicyOverrideRecord[] }> {
+    const query = new URLSearchParams({
+      workspace_id: params.workspaceId,
+      project_id: params.projectId,
+      report_name: params.reportName,
+    });
+    return this.client.get(`/internal/release-policy-overrides?${query.toString()}`);
+  }
+
+  async createOverride(payload: {
+    workspace_id: string;
+    project_id: string;
+    report_name: string;
+    issue_id: string;
+    issue_source: 'execution' | 'runtime' | 'usage';
+    issue_message: string;
+    reason: string;
+  }): Promise<ReleasePolicyOverrideRecord> {
+    return this.client.post('/internal/release-policy-overrides', payload);
   }
 }

@@ -21,6 +21,7 @@ import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
 import { handleMeRoute } from './me-route-handler.js';
 import { getReleaseReportDetail, listReleaseReports } from './release-report-store.js';
+import { createReleasePolicyOverride, listReleasePolicyOverrides } from './release-policy-override-store.js';
 import {
   getNotebookRuntimeMetricsPrometheusText,
   getNotebookRuntimeMetricsSnapshot,
@@ -295,6 +296,63 @@ export async function handleRequest(
       return;
     }
     json(res, 200, detail);
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/v1/internal/release-policy-overrides' && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const workspaceId = requestUrl.searchParams.get('workspace_id')?.trim();
+    const projectId = requestUrl.searchParams.get('project_id')?.trim();
+    const reportName = requestUrl.searchParams.get('report_name')?.trim();
+    if (!workspaceId || !projectId || !reportName) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_id, project_id, and report_name are required' });
+      return;
+    }
+    const items = await listReleasePolicyOverrides(deps.docStore, {
+      workspaceId,
+      projectId,
+      reportName,
+    });
+    json(res, 200, { items });
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/v1/internal/release-policy-overrides' && method === 'POST') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const body = await readBody(req) as Record<string, unknown>;
+    const workspaceId = typeof body.workspace_id === 'string' ? body.workspace_id.trim() : '';
+    const projectId = typeof body.project_id === 'string' ? body.project_id.trim() : '';
+    const reportName = typeof body.report_name === 'string' ? body.report_name.trim() : '';
+    const issueId = typeof body.issue_id === 'string' ? body.issue_id.trim() : '';
+    const issueSource = body.issue_source === 'execution' || body.issue_source === 'runtime' || body.issue_source === 'usage'
+      ? body.issue_source
+      : null;
+    const issueMessage = typeof body.issue_message === 'string' ? body.issue_message.trim() : '';
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!workspaceId || !projectId || !reportName || !issueId || !issueSource || !issueMessage || !reason) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_id, project_id, report_name, issue_id, issue_source, issue_message, and reason are required' });
+      return;
+    }
+    const record = await createReleasePolicyOverride(deps.docStore, {
+      workspaceId,
+      projectId,
+      reportName,
+      issueId,
+      issueSource,
+      issueMessage,
+      reason,
+      createdByUserId: user.id,
+      createdByName: user.name,
+    });
+    json(res, 201, record);
     return;
   }
 

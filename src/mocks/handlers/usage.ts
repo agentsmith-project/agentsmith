@@ -71,6 +71,19 @@ const usageReportSchedules: UsageReportSchedule[] = [{
 }];
 
 const usageReportDeliveries: UsageReportDelivery[] = [];
+const releasePolicyOverrides = [{
+  id: 'rpo_001',
+  workspace_id: 'ws_default',
+  project_id: 'proj_001',
+  report_name: 'usage-webhook-signature-policy-check',
+  issue_id: 'usage_usage_report_webhook_signature_recommended',
+  issue_source: 'usage',
+  issue_message: 'usage_report_webhook_signature_recommended',
+  reason: 'Accepted temporarily while the webhook receiver rollout is being staged.',
+  created_at: '2026-02-28T22:20:00.000Z',
+  created_by_user_id: 'mock-user',
+  created_by_name: 'Mock User',
+}];
 
 const releaseReports: ReleaseReportListItem[] = [
   {
@@ -896,6 +909,45 @@ export const usageHandlers = [
       return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_report_not_found' }, { status: 404 });
     }
     return HttpResponse.json(detail);
+  }),
+  http.get('/api/v1/internal/release-policy-overrides', ({ request }) => {
+    const url = new URL(request.url);
+    const workspaceId = url.searchParams.get('workspace_id');
+    const projectId = url.searchParams.get('project_id');
+    const reportName = url.searchParams.get('report_name');
+    return HttpResponse.json({
+      items: releasePolicyOverrides.filter((item) =>
+        item.workspace_id === workspaceId && item.project_id === projectId && item.report_name === reportName),
+    });
+  }),
+  http.post('/api/v1/internal/release-policy-overrides', async ({ request }) => {
+    const body = await request.json() as {
+      workspace_id: string;
+      project_id: string;
+      report_name: string;
+      issue_id: string;
+      issue_source: 'execution' | 'runtime' | 'usage';
+      issue_message: string;
+      reason: string;
+    };
+    const existing = releasePolicyOverrides.find((item) =>
+      item.workspace_id === body.workspace_id
+      && item.project_id === body.project_id
+      && item.report_name === body.report_name
+      && item.issue_id === body.issue_id,
+    );
+    if (existing) {
+      return HttpResponse.json(existing, { status: 201 });
+    }
+    const created = {
+      id: `rpo_${Date.now()}`,
+      ...body,
+      created_at: new Date().toISOString(),
+      created_by_user_id: 'mock-user',
+      created_by_name: 'Mock User',
+    };
+    releasePolicyOverrides.unshift(created);
+    return HttpResponse.json(created, { status: 201 });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage', ({ request }) => {
     const url = new URL(request.url);

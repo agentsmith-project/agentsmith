@@ -39,6 +39,7 @@ import type {
   FailureCategory,
   RuntimeReleaseEvidence,
   UsageReportEvidence,
+  GovernanceReleaseEvidence,
 } from './types';
 import {
   classifyFailure,
@@ -52,6 +53,7 @@ const DEFAULT_RUNS_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-runs');
 const DEFAULT_ESCALATIONS_OUTPUT_DIR = join(process.cwd(), 'artifacts/release-escalations');
 const DEFAULT_RUNTIME_EVIDENCE_FILE = 'runtime-release-evidence.json';
 const DEFAULT_USAGE_REPORT_EVIDENCE_FILE = 'usage-report-evidence.json';
+const DEFAULT_GOVERNANCE_EVIDENCE_FILE = 'governance-release-evidence.json';
 
 const TRANSIENT_UPSTREAM_CATEGORIES = new Set<FailureType>(['network', 'timeout', 'rate_limit']);
 
@@ -214,6 +216,9 @@ function parseArgs(argv: string[]): VerifyReleaseOptions {
       case '--usage-report-evidence':
         options.usageReportEvidence = argv[++i];
         break;
+      case '--governance-evidence':
+        options.governanceEvidence = argv[++i];
+        break;
       case '--runs-output':
         options.runsOutput = argv[++i];
         break;
@@ -278,6 +283,7 @@ OPTIONS:
   --mock-failure <t>   Mock a failure type: token|network|backend|assertion|timeout|rate_limit
   --runtime-evidence <path>  Read runtime release evidence artifact from custom path
   --usage-report-evidence <path>  Read usage report evidence artifact from custom path
+  --governance-evidence <path>  Read governance release evidence artifact from custom path
   --runs-output <dir>  Output directory for release gate run history artifacts
   --escalations-output <dir>  Output directory for release escalation artifacts
   --trigger <source>   Trigger source: manual|scheduled|ci|unknown
@@ -761,6 +767,10 @@ function buildCommand(
   def: { id: string; command: string },
   options: VerifyReleaseOptions,
 ): string {
+  if (def.id === 'smoke-governance') {
+    const governanceEvidencePath = getGovernanceEvidencePath(options);
+    return `GOVERNANCE_RELEASE_EVIDENCE_PATH=${shellQuote(governanceEvidencePath)} ${def.command}`;
+  }
   if (def.id !== 'runtime-release-evidence') return def.command;
 
   const runtimeEvidencePath = getRuntimeEvidencePath(options);
@@ -774,9 +784,16 @@ function buildCommand(
 function generateSummary(execution: ExecutionResults, options: VerifyReleaseOptions): ReportSummary {
   const runtimeEvidence = loadRuntimeReleaseEvidence(options);
   const usageReportEvidence = loadUsageReportEvidence(options);
+  const governanceEvidence = loadGovernanceReleaseEvidence(options);
   const runtimeBlockingReasons = getRuntimeEvidenceBlockingReasons(runtimeEvidence);
   const usageReportBlockingReasons = getUsageReportEvidenceBlockingReasons(usageReportEvidence);
-  const status = execution.failed === 0 && runtimeBlockingReasons.length === 0 && usageReportBlockingReasons.length === 0 ? 'pass' : 'fail';
+  const governanceBlockingReasons = getGovernanceReleaseEvidenceBlockingReasons(governanceEvidence);
+  const status = execution.failed === 0
+    && runtimeBlockingReasons.length === 0
+    && usageReportBlockingReasons.length === 0
+    && governanceBlockingReasons.length === 0
+    ? 'pass'
+    : 'fail';
 
   const summary: ReportSummary = {
     status,
@@ -788,6 +805,9 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
   }
   if (usageReportEvidence) {
     summary.usage_report_evidence = usageReportEvidence;
+  }
+  if (governanceEvidence) {
+    summary.governance_release_evidence = governanceEvidence;
   }
 
   // Add failure categories if there are failures
@@ -826,6 +846,11 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
         run_count: usageReportEvidence.runner_health.run_count,
       } : undefined,
     } : undefined,
+    governance: governanceEvidence ? {
+      release_readiness: governanceEvidence.release_readiness,
+      blockers: governanceEvidence.blockers,
+      warnings: governanceEvidence.warnings,
+    } : undefined,
   });
 
   if (runtimeBlockingReasons.length > 0) {
@@ -835,6 +860,10 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
   if (usageReportBlockingReasons.length > 0) {
     const usageRecommendations = usageReportBlockingReasons.map((reason) => `Usage report release blocker: ${reason}`);
     summary.recommendations = [...(summary.recommendations ?? []), ...usageRecommendations];
+  }
+  if (governanceBlockingReasons.length > 0) {
+    const governanceRecommendations = governanceBlockingReasons.map((reason) => `Governance release blocker: ${reason}`);
+    summary.recommendations = [...(summary.recommendations ?? []), ...governanceRecommendations];
   }
   if (summary.release_policy) {
     const policyRecommendations = summary.release_policy.blockers.map((issue) => `Release policy blocker: ${issue.message}`);
@@ -852,6 +881,11 @@ function getRuntimeEvidencePath(options: VerifyReleaseOptions): string {
 function getUsageReportEvidencePath(options: VerifyReleaseOptions): string {
   if (options.usageReportEvidence) return options.usageReportEvidence;
   return join(options.output ?? DEFAULT_OUTPUT_DIR, DEFAULT_USAGE_REPORT_EVIDENCE_FILE);
+}
+
+function getGovernanceEvidencePath(options: VerifyReleaseOptions): string {
+  if (options.governanceEvidence) return options.governanceEvidence;
+  return join(options.output ?? DEFAULT_OUTPUT_DIR, DEFAULT_GOVERNANCE_EVIDENCE_FILE);
 }
 
 function loadRuntimeReleaseEvidence(options: VerifyReleaseOptions): RuntimeReleaseEvidence | undefined {
@@ -987,6 +1021,56 @@ function loadUsageReportEvidence(options: VerifyReleaseOptions): UsageReportEvid
   return undefined;
 }
 
+function loadGovernanceReleaseEvidence(options: VerifyReleaseOptions): GovernanceReleaseEvidence | undefined {
+  const evidencePath = getGovernanceEvidencePath(options);
+  if (existsSync(evidencePath)) {
+    try {
+      return JSON.parse(readFileSync(evidencePath, 'utf-8')) as GovernanceReleaseEvidence;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_error';
+      return {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['governance_release_evidence_unreadable'],
+        warnings: [],
+        checks: {
+          page_smoke: false,
+          interaction_smoke: false,
+          endpoint_policy_effects: false,
+          source_library_policy_effects: false,
+          member_permission_effect: false,
+          member_lifecycle_effect: false,
+          sse_ticket_hardening: false,
+        },
+        note: `Failed to parse governance release evidence: ${message}`,
+      };
+    }
+  }
+
+  if (options.dryRun) {
+    return {
+      source: 'dry_run',
+      generated_at: new Date().toISOString(),
+      release_readiness: 'ready',
+      blockers: [],
+      warnings: [],
+      checks: {
+        page_smoke: true,
+        interaction_smoke: true,
+        endpoint_policy_effects: true,
+        source_library_policy_effects: true,
+        member_permission_effect: true,
+        member_lifecycle_effect: true,
+        sse_ticket_hardening: true,
+      },
+      note: 'Dry-run evidence uses deterministic fixture data and does not call live governance effect smoke lanes.',
+    };
+  }
+
+  return undefined;
+}
+
 function getRuntimeEvidenceBlockingReasons(runtimeEvidence?: RuntimeReleaseEvidence): string[] {
   if (!runtimeEvidence) return [];
 
@@ -1035,6 +1119,26 @@ function getUsageReportEvidenceBlockingReasons(usageReportEvidence?: UsageReport
   }
   if (usageReportEvidence.unacknowledged_required_deliveries > 0) {
     reasons.push(`usage report evidence has ${usageReportEvidence.unacknowledged_required_deliveries} unacknowledged required deliveries`);
+  }
+  return reasons;
+}
+
+function getGovernanceReleaseEvidenceBlockingReasons(governanceEvidence?: GovernanceReleaseEvidence): string[] {
+  if (!governanceEvidence) return [];
+
+  const reasons: string[] = [];
+  if (governanceEvidence.release_readiness === 'blocked') {
+    reasons.push(
+      governanceEvidence.blockers.length > 0
+        ? `governance release evidence blocked by ${governanceEvidence.blockers.join(', ')}`
+        : 'governance release evidence reported blocked release readiness',
+    );
+  }
+  const missingChecks = Object.entries(governanceEvidence.checks)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  if (missingChecks.length > 0) {
+    reasons.push(`governance release evidence missing checks: ${missingChecks.join(', ')}`);
   }
   return reasons;
 }
@@ -1310,6 +1414,32 @@ function generateMarkdown(report: ReleaseReport): string {
 
     if (usageEvidence.warnings.length > 0) {
       md += `**Usage Report Warnings:** ${usageEvidence.warnings.join(', ')}\n\n`;
+    }
+  }
+
+  if (summary.governance_release_evidence) {
+    const governanceEvidence = summary.governance_release_evidence;
+    md += `### Governance Release Evidence\n\n`;
+    md += `- **Source:** ${governanceEvidence.source}\n`;
+    md += `- **Generated At:** ${governanceEvidence.generated_at}\n`;
+    md += `- **Release Readiness:** ${governanceEvidence.release_readiness}\n`;
+    if (governanceEvidence.note) {
+      md += `- **Note:** ${governanceEvidence.note}\n`;
+    }
+    md += `\n`;
+
+    md += `| Governance Effect Check | Passed |\n`;
+    md += `|-------------------------|--------|\n`;
+    for (const [checkName, passed] of Object.entries(governanceEvidence.checks)) {
+      md += `| ${checkName} | ${passed ? 'yes' : 'no'} |\n`;
+    }
+    md += `\n`;
+
+    if (governanceEvidence.blockers.length > 0) {
+      md += `**Governance Blockers:** ${governanceEvidence.blockers.join(', ')}\n\n`;
+    }
+    if (governanceEvidence.warnings.length > 0) {
+      md += `**Governance Warnings:** ${governanceEvidence.warnings.join(', ')}\n\n`;
     }
   }
 

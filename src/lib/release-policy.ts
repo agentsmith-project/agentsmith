@@ -81,6 +81,9 @@ export type ReleasePolicyExecutionInput = {
 };
 
 export type ReleasePolicyGovernanceInput = {
+  release_readiness?: 'ready' | 'blocked';
+  blockers?: string[];
+  warnings?: string[];
   open_escalations?: number;
   critical_unassigned?: number;
   critical_overdue?: number;
@@ -271,6 +274,35 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
 
   const governance = input.governance;
   if (governance) {
+    if (governance.release_readiness === 'blocked') {
+      for (const blocker of dedupe(governance.blockers ?? [])) {
+        pushIssue(blockers, {
+          id: `governance_${blocker}`,
+          severity: 'blocker',
+          source: 'governance',
+          message: blocker,
+          overridable: false,
+        });
+      }
+      if ((governance.blockers?.length ?? 0) === 0) {
+        pushIssue(blockers, {
+          id: 'governance_release_readiness_blocked',
+          severity: 'blocker',
+          source: 'governance',
+          message: 'Governance release readiness is blocked.',
+          overridable: false,
+        });
+      }
+    }
+    for (const warning of dedupe(governance.warnings ?? [])) {
+      pushIssue(warnings, {
+        id: `governance_${warning}`,
+        severity: 'warning',
+        source: 'governance',
+        message: warning,
+        overridable: true,
+      });
+    }
     if ((governance.critical_unassigned ?? 0) > 0) {
       pushIssue(blockers, {
         id: 'governance_critical_escalations_unassigned',

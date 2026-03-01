@@ -141,6 +141,8 @@ export interface ReportSummary {
   runtime_release_evidence?: RuntimeReleaseEvidence;
   /** Usage report release evidence collected from scheduled-report workflow */
   usage_report_evidence?: UsageReportEvidence;
+  /** Governance execution evidence collected from governance release smoke */
+  governance_release_evidence?: GovernanceReleaseEvidence;
   /** Troubleshooting recommendations (present if failed > 0) */
   recommendations?: string[];
   /** Quick stats for release notes */
@@ -310,6 +312,31 @@ export interface UsageReportEvidence {
   note?: string;
 }
 
+export interface GovernanceReleaseEvidence {
+  /** Source of the evidence document */
+  source: 'dry_run' | 'artifact';
+  /** ISO timestamp when governance evidence was generated */
+  generated_at: string;
+  /** Release readiness derived from governance execution effects */
+  release_readiness: 'ready' | 'blocked';
+  /** Blocking governance failures */
+  blockers: string[];
+  /** Warning-only governance debt */
+  warnings: string[];
+  /** Focused governance effects that were exercised in the smoke lane */
+  checks: {
+    page_smoke: boolean;
+    interaction_smoke: boolean;
+    endpoint_policy_effects: boolean;
+    source_library_policy_effects: boolean;
+    member_permission_effect: boolean;
+    member_lifecycle_effect: boolean;
+    sse_ticket_hardening: boolean;
+  };
+  /** Optional reviewer note */
+  note?: string;
+}
+
 export interface ReleaseGateRunHistory {
   /** Unique gate run id */
   id: string;
@@ -417,6 +444,8 @@ export interface VerifyReleaseOptions {
   runtimeEvidence?: string;
   /** Path to usage report evidence artifact */
   usageReportEvidence?: string;
+  /** Path to governance release evidence artifact */
+  governanceEvidence?: string;
   /** Output directory for release run history artifacts */
   runsOutput?: string;
   /** Output directory for release escalation artifacts */

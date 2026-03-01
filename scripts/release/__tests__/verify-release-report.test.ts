@@ -10,9 +10,9 @@
  * 3. REFACTOR: Clean up
  */
 
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -51,9 +51,7 @@ describe('verify-release-report: TDD Suite', () => {
   // Increase timeout for report generation tests (30 seconds should be enough)
   // Use dry-run mode to avoid running actual smoke tests (which take 14+ seconds and may fail)
 
-  // Configure longer timeout for all tests in this suite
-  const originalTimeout = 5000;
-  // Note: Vitest testTimeout can be set per test or globally
+  // Configure longer timeout for all tests in this suite  // Note: Vitest testTimeout can be set per test or globally
 
   describe('RED Phase 1: Report Schema - Required Fields', () => {
     it('should generate JSON report with all required metadata fields', () => {
@@ -78,7 +76,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should include git commit information in metadata', () => {
       // Arrange & Act
-      const result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const _result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
       const report = readJsonReport(OUTPUT_DIR, 'report-test');
 
       // Assert - Git fields
@@ -95,7 +93,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should include environment information in metadata', () => {
       // Arrange & Act
-      const result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const _result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
       const report = readJsonReport(OUTPUT_DIR, 'report-test');
 
       // Assert
@@ -106,7 +104,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should accept optional commit range parameter', () => {
       // Arrange & Act - use dry-run for fast testing
-      const result = runScript([
+      const _result = runScript([
         '--output', OUTPUT_DIR,
         '--name', 'report-test',
         '--commit-range', 'abc123..def456',
@@ -170,7 +168,7 @@ describe('verify-release-report: TDD Suite', () => {
   describe('RED Phase 2: Execution Results', () => {
     it('should record each check result with status and duration', () => {
       // Arrange & Act
-      const result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const _result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
       const report = readJsonReport(OUTPUT_DIR, 'report-test');
 
       // Assert
@@ -194,7 +192,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should include output/error for failed checks', () => {
       // Arrange & Act - Simulate a failing scenario
-      const result = runScript([
+      const _result = runScript([
         '--output', OUTPUT_DIR,
         '--name', 'report-test',
         '--dry-run'  // Mock mode for testing
@@ -214,7 +212,7 @@ describe('verify-release-report: TDD Suite', () => {
   describe('RED Phase 3: Summary and Classification', () => {
     it('should generate pass/fail summary based on check results', () => {
       // Arrange & Act
-      const result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const _result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
       const report = readJsonReport(OUTPUT_DIR, 'report-test');
 
       // Assert
@@ -232,7 +230,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should categorize failures by type', () => {
       // Arrange & Act
-      const result = runScript([
+      const _result = runScript([
         '--output', OUTPUT_DIR,
         '--name', 'report-test',
         '--dry-run'
@@ -273,7 +271,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should provide troubleshooting recommendations for failures', () => {
       // Arrange & Act
-      const result = runScript([
+      const _result = runScript([
         '--output', OUTPUT_DIR,
         '--name', 'report-test',
         '--dry-run'
@@ -332,6 +330,27 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.usage_report_evidence?.active_schedules).toBeGreaterThan(0);
       expect(report.summary?.usage_report_evidence?.required_schedules).toBeGreaterThan(0);
       expect(report.summary?.usage_report_evidence?.warnings?.length).toBeGreaterThan(0);
+    });
+
+    it('should attach governance release evidence to the summary', () => {
+      runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: {
+          governance_release_evidence?: {
+            source?: string;
+            release_readiness?: string;
+            checks?: Record<string, boolean>;
+          };
+        };
+      };
+
+      expect(report.summary?.governance_release_evidence).toBeDefined();
+      expect(report.summary?.governance_release_evidence?.source).toBe('dry_run');
+      expect(report.summary?.governance_release_evidence?.release_readiness).toBe('ready');
+      expect(Object.values(report.summary?.governance_release_evidence?.checks ?? {})).toEqual(
+        expect.arrayContaining([true]),
+      );
+      expect(report.summary?.governance_release_evidence?.checks?.sse_ticket_hardening).toBe(true);
     });
 
     it('should fail when runtime release evidence reports blocked guardrails', () => {
@@ -403,12 +422,48 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.status).toBe('fail');
       expect(report.summary?.recommendations?.some((item) => item.includes('usage_report_schedule_unacknowledged'))).toBe(true);
     });
+
+    it('should fail when governance release evidence is blocked', () => {
+      const governanceEvidencePath = join(OUTPUT_DIR, 'governance-evidence-blocked.json');
+      const governanceEvidence = {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['governance_sse_ticket_hardening_missing'],
+        warnings: [],
+        checks: {
+          page_smoke: true,
+          interaction_smoke: true,
+          endpoint_policy_effects: true,
+          source_library_policy_effects: true,
+          member_permission_effect: true,
+          member_lifecycle_effect: true,
+          sse_ticket_hardening: false,
+        },
+      };
+      mkdirSync(OUTPUT_DIR, { recursive: true });
+      writeFileSync(governanceEvidencePath, JSON.stringify(governanceEvidence), 'utf-8');
+
+      runScript([
+        '--output', OUTPUT_DIR,
+        '--name', 'report-test',
+        '--dry-run',
+        '--governance-evidence', governanceEvidencePath,
+      ]);
+
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: { status?: string; recommendations?: string[] };
+      };
+
+      expect(report.summary?.status).toBe('fail');
+      expect(report.summary?.recommendations?.some((item) => item.includes('governance_sse_ticket_hardening_missing'))).toBe(true);
+    });
   });
 
   describe('RED Phase 4: Markdown Report', () => {
     it('should generate Markdown report alongside JSON', () => {
       // Arrange & Act
-      const result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const _result = runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
       const mdPath = join(OUTPUT_DIR, 'report-test.md');
 
       // Assert
@@ -421,6 +476,7 @@ describe('verify-release-report: TDD Suite', () => {
       expect(mdContent).toContain('## Execution Results');
       expect(mdContent).toContain('## Metadata');
       expect(mdContent).toContain('### Runtime Release Evidence');
+      expect(mdContent).toContain('### Governance Release Evidence');
     });
 
     it('should format markdown with status badges and tables', () => {
@@ -462,7 +518,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should support --name flag for custom report name', () => {
       // Arrange & Act
-      const result = runScript(['--output', OUTPUT_DIR, '--name', 'my-release', '--dry-run']);
+      const _result = runScript(['--output', OUTPUT_DIR, '--name', 'my-release', '--dry-run']);
       const report = readJsonReport(OUTPUT_DIR, 'my-release');
 
       // Assert
@@ -502,7 +558,7 @@ describe('verify-release-report: TDD Suite', () => {
     it('should classify token-related failures (401/403/expired)', () => {
       // This is a preview for D2 - failure classification
       // Arrange & Act
-      const result = runScript([
+      const _result = runScript([
         '--output', OUTPUT_DIR,
         '--name', 'report-test',
         '--mock-failure', 'token'  // Simulated token failure
@@ -517,7 +573,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should classify network-related failures (timeout/ECONNREFUSED)', () => {
       // Arrange & Act
-      const result = runScript([
+      const _result = runScript([
         '--output', OUTPUT_DIR,
         '--name', 'report-test',
         '--mock-failure', 'network'
@@ -532,7 +588,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should classify assertion failures (test expectations not met)', () => {
       // Arrange & Act
-      const result = runScript([
+      const _result = runScript([
         '--output', OUTPUT_DIR,
         '--name', 'report-test',
         '--mock-failure', 'assertion'
@@ -547,7 +603,7 @@ describe('verify-release-report: TDD Suite', () => {
 
     it('should provide fix suggestions per failure category', () => {
       // Arrange & Act
-      const result = runScript([
+      const _result = runScript([
         '--output', OUTPUT_DIR,
         '--name', 'report-test',
         '--mock-failure', 'token'

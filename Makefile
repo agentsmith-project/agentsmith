@@ -146,6 +146,7 @@ help:
 	@echo "  make governance-member-quota-effect-smoke # real-backend member quota effect smoke (quota block -> audit/usage evidence)"
 	@echo "  make governance-member-permission-effect-smoke # real-backend member permission effect smoke (route authz deny->allow)"
 	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
+	@echo "  make governance-sse-ticket-effect-smoke # real-backend SSE ticket hardening smoke (opaque ticket + no query fallback)"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
 	@echo "  make usage-report-runner-status   # query internal usage report runner status (auth required)"
@@ -752,6 +753,10 @@ governance-member-lifecycle-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-member-lifecycle-effect-smoke.sh
 
+governance-sse-ticket-effect-smoke:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/governance-sse-ticket-effect-smoke.sh
+
 governance-release-smoke:
 	@set -e; \
 	run_with_token_retry() { \
@@ -780,7 +785,11 @@ governance-release-smoke:
 	run_with_token_retry governance-agent-policy-rate-effect-smoke; \
 	run_with_token_retry governance-member-quota-effect-smoke; \
 	run_with_token_retry governance-member-permission-effect-smoke; \
-	run_with_token_retry governance-member-lifecycle-effect-smoke
+	run_with_token_retry governance-member-lifecycle-effect-smoke; \
+	run_with_token_retry governance-sse-ticket-effect-smoke; \
+	if [ -n "$${GOVERNANCE_RELEASE_EVIDENCE_PATH:-}" ]; then \
+		node ./scripts/write-governance-release-evidence.js "$${GOVERNANCE_RELEASE_EVIDENCE_PATH}"; \
+	fi
 
 notebook-agent-smoke-full:
 	@set -e; \

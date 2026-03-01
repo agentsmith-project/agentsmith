@@ -95,6 +95,8 @@ npm run release:report -- --name my-release
 | `--dry-run` | Skip actual tests, use mock data | false |
 | `--archive` | Create timestamped archive | false |
 | `--runtime-evidence` | Reuse an existing runtime evidence JSON artifact | auto-managed |
+| `--usage-report-evidence` | Reuse an existing usage report evidence artifact | auto-managed |
+| `--governance-evidence` | Reuse an existing governance release evidence artifact | auto-managed |
 
 ## CI Execution
 

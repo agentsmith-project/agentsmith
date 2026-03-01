@@ -13,6 +13,7 @@ describe('UsageFactDetailDrawer', () => {
       <UsageFactDetailDrawer
         open
         onOpenChange={() => {}}
+        basePath="/en-US/workspaces/ws_1/projects/proj_1"
         facts={[
           {
             id: 'fact_quota_1',
@@ -50,6 +51,10 @@ describe('UsageFactDetailDrawer', () => {
     expect(governance).toHaveTextContent('200');
     expect(governance).toHaveTextContent('201');
     expect(governance).toHaveTextContent('quota_exceeded');
+    expect(screen.getByTestId('usage__detail-open-resource-policy-fact_quota_1')).toHaveAttribute(
+      'href',
+      expect.stringContaining('/resource-policy?resource_type=source_library'),
+    );
   });
 
   it('renders forbidden membership and missing permission evidence', () => {
@@ -57,6 +62,7 @@ describe('UsageFactDetailDrawer', () => {
       <UsageFactDetailDrawer
         open
         onOpenChange={() => {}}
+        basePath="/en-US/workspaces/ws_1/projects/proj_1"
         facts={[
           {
             id: 'fact_forbidden_1',
@@ -83,5 +89,6 @@ describe('UsageFactDetailDrawer', () => {
     const governance = screen.getByTestId('usage__detail-governance-fact_forbidden_1');
     expect(governance).toHaveTextContent('project:member:view');
     expect(governance).toHaveTextContent('suspended');
+    expect(screen.queryByTestId('usage__detail-open-resource-policy-fact_forbidden_1')).not.toBeInTheDocument();
   });
 });

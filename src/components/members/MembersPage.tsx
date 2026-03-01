@@ -8,6 +8,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -48,11 +49,19 @@ export interface MembersPageProps {
 function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: MembersPageProps) {
   const t = useTranslations('members');
   const canManageMembers = useCanManageMemberGovernance();
+  const searchParams = useSearchParams();
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const contextValue = useMembersList({ workspaceId, projectId });
   const [activeTab, setActiveTab] = React.useState<'people' | 'requests' | 'templates' | 'groups'>('people');
   const { data: joinRequests = [], isLoading: isLoadingRequests } = useJoinRequests(workspaceId, projectId);
+
+  React.useEffect(() => {
+    const requestedTab = searchParams.get('member_tab');
+    if (requestedTab === 'people' || requestedTab === 'requests' || requestedTab === 'templates' || requestedTab === 'groups') {
+      setActiveTab(requestedTab);
+    }
+  }, [searchParams]);
 
   return (
     <MembersProvider value={contextValue}>

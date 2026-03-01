@@ -1,14 +1,22 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { PeopleTab } from '../PeopleTab';
+
+const mockSearchParams = new URLSearchParams();
+const setSelectedMember = vi.fn();
+const setDrawerOpen = vi.fn();
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, number>) => {
     if (key === 'filters.page_info') return `${values?.page}/${values?.totalPages}`;
     return key;
   },
+}));
+
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => mockSearchParams,
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
@@ -39,7 +47,7 @@ vi.mock('../MembersContext', () => ({
     clearSelection: vi.fn(),
     selectedMember: null,
     drawerOpen: false,
-    setDrawerOpen: vi.fn(),
+    setDrawerOpen,
     permissions: [],
     project: null,
     quotaOverrides: {},
@@ -49,6 +57,7 @@ vi.mock('../MembersContext', () => ({
     handleSaveQuota: vi.fn(),
     setHistoryDrawerOpen: vi.fn(),
     handleViewQuotaHistory: vi.fn(),
+    setSelectedMember,
   }),
 }));
 
@@ -67,6 +76,24 @@ vi.mock('../MemberDetailDrawer', () => ({
 }));
 
 describe('PeopleTab', () => {
+  beforeEach(() => {
+    setSelectedMember.mockClear();
+    setDrawerOpen.mockClear();
+    mockSearchParams.forEach((_, key) => mockSearchParams.delete(key));
+  });
+
+  it('opens member drawer from deep link context', () => {
+    mockSearchParams.set('member_id', 'member_3');
+    mockSearchParams.set('authorize_resource_type', 'endpoint');
+    mockSearchParams.set('authorize_resource_id', 'ep_1');
+    mockSearchParams.set('authorize_action', 'invoke');
+
+    render(<PeopleTab workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(setSelectedMember).toHaveBeenCalledWith(expect.objectContaining({ id: 'member_3' }));
+    expect(setDrawerOpen).toHaveBeenCalledWith(true);
+  });
+
   it('paginates member list and supports next page', async () => {
     const user = userEvent.setup();
     render(<PeopleTab workspaceId="ws_1" projectId="proj_1" />);

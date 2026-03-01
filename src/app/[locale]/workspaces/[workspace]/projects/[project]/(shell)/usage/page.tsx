@@ -26,6 +26,7 @@ export default function UsagePage({ params }: UsagePageProps) {
   const [resolvedParams, setResolvedParams] = useState<{
     workspace?: string;
     project?: string;
+    locale?: string;
   } | null>(null);
   const currentUser = useAuthStore((s) => s.user);
   const canViewUsage = useHasPermission('project:usage:view');
@@ -41,6 +42,7 @@ export default function UsagePage({ params }: UsagePageProps) {
       setResolvedParams({
         workspace: validateWorkspaceParam(p.workspace),
         project: validateProjectParam(p.project),
+        locale: p.locale,
       }),
     );
   }, [params]);
@@ -92,6 +94,7 @@ export default function UsagePage({ params }: UsagePageProps) {
       <UsagePageComponent
         workspaceId={workspaceId}
         projectId={projectId}
+        locale={resolvedParams.locale}
         currentUserId={currentUser?.id}
         initialFilters={initialFilters}
         initialPanel={initialPanel}

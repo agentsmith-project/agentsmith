@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -13,6 +14,7 @@ import {
 import { JSONViewer } from './JSONViewer';
 import type { UsageFactRecord } from '@/lib/api/types';
 import { getGovernanceEvidenceDetails } from '@/lib/api/endpoints/governance-explainability';
+import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 
 type AttemptTrace = {
   index?: number;
@@ -31,6 +33,7 @@ export interface UsageFactDetailDrawerProps {
   facts: UsageFactRecord[];
   loading?: boolean;
   aggregateLabel?: string;
+  basePath?: string;
 }
 
 function formatUsd(value?: number | null): string {
@@ -54,12 +57,19 @@ function formatGovernanceValue(value?: number | string | null): string {
   return String(value);
 }
 
+function getDefaultGovernanceAction(resourceType?: string): string {
+  if (resourceType === 'source_library') return 'upload';
+  if (resourceType === 'project') return 'read';
+  return 'invoke';
+}
+
 export function UsageFactDetailDrawer({
   open,
   onOpenChange,
   facts,
   loading = false,
   aggregateLabel,
+  basePath,
 }: UsageFactDetailDrawerProps) {
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
@@ -125,6 +135,25 @@ export function UsageFactDetailDrawer({
                   error_code: fact.error_code,
                   ...(fact.metadata_json ?? {}),
                 });
+                const membersHref = basePath && fact.end_user_id
+                  ? `${basePath}/members${buildSharedOpsFilterQuery({}, {
+                    member_tab: 'people',
+                    member_id: fact.end_user_id,
+                    authorize_resource_type: fact.resource_type,
+                    authorize_resource_id: fact.resource_id,
+                    authorize_action: getDefaultGovernanceAction(fact.resource_type),
+                  })}`
+                  : null;
+                const resourcePolicyHref = basePath && fact.resource_id
+                  && (fact.resource_type === 'endpoint' || fact.resource_type === 'source_library' || fact.resource_type === 'agent')
+                  ? `${basePath}/resource-policy${buildSharedOpsFilterQuery({}, {
+                    resource_type: fact.resource_type,
+                    resource_id: fact.resource_id,
+                    explain_subject_type: fact.end_user_id ? 'user' : undefined,
+                    explain_subject_id: fact.end_user_id,
+                    explain_action: getDefaultGovernanceAction(fact.resource_type),
+                  })}`
+                  : null;
                 return (
                   <section
                     key={fact.id}
@@ -192,7 +221,29 @@ export function UsageFactDetailDrawer({
 
                     {governance ? (
                       <div className="border-t border-subtle px-5 py-4" data-testid={`usage__detail-governance-${fact.id}`}>
-                        <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('detail.governance_title')}</div>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('detail.governance_title')}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {membersHref ? (
+                              <Link
+                                href={membersHref}
+                                className="text-xs text-primary underline-offset-2 hover:underline"
+                                data-testid={`usage__detail-open-member-${fact.id}`}
+                              >
+                                {t('detail.open_member_access')}
+                              </Link>
+                            ) : null}
+                            {resourcePolicyHref ? (
+                              <Link
+                                href={resourcePolicyHref}
+                                className="text-xs text-primary underline-offset-2 hover:underline"
+                                data-testid={`usage__detail-open-resource-policy-${fact.id}`}
+                              >
+                                {t('detail.open_resource_policy')}
+                              </Link>
+                            ) : null}
+                          </div>
+                        </div>
                         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                           <div>
                             <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.governance_kind')}</div>

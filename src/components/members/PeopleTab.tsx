@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -21,12 +22,28 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
   const context = useMembersContext();
   const canReadMembers = useHasPermission('project:member:view');
   const canManageMembers = useCanManageMemberGovernance();
+  const searchParams = useSearchParams();
   const [search, setSearch] = React.useState('');
   const [accessFilter, setAccessFilter] = React.useState<'all' | 'governance' | 'resource_manage' | 'access_only'>(
     'all'
   );
   const [statusFilter, setStatusFilter] = React.useState<'all' | 'active' | 'removed'>('all');
   const [page, setPage] = React.useState(1);
+  const deepLinkMemberId = searchParams.get('member_id');
+  const initialAuthorization = React.useMemo(() => {
+    const resourceType = searchParams.get('authorize_resource_type');
+    const resourceId = searchParams.get('authorize_resource_id');
+    const action = searchParams.get('authorize_action');
+    if (!resourceType || !resourceId || !action) return undefined;
+    if (resourceType !== 'project' && resourceType !== 'endpoint' && resourceType !== 'source_library' && resourceType !== 'agent') {
+      return undefined;
+    }
+    return {
+      resourceType,
+      resourceId,
+      action,
+    } as const;
+  }, [searchParams]);
 
   const getAccessProfile = React.useCallback((member: { permissions?: string[] }) => {
     const permissions = new Set(member.permissions ?? []);
@@ -67,6 +84,15 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
   React.useEffect(() => {
     if (page > pageCount) setPage(pageCount);
   }, [page, pageCount]);
+
+  React.useEffect(() => {
+    if (!deepLinkMemberId) return;
+    const matched = context.members.find((member) => member.id === deepLinkMemberId);
+    if (!matched) return;
+    if (context.selectedMember?.id === matched.id && context.drawerOpen) return;
+    context.setSelectedMember(matched);
+    context.setDrawerOpen(true);
+  }, [context, deepLinkMemberId]);
 
   const pagedMembers = React.useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
@@ -206,6 +232,7 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
               context.setHistoryDrawerOpen(true);
             }}
             onViewQuotaHistory={context.handleViewQuotaHistory}
+            initialAuthorization={initialAuthorization}
           />
         </div>
       )}
@@ -240,6 +267,7 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
               context.setHistoryDrawerOpen(true);
             }}
             onViewQuotaHistory={context.handleViewQuotaHistory}
+            initialAuthorization={initialAuthorization}
           />
         </div>
       )}

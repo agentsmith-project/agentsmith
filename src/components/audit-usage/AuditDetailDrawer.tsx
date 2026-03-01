@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
   Dialog,
@@ -14,11 +15,13 @@ import { Copy } from 'lucide-react';
 import { toast } from '@/components/ui/toast';
 import type { AuditEvent } from '@/lib/api/types';
 import { getGovernanceEvidenceDetails } from '@/lib/api/endpoints/governance-explainability';
+import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 
 export interface AuditDetailDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   event: AuditEvent | null;
+  basePath?: string;
 }
 
 function formatFullTimestamp(timestamp: string): string {
@@ -30,10 +33,17 @@ function formatGovernanceValue(value?: number | string | null): string {
   return String(value);
 }
 
+function getDefaultGovernanceAction(resourceType?: string): string {
+  if (resourceType === 'source_library') return 'upload';
+  if (resourceType === 'project') return 'read';
+  return 'invoke';
+}
+
 export function AuditDetailDrawer({
   open,
   onOpenChange,
   event,
+  basePath,
 }: AuditDetailDrawerProps) {
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
@@ -43,6 +53,25 @@ export function AuditDetailDrawer({
     error_code: event.error_code,
     ...(event.metadata_json ?? {}),
   });
+  const membersHref = basePath && event.end_user_id
+    ? `${basePath}/members${buildSharedOpsFilterQuery({}, {
+      member_tab: 'people',
+      member_id: event.end_user_id,
+      authorize_resource_type: event.resource_type,
+      authorize_resource_id: event.resource_id,
+      authorize_action: getDefaultGovernanceAction(event.resource_type),
+    })}`
+    : null;
+  const resourcePolicyHref = basePath && event.resource_id
+    && (event.resource_type === 'endpoint' || event.resource_type === 'source_library' || event.resource_type === 'agent')
+    ? `${basePath}/resource-policy${buildSharedOpsFilterQuery({}, {
+      resource_type: event.resource_type,
+      resource_id: event.resource_id,
+      explain_subject_type: event.end_user_id ? 'user' : undefined,
+      explain_subject_id: event.end_user_id,
+      explain_action: getDefaultGovernanceAction(event.resource_type),
+    })}`
+    : null;
 
   const handleCopyRequestId = () => {
     navigator.clipboard.writeText(event.request_id);
@@ -143,7 +172,29 @@ export function AuditDetailDrawer({
 
           {governance ? (
             <div className="bg-surface border border-border rounded-md p-4 space-y-3" data-testid="audit__detail-governance">
-              <h4 className="text-sm font-semibold text-foreground">{t('detail.governance_title')}</h4>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-foreground">{t('detail.governance_title')}</h4>
+                <div className="flex flex-wrap items-center gap-2">
+                  {membersHref ? (
+                    <Link
+                      href={membersHref}
+                      className="text-xs text-primary underline-offset-2 hover:underline"
+                      data-testid="audit__detail-open-member-access"
+                    >
+                      {t('detail.open_member_access')}
+                    </Link>
+                  ) : null}
+                  {resourcePolicyHref ? (
+                    <Link
+                      href={resourcePolicyHref}
+                      className="text-xs text-primary underline-offset-2 hover:underline"
+                      data-testid="audit__detail-open-resource-policy"
+                    >
+                      {t('detail.open_resource_policy')}
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <span className="text-sm text-tertiary">{t('detail.governance_kind')}:</span>

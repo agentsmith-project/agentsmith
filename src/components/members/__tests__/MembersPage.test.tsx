@@ -5,6 +5,10 @@ vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(),
   useCanManageMemberGovernance: vi.fn(),

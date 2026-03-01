@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils';
 export interface UsagePageProps {
   workspaceId: string;
   projectId: string;
+  locale?: string;
   defaultEndUserId?: string; // When set, user can only see own usage (locked)
   currentUserId?: string; // For scope switch when user has project-wide permission
   initialFilters?: Partial<UsageListParams>;
@@ -69,6 +70,7 @@ function getBucketRange(timeBucket: string, groupBy: 'day' | 'hour'): { start: s
 export function UsagePage({
   workspaceId,
   projectId,
+  locale = 'en-US',
   defaultEndUserId,
   currentUserId,
   initialFilters,
@@ -84,6 +86,7 @@ export function UsagePage({
   const canExportUsage = useHasPermission('project:usage:export');
   const canManageReportSchedules = useHasPermission('project:usage:report_schedule');
   const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   // If defaultEndUserId is provided, scope is locked to the current user usage.
   const isScopeLocked = !!defaultEndUserId;
@@ -373,8 +376,6 @@ export function UsagePage({
     || !!apiFilters.model
     || !!apiFilters.result
     || !!apiFilters.error_class;
-  const pathSegments = pathname.split('/');
-  const locale = pathSegments[1] || undefined;
   const runtimeObservabilityHref = locale
     ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-observability${buildSharedOpsFilterQuery(apiFilters)}`
     : null;
@@ -606,6 +607,7 @@ export function UsagePage({
             facts={usageFactsQuery.data?.items ?? []}
             loading={usageFactsQuery.isLoading}
             aggregateLabel={selectedUsageRecord?.time_bucket}
+            basePath={basePath}
           />
         </div>
       )}

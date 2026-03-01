@@ -18,6 +18,7 @@ describe('AuditDetailDrawer', () => {
       <AuditDetailDrawer
         open
         onOpenChange={() => {}}
+        basePath="/en-US/workspaces/ws_1/projects/proj_1"
         event={{
           id: 'audit_1',
           timestamp: '2026-03-01T00:00:00.000Z',
@@ -52,6 +53,10 @@ describe('AuditDetailDrawer', () => {
     expect(governance).toHaveTextContent('1048576');
     expect(governance).toHaveTextContent('1048577');
     expect(governance).toHaveTextContent('quota_exceeded');
+    expect(screen.getByTestId('audit__detail-open-resource-policy')).toHaveAttribute(
+      'href',
+      expect.stringContaining('/resource-policy?resource_type=source_library'),
+    );
   });
 
   it('renders forbidden explainability details from audit metadata', () => {
@@ -59,6 +64,7 @@ describe('AuditDetailDrawer', () => {
       <AuditDetailDrawer
         open
         onOpenChange={() => {}}
+        basePath="/en-US/workspaces/ws_1/projects/proj_1"
         event={{
           id: 'audit_2',
           timestamp: '2026-03-01T00:00:00.000Z',
@@ -86,5 +92,6 @@ describe('AuditDetailDrawer', () => {
     const governance = screen.getByTestId('audit__detail-governance');
     expect(governance).toHaveTextContent('project:member:manage');
     expect(governance).toHaveTextContent('suspended');
+    expect(screen.queryByTestId('audit__detail-open-resource-policy')).not.toBeInTheDocument();
   });
 });

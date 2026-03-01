@@ -267,6 +267,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         event={selectedEvent}
+        basePath={basePath}
       />
     </PageLayout>
   );

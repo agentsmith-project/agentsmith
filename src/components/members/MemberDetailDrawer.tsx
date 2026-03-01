@@ -58,6 +58,11 @@ export interface MemberDetailDrawerProps {
   onSaveQuota?: (quota: QuotaOverride) => void;
   onViewHistory?: () => void;
   onViewQuotaHistory?: () => void;
+  initialAuthorization?: {
+    resourceType: 'project' | 'endpoint' | 'source_library' | 'agent';
+    resourceId: string;
+    action: string;
+  };
   embedded?: boolean;
   className?: string;
 }
@@ -98,6 +103,7 @@ export function MemberDetailDrawer({
   onSaveQuota,
   onViewHistory,
   onViewQuotaHistory,
+  initialAuthorization,
   embedded = false,
   className,
 }: MemberDetailDrawerProps) {
@@ -140,6 +146,14 @@ export function MemberDetailDrawer({
     setAuthorizeAction('read');
     initializedPermTemplateMemberIdRef.current = null;
   }, [open, member, member?.id]);
+
+  React.useEffect(() => {
+    if (!open || !member || !initialAuthorization) return;
+    setActiveTab('effective_access');
+    setAuthorizeResourceType(initialAuthorization.resourceType);
+    setAuthorizeResourceId(initialAuthorization.resourceId);
+    setAuthorizeAction(initialAuthorization.action);
+  }, [initialAuthorization, member, open]);
 
   // Initialize selected permission template from the member's existing permissions.
   React.useEffect(() => {

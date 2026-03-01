@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { AgentAPI, AuditAPI, EndpointAPI, MemberAPI, FilesAPI, getApiClient } from '@/lib/api';
@@ -77,6 +78,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const tNav = useTranslations('nav');
   const tErrors = useTranslations('errors');
   const tResource = useTranslations('resource_policy');
+  const searchParams = useSearchParams();
   const featureAvailability = getFeatureAvailability('resource_policy');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('resource_policy');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
@@ -248,6 +250,17 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   }, [rows, selectedResource]);
 
   useEffect(() => {
+    const resourceType = searchParams.get('resource_type');
+    const resourceId = searchParams.get('resource_id');
+    if (!resourceType || !resourceId) return;
+    if (resourceType !== 'endpoint' && resourceType !== 'source_library' && resourceType !== 'agent') return;
+    const matched = rows.find((row) => row.type === resourceType && row.id === resourceId);
+    if (matched && (selectedResource?.type !== matched.type || selectedResource.id !== matched.id)) {
+      setSelectedResource(matched);
+    }
+  }, [rows, searchParams, selectedResource]);
+
+  useEffect(() => {
     if (!selectedPolicy) return;
     setAccessMode(selectedPolicy.access_mode);
     setRootDraftRules(buildDraftRuleValues(selectedResource?.type ?? selectedPolicy.resource_type, {
@@ -276,6 +289,32 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     setExplainSubjectId('');
     setAuthorizationResult(null);
   }, [selectedResource]);
+
+  useEffect(() => {
+    if (!selectedResource) return;
+    const queryResourceType = searchParams.get('resource_type');
+    const queryResourceId = searchParams.get('resource_id');
+    if (
+      queryResourceType
+      && queryResourceId
+      && (queryResourceType !== selectedResource.type || queryResourceId !== selectedResource.id)
+    ) {
+      return;
+    }
+
+    const subjectType = searchParams.get('explain_subject_type');
+    const subjectId = searchParams.get('explain_subject_id');
+    const action = searchParams.get('explain_action');
+    if (subjectType === 'user' || subjectType === 'group') {
+      setExplainSubjectType(subjectType);
+    }
+    if (subjectId) {
+      setExplainSubjectId(subjectId);
+    }
+    if (action) {
+      setExplainAction(action);
+    }
+  }, [searchParams, selectedResource]);
 
   const memberIds = useMemo(() => (userOptions ?? []).map((o) => o.id), [userOptions]);
   const groupIds = useMemo(() => (groupOptions ?? []).map((o) => o.id), [groupOptions]);

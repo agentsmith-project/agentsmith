@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { useCanManageResourcePolicy, useHasPermission } from '@/lib/hooks/use-permissions';
 
+const mockSearchParams = new URLSearchParams();
+
 const mockAuthorizeMutateAsync = vi.fn().mockResolvedValue({
   allowed: false,
   decision: {
@@ -119,6 +121,10 @@ vi.mock('@/lib/api', () => ({
   }),
 }));
 
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => mockSearchParams,
+}));
+
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
   useCanManageResourcePolicy: vi.fn(() => true),
@@ -199,6 +205,7 @@ function createWrapper() {
 
 describe('ResourcePolicyPage', () => {
   beforeEach(() => {
+    mockSearchParams.forEach((_, key) => mockSearchParams.delete(key));
     mockPolicyData = defaultPolicyData();
     mockMutateAsync.mockClear();
     mockGetResourcePolicy.mockClear();
@@ -464,6 +471,29 @@ describe('ResourcePolicyPage', () => {
     expect(screen.getByTestId('resource-policy__explain-result')).toHaveTextContent('explainability.denied');
     expect(screen.getByTestId('resource-policy__matched-policy')).toHaveTextContent('policy_ep_1');
     expect(screen.getByTestId('resource-policy__matched-policy')).toHaveTextContent('user_123');
+  });
+
+  it('hydrates selected resource and explain inputs from query params', async () => {
+    mockSearchParams.set('resource_type', 'source_library');
+    mockSearchParams.set('resource_id', 'lib_1');
+    mockSearchParams.set('explain_subject_type', 'group');
+    mockSearchParams.set('explain_subject_id', 'group_001');
+    mockSearchParams.set('explain_action', 'upload');
+
+    render(
+      <ResourcePolicyPage
+        params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Shared Docs')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('resource-policy__explain-subject-type')).toHaveValue('group');
+    expect(screen.getByTestId('resource-policy__explain-subject-id')).toHaveValue('group_001');
+    expect(screen.getByTestId('resource-policy__explain-action')).toHaveValue('upload');
   });
 
   it('saves source library policy changes', async () => {

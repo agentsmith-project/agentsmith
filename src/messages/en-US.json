@@ -207,6 +207,7 @@
   },
   "chat": {
     "title": "Chat",
+    "subtitle": "Work with project conversations, endpoints, and attachments in one place.",
     "model_select": "Select Model",
     "model_empty": "No models available",
     "send": "Send",
@@ -326,6 +327,9 @@
       "attachment_preview": "Attachment Preview",
       "attachment_preview_unavailable": "Preview unavailable"
     },
+    "open_notebook": "Open Notebook",
+    "open_endpoints": "Open Endpoints",
+    "open_files": "Open Files",
     "library_picker": {
       "title": "Select file from library",
       "select_library": "Select library",
@@ -340,6 +344,10 @@
   },
   "notebook": {
     "title": "Notebook",
+    "subtitle": "Run long-form agent tasks with files, artifacts, and conversation history.",
+    "open_chat": "Open Chat",
+    "open_files": "Open Files",
+    "open_agents": "Open Agents",
     "thread_new": "New Thread",
     "thread_close": "Close Thread",
     "thread_status_active": "Active",

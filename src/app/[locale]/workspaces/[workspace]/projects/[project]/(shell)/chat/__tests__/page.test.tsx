@@ -165,6 +165,9 @@ describe('ChatPage', () => {
 
     expect(screen.getByTestId('chat__new-thread-btn')).toBeInTheDocument();
     expect(screen.getByTestId('page-layout__body')).toBeInTheDocument();
+    expect(screen.getByTestId('chat__open-notebook')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/notebook');
+    expect(screen.getByTestId('chat__open-endpoints')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/endpoints');
+    expect(screen.getByTestId('chat__open-files')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/files');
   });
 
   it('triggers new thread creation from toolbar', async () => {

@@ -57,6 +57,12 @@ test.describe('Chat Page', () => {
     await expect(newThreadBtn).toBeEnabled();
   });
 
+  test('should show build header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('chat__open-notebook')).toHaveAttribute('href', /\/notebook$/);
+    await expect(authedPage.getByTestId('chat__open-endpoints')).toHaveAttribute('href', /\/endpoints$/);
+    await expect(authedPage.getByTestId('chat__open-files')).toHaveAttribute('href', /\/files$/);
+  });
+
   test('should render thread search and model selector controls', async ({ authedPage }) => {
     await expect(authedPage.getByPlaceholder(/search threads/i)).toBeVisible({ timeout: 10000 });
     await expect(
@@ -81,7 +87,7 @@ test.describe('Chat Page', () => {
     await expect(authedPage.getByTestId('chat__composer')).toBeVisible();
     // The selected thread should be marked as active
     const activeThread = threads.first();
-    const isActive = await activeThread.evaluate((el) =>
+    await activeThread.evaluate((el) =>
       el.classList.contains('active') || el.getAttribute('data-state') === 'active' ||
       el.getAttribute('aria-selected') === 'true' || el.closest('[class*="active"]') !== null,
     );

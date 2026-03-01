@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
@@ -41,8 +42,9 @@ import { ChatMainPane } from '@/components/chat/ChatMainPane';
 import { ChatDeleteDialog } from '@/components/chat/ChatDeleteDialog';
 import { ChatLibraryPickerDialog } from '@/components/chat/ChatLibraryPickerDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
@@ -59,7 +61,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const tErrors = useTranslations('errors');
 
   const token = useAuthStore((s) => s.token);
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const canAccessChat = useHasPermission('project:chat:access');
   const canReadThreads = canAccessChat;
   const canUseChat = canAccessChat;
@@ -79,12 +81,13 @@ export default function ChatPage({ params }: ChatPageProps) {
     params.then((p) => {
       const workspace = validateWorkspaceParam(p.workspace);
       const project = validateProjectParam(p.project);
-      setResolvedParams({ workspace, project });
+      setResolvedParams({ workspace, project, locale: p.locale });
     });
   }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
+  const locale = resolvedParams?.locale ?? 'en-US';
   const { layoutMode } = useProjectLayoutMode();
 
   const apiClient = useMemo(() => getApiClient(), []);
@@ -465,12 +468,44 @@ export default function ChatPage({ params }: ChatPageProps) {
   }
 
   const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
+  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   return (
     <PageState state="success">
       <PageLayout
         density="immersive"
         contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`${basePath}/notebook`}
+                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
+                  data-testid="chat__open-notebook"
+                >
+                  {t('open_notebook')}
+                </Link>
+                <Link
+                  href={`${basePath}/endpoints`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="chat__open-endpoints"
+                >
+                  {t('open_endpoints')}
+                </Link>
+                <Link
+                  href={`${basePath}/files`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="chat__open-files"
+                >
+                  {t('open_files')}
+                </Link>
+              </div>
+            )}
+          />
+        )}
       >
         <div
           className={cn(

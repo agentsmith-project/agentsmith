@@ -209,6 +209,7 @@
   },
   "chat": {
     "title": "聊天",
+    "subtitle": "在一个入口中处理项目对话、端点和附件。",
     "model_select": "选择模型",
     "model_empty": "暂无可用模型",
     "send": "发送",
@@ -328,6 +329,9 @@
       "attachment_preview": "附件预览",
       "attachment_preview_unavailable": "无法预览该附件"
     },
+    "open_notebook": "打开 Notebook",
+    "open_endpoints": "打开 Endpoints",
+    "open_files": "打开文件",
     "library_picker": {
       "title": "从文件库选择文件",
       "select_library": "选择文件库",
@@ -342,6 +346,10 @@
   },
   "notebook": {
     "title": "Notebook",
+    "subtitle": "围绕文件、产物和对话历史执行长流程智能体任务。",
+    "open_chat": "打开聊天",
+    "open_files": "打开文件",
+    "open_agents": "打开 Agents",
     "thread_new": "新建线程",
     "thread_close": "关闭线程",
     "thread_status_active": "活跃",

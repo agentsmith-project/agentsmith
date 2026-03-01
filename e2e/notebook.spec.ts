@@ -32,6 +32,12 @@ test.describe('Notebook Page', () => {
       await expect(createBtn).toBeEnabled();
     });
 
+    test('should show build header actions', async ({ authedPage }) => {
+      await expect(authedPage.getByTestId('notebook__open-chat')).toHaveAttribute('href', /\/chat$/);
+      await expect(authedPage.getByTestId('notebook__open-files')).toHaveAttribute('href', /\/files$/);
+      await expect(authedPage.getByTestId('notebook__open-agents')).toHaveAttribute('href', /\/agents$/);
+    });
+
     test('should open create task dialog', async ({ authedPage }) => {
       const createBtn = authedPage.getByTestId('notebook__create-task-btn');
       await expect(createBtn).toBeVisible({ timeout: 10000 });
@@ -56,7 +62,7 @@ test.describe('Notebook Page', () => {
       await expect(taskCards.first()).toBeVisible({ timeout: 10000 });
 
       // Get the task ID from the card for URL verification
-      const taskId = await taskCards.first().getAttribute('data-task-id');
+      const _taskId = await taskCards.first().getAttribute('data-task-id');
 
       // Click the first task card
       await taskCards.first().click();

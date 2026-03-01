@@ -35,6 +35,9 @@ describe('NotebookPage route', () => {
       expect(screen.getByTestId('notebook__task-list-route')).toBeInTheDocument();
     });
     expect(screen.getByText('ws_1:proj_1:true')).toBeInTheDocument();
+    expect(screen.getByTestId('notebook__open-chat')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/chat');
+    expect(screen.getByTestId('notebook__open-files')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/files');
+    expect(screen.getByTestId('notebook__open-agents')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/agents');
   });
 
   it('shows invalid parameter error for unsafe workspace/project', async () => {

@@ -21,6 +21,10 @@ import {
   useBatchApplyPermissionTemplate,
   useBatchApplyQuotaTemplate,
 } from './use-members';
+import {
+  useAuthorizationCheck,
+  useEffectiveAccessSnapshot,
+} from './use-governance-explainability';
 import { useMemberSelection } from './use-member-selection';
 import { useMemberDialogs } from './use-member-dialogs';
 import { useMemberActions } from './use-member-actions';
@@ -83,6 +87,7 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
   const removeMember = useRemoveMember(workspaceId, projectId);
   const batchApplyPermission = useBatchApplyPermissionTemplate(workspaceId, projectId);
   const batchApplyQuota = useBatchApplyQuotaTemplate(workspaceId, projectId);
+  const authorizationCheck = useAuthorizationCheck(workspaceId, projectId);
 
   // Selected member data queries
   const { data: permissions } = useMemberPermissions(
@@ -91,6 +96,11 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     dialogs.selectedMember?.id || ''
   );
   const { data: quotaOverrides } = useMemberQuotaOverrides(
+    workspaceId,
+    projectId,
+    dialogs.selectedMember?.id || ''
+  );
+  const { data: effectiveAccessSnapshot } = useEffectiveAccessSnapshot(
     workspaceId,
     projectId,
     dialogs.selectedMember?.id || ''
@@ -134,6 +144,7 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     selectedMember: dialogs.selectedMember,
     permissions,
     quotaOverrides,
+    effectiveAccessSnapshot,
     changeHistory,
     quotaHistoryData,
     quotaHistoryLoading,
@@ -159,6 +170,8 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     isUpdatingPermissions: updatePermissions.isPending,
     isUpdatingQuota: updateQuotaOverrides.isPending,
     isRemovingMember: removeMember.isPending,
+    isCheckingAuthorization: authorizationCheck.isPending,
+    authorizationCheckResult: authorizationCheck.data ?? null,
 
     // Dialog setters
     setSelectedMember: dialogs.setSelectedMember,
@@ -184,6 +197,7 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     clearSelection: selection.clearSelection,
     handleBatchApplyPermission: actions.handleBatchApplyPermission,
     handleBatchApplyQuota: actions.handleBatchApplyQuota,
+    handleAuthorizationCheck: authorizationCheck.mutateAsync,
   };
 }
 

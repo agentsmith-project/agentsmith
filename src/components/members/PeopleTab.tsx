@@ -189,6 +189,16 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
             _projectId={projectId}
             permissionTemplates={context.permissionTemplates}
             quotaTemplates={context.quotaTemplates}
+            effectiveAccessSnapshot={context.effectiveAccessSnapshot}
+            authorizationCheckResult={context.authorizationCheckResult}
+            isCheckingAuthorization={context.isCheckingAuthorization}
+            onRunAuthorizationCheck={async ({ resourceType, resourceId, action }) =>
+              context.handleAuthorizationCheck({
+                subject: { type: 'user', id: context.selectedMember!.id },
+                resource: { type: resourceType, id: resourceId },
+                action,
+              })
+            }
             onSavePermissions={context.handleSavePermissions}
             onSaveQuota={context.handleSaveQuota}
             onViewHistory={() => {
@@ -213,6 +223,16 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
             _projectId={projectId}
             permissionTemplates={context.permissionTemplates}
             quotaTemplates={context.quotaTemplates}
+            effectiveAccessSnapshot={context.effectiveAccessSnapshot}
+            authorizationCheckResult={context.authorizationCheckResult}
+            isCheckingAuthorization={context.isCheckingAuthorization}
+            onRunAuthorizationCheck={async ({ resourceType, resourceId, action }) =>
+              context.handleAuthorizationCheck({
+                subject: { type: 'user', id: context.selectedMember!.id },
+                resource: { type: resourceType, id: resourceId },
+                action,
+              })
+            }
             onSavePermissions={context.handleSavePermissions}
             onSaveQuota={context.handleSaveQuota}
             onViewHistory={() => {

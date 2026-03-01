@@ -407,17 +407,17 @@
         "title": "Add Files as Inputs",
         "description": "Choose files from your library to add as context inputs",
         "search_placeholder": "Search your files...",
-      "confirm": "Add Selected",
-      "no_files": "No ready files available in your library",
-      "from_library": "From your Files library",
-      "library_objects_title": "File Library Objects",
-      "library_objects_empty": "No file libraries yet",
-      "library_objects_no_items": "No files in this library yet",
-      "library_objects_add": "Add",
-      "library_objects_hint": "Library objects will be imported as task-selectable files, then attached to this task.",
-      "none_selected": "No files selected",
-      "selected_count": "{count} file(s) selected"
-    },
+        "confirm": "Add Selected",
+        "no_files": "No ready files available in your library",
+        "from_library": "From your Files library",
+        "library_objects_title": "File Library Objects",
+        "library_objects_empty": "No file libraries yet",
+        "library_objects_no_items": "No files in this library yet",
+        "library_objects_add": "Add",
+        "library_objects_hint": "Library objects will be imported as task-selectable files, then attached to this task.",
+        "none_selected": "No files selected",
+        "selected_count": "{count} file(s) selected"
+      },
       "tooltip": {
         "attached_file": "This file is attached to this notebook as context input",
         "remove_file": "Remove from notebook (file remains in your library)"
@@ -1974,6 +1974,37 @@
       },
       "approve_success": "Join request approved successfully",
       "reject_success": "Join request rejected successfully"
+    },
+    "effective_access": {
+      "title": "Effective Access",
+      "current_state_title": "Current effective state",
+      "current_state_description": "Inspect the member's current lifecycle, effective permissions, and active quota overrides.",
+      "membership_status_label": "Membership status",
+      "role_label": "Resolved role",
+      "permissions_label": "Effective permissions",
+      "quota_label": "Quota overrides",
+      "no_permissions": "No effective permissions",
+      "no_quota_overrides": "No quota overrides",
+      "authorize_title": "Run authorization check",
+      "authorize_description": "Verify whether this member can perform an action on a specific governed resource.",
+      "resource_type": "Resource type",
+      "resource_id": "Resource ID",
+      "resource_id_placeholder": "Leave blank to use current member/project context",
+      "action": "Action",
+      "action_placeholder": "e.g. read, invoke, upload",
+      "run_check": "Run Check",
+      "checking": "Checking…",
+      "allowed": "Allowed",
+      "denied": "Denied",
+      "reason_label": "Reason",
+      "source_label": "Source",
+      "matched_policy": "Matched policy",
+      "membership_status": {
+        "active": "Active",
+        "pending": "Pending",
+        "suspended": "Suspended",
+        "none": "No membership"
+      }
     }
   },
   "overview": {

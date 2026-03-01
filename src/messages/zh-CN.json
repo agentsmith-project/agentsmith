@@ -409,17 +409,17 @@
         "title": "添加文件作为输入",
         "description": "从您的文件库中选择文件作为上下文输入",
         "search_placeholder": "搜索您的文件...",
-      "confirm": "添加选中",
-      "no_files": "您的文件库中暂无可用文件",
-      "from_library": "来自您的文件库",
-      "library_objects_title": "文件库对象",
-      "library_objects_empty": "暂无文件库",
-      "library_objects_no_items": "该文件库中暂无文件",
-      "library_objects_add": "添加",
-      "library_objects_hint": "文件库对象会先导入为可挂载文件，再附加到当前任务。",
-      "none_selected": "未选择文件",
-      "selected_count": "已选择 {count} 个文件"
-    },
+        "confirm": "添加选中",
+        "no_files": "您的文件库中暂无可用文件",
+        "from_library": "来自您的文件库",
+        "library_objects_title": "文件库对象",
+        "library_objects_empty": "暂无文件库",
+        "library_objects_no_items": "该文件库中暂无文件",
+        "library_objects_add": "添加",
+        "library_objects_hint": "文件库对象会先导入为可挂载文件，再附加到当前任务。",
+        "none_selected": "未选择文件",
+        "selected_count": "已选择 {count} 个文件"
+      },
       "tooltip": {
         "attached_file": "此文件已附加到此笔记本作为上下文输入",
         "remove_file": "从笔记本中移除（文件仍保留在您的文件库中）"
@@ -1976,6 +1976,37 @@
       },
       "approve_success": "加入申请已批准",
       "reject_success": "加入申请已拒绝"
+    },
+    "effective_access": {
+      "title": "有效访问",
+      "current_state_title": "当前生效状态",
+      "current_state_description": "查看该成员当前的生命周期状态、生效权限与配额覆盖。",
+      "membership_status_label": "成员状态",
+      "role_label": "生效角色",
+      "permissions_label": "生效权限",
+      "quota_label": "配额覆盖",
+      "no_permissions": "当前没有生效权限",
+      "no_quota_overrides": "当前没有配额覆盖",
+      "authorize_title": "运行授权检查",
+      "authorize_description": "验证该成员是否能对指定治理资源执行某个动作。",
+      "resource_type": "资源类型",
+      "resource_id": "资源 ID",
+      "resource_id_placeholder": "留空则使用当前成员/项目上下文",
+      "action": "动作",
+      "action_placeholder": "例如 read、invoke、upload",
+      "run_check": "运行检查",
+      "checking": "检查中…",
+      "allowed": "允许",
+      "denied": "拒绝",
+      "reason_label": "原因",
+      "source_label": "来源",
+      "matched_policy": "命中策略",
+      "membership_status": {
+        "active": "有效",
+        "pending": "待处理",
+        "suspended": "已暂停",
+        "none": "无成员关系"
+      }
     }
   },
   "overview": {

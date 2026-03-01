@@ -91,6 +91,7 @@ describe('MembersPage', () => {
       selectedMember: null,
       permissions: [],
       quotaOverrides: [],
+      effectiveAccessSnapshot: null,
       changeHistory: [],
       quotaHistoryData: null,
       quotaHistoryLoading: false,
@@ -110,6 +111,8 @@ describe('MembersPage', () => {
       isUpdatingPermissions: false,
       isUpdatingQuota: false,
       isRemovingMember: false,
+      isCheckingAuthorization: false,
+      authorizationCheckResult: null,
       setSelectedMember: vi.fn(),
       setDrawerOpen: vi.fn(),
       setHistoryDrawerOpen: vi.fn(),
@@ -131,6 +134,7 @@ describe('MembersPage', () => {
       clearSelection: vi.fn(),
       handleBatchApplyPermission: vi.fn(),
       handleBatchApplyQuota: vi.fn(),
+      handleAuthorizationCheck: vi.fn(),
     } as any);
   });
 

@@ -84,6 +84,9 @@ test.describe('Notebook Page', () => {
     test('should display task header', async ({ authedPage }) => {
       const header = authedPage.getByTestId('notebook__task-header');
       await expect(header).toBeVisible({ timeout: 10000 });
+      await expect(authedPage.getByTestId('notebook-task__open-list')).toHaveAttribute('href', /\/notebook$/);
+      await expect(authedPage.getByTestId('notebook-task__open-chat')).toHaveAttribute('href', /\/chat$/);
+      await expect(authedPage.getByTestId('notebook-task__open-files')).toHaveAttribute('href', /\/files$/);
     });
 
     test('should display conversation input and send button', async ({ authedPage }) => {

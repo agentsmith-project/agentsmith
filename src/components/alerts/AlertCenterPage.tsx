@@ -14,6 +14,7 @@ import { Plus, Bell, Settings } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PageState } from '@/components/layout/PageState';
+import { Button } from '@/components/ui/button';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { AlertRulesList } from './AlertRulesList';
 import { AlertNotificationsPanel } from './AlertNotificationsPanel';
@@ -181,14 +182,16 @@ export function AlertCenterPage({
           </TabsList>
 
           {activeTab === 'rules' && canManageAlerts && (
-            <button
+            <Button
               onClick={() => setIsCreateDialogOpen(true)}
-              className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 flex items-center gap-2"
+              variant="action"
+              size="sm"
+              className="gap-2"
               data-testid="alert-center__create-button"
             >
               <Plus className="h-4 w-4" />
               {t('create_rule')}
-            </button>
+            </Button>
           )}
         </div>
 

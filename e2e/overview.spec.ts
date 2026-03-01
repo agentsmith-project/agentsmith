@@ -27,6 +27,12 @@ test.describe('AI Ops Home', () => {
     await expect(authedPage.getByTestId('overview__snapshot-cost')).toBeVisible();
     await expect(authedPage.getByTestId('overview__snapshot-release')).toBeVisible();
     await expect(authedPage.getByTestId('overview__snapshot-incidents')).toBeVisible();
+    await expect(authedPage.getByTestId('overview__primary-actions')).toBeVisible();
+    await expect(authedPage.getByTestId('overview__primary-action-0')).toBeVisible();
+    await expect(authedPage.getByTestId('overview__primary-action-link-0')).toHaveAttribute('href', /release-ops\?/);
+    await expect(authedPage.getByTestId('overview__primary-action-link-1')).toHaveAttribute('href', /runtime-observability\?/);
+    await expect(authedPage.getByTestId('overview__primary-action-link-2')).toHaveAttribute('href', /usage\?/);
+    await expect(authedPage.getByTestId('overview__primary-action-link-3')).toHaveAttribute('href', /release-ops\?/);
     await expect(authedPage.getByTestId('overview__quick-actions')).toBeVisible();
     await expect(authedPage.getByTestId('overview__snapshot-runtime-link')).toHaveAttribute('href', /runtime-observability\?/);
     await expect(authedPage.getByTestId('overview__snapshot-cost-link')).toHaveAttribute('href', /usage\?/);

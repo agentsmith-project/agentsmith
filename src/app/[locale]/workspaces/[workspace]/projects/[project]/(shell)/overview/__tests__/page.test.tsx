@@ -132,12 +132,17 @@ describe('OverviewPage', () => {
     expect(screen.getByTestId('overview__ai-ops-home')).toBeInTheDocument();
     expect(screen.getByTestId('overview__status-strip')).toBeInTheDocument();
     expect(screen.getByTestId('overview__attention')).toBeInTheDocument();
+    expect(screen.getByTestId('overview__primary-actions')).toBeInTheDocument();
     expect(screen.getByTestId('overview__snapshot-runtime')).toBeInTheDocument();
     expect(screen.getByTestId('overview__snapshot-release')).toBeInTheDocument();
     expect(screen.getByTestId('overview__quick-actions')).toBeInTheDocument();
     expect(screen.getByTestId('overview__snapshot-runtime-link')).toHaveAttribute('href', expect.stringContaining('/runtime-observability?'));
     expect(screen.getByTestId('overview__snapshot-cost-link')).toHaveAttribute('href', expect.stringContaining('/usage?'));
     expect(screen.getByTestId('overview__snapshot-release-link')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
+    expect(screen.getByTestId('overview__primary-action-link-0')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
+    expect(screen.getByTestId('overview__primary-action-link-1')).toHaveAttribute('href', expect.stringContaining('/runtime-observability?'));
+    expect(screen.getByTestId('overview__primary-action-link-2')).toHaveAttribute('href', expect.stringContaining('/usage?'));
+    expect(screen.getByTestId('overview__primary-action-link-3')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
   });
 
   it('renders header and toolbar layout', () => {

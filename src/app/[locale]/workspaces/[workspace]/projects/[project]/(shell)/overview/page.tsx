@@ -34,6 +34,14 @@ type AttentionItem = {
   href: string;
   actionLabel: string;
 };
+type PrimaryActionItem = {
+  id: string;
+  tone: HomeStatusTone;
+  title: string;
+  body: string;
+  href: string;
+  actionLabel: string;
+};
 
 function getTimeRange(preset: TimeRangePreset): { start_time: string; end_time: string } {
   const end = new Date();
@@ -260,6 +268,91 @@ export default function OverviewPage() {
     });
   }
 
+  const primaryActions: PrimaryActionItem[] = [];
+  primaryActions.push(
+    releaseTone === 'blocked'
+      ? {
+          id: 'resolve-release-blockers',
+          tone: 'blocked',
+          title: t('primary_actions.resolve_release_blockers_title'),
+          body: t('primary_actions.resolve_release_blockers_body'),
+          href: releaseOpsHref,
+          actionLabel: t('primary_actions.open_release_ops'),
+        }
+      : {
+          id: 'review-release-readiness',
+          tone: releaseTone,
+          title: t('primary_actions.review_release_readiness_title'),
+          body: t('primary_actions.review_release_readiness_body'),
+          href: releaseOpsHref,
+          actionLabel: t('primary_actions.open_release_ops'),
+        },
+  );
+  primaryActions.push(
+    runtimeTone === 'blocked' || runtimeTone === 'warning'
+      ? {
+          id: 'investigate-runtime',
+          tone: runtimeTone,
+          title: t('primary_actions.investigate_runtime_title'),
+          body: t('primary_actions.investigate_runtime_body'),
+          href: `${basePath}/runtime-observability${buildSharedOpsFilterQuery({
+            ...timeRange,
+            result: runtimeTone === 'ready' ? undefined : 'error',
+          })}`,
+          actionLabel: t('primary_actions.open_runtime'),
+        }
+      : {
+          id: 'review-runtime-health',
+          tone: 'ready',
+          title: t('primary_actions.review_runtime_health_title'),
+          body: t('primary_actions.review_runtime_health_body'),
+          href: runtimeHref,
+          actionLabel: t('primary_actions.open_runtime'),
+        },
+  );
+  primaryActions.push(
+    costTone === 'blocked' || costTone === 'warning'
+      ? {
+          id: 'review-cost-anomalies',
+          tone: costTone,
+          title: t('primary_actions.review_cost_anomalies_title'),
+          body: t('primary_actions.review_cost_anomalies_body'),
+          href: `${basePath}/usage${buildSharedOpsFilterQuery({
+            ...timeRange,
+            panel: 'usage',
+            result: costTone === 'blocked' ? 'error' : undefined,
+          })}`,
+          actionLabel: t('primary_actions.open_usage'),
+        }
+      : {
+          id: 'review-cost-health',
+          tone: 'ready',
+          title: t('primary_actions.review_cost_health_title'),
+          body: t('primary_actions.review_cost_health_body'),
+          href: usageHref,
+          actionLabel: t('primary_actions.open_usage'),
+        },
+  );
+  primaryActions.push(
+    incidentTone === 'blocked' || incidentTone === 'warning'
+      ? {
+          id: 'handle-open-incidents',
+          tone: incidentTone,
+          title: t('primary_actions.handle_open_incidents_title'),
+          body: t('primary_actions.handle_open_incidents_body'),
+          href: releaseOpsHref,
+          actionLabel: t('primary_actions.open_release_ops'),
+        }
+      : {
+          id: 'review-incident-ownership',
+          tone: 'ready',
+          title: t('primary_actions.review_incident_ownership_title'),
+          body: t('primary_actions.review_incident_ownership_body'),
+          href: releaseOpsHref,
+          actionLabel: t('primary_actions.open_release_ops'),
+        },
+  );
+
   const quickActions: NavItem[] = [
     {
       icon: MessageSquare,
@@ -447,6 +540,41 @@ export default function OverviewPage() {
                   {t('attention.empty')}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="overview__primary-actions">
+            <CardHeader>
+              <CardTitle>{t('primary_actions.title')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 xl:grid-cols-2">
+                {primaryActions.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className={cn('flex flex-col gap-3 rounded-xl border p-4', statusToneClassName(item.tone))}
+                    data-testid={`overview__primary-action-${index}`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={item.tone}>{t(`status_labels.${item.tone}`)}</StatusBadge>
+                        <span className="text-sm font-medium text-foreground">{item.title}</span>
+                      </div>
+                      <p className="text-sm text-tertiary">{item.body}</p>
+                    </div>
+                    <div>
+                      <Link
+                        href={item.href}
+                        data-testid={`overview__primary-action-link-${index}`}
+                        className="inline-flex items-center gap-2 text-sm font-medium text-accent hover:underline"
+                      >
+                        {item.actionLabel}
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
 

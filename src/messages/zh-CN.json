@@ -1992,6 +1992,28 @@
       "review_cost": "查看成本",
       "investigate_runtime": "排查运行问题"
     },
+    "primary_actions": {
+      "title": "现在要做什么",
+      "resolve_release_blockers_title": "先处理发布阻塞",
+      "resolve_release_blockers_body": "最近一次发布门禁已被阻断，继续变更前应先清掉阻塞项。",
+      "review_release_readiness_title": "确认发布就绪度",
+      "review_release_readiness_body": "在继续调整运行时、价格或发布策略前，先确认当前 gate 状态。",
+      "investigate_runtime_title": "排查运行问题",
+      "investigate_runtime_body": "运行退化或终态失败需要先到运行控制台做一轮确认。",
+      "review_runtime_health_title": "确认运行健康度",
+      "review_runtime_health_body": "当前运行稳定，可在运行视图中继续确认 provider、route 与 fallback 行为是否健康。",
+      "review_cost_anomalies_title": "检查成本异常",
+      "review_cost_anomalies_body": "近期成本波动或缺价覆盖需要尽快确认，避免演变成治理问题。",
+      "review_cost_health_title": "确认成本健康度",
+      "review_cost_health_body": "当前成本稳定，可在用量视图中继续确认 pricing 与高成本面是否受控。",
+      "handle_open_incidents_title": "处理 open incident",
+      "handle_open_incidents_body": "当前 open 或超时 incident 需要明确 owner、SLA 和处理结论。",
+      "review_incident_ownership_title": "确认 incident 责任归属",
+      "review_incident_ownership_body": "当前没有阻塞项目的 incident，可在 Release Ops 中继续确认 ownership 和 handoff 是否干净。",
+      "open_release_ops": "打开 Release Ops",
+      "open_runtime": "打开运行时运营",
+      "open_usage": "打开用量"
+    },
     "snapshots": {
       "runtime_title": "运行态摘要",
       "cost_title": "成本摘要",
@@ -2016,7 +2038,6 @@
     "open_runtime": "打开运行时运营",
     "open_usage": "打开用量",
     "open_release_ops": "打开发布运营",
-    "open_release_ops": "打开 Release Ops",
     "empty_cost_snapshot": "当前时间窗口内没有明显高成本 provider/model。",
     "quick_actions": "快速入口",
     "actions": {

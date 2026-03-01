@@ -115,6 +115,18 @@ const releaseReports: ReleaseReportListItem[] = [
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
     markdown_available: true,
+    policy_enforcement: {
+      decision: 'ready',
+      base_decision: 'ready',
+      blocker_count: 0,
+      warning_count: 0,
+      pending_override_count: 0,
+      approved_override_count: 0,
+      unresolved_blockers: [],
+      overridden_blockers: [],
+      pending_override_issues: [],
+      rejected_override_issues: [],
+    },
   },
   {
     name: 'usage-webhook-signature-policy-check',
@@ -128,6 +140,18 @@ const releaseReports: ReleaseReportListItem[] = [
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
     markdown_available: true,
+    policy_enforcement: {
+      decision: 'warning',
+      base_decision: 'warning',
+      blocker_count: 0,
+      warning_count: 1,
+      pending_override_count: 0,
+      approved_override_count: 0,
+      unresolved_blockers: [],
+      overridden_blockers: [],
+      pending_override_issues: [],
+      rejected_override_issues: [],
+    },
   },
   {
     name: 'runtime-evidence-gate-regression-20260227',
@@ -141,6 +165,26 @@ const releaseReports: ReleaseReportListItem[] = [
     runtime_release_readiness: 'blocked',
     usage_release_readiness: 'blocked',
     markdown_available: true,
+    policy_enforcement: {
+      decision: 'releasable_with_override',
+      base_decision: 'blocked',
+      blocker_count: 5,
+      warning_count: 2,
+      pending_override_count: 0,
+      approved_override_count: 1,
+      unresolved_blockers: [],
+      overridden_blockers: [
+        {
+          id: 'execution_failures_present',
+          severity: 'blocker',
+          source: 'execution',
+          message: 'Execution has 2 failed checks.',
+          overridable: true,
+        },
+      ],
+      pending_override_issues: [],
+      rejected_override_issues: [],
+    },
   },
 ];
 
@@ -157,6 +201,7 @@ const releaseRuns: ReleaseGateRunListItem[] = [
     branch: 'main',
     commit_short: '6e002bd',
     release_policy_decision: 'ready',
+    policy_enforcement: releaseReports[0]?.policy_enforcement,
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
     total_checks: 6,
@@ -175,6 +220,7 @@ const releaseRuns: ReleaseGateRunListItem[] = [
     branch: 'main',
     commit_short: '5d1e26e',
     release_policy_decision: 'warning',
+    policy_enforcement: releaseReports[1]?.policy_enforcement,
     runtime_release_readiness: 'ready',
     usage_release_readiness: 'ready',
     total_checks: 6,
@@ -193,6 +239,7 @@ const releaseRuns: ReleaseGateRunListItem[] = [
     branch: 'main',
     commit_short: 'a0f74a6',
     release_policy_decision: 'blocked',
+    policy_enforcement: releaseReports[2]?.policy_enforcement,
     runtime_release_readiness: 'blocked',
     usage_release_readiness: 'blocked',
     total_checks: 6,
@@ -295,6 +342,7 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
 const releaseReportDetails = new Map<string, ReleaseReportDetail>([
   ['wp11-release-controls-final-20260228', {
     name: 'wp11-release-controls-final-20260228',
+    policy_enforcement: releaseReports[0]?.policy_enforcement,
     report: {
       metadata: {
         timestamp: '2026-02-28T20:35:10.000Z',
@@ -350,6 +398,7 @@ const releaseReportDetails = new Map<string, ReleaseReportDetail>([
   }],
   ['usage-webhook-signature-policy-check', {
     name: 'usage-webhook-signature-policy-check',
+    policy_enforcement: releaseReports[1]?.policy_enforcement,
     report: {
       metadata: {
         timestamp: '2026-02-28T22:10:00.000Z',
@@ -413,6 +462,7 @@ const releaseReportDetails = new Map<string, ReleaseReportDetail>([
   }],
   ['runtime-evidence-gate-regression-20260227', {
     name: 'runtime-evidence-gate-regression-20260227',
+    policy_enforcement: releaseReports[2]?.policy_enforcement,
     report: {
       metadata: {
         timestamp: '2026-02-27T19:25:00.000Z',

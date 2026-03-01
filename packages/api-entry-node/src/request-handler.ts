@@ -30,12 +30,45 @@ import {
 } from './release-escalation-state-store.js';
 import { getReleaseReportDetail, listReleaseReports } from './release-report-store.js';
 import { getReleaseGateRunDetail, listReleaseGateRuns } from './release-run-store.js';
-import { createReleasePolicyOverride, listReleasePolicyOverrides, updateReleasePolicyOverrideDecision } from './release-policy-override-store.js';
+import {
+  createReleasePolicyOverride,
+  listReleasePolicyOverrides,
+  updateReleasePolicyOverrideDecision,
+} from './release-policy-override-store.js';
 import {
   getNotebookRuntimeMetricsPrometheusText,
   getNotebookRuntimeMetricsSnapshot,
   handleTaskRoute,
 } from './task-route-handler.js';
+import { enforceReleasePolicy, type ReleasePolicyEvaluation } from '../../../src/lib/release-policy.js';
+
+type ReleaseReportPolicyShape = {
+  summary?: {
+    release_policy?: ReleasePolicyEvaluation;
+  };
+};
+
+async function buildPolicyEnforcement(
+  deps: NodeApiDeps,
+  reportName: string,
+  report: Record<string, unknown>,
+  scope?: { workspaceId?: string | null; projectId?: string | null },
+) {
+  const evaluation = (report as ReleaseReportPolicyShape).summary?.release_policy;
+  if (!evaluation) return undefined;
+  const workspaceId = scope?.workspaceId?.trim();
+  const projectId = scope?.projectId?.trim();
+  const overrides = workspaceId && projectId
+    ? await listReleasePolicyOverrides(deps.docStore, { workspaceId, projectId, reportName })
+    : [];
+  return enforceReleasePolicy(
+    evaluation,
+    overrides.map((item) => ({
+      issue_id: item.issue_id,
+      status: item.status,
+    })),
+  );
+}
 
 function isChatRoute(route: { kind: string }): route is ChatRoute {
   return route.kind.startsWith('chat');
@@ -321,8 +354,21 @@ export async function handleRequest(
       unauthorized(res);
       return;
     }
+    const workspaceId = requestUrl.searchParams.get('workspace_id');
+    const projectId = requestUrl.searchParams.get('project_id');
+    const reports = listReleaseReports(deps.releaseReportsDir ?? 'artifacts/release-reports');
+    const items = await Promise.all(
+      reports.map(async (item) => {
+        const detail = getReleaseReportDetail(deps.releaseReportsDir ?? 'artifacts/release-reports', item.name);
+        if (!detail) return item;
+        return {
+          ...item,
+          policy_enforcement: await buildPolicyEnforcement(deps, item.name, detail.report, { workspaceId, projectId }),
+        };
+      }),
+    );
     json(res, 200, {
-      items: listReleaseReports(deps.releaseReportsDir ?? 'artifacts/release-reports'),
+      items,
     });
     return;
   }
@@ -339,7 +385,12 @@ export async function handleRequest(
       json(res, 404, { error_code: 'NOT_FOUND', message: 'release_report_not_found' });
       return;
     }
-    json(res, 200, detail);
+    const workspaceId = requestUrl.searchParams.get('workspace_id');
+    const projectId = requestUrl.searchParams.get('project_id');
+    json(res, 200, {
+      ...detail,
+      policy_enforcement: await buildPolicyEnforcement(deps, reportName, detail.report, { workspaceId, projectId }),
+    });
     return;
   }
 
@@ -349,8 +400,21 @@ export async function handleRequest(
       unauthorized(res);
       return;
     }
+    const workspaceId = requestUrl.searchParams.get('workspace_id');
+    const projectId = requestUrl.searchParams.get('project_id');
+    const runs = listReleaseGateRuns(deps.releaseRunsDir ?? 'artifacts/release-runs');
+    const items = await Promise.all(
+      runs.map(async (item) => {
+        const detail = getReleaseReportDetail(deps.releaseReportsDir ?? 'artifacts/release-reports', item.report_name);
+        if (!detail) return item;
+        return {
+          ...item,
+          policy_enforcement: await buildPolicyEnforcement(deps, item.report_name, detail.report, { workspaceId, projectId }),
+        };
+      }),
+    );
     json(res, 200, {
-      items: listReleaseGateRuns(deps.releaseRunsDir ?? 'artifacts/release-runs'),
+      items,
     });
     return;
   }
@@ -367,7 +431,15 @@ export async function handleRequest(
       json(res, 404, { error_code: 'NOT_FOUND', message: 'release_run_not_found' });
       return;
     }
-    json(res, 200, detail);
+    const workspaceId = requestUrl.searchParams.get('workspace_id');
+    const projectId = requestUrl.searchParams.get('project_id');
+    const report = getReleaseReportDetail(deps.releaseReportsDir ?? 'artifacts/release-reports', detail.report_name);
+    json(res, 200, {
+      ...detail,
+      policy_enforcement: report
+        ? await buildPolicyEnforcement(deps, detail.report_name, report.report, { workspaceId, projectId })
+        : undefined,
+    });
     return;
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateReleasePolicy } from '@/lib/release-policy';
+import { enforceReleasePolicy, evaluateReleasePolicy } from '@/lib/release-policy';
 
 describe('evaluateReleasePolicy', () => {
   it('returns ready when no issues are present', () => {
@@ -71,5 +71,45 @@ describe('evaluateReleasePolicy', () => {
     expect(result.decision).toBe('blocked');
     expect(result.summary.blocker_count).toBeGreaterThan(0);
     expect(result.summary.warning_count).toBeGreaterThan(0);
+  });
+
+  it('marks a gate as pending_override when remaining blockers are waiting for approval', () => {
+    const evaluation = evaluateReleasePolicy({
+      execution: {
+        failed_count: 1,
+        transient_acceptance: 'mixed_or_blocking',
+      },
+    });
+
+    const enforced = enforceReleasePolicy(evaluation, [
+      {
+        issue_id: 'execution_failures_present',
+        status: 'pending',
+      },
+    ]);
+
+    expect(evaluation.blockers[0]?.overridable).toBe(true);
+    expect(enforced.decision).toBe('pending_override');
+    expect(enforced.pending_override_count).toBe(1);
+  });
+
+  it('marks a gate as releasable_with_override when all blockers are approved exceptions', () => {
+    const evaluation = evaluateReleasePolicy({
+      execution: {
+        failed_count: 1,
+        transient_acceptance: 'mixed_or_blocking',
+      },
+    });
+
+    const enforced = enforceReleasePolicy(evaluation, [
+      {
+        issue_id: 'execution_failures_present',
+        status: 'approved',
+      },
+    ]);
+
+    expect(enforced.decision).toBe('releasable_with_override');
+    expect(enforced.approved_override_count).toBe(1);
+    expect(enforced.unresolved_blockers).toHaveLength(0);
   });
 });

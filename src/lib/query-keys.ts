@@ -241,10 +241,12 @@ export const queryKeys = {
 
   releaseOps: {
     _def: ['release-ops'] as const,
-    list: () => ['release-ops', 'reports'] as const,
-    detail: (name: string) => ['release-ops', 'reports', name] as const,
-    runs: () => ['release-ops', 'runs'] as const,
-    runDetail: (id: string) => ['release-ops', 'runs', id] as const,
+    list: (workspaceId = '', projectId = '') => ['release-ops', 'reports', workspaceId, projectId] as const,
+    detail: (name: string, workspaceId = '', projectId = '') =>
+      ['release-ops', 'reports', workspaceId, projectId, name] as const,
+    runs: (workspaceId = '', projectId = '') => ['release-ops', 'runs', workspaceId, projectId] as const,
+    runDetail: (id: string, workspaceId = '', projectId = '') =>
+      ['release-ops', 'runs', workspaceId, projectId, id] as const,
     escalations: () => ['release-ops', 'escalations'] as const,
     escalationDetail: (id: string) => ['release-ops', 'escalations', id] as const,
     overrides: (workspaceId: string, projectId: string, reportName: string) =>

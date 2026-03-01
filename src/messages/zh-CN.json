@@ -1034,6 +1034,7 @@
     "release_ops_compare_report_blockers": "报告阻断项",
     "release_ops_compare_report_warnings": "报告告警项",
     "release_ops_policy_title": "发布策略",
+    "release_ops_policy_enforcement": "发布门禁执行状态",
     "release_ops_timeline_title": "近期报告时间线",
     "release_ops_timeline_subtitle": "跟踪最近 release artifact 的结果与就绪度变化。",
     "release_ops_timeline_pass_rate": "近期通过率",

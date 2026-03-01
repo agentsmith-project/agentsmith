@@ -4194,6 +4194,33 @@ describe('api-entry-node projects routes', () => {
       },
       summary: {
         status: 'pass',
+        release_policy: {
+          decision: 'blocked',
+          blockers: [
+            {
+              id: 'execution_failures_present',
+              severity: 'blocker',
+              source: 'execution',
+              message: 'Execution has 1 failed checks.',
+              overridable: true,
+            },
+          ],
+          warnings: [
+            {
+              id: 'usage_usage_report_webhook_signature_recommended',
+              severity: 'warning',
+              source: 'usage',
+              message: 'usage_report_webhook_signature_recommended',
+              overridable: true,
+            },
+          ],
+          summary: {
+            total_issues: 2,
+            blocker_count: 1,
+            warning_count: 1,
+            overridable_count: 2,
+          },
+        },
         runtime_release_evidence: {
           guardrails: {
             release_readiness: 'ready',
@@ -4245,37 +4272,90 @@ describe('api-entry-node projects routes', () => {
 
     const { baseUrl } = startServerWithDeps(deps);
 
-    const listRes = await apiFetch(baseUrl, '/api/v1/internal/release-reports');
+    const listRes = await apiFetch(baseUrl, '/api/v1/internal/release-reports?workspace_id=ws_default&project_id=proj_1');
     expect(listRes.status).toBe(200);
-    const listPayload = (await listRes.json()) as { items: Array<{ name: string; status: string; markdown_available: boolean }> };
+    const listPayload = (await listRes.json()) as {
+      items: Array<{
+        name: string;
+        status: string;
+        markdown_available: boolean;
+        policy_enforcement?: { decision?: string };
+      }>;
+    };
     expect(listPayload.items[0]).toEqual(expect.objectContaining({
       name: 'sample-release',
       status: 'pass',
       markdown_available: true,
+      policy_enforcement: expect.objectContaining({
+        decision: 'blocked',
+      }),
     }));
 
-    const detailRes = await apiFetch(baseUrl, '/api/v1/internal/release-reports/sample-release');
+    const detailRes = await apiFetch(baseUrl, '/api/v1/internal/release-reports/sample-release?workspace_id=ws_default&project_id=proj_1');
     expect(detailRes.status).toBe(200);
-    const detailPayload = (await detailRes.json()) as { name: string; markdown?: string; report?: { summary?: { status?: string } } };
+    const detailPayload = (await detailRes.json()) as {
+      name: string;
+      markdown?: string;
+      report?: { summary?: { status?: string } };
+      policy_enforcement?: { decision?: string };
+    };
     expect(detailPayload.name).toBe('sample-release');
     expect(detailPayload.markdown).toContain('# Sample Release');
     expect(detailPayload.report?.summary?.status).toBe('pass');
+    expect(detailPayload.policy_enforcement?.decision).toBe('blocked');
 
-    const runListRes = await apiFetch(baseUrl, '/api/v1/internal/release-runs');
+    const createOverrideRes = await apiFetch(baseUrl, '/api/v1/internal/release-policy-overrides', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        report_name: 'sample-release',
+        issue_id: 'execution_failures_present',
+        issue_source: 'execution',
+        issue_message: 'Execution has 1 failed checks.',
+        reason: 'Accepted during controlled release window',
+      }),
+    });
+    const createdOverride = (await createOverrideRes.json()) as { id: string };
+    const approveOverrideRes = await apiFetch(baseUrl, `/api/v1/internal/release-policy-overrides/${createdOverride.id}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' }),
+    });
+    expect(approveOverrideRes.status).toBe(200);
+
+    const runListRes = await apiFetch(baseUrl, '/api/v1/internal/release-runs?workspace_id=ws_default&project_id=proj_1');
     expect(runListRes.status).toBe(200);
-    const runListPayload = (await runListRes.json()) as { items: Array<{ id: string; trigger: string; artifact_name: string }> };
+    const runListPayload = (await runListRes.json()) as {
+      items: Array<{
+        id: string;
+        trigger: string;
+        artifact_name: string;
+        policy_enforcement?: { decision?: string };
+      }>;
+    };
     expect(runListPayload.items[0]).toEqual(expect.objectContaining({
       id: 'sample-release',
       trigger: 'manual',
       artifact_name: 'sample-release',
+      policy_enforcement: expect.objectContaining({
+        decision: 'releasable_with_override',
+      }),
     }));
 
-    const runDetailRes = await apiFetch(baseUrl, '/api/v1/internal/release-runs/sample-release');
+    const runDetailRes = await apiFetch(baseUrl, '/api/v1/internal/release-runs/sample-release?workspace_id=ws_default&project_id=proj_1');
     expect(runDetailRes.status).toBe(200);
-    const runDetailPayload = (await runDetailRes.json()) as { id: string; duration_ms: number; status: string };
+    const runDetailPayload = (await runDetailRes.json()) as {
+      id: string;
+      duration_ms: number;
+      status: string;
+      policy_enforcement?: { decision?: string };
+    };
     expect(runDetailPayload.id).toBe('sample-release');
     expect(runDetailPayload.duration_ms).toBe(20000);
     expect(runDetailPayload.status).toBe('pass');
+    expect(runDetailPayload.policy_enforcement?.decision).toBe('releasable_with_override');
 
     const escalationListRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations');
     expect(escalationListRes.status).toBe(200);

@@ -1032,6 +1032,7 @@
     "release_ops_compare_report_blockers": "Report blockers",
     "release_ops_compare_report_warnings": "Report warnings",
     "release_ops_policy_title": "Release Policy",
+    "release_ops_policy_enforcement": "Gate Enforcement",
     "release_ops_timeline_title": "Recent Report Timeline",
     "release_ops_timeline_subtitle": "Track release outcomes and readiness drift across the latest artifacts.",
     "release_ops_timeline_pass_rate": "Recent Pass Rate",

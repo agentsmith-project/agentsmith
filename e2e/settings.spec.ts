@@ -168,6 +168,7 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__report-detail')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-structured-summary')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-policy')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__report-policy-enforcement')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-overrides')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-metadata')).toBeVisible();
     await expect(authedPage.getByTestId('release-ops__report-download-markdown')).toBeVisible();
@@ -199,6 +200,7 @@ test.describe('Settings Page', () => {
     await authedPage.getByRole('option', { name: 'Pass' }).click();
     await authedPage.getByTestId('release-ops__report-search').fill('signature');
     await authedPage.getByTestId('release-ops__report-item-0').click();
+    await expect(authedPage.getByTestId('release-ops__report-policy-enforcement')).toContainText(/warning|ready|blocked|releasable_with_override|pending_override/i);
     await expect(authedPage.getByTestId('release-ops__override-item-0')).toBeVisible();
     await authedPage.getByTestId('release-ops__override-approve-0').click();
     await expect(authedPage.getByTestId('release-ops__override-item-0')).toContainText('approved');

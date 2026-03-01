@@ -2,41 +2,55 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApiClient, ReleaseOpsAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 
-export function useReleaseReportList(options?: { enabled?: boolean }) {
+export function useReleaseReportList(
+  params?: { workspaceId?: string; projectId?: string },
+  options?: { enabled?: boolean },
+) {
   const api = new ReleaseOpsAPI(getApiClient());
   return useQuery({
-    queryKey: queryKeys.releaseOps.list(),
-    queryFn: () => api.listReports(),
+    queryKey: queryKeys.releaseOps.list(params?.workspaceId ?? '', params?.projectId ?? ''),
+    queryFn: () => api.listReports(params),
     enabled: options?.enabled ?? true,
     staleTime: 10000,
   });
 }
 
-export function useReleaseReportDetail(name?: string, options?: { enabled?: boolean }) {
+export function useReleaseReportDetail(
+  name?: string,
+  params?: { workspaceId?: string; projectId?: string },
+  options?: { enabled?: boolean },
+) {
   const api = new ReleaseOpsAPI(getApiClient());
   return useQuery({
-    queryKey: queryKeys.releaseOps.detail(name ?? ''),
-    queryFn: () => api.getReport(name ?? ''),
+    queryKey: queryKeys.releaseOps.detail(name ?? '', params?.workspaceId ?? '', params?.projectId ?? ''),
+    queryFn: () => api.getReport(name ?? '', params),
     enabled: (options?.enabled ?? true) && !!name,
     staleTime: 10000,
   });
 }
 
-export function useReleaseGateRunList(options?: { enabled?: boolean }) {
+export function useReleaseGateRunList(
+  params?: { workspaceId?: string; projectId?: string },
+  options?: { enabled?: boolean },
+) {
   const api = new ReleaseOpsAPI(getApiClient());
   return useQuery({
-    queryKey: queryKeys.releaseOps.runs(),
-    queryFn: () => api.listRuns(),
+    queryKey: queryKeys.releaseOps.runs(params?.workspaceId ?? '', params?.projectId ?? ''),
+    queryFn: () => api.listRuns(params),
     enabled: options?.enabled ?? true,
     staleTime: 10000,
   });
 }
 
-export function useReleaseGateRunDetail(id?: string, options?: { enabled?: boolean }) {
+export function useReleaseGateRunDetail(
+  id?: string,
+  params?: { workspaceId?: string; projectId?: string },
+  options?: { enabled?: boolean },
+) {
   const api = new ReleaseOpsAPI(getApiClient());
   return useQuery({
-    queryKey: queryKeys.releaseOps.runDetail(id ?? ''),
-    queryFn: () => api.getRun(id ?? ''),
+    queryKey: queryKeys.releaseOps.runDetail(id ?? '', params?.workspaceId ?? '', params?.projectId ?? ''),
+    queryFn: () => api.getRun(id ?? '', params),
     enabled: (options?.enabled ?? true) && !!id,
     staleTime: 10000,
   });

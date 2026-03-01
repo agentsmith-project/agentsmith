@@ -1,4 +1,5 @@
 import type { ApiClient } from '../client';
+import type { ReleasePolicyEnforcement } from '@/lib/release-policy';
 
 export interface ReleaseReportListItem {
   name: string;
@@ -12,12 +13,14 @@ export interface ReleaseReportListItem {
   runtime_release_readiness?: 'ready' | 'blocked';
   usage_release_readiness?: 'ready' | 'blocked';
   markdown_available: boolean;
+  policy_enforcement?: ReleasePolicyEnforcement;
 }
 
 export interface ReleaseReportDetail {
   name: string;
   report: Record<string, unknown>;
   markdown?: string;
+  policy_enforcement?: ReleasePolicyEnforcement;
 }
 
 export interface ReleaseGateRunListItem {
@@ -39,6 +42,7 @@ export interface ReleaseGateRunListItem {
   failed_checks: number;
   failed_step_name?: string;
   failed_step_category?: string;
+  policy_enforcement?: ReleasePolicyEnforcement;
 }
 
 export interface ReleaseGateRunDetail extends ReleaseGateRunListItem {
@@ -100,20 +104,32 @@ export interface ReleasePolicyOverrideRecord {
 export class ReleaseOpsAPI {
   constructor(private readonly client: ApiClient) {}
 
-  async listReports(): Promise<{ items: ReleaseReportListItem[] }> {
-    return this.client.get('/internal/release-reports');
+  async listReports(params?: { workspaceId?: string; projectId?: string }): Promise<{ items: ReleaseReportListItem[] }> {
+    const query = new URLSearchParams();
+    if (params?.workspaceId) query.set('workspace_id', params.workspaceId);
+    if (params?.projectId) query.set('project_id', params.projectId);
+    return this.client.get(`/internal/release-reports${query.size > 0 ? `?${query.toString()}` : ''}`);
   }
 
-  async getReport(name: string): Promise<ReleaseReportDetail> {
-    return this.client.get(`/internal/release-reports/${encodeURIComponent(name)}`);
+  async getReport(name: string, params?: { workspaceId?: string; projectId?: string }): Promise<ReleaseReportDetail> {
+    const query = new URLSearchParams();
+    if (params?.workspaceId) query.set('workspace_id', params.workspaceId);
+    if (params?.projectId) query.set('project_id', params.projectId);
+    return this.client.get(`/internal/release-reports/${encodeURIComponent(name)}${query.size > 0 ? `?${query.toString()}` : ''}`);
   }
 
-  async listRuns(): Promise<{ items: ReleaseGateRunListItem[] }> {
-    return this.client.get('/internal/release-runs');
+  async listRuns(params?: { workspaceId?: string; projectId?: string }): Promise<{ items: ReleaseGateRunListItem[] }> {
+    const query = new URLSearchParams();
+    if (params?.workspaceId) query.set('workspace_id', params.workspaceId);
+    if (params?.projectId) query.set('project_id', params.projectId);
+    return this.client.get(`/internal/release-runs${query.size > 0 ? `?${query.toString()}` : ''}`);
   }
 
-  async getRun(id: string): Promise<ReleaseGateRunDetail> {
-    return this.client.get(`/internal/release-runs/${encodeURIComponent(id)}`);
+  async getRun(id: string, params?: { workspaceId?: string; projectId?: string }): Promise<ReleaseGateRunDetail> {
+    const query = new URLSearchParams();
+    if (params?.workspaceId) query.set('workspace_id', params.workspaceId);
+    if (params?.projectId) query.set('project_id', params.projectId);
+    return this.client.get(`/internal/release-runs/${encodeURIComponent(id)}${query.size > 0 ? `?${query.toString()}` : ''}`);
   }
 
   async listEscalations(): Promise<{ items: ReleaseEscalationEvent[] }> {

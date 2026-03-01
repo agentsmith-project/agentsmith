@@ -22,9 +22,9 @@ describe('ReleaseOpsAPI', () => {
       get: getMock,
     } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
 
-    const result = await api.listReports();
+    const result = await api.listReports({ workspaceId: 'ws_default', projectId: 'proj_001' });
 
-    expect(getMock).toHaveBeenCalledWith('/internal/release-reports');
+    expect(getMock).toHaveBeenCalledWith('/internal/release-reports?workspace_id=ws_default&project_id=proj_001');
     expect(result.items[0]?.name).toBe('sample-release');
   });
 
@@ -43,9 +43,9 @@ describe('ReleaseOpsAPI', () => {
       get: getMock,
     } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
 
-    const result = await api.getReport('sample-release');
+    const result = await api.getReport('sample-release', { workspaceId: 'ws_default', projectId: 'proj_001' });
 
-    expect(getMock).toHaveBeenCalledWith('/internal/release-reports/sample-release');
+    expect(getMock).toHaveBeenCalledWith('/internal/release-reports/sample-release?workspace_id=ws_default&project_id=proj_001');
     expect(result.markdown).toContain('Sample Release');
   });
 
@@ -72,9 +72,9 @@ describe('ReleaseOpsAPI', () => {
       get: getMock,
     } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
 
-    const result = await api.listRuns();
+    const result = await api.listRuns({ workspaceId: 'ws_default', projectId: 'proj_001' });
 
-    expect(getMock).toHaveBeenCalledWith('/internal/release-runs');
+    expect(getMock).toHaveBeenCalledWith('/internal/release-runs?workspace_id=ws_default&project_id=proj_001');
     expect(result.items[0]?.id).toBe('sample-release');
   });
 
@@ -99,9 +99,9 @@ describe('ReleaseOpsAPI', () => {
       get: getMock,
     } as unknown as ConstructorParameters<typeof ReleaseOpsAPI>[0]);
 
-    const result = await api.getRun('sample-release');
+    const result = await api.getRun('sample-release', { workspaceId: 'ws_default', projectId: 'proj_001' });
 
-    expect(getMock).toHaveBeenCalledWith('/internal/release-runs/sample-release');
+    expect(getMock).toHaveBeenCalledWith('/internal/release-runs/sample-release?workspace_id=ws_default&project_id=proj_001');
     expect(result.status).toBe('pass');
   });
 

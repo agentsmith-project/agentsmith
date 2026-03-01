@@ -22,6 +22,33 @@ export type ReleasePolicyEvaluation = {
   };
 };
 
+export type ReleasePolicyOverrideStatus = 'pending' | 'approved' | 'rejected';
+
+export type ReleasePolicyOverrideInput = {
+  issue_id: string;
+  status: ReleasePolicyOverrideStatus;
+};
+
+export type ReleasePolicyEnforcementDecision =
+  | 'ready'
+  | 'warning'
+  | 'blocked'
+  | 'pending_override'
+  | 'releasable_with_override';
+
+export type ReleasePolicyEnforcement = {
+  decision: ReleasePolicyEnforcementDecision;
+  base_decision: ReleasePolicyDecision;
+  blocker_count: number;
+  warning_count: number;
+  pending_override_count: number;
+  approved_override_count: number;
+  unresolved_blockers: ReleasePolicyIssue[];
+  overridden_blockers: ReleasePolicyIssue[];
+  pending_override_issues: ReleasePolicyIssue[];
+  rejected_override_issues: ReleasePolicyIssue[];
+};
+
 export type ReleasePolicyRuntimeInput = {
   release_readiness?: 'ready' | 'blocked';
   blockers?: string[];
@@ -82,7 +109,7 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
       message: onlyTransient
         ? 'Execution contains only transient upstream failures and should be retried before acceptance.'
         : `Execution has ${execution?.failed_count ?? 0} failed checks.`,
-      overridable: onlyTransient,
+      overridable: true,
     };
     pushIssue(onlyTransient ? warnings : blockers, issue);
   }
@@ -90,7 +117,7 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
   const runtime = input.runtime;
   if (runtime) {
     if (runtime.release_readiness === 'blocked') {
-      for (const blocker of dedupe(runtime.blockers)) {
+      for (const blocker of dedupe(runtime.blockers ?? [])) {
         pushIssue(blockers, {
           id: `runtime_${blocker}`,
           severity: 'blocker',
@@ -145,7 +172,7 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
         overridable: false,
       });
     }
-    for (const warning of dedupe(runtime.warnings)) {
+    for (const warning of dedupe(runtime.warnings ?? [])) {
       pushIssue(warnings, {
         id: `runtime_${warning}`,
         severity: 'warning',
@@ -159,7 +186,7 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
   const usage = input.usage;
   if (usage) {
     if (usage.release_readiness === 'blocked') {
-      for (const blocker of dedupe(usage.blockers)) {
+      for (const blocker of dedupe(usage.blockers ?? [])) {
         pushIssue(blockers, {
           id: `usage_${blocker}`,
           severity: 'blocker',
@@ -223,7 +250,7 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
         overridable: false,
       });
     }
-    for (const warning of dedupe(usage.warnings)) {
+    for (const warning of dedupe(usage.warnings ?? [])) {
       pushIssue(warnings, {
         id: `usage_${warning}`,
         severity: 'warning',
@@ -247,5 +274,66 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
       warning_count: warnings.length,
       overridable_count: overridableCount,
     },
+  };
+}
+
+export function enforceReleasePolicy(
+  evaluation: ReleasePolicyEvaluation,
+  overrides: ReleasePolicyOverrideInput[],
+): ReleasePolicyEnforcement {
+  const statusByIssueId = new Map<string, ReleasePolicyOverrideStatus>();
+  for (const override of overrides) {
+    statusByIssueId.set(override.issue_id, override.status);
+  }
+
+  const unresolvedBlockers: ReleasePolicyIssue[] = [];
+  const overriddenBlockers: ReleasePolicyIssue[] = [];
+  const pendingOverrideIssues: ReleasePolicyIssue[] = [];
+  const rejectedOverrideIssues: ReleasePolicyIssue[] = [];
+
+  for (const blocker of evaluation.blockers) {
+    const status = statusByIssueId.get(blocker.id);
+    if (status === 'approved' && blocker.overridable) {
+      overriddenBlockers.push(blocker);
+      continue;
+    }
+    unresolvedBlockers.push(blocker);
+    if (status === 'pending' && blocker.overridable) {
+      pendingOverrideIssues.push(blocker);
+    }
+    if (status === 'rejected' && blocker.overridable) {
+      rejectedOverrideIssues.push(blocker);
+    }
+  }
+
+  let decision: ReleasePolicyEnforcementDecision;
+  if (unresolvedBlockers.length > 0) {
+    const unresolvedOverridable = unresolvedBlockers.filter((issue) => issue.overridable);
+    const unresolvedNonOverridable = unresolvedBlockers.filter((issue) => !issue.overridable);
+    const allRemainingBlockersPending =
+      unresolvedNonOverridable.length === 0
+      && unresolvedOverridable.length > 0
+      && unresolvedOverridable.every((issue) => statusByIssueId.get(issue.id) === 'pending');
+
+    decision = allRemainingBlockersPending ? 'pending_override' : 'blocked';
+  } else if (overriddenBlockers.length > 0) {
+    decision = 'releasable_with_override';
+  } else if (evaluation.decision === 'warning') {
+    decision = 'warning';
+  } else {
+    decision = 'ready';
+  }
+
+  return {
+    decision,
+    base_decision: evaluation.decision,
+    blocker_count: evaluation.summary.blocker_count,
+    warning_count: evaluation.summary.warning_count,
+    pending_override_count: pendingOverrideIssues.length,
+    approved_override_count: overriddenBlockers.length,
+    unresolved_blockers: unresolvedBlockers,
+    overridden_blockers: overriddenBlockers,
+    pending_override_issues: pendingOverrideIssues,
+    rejected_override_issues: rejectedOverrideIssues,
   };
 }

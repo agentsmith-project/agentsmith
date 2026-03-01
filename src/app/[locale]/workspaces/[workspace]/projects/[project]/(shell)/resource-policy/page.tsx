@@ -34,6 +34,7 @@ import {
   useResourcePolicy,
   useUpdateResourcePolicy,
 } from '@/lib/hooks/use-members';
+import { useAuthorizationCheck } from '@/lib/hooks/use-governance-explainability';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import {
@@ -57,6 +58,7 @@ import {
 } from '@/lib/resource-policy/editor-utils';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 import { cn } from '@/lib/utils';
+import type { GovernanceAuthorizationResponse } from '@/lib/api/endpoints/governance-explainability';
 
 interface ResourcePolicyPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -82,6 +84,10 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const [accessMode, setAccessMode] = useState<'allow_all_members' | 'allow_list'>('allow_all_members');
   const [rootDraftRules, setRootDraftRules] = useState<Partial<Record<PolicyRuleKey, string>>>({});
   const [subjects, setSubjects] = useState<EditableSubject[]>([]);
+  const [explainSubjectType, setExplainSubjectType] = useState<'user' | 'group'>('user');
+  const [explainSubjectId, setExplainSubjectId] = useState('');
+  const [explainAction, setExplainAction] = useState('invoke');
+  const [authorizationResult, setAuthorizationResult] = useState<GovernanceAuthorizationResponse | null>(null);
   const canUpdatePolicy = useHasPermission('project:resource_policy:manage');
   const canReadPolicy = canUpdatePolicy;
 
@@ -195,6 +201,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const { data: membersData } = useMembers(workspaceId, projectId);
   const { data: groupsData } = useProjectGroups(workspaceId, projectId);
   const updatePolicyMutation = useUpdateResourcePolicy(workspaceId, projectId, selectedType, selectedId);
+  const authorizationCheck = useAuthorizationCheck(workspaceId, projectId);
 
   const auditTimeRange = useMemo(() => {
     const end = new Date();
@@ -262,6 +269,14 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     );
   }, [selectedPolicy, selectedResource?.type]);
 
+  useEffect(() => {
+    if (!selectedResource) return;
+    setExplainAction(getDefaultActionForResourceType(selectedResource.type));
+    setExplainSubjectType('user');
+    setExplainSubjectId('');
+    setAuthorizationResult(null);
+  }, [selectedResource]);
+
   const memberIds = useMemo(() => (userOptions ?? []).map((o) => o.id), [userOptions]);
   const groupIds = useMemo(() => (groupOptions ?? []).map((o) => o.id), [groupOptions]);
   const staleSubjectRowIds = useMemo(
@@ -319,6 +334,22 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     await updatePolicyMutation.mutateAsync(payload);
   };
 
+  const handleAuthorizationExplain = async () => {
+    if (!selectedResource || !explainSubjectId.trim()) return;
+    const result = await authorizationCheck.mutateAsync({
+      subject: {
+        type: explainSubjectType,
+        id: explainSubjectId.trim(),
+      },
+      resource: {
+        type: selectedResource.type,
+        id: selectedResource.id,
+      },
+      action: explainAction.trim() || getDefaultActionForResourceType(selectedResource.type),
+    });
+    setAuthorizationResult(result);
+  };
+
   const addSubject = () => {
     setSubjects((prev) => [
       ...prev,
@@ -346,6 +377,9 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       prev.map((subject) => (subject.rowId === rowId ? { ...subject, ...patch } : subject))
     );
   };
+
+  const explainOptions = explainSubjectType === 'user' ? userOptions : groupOptions;
+  const explainMatchedPolicy = authorizationResult?.matched_policy;
 
   if (!resolvedParams) {
     return (
@@ -771,6 +805,132 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                   </div>
 
                   <div
+                    className="rounded-sm border border-subtle bg-surface p-3 space-y-3"
+                    data-testid="resource-policy__explainability"
+                  >
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-foreground">{tResource('explainability.title')}</p>
+                      <p className="text-xs text-tertiary">{tResource('explainability.description')}</p>
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-[120px_1fr]">
+                      <div className="rounded-sm border border-subtle bg-bg-base/10 p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-tertiary">
+                          {tResource('explainability.current_resource')}
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">{selectedResource.name}</p>
+                        <p className="text-xs text-tertiary">
+                          {tResource(`resource_type.${selectedResource.type}`)} / {selectedResource.id}
+                        </p>
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-3">
+                        <select
+                          value={explainSubjectType}
+                          onChange={(event) => {
+                            setExplainSubjectType(event.target.value as 'user' | 'group');
+                            setExplainSubjectId('');
+                            setAuthorizationResult(null);
+                          }}
+                          className="h-9 rounded-sm border border-subtle bg-surface-high px-2 text-sm text-foreground"
+                          data-testid="resource-policy__explain-subject-type"
+                        >
+                          <option value="user">{tResource('subjects.user')}</option>
+                          <option value="group">{tResource('subjects.group')}</option>
+                        </select>
+                        <select
+                          value={explainSubjectId}
+                          onChange={(event) => {
+                            setExplainSubjectId(event.target.value);
+                            setAuthorizationResult(null);
+                          }}
+                          className="h-9 rounded-sm border border-subtle bg-surface-high px-3 text-sm text-foreground"
+                          data-testid="resource-policy__explain-subject-id"
+                        >
+                          <option value="">{tResource('explainability.select_subject')}</option>
+                          {explainOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          value={explainAction}
+                          onChange={(event) => {
+                            setExplainAction(event.target.value);
+                            setAuthorizationResult(null);
+                          }}
+                          className="h-9 rounded-sm border border-subtle bg-surface-high px-3 text-sm text-foreground"
+                          placeholder={tResource('explainability.action_placeholder')}
+                          data-testid="resource-policy__explain-action"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        onClick={handleAuthorizationExplain}
+                        disabled={!explainSubjectId.trim() || authorizationCheck.isPending}
+                        variant="outline"
+                        size="sm"
+                        className="h-9 px-4"
+                        data-testid="resource-policy__explain-run"
+                      >
+                        {authorizationCheck.isPending
+                          ? tResource('explainability.checking')
+                          : tResource('explainability.run')}
+                      </Button>
+                    </div>
+                    {authorizationResult ? (
+                      <div
+                        className="rounded-sm border border-subtle bg-bg-base/10 p-3 space-y-2"
+                        data-testid="resource-policy__explain-result"
+                      >
+                        <p className="text-xs text-tertiary">
+                          {tResource('explainability.decision')}:{' '}
+                          <span className="text-primary">
+                            {authorizationResult.allowed
+                              ? tResource('explainability.allowed')
+                              : tResource('explainability.denied')}
+                          </span>
+                        </p>
+                        <p className="text-xs text-tertiary">
+                          {tResource('explainability.source')}:{' '}
+                          <span className="text-primary">{authorizationResult.decision.source}</span>
+                        </p>
+                        <p className="text-xs text-tertiary">
+                          {tResource('explainability.reason')}:{' '}
+                          <span className="text-primary">{authorizationResult.decision.reason}</span>
+                        </p>
+                        {explainMatchedPolicy ? (
+                          <div
+                            className="rounded-sm border border-subtle bg-surface px-3 py-2 text-xs text-tertiary"
+                            data-testid="resource-policy__matched-policy"
+                          >
+                            <p>
+                              {tResource('explainability.matched_policy')}:{' '}
+                              <span className="text-primary">{explainMatchedPolicy.id}</span>
+                            </p>
+                            <p>
+                              {tResource('explainability.access_mode')}:{' '}
+                              <span className="text-primary">
+                                {tResource(`access_mode.${explainMatchedPolicy.access_mode}`)}
+                              </span>
+                            </p>
+                            {explainMatchedPolicy.matched_subject ? (
+                              <p>
+                                {tResource('explainability.matched_subject')}:{' '}
+                                <span className="text-primary">
+                                  {tResource(`subjects.${explainMatchedPolicy.matched_subject.type}`)} /{' '}
+                                  {explainMatchedPolicy.matched_subject.id}
+                                </span>
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div
                     className="rounded-sm border border-subtle bg-surface p-3 space-y-2"
                     data-testid="resource-policy__governance-audit"
                   >
@@ -806,6 +966,11 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       </PageLayout>
     </PageState>
   );
+}
+
+function getDefaultActionForResourceType(resourceType: ResourceRow['type']): string {
+  if (resourceType === 'source_library') return 'upload';
+  return 'invoke';
 }
 
 function renderRuleSummary(

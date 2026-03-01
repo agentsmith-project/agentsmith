@@ -433,6 +433,57 @@ export const memberHandlers = [
     };
     return HttpResponse.json({ ok: true });
   }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/authorize', async ({ params, request }) => {
+    const projectId = String(params.prj ?? '');
+    const body = (await request.json().catch(() => ({}))) as {
+      subject?: { type?: 'user' | 'group'; id?: string };
+      resource?: { type?: 'endpoint' | 'source_library' | 'agent'; id?: string };
+      action?: string;
+    };
+    const resourceType = body.resource?.type;
+    const resourceId = body.resource?.id;
+    if (!resourceType || !resourceId) {
+      return HttpResponse.json({ error: 'invalid_resource' }, { status: 400 });
+    }
+
+    const key = `${projectId}:${resourceType}:${resourceId}`;
+    const policy = resourcePolicyStore[key] ?? getDefaultPolicy(resourceType, resourceId);
+    const subjectType = body.subject?.type === 'group' ? 'group' : 'user';
+    const subjectId = typeof body.subject?.id === 'string' ? body.subject.id : '';
+    const matchedSubject = policy.allowed_subjects.find(
+      (subject) => subject.subject_type === subjectType && subject.subject_id === subjectId
+    );
+    const allowed = policy.access_mode === 'allow_all_members' || Boolean(matchedSubject);
+
+    return HttpResponse.json({
+      allowed,
+      decision: {
+        source: allowed
+          ? policy.access_mode === 'allow_all_members'
+            ? 'project_default'
+            : 'resource_policy'
+          : 'resource_policy',
+        reason: allowed
+          ? policy.access_mode === 'allow_all_members'
+            ? 'resource_default_allow_all'
+            : 'subject_allow_listed'
+          : 'subject_not_allow_listed',
+      },
+      matched_policy: {
+        id: `policy_${resourceType}_${resourceId}`,
+        resource_type: resourceType,
+        resource_id: resourceId,
+        access_mode: policy.access_mode,
+        matched_subject: matchedSubject
+          ? {
+              type: matchedSubject.subject_type,
+              id: matchedSubject.subject_id,
+            }
+          : undefined,
+      },
+      action: body.action ?? 'read',
+    });
+  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/permission-templates', () => {
     const defaults: PermissionTemplate[] = [
       {

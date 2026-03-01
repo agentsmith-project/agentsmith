@@ -1549,6 +1549,23 @@
     }
   },
   "resource_policy": {
+    "explainability": {
+      "title": "访问解释",
+      "description": "检查某个用户或用户组是否可以访问当前资源，并查看命中的策略。",
+      "current_resource": "当前资源",
+      "select_subject": "选择主体",
+      "action_placeholder": "动作，例如 invoke 或 upload",
+      "run": "检查访问",
+      "checking": "检查中...",
+      "decision": "决策",
+      "allowed": "允许",
+      "denied": "拒绝",
+      "source": "来源",
+      "reason": "原因",
+      "matched_policy": "命中策略",
+      "matched_subject": "命中主体",
+      "access_mode": "访问模式"
+    },
     "subtitle": "统一配置资源策略基线与按主体覆盖规则。",
     "open_members": "打开成员",
     "open_credentials": "打开凭据",

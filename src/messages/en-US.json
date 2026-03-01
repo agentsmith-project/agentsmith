@@ -1547,6 +1547,23 @@
     }
   },
   "resource_policy": {
+    "explainability": {
+      "title": "Access explain",
+      "description": "Check whether a user or group can access the current resource and see which policy matched.",
+      "current_resource": "Current resource",
+      "select_subject": "Select subject",
+      "action_placeholder": "Action, for example invoke or upload",
+      "run": "Check access",
+      "checking": "Checking...",
+      "decision": "Decision",
+      "allowed": "Allowed",
+      "denied": "Denied",
+      "source": "Source",
+      "reason": "Reason",
+      "matched_policy": "Matched policy",
+      "matched_subject": "Matched subject",
+      "access_mode": "Access mode"
+    },
     "subtitle": "Unified resource policy baseline and per-subject overrides.",
     "open_members": "Open Members",
     "open_credentials": "Open Credentials",

@@ -4,6 +4,24 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { useCanManageResourcePolicy, useHasPermission } from '@/lib/hooks/use-permissions';
 
+const mockAuthorizeMutateAsync = vi.fn().mockResolvedValue({
+  allowed: false,
+  decision: {
+    source: 'resource_policy',
+    reason: 'subject_not_allow_listed',
+  },
+  matched_policy: {
+    id: 'policy_ep_1',
+    resource_type: 'endpoint',
+    resource_id: 'ep_1',
+    access_mode: 'allow_list',
+    matched_subject: {
+      type: 'user',
+      id: 'user_123',
+    },
+  },
+});
+
 const mockListEndpoints = vi.fn().mockResolvedValue({
   items: [
     {
@@ -155,6 +173,13 @@ vi.mock('@/lib/hooks/use-members', () => ({
   })),
 }));
 
+vi.mock('@/lib/hooks/use-governance-explainability', () => ({
+  useAuthorizationCheck: vi.fn(() => ({
+    mutateAsync: mockAuthorizeMutateAsync,
+    isPending: false,
+  })),
+}));
+
 import ResourcePolicyPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
@@ -177,6 +202,7 @@ describe('ResourcePolicyPage', () => {
     mockPolicyData = defaultPolicyData();
     mockMutateAsync.mockClear();
     mockGetResourcePolicy.mockClear();
+    mockAuthorizeMutateAsync.mockClear();
     mockUseHasPermission.mockReturnValue(true);
     mockUseCanManageResourcePolicy.mockReturnValue(true);
   });
@@ -405,6 +431,39 @@ describe('ResourcePolicyPage', () => {
     const subjectSummary = screen.getByTestId('resource-policy__effective-subject--0');
     expect(within(subjectSummary).getByText(/user:/)).toBeInTheDocument();
     expect(subjectSummary).toHaveTextContent('70000 units.tokens_per_day');
+  });
+
+  it('explains subject access for the selected resource', async () => {
+    mockUseHasPermission.mockReturnValue(true);
+    const user = userEvent.setup();
+    render(
+      <ResourcePolicyPage
+        params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__explainability')).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByTestId('resource-policy__explain-subject-id'), 'user_123');
+    await user.clear(screen.getByTestId('resource-policy__explain-action'));
+    await user.type(screen.getByTestId('resource-policy__explain-action'), 'invoke');
+    await user.click(screen.getByTestId('resource-policy__explain-run'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__explain-result')).toBeInTheDocument();
+    });
+
+    expect(mockAuthorizeMutateAsync).toHaveBeenCalledWith({
+      subject: { type: 'user', id: 'user_123' },
+      resource: { type: 'endpoint', id: 'ep_1' },
+      action: 'invoke',
+    });
+    expect(screen.getByTestId('resource-policy__explain-result')).toHaveTextContent('explainability.denied');
+    expect(screen.getByTestId('resource-policy__matched-policy')).toHaveTextContent('policy_ep_1');
+    expect(screen.getByTestId('resource-policy__matched-policy')).toHaveTextContent('user_123');
   });
 
   it('saves source library policy changes', async () => {

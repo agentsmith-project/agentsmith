@@ -30,6 +30,17 @@ test.describe('Resource Policy Page', () => {
     await expect(authedPage.locator('[data-testid^="resource-policy__row--source_library--"]').first()).toBeVisible();
   });
 
+  test('explains current resource access for a selected subject', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('resource-policy__explainability')).toBeVisible();
+    await authedPage.getByTestId('resource-policy__explain-subject-id').selectOption({ index: 1 });
+    await authedPage.getByTestId('resource-policy__explain-action').fill('invoke');
+    await authedPage.getByTestId('resource-policy__explain-run').click();
+
+    await expect(authedPage.getByTestId('resource-policy__explain-result')).toBeVisible();
+    await expect(authedPage.getByTestId('resource-policy__explain-result')).toContainText(/Allowed|Denied/i);
+    await expect(authedPage.getByTestId('resource-policy__matched-policy')).toBeVisible();
+  });
+
   test('allow_list mode becomes valid after adding a subject and invalid after removing it', async ({ authedPage }) => {
     const accessMode = authedPage.getByTestId('resource-policy__access-mode');
     await accessMode.selectOption('allow_list');

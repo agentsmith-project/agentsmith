@@ -266,7 +266,14 @@ This section records the recent notebook external-agent workline (Codex runner +
 
 ### Internal Release Scope Clarification (Product Governance Pages)
 
-As of the current internal release candidate, `Audit` and `Usage` are backed by real local `api-entry-node` routes (product-usable v1), while `Members` and `Resource Policy` are partially backed with baseline reads/writes. They should be treated as `partial` in real local-backend mode, with scope limits documented in the release capability matrix. `Resource Policy` partial now includes endpoint/agent allow-list enforcement (user/group subjects) and endpoint `requests_per_minute` rate limiting. Backend project route authorization also now has a minimal real closure path: group membership + permission templates and member custom/template permissions can expand granted permissions (allow-only union model) via the shared project authz resolver, and join requests now support a minimal create/approve/reject lifecycle with audit events.
+The current internal baseline no longer treats `Members` and `Resource Policy` as page-only or mock-backed governance surfaces. In local real-backend mode:
+
+- `Audit` and `Usage` are fully backed by persisted `api-entry-node` routes
+- `Members` supports real lifecycle effects (`suspend / restore / revoke`) and downstream cleanup
+- `Resource Policy` supports real allow-list / rate / quota effects on the currently supported resource paths
+- project route authorization is driven by the shared backend authz engine and explainable `/authorize` decisions
+
+The important constraint is no longer "partial page support", but **scoped enforcement coverage**. For the exact supported effects and boundaries, use the release capability matrix as the source of truth.
 
 See also:
 - `docs/release/internal-release-capability-matrix.md`
@@ -736,7 +743,11 @@ Current known boundary:
   - Chat message creation / attachment creation
   - Chat stream run lifecycle + usage
   - Endpoint proxy request usage (success/error, duration)
-- Feature availability for `audit` / `usage` in real backend mode is now `available`; `members` / `resource_policy` are `partial` with baseline backend routes and minimal resource-policy runtime enforcement (endpoint/agent allow-list checks; see release capability matrix for exact coverage and limits).
-- Governance backend continued closure:
-  - Resource Policy runtime enforcement now includes endpoint `requests_per_minute` and endpoint `daily_token_limit` baseline checks.
-  - Members partial backend now includes join-request create flow and first-stage runtime effects via group permission templates (route authz allow-only union) and member quota overrides/templates (endpoint `daily_token_limit`).
+- Feature availability for `audit`, `usage`, `members`, and `resource_policy` in real backend mode is now governed by **supported enforcement scope**, not placeholder-vs-real status.
+- Governance backend baseline now includes:
+  - unified backend authz decisions and `/authorize` explain payloads
+  - endpoint allow-list / rate / quota effects
+  - source-library allow-list / rate / upload quota effects
+  - notebook/chat agent access and agent request-rate effects
+  - member permission, quota, suspend / restore / revoke downstream effects
+  - opaque SSE ticket issuance with legacy JWT query fallback disabled

@@ -73,9 +73,6 @@ npm run release:report -- --dry-run
 # Full verification with lane-based release gate (L0 + L2 + L3)
 make verify-release
 
-# Legacy verification path (for temporary compatibility only)
-make verify-release-legacy
-
 # Generate structured report after verification
 npm run release:report -- --name release-$(date +%Y%m%d-%H%M%S)
 # Custom output directory

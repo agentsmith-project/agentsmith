@@ -135,6 +135,9 @@ describe('OverviewPage', () => {
     expect(screen.getByTestId('overview__snapshot-runtime')).toBeInTheDocument();
     expect(screen.getByTestId('overview__snapshot-release')).toBeInTheDocument();
     expect(screen.getByTestId('overview__quick-actions')).toBeInTheDocument();
+    expect(screen.getByTestId('overview__snapshot-runtime-link')).toHaveAttribute('href', expect.stringContaining('/runtime-observability?'));
+    expect(screen.getByTestId('overview__snapshot-cost-link')).toHaveAttribute('href', expect.stringContaining('/usage?'));
+    expect(screen.getByTestId('overview__snapshot-release-link')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
   });
 
   it('renders header and toolbar layout', () => {
@@ -165,6 +168,7 @@ describe('OverviewPage', () => {
     render(<OverviewPage />);
 
     expect(screen.getByTestId('overview__attention-item-0')).toBeInTheDocument();
+    expect(screen.getByTestId('overview__attention-link-0')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
   });
 
   it('renders page state container', () => {

@@ -20,6 +20,7 @@ import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/valida
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { formatNumber } from '@/lib/utils/formatters';
 import { cn } from '@/lib/utils';
+import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 import type { NavItem } from '@/components/dashboard/ProjectNavigation';
 import type { ReleaseGateRunListItem, ReleaseReportListItem } from '@/lib/api/endpoints/release-ops';
 
@@ -158,9 +159,9 @@ export default function OverviewPage() {
   }
 
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
-  const runtimeHref = `${basePath}/runtime-observability`;
-  const usageHref = `${basePath}/usage`;
-  const releaseOpsHref = `${basePath}/release-ops`;
+  const runtimeHref = `${basePath}/runtime-observability${buildSharedOpsFilterQuery(timeRange)}`;
+  const usageHref = `${basePath}/usage${buildSharedOpsFilterQuery(timeRange, { panel: 'usage' })}`;
+  const releaseOpsHref = `${basePath}/release-ops${buildSharedOpsFilterQuery(timeRange)}`;
 
   const runtime = runtimeQuery.data;
   const operationsSummary = operationsSummaryQuery.data;
@@ -218,7 +219,10 @@ export default function OverviewPage() {
       tone: 'blocked',
       title: t('attention.missing_price_title', { count: runtime?.health_summary.missing_price_facts ?? 0 }),
       body: t('attention.missing_price_body'),
-      href: runtimeHref,
+      href: `${basePath}/runtime-observability${buildSharedOpsFilterQuery({
+        ...timeRange,
+        result: 'error',
+      })}`,
       actionLabel: t('attention.review_runtime'),
     });
   }
@@ -248,7 +252,10 @@ export default function OverviewPage() {
       tone: 'warning',
       title: t('attention.runtime_degradation_title'),
       body: t('attention.runtime_degradation_body'),
-      href: runtimeHref,
+      href: `${basePath}/runtime-observability${buildSharedOpsFilterQuery({
+        ...timeRange,
+        result: 'error',
+      })}`,
       actionLabel: t('attention.investigate_runtime'),
     });
   }
@@ -426,6 +433,7 @@ export default function OverviewPage() {
                       </div>
                       <Link
                         href={item.href}
+                        data-testid={`overview__attention-link-${index}`}
                         className="inline-flex items-center gap-2 text-sm font-medium text-accent hover:underline"
                       >
                         {item.actionLabel}
@@ -446,7 +454,7 @@ export default function OverviewPage() {
             <Card data-testid="overview__snapshot-runtime">
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle>{t('snapshots.runtime_title')}</CardTitle>
-                <Link href={runtimeHref} className="text-sm font-medium text-accent hover:underline">{t('open_runtime')}</Link>
+                <Link href={runtimeHref} data-testid="overview__snapshot-runtime-link" className="text-sm font-medium text-accent hover:underline">{t('open_runtime')}</Link>
               </CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border border-subtle bg-bg-base/40 p-3">
@@ -471,7 +479,7 @@ export default function OverviewPage() {
             <Card data-testid="overview__snapshot-cost">
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle>{t('snapshots.cost_title')}</CardTitle>
-                <Link href={usageHref} className="text-sm font-medium text-accent hover:underline">{t('open_usage')}</Link>
+                <Link href={usageHref} data-testid="overview__snapshot-cost-link" className="text-sm font-medium text-accent hover:underline">{t('open_usage')}</Link>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -502,7 +510,7 @@ export default function OverviewPage() {
             <Card data-testid="overview__snapshot-release">
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle>{t('snapshots.release_title')}</CardTitle>
-                <Link href={releaseOpsHref} className="text-sm font-medium text-accent hover:underline">{t('open_release_ops')}</Link>
+                <Link href={releaseOpsHref} data-testid="overview__snapshot-release-link" className="text-sm font-medium text-accent hover:underline">{t('open_release_ops')}</Link>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -537,7 +545,7 @@ export default function OverviewPage() {
             <Card data-testid="overview__snapshot-incidents">
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle>{t('snapshots.incidents_title')}</CardTitle>
-                <Link href={releaseOpsHref} className="text-sm font-medium text-accent hover:underline">{t('open_release_ops')}</Link>
+                <Link href={releaseOpsHref} data-testid="overview__snapshot-incidents-link" className="text-sm font-medium text-accent hover:underline">{t('open_release_ops')}</Link>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid gap-3 sm:grid-cols-2">

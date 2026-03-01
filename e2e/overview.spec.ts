@@ -28,6 +28,9 @@ test.describe('AI Ops Home', () => {
     await expect(authedPage.getByTestId('overview__snapshot-release')).toBeVisible();
     await expect(authedPage.getByTestId('overview__snapshot-incidents')).toBeVisible();
     await expect(authedPage.getByTestId('overview__quick-actions')).toBeVisible();
+    await expect(authedPage.getByTestId('overview__snapshot-runtime-link')).toHaveAttribute('href', /runtime-observability\?/);
+    await expect(authedPage.getByTestId('overview__snapshot-cost-link')).toHaveAttribute('href', /usage\?/);
+    await expect(authedPage.getByTestId('overview__snapshot-release-link')).toHaveAttribute('href', /release-ops\?/);
   });
 
   test('navigates to chat from quick actions', async ({ authedPage }) => {

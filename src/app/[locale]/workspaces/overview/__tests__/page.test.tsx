@@ -89,11 +89,21 @@ describe('WorkspacesOverviewPage', () => {
 
     expect(screen.getByTestId('workspace-overview__heading')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__matrix')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__search')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__readiness-filter')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__row--ws_1')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__attention')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__attention-item--ws_1--project--proj_1')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__actions-queue')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__actions-queue-item--action--ws_1--project--proj_1')).toBeInTheDocument();
+  });
+
+  it('filters matrix rows by readiness', () => {
+    render(<WorkspacesOverviewPage />);
+    fireEvent.change(screen.getByTestId('workspace-overview__readiness-filter'), { target: { value: 'blocked' } });
+
+    expect(screen.queryByTestId('workspace-overview__row--ws_1')).not.toBeInTheDocument();
+    expect(screen.getByText('org_overview_matrix_empty_filtered')).toBeInTheDocument();
   });
 
   it('shows loading state', () => {

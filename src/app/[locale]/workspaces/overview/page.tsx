@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -23,6 +24,36 @@ export default function WorkspacesOverviewPage() {
   const orgRollup = useOrganizationGovernanceRollup(workspaces);
   const isLoading = isWorkspaceLoading || orgRollup.isLoading;
   const isError = isWorkspaceError || orgRollup.isError;
+  const [searchQuery, setSearchQuery] = useState('');
+  const [readinessFilter, setReadinessFilter] = useState<'all' | 'blocked' | 'warning' | 'ready'>('all');
+
+  const filteredWorkspaceRanking = useMemo(() => {
+    const items = orgRollup.rollup?.workspaceRanking ?? [];
+    const query = searchQuery.trim().toLowerCase();
+    return items.filter((workspace) => {
+      if (readinessFilter !== 'all' && workspace.readiness !== readinessFilter) {
+        return false;
+      }
+      if (query.length > 0 && !workspace.workspaceName.toLowerCase().includes(query)) {
+        return false;
+      }
+      return true;
+    });
+  }, [orgRollup.rollup?.workspaceRanking, readinessFilter, searchQuery]);
+
+  const filteredActionsQueue = useMemo(() => {
+    const actions = orgRollup.rollup?.actionsQueue ?? [];
+    const query = searchQuery.trim().toLowerCase();
+    return actions.filter((action) => {
+      if (readinessFilter !== 'all' && action.severity !== readinessFilter) {
+        return false;
+      }
+      if (query.length > 0 && !action.workspaceName.toLowerCase().includes(query)) {
+        return false;
+      }
+      return true;
+    });
+  }, [orgRollup.rollup?.actionsQueue, readinessFilter, searchQuery]);
 
   return (
     <PageState state="success">
@@ -77,8 +108,29 @@ export default function WorkspacesOverviewPage() {
                       {t(`org_overview_status_${orgRollup.rollup.summary.readiness}`)}
                     </StatusBadge>
                   </div>
+                  <div className="mb-3 grid gap-2 md:grid-cols-[1fr_auto]">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder={t('org_overview_search_placeholder')}
+                      className="h-9 rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
+                      data-testid="workspace-overview__search"
+                    />
+                    <select
+                      value={readinessFilter}
+                      onChange={(event) => setReadinessFilter(event.target.value as 'all' | 'blocked' | 'warning' | 'ready')}
+                      className="h-9 rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground"
+                      data-testid="workspace-overview__readiness-filter"
+                    >
+                      <option value="all">{t('org_overview_filter_all')}</option>
+                      <option value="blocked">{t('org_overview_status_blocked')}</option>
+                      <option value="warning">{t('org_overview_status_warning')}</option>
+                      <option value="ready">{t('org_overview_status_ready')}</option>
+                    </select>
+                  </div>
                   <div className="space-y-2">
-                    {orgRollup.rollup.workspaceRanking.map((workspace) => (
+                    {filteredWorkspaceRanking.map((workspace) => (
                       <div
                         key={workspace.workspaceId}
                         className="grid gap-3 rounded-sm border border-subtle bg-bg-base/20 p-3 md:grid-cols-[1.2fr_auto_auto_auto_auto]"
@@ -123,6 +175,11 @@ export default function WorkspacesOverviewPage() {
                         </Link>
                       </div>
                     ))}
+                    {filteredWorkspaceRanking.length === 0 ? (
+                      <p className="rounded-sm border border-subtle bg-bg-base/20 px-3 py-2 text-sm text-tertiary">
+                        {t('org_overview_matrix_empty_filtered')}
+                      </p>
+                    ) : null}
                   </div>
                 </section>
 
@@ -180,11 +237,11 @@ export default function WorkspacesOverviewPage() {
 
                 <section className="rounded-md border border-border bg-surface p-4" data-testid="workspace-overview__actions-queue">
                   <h2 className="text-base font-semibold text-foreground">{t('org_overview_actions_queue_title')}</h2>
-                  {orgRollup.rollup.actionsQueue.length === 0 ? (
+                  {filteredActionsQueue.length === 0 ? (
                     <p className="mt-2 text-sm text-tertiary">{t('org_overview_actions_queue_empty')}</p>
                   ) : (
                     <div className="mt-3 space-y-2">
-                      {orgRollup.rollup.actionsQueue.map((action) => (
+                      {filteredActionsQueue.map((action) => (
                         <div
                           key={action.id}
                           className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-subtle bg-bg-base/20 p-3"

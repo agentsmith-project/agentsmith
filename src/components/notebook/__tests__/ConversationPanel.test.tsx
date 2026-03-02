@@ -272,7 +272,9 @@ describe('ConversationPanel', () => {
         />
       );
 
-      expect(screen.getByTestId('notebook__sse-status')).toHaveTextContent('Realtime connection: reconnecting...');
+      const status = screen.getByTestId('notebook__sse-status');
+      expect(status).toHaveTextContent('Live task stream disconnected');
+      expect(status).toHaveTextContent('The task stream is offline. Retry or refresh to resume updates.');
     });
 
     it('shows recovering status on connection errors', () => {
@@ -284,7 +286,9 @@ describe('ConversationPanel', () => {
         />
       );
 
-      expect(screen.getByTestId('notebook__sse-status')).toHaveTextContent('Realtime connection: recovering...');
+      const status = screen.getByTestId('notebook__sse-status');
+      expect(status).toHaveTextContent('Live task stream recovery failed');
+      expect(status).toHaveTextContent('Recent reconnect attempts did not recover the stream. Retry or refresh to continue.');
     });
   });
 

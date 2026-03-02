@@ -544,6 +544,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             disabled={disabled}
             activeStreamStatus={activeStreamStatus}
             activeStreamingAssistant={activeStreamingAssistant}
+            activeStreamErrorCode={chatViewModel.activeStreamErrorCode}
             activeStreamErrorMessage={activeStreamErrorMessage}
             suppressAutoScroll={suppressAutoScroll}
             createPending={createSessionMutation.isPending}
@@ -562,6 +563,11 @@ export default function ChatPage({ params }: ChatPageProps) {
               noActiveThreadHint: t('no_active_thread_hint_create'),
               noEndpointHint: t('no_active_endpoint_hint'),
               streamErrorHint: t('stream_error_hint'),
+              streamErrorTitleInterrupted: t('stream_error_title_interrupted'),
+              streamErrorTitleAgentOffline: t('stream_error_title_agent_offline'),
+              streamErrorTitleAgentTimeout: t('stream_error_title_agent_timeout'),
+              streamErrorTitleAgentProtocol: t('stream_error_title_agent_protocol'),
+              streamErrorTitleAgentUpstream: t('stream_error_title_agent_upstream'),
               selectThreadHint: t('no_active_thread_hint_select'),
               attachmentsDisabledReason: t('attachments.multimodal_required'),
               newThread: t('new_thread'),

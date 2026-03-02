@@ -9,6 +9,7 @@ import {
 export interface ChatViewModel {
   activeStreamStatus: SessionStreamStatus;
   activeStreamingAssistant: SessionStreamingAssistant | null;
+  activeStreamErrorCode: string | null;
   activeStreamErrorMessage: string | null;
   mergedStreamingSessionIds: string[];
   disabled: boolean;
@@ -32,6 +33,9 @@ export function buildChatViewModel(args: {
   const activeStreamingAssistant = currentSessionId
     ? (streamStateBySession[currentSessionId]?.assistant ?? null)
     : null;
+  const activeStreamErrorCode = currentSessionId
+    ? (streamStateBySession[currentSessionId]?.errorCode ?? null)
+    : null;
   const activeStreamErrorMessage = currentSessionId
     ? (streamStateBySession[currentSessionId]?.errorMessage ?? null)
     : null;
@@ -47,6 +51,7 @@ export function buildChatViewModel(args: {
   return {
     activeStreamStatus,
     activeStreamingAssistant,
+    activeStreamErrorCode,
     activeStreamErrorMessage,
     mergedStreamingSessionIds,
     disabled,

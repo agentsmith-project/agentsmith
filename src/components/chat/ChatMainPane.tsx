@@ -6,6 +6,7 @@ import { AlertTriangle, MessageSquare, Plus } from 'lucide-react';
 import type { Agent, Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
 import { deriveChatComposerState } from '@/lib/chat/composer-state';
 import type { SessionStreamStatus, SessionStreamingAssistant } from '@/lib/chat/stream-state';
+import { classifyChatStreamFailure } from '@/lib/build-failure-explainability';
 
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { Composer } from '@/components/chat/Composer';
@@ -20,6 +21,11 @@ export interface ChatMainPaneLabels {
   noActiveThreadHint: string;
   noEndpointHint: string;
   streamErrorHint: string;
+  streamErrorTitleInterrupted: string;
+  streamErrorTitleAgentOffline: string;
+  streamErrorTitleAgentTimeout: string;
+  streamErrorTitleAgentProtocol: string;
+  streamErrorTitleAgentUpstream: string;
   newThread: string;
   selectThreadHint: string;
   attachmentsDisabledReason: string;
@@ -39,6 +45,7 @@ export interface ChatMainPaneProps {
   disabled: boolean;
   activeStreamStatus: SessionStreamStatus;
   activeStreamingAssistant: SessionStreamingAssistant | null;
+  activeStreamErrorCode: string | null;
   activeStreamErrorMessage: string | null;
   suppressAutoScroll: boolean;
   createPending: boolean;
@@ -86,6 +93,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     disabled,
     activeStreamStatus,
     activeStreamingAssistant,
+    activeStreamErrorCode,
     activeStreamErrorMessage,
     suppressAutoScroll,
     createPending,
@@ -135,6 +143,16 @@ export function ChatMainPane(props: ChatMainPaneProps) {
   });
   const composerDisabled = composerState !== 'ready';
   const showStreamErrorBanner = activeStreamStatus === 'error' && Boolean(currentSessionId);
+  const streamFailureKind = classifyChatStreamFailure(activeStreamErrorCode);
+  const streamErrorTitle = streamFailureKind === 'agent_offline'
+    ? labels.streamErrorTitleAgentOffline
+    : streamFailureKind === 'agent_timeout'
+      ? labels.streamErrorTitleAgentTimeout
+      : streamFailureKind === 'agent_protocol'
+        ? labels.streamErrorTitleAgentProtocol
+        : streamFailureKind === 'agent_upstream'
+          ? labels.streamErrorTitleAgentUpstream
+          : labels.streamErrorTitleInterrupted;
   const composerDisabledReason =
     composerState === 'no_thread'
       ? labels.noActiveThreadHint
@@ -230,8 +248,8 @@ export function ChatMainPane(props: ChatMainPaneProps) {
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 text-error" aria-hidden />
             <div className="min-w-0">
-              <div className="text-sm text-error">{activeStreamErrorMessage || labels.streamErrorHint}</div>
-              <div className="mt-1 text-xs text-tertiary">{labels.streamErrorHint}</div>
+              <div className="text-sm font-medium text-error">{streamErrorTitle}</div>
+              <div className="mt-1 text-xs text-tertiary">{activeStreamErrorMessage || labels.streamErrorHint}</div>
             </div>
           </div>
         </div>

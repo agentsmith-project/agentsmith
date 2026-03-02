@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { MessageList } from './MessageList';
 import { ConversationInput } from './ConversationInput';
 import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
+import { classifyNotebookRealtimeFailure } from '@/lib/build-failure-explainability';
 
 export interface ConversationPanelProps {
   messages: TaskMessage[];
@@ -38,6 +39,29 @@ export function ConversationPanel({
 }: ConversationPanelProps) {
   const t = useTranslations('notebook.conversation');
   const [inputValue, setInputValue] = React.useState('');
+  const connectionFailureKind = connectionStatus
+    ? classifyNotebookRealtimeFailure(connectionStatus)
+    : null;
+
+  const connectionTitle = connectionFailureKind === 'connecting'
+    ? t('realtime_status_connecting_title')
+    : connectionFailureKind === 'reconnecting'
+      ? t('realtime_status_reconnecting_title')
+      : connectionFailureKind === 'disconnected'
+        ? t('realtime_status_disconnected_title')
+        : connectionFailureKind === 'error'
+          ? t('realtime_status_error_title')
+          : null;
+
+  const connectionDescription = connectionFailureKind === 'connecting'
+    ? t('realtime_status_connecting_description')
+    : connectionFailureKind === 'reconnecting'
+      ? t('realtime_status_reconnecting_description')
+      : connectionFailureKind === 'disconnected'
+        ? t('realtime_status_disconnected_description')
+        : connectionFailureKind === 'error'
+          ? t('realtime_status_error_description')
+          : null;
 
   const handleSend = () => {
     if (inputValue.trim().length === 0) return;
@@ -48,11 +72,9 @@ export function ConversationPanel({
   return (
     <div className="h-full flex flex-col bg-background">
       {connectionStatus && connectionStatus !== 'connected' && (
-        <div className="border-b border-subtle px-4 py-2 text-xs text-tertiary" data-testid="notebook__sse-status">
-          {connectionStatus === 'connecting' && t('realtime_connecting')}
-          {connectionStatus === 'reconnecting' && t('realtime_reconnecting')}
-          {connectionStatus === 'disconnected' && t('realtime_disconnected')}
-          {connectionStatus === 'error' && t('realtime_error')}
+        <div className="border-b border-subtle px-4 py-2" data-testid="notebook__sse-status">
+          <div className="text-xs font-medium text-primary">{connectionTitle}</div>
+          <div className="mt-0.5 text-xs text-tertiary">{connectionDescription}</div>
         </div>
       )}
       <div className="flex-1 min-h-0">

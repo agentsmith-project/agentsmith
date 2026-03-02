@@ -87,6 +87,12 @@ function mapStreamErrorMessage(error: unknown, messages: UseChatStreamingArgs['m
   return messages.streamingFailed;
 }
 
+function mapStreamErrorCode(error: unknown): string | null {
+  if (error instanceof StreamUiError) return error.code;
+  if (error instanceof ApiError) return error.errorCode ?? null;
+  return null;
+}
+
 export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingResult {
   const {
     token,
@@ -137,7 +143,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         : updater;
       const normalized: SessionStreamState = next.status === 'error'
         ? next
-        : { ...next, errorMessage: null };
+        : { ...next, errorCode: null, errorMessage: null };
       if ((normalized.status === 'stopped' || normalized.status === 'error') && !normalized.assistant) {
         const timer = window.setTimeout(() => {
           const currentState = useChatRuntimeStore.getState().streamStateBySession[sessionId];
@@ -353,8 +359,9 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
               queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
               return;
             }
+            const errorCode = mapStreamErrorCode(e);
             const errorMessage = mapStreamErrorMessage(e, messages);
-            setSessionStreamState(session.id, { status: 'error', assistant: null, errorMessage });
+            setSessionStreamState(session.id, { status: 'error', assistant: null, errorCode, errorMessage });
             toast.error(errorMessage);
           } finally {
             if (streamControllersRef.current.get(session.id) === controller) {
@@ -622,8 +629,9 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
         return;
       }
+      const errorCode = mapStreamErrorCode(e);
       const errorMessage = mapStreamErrorMessage(e, messages);
-      setSessionStreamState(runArgs.sessionId, { status: 'error', assistant: null, errorMessage });
+      setSessionStreamState(runArgs.sessionId, { status: 'error', assistant: null, errorCode, errorMessage });
       toast.error(errorMessage);
       queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, runArgs.sessionId) });
       queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });

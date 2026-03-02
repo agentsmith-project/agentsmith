@@ -20,6 +20,7 @@ export { AlertAPI } from './alerts';
 export { RuntimeAPI } from './runtime';
 export { ReleaseOpsAPI } from './release-ops';
 export { GovernanceExplainabilityAPI } from './governance-explainability';
+export { OrganizationActionsAPI } from './organization-actions';
 
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';

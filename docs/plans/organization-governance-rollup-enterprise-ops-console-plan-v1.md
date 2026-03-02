@@ -192,11 +192,12 @@
 5. `WP-03` 第一阶段落地：在组织总览页增加 prioritized actions queue，并打通 settings/release-ops 快捷动作
 6. `WP-02` 第二阶段已启动：组织矩阵页已具备 workspace 搜索与 readiness 筛选
 7. `WP-03` 第二阶段已启动：动作队列支持状态回写（pending/in-progress/completed/blocked）与状态历史审计展示
+8. `WP-03` 第二阶段推进：已接入 organization-actions 内部 API 合约与 Mock 路由，形成“服务端优先 + 本地镜像”状态同步
 
 待完成：
 
 1. `WP-01` 第二阶段：与 workspace settings / release readiness 建立更强联动
 2. `WP-02` 第二阶段：矩阵排序与批量动作预览
-3. `WP-03` 第二阶段：接入服务端动作审计 API 与跨会话统一归档
+3. `WP-03` 第二阶段：接入真实后端 organization-actions 持久化与审计归档
 4. `WP-04` 组织级 explainability drill-down 完整链路
 5. `WP-05` 组织级 release evidence 与 gate 集成

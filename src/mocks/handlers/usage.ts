@@ -4,6 +4,7 @@ import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
 import { buildRuntimeUsageRecords, listRuntimeUsageFacts } from '../state/runtime-usage';
 import type { UsageReportDelivery, UsageReportEvidence, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
 import type { ReleaseEscalationEvent, ReleaseGateRunDetail, ReleaseGateRunListItem, ReleaseReportDetail, ReleaseReportListItem } from '@/lib/api/endpoints/release-ops';
+import type { OrganizationActionServerRecord, OrganizationActionStatus } from '@/lib/stores/organization-actions-store';
 import { appendMockNotification } from '../state/me-notifications';
 
 type ResourceType = 'endpoint' | 'source_library' | 'agent';
@@ -71,6 +72,31 @@ const usageReportSchedules: UsageReportSchedule[] = [{
 }];
 
 const usageReportDeliveries: UsageReportDelivery[] = [];
+const organizationActionRecords = new Map<string, OrganizationActionServerRecord>();
+
+function listOrganizationActionRecords(actionIds: string[]): OrganizationActionServerRecord[] {
+  return actionIds.map((actionId) => {
+    const existing = organizationActionRecords.get(actionId);
+    if (existing) {
+      return existing;
+    }
+    const created: OrganizationActionServerRecord = {
+      action_id: actionId,
+      status: 'pending',
+      updated_at: new Date().toISOString(),
+      history: [],
+    };
+    organizationActionRecords.set(actionId, created);
+    return created;
+  });
+}
+
+function normalizeActionStatus(value: unknown): OrganizationActionStatus | null {
+  if (value === 'pending' || value === 'in_progress' || value === 'completed' || value === 'blocked') {
+    return value;
+  }
+  return null;
+}
 const releasePolicyOverrides = [{
   id: 'rpo_001',
   incident_id: 'incident-usage-webhook-signature-policy-check',
@@ -1214,6 +1240,56 @@ function buildUsageOperationsSummary(records: Array<Record<string, unknown>>) {
 }
 
 export const usageHandlers = [
+  http.get('/api/v1/internal/organization-actions', ({ request }) => {
+    const url = new URL(request.url);
+    const rawActionIds = url.searchParams.get('action_ids') ?? '';
+    const actionIds = rawActionIds
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0);
+    return HttpResponse.json({
+      items: listOrganizationActionRecords(actionIds),
+    });
+  }),
+  http.post('/api/v1/internal/organization-actions/:actionId/status', async ({ params, request }) => {
+    const actionId = String(params.actionId ?? '');
+    const body = await request.json() as {
+      status?: OrganizationActionStatus;
+      actor_user_id?: string;
+      actor_name?: string;
+      note?: string;
+    };
+    const normalizedStatus = normalizeActionStatus(body.status);
+    if (!actionId || !normalizedStatus || !body.actor_user_id || !body.actor_name) {
+      return HttpResponse.json(
+        { error_code: 'VALIDATION_ERROR', message: 'invalid organization action status payload' },
+        { status: 422 },
+      );
+    }
+    const record = organizationActionRecords.get(actionId) ?? {
+      action_id: actionId,
+      status: 'pending' as OrganizationActionStatus,
+      updated_at: new Date().toISOString(),
+      history: [],
+    };
+    const event = {
+      id: `org_action_audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      action_id: actionId,
+      status: normalizedStatus,
+      actor_user_id: body.actor_user_id,
+      actor_name: body.actor_name,
+      note: body.note,
+      at: new Date().toISOString(),
+    };
+    const updated: OrganizationActionServerRecord = {
+      action_id: actionId,
+      status: normalizedStatus,
+      updated_at: event.at,
+      history: [...record.history, event].slice(-20),
+    };
+    organizationActionRecords.set(actionId, updated);
+    return HttpResponse.json(updated);
+  }),
   http.get('/api/v1/internal/release-reports', () => {
     return HttpResponse.json({ items: releaseReports });
   }),

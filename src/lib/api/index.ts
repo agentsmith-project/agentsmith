@@ -56,6 +56,7 @@ export {
   RuntimeAPI,
   ReleaseOpsAPI,
   GovernanceExplainabilityAPI,
+  OrganizationActionsAPI,
 } from './endpoints';
 
 export type {

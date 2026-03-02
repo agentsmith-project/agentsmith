@@ -21,9 +21,25 @@ export interface OrganizationActionRecord {
   history: OrganizationActionAuditEvent[];
 }
 
+export interface OrganizationActionServerRecord {
+  action_id: string;
+  status: OrganizationActionStatus;
+  updated_at: string;
+  history: Array<{
+    id: string;
+    action_id: string;
+    status: OrganizationActionStatus;
+    actor_user_id: string;
+    actor_name: string;
+    note?: string;
+    at: string;
+  }>;
+}
+
 interface OrganizationActionsState {
   records: Record<string, OrganizationActionRecord>;
   hydrateQueue: (actionIds: string[]) => void;
+  hydrateFromServer: (records: OrganizationActionServerRecord[]) => void;
   setActionStatus: (args: {
     actionId: string;
     status: OrganizationActionStatus;
@@ -56,6 +72,30 @@ export const useOrganizationActionsStore = create<OrganizationActionsState>()(
             if (!next[actionId]) {
               next[actionId] = createInitialRecord();
             }
+          }
+          return { records: next };
+        });
+      },
+      hydrateFromServer: (records) => {
+        if (records.length === 0) {
+          return;
+        }
+        set((state) => {
+          const next = { ...state.records };
+          for (const record of records) {
+            next[record.action_id] = {
+              status: record.status,
+              updatedAt: record.updated_at,
+              history: record.history.map((event) => ({
+                id: event.id,
+                actionId: event.action_id,
+                status: event.status,
+                actorId: event.actor_user_id,
+                actorName: event.actor_name,
+                note: event.note,
+                at: event.at,
+              })),
+            };
           }
           return { records: next };
         });

@@ -35,22 +35,22 @@ test.describe('Runtime Console', () => {
     // Click monitoring tab
     await authedPage.getByTestId('tabs-trigger-monitoring').click();
     await expect(authedPage.getByTestId('tabs-trigger-monitoring')).toHaveAttribute('data-state', 'active');
-    await expect(authedPage.url()).toContain('tab=monitoring');
+    await expect(authedPage).toHaveURL(/tab=monitoring/);
 
     // Click alerts tab
     await authedPage.getByTestId('tabs-trigger-alerts').click();
     await expect(authedPage.getByTestId('tabs-trigger-alerts')).toHaveAttribute('data-state', 'active');
-    await expect(authedPage.url()).toContain('tab=alerts');
+    await expect(authedPage).toHaveURL(/tab=alerts/);
 
     // Click control tab
     await authedPage.getByTestId('tabs-trigger-control').click();
     await expect(authedPage.getByTestId('tabs-trigger-control')).toHaveAttribute('data-state', 'active');
-    await expect(authedPage.url()).toContain('tab=control');
+    await expect(authedPage).toHaveURL(/tab=control/);
 
     // Click reports tab
     await authedPage.getByTestId('tabs-trigger-reports').click();
     await expect(authedPage.getByTestId('tabs-trigger-reports')).toHaveAttribute('data-state', 'active');
-    await expect(authedPage.url()).toContain('tab=reports');
+    await expect(authedPage).toHaveURL(/tab=reports/);
   });
 
   test('opens overview tab with tab parameter', async ({ authedPage }) => {
@@ -79,8 +79,8 @@ test.describe('Runtime Console', () => {
     await authedPage.getByTestId('tabs-trigger-alerts').click();
     await expect(authedPage.getByTestId('tabs-trigger-alerts')).toHaveAttribute('data-state', 'active');
 
-    // Verify alert center content is visible
-    await expect(authedPage.getByTestId('alert-center__tabs')).toBeVisible({ timeout: 5000 });
+    // Verify alert center page is visible
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 5000 });
   });
 
   test('shows release ops dashboard in reports tab', async ({ authedPage }) => {
@@ -104,7 +104,7 @@ test.describe('Runtime Console', () => {
     await expect(authedPage.getByTestId('tabs-trigger-control')).toHaveAttribute('data-state', 'active');
 
     // Verify runtime control plane panel is visible
-    await expect(authedPage.getByTestId('runtime-cp__panel')).toBeVisible({ timeout: 5000 });
+    await expect(authedPage.getByTestId('settings-runtime__panel')).toBeVisible({ timeout: 5000 });
   });
 
   test('maintains tab state on browser back/forward', async ({ authedPage }) => {
@@ -114,7 +114,7 @@ test.describe('Runtime Console', () => {
     // Click monitoring tab
     await authedPage.getByTestId('tabs-trigger-monitoring').click();
     await expect(authedPage.getByTestId('tabs-trigger-monitoring')).toHaveAttribute('data-state', 'active');
-    await expect(authedPage.url()).toContain('tab=monitoring');
+    await expect(authedPage).toHaveURL(/tab=monitoring/);
 
     // Navigate back
     await authedPage.goBack();
@@ -127,62 +127,66 @@ test.describe('Runtime Console', () => {
 });
 
 test.describe('Runtime Console - Permission-Based URL Correction', () => {
-  test('redirects to first available tab when user lacks permission for requested tab', async ({ authedPage }) => {
-    await goToProject(authedPage, 'overview');
+  test('redirects to first available tab when user lacks permission for requested tab', async ({ limitedPage }) => {
+    // limitedPage uses user_004 which has project:usage:view but NOT project:settings:manage
+    await goToProject(limitedPage, 'overview');
 
     // Navigate directly to control tab (requires project:settings:manage)
-    // MSW mock user has project:usage:view but NOT project:settings:manage
-    await authedPage.goto(authedPage.url().replace('overview', 'runtime-console?tab=control'));
+    await limitedPage.goto(limitedPage.url().replace('overview', 'runtime-console?tab=control'));
 
-    // Page should load and redirect to monitoring tab (first available for usage:view permission)
-    await expect(authedPage.getByTestId('tabs')).toBeVisible({ timeout: 10000 });
+    // Page should load and redirect to overview tab (first accessible for usage:view permission)
+    await expect(limitedPage.getByTestId('tabs')).toBeVisible({ timeout: 10000 });
 
-    // URL should be corrected to monitoring tab
-    expect(authedPage.url()).toContain('runtime-console');
-    expect(authedPage.url()).toContain('tab=monitoring');
-    expect(authedPage.url()).not.toContain('tab=control');
+    // URL should be corrected (overview removes tab parameter)
+    await expect(limitedPage).toHaveURL(/runtime-console/);
+    await expect(limitedPage).not.toHaveURL(/tab=control/);
 
-    // Verify monitoring tab is active
-    await expect(authedPage.getByTestId('tabs-trigger-monitoring')).toHaveAttribute('data-state', 'active');
+    // Verify overview tab is active (first accessible tab)
+    await expect(limitedPage.getByTestId('tabs-trigger-overview')).toHaveAttribute('data-state', 'active');
   });
 
-  test('preserves URL correction in browser history', async ({ authedPage }) => {
-    await goToProject(authedPage, 'overview');
+  test('preserves URL correction in browser history', async ({ limitedPage }) => {
+    // limitedPage uses user_004 which lacks project:settings:manage
+    await goToProject(limitedPage, 'overview');
 
-    // Navigate to a tab user doesn't have permission for
-    const originalUrl = authedPage.url().replace('overview', 'runtime-console?tab=control');
-    await authedPage.goto(originalUrl);
+    // Navigate to control tab (user doesn't have permission)
+    const originalUrl = limitedPage.url().replace('overview', 'runtime-console?tab=control');
+    await limitedPage.goto(originalUrl);
 
-    // Wait for correction
-    await expect(authedPage.getByTestId('tabs-trigger-monitoring')).toHaveAttribute('data-state', 'active');
+    // Wait for correction to overview
+    await expect(limitedPage.getByTestId('tabs-trigger-overview')).toHaveAttribute('data-state', 'active');
 
-    const correctedUrl = authedPage.url();
-    expect(correctedUrl).toContain('tab=monitoring');
+    const correctedUrl = limitedPage.url();
+    expect(correctedUrl).toContain('runtime-console');
+    expect(correctedUrl).not.toContain('tab=control');
 
-    // Navigate back should return to the page before the corrected request
-    await authedPage.goBack();
-    expect(authedPage.url()).toContain('overview');
+    // Navigate back should return to overview
+    await limitedPage.goBack();
+    await expect(limitedPage).toHaveURL(/overview/);
 
     // Navigate forward should redo the correction
-    await authedPage.goForward();
-    expect(authedPage.url()).toContain('tab=monitoring');
+    await limitedPage.goForward();
+    await expect(limitedPage).toHaveURL(/runtime-console/);
+    await expect(limitedPage).not.toHaveURL(/tab=control/);
   });
 
-  test('allows access to tabs user has permission for', async ({ authedPage }) => {
-    await goToProject(authedPage, 'overview');
+  test('allows access to tabs user has permission for', async ({ limitedPage }) => {
+    // limitedPage has project:usage:view permission
+    await goToProject(limitedPage, 'overview');
 
-    // User has project:usage:view permission, so monitoring tab should work
-    await authedPage.goto(authedPage.url().replace('overview', 'runtime-console?tab=monitoring'));
+    // Navigate to monitoring tab (user has permission)
+    await limitedPage.goto(limitedPage.url().replace('overview', 'runtime-console?tab=monitoring'));
 
-    await expect(authedPage.getByTestId('tabs')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('tabs-trigger-monitoring')).toHaveAttribute('data-state', 'active');
-    expect(authedPage.url()).toContain('tab=monitoring');
+    await expect(limitedPage.getByTestId('tabs')).toBeVisible({ timeout: 10000 });
+    await expect(limitedPage.getByTestId('tabs-trigger-monitoring')).toHaveAttribute('data-state', 'active');
+    await expect(limitedPage).toHaveURL(/tab=monitoring/);
 
     // Verify content is visible
-    await expect(authedPage.getByTestId('runtime-observability__refresh')).toBeVisible();
+    await expect(limitedPage.getByTestId('runtime-observability__refresh')).toBeVisible();
   });
 
-  test('falls back to overview when no tab permission matches', async ({ authedPage }) => {
+  test('falls back to overview when tab requires unavailable permission', async ({ authedPage }) => {
+    // Even with full permissions, invalid tab parameter should fall back to overview
     await goToProject(authedPage, 'overview');
 
     // Navigate with invalid tab parameter
@@ -193,7 +197,7 @@ test.describe('Runtime Console - Permission-Based URL Correction', () => {
     await expect(authedPage.getByTestId('tabs-trigger-overview')).toHaveAttribute('data-state', 'active');
 
     // URL should be corrected (tab parameter removed for overview)
-    expect(authedPage.url()).toContain('runtime-console');
-    expect(authedPage.url()).not.toContain('tab=');
+    await expect(authedPage).toHaveURL(/runtime-console/);
+    await expect(authedPage).not.toHaveURL(/tab=/);
   });
 });

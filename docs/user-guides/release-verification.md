@@ -96,6 +96,7 @@ npm run release:report -- --name my-release
 | `--governance-evidence` | Reuse an existing governance release evidence artifact | auto-managed |
 | `--build-reliability-evidence` | Reuse an existing build reliability evidence artifact | auto-managed |
 | `--workspace-governance-evidence` | Reuse an existing workspace governance release evidence artifact | auto-managed |
+| `--organization-governance-evidence` | Reuse an existing organization governance release evidence artifact | auto-managed |
 
 ## CI Execution
 
@@ -167,6 +168,14 @@ Workspace governance now contributes dedicated evidence as well. `make workspace
 4. workspace explainability panels and drill-down links
 
 When this smoke succeeds, it writes `workspace-governance-release-evidence.json`, and `release:report` attaches it as `summary.workspace_governance_evidence`.
+
+Organization governance now contributes dedicated evidence as well. `make organization-governance-release-smoke` validates:
+
+1. organization governance overview summary
+2. cross-workspace matrix and actions queue
+3. release-ops governance drilldown chain
+
+When this smoke succeeds, it writes `organization-governance-release-evidence.json`, and `release:report` attaches it as `summary.organization_governance_evidence`.
 
 ## Report Structure
 

@@ -93,7 +93,9 @@
 5. governance release evidence
 6. runtime release evidence
 7. usage report evidence
-8. incident linkage and ownership / SLA
+8. workspace governance release evidence
+9. organization governance release evidence
+10. incident linkage and ownership / SLA
 
 ## 5. 当前边界
 

@@ -395,6 +395,27 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.workspace_governance_evidence?.checks?.workspace_explainability).toBe(true);
     });
 
+    it('should attach organization governance release evidence to the summary', () => {
+      runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: {
+          organization_governance_evidence?: {
+            source?: string;
+            release_readiness?: string;
+            checks?: Record<string, boolean>;
+          };
+        };
+      };
+
+      expect(report.summary?.organization_governance_evidence).toBeDefined();
+      expect(report.summary?.organization_governance_evidence?.source).toBe('dry_run');
+      expect(report.summary?.organization_governance_evidence?.release_readiness).toBe('ready');
+      expect(Object.values(report.summary?.organization_governance_evidence?.checks ?? {})).toEqual(
+        expect.arrayContaining([true]),
+      );
+      expect(report.summary?.organization_governance_evidence?.checks?.evidence_drilldown_chain).toBe(true);
+    });
+
     it('should fail when runtime release evidence reports blocked guardrails', () => {
       const runtimeEvidencePath = join(OUTPUT_DIR, 'runtime-evidence-blocked.json');
       const runtimeEvidence = {
@@ -569,6 +590,39 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.status).toBe('fail');
       expect(report.summary?.recommendations?.some((item) => item.includes('workspace_governance_explainability_missing'))).toBe(true);
     });
+
+    it('should fail when organization governance release evidence is blocked', () => {
+      const organizationEvidencePath = join(OUTPUT_DIR, 'organization-governance-evidence-blocked.json');
+      const organizationEvidence = {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['organization_governance_drilldown_chain_missing'],
+        warnings: [],
+        checks: {
+          org_overview_summary: true,
+          workspace_matrix: true,
+          actions_queue_execution: true,
+          evidence_drilldown_chain: false,
+        },
+      };
+      mkdirSync(OUTPUT_DIR, { recursive: true });
+      writeFileSync(organizationEvidencePath, JSON.stringify(organizationEvidence), 'utf-8');
+
+      runScript([
+        '--output', OUTPUT_DIR,
+        '--name', 'report-test',
+        '--dry-run',
+        '--organization-governance-evidence', organizationEvidencePath,
+      ]);
+
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: { status?: string; recommendations?: string[] };
+      };
+
+      expect(report.summary?.status).toBe('fail');
+      expect(report.summary?.recommendations?.some((item) => item.includes('organization_governance_drilldown_chain_missing'))).toBe(true);
+    });
   });
 
   describe('RED Phase 4: Markdown Report', () => {
@@ -589,6 +643,7 @@ describe('verify-release-report: TDD Suite', () => {
       expect(mdContent).toContain('### Runtime Release Evidence');
       expect(mdContent).toContain('### Governance Release Evidence');
       expect(mdContent).toContain('### Workspace Governance Evidence');
+      expect(mdContent).toContain('### Organization Governance Evidence');
     });
 
     it('should format markdown with status badges and tables', () => {

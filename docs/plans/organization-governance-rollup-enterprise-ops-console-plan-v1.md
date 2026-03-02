@@ -206,10 +206,11 @@
 19. `WP-04` 第二阶段推进：Audit 页面已支持 trace 引用精确匹配（含 metadata 全量扫描）并自动打开匹配事件详情，补齐“看到引用 -> 看到具体记录”的最后一步定位体验
 20. `WP-04` 第二阶段推进：AuditEvent contract 已增加标准 trace 字段，AuditAPI 已完成 trace 引用归一化（top-level + metadata 双通道提取），页面定位逻辑优先依赖标准字段，metadata 扫描仅保留兜底
 21. `WP-04` 第二阶段推进：已新增 Playwright e2e 场景，覆盖 `release-ops` 治理 trace 下钻到 `usage/audit` 的 URL 参数透传与 trace context UI 验证（含 audit 匹配状态提示）
+22. `WP-05` 第一阶段推进：已新增 organization governance release smoke（契约 + e2e）与 evidence artifact，`release:report` 已接入 `organization_governance_evidence` 加载/阻塞判定/markdown 展示，并新增 CLI 透传参数
 
 待完成：
 
 1. `WP-01` 第二阶段：与 workspace settings / release readiness 建立更强联动
 2. `WP-02` 第二阶段：矩阵排序与批量动作预览
 3. `WP-03` 第二阶段：接入真实后端 organization-actions 持久化与审计归档
-4. `WP-05` 组织级 release evidence 与 gate 集成
+4. `WP-05` 第二阶段：将 organization governance release smoke 并入 `governance-release-smoke` 与 `verify-release` 严格主线，完成真实后端 gate 常态化

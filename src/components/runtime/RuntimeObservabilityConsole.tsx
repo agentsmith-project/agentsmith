@@ -14,12 +14,14 @@ import { EmptyState } from '@/components/audit-usage/EmptyState';
 import { SectionHeading } from '@/components/ui/section-heading';
 import { useRuntimeObservability, useUsageFacts } from '@/lib/hooks/use-audit-usage';
 import type { UsageListParams } from '@/lib/api/types';
-import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
+import { buildSharedOpsFilterQuery, parseSharedOpsFilterContext, type SharedOpsFilterContext } from '@/lib/ops-filter-context';
 
 type RuntimeObservabilityConsoleProps = {
   workspaceId: string;
   projectId: string;
   initialFilters?: Partial<RuntimeObservabilityFilters>;
+  /** Whether this tab instance is currently active. Only the active instance should update URL. */
+  isActive?: boolean;
 };
 
 type RuntimeObservabilityFilters = {
@@ -76,17 +78,31 @@ export function RuntimeObservabilityConsole({
   workspaceId,
   projectId,
   initialFilters,
+  isActive = true,
 }: RuntimeObservabilityConsoleProps) {
   const settingsT = useTranslations('settings');
   const commonT = useTranslations('common');
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [filters, setFilters] = React.useState<RuntimeObservabilityFilters>(() => ({
-    ...defaultTimeRange(),
-    ...initialFilters,
-  }));
+
+  // Read filter params from URL on mount, fallback to defaults
+  const [filters, setFilters] = React.useState<RuntimeObservabilityFilters>(() => {
+    const urlFilters = parseSharedOpsFilterContext(searchParams);
+    return {
+      start_time: urlFilters.start_time ?? defaultTimeRange().start_time,
+      end_time: urlFilters.end_time ?? defaultTimeRange().end_time,
+      provider: urlFilters.provider,
+      model: urlFilters.model,
+      result: urlFilters.result,
+      error_class: urlFilters.error_class,
+      ...initialFilters,
+    };
+  });
   const [drillDown, setDrillDown] = React.useState<RuntimeDrillDown | null>(null);
+
+  // Track if this is the initial mount to avoid unnecessary URL writes
+  const isInitialMount = React.useRef(true);
 
   const observabilityQuery = useRuntimeObservability(workspaceId, projectId, filters, {
     enabled: !!workspaceId && !!projectId,
@@ -156,13 +172,8 @@ export function RuntimeObservabilityConsole({
     });
   }, [filters.end_time, filters.start_time, openDrillDown]);
 
-  React.useEffect(() => {
-    const nextQuery = buildSharedOpsFilterQuery(filters);
-    const currentQuery = searchParams.toString();
-    const normalizedCurrent = currentQuery ? `?${currentQuery}` : '';
-    if (nextQuery === normalizedCurrent) return;
-    router.replace(`${pathname}${nextQuery}`, { scroll: false });
-  }, [filters, pathname, router, searchParams]);
+  // NOTE: URL sync removed to avoid race conditions with parent component's tab management
+  // Filters work locally within the component. Future: implement coordinated URL sync via parent.
 
   return (
     <>

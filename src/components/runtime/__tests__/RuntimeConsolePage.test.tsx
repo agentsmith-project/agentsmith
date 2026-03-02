@@ -493,4 +493,114 @@ describe('RuntimeConsolePage', () => {
       expect(mockRouterReplace).not.toHaveBeenCalled();
     });
   });
+
+  describe('URL normalization', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      // Reset to full permissions
+      mockPermissions['project:usage:view'] = true;
+      mockPermissions['project:alert:view'] = true;
+      mockPermissions['project:settings:manage'] = true;
+      mockSearchParams = new URLSearchParams();
+      mockRouterReplace.mockReset();
+    });
+
+    it('removes tab parameter when tab=overview (overview is default)', () => {
+      mockSearchParams = new URLSearchParams('tab=overview');
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      // User should be on overview tab
+      const tabs = screen.getByTestId('tabs');
+      expect(tabs).toHaveAttribute('data-value', 'overview');
+
+      // router.replace should be called to remove the tab parameter
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        '/en-US/workspaces/ws1/projects/proj1/runtime-console',
+        { scroll: false }
+      );
+    });
+
+    it('corrects URL when tab parameter is invalid (unknown tab)', () => {
+      mockSearchParams = new URLSearchParams('tab=invalid');
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      // User should fall back to overview (default tab)
+      const tabs = screen.getByTestId('tabs');
+      expect(tabs).toHaveAttribute('data-value', 'overview');
+
+      // router.replace should be called to remove the invalid parameter
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        '/en-US/workspaces/ws1/projects/proj1/runtime-console',
+        { scroll: false }
+      );
+    });
+
+    it('corrects URL when tab parameter is invalid (unknown tab) with other params', () => {
+      mockSearchParams = new URLSearchParams('tab=unknown&filter=error');
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      // User should fall back to overview (default tab)
+      const tabs = screen.getByTestId('tabs');
+      expect(tabs).toHaveAttribute('data-value', 'overview');
+
+      // router.replace should be called to preserve other params but remove invalid tab
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        '/en-US/workspaces/ws1/projects/proj1/runtime-console?filter=error',
+        { scroll: false }
+      );
+    });
+
+    it('preserves valid non-overview tab parameters', () => {
+      mockSearchParams = new URLSearchParams('tab=monitoring');
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabs = screen.getByTestId('tabs');
+      expect(tabs).toHaveAttribute('data-value', 'monitoring');
+
+      // router.replace should NOT be called since the URL is valid
+      expect(mockRouterReplace).not.toHaveBeenCalled();
+    });
+
+    it('removes overview parameter and keeps other valid tabs unchanged', () => {
+      // User requests overview explicitly, but it's the default - should clean up
+      mockSearchParams = new URLSearchParams('tab=overview');
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      // router.replace should be called to clean up the redundant parameter
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        '/en-US/workspaces/ws1/projects/proj1/runtime-console',
+        { scroll: false }
+      );
+    });
+  });
 });

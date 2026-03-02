@@ -132,23 +132,28 @@ export function RuntimeConsolePage({
       // If requested tab is accessible, use it; otherwise fall back to first accessible
       if (tabPermissions[requestedTab]) {
         targetTab = requestedTab;
+        // Overview is the default tab, so we should remove the parameter
+        if (targetTab === 'overview') {
+          needsUrlCorrection = true;
+        }
       } else {
         // User requested a tab they don't have permission for
         targetTab = firstAccessibleTab;
         needsUrlCorrection = true;
       }
     } else {
+      // Invalid or unknown tab parameter - remove it and use default
       targetTab = firstAccessibleTab;
+      needsUrlCorrection = true;
     }
 
     setActiveTab(targetTab);
 
-    // Correct URL if user tried to access a tab they don't have permission for
+    // Correct URL: remove invalid/unnecessary tab parameter
     if (needsUrlCorrection) {
       const params = new URLSearchParams(searchParams.toString());
-      if (targetTab === 'overview') {
-        params.delete('tab');
-      } else {
+      params.delete('tab'); // Always delete for correction (overview uses no param, others get set)
+      if (targetTab !== 'overview') {
         params.set('tab', targetTab);
       }
       const correctedUrl = `${pathname}${params.toString() ? `?${params.toString()}` : ''}`;
@@ -205,6 +210,7 @@ export function RuntimeConsolePage({
             <RuntimeObservabilityConsole
               workspaceId={workspaceId}
               projectId={projectId}
+              isActive={activeTab === 'overview'}
             />
           </TabsContent>
         )}
@@ -215,6 +221,7 @@ export function RuntimeConsolePage({
             <RuntimeObservabilityConsole
               workspaceId={workspaceId}
               projectId={projectId}
+              isActive={activeTab === 'monitoring'}
             />
           </TabsContent>
         )}

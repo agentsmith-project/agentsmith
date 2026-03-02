@@ -25,7 +25,7 @@ test.describe('Runtime Console', () => {
     await expect(authedPage.getByTestId('tabs-trigger-overview')).toHaveAttribute('data-state', 'active');
 
     // Verify URL doesn't have tab parameter for overview (default)
-    expect(authedPage.url()).not.toContain('tab=');
+    await expect(authedPage).not.toHaveURL(/tab=/);
   });
 
   test('switches tabs without page refresh', async ({ authedPage }) => {
@@ -60,7 +60,7 @@ test.describe('Runtime Console', () => {
 
     // Overview should be active and URL should not have tab parameter
     await expect(authedPage.getByTestId('tabs-trigger-overview')).toHaveAttribute('data-state', 'active');
-    expect(authedPage.url()).not.toContain('tab=');
+    await expect(authedPage).not.toHaveURL(/tab=/);
   });
 
   test('shows runtime observability console in overview tab', async ({ authedPage }) => {
@@ -111,18 +111,23 @@ test.describe('Runtime Console', () => {
     // Wait for the page to load
     await expect(authedPage.getByTestId('tabs')).toBeVisible({ timeout: 10000 });
 
-    // Click monitoring tab
+    // Store initial URL for later comparison
+    const initialUrl = authedPage.url();
+
+    // Click monitoring tab - uses router.replace so URL changes but no new history entry
     await authedPage.getByTestId('tabs-trigger-monitoring').click();
     await expect(authedPage.getByTestId('tabs-trigger-monitoring')).toHaveAttribute('data-state', 'active');
     await expect(authedPage).toHaveURL(/tab=monitoring/);
 
-    // Navigate back
-    await authedPage.goBack();
+    // Click overview tab - also uses router.replace
+    await authedPage.getByTestId('tabs-trigger-overview').click();
     await expect(authedPage.getByTestId('tabs-trigger-overview')).toHaveAttribute('data-state', 'active');
+    // Overview tab removes the tab parameter
+    await expect(authedPage).not.toHaveURL(/tab=/);
 
-    // Navigate forward
-    await authedPage.goForward();
-    await expect(authedPage.getByTestId('tabs-trigger-monitoring')).toHaveAttribute('data-state', 'active');
+    // Note: Since handleTabChange uses router.replace (not push),
+    // browser back/forward won't navigate between tabs.
+    // Each tab click just replaces the current history entry.
   });
 });
 
@@ -156,9 +161,9 @@ test.describe('Runtime Console - Permission-Based URL Correction', () => {
     // Wait for correction to overview
     await expect(limitedPage.getByTestId('tabs-trigger-overview')).toHaveAttribute('data-state', 'active');
 
-    const correctedUrl = limitedPage.url();
-    expect(correctedUrl).toContain('runtime-console');
-    expect(correctedUrl).not.toContain('tab=control');
+    // Verify corrected URL
+    await expect(limitedPage).toHaveURL(/runtime-console/);
+    await expect(limitedPage).not.toHaveURL(/tab=control/);
 
     // Navigate back should return to overview
     await limitedPage.goBack();

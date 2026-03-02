@@ -29,6 +29,7 @@ export default function WorkspacesOverviewPage() {
   const isError = isWorkspaceError || orgRollup.isError;
   const [searchQuery, setSearchQuery] = useState('');
   const [readinessFilter, setReadinessFilter] = useState<'all' | 'blocked' | 'warning' | 'ready'>('all');
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
 
   const filteredWorkspaceRanking = useMemo(() => {
     const items = orgRollup.rollup?.workspaceRanking ?? [];
@@ -58,6 +59,15 @@ export default function WorkspacesOverviewPage() {
     });
   }, [orgRollup.rollup?.actionsQueue, readinessFilter, searchQuery]);
   const { actionsWithState, updateActionStatus } = useOrganizationActions(filteredActionsQueue);
+  const selectedAction = useMemo(() => {
+    if (actionsWithState.length === 0) {
+      return null;
+    }
+    if (!selectedActionId) {
+      return actionsWithState[0] ?? null;
+    }
+    return actionsWithState.find((action) => action.id === selectedActionId) ?? actionsWithState[0] ?? null;
+  }, [actionsWithState, selectedActionId]);
 
   return (
     <PageState state="success">
@@ -329,6 +339,17 @@ export default function WorkspacesOverviewPage() {
                             >
                               {t('org_overview_action_mark_pending')}
                             </button>
+                            <button
+                              type="button"
+                              className={cn(
+                                'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                'hover:bg-hover',
+                              )}
+                              onClick={() => setSelectedActionId(action.id)}
+                              data-testid={`workspace-overview__actions-queue-open-explain--${actionIdForTest}`}
+                            >
+                              {t('org_overview_action_open_explain')}
+                            </button>
                             <Link
                               href={`/${locale}/workspaces/${action.workspaceId}/settings${drilldownQuery}`}
                               className={cn(
@@ -395,6 +416,55 @@ export default function WorkspacesOverviewPage() {
                         </div>
                         );
                       })}
+                    </div>
+                  )}
+                </section>
+
+                <section className="rounded-md border border-border bg-surface p-4" data-testid="workspace-overview__action-explain-panel">
+                  <h2 className="text-base font-semibold text-foreground">{t('org_overview_action_explain_title')}</h2>
+                  {!selectedAction ? (
+                    <p className="mt-2 text-sm text-tertiary">{t('org_overview_action_explain_empty')}</p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm font-medium text-foreground">{selectedAction.workspaceName}</p>
+                      <p className="text-xs text-tertiary">{t(`org_overview_action_type_${selectedAction.actionType}`)}</p>
+                      <p className="text-xs text-tertiary">{selectedAction.description || t('org_overview_action_explain_reason_fallback')}</p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Link
+                          href={`/${locale}/workspaces/${selectedAction.workspaceId}/settings`}
+                          className={cn(
+                            'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                            'hover:bg-hover',
+                          )}
+                          data-testid="workspace-overview__action-explain-open-settings"
+                        >
+                          {t('org_overview_open_settings')}
+                        </Link>
+                        {selectedAction.projectId ? (
+                          <>
+                            <Link
+                              href={`/${locale}/workspaces/${selectedAction.workspaceId}/projects/${selectedAction.projectId}/audit`}
+                              className={cn(
+                                'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                'hover:bg-hover',
+                              )}
+                              data-testid="workspace-overview__action-explain-open-audit"
+                            >
+                              {t('org_overview_open_audit')}
+                            </Link>
+                            <Link
+                              href={`/${locale}/workspaces/${selectedAction.workspaceId}/projects/${selectedAction.projectId}/resource-policy`}
+                              className={cn(
+                                'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                'hover:bg-hover',
+                              )}
+                              data-testid="workspace-overview__action-explain-open-policy"
+                            >
+                              {t('org_overview_open_policy')}
+                            </Link>
+                          </>
+                        ) : null}
+                      </div>
                     </div>
                   )}
                 </section>

@@ -98,6 +98,7 @@ describe('WorkspacesOverviewPage', () => {
     expect(screen.getByTestId('workspace-overview__attention-item--ws_1--project--proj_1')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__actions-queue')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__actions-queue-item--action--ws_1--project--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__action-explain-panel')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__attention-open-audit--ws_1--project--proj_1')).toHaveAttribute(
       'href',
       expect.stringContaining('gov_from=organization_overview'),
@@ -118,6 +119,14 @@ describe('WorkspacesOverviewPage', () => {
 
     expect(screen.getByText('org_overview_action_status_in_progress')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__actions-queue-history--action--ws_1--project--proj_1')).toBeInTheDocument();
+  });
+
+  it('opens explain panel from an action item', () => {
+    render(<WorkspacesOverviewPage />);
+    fireEvent.click(screen.getByTestId('workspace-overview__actions-queue-open-explain--action--ws_1--project--proj_1'));
+
+    expect(screen.getByTestId('workspace-overview__action-explain-open-audit')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__action-explain-open-policy')).toBeInTheDocument();
   });
 
   it('shows loading state', () => {

@@ -131,7 +131,10 @@ describe('WorkspacesOverviewPage', () => {
     expect(
       screen.getByTestId('workspace-overview__action-explain-related-item--ws_1--project--proj_1'),
     ).toBeInTheDocument();
-    expect(screen.getByTestId('workspace-overview__action-explain-open-audit')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__action-explain-open-audit')).toHaveAttribute(
+      'href',
+      expect.stringContaining('gov_action_id=action%3Aws_1%3Aproject%3Aproj_1'),
+    );
     expect(screen.getByTestId('workspace-overview__action-explain-open-policy')).toBeInTheDocument();
   });
 

@@ -98,6 +98,20 @@ export default function WorkspacesOverviewPage() {
       memberSignals: relatedAttention.filter((item) => item.kind === 'member').length,
     };
   }, [orgRollup.rollup, selectedAction]);
+  const selectedActionDrilldownQuery = useMemo(() => {
+    if (!selectedAction) {
+      return '';
+    }
+    return buildGovernanceDrilldownQuery({
+      gov_from: 'organization_overview',
+      gov_action_id: selectedAction.id,
+      gov_kind: selectedAction.memberId ? 'member' : selectedAction.projectId ? 'project' : 'workspace',
+      gov_workspace_id: selectedAction.workspaceId,
+      gov_project_id: selectedAction.projectId,
+      gov_member_id: selectedAction.memberId,
+      gov_reason: selectedAction.description,
+    });
+  }, [selectedAction]);
 
   return (
     <PageState state="success">
@@ -543,7 +557,7 @@ export default function WorkspacesOverviewPage() {
                       ) : null}
                       <div className="flex flex-wrap gap-2 pt-1">
                         <Link
-                          href={`/${locale}/workspaces/${selectedAction.workspaceId}/settings`}
+                          href={`/${locale}/workspaces/${selectedAction.workspaceId}/settings${selectedActionDrilldownQuery}`}
                           className={cn(
                             'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                             'hover:bg-hover',
@@ -555,7 +569,7 @@ export default function WorkspacesOverviewPage() {
                         {selectedAction.projectId ? (
                           <>
                             <Link
-                              href={`/${locale}/workspaces/${selectedAction.workspaceId}/projects/${selectedAction.projectId}/audit`}
+                              href={`/${locale}/workspaces/${selectedAction.workspaceId}/projects/${selectedAction.projectId}/audit${selectedActionDrilldownQuery}`}
                               className={cn(
                                 'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                 'hover:bg-hover',
@@ -565,7 +579,7 @@ export default function WorkspacesOverviewPage() {
                               {t('org_overview_open_audit')}
                             </Link>
                             <Link
-                              href={`/${locale}/workspaces/${selectedAction.workspaceId}/projects/${selectedAction.projectId}/resource-policy`}
+                              href={`/${locale}/workspaces/${selectedAction.workspaceId}/projects/${selectedAction.projectId}/resource-policy${selectedActionDrilldownQuery}`}
                               className={cn(
                                 'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                 'hover:bg-hover',
@@ -574,6 +588,18 @@ export default function WorkspacesOverviewPage() {
                             >
                               {t('org_overview_open_policy')}
                             </Link>
+                            {selectedAction.memberId ? (
+                              <Link
+                                href={`/${locale}/workspaces/${selectedAction.workspaceId}/projects/${selectedAction.projectId}/members?member_id=${selectedAction.memberId}&member_tab=people${selectedActionDrilldownQuery.replace('?', '&')}`}
+                                className={cn(
+                                  'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                  'hover:bg-hover',
+                                )}
+                                data-testid="workspace-overview__action-explain-open-members"
+                              >
+                                {t('org_overview_open_members')}
+                              </Link>
+                            ) : null}
                           </>
                         ) : null}
                       </div>

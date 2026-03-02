@@ -195,7 +195,7 @@
 8. `WP-03` 第二阶段推进：已接入 organization-actions 内部 API 合约与 Mock 路由，形成“服务端优先 + 本地镜像”状态同步
 9. `WP-04` 第一阶段已启动：建立 organization drill-down query contract，并在 overview -> audit/members/resource-policy 路径注入上下文
 10. `WP-04` 第一阶段推进：release-ops 页面已接入 drill-down 上下文提示，形成 organization -> release governance 连续链路
-11. `WP-04` 第二阶段推进：organization overview action explain panel 已补齐 evidence summary（相关信号/阻塞预警分布/工作区风险快照）与证据条目聚合
+11. `WP-04` 第二阶段推进：organization overview action explain panel 已补齐 evidence summary（相关信号/阻塞预警分布/工作区风险快照）、证据条目聚合，并为 settings/audit/resource-policy/members 跳转统一携带 drill-down context
 
 待完成：
 

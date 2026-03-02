@@ -143,6 +143,8 @@ export interface ReportSummary {
   usage_report_evidence?: UsageReportEvidence;
   /** Governance execution evidence collected from governance release smoke */
   governance_release_evidence?: GovernanceReleaseEvidence;
+  /** Build reliability evidence collected from build execution smoke lanes */
+  build_reliability_evidence?: BuildReliabilityReleaseEvidence;
   /** Troubleshooting recommendations (present if failed > 0) */
   recommendations?: string[];
   /** Quick stats for release notes */
@@ -337,6 +339,30 @@ export interface GovernanceReleaseEvidence {
   note?: string;
 }
 
+export interface BuildReliabilityReleaseEvidence {
+  /** Source of the evidence document */
+  source: 'dry_run' | 'artifact';
+  /** ISO timestamp when build reliability evidence was generated */
+  generated_at: string;
+  /** Release readiness derived from build reliability checks */
+  release_readiness: 'ready' | 'blocked';
+  /** Blocking build reliability failures */
+  blockers: string[];
+  /** Warning-only build reliability debt */
+  warnings: string[];
+  /** Focused build reliability checks covered by this evidence */
+  checks: {
+    realtime_session_resilience: boolean;
+    notebook_trace_fidelity: boolean;
+    build_failure_explainability: boolean;
+    cross_surface_diagnostics: boolean;
+    chat_recovery_integration: boolean;
+    notebook_external_runtime: boolean;
+  };
+  /** Optional reviewer note */
+  note?: string;
+}
+
 export interface ReleaseGateRunHistory {
   /** Unique gate run id */
   id: string;
@@ -446,6 +472,8 @@ export interface VerifyReleaseOptions {
   usageReportEvidence?: string;
   /** Path to governance release evidence artifact */
   governanceEvidence?: string;
+  /** Path to build reliability release evidence artifact */
+  buildReliabilityEvidence?: string;
   /** Output directory for release run history artifacts */
   runsOutput?: string;
   /** Output directory for release escalation artifacts */

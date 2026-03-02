@@ -1,5 +1,5 @@
 export type ReleasePolicySeverity = 'warning' | 'blocker';
-export type ReleasePolicySource = 'execution' | 'runtime' | 'usage' | 'governance';
+export type ReleasePolicySource = 'execution' | 'runtime' | 'usage' | 'governance' | 'build';
 export type ReleasePolicyDecision = 'ready' | 'warning' | 'blocked';
 
 export type ReleasePolicyIssue = {
@@ -90,11 +90,18 @@ export type ReleasePolicyGovernanceInput = {
   due_soon?: number;
 };
 
+export type ReleasePolicyBuildInput = {
+  release_readiness?: 'ready' | 'blocked';
+  blockers?: string[];
+  warnings?: string[];
+};
+
 export type EvaluateReleasePolicyInput = {
   execution?: ReleasePolicyExecutionInput;
   runtime?: ReleasePolicyRuntimeInput;
   usage?: ReleasePolicyUsageInput;
   governance?: ReleasePolicyGovernanceInput;
+  build?: ReleasePolicyBuildInput;
 };
 
 function dedupe(values: Array<string | undefined>): string[] {
@@ -336,6 +343,39 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
         severity: 'warning',
         source: 'governance',
         message: `${governance.open_escalations} open release escalations require follow-up.`,
+        overridable: true,
+      });
+    }
+  }
+
+  const build = input.build;
+  if (build) {
+    if (build.release_readiness === 'blocked') {
+      for (const blocker of dedupe(build.blockers ?? [])) {
+        pushIssue(blockers, {
+          id: `build_${blocker}`,
+          severity: 'blocker',
+          source: 'build',
+          message: blocker,
+          overridable: false,
+        });
+      }
+      if ((build.blockers?.length ?? 0) === 0) {
+        pushIssue(blockers, {
+          id: 'build_release_readiness_blocked',
+          severity: 'blocker',
+          source: 'build',
+          message: 'Build reliability release readiness is blocked.',
+          overridable: false,
+        });
+      }
+    }
+    for (const warning of dedupe(build.warnings ?? [])) {
+      pushIssue(warnings, {
+        id: `build_${warning}`,
+        severity: 'warning',
+        source: 'build',
+        message: warning,
         overridable: true,
       });
     }

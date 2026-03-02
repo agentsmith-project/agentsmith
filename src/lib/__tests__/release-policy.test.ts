@@ -90,6 +90,20 @@ describe('evaluateReleasePolicy', () => {
     expect(result.warnings.map((item) => item.id)).toContain('governance_open_escalations_present');
   });
 
+  it('adds build blockers when build reliability readiness is blocked', () => {
+    const result = evaluateReleasePolicy({
+      build: {
+        release_readiness: 'blocked',
+        blockers: ['build_chat_recovery_integration_missing'],
+        warnings: ['build_cross_surface_diagnostics_degraded'],
+      },
+    });
+
+    expect(result.decision).toBe('blocked');
+    expect(result.blockers.map((item) => item.id)).toContain('build_build_chat_recovery_integration_missing');
+    expect(result.warnings.map((item) => item.id)).toContain('build_build_cross_surface_diagnostics_degraded');
+  });
+
   it('merges governance evaluation into an existing release policy', () => {
     const base = evaluateReleasePolicy({
       runtime: {

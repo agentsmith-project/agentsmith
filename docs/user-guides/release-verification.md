@@ -94,6 +94,7 @@ npm run release:report -- --name my-release
 | `--runtime-evidence` | Reuse an existing runtime evidence JSON artifact | auto-managed |
 | `--usage-report-evidence` | Reuse an existing usage report evidence artifact | auto-managed |
 | `--governance-evidence` | Reuse an existing governance release evidence artifact | auto-managed |
+| `--build-reliability-evidence` | Reuse an existing build reliability evidence artifact | auto-managed |
 
 ## CI Execution
 
@@ -148,6 +149,14 @@ make notebook-agent-refresh-token
 ### Release Readiness
 
 Release verification now depends on delivery evidence, not only schedule definitions. If a required schedule is active but has failing or unacknowledged required deliveries, release evidence will surface it in `summary.usage_report_evidence`.
+
+Build reliability also contributes dedicated evidence. `make build-reliability-release-smoke` validates:
+
+1. chat recovery integration
+2. notebook external runtime integration
+3. realtime / trace / explainability contract tests
+
+When this smoke succeeds, it writes `build-reliability-release-evidence.json`, and `release:report` attaches it as `summary.build_reliability_evidence`.
 
 ## Report Structure
 

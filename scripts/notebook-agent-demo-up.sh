@@ -393,6 +393,28 @@ main() {
           err "token refresh failed and no valid fallback token is available"
           exit 1
         fi
+      elif token_file_is_valid; then
+        info "refreshed demo token is valid"
+      else
+        info "refreshed token did not validate; retrying once"
+        if ! (
+          cd "${ROOT_DIR}" && \
+          timeout "${DEMO_REFRESH_TIMEOUT_SEC}"s env \
+            BASE_URL="http://localhost:${WEB_PORT}" \
+            LOCALE="${LOCALE}" \
+            KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+            KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+            KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+            make notebook-agent-refresh-token
+        ); then
+          err "token refresh retry failed"
+          exit 1
+        fi
+        if ! token_file_is_valid; then
+          err "refreshed token is still invalid after retry"
+          exit 1
+        fi
+        info "refreshed demo token is valid after retry"
       fi
     fi
   fi

@@ -353,6 +353,27 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.governance_release_evidence?.checks?.sse_ticket_hardening).toBe(true);
     });
 
+    it('should attach build reliability release evidence to the summary', () => {
+      runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: {
+          build_reliability_evidence?: {
+            source?: string;
+            release_readiness?: string;
+            checks?: Record<string, boolean>;
+          };
+        };
+      };
+
+      expect(report.summary?.build_reliability_evidence).toBeDefined();
+      expect(report.summary?.build_reliability_evidence?.source).toBe('dry_run');
+      expect(report.summary?.build_reliability_evidence?.release_readiness).toBe('ready');
+      expect(Object.values(report.summary?.build_reliability_evidence?.checks ?? {})).toEqual(
+        expect.arrayContaining([true]),
+      );
+      expect(report.summary?.build_reliability_evidence?.checks?.cross_surface_diagnostics).toBe(true);
+    });
+
     it('should fail when runtime release evidence reports blocked guardrails', () => {
       const runtimeEvidencePath = join(OUTPUT_DIR, 'runtime-evidence-blocked.json');
       const runtimeEvidence = {
@@ -457,6 +478,41 @@ describe('verify-release-report: TDD Suite', () => {
 
       expect(report.summary?.status).toBe('fail');
       expect(report.summary?.recommendations?.some((item) => item.includes('governance_sse_ticket_hardening_missing'))).toBe(true);
+    });
+
+    it('should fail when build reliability release evidence is blocked', () => {
+      const buildEvidencePath = join(OUTPUT_DIR, 'build-reliability-evidence-blocked.json');
+      const buildEvidence = {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['build_chat_recovery_integration_missing'],
+        warnings: [],
+        checks: {
+          realtime_session_resilience: true,
+          notebook_trace_fidelity: true,
+          build_failure_explainability: true,
+          cross_surface_diagnostics: true,
+          chat_recovery_integration: false,
+          notebook_external_runtime: true,
+        },
+      };
+      mkdirSync(OUTPUT_DIR, { recursive: true });
+      writeFileSync(buildEvidencePath, JSON.stringify(buildEvidence), 'utf-8');
+
+      runScript([
+        '--output', OUTPUT_DIR,
+        '--name', 'report-test',
+        '--dry-run',
+        '--build-reliability-evidence', buildEvidencePath,
+      ]);
+
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: { status?: string; recommendations?: string[] };
+      };
+
+      expect(report.summary?.status).toBe('fail');
+      expect(report.summary?.recommendations?.some((item) => item.includes('build_chat_recovery_integration_missing'))).toBe(true);
     });
   });
 

@@ -107,16 +107,22 @@ describe('ChatHeader', () => {
       expect(screen.getByText('Generating…')).toBeInTheDocument();
     });
 
+    it('should show "Recovering stream..." when recovering', () => {
+      render(<ChatHeader {...defaultProps} streamStatus="recovering" />);
+
+      expect(screen.getByText('Recovering stream...')).toBeInTheDocument();
+    });
+
     it('should show "Stopped" when stopped', () => {
       render(<ChatHeader {...defaultProps} streamStatus="stopped" />);
 
       expect(screen.getByText('Stopped')).toBeInTheDocument();
     });
 
-    it('should show "Recovering..." when error', () => {
+    it('should show "Interrupted" when error', () => {
       render(<ChatHeader {...defaultProps} streamStatus="error" />);
 
-      expect(screen.getByText('Recovering...')).toBeInTheDocument();
+      expect(screen.getByText('Interrupted')).toBeInTheDocument();
     });
 
     it('should show no status when idle', () => {
@@ -124,7 +130,8 @@ describe('ChatHeader', () => {
 
       expect(screen.queryByText('Generating…')).not.toBeInTheDocument();
       expect(screen.queryByText('Stopped')).not.toBeInTheDocument();
-      expect(screen.queryByText('Recovering...')).not.toBeInTheDocument();
+      expect(screen.queryByText('Recovering stream...')).not.toBeInTheDocument();
+      expect(screen.queryByText('Interrupted')).not.toBeInTheDocument();
     });
   });
 

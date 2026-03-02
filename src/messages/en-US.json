@@ -279,8 +279,9 @@
     },
     "header": {
       "status_generating": "Generating...",
+      "status_recovering": "Recovering stream...",
       "status_stopped": "Stopped",
-      "status_error": "Recovering...",
+      "status_error": "Interrupted",
       "layout_standard": "Standard",
       "layout_ultrawide": "Ultrawide",
       "switch_to_standard": "Switch to standard layout",

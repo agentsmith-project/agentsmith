@@ -142,7 +142,11 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         const timer = window.setTimeout(() => {
           const currentState = useChatRuntimeStore.getState().streamStateBySession[sessionId];
           if (!currentState) return;
-          if (currentState.status === 'connecting' || currentState.status === 'streaming') return;
+          if (
+            currentState.status === 'connecting' ||
+            currentState.status === 'streaming' ||
+            currentState.status === 'recovering'
+          ) return;
           clearStreamState(sessionId);
           cleanupTimers.delete(sessionId);
         }, 60_000);
@@ -219,7 +223,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
           streamControllersRef.current.set(session.id, controller);
           const now = Date.now();
           setSessionStreamState(session.id, {
-            status: 'connecting',
+            status: 'recovering',
             assistant: {
               messageId: null,
               content: '',

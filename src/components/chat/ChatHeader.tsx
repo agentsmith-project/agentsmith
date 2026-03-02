@@ -31,7 +31,7 @@ export function ChatHeader({
   session: ChatSession | null;
   endpoints: Endpoint[];
   externalAgents?: Agent[];
-  streamStatus: 'idle' | 'connecting' | 'streaming' | 'stopped' | 'error';
+  streamStatus: 'idle' | 'connecting' | 'recovering' | 'streaming' | 'stopped' | 'error';
   onRename: (title: string) => void;
   onSelectEndpoint: (endpoint: Endpoint) => void;
   onSelectExternalAgent?: (agent: Agent) => void;
@@ -64,6 +64,7 @@ export function ChatHeader({
 
   const statusText = React.useMemo(() => {
     if (streamStatus === 'connecting' || streamStatus === 'streaming') return t('header.status_generating');
+    if (streamStatus === 'recovering') return t('header.status_recovering');
     if (streamStatus === 'stopped') return t('header.status_stopped');
     if (streamStatus === 'error') return t('header.status_error');
     return '';

@@ -1,7 +1,7 @@
 # Organization Governance Rollup & Enterprise Ops Console Plan v1
 
 更新时间：2026-03-02  
-状态：`current-recommendation`
+状态：`in-progress`
 
 前置文档：
 
@@ -179,3 +179,20 @@
 4. organization explainability / evidence drill-down 打通
 5. org governance evidence 已进入 release gate
 
+---
+
+## 7. 当前进展（2026-03-02）
+
+已完成：
+
+1. `WP-01` 第一阶段落地：登录后 workspace 选择页已增加组织级治理总览模块
+2. 已形成 org summary、workspace risk ranking、attention feed 三个核心视图
+3. 已补充 rollup 纯函数与页面渲染单测，并通过 `make gate-l0`
+
+待完成：
+
+1. `WP-01` 第二阶段：与 workspace settings / release readiness 建立更强联动
+2. `WP-02` 跨 workspace 矩阵视图
+3. `WP-03` 企业动作队列
+4. `WP-04` 组织级 explainability drill-down 完整链路
+5. `WP-05` 组织级 release evidence 与 gate 集成

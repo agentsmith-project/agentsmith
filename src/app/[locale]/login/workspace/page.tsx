@@ -1,15 +1,19 @@
 'use client';
 
 import { useCallback } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Building2, FolderKanban } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
+import { useOrganizationGovernanceRollup } from '@/lib/hooks/use-organization-governance-rollup';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { APIError } from '@/lib/api/errors';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export default function WorkspaceSelectPage() {
   const router = useRouter();
@@ -24,6 +28,7 @@ export default function WorkspaceSelectPage() {
     error,
     refetch,
   } = useWorkspaces();
+  const organizationGovernance = useOrganizationGovernanceRollup(workspaces);
 
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
 
@@ -83,14 +88,24 @@ export default function WorkspaceSelectPage() {
                 </Button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {workspaces?.map(workspace => (
-                  <WorkspaceCard
-                    key={workspace.id}
-                    workspace={workspace}
-                    onSelect={() => handleWorkspaceSelect(workspace.id)}
-                  />
-                ))}
+              <div className="space-y-6">
+                <OrganizationGovernanceOverview
+                  locale={locale}
+                  isLoading={organizationGovernance.isLoading}
+                  isError={organizationGovernance.isError}
+                  onRefresh={organizationGovernance.refetch}
+                  rollup={organizationGovernance.rollup}
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {workspaces?.map(workspace => (
+                    <WorkspaceCard
+                      key={workspace.id}
+                      workspace={workspace}
+                      onSelect={() => handleWorkspaceSelect(workspace.id)}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -129,6 +144,152 @@ function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
           {t('projects_count', { count: 0 })}
         </span>
       </div>
+    </div>
+  );
+}
+
+interface OrganizationGovernanceOverviewProps {
+  locale: string;
+  isLoading: boolean;
+  isError: boolean;
+  onRefresh: () => Promise<void>;
+  rollup: ReturnType<typeof useOrganizationGovernanceRollup>['rollup'];
+}
+
+function OrganizationGovernanceOverview(props: OrganizationGovernanceOverviewProps) {
+  const t = useTranslations('auth');
+
+  if (props.isLoading) {
+    return (
+      <div className="rounded-md border border-subtle bg-surface p-4" data-testid="workspace-select__org-governance-loading">
+        <p className="text-sm text-tertiary">{t('org_governance_loading')}</p>
+      </div>
+    );
+  }
+
+  if (props.isError) {
+    return (
+      <div className="rounded-md border border-warning/30 bg-surface p-4" data-testid="workspace-select__org-governance-error">
+        <p className="text-sm font-medium text-foreground">{t('org_governance_error_title')}</p>
+        <p className="mt-1 text-sm text-tertiary">{t('org_governance_error_description')}</p>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-3"
+          onClick={() => void props.onRefresh()}
+          data-testid="workspace-select__org-governance-retry"
+        >
+          {t('workspace_retry')}
+        </Button>
+      </div>
+    );
+  }
+
+  if (!props.rollup) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-surface p-4 md:p-5" data-testid="workspace-select__org-governance-overview">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('org_governance_eyebrow')}</p>
+          <h2 className="mt-1 text-lg font-semibold text-foreground">{t('org_governance_title')}</h2>
+          <p className="mt-1 text-sm text-tertiary">{t('org_governance_subtitle')}</p>
+        </div>
+        <StatusBadge status={props.rollup.summary.readiness}>
+          {t(`org_governance_status_${props.rollup.summary.readiness}`)}
+        </StatusBadge>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryMetric label={t('org_governance_metric_workspaces')} value={props.rollup.summary.totalWorkspaces} />
+        <SummaryMetric label={t('org_governance_metric_risky_workspaces')} value={props.rollup.summary.riskyWorkspaces} />
+        <SummaryMetric label={t('org_governance_metric_blocked_workspaces')} value={props.rollup.summary.blockedWorkspaces} />
+        <SummaryMetric label={t('org_governance_metric_risky_projects')} value={props.rollup.summary.totalRiskyProjects} />
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        <div className="rounded-md border border-subtle bg-bg-base/20 p-3">
+          <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('org_governance_workspace_ranking')}</p>
+          <div className="mt-2 space-y-2">
+            {props.rollup.workspaceRanking.slice(0, 5).map((workspace) => (
+              <div
+                key={workspace.workspaceId}
+                className="flex items-center justify-between gap-3 rounded-sm border border-subtle bg-surface px-3 py-2"
+                data-testid={`workspace-select__org-governance-rank--${workspace.workspaceId}`}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{workspace.workspaceName}</p>
+                  <p className="text-xs text-tertiary">
+                    {t('org_governance_workspace_risk_meta', {
+                      blocked: workspace.blockedItems,
+                      warning: workspace.warningItems,
+                    })}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={workspace.readiness}>{t(`org_governance_status_${workspace.readiness}`)}</StatusBadge>
+                  <Link
+                    href={`/${props.locale}/workspaces/${workspace.workspaceId}/settings`}
+                    className={cn(
+                      'inline-flex h-8 items-center rounded-sm border border-subtle px-2.5 text-xs font-medium text-foreground transition-colors',
+                      'hover:bg-hover',
+                    )}
+                    data-testid={`workspace-select__org-governance-open-settings--${workspace.workspaceId}`}
+                  >
+                    {t('org_governance_open_workspace')}
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-md border border-subtle bg-bg-base/20 p-3">
+          <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('org_governance_attention_feed')}</p>
+          {props.rollup.attention.length === 0 ? (
+            <p className="mt-3 text-sm text-tertiary">{t('org_governance_attention_empty')}</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {props.rollup.attention.slice(0, 5).map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-sm border border-subtle bg-surface px-3 py-2"
+                  data-testid={`workspace-select__org-governance-attention--${item.id.replace(':', '--')}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-medium text-foreground">{item.workspaceName}</p>
+                    <StatusBadge status={item.severity}>{t(`org_governance_status_${item.severity}`)}</StatusBadge>
+                  </div>
+                  <p className="mt-1 text-xs text-tertiary">{item.title}</p>
+                  {item.projectId ? (
+                    <Link
+                      href={`/${props.locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/audit`}
+                      className={cn(
+                        'mt-2 inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                        'hover:bg-hover',
+                      )}
+                      data-testid={`workspace-select__org-governance-open-audit--${item.id.replace(':', '--')}`}
+                    >
+                      {t('org_governance_open_project_audit')}
+                    </Link>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SummaryMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-subtle bg-bg-base/20 p-3">
+      <p className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-foreground">{value}</p>
     </div>
   );
 }

@@ -10,6 +10,7 @@ Central index for AgentSmith documentation. Product scope and principles are in 
 | [Product Engineering Governance Methodology](./design/agentsmith-product-engineering-governance-methodology-v1.md) | 产品设计、工程交付与治理方法论基线 |
 | [Project Maturity & Productization Review v1](./design/project-maturity-productization-review-v1.md) | 当前项目成熟度、产品化进度与下一阶段主要缺口评估 |
 | [Next Mainline Priority Review v2](./design/next-mainline-priority-review-v2.md) | 当前基线收口后的下一主线优先级评估 |
+| [Next Mainline Priority Review v3](./design/next-mainline-priority-review-v3.md) | 当前最新下一主线优先级评审（组织级治理总控） |
 | [Build Execution Reliability & Trace Fidelity Closure Review v1](./design/build-execution-reliability-trace-fidelity-closure-review-v1.md) | Build 执行可靠性与轨迹保真主线第一阶段收口结论 |
 | [Enterprise Administration & Workspace Governance Priority Review v1](./design/enterprise-administration-workspace-governance-priority-review-v1.md) | 当前基线下企业管理与工作区治理主线的优先级评估 |
 | [Enterprise Administration & Workspace Governance Closure Review v1](./design/enterprise-administration-workspace-governance-closure-review-v1.md) | 企业管理与工作区治理主线第一阶段收口结论 |
@@ -57,6 +58,11 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 - [build-execution-reliability-trace-fidelity-closure-review-v1](./design/build-execution-reliability-trace-fidelity-closure-review-v1.md) — 当前 build reliability 主线收口与验收基线
 - [enterprise-administration-workspace-governance-plan-v1](./plans/enterprise-administration-workspace-governance-plan-v1.md) — 当前推荐的企业管理与工作区治理主线实施计划
 - [enterprise-administration-workspace-governance-closure-review-v1](./design/enterprise-administration-workspace-governance-closure-review-v1.md) — 企业管理与工作区治理主线收口与验收基线
+
+## Next Mainline (Current Recommendation)
+
+- [next-mainline-priority-review-v3](./design/next-mainline-priority-review-v3.md) — 当前推荐主线：组织治理汇总与企业运维总控台
+- [organization-governance-rollup-enterprise-ops-console-plan-v1](./plans/organization-governance-rollup-enterprise-ops-console-plan-v1.md) — 下一主线执行计划（WP-01 ~ WP-05）
 
 ## Other
 

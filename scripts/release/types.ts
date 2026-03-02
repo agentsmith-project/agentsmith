@@ -145,6 +145,8 @@ export interface ReportSummary {
   governance_release_evidence?: GovernanceReleaseEvidence;
   /** Build reliability evidence collected from build execution smoke lanes */
   build_reliability_evidence?: BuildReliabilityReleaseEvidence;
+  /** Workspace governance evidence collected from workspace governance smoke lane */
+  workspace_governance_evidence?: WorkspaceGovernanceReleaseEvidence;
   /** Troubleshooting recommendations (present if failed > 0) */
   recommendations?: string[];
   /** Quick stats for release notes */
@@ -363,6 +365,29 @@ export interface BuildReliabilityReleaseEvidence {
   note?: string;
 }
 
+export interface WorkspaceGovernanceReleaseEvidence {
+  /** Source of the evidence document */
+  source: 'dry_run' | 'artifact';
+  /** ISO timestamp when workspace governance evidence was generated */
+  generated_at: string;
+  /** Release readiness derived from workspace governance checks */
+  release_readiness: 'ready' | 'blocked';
+  /** Blocking workspace governance failures */
+  blockers: string[];
+  /** Warning-only workspace governance debt */
+  warnings: string[];
+  /** Focused workspace governance checks covered by this evidence */
+  checks: {
+    workspace_overview: boolean;
+    workspace_member_administration: boolean;
+    cross_project_actions: boolean;
+    workspace_explainability: boolean;
+    workspace_attention_drilldown: boolean;
+  };
+  /** Optional reviewer note */
+  note?: string;
+}
+
 export interface ReleaseGateRunHistory {
   /** Unique gate run id */
   id: string;
@@ -474,6 +499,8 @@ export interface VerifyReleaseOptions {
   governanceEvidence?: string;
   /** Path to build reliability release evidence artifact */
   buildReliabilityEvidence?: string;
+  /** Path to workspace governance release evidence artifact */
+  workspaceGovernanceEvidence?: string;
   /** Output directory for release run history artifacts */
   runsOutput?: string;
   /** Output directory for release escalation artifacts */

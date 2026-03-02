@@ -8,7 +8,7 @@
 	notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-quota-effect-smoke governance-policy-requests-quota-effect-smoke governance-source-library-policy-access-effect-smoke governance-source-library-policy-group-access-effect-smoke governance-source-library-policy-rate-effect-smoke governance-source-ai-ready-policy-effect-smoke governance-agent-policy-rate-effect-smoke governance-member-quota-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
-	build-reliability-release-smoke \
+	build-reliability-release-smoke workspace-governance-release-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
@@ -147,6 +147,7 @@ help:
 	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
 	@echo "  make governance-sse-ticket-effect-smoke # real-backend SSE ticket hardening smoke (opaque ticket + no query fallback)"
 	@echo "  make build-reliability-release-smoke # build reliability release smoke (chat recovery + notebook runtime + contract suite)"
+	@echo "  make workspace-governance-release-smoke # workspace governance release smoke (overview + member admin + cross-project actions + explainability)"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
 	@echo "  make usage-report-runner-status   # query internal usage report runner status (auth required)"
@@ -261,6 +262,9 @@ smoke-all:
 build-reliability-release-smoke:
 	./scripts/build-reliability-release-smoke.sh
 
+workspace-governance-release-smoke:
+	./scripts/workspace-governance-release-smoke.sh
+
 verify-contracts:
 	$(NPM) run ws:typecheck
 	$(NPM) run openapi:check-generated
@@ -340,16 +344,19 @@ gate-release:
 # Use REPORT_NAME=name to customize, REPORT_COMMIT_RANGE=range to specify commits
 # Use REPORT_ARCHIVE=1 to create timestamped archive
 # Use REPORT_RUNTIME_EVIDENCE=/abs/path/runtime-release-evidence.json to reuse an existing runtime evidence artifact
+# Use REPORT_WORKSPACE_GOVERNANCE_EVIDENCE=/abs/path/workspace-governance-release-evidence.json to reuse an existing workspace governance evidence artifact
 release-report:
 	@set -e; \
 	NAME=$${REPORT_NAME:-}; \
 	RANGE=$${REPORT_COMMIT_RANGE:-}; \
 	ARCHIVE=$${REPORT_ARCHIVE:-}; \
 	RUNTIME_EVIDENCE=$${REPORT_RUNTIME_EVIDENCE:-}; \
+	WORKSPACE_GOVERNANCE_EVIDENCE=$${REPORT_WORKSPACE_GOVERNANCE_EVIDENCE:-}; \
 	EXTRA_ARGS=""; \
 	[ -n "$$NAME" ] && EXTRA_ARGS="$$EXTRA_ARGS --name $$NAME"; \
 	[ -n "$$RANGE" ] && EXTRA_ARGS="$$EXTRA_ARGS --commit-range $$RANGE"; \
 	[ -n "$$RUNTIME_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --runtime-evidence $$RUNTIME_EVIDENCE"; \
+	[ -n "$$WORKSPACE_GOVERNANCE_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --workspace-governance-evidence $$WORKSPACE_GOVERNANCE_EVIDENCE"; \
 	[ "$$ARCHIVE" = "1" ] && EXTRA_ARGS="$$EXTRA_ARGS --archive"; \
 	$(NPM) run release:report -- $$EXTRA_ARGS
 

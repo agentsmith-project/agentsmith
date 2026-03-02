@@ -69,8 +69,11 @@ artifacts/release-reports/runtime-release-evidence.json
 artifacts/release-reports/governance-release-evidence.json
 artifacts/release-reports/usage-report-evidence.json
 artifacts/release-reports/build-reliability-release-evidence.json
+artifacts/release-reports/workspace-governance-release-evidence.json
 artifacts/release-reports/build-reliability-*.json
 artifacts/release-reports/build-reliability-*.md
+artifacts/release-reports/workspace-governance-*.json
+artifacts/release-reports/workspace-governance-*.md
 artifacts/release-reports/governance-execution-closure-*.json
 artifacts/release-reports/governance-execution-closure-*.md
 artifacts/release-reports/wp11-release-controls-*.json

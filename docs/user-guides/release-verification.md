@@ -95,6 +95,7 @@ npm run release:report -- --name my-release
 | `--usage-report-evidence` | Reuse an existing usage report evidence artifact | auto-managed |
 | `--governance-evidence` | Reuse an existing governance release evidence artifact | auto-managed |
 | `--build-reliability-evidence` | Reuse an existing build reliability evidence artifact | auto-managed |
+| `--workspace-governance-evidence` | Reuse an existing workspace governance release evidence artifact | auto-managed |
 
 ## CI Execution
 
@@ -157,6 +158,15 @@ Build reliability also contributes dedicated evidence. `make build-reliability-r
 3. realtime / trace / explainability contract tests
 
 When this smoke succeeds, it writes `build-reliability-release-evidence.json`, and `release:report` attaches it as `summary.build_reliability_evidence`.
+
+Workspace governance now contributes dedicated evidence as well. `make workspace-governance-release-smoke` validates:
+
+1. workspace governance overview
+2. workspace member administration surface
+3. cross-project governance actions
+4. workspace explainability panels and drill-down links
+
+When this smoke succeeds, it writes `workspace-governance-release-evidence.json`, and `release:report` attaches it as `summary.workspace_governance_evidence`.
 
 ## Report Structure
 

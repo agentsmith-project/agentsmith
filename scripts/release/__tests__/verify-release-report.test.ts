@@ -374,6 +374,27 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.build_reliability_evidence?.checks?.cross_surface_diagnostics).toBe(true);
     });
 
+    it('should attach workspace governance release evidence to the summary', () => {
+      runScript(['--output', OUTPUT_DIR, '--name', 'report-test', '--dry-run']);
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: {
+          workspace_governance_evidence?: {
+            source?: string;
+            release_readiness?: string;
+            checks?: Record<string, boolean>;
+          };
+        };
+      };
+
+      expect(report.summary?.workspace_governance_evidence).toBeDefined();
+      expect(report.summary?.workspace_governance_evidence?.source).toBe('dry_run');
+      expect(report.summary?.workspace_governance_evidence?.release_readiness).toBe('ready');
+      expect(Object.values(report.summary?.workspace_governance_evidence?.checks ?? {})).toEqual(
+        expect.arrayContaining([true]),
+      );
+      expect(report.summary?.workspace_governance_evidence?.checks?.workspace_explainability).toBe(true);
+    });
+
     it('should fail when runtime release evidence reports blocked guardrails', () => {
       const runtimeEvidencePath = join(OUTPUT_DIR, 'runtime-evidence-blocked.json');
       const runtimeEvidence = {
@@ -514,6 +535,40 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.status).toBe('fail');
       expect(report.summary?.recommendations?.some((item) => item.includes('build_chat_recovery_integration_missing'))).toBe(true);
     });
+
+    it('should fail when workspace governance release evidence is blocked', () => {
+      const workspaceEvidencePath = join(OUTPUT_DIR, 'workspace-governance-evidence-blocked.json');
+      const workspaceEvidence = {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['workspace_governance_explainability_missing'],
+        warnings: [],
+        checks: {
+          workspace_overview: true,
+          workspace_member_administration: true,
+          cross_project_actions: true,
+          workspace_explainability: false,
+          workspace_attention_drilldown: true,
+        },
+      };
+      mkdirSync(OUTPUT_DIR, { recursive: true });
+      writeFileSync(workspaceEvidencePath, JSON.stringify(workspaceEvidence), 'utf-8');
+
+      runScript([
+        '--output', OUTPUT_DIR,
+        '--name', 'report-test',
+        '--dry-run',
+        '--workspace-governance-evidence', workspaceEvidencePath,
+      ]);
+
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: { status?: string; recommendations?: string[] };
+      };
+
+      expect(report.summary?.status).toBe('fail');
+      expect(report.summary?.recommendations?.some((item) => item.includes('workspace_governance_explainability_missing'))).toBe(true);
+    });
   });
 
   describe('RED Phase 4: Markdown Report', () => {
@@ -533,6 +588,7 @@ describe('verify-release-report: TDD Suite', () => {
       expect(mdContent).toContain('## Metadata');
       expect(mdContent).toContain('### Runtime Release Evidence');
       expect(mdContent).toContain('### Governance Release Evidence');
+      expect(mdContent).toContain('### Workspace Governance Evidence');
     });
 
     it('should format markdown with status badges and tables', () => {

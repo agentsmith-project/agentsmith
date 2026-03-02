@@ -41,6 +41,7 @@ import type {
   UsageReportEvidence,
   GovernanceReleaseEvidence,
   BuildReliabilityReleaseEvidence,
+  WorkspaceGovernanceReleaseEvidence,
 } from './types';
 import {
   classifyFailure,
@@ -56,6 +57,7 @@ const DEFAULT_RUNTIME_EVIDENCE_FILE = 'runtime-release-evidence.json';
 const DEFAULT_USAGE_REPORT_EVIDENCE_FILE = 'usage-report-evidence.json';
 const DEFAULT_GOVERNANCE_EVIDENCE_FILE = 'governance-release-evidence.json';
 const DEFAULT_BUILD_RELIABILITY_EVIDENCE_FILE = 'build-reliability-release-evidence.json';
+const DEFAULT_WORKSPACE_GOVERNANCE_EVIDENCE_FILE = 'workspace-governance-release-evidence.json';
 
 const TRANSIENT_UPSTREAM_CATEGORIES = new Set<FailureType>(['network', 'timeout', 'rate_limit']);
 
@@ -115,6 +117,13 @@ const CHECK_DEFINITIONS: Array<{
     category: 'e2e',
     command: 'make build-reliability-release-smoke',
     timeout: 600000, // 10 minutes
+  },
+  {
+    id: 'workspace-governance-evidence',
+    name: 'Workspace governance release workflow',
+    category: 'e2e',
+    command: 'make workspace-governance-release-smoke',
+    timeout: 300000, // 5 minutes
   },
 ];
 
@@ -231,6 +240,9 @@ function parseArgs(argv: string[]): VerifyReleaseOptions {
       case '--build-reliability-evidence':
         options.buildReliabilityEvidence = argv[++i];
         break;
+      case '--workspace-governance-evidence':
+        options.workspaceGovernanceEvidence = argv[++i];
+        break;
       case '--runs-output':
         options.runsOutput = argv[++i];
         break;
@@ -297,6 +309,7 @@ OPTIONS:
   --usage-report-evidence <path>  Read usage report evidence artifact from custom path
   --governance-evidence <path>  Read governance release evidence artifact from custom path
   --build-reliability-evidence <path>  Read build reliability release evidence artifact from custom path
+  --workspace-governance-evidence <path>  Read workspace governance release evidence artifact from custom path
   --runs-output <dir>  Output directory for release gate run history artifacts
   --escalations-output <dir>  Output directory for release escalation artifacts
   --trigger <source>   Trigger source: manual|scheduled|ci|unknown
@@ -788,6 +801,10 @@ function buildCommand(
     const buildReliabilityEvidencePath = getBuildReliabilityEvidencePath(options);
     return `BUILD_RELIABILITY_EVIDENCE_PATH=${shellQuote(buildReliabilityEvidencePath)} ${def.command}`;
   }
+  if (def.id === 'workspace-governance-evidence') {
+    const workspaceGovernanceEvidencePath = getWorkspaceGovernanceEvidencePath(options);
+    return `WORKSPACE_GOVERNANCE_EVIDENCE_PATH=${shellQuote(workspaceGovernanceEvidencePath)} ${def.command}`;
+  }
   if (def.id !== 'runtime-release-evidence') return def.command;
 
   const runtimeEvidencePath = getRuntimeEvidencePath(options);
@@ -803,15 +820,18 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
   const usageReportEvidence = loadUsageReportEvidence(options);
   const governanceEvidence = loadGovernanceReleaseEvidence(options);
   const buildReliabilityEvidence = loadBuildReliabilityReleaseEvidence(options);
+  const workspaceGovernanceEvidence = loadWorkspaceGovernanceReleaseEvidence(options);
   const runtimeBlockingReasons = getRuntimeEvidenceBlockingReasons(runtimeEvidence);
   const usageReportBlockingReasons = getUsageReportEvidenceBlockingReasons(usageReportEvidence);
   const governanceBlockingReasons = getGovernanceReleaseEvidenceBlockingReasons(governanceEvidence);
   const buildReliabilityBlockingReasons = getBuildReliabilityEvidenceBlockingReasons(buildReliabilityEvidence);
+  const workspaceGovernanceBlockingReasons = getWorkspaceGovernanceEvidenceBlockingReasons(workspaceGovernanceEvidence);
   const status = execution.failed === 0
     && runtimeBlockingReasons.length === 0
     && usageReportBlockingReasons.length === 0
     && governanceBlockingReasons.length === 0
     && buildReliabilityBlockingReasons.length === 0
+    && workspaceGovernanceBlockingReasons.length === 0
     ? 'pass'
     : 'fail';
 
@@ -831,6 +851,9 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
   }
   if (buildReliabilityEvidence) {
     summary.build_reliability_evidence = buildReliabilityEvidence;
+  }
+  if (workspaceGovernanceEvidence) {
+    summary.workspace_governance_evidence = workspaceGovernanceEvidence;
   }
 
   // Add failure categories if there are failures
@@ -869,10 +892,19 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
         run_count: usageReportEvidence.runner_health.run_count,
       } : undefined,
     } : undefined,
-    governance: governanceEvidence ? {
-      release_readiness: governanceEvidence.release_readiness,
-      blockers: governanceEvidence.blockers,
-      warnings: governanceEvidence.warnings,
+    governance: governanceEvidence || workspaceGovernanceEvidence ? {
+      release_readiness:
+        governanceEvidence?.release_readiness === 'blocked' || workspaceGovernanceEvidence?.release_readiness === 'blocked'
+          ? 'blocked'
+          : 'ready',
+      blockers: [
+        ...(governanceEvidence?.blockers ?? []),
+        ...(workspaceGovernanceEvidence?.blockers ?? []),
+      ],
+      warnings: [
+        ...(governanceEvidence?.warnings ?? []),
+        ...(workspaceGovernanceEvidence?.warnings ?? []),
+      ],
     } : undefined,
     build: buildReliabilityEvidence ? {
       release_readiness: buildReliabilityEvidence.release_readiness,
@@ -896,6 +928,10 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
   if (buildReliabilityBlockingReasons.length > 0) {
     const buildRecommendations = buildReliabilityBlockingReasons.map((reason) => `Build reliability blocker: ${reason}`);
     summary.recommendations = [...(summary.recommendations ?? []), ...buildRecommendations];
+  }
+  if (workspaceGovernanceBlockingReasons.length > 0) {
+    const workspaceRecommendations = workspaceGovernanceBlockingReasons.map((reason) => `Workspace governance blocker: ${reason}`);
+    summary.recommendations = [...(summary.recommendations ?? []), ...workspaceRecommendations];
   }
   if (summary.release_policy) {
     const policyRecommendations = summary.release_policy.blockers.map((issue) => `Release policy blocker: ${issue.message}`);
@@ -923,6 +959,11 @@ function getGovernanceEvidencePath(options: VerifyReleaseOptions): string {
 function getBuildReliabilityEvidencePath(options: VerifyReleaseOptions): string {
   if (options.buildReliabilityEvidence) return options.buildReliabilityEvidence;
   return join(options.output ?? DEFAULT_OUTPUT_DIR, DEFAULT_BUILD_RELIABILITY_EVIDENCE_FILE);
+}
+
+function getWorkspaceGovernanceEvidencePath(options: VerifyReleaseOptions): string {
+  if (options.workspaceGovernanceEvidence) return options.workspaceGovernanceEvidence;
+  return join(options.output ?? DEFAULT_OUTPUT_DIR, DEFAULT_WORKSPACE_GOVERNANCE_EVIDENCE_FILE);
 }
 
 function loadRuntimeReleaseEvidence(options: VerifyReleaseOptions): RuntimeReleaseEvidence | undefined {
@@ -1156,6 +1197,52 @@ function loadBuildReliabilityReleaseEvidence(options: VerifyReleaseOptions): Bui
   return undefined;
 }
 
+function loadWorkspaceGovernanceReleaseEvidence(options: VerifyReleaseOptions): WorkspaceGovernanceReleaseEvidence | undefined {
+  const evidencePath = getWorkspaceGovernanceEvidencePath(options);
+  if (existsSync(evidencePath)) {
+    try {
+      return JSON.parse(readFileSync(evidencePath, 'utf-8')) as WorkspaceGovernanceReleaseEvidence;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_error';
+      return {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['workspace_governance_evidence_unreadable'],
+        warnings: [],
+        checks: {
+          workspace_overview: false,
+          workspace_member_administration: false,
+          cross_project_actions: false,
+          workspace_explainability: false,
+          workspace_attention_drilldown: false,
+        },
+        note: `Failed to parse workspace governance release evidence: ${message}`,
+      };
+    }
+  }
+
+  if (options.dryRun) {
+    return {
+      source: 'dry_run',
+      generated_at: new Date().toISOString(),
+      release_readiness: 'ready',
+      blockers: [],
+      warnings: [],
+      checks: {
+        workspace_overview: true,
+        workspace_member_administration: true,
+        cross_project_actions: true,
+        workspace_explainability: true,
+        workspace_attention_drilldown: true,
+      },
+      note: 'Dry-run evidence uses deterministic fixture data and does not call live workspace governance smoke lanes.',
+    };
+  }
+
+  return undefined;
+}
+
 function getRuntimeEvidenceBlockingReasons(runtimeEvidence?: RuntimeReleaseEvidence): string[] {
   if (!runtimeEvidence) return [];
 
@@ -1244,6 +1331,26 @@ function getBuildReliabilityEvidenceBlockingReasons(buildEvidence?: BuildReliabi
     .map(([name]) => name);
   if (missingChecks.length > 0) {
     reasons.push(`build reliability evidence missing checks: ${missingChecks.join(', ')}`);
+  }
+  return reasons;
+}
+
+function getWorkspaceGovernanceEvidenceBlockingReasons(workspaceEvidence?: WorkspaceGovernanceReleaseEvidence): string[] {
+  if (!workspaceEvidence) return [];
+
+  const reasons: string[] = [];
+  if (workspaceEvidence.release_readiness === 'blocked') {
+    reasons.push(
+      workspaceEvidence.blockers.length > 0
+        ? `workspace governance evidence blocked by ${workspaceEvidence.blockers.join(', ')}`
+        : 'workspace governance evidence reported blocked release readiness',
+    );
+  }
+  const missingChecks = Object.entries(workspaceEvidence.checks)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  if (missingChecks.length > 0) {
+    reasons.push(`workspace governance evidence missing checks: ${missingChecks.join(', ')}`);
   }
   return reasons;
 }
@@ -1571,6 +1678,32 @@ function generateMarkdown(report: ReleaseReport): string {
     }
     if (buildEvidence.warnings.length > 0) {
       md += `**Build Reliability Warnings:** ${buildEvidence.warnings.join(', ')}\n\n`;
+    }
+  }
+
+  if (summary.workspace_governance_evidence) {
+    const workspaceEvidence = summary.workspace_governance_evidence;
+    md += `### Workspace Governance Evidence\n\n`;
+    md += `- **Source:** ${workspaceEvidence.source}\n`;
+    md += `- **Generated At:** ${workspaceEvidence.generated_at}\n`;
+    md += `- **Release Readiness:** ${workspaceEvidence.release_readiness}\n`;
+    if (workspaceEvidence.note) {
+      md += `- **Note:** ${workspaceEvidence.note}\n`;
+    }
+    md += `\n`;
+
+    md += `| Workspace Governance Check | Passed |\n`;
+    md += `|----------------------------|--------|\n`;
+    for (const [checkName, passed] of Object.entries(workspaceEvidence.checks)) {
+      md += `| ${checkName} | ${passed ? 'yes' : 'no'} |\n`;
+    }
+    md += `\n`;
+
+    if (workspaceEvidence.blockers.length > 0) {
+      md += `**Workspace Governance Blockers:** ${workspaceEvidence.blockers.join(', ')}\n\n`;
+    }
+    if (workspaceEvidence.warnings.length > 0) {
+      md += `**Workspace Governance Warnings:** ${workspaceEvidence.warnings.join(', ')}\n\n`;
     }
   }
 

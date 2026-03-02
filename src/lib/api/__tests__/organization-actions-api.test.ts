@@ -33,4 +33,15 @@ describe('OrganizationActionsAPI', () => {
       note: 'completed in overview',
     });
   });
+
+  it('lists organization action audit history', async () => {
+    const getMock = vi.fn().mockResolvedValue({ action_id: 'action:ws_1:project:proj_1', total: 0, items: [] });
+    const api = new OrganizationActionsAPI({
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof OrganizationActionsAPI>[0]);
+
+    await api.listHistory('action:ws_1:project:proj_1', 30);
+
+    expect(getMock).toHaveBeenCalledWith('/internal/organization-actions/action%3Aws_1%3Aproject%3Aproj_1/history?limit=30');
+  });
 });

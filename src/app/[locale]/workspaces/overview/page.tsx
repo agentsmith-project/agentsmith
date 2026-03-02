@@ -274,7 +274,7 @@ export default function WorkspacesOverviewPage() {
                     {filteredWorkspaceRanking.map((workspace) => (
                       <div
                         key={workspace.workspaceId}
-                        className="grid gap-3 rounded-sm border border-subtle bg-bg-base/20 p-3 md:grid-cols-[auto_1.2fr_auto_auto_auto_auto]"
+                        className="grid gap-3 rounded-sm border border-subtle bg-bg-base/20 p-3 md:grid-cols-[auto_1.2fr_auto_auto_auto_auto_auto]"
                         data-testid={`workspace-overview__row--${workspace.workspaceId}`}
                       >
                         <label className="mt-0.5 inline-flex items-center justify-center">
@@ -322,6 +322,35 @@ export default function WorkspacesOverviewPage() {
                         >
                           {t('org_overview_open_projects')}
                         </Link>
+                        {workspace.topRiskProjectId ? (
+                          <Link
+                            href={`/${locale}/workspaces/${workspace.workspaceId}/projects/${workspace.topRiskProjectId}/release-ops${buildGovernanceDrilldownQuery({
+                              gov_from: 'organization_overview',
+                              gov_kind: 'workspace',
+                              gov_workspace_id: workspace.workspaceId,
+                              gov_project_id: workspace.topRiskProjectId,
+                              gov_reason: 'workspace_release_readiness',
+                              gov_workspace_risk_score: workspace.riskScore,
+                              gov_workspace_blocked_items: workspace.blockedItems,
+                              gov_workspace_warning_items: workspace.warningItems,
+                              gov_workspace_risky_projects: workspace.riskyProjects,
+                            })}`}
+                            className={cn(
+                              'inline-flex h-8 items-center justify-center rounded-sm border border-subtle px-2.5 text-xs font-medium text-foreground transition-colors',
+                              'hover:bg-hover',
+                            )}
+                            data-testid={`workspace-overview__open-release-readiness--${workspace.workspaceId}`}
+                          >
+                            {t('org_overview_open_release_ops')}
+                          </Link>
+                        ) : (
+                          <span
+                            className="inline-flex h-8 items-center justify-center rounded-sm border border-subtle px-2.5 text-xs text-tertiary"
+                            data-testid={`workspace-overview__open-release-readiness-disabled--${workspace.workspaceId}`}
+                          >
+                            {t('org_overview_open_release_ops')}
+                          </span>
+                        )}
                       </div>
                     ))}
                     {filteredWorkspaceRanking.length === 0 ? (

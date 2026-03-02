@@ -22,4 +22,8 @@ export class OrganizationActionsAPI {
   async updateStatus(actionId: string, payload: OrganizationActionStatusUpdateRequest): Promise<OrganizationActionServerRecord> {
     return this.client.post(`/internal/organization-actions/${encodeURIComponent(actionId)}/status`, payload);
   }
+
+  async listHistory(actionId: string, limit = 100): Promise<{ action_id: string; total: number; items: OrganizationActionServerRecord['history'] }> {
+    return this.client.get(`/internal/organization-actions/${encodeURIComponent(actionId)}/history?limit=${Math.max(1, Math.min(limit, 500))}`);
+  }
 }

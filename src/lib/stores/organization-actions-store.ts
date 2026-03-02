@@ -25,6 +25,7 @@ export interface OrganizationActionServerRecord {
   action_id: string;
   status: OrganizationActionStatus;
   updated_at: string;
+  history_total?: number;
   history: Array<{
     id: string;
     action_id: string;

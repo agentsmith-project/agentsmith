@@ -1,7 +1,7 @@
 # Organization Governance Rollup & Enterprise Ops Console Plan v1
 
 更新时间：2026-03-02  
-状态：`in-progress`
+状态：`completed`
 
 前置文档：
 
@@ -210,8 +210,9 @@
 23. `WP-05` 第二阶段推进：`governance-release-smoke` 默认流程已并入 `organization-governance-release-smoke`，`verify-release` 主线默认覆盖组织级治理验收
 24. `WP-05` 第三阶段推进：release run / escalation 已新增结构化 `governance_blockers` 与 `governance_warnings`（governance/workspace/organization source），并在 release-ops 详情面板可视化，支持按 incident/run 追溯治理阻塞来源
 25. `WP-02` 第二阶段推进：组织治理矩阵已支持排序（风险分/阻塞项/名称）与工作区批量选择，新增 batch actions preview（覆盖动作数量/状态分布/批量状态回写），补齐跨工作区治理执行前预览能力
+26. `WP-01` 第二阶段推进：组织总览矩阵与 workspace settings 已补充 release readiness 直达联动（workspace top-risk project -> release-ops；workspace settings explainability/attention/project posture -> release-ops），并保持治理下钻上下文透传
+27. `WP-03` 第二阶段推进：`/api/v1/internal/organization-actions` 已在 node backend 落地真实持久化（state + audit archive），支持状态更新、按 action 查询与历史归档拉取，前端不再依赖 mock-only 路径验证
 
 待完成：
 
-1. `WP-01` 第二阶段：与 workspace settings / release readiness 建立更强联动
-2. `WP-03` 第二阶段：接入真实后端 organization-actions 持久化与审计归档
+1. 无（本主线 P0 工作包已完成，进入稳定化与持续优化阶段）

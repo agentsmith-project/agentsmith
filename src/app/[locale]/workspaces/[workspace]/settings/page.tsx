@@ -216,17 +216,30 @@ export default function WorkspaceSettingsPage() {
                   <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_explainability_blocked_projects')}</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.blockedProjects}</div>
                   {explainabilitySummary.primaryBlockedProjectId ? (
-                    <Link
-                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/audit${buildWorkspaceEvidenceQuery({
-                        kind: 'project',
-                        projectId: explainabilitySummary.primaryBlockedProjectId,
-                        reason: 'blocked_projects',
-                      })}`}
-                      className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mt-2 h-7 px-2')}
-                      data-testid="ws-settings__explain-open-blocked-project-audit"
-                    >
-                      {t('workspace_explainability_open_audit')}
-                    </Link>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Link
+                        href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/audit${buildWorkspaceEvidenceQuery({
+                          kind: 'project',
+                          projectId: explainabilitySummary.primaryBlockedProjectId,
+                          reason: 'blocked_projects',
+                        })}`}
+                        className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-7 px-2')}
+                        data-testid="ws-settings__explain-open-blocked-project-audit"
+                      >
+                        {t('workspace_explainability_open_audit')}
+                      </Link>
+                      <Link
+                        href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/release-ops${buildWorkspaceEvidenceQuery({
+                          kind: 'project',
+                          projectId: explainabilitySummary.primaryBlockedProjectId,
+                          reason: 'blocked_projects_release_readiness',
+                        })}`}
+                        className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-7 px-2')}
+                        data-testid="ws-settings__explain-open-blocked-project-release-ops"
+                      >
+                        {t('workspace_explainability_open_release_ops')}
+                      </Link>
+                    </div>
                   ) : null}
                 </div>
                 <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
@@ -336,6 +349,15 @@ export default function WorkspaceSettingsPage() {
                                 {t('workspace_attention_open_resource_policy')}
                               </Link>
                             ) : null}
+                            {item.projectId ? (
+                              <Link
+                                href={`${workspaceBasePath}/projects/${item.projectId}/release-ops${attentionQuery}`}
+                                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                data-testid={`ws-settings__attention-open-release-ops--${item.id.replace(':', '--')}`}
+                              >
+                                {t('workspace_attention_open_release_ops')}
+                              </Link>
+                            ) : null}
                             {item.projectId && item.memberId ? (
                               <Link
                                 href={`${workspaceBasePath}/projects/${item.projectId}/members?member_id=${item.memberId}&member_tab=people${attentionQuery.replace('?', '&')}`}
@@ -443,6 +465,17 @@ export default function WorkspaceSettingsPage() {
                           data-testid={`ws-settings__project-open-resource-policy--${project.projectId}`}
                         >
                           {t('workspace_projects_open_resource_policy')}
+                        </Link>
+                        <Link
+                          href={`${workspaceBasePath}/projects/${project.projectId}/release-ops${buildWorkspaceEvidenceQuery({
+                            kind: 'project',
+                            projectId: project.projectId,
+                            reason: 'workspace_project_release_readiness',
+                          })}`}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                          data-testid={`ws-settings__project-open-release-ops--${project.projectId}`}
+                        >
+                          {t('workspace_projects_open_release_ops')}
                         </Link>
                       </div>
                     </div>

@@ -96,6 +96,10 @@ describe('WorkspacesOverviewPage', () => {
     expect(screen.getByTestId('workspace-overview__sort')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__matrix-select-all')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__row--ws_1')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__open-release-readiness--ws_1')).toHaveAttribute(
+      'href',
+      expect.stringContaining('/en-US/workspaces/ws_1/projects/proj_1/release-ops?'),
+    );
     expect(screen.getByTestId('workspace-overview__batch-preview')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__attention')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__attention-item--ws_1--project--proj_1')).toBeInTheDocument();

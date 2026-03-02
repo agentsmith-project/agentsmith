@@ -5261,6 +5261,73 @@ describe('api-entry-node projects routes', () => {
     expect(decided.effective_status).toBe('approved');
   });
 
+  it('persists organization action status updates and exposes audit archive history', async () => {
+    const { baseUrl } = startServer();
+    const actionId = 'action:ws_1:project:proj_1';
+
+    const listBeforeRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions?action_ids=${encodeURIComponent(actionId)}`);
+    expect(listBeforeRes.status).toBe(200);
+    const listBefore = (await listBeforeRes.json()) as {
+      items: Array<{ action_id: string; status: string; history_total?: number; history: unknown[] }>;
+    };
+    expect(listBefore.items[0]?.action_id).toBe(actionId);
+    expect(listBefore.items[0]?.status).toBe('pending');
+    expect(listBefore.items[0]?.history_total ?? 0).toBe(0);
+
+    const firstUpdateRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions/${encodeURIComponent(actionId)}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'in_progress',
+        actor_user_id: 'user_test',
+        actor_name: 'Test User',
+        note: 'first transition',
+      }),
+    });
+    expect(firstUpdateRes.status).toBe(200);
+
+    const secondUpdateRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions/${encodeURIComponent(actionId)}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'completed',
+        actor_user_id: 'user_test',
+        actor_name: 'Test User',
+        note: 'final transition',
+      }),
+    });
+    expect(secondUpdateRes.status).toBe(200);
+    const secondUpdate = (await secondUpdateRes.json()) as {
+      status: string;
+      history_total?: number;
+      history: Array<{ status: string; note?: string }>;
+    };
+    expect(secondUpdate.status).toBe('completed');
+    expect(secondUpdate.history_total).toBe(2);
+    expect(secondUpdate.history.length).toBe(2);
+    expect(secondUpdate.history[1]?.note).toBe('final transition');
+
+    const listAfterRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions?action_ids=${encodeURIComponent(actionId)}`);
+    expect(listAfterRes.status).toBe(200);
+    const listAfter = (await listAfterRes.json()) as {
+      items: Array<{ status: string; history_total?: number; history: Array<{ status: string }> }>;
+    };
+    expect(listAfter.items[0]?.status).toBe('completed');
+    expect(listAfter.items[0]?.history_total).toBe(2);
+    expect(listAfter.items[0]?.history.length).toBe(2);
+
+    const historyRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions/${encodeURIComponent(actionId)}/history?limit=1`);
+    expect(historyRes.status).toBe(200);
+    const historyPayload = (await historyRes.json()) as {
+      action_id: string;
+      total: number;
+      items: Array<{ status: string }>;
+    };
+    expect(historyPayload.action_id).toBe(actionId);
+    expect(historyPayload.total).toBe(1);
+    expect(historyPayload.items[0]?.status).toBe('completed');
+  });
+
   it('returns release gate runner status and triggers a manual rerun request', async () => {
     const deps = createDefaultNodeApiDeps();
     const mockRunner: ReleaseGateRunnerController = {

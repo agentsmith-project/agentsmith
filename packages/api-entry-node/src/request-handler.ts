@@ -56,6 +56,12 @@ import {
   handleTaskRoute,
 } from './task-route-handler.js';
 import { issueSSETicket } from './sse-ticket-store.js';
+import {
+  appendOrganizationActionStatus,
+  listOrganizationActionHistory,
+  listOrganizationActionRecords,
+  parseOrganizationActionStatus,
+} from './organization-actions-store.js';
 
 type ReleaseReportPolicyShape = {
   summary?: {
@@ -420,6 +426,77 @@ export async function handleRequest(
     res.statusCode = 200;
     res.setHeader('content-type', 'text/plain; version=0.0.4; charset=utf-8');
     res.end(getNotebookRuntimeMetricsPrometheusText());
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/v1/internal/organization-actions' && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const actionIds = (requestUrl.searchParams.get('action_ids') ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    const items = await listOrganizationActionRecords(deps.docStore, {
+      actionIds,
+      historyLimit: 20,
+    });
+    json(res, 200, { items });
+    return;
+  }
+
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/organization-actions\/[^/]+\/status\/?$/) && method === 'POST') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const actionId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/organization-actions/', '').replace('/status', '').replace(/\/$/, ''));
+    const body = await readBody(req) as Record<string, unknown>;
+    const status = parseOrganizationActionStatus(body.status);
+    const actorUserId = typeof body.actor_user_id === 'string' ? body.actor_user_id.trim() : '';
+    const actorName = typeof body.actor_name === 'string' ? body.actor_name.trim() : '';
+    const note = typeof body.note === 'string' ? body.note : undefined;
+    if (!actionId || !status || !actorUserId || !actorName) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'invalid organization action status payload' });
+      return;
+    }
+    const item = await appendOrganizationActionStatus(deps.docStore, {
+      actionId,
+      status,
+      actorUserId,
+      actorName,
+      note,
+    });
+    json(res, 200, item);
+    return;
+  }
+
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/organization-actions\/[^/]+\/history\/?$/) && method === 'GET') {
+    const user = await verifyBearerToken(req);
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+    const actionId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/organization-actions/', '').replace('/history', '').replace(/\/$/, ''));
+    if (!actionId) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'organization action id is required' });
+      return;
+    }
+    const limitValue = requestUrl.searchParams.get('limit');
+    const limit = limitValue ? Number.parseInt(limitValue, 10) : 100;
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 100;
+    const items = await listOrganizationActionHistory(deps.docStore, {
+      actionId,
+      limit: safeLimit,
+    });
+    json(res, 200, {
+      action_id: actionId,
+      total: items.length,
+      items,
+    });
     return;
   }
 

@@ -68,10 +68,15 @@ export const useOrganizationActionsStore = create<OrganizationActionsState>()(
         }
         set((state) => {
           const next = { ...state.records };
+          let changed = false;
           for (const actionId of actionIds) {
             if (!next[actionId]) {
               next[actionId] = createInitialRecord();
+              changed = true;
             }
+          }
+          if (!changed) {
+            return state;
           }
           return { records: next };
         });

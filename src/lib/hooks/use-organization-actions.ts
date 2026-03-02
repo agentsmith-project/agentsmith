@@ -18,10 +18,11 @@ export function useOrganizationActions(actionsQueue: OrganizationGovernanceActio
   const setActionStatus = useOrganizationActionsStore((state) => state.setActionStatus);
 
   const actionIds = useMemo(() => actionsQueue.map((action) => action.id), [actionsQueue]);
+  const actionIdsKey = useMemo(() => actionIds.join('::'), [actionIds]);
 
   useEffect(() => {
     hydrateQueue(actionIds);
-  }, [actionIds, hydrateQueue]);
+  }, [actionIds, actionIdsKey, hydrateQueue]);
 
   useEffect(() => {
     if (actionIds.length === 0) {
@@ -40,7 +41,7 @@ export function useOrganizationActions(actionsQueue: OrganizationGovernanceActio
     return () => {
       active = false;
     };
-  }, [actionIds, hydrateFromServer]);
+  }, [actionIds, actionIdsKey, hydrateFromServer]);
 
   const actionsWithState = useMemo(
     () =>

@@ -159,7 +159,12 @@ test.describe('Settings Page', () => {
   test('release ops route is reachable from sidebar', async ({ authedPage }) => {
     await goToProject(authedPage, 'overview');
 
-    await authedPage.getByTestId('sidebar__nav-item--release_ops').click();
+    const releaseOpsNav = authedPage.getByTestId('sidebar__nav-item--release_ops');
+    await expect(releaseOpsNav).toHaveAttribute('href', /\/release-ops$/);
+    await Promise.all([
+      authedPage.waitForURL(/\/release-ops(\?|$)/, { timeout: 10000 }),
+      releaseOpsNav.click(),
+    ]);
 
     await expect(authedPage).toHaveURL(/\/release-ops(\?|$)/);
     await expect(authedPage.getByTestId('release-ops__page')).toBeVisible({ timeout: 10000 });
@@ -252,9 +257,14 @@ test.describe('Settings Page', () => {
   test('alerts route keeps ops header actions', async ({ authedPage }) => {
     await goToProject(authedPage, 'overview');
 
-    await authedPage.getByTestId('sidebar__nav-item--alerts').click();
+    const alertsNav = authedPage.getByTestId('sidebar__nav-item--alerts');
+    await expect(alertsNav).toHaveAttribute('href', /\/alerts$/);
+    await Promise.all([
+      authedPage.waitForURL(/\/alerts(\?|$)/, { timeout: 10000 }),
+      alertsNav.click(),
+    ]);
 
-    await expect(authedPage).toHaveURL(/\/alerts$/);
+    await expect(authedPage).toHaveURL(/\/alerts(\?|$)/);
     await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('alerts__open-release-ops')).toHaveAttribute('href', /release-ops\?/);
     await expect(authedPage.getByTestId('alerts__open-runtime')).toHaveAttribute('href', /runtime-observability\?/);

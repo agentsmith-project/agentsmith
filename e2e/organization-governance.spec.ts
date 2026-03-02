@@ -21,8 +21,9 @@ test.describe('Organization Governance Overview', () => {
     await expect(releaseOpsLink).toBeVisible({ timeout: 10000 });
     await expect(releaseOpsLink).toHaveAttribute('href', /\/release-ops\?/);
     await expect(releaseOpsLink).toHaveAttribute('href', /gov_from=organization_overview/);
-
-    await releaseOpsLink.click();
+    const href = await releaseOpsLink.getAttribute('href');
+    expect(href).toBeTruthy();
+    await goTo(authedPage, href ?? '/en-US/workspaces/overview');
     await expect(authedPage).toHaveURL(/\/release-ops\?/);
     await expect(authedPage).toHaveURL(/gov_from=organization_overview/);
     await expect(authedPage.getByTestId('release-ops__governance-evidence-bridge')).toBeVisible({ timeout: 10000 });

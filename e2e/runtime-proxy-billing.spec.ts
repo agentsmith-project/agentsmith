@@ -232,7 +232,8 @@ test.describe('runtime proxy billing (mock lane)', () => {
     await goToProject(authedPage, 'usage');
     const firstRow = authedPage.locator('[data-testid="usage__table__row"]').first();
     await expect(firstRow).toBeVisible({ timeout: 10000 });
-    await firstRow.click();
+    await firstRow.scrollIntoViewIfNeeded();
+    await firstRow.dispatchEvent('click');
 
     await expect(authedPage.getByTestId('usage__detail-summary__cost')).toBeVisible();
     await expect(authedPage.getByTestId('usage__detail-summary__recovered')).toBeVisible();

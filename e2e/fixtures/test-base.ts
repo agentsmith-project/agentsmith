@@ -75,14 +75,22 @@ export async function goTo(page: Page, path: string) {
     await waitForPageReady(page);
   };
 
-  try {
-    await navigateOnce();
-  } catch {
+  let navigateError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await navigateOnce();
-    } catch {
-      throw new Error(`Failed to load route: ${path}`);
+      navigateError = null;
+      break;
+    } catch (error) {
+      navigateError = error;
+      if (attempt < 2) {
+        await page.waitForTimeout(250);
+      }
     }
+  }
+
+  if (navigateError) {
+    throw new Error(`Failed to load route: ${path}`);
   }
 
   if (!isProtectedRoute) return;

@@ -181,7 +181,7 @@ test.describe('Full Login Journey', () => {
     ).toBeVisible({ timeout: 15_000 });
 
     // 4. Select workspace
-    await page.getByText('Default Workspace').click();
+    await page.getByTestId('workspace-select__card--ws_default').click();
 
     // 5. Should land on projects page
     await page.waitForURL(/\/workspaces\/ws_default\/projects/, {

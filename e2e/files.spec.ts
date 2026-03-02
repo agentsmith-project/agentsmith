@@ -117,25 +117,10 @@ test.describe('Files Page (object browser)', () => {
 
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
     await authedPage.getByTestId('files__library-item--lib_large_bench').click();
-    await expect(authedPage.getByTestId('files__load-more')).toBeVisible();
-
-    const continuationResponse = authedPage.waitForResponse((response) => {
-      const url = response.url();
-      return url.includes('/source-libraries/') && url.includes('/objects?') && url.includes('continuation_token=');
-    });
-    let clicked = false;
-    for (let attempt = 0; attempt < 3 && !clicked; attempt += 1) {
-      try {
-        await authedPage
-          .getByTestId('files__load-more')
-          .evaluate((node) => (node as HTMLButtonElement).click());
-        clicked = true;
-      } catch {
-        if (attempt === 2) throw new Error('Failed to click load-more button after retries');
-        await authedPage.waitForTimeout(200);
-      }
-    }
-    await continuationResponse;
+    const loadMoreButton = authedPage.getByTestId('files__load-more');
+    await expect(loadMoreButton).toBeVisible();
+    await loadMoreButton.click();
+    await expect(authedPage.getByTestId('files__load-more')).toHaveCount(0, { timeout: 10000 });
 
     await authedPage.getByTestId('files__search').fill('bulk-0250');
     await expect(authedPage.getByTestId('files__search')).toHaveValue('bulk-0250');

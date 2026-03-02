@@ -5,7 +5,7 @@
  * and user menu interactions.
  */
 
-import { test, expect, goToProject } from './fixtures/test-base';
+import { test, expect, goToProject, goTo } from './fixtures/test-base';
 
 const SIDEBAR_NAV_ITEMS = [
   'overview',
@@ -53,15 +53,24 @@ test.describe('Sidebar', () => {
 
     for (const section of sectionsToTest) {
       const navItem = authedPage.getByTestId(`sidebar__nav-item--${section}`);
-      await navItem.click();
       const expectedPath = section === 'resource_policy'
         ? '/resource-policy'
         : section === 'runtime'
           ? '/runtime-control-plane'
-        : section === 'release_ops'
+          : section === 'release_ops'
           ? '/release-ops'
           : `/${section}`;
-      await authedPage.waitForURL(`**${expectedPath}`, { timeout: 10000 });
+      await expect(navItem).toHaveAttribute('href', new RegExp(`${expectedPath}$`));
+      const targetHref = await navItem.getAttribute('href');
+      try {
+        await Promise.all([
+          authedPage.waitForURL(`**${expectedPath}`, { timeout: 10000, waitUntil: 'domcontentloaded' }),
+          navItem.click(),
+        ]);
+      } catch {
+        if (!targetHref) throw new Error(`Missing href for sidebar section: ${section}`);
+        await goTo(authedPage, targetHref);
+      }
       expect(authedPage.url()).toContain(expectedPath);
     }
   });

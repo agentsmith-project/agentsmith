@@ -387,14 +387,24 @@ export function UsagePage({
   const releaseOpsHref = locale
     ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/release-ops${buildSharedOpsFilterQuery(apiFilters)}`
     : null;
+  const traceQueryExtras = React.useMemo(
+    () => ({
+      trace_source: traceSource,
+      trace_ref: traceRef,
+      trace_incident_id: traceIncidentId,
+      trace_escalation_id: traceEscalationId,
+      trace_run_id: traceRunId,
+    }),
+    [traceEscalationId, traceIncidentId, traceRef, traceRunId, traceSource],
+  );
 
   React.useEffect(() => {
-    const nextQuery = buildSharedOpsFilterQuery(apiFilters, { panel });
+    const nextQuery = buildSharedOpsFilterQuery(apiFilters, { panel, ...traceQueryExtras });
     const currentQuery = searchParams.toString();
     const normalizedCurrent = currentQuery ? `?${currentQuery}` : '';
     if (nextQuery === normalizedCurrent) return;
     router.replace(`${pathname}${nextQuery}`, { scroll: false });
-  }, [apiFilters, panel, pathname, router, searchParams]);
+  }, [apiFilters, panel, pathname, router, searchParams, traceQueryExtras]);
 
   const handleSelectUsageRecord = React.useCallback((record: UsageRecord) => {
     setSelectedUsageRecord(record);

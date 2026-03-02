@@ -31,12 +31,14 @@ test.describe('Epic A: Governance – Authorization & Policy', () => {
       await editPermsItem.click();
 
       // Verify permissions tab is visible
-      await expect(authedPage.getByRole('tab', { name: /permissions/i }).last()).toBeVisible({ timeout: 5000 });
+      const permissionsTab = authedPage.getByRole('tab', { name: /permissions/i }).last();
+      await expect(permissionsTab).toBeVisible({ timeout: 5000 });
+      await permissionsTab.click();
 
-      // Check for permission source indicators (template, custom, group)
-      // Template selector should be present in the detail drawer.
-      await expect(authedPage.getByText(/apply template/i).first()).toBeVisible();
-      await expect(authedPage.getByRole('combobox').last()).toBeVisible();
+      // Permission source chain is surfaced via template selector and current template text.
+      const templateSelect = authedPage.getByRole('combobox').last();
+      await expect(templateSelect).toBeVisible();
+      await expect(templateSelect).toContainText(/select template|owner|admin|governance|manager/i);
     });
 
     test('permission changes reflect immediately (1-request-cycle propagation)', async ({ authedPage }) => {
@@ -53,12 +55,15 @@ test.describe('Epic A: Governance – Authorization & Policy', () => {
       await editPermsItem.click();
 
       // Verify permissions are loaded
-      await expect(authedPage.getByRole('tab', { name: /permissions/i }).last()).toBeVisible({ timeout: 5000 });
+      const permissionsTab = authedPage.getByRole('tab', { name: /permissions/i }).last();
+      await expect(permissionsTab).toBeVisible({ timeout: 5000 });
+      await permissionsTab.click();
 
-      // Permissions editor should render in either template or advanced mode.
-      await expect(
-        authedPage.getByRole('tab', { name: /template mode|advanced mode/i }).first(),
-      ).toBeVisible();
+      // 1-request-cycle propagation: once editor opens, template selector should be interactable immediately.
+      const templateSelect = authedPage.getByRole('combobox').last();
+      await expect(templateSelect).toBeVisible();
+      await templateSelect.click();
+      await expect(authedPage.getByRole('option').first()).toBeVisible();
     });
 
     test('custom permissions can be added and removed', async ({ authedPage }) => {
@@ -332,7 +337,7 @@ test.describe('Epic A: Evidence Chain Verification', () => {
     await expect(authedPage.getByTestId('resource-policy__endpoint-daily-token-limit')).toBeVisible();
 
     // Navigate to audit to verify traceability
-    await authedPage.getByRole('link', { name: /Audit/i }).click();
+    await authedPage.getByTestId('sidebar__nav-item--audit').click();
     await expect(authedPage.getByTestId('audit__table')).toBeVisible({ timeout: 10000 });
 
     // Audit log should show policy-related events

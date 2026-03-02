@@ -22,6 +22,13 @@ export interface ReleaseOpsGovernanceEvidenceSnapshot {
       | 'critical_escalations';
     value: number;
   }>;
+  trace: Array<{
+    id: string;
+    source: 'usage_blocker' | 'usage_warning' | 'escalation';
+    severity: 'blocked' | 'warning';
+    message: string;
+    timestamp?: string;
+  }>;
 }
 
 function countFocusFailRuns(focus: GovernanceEvidenceFocus, runs: ReleaseGateRunListItem[]): number {
@@ -79,6 +86,30 @@ export function buildReleaseOpsGovernanceEvidenceSnapshot(args: {
         key: 'critical_escalations',
         value: escalations.filter((item) => item.status !== 'resolved' && item.severity === 'critical').length,
       },
+    ],
+    trace: [
+      ...(args.usageEvidence?.blockers ?? []).slice(0, 3).map((item, index) => ({
+        id: `usage-blocker-${index}`,
+        source: 'usage_blocker' as const,
+        severity: 'blocked' as const,
+        message: item,
+      })),
+      ...(args.usageEvidence?.warnings ?? []).slice(0, 3).map((item, index) => ({
+        id: `usage-warning-${index}`,
+        source: 'usage_warning' as const,
+        severity: 'warning' as const,
+        message: item,
+      })),
+      ...escalations
+        .filter((item) => item.status !== 'resolved')
+        .slice(0, 3)
+        .map((item) => ({
+          id: `escalation-${item.id}`,
+          source: 'escalation' as const,
+          severity: item.severity === 'critical' ? 'blocked' as const : 'warning' as const,
+          message: item.title,
+          timestamp: item.created_at,
+        })),
     ],
   };
 }

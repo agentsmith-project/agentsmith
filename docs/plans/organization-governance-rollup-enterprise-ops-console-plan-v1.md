@@ -200,6 +200,7 @@
 13. `WP-04` 第二阶段推进：workspace settings explainability/attention 快捷入口已统一注入 `workspace_settings` 来源的 drill-down context，形成组织入口到项目治理页的可追踪证据链
 14. `WP-04` 第二阶段推进：治理 banner 已支持基于 reason 的证据焦点识别（cost/deny/quota 等）与统一 remediation 快捷入口（audit/release-ops/members/policy），并保持 context 透传
 15. `WP-04` 第二阶段推进：release-ops 页面已接入 governance evidence bridge，基于实时 runtime/usage/run/escalation 数据聚合 cost/deny/quota 焦点指标，用于治理入口后的即时判定
+16. `WP-04` 第二阶段推进：governance evidence bridge 已增加 trace 条目（usage blocker/warning + open escalation）用于 operator 级证据追踪，减少“只有汇总无证据”的验收风险
 
 待完成：
 

@@ -824,6 +824,34 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                   />
                 ))}
               </div>
+              <div className="mt-3 space-y-2" data-testid="release-ops__governance-evidence-trace">
+                <p className="text-[11px] uppercase tracking-wide text-tertiary">
+                  {settingsT('release_ops_governance_trace_title')}
+                </p>
+                {governanceEvidenceSnapshot.trace.length === 0 ? (
+                  <p className="text-xs text-tertiary">{settingsT('release_ops_governance_trace_empty')}</p>
+                ) : (
+                  governanceEvidenceSnapshot.trace.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-lg border border-subtle bg-bg-base/10 px-3 py-2 text-xs text-tertiary"
+                      data-testid={`release-ops__governance-trace-item--${item.id}`}
+                    >
+                      <span className="font-medium text-foreground">
+                        {settingsT(`release_ops_governance_trace_source_${item.source}`)}
+                      </span>
+                      {' · '}
+                      <span>{item.message}</span>
+                      {item.timestamp ? (
+                        <>
+                          {' · '}
+                          <span>{formatDateTime(item.timestamp)}</span>
+                        </>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
             </section>
           ) : null}
           <ReleaseOpsDashboard

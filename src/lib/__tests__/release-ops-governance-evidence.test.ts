@@ -103,6 +103,8 @@ describe('release-ops-governance-evidence', () => {
     expect(snapshot.metrics.find((item) => item.key === 'release_fail_runs')?.value).toBe(1);
     expect(snapshot.metrics.find((item) => item.key === 'release_fail_runs_focus_filtered')?.value).toBe(1);
     expect(snapshot.metrics.find((item) => item.key === 'critical_escalations')?.value).toBe(1);
+    expect(snapshot.trace.some((item) => item.source === 'usage_blocker')).toBe(true);
+    expect(snapshot.trace.some((item) => item.source === 'escalation')).toBe(true);
   });
 
   it('falls back safely with empty live data', () => {

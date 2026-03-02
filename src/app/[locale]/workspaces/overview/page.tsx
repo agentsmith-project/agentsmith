@@ -9,6 +9,7 @@ import { PageState } from '@/components/layout/PageState';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { useOrganizationGovernanceRollup } from '@/lib/hooks/use-organization-governance-rollup';
 import { useOrganizationActions } from '@/lib/hooks/use-organization-actions';
+import { buildGovernanceDrilldownQuery } from '@/lib/governance-drilldown-context';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 import { cn } from '@/lib/utils';
 import type { OrganizationActionStatus } from '@/lib/stores/organization-actions-store';
@@ -194,6 +195,14 @@ export default function WorkspacesOverviewPage() {
                     <div className="mt-3 space-y-2">
                       {orgRollup.rollup.attention.map((item) => {
                         const testIdSegment = item.id.replace(/:/g, '--');
+                        const drilldownQuery = buildGovernanceDrilldownQuery({
+                          gov_from: 'organization_overview',
+                          gov_kind: item.kind,
+                          gov_workspace_id: item.workspaceId,
+                          gov_project_id: item.projectId,
+                          gov_member_id: item.memberId,
+                          gov_reason: item.description,
+                        });
                         return (
                         <div
                           key={item.id}
@@ -209,7 +218,7 @@ export default function WorkspacesOverviewPage() {
                             {item.projectId ? (
                               <>
                                 <Link
-                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/audit`}
+                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/audit${drilldownQuery}`}
                                   className={cn(
                                     'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                     'hover:bg-hover',
@@ -219,7 +228,7 @@ export default function WorkspacesOverviewPage() {
                                   {t('org_overview_open_audit')}
                                 </Link>
                                 <Link
-                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/release-ops`}
+                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/release-ops${drilldownQuery}`}
                                   className={cn(
                                     'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                     'hover:bg-hover',
@@ -246,6 +255,15 @@ export default function WorkspacesOverviewPage() {
                     <div className="mt-3 space-y-2">
                       {actionsWithState.map((action) => {
                         const actionIdForTest = action.id.replace(/:/g, '--');
+                        const drilldownQuery = buildGovernanceDrilldownQuery({
+                          gov_from: 'organization_overview',
+                          gov_action_id: action.id,
+                          gov_kind: action.memberId ? 'member' : action.projectId ? 'project' : 'workspace',
+                          gov_workspace_id: action.workspaceId,
+                          gov_project_id: action.projectId,
+                          gov_member_id: action.memberId,
+                          gov_reason: action.description,
+                        });
                         return (
                         <div
                           key={action.id}
@@ -312,7 +330,7 @@ export default function WorkspacesOverviewPage() {
                               {t('org_overview_action_mark_pending')}
                             </button>
                             <Link
-                              href={`/${locale}/workspaces/${action.workspaceId}/settings`}
+                              href={`/${locale}/workspaces/${action.workspaceId}/settings${drilldownQuery}`}
                               className={cn(
                                 'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                 'hover:bg-hover',
@@ -323,7 +341,7 @@ export default function WorkspacesOverviewPage() {
                             </Link>
                             {action.projectId ? (
                               <Link
-                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/release-ops`}
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/release-ops${drilldownQuery}`}
                                 className={cn(
                                   'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                   'hover:bg-hover',
@@ -331,6 +349,30 @@ export default function WorkspacesOverviewPage() {
                                 data-testid={`workspace-overview__actions-queue-open-release-ops--${actionIdForTest}`}
                               >
                                 {t('org_overview_open_release_ops')}
+                              </Link>
+                            ) : null}
+                            {action.projectId && action.memberId ? (
+                              <Link
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/members?member_id=${action.memberId}&member_tab=people${drilldownQuery.replace('?', '&')}`}
+                                className={cn(
+                                  'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                  'hover:bg-hover',
+                                )}
+                                data-testid={`workspace-overview__actions-queue-open-members--${actionIdForTest}`}
+                              >
+                                {t('org_overview_open_members')}
+                              </Link>
+                            ) : null}
+                            {action.projectId ? (
+                              <Link
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/audit${drilldownQuery}`}
+                                className={cn(
+                                  'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                  'hover:bg-hover',
+                                )}
+                                data-testid={`workspace-overview__actions-queue-open-audit--${actionIdForTest}`}
+                              >
+                                {t('org_overview_open_audit')}
                               </Link>
                             ) : null}
                           </div>

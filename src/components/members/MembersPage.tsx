@@ -39,6 +39,8 @@ import { JoinRequestsTab } from './JoinRequestsTab';
 import { BatchApplyPermissionDialog } from './BatchApplyPermissionDialog';
 import { BatchApplyQuotaDialog } from './BatchApplyQuotaDialog';
 import { cn } from '@/lib/utils';
+import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
+import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
 
 export interface MembersPageProps {
   workspaceId: string;
@@ -50,6 +52,7 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
   const t = useTranslations('members');
   const canManageMembers = useCanManageMemberGovernance();
   const searchParams = useSearchParams();
+  const drilldownContext = React.useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const contextValue = useMembersList({ workspaceId, projectId });
@@ -108,6 +111,9 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
           />
         )}
       >
+        {drilldownContext ? (
+          <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
+        ) : null}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'people' | 'requests' | 'templates' | 'groups')} className="flex-1 min-h-0 flex flex-col min-w-0">
           <TabsList className="flex-shrink-0">
             <TabsTrigger value="people">{t('tabs.people')}</TabsTrigger>

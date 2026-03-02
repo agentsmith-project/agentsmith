@@ -27,6 +27,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
+import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
 import { ResourcePolicyTable, type ResourceRow } from '@/components/resource-policy/ResourcePolicyTable';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -59,6 +60,7 @@ import {
 } from '@/lib/resource-policy/editor-utils';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 import { cn } from '@/lib/utils';
+import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import type { GovernanceAuthorizationResponse } from '@/lib/api/endpoints/governance-explainability';
 
 interface ResourcePolicyPageProps {
@@ -79,6 +81,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const tErrors = useTranslations('errors');
   const tResource = useTranslations('resource_policy');
   const searchParams = useSearchParams();
+  const drilldownContext = useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);
   const featureAvailability = getFeatureAvailability('resource_policy');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('resource_policy');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
@@ -537,6 +540,9 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
           />
         )}
       >
+        {drilldownContext ? (
+          <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
+        ) : null}
         <div className="p-4 rounded-md border border-subtle bg-surface">
           <p className="text-sm text-tertiary mb-4">
             {tResource('default_model_hint')}

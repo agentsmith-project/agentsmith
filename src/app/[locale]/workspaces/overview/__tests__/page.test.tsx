@@ -98,6 +98,10 @@ describe('WorkspacesOverviewPage', () => {
     expect(screen.getByTestId('workspace-overview__attention-item--ws_1--project--proj_1')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__actions-queue')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__actions-queue-item--action--ws_1--project--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__attention-open-audit--ws_1--project--proj_1')).toHaveAttribute(
+      'href',
+      expect.stringContaining('gov_from=organization_overview'),
+    );
   });
 
   it('filters matrix rows by readiness', () => {

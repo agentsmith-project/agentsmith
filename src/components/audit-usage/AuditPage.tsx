@@ -1,6 +1,7 @@
 'use client';
 import * as React from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
@@ -18,6 +19,8 @@ import { ErrorState } from '@/components/ui/error-state';
 import type { AuditEvent, AuditListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
+import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
 
 export interface AuditPageProps {
   workspaceId: string;
@@ -39,6 +42,8 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   const queryClient = useQueryClient();
   const canReadAudit = useHasPermission('project:audit:view');
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
+  const searchParams = useSearchParams();
+  const drilldownContext = React.useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);
 
   const [filters, setFilters] = React.useState<AuditListParams>(() => ({
     ...getDefaultTimeRange(),
@@ -218,6 +223,9 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
         </PageToolbar>
       )}
     >
+      {drilldownContext ? (
+        <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
+      ) : null}
       <div data-testid="audit__filters">
         <AuditFilters
           filters={filters}

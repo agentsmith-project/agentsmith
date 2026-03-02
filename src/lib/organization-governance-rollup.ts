@@ -35,6 +35,7 @@ export interface OrganizationGovernanceActionItem {
   workspaceId: string;
   workspaceName: string;
   projectId?: string;
+  memberId?: string;
   severity: WorkspaceGovernanceReadiness;
   actionType: 'investigate_project_risk' | 'review_member_scope' | 'review_workspace_posture';
   title: string;
@@ -142,6 +143,7 @@ export function buildOrganizationGovernanceRollup(args: {
     workspaceId: item.workspaceId,
     workspaceName: item.workspaceName,
     projectId: item.projectId,
+    memberId: item.memberId,
     severity: item.severity,
     actionType:
       item.kind === 'project'

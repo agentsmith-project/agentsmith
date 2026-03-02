@@ -11,6 +11,7 @@ Central index for AgentSmith documentation. Product scope and principles are in 
 | [Project Maturity & Productization Review v1](./design/project-maturity-productization-review-v1.md) | 当前项目成熟度、产品化进度与下一阶段主要缺口评估 |
 | [Next Mainline Priority Review v2](./design/next-mainline-priority-review-v2.md) | 当前基线收口后的下一主线优先级评估 |
 | [Build Execution Reliability & Trace Fidelity Closure Review v1](./design/build-execution-reliability-trace-fidelity-closure-review-v1.md) | Build 执行可靠性与轨迹保真主线第一阶段收口结论 |
+| [Enterprise Administration & Workspace Governance Priority Review v1](./design/enterprise-administration-workspace-governance-priority-review-v1.md) | 当前基线下企业管理与工作区治理主线的优先级评估 |
 | [Governance Explainability Closure Review v1](./design/governance-explainability-closure-review-v1.md) | 治理解释性与有效访问控制台第一阶段收口结论与基线定义 |
 | [AI Ops Home UX Strategy v1](./design/ai-ops-home-ux-strategy-v1.md) | 当前 UX 基线的设计原则与任务化信息架构 |
 | [AI Ops Home UX Closure Review v1](./design/ai-ops-home-ux-closure-review-v1.md) | 当前 UX 主线的收口结论、残余低优先级债与基线定义 |
@@ -53,6 +54,7 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 - [governance-explainability-effective-access-console-plan-v1](./plans/governance-explainability-effective-access-console-plan-v1.md) — 当前 explainability 与 effective access 已完成实施计划
 - [build-execution-reliability-trace-fidelity-plan-v1](./plans/build-execution-reliability-trace-fidelity-plan-v1.md) — 已完成的 build 执行可靠性与轨迹保真实施计划
 - [build-execution-reliability-trace-fidelity-closure-review-v1](./design/build-execution-reliability-trace-fidelity-closure-review-v1.md) — 当前 build reliability 主线收口与验收基线
+- [enterprise-administration-workspace-governance-plan-v1](./plans/enterprise-administration-workspace-governance-plan-v1.md) — 当前推荐的企业管理与工作区治理主线实施计划
 
 ## Other
 

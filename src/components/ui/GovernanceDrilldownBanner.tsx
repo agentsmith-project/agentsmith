@@ -6,7 +6,11 @@ import {
   buildGovernanceDrilldownQuery,
   type GovernanceDrilldownContext,
 } from '@/lib/governance-drilldown-context';
-import { classifyGovernanceEvidenceFocus, getGovernanceEvidenceCount } from '@/lib/governance-evidence';
+import {
+  classifyGovernanceEvidenceFocus,
+  getGovernanceEvidenceCount,
+  buildEvidenceHref,
+} from '@/lib/governance-evidence';
 import { cn } from '@/lib/utils';
 
 interface GovernanceDrilldownBannerProps {
@@ -21,6 +25,10 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
   const drilldownQuery = buildGovernanceDrilldownQuery(context);
   const focus = classifyGovernanceEvidenceFocus(context.gov_reason);
   const evidenceCount = getGovernanceEvidenceCount(context);
+
+  // Build evidence href for clicking on evidence count/focus
+  const evidenceHref = buildEvidenceHref(context, focus, locale);
+
   const evidenceMetrics = [
     { key: 'governance_drilldown_metric_related_signals', value: context.gov_related_signals },
     { key: 'governance_drilldown_metric_blocked_signals', value: context.gov_blocked_signals },
@@ -33,6 +41,11 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
     { key: 'governance_drilldown_metric_workspace_risky_projects', value: context.gov_workspace_risky_projects },
   ].filter((item) => typeof item.value === 'number');
 
+  // Determine if blocked/warning signals exist for clickable behavior
+  const hasBlockers = (context.gov_blocked_signals ?? 0) > 0;
+  const hasWarnings = (context.gov_warning_signals ?? 0) > 0;
+  const totalSignals = (context.gov_blocked_signals ?? 0) + (context.gov_warning_signals ?? 0);
+
   return (
     <div className="mb-3 rounded-md border border-warning/30 bg-warning/5 p-3" data-testid="governance-drilldown__banner">
       <p className="text-xs font-medium text-foreground">{t('governance_drilldown_title')}</p>
@@ -44,10 +57,23 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
         })}
       </p>
       <p className="mt-1 text-xs text-tertiary" data-testid="governance-drilldown__focus">
-        {t('governance_drilldown_focus', {
-          focus: t(`governance_drilldown_focus_${focus}`),
-          count: evidenceCount ?? 0,
-        })}
+        {totalSignals > 0 ? (
+          <Link
+            href={evidenceHref}
+            className="text-accent hover:underline inline-flex items-center gap-1"
+            data-testid="governance-drilldown__focus-link"
+          >
+            {t('governance_drilldown_focus', {
+              focus: t(`governance_drilldown_focus_${focus}`),
+              count: evidenceCount ?? 0,
+            })}
+          </Link>
+        ) : (
+          t('governance_drilldown_focus', {
+            focus: t(`governance_drilldown_focus_${focus}`),
+            count: evidenceCount ?? 0,
+          })
+        )}
       </p>
       {context.gov_action_id ? (
         <p className="mt-1 text-xs text-tertiary">
@@ -56,16 +82,48 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
       ) : null}
       {evidenceMetrics.length > 0 ? (
         <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3" data-testid="governance-drilldown__evidence">
-          {evidenceMetrics.map((metric) => (
-            <div
-              key={metric.key}
-              className="rounded-sm border border-warning/20 bg-warning/10 px-2 py-1.5"
-              data-testid={`governance-drilldown__metric--${metric.key.replace(/_/g, '-')}`}
-            >
-              <p className="text-[11px] uppercase tracking-[0.1em] text-tertiary">{t(metric.key)}</p>
-              <p className="mt-0.5 text-xs font-semibold text-foreground">{metric.value}</p>
-            </div>
-          ))}
+          {evidenceMetrics.map((metric) => {
+            // Make blocked/warning signals clickable as they indicate actionable evidence
+            const isClickableMetric =
+              metric.key === 'governance_drilldown_metric_blocked_signals' && hasBlockers;
+            const isClickableWarning =
+              metric.key === 'governance_drilldown_metric_warning_signals' && hasWarnings;
+
+            const metricContent = (
+              <>
+                <p className="text-[11px] uppercase tracking-[0.1em] text-tertiary">{t(metric.key)}</p>
+                <p className={cn(
+                  'mt-0.5 text-xs font-semibold',
+                  (isClickableMetric || isClickableWarning) && 'text-accent'
+                )}>
+                  {metric.value}
+                </p>
+              </>
+            );
+
+            return (
+              <div
+                key={metric.key}
+                className={cn(
+                  'rounded-sm border border-warning/20 bg-warning/10 px-2 py-1.5',
+                  (isClickableMetric || isClickableWarning) && 'cursor-pointer hover:bg-warning/20',
+                )}
+                data-testid={`governance-drilldown__metric--${metric.key.replace(/_/g, '-')}`}
+              >
+                {(isClickableMetric || isClickableWarning) ? (
+                  <Link
+                    href={evidenceHref}
+                    className="block no-underline"
+                    data-testid="governance-drilldown__metric-link"
+                  >
+                    {metricContent}
+                  </Link>
+                ) : (
+                  metricContent
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : null}
       <div className="mt-2 flex flex-wrap gap-2">

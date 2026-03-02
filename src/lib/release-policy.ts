@@ -1,5 +1,5 @@
 export type ReleasePolicySeverity = 'warning' | 'blocker';
-export type ReleasePolicySource = 'execution' | 'runtime' | 'usage' | 'governance' | 'build';
+export type ReleasePolicySource = 'execution' | 'runtime' | 'usage' | 'governance' | 'workspace_governance' | 'organization_governance' | 'build';
 export type ReleasePolicyDecision = 'ready' | 'warning' | 'blocked';
 
 export type ReleasePolicyIssue = {
@@ -90,6 +90,37 @@ export type ReleasePolicyGovernanceInput = {
   due_soon?: number;
 };
 
+/**
+ * Organization-level governance evidence for release gates.
+ * These are hard fails that can block a release across all projects.
+ */
+export type ReleasePolicyOrganizationInput = {
+  /** Organization release readiness status */
+  release_readiness?: 'ready' | 'blocked';
+  /** Organization-level blockers (e.g., compliance violations, security issues) */
+  blockers?: Array<{
+    id: string;
+    message: string;
+    severity: 'blocker' | 'warning';
+    source: 'organization_governance';
+    overridable: boolean;
+  }>;
+  /** Organization-level warnings */
+  warnings?: Array<{
+    id: string;
+    message: string;
+    severity: 'warning';
+    source: 'organization_governance';
+    overridable: boolean;
+  }>;
+  /** Count of organization-level critical escalations */
+  critical_escalations?: number;
+  /** Count of unassigned organization-level critical escalations */
+  critical_unassigned?: number;
+  /** Organization-level compliance hard fails */
+  compliance_hard_fails?: number;
+};
+
 export type ReleasePolicyBuildInput = {
   release_readiness?: 'ready' | 'blocked';
   blockers?: string[];
@@ -101,6 +132,7 @@ export type EvaluateReleasePolicyInput = {
   runtime?: ReleasePolicyRuntimeInput;
   usage?: ReleasePolicyUsageInput;
   governance?: ReleasePolicyGovernanceInput;
+  organization?: ReleasePolicyOrganizationInput;
   build?: ReleasePolicyBuildInput;
 };
 
@@ -344,6 +376,81 @@ export function evaluateReleasePolicy(input: EvaluateReleasePolicyInput): Releas
         source: 'governance',
         message: `${governance.open_escalations} open release escalations require follow-up.`,
         overridable: true,
+      });
+    }
+  }
+
+  const organization = input.organization;
+  if (organization) {
+    // Organization-level evidence is HARD FAIL - these blockers cannot be overridden
+    if (organization.release_readiness === 'blocked') {
+      pushIssue(blockers, {
+        id: 'organization_release_readiness_blocked',
+        severity: 'blocker',
+        source: 'organization_governance',
+        message: 'Organization-level release readiness is blocked.',
+        overridable: false,
+      });
+    }
+
+    // Process organization-level blockers
+    if (organization.blockers) {
+      for (const blocker of organization.blockers) {
+        if (blocker.severity === 'blocker') {
+          pushIssue(blockers, {
+            id: blocker.id,
+            severity: 'blocker',
+            source: 'organization_governance',
+            message: blocker.message,
+            overridable: false, // Organization-level blockers are never overridable
+          });
+        }
+      }
+    }
+
+    // Process organization-level warnings
+    if (organization.warnings) {
+      for (const warning of organization.warnings) {
+        pushIssue(warnings, {
+          id: warning.id,
+          severity: 'warning',
+          source: 'organization_governance',
+          message: warning.message,
+          overridable: false, // Organization warnings are also not overridable
+        });
+      }
+    }
+
+    // Organization-level critical escalations are hard fails
+    if ((organization.critical_escalations ?? 0) > 0) {
+      pushIssue(blockers, {
+        id: 'organization_critical_escalations_present',
+        severity: 'blocker',
+        source: 'organization_governance',
+        message: `${organization.critical_escalations} organization-level critical escalations require resolution before release.`,
+        overridable: false,
+      });
+    }
+
+    // Unassigned organization critical escalations
+    if ((organization.critical_unassigned ?? 0) > 0) {
+      pushIssue(blockers, {
+        id: 'organization_critical_escalations_unassigned',
+        severity: 'blocker',
+        source: 'organization_governance',
+        message: `${organization.critical_unassigned} organization-level critical escalations are unassigned to an owner.`,
+        overridable: false,
+      });
+    }
+
+    // Organization compliance hard fails
+    if ((organization.compliance_hard_fails ?? 0) > 0) {
+      pushIssue(blockers, {
+        id: 'organization_compliance_hard_fails_present',
+        severity: 'blocker',
+        source: 'organization_governance',
+        message: `${organization.compliance_hard_fails} organization-level compliance hard fails must be resolved.`,
+        overridable: false,
       });
     }
   }

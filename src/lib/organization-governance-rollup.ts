@@ -15,6 +15,7 @@ export interface OrganizationWorkspaceGovernanceSnapshot {
   warningItems: number;
   riskyProjects: number;
   totalProjects: number;
+  topRiskProjectId?: string;
 }
 
 export interface OrganizationGovernanceAttentionItem {
@@ -75,6 +76,7 @@ export function buildOrganizationGovernanceRollup(args: {
       warningItems,
       riskyProjects: posture.summary.riskyProjects,
       totalProjects: posture.summary.totalProjects,
+      topRiskProjectId: posture.projects.find((project) => project.readiness === 'blocked' || project.readiness === 'warning')?.projectId,
     });
 
     const workspaceAttention = buildWorkspaceGovernanceAttentionFeed({

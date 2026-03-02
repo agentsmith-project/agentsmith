@@ -46,12 +46,26 @@ export default function WorkspaceSelectPage() {
       <PageLayout>
         <div className="min-h-screen bg-background p-8">
           <div className="max-w-4xl mx-auto">
-            <h1 data-testid="workspace-select__heading" className="text-2xl font-semibold text-foreground mb-2">
-              {t('select_your_workspace')}
-            </h1>
-            <p className="text-tertiary mb-8">
-              {t('choose_workspace')}
-            </p>
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h1 data-testid="workspace-select__heading" className="text-2xl font-semibold text-foreground mb-2">
+                  {t('select_your_workspace')}
+                </h1>
+                <p className="text-tertiary">
+                  {t('choose_workspace')}
+                </p>
+              </div>
+              <Link
+                href={`/${locale}/workspaces/overview`}
+                className={cn(
+                  'inline-flex h-9 items-center rounded-sm border border-subtle px-3 text-sm font-medium text-foreground transition-colors',
+                  'hover:bg-hover',
+                )}
+                data-testid="workspace-select__open-org-overview"
+              >
+                {t('open_enterprise_console')}
+              </Link>
+            </div>
 
             {isLoading ? (
               <p className="text-sm text-tertiary" data-testid="workspace-select__loading">{t('loading_workspaces')}</p>
@@ -252,31 +266,34 @@ function OrganizationGovernanceOverview(props: OrganizationGovernanceOverviewPro
             <p className="mt-3 text-sm text-tertiary">{t('org_governance_attention_empty')}</p>
           ) : (
             <div className="mt-2 space-y-2">
-              {props.rollup.attention.slice(0, 5).map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-sm border border-subtle bg-surface px-3 py-2"
-                  data-testid={`workspace-select__org-governance-attention--${item.id.replace(':', '--')}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium text-foreground">{item.workspaceName}</p>
-                    <StatusBadge status={item.severity}>{t(`org_governance_status_${item.severity}`)}</StatusBadge>
+              {props.rollup.attention.slice(0, 5).map((item) => {
+                const testIdSegment = item.id.replace(/:/g, '--');
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-sm border border-subtle bg-surface px-3 py-2"
+                    data-testid={`workspace-select__org-governance-attention--${testIdSegment}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-medium text-foreground">{item.workspaceName}</p>
+                      <StatusBadge status={item.severity}>{t(`org_governance_status_${item.severity}`)}</StatusBadge>
+                    </div>
+                    <p className="mt-1 text-xs text-tertiary">{item.title}</p>
+                    {item.projectId ? (
+                      <Link
+                        href={`/${props.locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/audit`}
+                        className={cn(
+                          'mt-2 inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                          'hover:bg-hover',
+                        )}
+                        data-testid={`workspace-select__org-governance-open-audit--${testIdSegment}`}
+                      >
+                        {t('org_governance_open_project_audit')}
+                      </Link>
+                    ) : null}
                   </div>
-                  <p className="mt-1 text-xs text-tertiary">{item.title}</p>
-                  {item.projectId ? (
-                    <Link
-                      href={`/${props.locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/audit`}
-                      className={cn(
-                        'mt-2 inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
-                        'hover:bg-hover',
-                      )}
-                      data-testid={`workspace-select__org-governance-open-audit--${item.id.replace(':', '--')}`}
-                    >
-                      {t('org_governance_open_project_audit')}
-                    </Link>
-                  ) : null}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

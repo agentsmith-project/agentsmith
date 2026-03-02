@@ -58,6 +58,19 @@ describe('WorkspaceSelectPage', () => {
     expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/projects');
   });
 
+  it('renders entry link to organization overview page', () => {
+    mockUseWorkspaces.mockReturnValue({
+      data: [{ id: 'ws_1', name: 'Workspace One' }],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: mockRefetch,
+    });
+
+    render(<WorkspaceSelectPage />);
+    expect(screen.getByTestId('workspace-select__open-org-overview')).toBeInTheDocument();
+  });
+
   it('renders organization governance overview when rollup is available', () => {
     mockUseWorkspaces.mockReturnValue({
       data: [{ id: 'ws_1', name: 'Workspace One' }],

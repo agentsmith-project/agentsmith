@@ -15,7 +15,10 @@ import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
 import { buildProjectAdminSummary } from '@/lib/projects/project-view';
-import { buildWorkspaceGovernancePosture } from '@/lib/workspace-governance-posture';
+import {
+  buildWorkspaceGovernancePosture,
+  buildWorkspaceMemberAdministration,
+} from '@/lib/workspace-governance-posture';
 import { formatBytes } from '@/lib/utils/formatters';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
@@ -61,6 +64,10 @@ export default function WorkspaceSettingsPage() {
   const governancePosture = React.useMemo(
     () => buildWorkspaceGovernancePosture({ members, projects, adminSummaryByProjectId }),
     [adminSummaryByProjectId, members, projects],
+  );
+  const memberAdministration = React.useMemo(
+    () => buildWorkspaceMemberAdministration({ members, projects }),
+    [members, projects],
   );
 
   if (!workspaceId) {
@@ -230,11 +237,15 @@ export default function WorkspaceSettingsPage() {
             </div>
 
             <div className="mt-5 p-5 rounded-xl border border-border bg-surface" data-testid="ws-settings__members">
-              <h2 className="font-semibold text-foreground mb-4">{t('workspace_members')}</h2>
+              <SectionHeading
+                eyebrow={t('workspace_members_eyebrow')}
+                title={t('workspace_members')}
+                subtitle={t('workspace_members_subtitle')}
+              />
               {members.length === 0 ? (
-                <p className="text-tertiary text-sm">{t('workspace_members_empty')}</p>
+                <p className="mt-4 text-tertiary text-sm">{t('workspace_members_empty')}</p>
               ) : (
-                <div className="space-y-3">
+                <div className="mt-4 space-y-3">
                   {members.map((member) => (
                     <div key={member.id} className="flex items-center justify-between rounded-md border border-subtle bg-surface-high px-4 py-3">
                       <div className="min-w-0">
@@ -256,6 +267,80 @@ export default function WorkspaceSettingsPage() {
                           <option value="user">{t('workspace_governance_user')}</option>
                         </select>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 p-5 rounded-xl border border-border bg-surface" data-testid="ws-settings__member-administration">
+              <SectionHeading
+                eyebrow={t('workspace_member_admin_eyebrow')}
+                title={t('workspace_member_admin_title')}
+                subtitle={t('workspace_member_admin_subtitle')}
+              />
+              {memberAdministration.length === 0 ? (
+                <p className="mt-4 text-sm text-tertiary">{t('workspace_members_empty')}</p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {memberAdministration.map((member) => (
+                    <div
+                      key={member.memberId}
+                      className="rounded-lg border border-subtle bg-bg-base/20 p-4"
+                      data-testid={`ws-settings__member-administration--${member.memberId}`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-foreground">{member.name}</p>
+                            <StatusBadge status={member.readiness === 'info' ? 'info' : member.readiness}>
+                              {member.readiness === 'info'
+                                ? t('workspace_member_admin_status_info')
+                                : t(`workspace_governance_status_${member.readiness}`)}
+                            </StatusBadge>
+                            <StatusBadge status={member.status === 'active' ? 'ready' : 'info'}>
+                              {t(`workspace_member_admin_membership_${member.status}`)}
+                            </StatusBadge>
+                          </div>
+                          <p className="mt-1 text-xs text-tertiary">{member.email}</p>
+                        </div>
+                        <div className="text-right text-xs text-tertiary">
+                          <div>{t('workspace_member_admin_governance_group')}</div>
+                          <div className="mt-1 text-sm text-foreground">
+                            {member.governanceGroup === 'wheel'
+                              ? t('workspace_governance_wheel')
+                              : t('workspace_governance_user')}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <div className="rounded-lg border border-subtle bg-bg-base/10 p-3">
+                          <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_member_admin_owned_projects')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{member.ownedProjects}</div>
+                        </div>
+                        <div className="rounded-lg border border-subtle bg-bg-base/10 p-3">
+                          <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_member_admin_admin_projects')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{member.administeredProjects}</div>
+                        </div>
+                        <div className="rounded-lg border border-subtle bg-bg-base/10 p-3">
+                          <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_member_admin_exposed_projects')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">{member.exposedProjects}</div>
+                        </div>
+                      </div>
+
+                      {member.riskCodes.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {member.riskCodes.map((riskCode) => (
+                            <StatusBadge
+                              key={riskCode}
+                              status={riskCode === 'removed_member_with_project_scope' ? 'blocked' : 'warning'}
+                            >
+                              {t(`workspace_member_admin_risk_${riskCode}`)}
+                            </StatusBadge>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>

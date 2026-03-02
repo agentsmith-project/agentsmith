@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWorkspaceGovernancePosture } from '@/lib/workspace-governance-posture';
+import { buildWorkspaceGovernancePosture, buildWorkspaceMemberAdministration } from '@/lib/workspace-governance-posture';
 import type { Project, WorkspaceMember } from '@/lib/api/types';
 
 const members: WorkspaceMember[] = [
@@ -88,5 +88,82 @@ describe('buildWorkspaceGovernancePosture', () => {
     expect(posture.readiness).toBe('ready');
     expect(posture.summary.activeProjects).toBe(1);
     expect(posture.projects.find((project) => project.projectId === 'proj_archived')?.readiness).toBe('info');
+  });
+});
+
+describe('buildWorkspaceMemberAdministration', () => {
+  it('flags removed members that still hold project scope', () => {
+    const entries = buildWorkspaceMemberAdministration({
+      members: [
+        ...members,
+        {
+          id: 'wm_3',
+          user_id: 'u_3',
+          name: 'Removed Admin',
+          email: 'removed@example.com',
+          role: 'admin',
+          permissions: ['workspace:read'],
+          status: 'removed',
+          joined_at: '2026-03-01T00:00:00Z',
+        },
+      ],
+      projects: [
+        makeProject({
+          governance_json: {
+            project_admins: ['u_3'],
+            quotas: {
+              source_library: {
+                max_total_files: 2000,
+                max_file_size_bytes: 104857600,
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    const removed = entries.find((entry) => entry.userId === 'u_3');
+    expect(removed?.readiness).toBe('blocked');
+    expect(removed?.riskCodes).toContain('removed_member_with_project_scope');
+  });
+
+  it('tracks exposed project scope for active members', () => {
+    const entries = buildWorkspaceMemberAdministration({
+      members,
+      projects: [
+        makeProject({
+          owner_id: 'u_2',
+          visibility: 'public',
+          join_policy: 'open',
+        }),
+      ],
+    });
+
+    const dev = entries.find((entry) => entry.userId === 'u_2');
+    expect(dev?.readiness).toBe('warning');
+    expect(dev?.administeredProjects).toBe(1);
+    expect(dev?.exposedProjects).toBe(1);
+    expect(dev?.riskCodes).toContain('public_project_scope');
+    expect(dev?.riskCodes).toContain('open_join_scope');
+  });
+
+  it('uses governance group fallback from permissions when api field is missing', () => {
+    const entries = buildWorkspaceMemberAdministration({
+      members: [
+        {
+          id: 'wm_4',
+          user_id: 'u_4',
+          name: 'Wheel Fallback',
+          email: 'wheel@example.com',
+          role: 'admin',
+          permissions: ['workspace:governance:update'],
+          status: 'active',
+          joined_at: '2026-03-01T00:00:00Z',
+        },
+      ],
+      projects: [],
+    });
+
+    expect(entries[0]?.governanceGroup).toBe('wheel');
   });
 });

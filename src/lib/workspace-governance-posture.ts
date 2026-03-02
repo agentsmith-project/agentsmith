@@ -39,10 +39,59 @@ export interface WorkspaceGovernancePosture {
   projects: WorkspaceProjectGovernancePosture[];
 }
 
+export type WorkspaceMemberGovernanceRiskCode =
+  | 'removed_member_with_project_scope'
+  | 'public_project_scope'
+  | 'open_join_scope';
+
+export interface WorkspaceMemberAdministrationEntry {
+  memberId: string;
+  userId: string;
+  name: string;
+  email: string;
+  role: WorkspaceMember['role'];
+  governanceGroup: 'wheel' | 'user';
+  status: WorkspaceMember['status'];
+  readiness: WorkspaceGovernanceReadiness | 'info';
+  ownedProjects: number;
+  administeredProjects: number;
+  exposedProjects: number;
+  riskCodes: WorkspaceMemberGovernanceRiskCode[];
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function getProjectAdminIds(project: Project): string[] {
+  const governance = asRecord(project.governance_json);
+  const rawAdmins = governance?.project_admins;
+  if (!Array.isArray(rawAdmins)) {
+    return [];
+  }
+  const ids: string[] = [];
+  for (const item of rawAdmins) {
+    if (typeof item === 'string') {
+      ids.push(item);
+      continue;
+    }
+    const record = asRecord(item);
+    const maybeId = record?.id;
+    if (typeof maybeId === 'string') {
+      ids.push(maybeId);
+    }
+  }
+  return ids;
+}
+
+export function resolveWorkspaceGovernanceGroup(member: Pick<WorkspaceMember, 'governance_group' | 'permissions'>): 'wheel' | 'user' {
+  if (member.governance_group === 'wheel' || member.governance_group === 'user') {
+    return member.governance_group;
+  }
+  const permissions = new Set(member.permissions ?? []);
+  return permissions.has('workspace:governance:update') ? 'wheel' : 'user';
 }
 
 function getSourceLibraryQuota(project: Project, key: 'max_total_files' | 'max_file_size_bytes'): number | undefined {
@@ -151,4 +200,83 @@ export function buildWorkspaceGovernancePosture(args: {
     },
     projects: projectPosture,
   };
+}
+
+export function buildWorkspaceMemberAdministration(args: {
+  members: WorkspaceMember[];
+  projects: Project[];
+}): WorkspaceMemberAdministrationEntry[] {
+  const { members, projects } = args;
+
+  return members
+    .map<WorkspaceMemberAdministrationEntry>((member) => {
+      let ownedProjects = 0;
+      let administeredProjects = 0;
+      let exposedProjects = 0;
+      const riskCodes: WorkspaceMemberGovernanceRiskCode[] = [];
+
+      for (const project of projects) {
+        const adminIds = getProjectAdminIds(project);
+        const hasScope = project.owner_id === member.user_id || adminIds.includes(member.user_id);
+        if (!hasScope) continue;
+
+        if (project.owner_id === member.user_id) {
+          ownedProjects += 1;
+        }
+        administeredProjects += 1;
+
+        if (project.status === 'active' && (project.visibility === 'public' || (project.join_policy ?? 'approval_required') === 'open')) {
+          exposedProjects += 1;
+          if (project.visibility === 'public') {
+            riskCodes.push('public_project_scope');
+          }
+          if ((project.join_policy ?? 'approval_required') === 'open') {
+            riskCodes.push('open_join_scope');
+          }
+        }
+      }
+
+      if (member.status === 'removed' && administeredProjects > 0) {
+        riskCodes.push('removed_member_with_project_scope');
+      }
+
+      const readiness: WorkspaceMemberAdministrationEntry['readiness'] =
+        riskCodes.includes('removed_member_with_project_scope')
+          ? 'blocked'
+          : riskCodes.length > 0
+            ? 'warning'
+            : member.status === 'active'
+              ? 'ready'
+              : 'info';
+
+      return {
+        memberId: member.id,
+        userId: member.user_id,
+        name: member.name,
+        email: member.email,
+        role: member.role,
+        governanceGroup: resolveWorkspaceGovernanceGroup(member),
+        status: member.status,
+        readiness,
+        ownedProjects,
+        administeredProjects,
+        exposedProjects,
+        riskCodes: Array.from(new Set(riskCodes)),
+      };
+    })
+    .sort((left, right) => {
+      const rank = (readiness: WorkspaceMemberAdministrationEntry['readiness']) => {
+        switch (readiness) {
+          case 'blocked':
+            return 0;
+          case 'warning':
+            return 1;
+          case 'ready':
+            return 2;
+          default:
+            return 3;
+        }
+      };
+      return rank(left.readiness) - rank(right.readiness) || left.name.localeCompare(right.name);
+    });
 }

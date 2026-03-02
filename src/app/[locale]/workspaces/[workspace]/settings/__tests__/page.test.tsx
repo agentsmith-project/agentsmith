@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 
@@ -13,6 +13,15 @@ const STABLE_MEMBERS = [
     status: 'active',
     joined_at: '2026-02-01T00:00:00Z',
   },
+  {
+    id: 'wm_2',
+    user_id: 'u_2',
+    name: 'Removed Admin',
+    email: 'removed@example.com',
+    role: 'admin',
+    status: 'removed',
+    joined_at: '2026-02-01T00:00:00Z',
+  },
 ];
 const STABLE_PROJECTS = [
   {
@@ -24,6 +33,28 @@ const STABLE_PROJECTS = [
     join_policy: 'open',
     status: 'active',
     governance_json: {
+      quotas: {
+        source_library: {
+          max_total_files: 2000,
+          max_file_size_bytes: 104857600,
+        },
+      },
+    },
+    runtime_preferences_json: {},
+    limits_json: {},
+    created_at: '2026-03-01T00:00:00Z',
+    updated_at: '2026-03-01T00:00:00Z',
+  },
+  {
+    id: 'proj_2',
+    workspace_id: 'ws_1',
+    name: 'Sensitive Project',
+    owner_id: 'u_1',
+    visibility: 'private',
+    join_policy: 'approval_required',
+    status: 'active',
+    governance_json: {
+      project_admins: ['u_2'],
       quotas: {
         source_library: {
           max_total_files: 2000,
@@ -90,7 +121,7 @@ describe('WorkspaceSettingsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('workspace_members')).toBeInTheDocument();
     });
-    expect(screen.getByText('dev1@example.com')).toBeInTheDocument();
+    expect(within(screen.getByTestId('ws-settings__members')).getByText('dev1@example.com')).toBeInTheDocument();
   });
 
   it('renders governance overview and project posture', async () => {
@@ -101,6 +132,15 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.getByTestId('ws-settings__project-posture')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-posture--proj_1')).toBeInTheDocument();
     expect(screen.getByText('workspace_projects_risk_public_open_access')).toBeInTheDocument();
+  });
+
+  it('renders member administration risk view', async () => {
+    render(<WorkspaceSettingsPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__member-administration')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('ws-settings__member-administration--wm_2')).toBeInTheDocument();
+    expect(screen.getByText('workspace_member_admin_risk_removed_member_with_project_scope')).toBeInTheDocument();
   });
 
   it('shows validation_error for invalid workspace param', async () => {

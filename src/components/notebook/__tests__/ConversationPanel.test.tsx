@@ -25,6 +25,12 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.realtime_status_ticket_unauthorized_description': 'The current session is not allowed to open a realtime notebook stream.',
       'notebook.conversation.realtime_status_ticket_rate_limited_title': 'Realtime ticket request rate limited',
       'notebook.conversation.realtime_status_ticket_rate_limited_description': 'Ticket issuance is temporarily throttled. Retry after the current limit window clears.',
+      'notebook.conversation.realtime_status_stream_unavailable_title': 'Realtime task stream unavailable',
+      'notebook.conversation.realtime_status_stream_unavailable_description': 'The notebook task event stream did not open in this environment. Check the task events endpoint before retrying.',
+      'notebook.conversation.realtime_status_stream_interrupted_title': 'Realtime task stream interrupted',
+      'notebook.conversation.realtime_status_stream_interrupted_description': 'The live task stream opened earlier but is no longer delivering updates.',
+      'notebook.conversation.realtime_status_stream_recovery_exhausted_title': 'Realtime task recovery exhausted',
+      'notebook.conversation.realtime_status_stream_recovery_exhausted_description': 'The task stream could not recover after multiple reconnect attempts.',
       'notebook.conversation.realtime_status_ticket_network_title': 'Realtime ticket exchange failed',
       'notebook.conversation.realtime_status_ticket_network_description': 'The client could not establish the ticket needed for realtime notebook updates.',
       'notebook.conversation.realtime_status_reconcile_failed_title': 'Trace recovery needs manual refresh',
@@ -347,6 +353,36 @@ describe('ConversationPanel', () => {
       const status = screen.getByTestId('notebook__sse-status');
       expect(status).toHaveTextContent('Trace recovery needs manual refresh');
       expect(status).toHaveTextContent('Trace tail fetch returned 503');
+    });
+
+    it('shows stream-unavailable explanation when task events never open', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="error"
+          connectionErrorCode="TASK_EVENTS_STREAM_UNAVAILABLE"
+        />
+      );
+
+      const status = screen.getByTestId('notebook__sse-status');
+      expect(status).toHaveTextContent('Realtime task stream unavailable');
+      expect(status).toHaveTextContent('The notebook task event stream did not open in this environment. Check the task events endpoint before retrying.');
+    });
+
+    it('shows stream-recovery-exhausted explanation after reconnect budget is spent', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="error"
+          connectionErrorCode="TASK_EVENTS_RECOVERY_EXHAUSTED"
+        />
+      );
+
+      const status = screen.getByTestId('notebook__sse-status');
+      expect(status).toHaveTextContent('Realtime task recovery exhausted');
+      expect(status).toHaveTextContent('The task stream could not recover after multiple reconnect attempts.');
     });
   });
 

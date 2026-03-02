@@ -12,6 +12,9 @@ export type NotebookRealtimeFailureKind =
   | 'reconnecting'
   | 'disconnected'
   | 'error'
+  | 'stream_unavailable'
+  | 'stream_interrupted'
+  | 'stream_recovery_exhausted'
   | 'ticket_unavailable'
   | 'ticket_unauthorized'
   | 'ticket_rate_limited'
@@ -52,6 +55,12 @@ export function classifyNotebookRealtimeFailure(
         return 'ticket_unauthorized';
       case 'SSE_TICKET_RATE_LIMITED':
         return 'ticket_rate_limited';
+      case 'TASK_EVENTS_STREAM_UNAVAILABLE':
+        return 'stream_unavailable';
+      case 'TASK_EVENTS_STREAM_INTERRUPTED':
+        return 'stream_interrupted';
+      case 'TASK_EVENTS_RECOVERY_EXHAUSTED':
+        return 'stream_recovery_exhausted';
       case 'SSE_TICKET_NETWORK_ERROR':
       case 'SSE_TICKET_UPSTREAM':
       case 'SSE_TICKET_INVALID_RESPONSE':

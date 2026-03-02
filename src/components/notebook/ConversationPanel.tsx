@@ -58,12 +58,18 @@ export function ConversationPanel({
         ? t('realtime_status_disconnected_title')
         : connectionFailureKind === 'ticket_unavailable'
           ? t('realtime_status_ticket_unavailable_title')
-          : connectionFailureKind === 'ticket_unauthorized'
-            ? t('realtime_status_ticket_unauthorized_title')
-            : connectionFailureKind === 'ticket_rate_limited'
-              ? t('realtime_status_ticket_rate_limited_title')
-              : connectionFailureKind === 'ticket_network'
-                ? t('realtime_status_ticket_network_title')
+        : connectionFailureKind === 'ticket_unauthorized'
+          ? t('realtime_status_ticket_unauthorized_title')
+        : connectionFailureKind === 'ticket_rate_limited'
+          ? t('realtime_status_ticket_rate_limited_title')
+        : connectionFailureKind === 'stream_unavailable'
+          ? t('realtime_status_stream_unavailable_title')
+        : connectionFailureKind === 'stream_interrupted'
+          ? t('realtime_status_stream_interrupted_title')
+        : connectionFailureKind === 'stream_recovery_exhausted'
+          ? t('realtime_status_stream_recovery_exhausted_title')
+        : connectionFailureKind === 'ticket_network'
+          ? t('realtime_status_ticket_network_title')
                 : connectionFailureKind === 'reconcile_failed'
                   ? t('realtime_status_reconcile_failed_title')
                   : connectionFailureKind === 'error'
@@ -78,12 +84,18 @@ export function ConversationPanel({
         ? t('realtime_status_disconnected_description')
         : connectionFailureKind === 'ticket_unavailable'
           ? t('realtime_status_ticket_unavailable_description')
-          : connectionFailureKind === 'ticket_unauthorized'
-            ? t('realtime_status_ticket_unauthorized_description')
-            : connectionFailureKind === 'ticket_rate_limited'
-              ? t('realtime_status_ticket_rate_limited_description')
-              : connectionFailureKind === 'ticket_network'
-                ? t('realtime_status_ticket_network_description')
+        : connectionFailureKind === 'ticket_unauthorized'
+          ? t('realtime_status_ticket_unauthorized_description')
+        : connectionFailureKind === 'ticket_rate_limited'
+          ? t('realtime_status_ticket_rate_limited_description')
+        : connectionFailureKind === 'stream_unavailable'
+          ? connectionErrorMessage || t('realtime_status_stream_unavailable_description')
+        : connectionFailureKind === 'stream_interrupted'
+          ? connectionErrorMessage || t('realtime_status_stream_interrupted_description')
+        : connectionFailureKind === 'stream_recovery_exhausted'
+          ? connectionErrorMessage || t('realtime_status_stream_recovery_exhausted_description')
+        : connectionFailureKind === 'ticket_network'
+          ? t('realtime_status_ticket_network_description')
                 : connectionFailureKind === 'reconcile_failed'
                   ? connectionErrorMessage || t('realtime_status_reconcile_failed_description')
                   : connectionFailureKind === 'error'

@@ -24,6 +24,9 @@ describe('build failure explainability helpers', () => {
     expect(classifyNotebookRealtimeFailure('error', 'SSE_TICKET_UNAVAILABLE')).toBe('ticket_unavailable');
     expect(classifyNotebookRealtimeFailure('error', 'SSE_TICKET_UNAUTHORIZED')).toBe('ticket_unauthorized');
     expect(classifyNotebookRealtimeFailure('error', 'SSE_TICKET_RATE_LIMITED')).toBe('ticket_rate_limited');
+    expect(classifyNotebookRealtimeFailure('error', 'TASK_EVENTS_STREAM_UNAVAILABLE')).toBe('stream_unavailable');
+    expect(classifyNotebookRealtimeFailure('error', 'TASK_EVENTS_STREAM_INTERRUPTED')).toBe('stream_interrupted');
+    expect(classifyNotebookRealtimeFailure('error', 'TASK_EVENTS_RECOVERY_EXHAUSTED')).toBe('stream_recovery_exhausted');
     expect(classifyNotebookRealtimeFailure('error', 'SSE_TICKET_NETWORK_ERROR')).toBe('ticket_network');
     expect(classifyNotebookRealtimeFailure('error', 'TRACE_RECONCILE_FAILED')).toBe('reconcile_failed');
     expect(classifyNotebookRealtimeFailure('connected')).toBeNull();

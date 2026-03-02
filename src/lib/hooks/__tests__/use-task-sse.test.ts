@@ -227,4 +227,72 @@ describe('useTaskSSE', () => {
     expect(result.current.connectionErrorCode).toBe('SSE_TICKET_UNAVAILABLE');
     expect(result.current.connectionErrorMessage).toContain('ticket endpoint');
   });
+
+  it('marks stream as unavailable when reconnect exhausts before any open event', async () => {
+    const { result } = renderHook(() =>
+      useTaskSSE('ws_default', 'proj_1', 'task_5', {
+        reconnectInterval: 10,
+        maxReconnectAttempts: 0,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(currentEventSource).not.toBeNull();
+    });
+
+    act(() => {
+      if (currentEventSource) currentEventSource.readyState = 2;
+      currentEventSource?.onerror?.({} as Event);
+    });
+
+    await waitFor(() => {
+      expect(result.current.connectionStatus).toBe('error');
+    });
+
+    expect(result.current.connectionErrorCode).toBe('TASK_EVENTS_STREAM_UNAVAILABLE');
+  });
+
+  it('marks stream recovery as exhausted after a previously opened connection fails repeatedly', async () => {
+    const { result } = renderHook(() =>
+      useTaskSSE('ws_default', 'proj_1', 'task_6', {
+        reconnectInterval: 10,
+        maxReconnectAttempts: 0,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(currentEventSource).not.toBeNull();
+    });
+
+    act(() => {
+      currentEventSource?.onopen?.();
+    });
+
+    act(() => {
+      currentEventSource?.onmessage?.({
+        data: JSON.stringify({
+          type: 'message',
+          data: {
+            id: 'msg_1',
+            task_id: 'task_6',
+            role: 'agent',
+            content: 'hello',
+            created_at: new Date().toISOString(),
+          },
+        }),
+        lastEventId: 'evt-77',
+      } as unknown as MessageEvent);
+    });
+
+    act(() => {
+      if (currentEventSource) currentEventSource.readyState = 2;
+      currentEventSource?.onerror?.({} as Event);
+    });
+
+    await waitFor(() => {
+      expect(result.current.connectionStatus).toBe('error');
+    });
+
+    expect(result.current.connectionErrorCode).toBe('TASK_EVENTS_RECOVERY_EXHAUSTED');
+  });
 });

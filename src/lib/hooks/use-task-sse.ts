@@ -86,6 +86,7 @@ export function useTaskSSE(
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
+  const hasOpenedRef = useRef(false);
 
   // Store callbacks in refs to prevent them from causing reconnection cycles
   const callbacksRef = useRef<CallbackRefs>({
@@ -138,6 +139,9 @@ export function useTaskSSE(
     setConnectionStatus('connecting');
     setConnectionErrorCode(null);
     setConnectionErrorMessage(null);
+    if (!lastEventIdRef.current) {
+      hasOpenedRef.current = false;
+    }
     emitDebug({ phase: 'connect_start', summary: `connecting task=${taskId}` });
 
     void (async () => {
@@ -159,6 +163,7 @@ export function useTaskSSE(
           setConnectionStatus('connected');
           setConnectionErrorCode(null);
           setConnectionErrorMessage(null);
+          hasOpenedRef.current = true;
           reconnectAttemptsRef.current = 0;
           emitDebug({ phase: 'open', summary: 'sse_open' });
           if (lastEventIdRef.current) {
@@ -229,12 +234,20 @@ export function useTaskSSE(
               connect();
             }, reconnectInterval);
           } else {
+            const exhaustedCode = !hasOpenedRef.current && !lastEventIdRef.current
+              ? 'TASK_EVENTS_STREAM_UNAVAILABLE'
+              : lastEventIdRef.current
+                ? 'TASK_EVENTS_RECOVERY_EXHAUSTED'
+                : 'TASK_EVENTS_STREAM_INTERRUPTED';
             setConnectionStatus('error');
-            setConnectionErrorCode('SSE_RECONNECT_EXHAUSTED');
+            setConnectionErrorCode(exhaustedCode);
             setConnectionErrorMessage(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`);
             emitDebug({ phase: 'reconnect_exhausted', summary: `max=${maxReconnectAttempts}` });
             callbacksRef.current.onError?.(
-              new Error(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`)
+              Object.assign(
+                new Error(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`),
+                { code: exhaustedCode },
+              ),
             );
           }
         };
@@ -290,6 +303,7 @@ export function useTaskSSE(
     reconnectAttemptsRef.current = 0;
     setConnectionErrorCode(null);
     setConnectionErrorMessage(null);
+    hasOpenedRef.current = false;
     emitDebug({ phase: 'disconnect', summary: 'manual_disconnect' });
   }, [emitDebug]);
 

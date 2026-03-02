@@ -10,6 +10,25 @@
 4. handle escalations, ownership, SLA, and incident history
 5. trigger manual gate runs and failed-check reruns
 
+## What "Release" Means in AgentSmith
+
+In this project, "release" does **not** only mean shipping frontend code.
+It means the current runtime and governance state is safe to receive production traffic.
+
+Concretely, release includes three layers:
+
+1. Runtime route release  
+   Publish runtime targets (alias/combo) from draft to published, with rollout policy (`full`/`canary`).
+2. Gate execution and evidence  
+   Run release gates and produce auditable artifacts (report/run/evidence).
+3. Governance decision and enforcement  
+   Evaluate policy readiness (`ready`/`warning`/`blocked`/`pending_override`/`releasable_with_override`) and handle override/escalation/incident.
+
+Practical interpretation:
+
+1. "Can we release?" = "Can this runtime configuration and its governance evidence be promoted and enforced safely?"
+2. A green page alone is not release acceptance; artifacts + policy enforcement are the acceptance baseline.
+
 ## Main Surfaces
 
 Project route:

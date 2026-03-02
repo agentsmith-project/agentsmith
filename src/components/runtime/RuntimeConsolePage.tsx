@@ -210,7 +210,6 @@ export function RuntimeConsolePage({
             <RuntimeObservabilityConsole
               workspaceId={workspaceId}
               projectId={projectId}
-              isActive={activeTab === 'overview'}
             />
           </TabsContent>
         )}
@@ -221,7 +220,6 @@ export function RuntimeConsolePage({
             <RuntimeObservabilityConsole
               workspaceId={workspaceId}
               projectId={projectId}
-              isActive={activeTab === 'monitoring'}
             />
           </TabsContent>
         )}

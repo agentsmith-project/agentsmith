@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
@@ -14,14 +14,12 @@ import { EmptyState } from '@/components/audit-usage/EmptyState';
 import { SectionHeading } from '@/components/ui/section-heading';
 import { useRuntimeObservability, useUsageFacts } from '@/lib/hooks/use-audit-usage';
 import type { UsageListParams } from '@/lib/api/types';
-import { buildSharedOpsFilterQuery, parseSharedOpsFilterContext, type SharedOpsFilterContext } from '@/lib/ops-filter-context';
+import { parseSharedOpsFilterContext } from '@/lib/ops-filter-context';
 
 type RuntimeObservabilityConsoleProps = {
   workspaceId: string;
   projectId: string;
   initialFilters?: Partial<RuntimeObservabilityFilters>;
-  /** Whether this tab instance is currently active. Only the active instance should update URL. */
-  isActive?: boolean;
 };
 
 type RuntimeObservabilityFilters = {
@@ -78,12 +76,9 @@ export function RuntimeObservabilityConsole({
   workspaceId,
   projectId,
   initialFilters,
-  isActive = true,
 }: RuntimeObservabilityConsoleProps) {
   const settingsT = useTranslations('settings');
   const commonT = useTranslations('common');
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   // Read filter params from URL on mount, fallback to defaults
@@ -100,9 +95,6 @@ export function RuntimeObservabilityConsole({
     };
   });
   const [drillDown, setDrillDown] = React.useState<RuntimeDrillDown | null>(null);
-
-  // Track if this is the initial mount to avoid unnecessary URL writes
-  const isInitialMount = React.useRef(true);
 
   const observabilityQuery = useRuntimeObservability(workspaceId, projectId, filters, {
     enabled: !!workspaceId && !!projectId,

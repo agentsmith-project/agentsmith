@@ -24,7 +24,6 @@ export async function middleware(request: NextRequest) {
 
   if (legacyRouteMatch) {
     const [, locale, workspace, project, legacyRoute] = legacyRouteMatch;
-    let redirectPath = `/${locale}/workspaces/${workspace}/projects/${project}/runtime-console`;
 
     // Map legacy routes to new routes with appropriate tab parameters
     const tabMapping: Record<string, string> = {
@@ -33,14 +32,23 @@ export async function middleware(request: NextRequest) {
       'alerts': 'alerts',
     };
 
+    // Build redirect URL preserving all original query parameters
+    const redirectUrl = new URL(
+      `/${locale}/workspaces/${workspace}/projects/${project}/runtime-console`,
+      request.url,
+    );
+
+    // Copy all original query parameters
+    request.nextUrl.searchParams.forEach((value, key) => {
+      redirectUrl.searchParams.set(key, value);
+    });
+
+    // Set tab parameter if mapped
     const tab = tabMapping[legacyRoute];
     if (tab) {
-      const url = new URL(request.url);
-      url.searchParams.set('tab', tab);
-      redirectPath = `${redirectPath}?tab=${tab}`;
+      redirectUrl.searchParams.set('tab', tab);
     }
 
-    const redirectUrl = new URL(redirectPath, request.url);
     return NextResponse.redirect(redirectUrl);
   }
 

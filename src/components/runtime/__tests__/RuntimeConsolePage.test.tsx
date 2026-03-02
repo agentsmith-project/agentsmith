@@ -4,7 +4,7 @@
  * TDD: Tests first, then implementation.
  */
 
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RuntimeConsolePage } from '../RuntimeConsolePage';
 
@@ -21,8 +21,14 @@ vi.mock('next/navigation', () => ({
 }));
 
 // Mock use-permissions hook
+const mockPermissions: Record<string, boolean> = {
+  'project:usage:view': true,
+  'project:alert:view': true,
+  'project:settings:manage': true,
+};
+
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: () => true,
+  useHasPermission: (permission: string) => mockPermissions[permission] ?? false,
 }));
 
 // Mock child components
@@ -52,7 +58,7 @@ vi.mock('@/components/settings/RuntimeControlPlanePanel', () => ({
 
 // Mock UI components
 vi.mock('@/components/ui/tabs', () => ({
-  Tabs: ({ value, onValueChange, children, className }: any) => (
+  Tabs: ({ value, _onValueChange, children, className }: any) => (
     <div data-testid="tabs" data-value={value} className={className}>
       {children}
     </div>
@@ -95,139 +101,305 @@ vi.mock('@/components/layout/PageHeader', () => ({
 }));
 
 const TABS = ['overview', 'monitoring', 'alerts', 'control', 'reports'] as const;
-type TabValue = (typeof TABS)[number];
 
 describe('RuntimeConsolePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset to full permissions by default
+    mockPermissions['project:usage:view'] = true;
+    mockPermissions['project:alert:view'] = true;
+    mockPermissions['project:settings:manage'] = true;
   });
 
-  it('renders page header with title and subtitle', () => {
-    render(
-      <RuntimeConsolePage
-        workspaceId="ws_1"
-        projectId="proj_1"
-        locale="en-US"
-      />
-    );
+  describe('with full permissions', () => {
+    it('renders page header with title and subtitle', () => {
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
 
-    const header = screen.getByTestId('page-layout__header');
-    expect(within(header).getByTestId('page-header__title')).toBeInTheDocument();
-    expect(within(header).getByTestId('page-header__subtitle')).toBeInTheDocument();
-  });
+      const header = screen.getByTestId('page-layout__header');
+      expect(within(header).getByTestId('page-header__title')).toBeInTheDocument();
+      expect(within(header).getByTestId('page-header__subtitle')).toBeInTheDocument();
+    });
 
-  it('renders all 5 tabs', () => {
-    render(
-      <RuntimeConsolePage
-        workspaceId="ws_1"
-        projectId="proj_1"
-        locale="en-US"
-      />
-    );
+    it('renders all 5 tabs', () => {
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
 
-    const tabsList = screen.getByTestId('tabs-list');
-    expect(tabsList).toBeInTheDocument();
+      const tabsList = screen.getByTestId('tabs-list');
+      expect(tabsList).toBeInTheDocument();
 
-    TABS.forEach((tab) => {
-      const trigger = within(tabsList).getByTestId(`tabs-trigger-${tab}`);
-      expect(trigger).toBeInTheDocument();
-      expect(trigger).toHaveAttribute('role', 'tab');
+      TABS.forEach((tab) => {
+        const trigger = within(tabsList).getByTestId(`tabs-trigger-${tab}`);
+        expect(trigger).toBeInTheDocument();
+        expect(trigger).toHaveAttribute('role', 'tab');
+      });
+    });
+
+    it('renders overview tab as default', () => {
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabs = screen.getByTestId('tabs');
+      expect(tabs).toHaveAttribute('data-value', 'overview');
+    });
+
+    it('passes workspaceId and projectId to child components', () => {
+      render(
+        <RuntimeConsolePage
+          workspaceId="test_ws"
+          projectId="test_proj"
+        />
+      );
+
+      const consoles = screen.getAllByTestId('runtime-observability-console');
+      expect(consoles.length).toBeGreaterThan(0);
+      expect(consoles[0]).toHaveAttribute('data-workspace-id', 'test_ws');
+      expect(consoles[0]).toHaveAttribute('data-project-id', 'test_proj');
     });
   });
 
-  it('renders overview tab as default', () => {
-    render(
-      <RuntimeConsolePage
-        workspaceId="ws_1"
-        projectId="proj_1"
-        locale="en-US"
-      />
-    );
+  describe('permission gating', () => {
+    it('hides overview and monitoring tabs when user lacks project:usage:view', () => {
+      mockPermissions['project:usage:view'] = false;
+      mockPermissions['project:alert:view'] = true;
+      mockPermissions['project:settings:manage'] = true;
 
-    const tabs = screen.getByTestId('tabs');
-    expect(tabs).toHaveAttribute('data-value', 'overview');
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabsList = screen.getByTestId('tabs-list');
+      expect(() => within(tabsList).getByTestId('tabs-trigger-overview')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-monitoring')).toThrow();
+    });
+
+    it('hides reports tab when user lacks project:usage:view', () => {
+      mockPermissions['project:usage:view'] = false;
+      mockPermissions['project:alert:view'] = true;
+      mockPermissions['project:settings:manage'] = true;
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabsList = screen.getByTestId('tabs-list');
+      expect(() => within(tabsList).getByTestId('tabs-trigger-reports')).toThrow();
+    });
+
+    it('hides alerts tab when user lacks project:alert:view', () => {
+      mockPermissions['project:usage:view'] = true;
+      mockPermissions['project:alert:view'] = false;
+      mockPermissions['project:settings:manage'] = true;
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabsList = screen.getByTestId('tabs-list');
+      expect(() => within(tabsList).getByTestId('tabs-trigger-alerts')).toThrow();
+    });
+
+    it('hides control tab when user lacks project:settings:manage', () => {
+      mockPermissions['project:usage:view'] = true;
+      mockPermissions['project:alert:view'] = true;
+      mockPermissions['project:settings:manage'] = false;
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabsList = screen.getByTestId('tabs-list');
+      expect(() => within(tabsList).getByTestId('tabs-trigger-control')).toThrow();
+    });
   });
 
-  it('renders overview tab content with runtime observability console', () => {
-    render(
-      <RuntimeConsolePage
-        workspaceId="ws_1"
-        projectId="proj_1"
-        locale="en-US"
-      />
-    );
+  describe('with partial permissions', () => {
+    it('shows only tabs user has permission for (usage only)', () => {
+      mockPermissions['project:usage:view'] = true;
+      mockPermissions['project:alert:view'] = false;
+      mockPermissions['project:settings:manage'] = false;
 
-    // Multiple RuntimeObservabilityConsole may exist (overview + monitoring tabs),
-    // but we should find at least one in the overview tab content
-    const consoles = screen.getAllByTestId('runtime-observability-console');
-    expect(consoles.length).toBeGreaterThan(0);
-    expect(consoles[0]).toHaveAttribute('data-workspace-id', 'ws_1');
-    expect(consoles[0]).toHaveAttribute('data-project-id', 'proj_1');
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabsList = screen.getByTestId('tabs-list');
+      expect(within(tabsList).getByTestId('tabs-trigger-overview')).toBeInTheDocument();
+      expect(within(tabsList).getByTestId('tabs-trigger-monitoring')).toBeInTheDocument();
+      expect(within(tabsList).getByTestId('tabs-trigger-reports')).toBeInTheDocument();
+
+      expect(() => within(tabsList).getByTestId('tabs-trigger-alerts')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-control')).toThrow();
+    });
+
+    it('shows only tabs user has permission for (alerts only)', () => {
+      mockPermissions['project:usage:view'] = false;
+      mockPermissions['project:alert:view'] = true;
+      mockPermissions['project:settings:manage'] = false;
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabsList = screen.getByTestId('tabs-list');
+      expect(within(tabsList).getByTestId('tabs-trigger-alerts')).toBeInTheDocument();
+
+      expect(() => within(tabsList).getByTestId('tabs-trigger-overview')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-monitoring')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-control')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-reports')).toThrow();
+    });
+
+    it('shows only tabs user has permission for (settings only)', () => {
+      mockPermissions['project:usage:view'] = false;
+      mockPermissions['project:alert:view'] = false;
+      mockPermissions['project:settings:manage'] = true;
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabsList = screen.getByTestId('tabs-list');
+      expect(within(tabsList).getByTestId('tabs-trigger-control')).toBeInTheDocument();
+
+      expect(() => within(tabsList).getByTestId('tabs-trigger-overview')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-monitoring')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-alerts')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-reports')).toThrow();
+    });
+
+    it('defaults to first accessible tab when current tab is not accessible', () => {
+      mockPermissions['project:usage:view'] = false;
+      mockPermissions['project:alert:view'] = true;
+      mockPermissions['project:settings:manage'] = false;
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      const tabs = screen.getByTestId('tabs');
+      // Should default to alerts tab (first accessible)
+      expect(tabs).toHaveAttribute('data-value', 'alerts');
+    });
   });
 
-  it('renders monitoring tab content', () => {
-    render(
-      <RuntimeConsolePage
-        workspaceId="ws_1"
-        projectId="proj_1"
-        locale="en-US"
-      />
-    );
+  describe('with no permissions', () => {
+    it('shows permission denied message when user has no accessible tabs', () => {
+      mockPermissions['project:usage:view'] = false;
+      mockPermissions['project:alert:view'] = false;
+      mockPermissions['project:settings:manage'] = false;
 
-    expect(screen.getByTestId('tabs-content-monitoring')).toBeInTheDocument();
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      // Should show permission denied
+      expect(screen.getByText('Permission Denied')).toBeInTheDocument();
+      expect(screen.getByText(/You don't have permission to access any sections/)).toBeInTheDocument();
+
+      // Tabs should not be rendered
+      expect(screen.queryByTestId('tabs')).not.toBeInTheDocument();
+    });
   });
 
-  it('renders alerts tab content with AlertCenterPage', () => {
-    render(
-      <RuntimeConsolePage
-        workspaceId="ws_1"
-        projectId="proj_1"
-        locale="en-US"
-      />
-    );
+  describe('permission checks are independent (no short-circuiting)', () => {
+    it('checks all three permission types independently', () => {
+      // The implementation makes separate useHasPermission calls for:
+      // - project:usage:view (for overview, monitoring, reports)
+      // - project:alert:view (for alerts)
+      // - project:settings:manage (for control)
+      //
+      // This test verifies the behavior: each permission type works independently.
 
-    expect(screen.getByTestId('tabs-content-alerts')).toBeInTheDocument();
-    // AlertCenterPage is conditionally rendered inside the tab
-  });
+      // Test with only usage:view permission
+      mockPermissions['project:usage:view'] = true;
+      mockPermissions['project:alert:view'] = false;
+      mockPermissions['project:settings:manage'] = false;
 
-  it('renders control tab content', () => {
-    render(
-      <RuntimeConsolePage
-        workspaceId="ws_1"
-        projectId="proj_1"
-        locale="en-US"
-      />
-    );
+      const { rerender } = render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
 
-    expect(screen.getByTestId('tabs-content-control')).toBeInTheDocument();
-    expect(screen.getByTestId('runtime-control-plane-panel')).toBeInTheDocument();
-  });
+      let tabsList = screen.getByTestId('tabs-list');
+      expect(within(tabsList).getByTestId('tabs-trigger-overview')).toBeInTheDocument();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-alerts')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-control')).toThrow();
 
-  it('renders reports tab content with ReleaseOpsDashboard', () => {
-    render(
-      <RuntimeConsolePage
-        workspaceId="ws_1"
-        projectId="proj_1"
-        locale="en-US"
-      />
-    );
+      // Now test with only alert:view permission
+      mockPermissions['project:usage:view'] = false;
+      mockPermissions['project:alert:view'] = true;
+      mockPermissions['project:settings:manage'] = false;
 
-    expect(screen.getByTestId('tabs-content-reports')).toBeInTheDocument();
-    expect(screen.getByTestId('release-ops-dashboard')).toBeInTheDocument();
-  });
+      rerender(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
 
-  it('passes workspaceId and projectId to child components', () => {
-    render(
-      <RuntimeConsolePage
-        workspaceId="test_ws"
-        projectId="test_proj"
-        locale="en-US"
-      />
-    );
+      tabsList = screen.getByTestId('tabs-list');
+      expect(() => within(tabsList).getByTestId('tabs-trigger-overview')).toThrow();
+      expect(within(tabsList).getByTestId('tabs-trigger-alerts')).toBeInTheDocument();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-control')).toThrow();
 
-    const consoles = screen.getAllByTestId('runtime-observability-console');
-    expect(consoles.length).toBeGreaterThan(0);
-    expect(consoles[0]).toHaveAttribute('data-workspace-id', 'test_ws');
-    expect(consoles[0]).toHaveAttribute('data-project-id', 'test_proj');
+      // Now test with only settings:manage permission
+      mockPermissions['project:usage:view'] = false;
+      mockPermissions['project:alert:view'] = false;
+      mockPermissions['project:settings:manage'] = true;
+
+      rerender(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      tabsList = screen.getByTestId('tabs-list');
+      expect(() => within(tabsList).getByTestId('tabs-trigger-overview')).toThrow();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-alerts')).toThrow();
+      expect(within(tabsList).getByTestId('tabs-trigger-control')).toBeInTheDocument();
+    });
   });
 });

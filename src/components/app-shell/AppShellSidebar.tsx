@@ -53,7 +53,8 @@ type ProjectMenuItem = {
     | 'project:member:view'
     | 'project:audit:view'
     | 'project:usage:view'
-    | 'project:settings:manage';
+    | 'project:settings:manage'
+    | 'project:runtime_console:access';
   section: ProjectMenuSection;
 };
 
@@ -75,7 +76,8 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:view', section: 'govern' },
   { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage', section: 'govern' },
   // Operate section
-  { icon: Monitor, labelKey: 'runtime_console', href: 'runtime-console', permission: 'project:settings:manage', section: 'operate' },
+  // Runtime Console is accessible if user has ANY of: usage:view, alert:view, settings:manage
+  { icon: Monitor, labelKey: 'runtime_console', href: 'runtime-console', permission: 'project:runtime_console:access', section: 'operate' },
 ];
 
 const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }> = [
@@ -134,6 +136,10 @@ export function AppShellSidebar({
         if (item.permission === 'project:credential:manage') return canManageCredentials;
         if (item.permission === 'project:member:view') return canViewMembers;
         if (item.permission === 'project:settings:manage') return canManageSettings;
+        // Runtime Console: accessible if user has ANY of usage:view, alert:view, or settings:manage
+        if (item.permission === 'project:runtime_console:access') {
+          return canReadUsage || canViewAlerts || canManageSettings;
+        }
         return true;
       })
     : [];

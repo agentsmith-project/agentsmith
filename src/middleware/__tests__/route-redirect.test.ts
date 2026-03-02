@@ -188,4 +188,106 @@ describe('Route Redirect Logic - WP-03', () => {
       }
     });
   });
+
+  describe('Query Parameter Preservation - Bug Fix', () => {
+    // Simulates the middleware logic for query parameter preservation
+    function buildRedirectWithQuery(
+      pathname: string,
+      searchParams: Record<string, string>,
+    ): string {
+      const match = pathname.match(LEGACY_ROUTE_PATTERN);
+      if (!match) return pathname;
+
+      const [, locale, workspace, project, legacyRoute] = match;
+      const basePath = `/${locale}/workspaces/${workspace}/projects/${project}/runtime-console`;
+      const tab = TAB_MAPPING[legacyRoute];
+
+      // Build URL preserving all original query parameters
+      const queryParams = new URLSearchParams();
+      Object.entries(searchParams).forEach(([key, value]) => {
+        queryParams.set(key, value);
+      });
+
+      // Set tab parameter if mapped
+      if (tab) {
+        queryParams.set('tab', tab);
+      }
+
+      const queryString = queryParams.toString();
+      return queryString ? `${basePath}?${queryString}` : basePath;
+    }
+
+    it('should preserve governance query parameters', () => {
+      const pathname = '/en-US/workspaces/ws1/projects/prj1/release-ops';
+      const searchParams = {
+        'gov_from': 'organization_overview',
+        'gov_kind': 'workspace',
+        'gov_workspace_id': 'ws_default',
+        'gov_project_id': 'proj_001',
+        'gov_reason': 'cost',
+      };
+
+      const result = buildRedirectWithQuery(pathname, searchParams);
+      expect(result).toContain('/runtime-console?');
+      expect(result).toContain('tab=control');
+      expect(result).toContain('gov_from=organization_overview');
+      expect(result).toContain('gov_kind=workspace');
+      expect(result).toContain('gov_reason=cost');
+    });
+
+    it('should preserve filter query parameters', () => {
+      const pathname = '/en-US/workspaces/ws1/projects/prj1/runtime-observability';
+      const searchParams = {
+        'result': 'error',
+        'time_range': '24h',
+        'provider': 'secondaryok',
+      };
+
+      const result = buildRedirectWithQuery(pathname, searchParams);
+      expect(result).toContain('/runtime-console?');
+      expect(result).toContain('tab=monitoring');
+      expect(result).toContain('result=error');
+      expect(result).toContain('time_range=24h');
+      expect(result).toContain('provider=secondaryok');
+    });
+
+    it('should preserve mixed query parameters', () => {
+      const pathname = '/en-US/workspaces/ws1/projects/prj1/alerts';
+      const searchParams = {
+        'gov_context': 'incident_drilldown',
+        'severity': 'critical',
+        'status': 'open',
+      };
+
+      const result = buildRedirectWithQuery(pathname, searchParams);
+      expect(result).toContain('/runtime-console?');
+      expect(result).toContain('tab=alerts');
+      expect(result).toContain('gov_context=incident_drilldown');
+      expect(result).toContain('severity=critical');
+      expect(result).toContain('status=open');
+    });
+
+    it('should handle route without tab mapping but with query params', () => {
+      const pathname = '/en-US/workspaces/ws1/projects/prj1/runtime-control-plane';
+      const searchParams = {
+        'panel': 'advanced',
+        'view': 'json',
+      };
+
+      const result = buildRedirectWithQuery(pathname, searchParams);
+      expect(result).toContain('/runtime-console?');
+      expect(result).toContain('panel=advanced');
+      expect(result).toContain('view=json');
+      // No tab parameter for runtime-control-plane
+      expect(result).not.toContain('tab=');
+    });
+
+    it('should preserve empty query parameters', () => {
+      const pathname = '/en-US/workspaces/ws1/projects/prj1/release-ops';
+      const searchParams = {};
+
+      const result = buildRedirectWithQuery(pathname, searchParams);
+      expect(result).toBe('/en-US/workspaces/ws1/projects/prj1/runtime-console?tab=control');
+    });
+  });
 });

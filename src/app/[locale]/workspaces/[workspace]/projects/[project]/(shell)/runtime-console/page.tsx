@@ -74,7 +74,6 @@ export default function RuntimeConsoleRoute({ params }: RuntimeConsoleRouteProps
       <RuntimeConsolePage
         workspaceId={resolvedParams.workspace}
         projectId={resolvedParams.project}
-        locale={resolvedParams.locale}
       />
     </PageState>
   );

@@ -3,6 +3,14 @@
  *
  * Unified operations console combining runtime observability, alerts, control, and reports.
  * Part of the navigation restructure WP-02.
+ *
+ * **Permission Model**:
+ * Each tab requires specific permission points. Tabs without permissions are hidden.
+ * - Overview: project:usage:view
+ * - Monitoring: project:usage:view
+ * - Alerts: project:alert:view
+ * - Control: project:settings:manage
+ * - Reports: project:usage:view
  */
 
 'use client';
@@ -17,35 +25,80 @@ import { RuntimeObservabilityConsole } from '@/components/runtime/RuntimeObserva
 import { AlertCenterPage } from '@/components/alerts/AlertCenterPage';
 import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { RuntimeControlPlanePanel } from '@/components/settings/RuntimeControlPlanePanel';
-import { cn } from '@/lib/utils';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 export type RuntimeConsoleTab = 'overview' | 'monitoring' | 'alerts' | 'control' | 'reports';
+
+/** Tab configuration with required permissions */
+interface TabConfig {
+  value: RuntimeConsoleTab;
+  labelKey: string;
+  permission: string;
+  testId: string;
+}
+
+/** Tab configurations with their required permissions */
+const TAB_CONFIGS: readonly TabConfig[] = [
+  { value: 'overview', labelKey: 'tabs.overview', permission: 'project:usage:view', testId: 'tabs-trigger-overview' },
+  { value: 'monitoring', labelKey: 'tabs.monitoring', permission: 'project:usage:view', testId: 'tabs-trigger-monitoring' },
+  { value: 'alerts', labelKey: 'tabs.alerts', permission: 'project:alert:view', testId: 'tabs-trigger-alerts' },
+  { value: 'control', labelKey: 'tabs.control', permission: 'project:settings:manage', testId: 'tabs-trigger-control' },
+  { value: 'reports', labelKey: 'tabs.reports', permission: 'project:usage:view', testId: 'tabs-trigger-reports' },
+] as const;
 
 export interface RuntimeConsolePageProps {
   workspaceId: string;
   projectId: string;
-  locale?: string;
 }
 
 export function RuntimeConsolePage({
   workspaceId,
   projectId,
-  locale = 'en-US',
 }: RuntimeConsolePageProps) {
   const t = useTranslations('runtime_console');
-  const commonT = useTranslations('common');
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
 
-  // Read tab from URL query parameter, default to 'overview'
+  // Check permissions for each tab - IMPORTANT: Each permission check is separate
+  // to avoid hook short-circuiting (禁止 hook 短路)
+  const canViewOverview = useHasPermission('project:usage:view');
+  const canViewMonitoring = useHasPermission('project:usage:view');
+  const canViewAlerts = useHasPermission('project:alert:view');
+  const canViewControl = useHasPermission('project:settings:manage');
+  const canViewReports = useHasPermission('project:usage:view');
+
+  // Map of tab permissions
+  const tabPermissions: Record<RuntimeConsoleTab, boolean> = React.useMemo(() => ({
+    overview: canViewOverview,
+    monitoring: canViewMonitoring,
+    alerts: canViewAlerts,
+    control: canViewControl,
+    reports: canViewReports,
+  }), [canViewOverview, canViewMonitoring, canViewAlerts, canViewControl, canViewReports]);
+
+  // Filter tabs to only those user has permission for
+  const accessibleTabs = React.useMemo(() => {
+    return TAB_CONFIGS.filter(tab => tabPermissions[tab.value]);
+  }, [tabPermissions]);
+
+  // Get first accessible tab as fallback
+  const firstAccessibleTab = React.useMemo(() => {
+    return accessibleTabs[0]?.value ?? 'overview';
+  }, [accessibleTabs]);
+
+  // Read tab from URL query parameter, default to first accessible tab
   const [activeTab, setActiveTab] = React.useState<RuntimeConsoleTab>(() => {
     const tabParam = searchParams.get('tab');
     if (tabParam === 'overview' || tabParam === 'monitoring' || tabParam === 'alerts' ||
         tabParam === 'control' || tabParam === 'reports') {
-      return tabParam;
+      const tab = tabParam as RuntimeConsoleTab;
+      // Only allow if user has permission
+      if (tabPermissions[tab]) {
+        return tab;
+      }
     }
-    return 'overview';
+    return firstAccessibleTab;
   });
 
   // Update URL query parameter when tab changes
@@ -66,13 +119,49 @@ export function RuntimeConsolePage({
   }, [searchParams, pathname, router]);
 
   // Sync with URL changes (e.g., browser back/forward)
+  // Also redirect to first accessible tab if current tab is not accessible
   React.useEffect(() => {
     const tabParam = searchParams.get('tab');
-    const validTab = tabParam === 'overview' || tabParam === 'monitoring' ||
-                     tabParam === 'alerts' || tabParam === 'control' ||
-                     tabParam === 'reports' ? tabParam as RuntimeConsoleTab : 'overview';
-    setActiveTab(validTab);
-  }, [searchParams]);
+    let targetTab: RuntimeConsoleTab = 'overview';
+
+    if (tabParam === 'overview' || tabParam === 'monitoring' ||
+        tabParam === 'alerts' || tabParam === 'control' ||
+        tabParam === 'reports') {
+      const requestedTab = tabParam as RuntimeConsoleTab;
+      // If requested tab is accessible, use it; otherwise fall back to first accessible
+      if (tabPermissions[requestedTab]) {
+        targetTab = requestedTab;
+      } else {
+        targetTab = firstAccessibleTab;
+      }
+    } else {
+      targetTab = firstAccessibleTab;
+    }
+
+    setActiveTab(targetTab);
+  }, [searchParams, tabPermissions, firstAccessibleTab]);
+
+  // If user has no accessible tabs, show permission denied
+  if (accessibleTabs.length === 0) {
+    return (
+      <PageLayout
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+          />
+        )}
+      >
+        <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+          <h2 className="text-lg font-semibold text-foreground">Permission Denied</h2>
+          <p className="mt-2 text-sm text-tertiary">
+            You don't have permission to access any sections of the Runtime Console.
+            Required permissions: project:usage:view, project:alert:view, or project:settings:manage
+          </p>
+        </div>
+      </PageLayout>
+    );
+  }
 
   return (
     <PageLayout
@@ -85,45 +174,64 @@ export function RuntimeConsolePage({
     >
       <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1 min-h-0 flex flex-col min-w-0">
         <TabsList className="flex-shrink-0" data-testid="tabs">
-          <TabsTrigger value="overview" data-testid="tabs-trigger-overview">{t('tabs.overview')}</TabsTrigger>
-          <TabsTrigger value="monitoring" data-testid="tabs-trigger-monitoring">{t('tabs.monitoring')}</TabsTrigger>
-          <TabsTrigger value="alerts" data-testid="tabs-trigger-alerts">{t('tabs.alerts')}</TabsTrigger>
-          <TabsTrigger value="control" data-testid="tabs-trigger-control">{t('tabs.control')}</TabsTrigger>
-          <TabsTrigger value="reports" data-testid="tabs-trigger-reports">{t('tabs.reports')}</TabsTrigger>
+          {accessibleTabs.map((tab) => (
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              data-testid={tab.testId}
+            >
+              {t(tab.labelKey)}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
-        <TabsContent value="overview" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-          <RuntimeObservabilityConsole
-            workspaceId={workspaceId}
-            projectId={projectId}
-          />
-        </TabsContent>
+        {/* Overview Tab - requires project:usage:view */}
+        {canViewOverview && (
+          <TabsContent value="overview" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
+            <RuntimeObservabilityConsole
+              workspaceId={workspaceId}
+              projectId={projectId}
+            />
+          </TabsContent>
+        )}
 
-        <TabsContent value="monitoring" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-          <RuntimeObservabilityConsole
-            workspaceId={workspaceId}
-            projectId={projectId}
-          />
-        </TabsContent>
+        {/* Monitoring Tab - requires project:usage:view */}
+        {canViewMonitoring && (
+          <TabsContent value="monitoring" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
+            <RuntimeObservabilityConsole
+              workspaceId={workspaceId}
+              projectId={projectId}
+            />
+          </TabsContent>
+        )}
 
-        <TabsContent value="alerts" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-          <AlertCenterPage
-            workspaceId={workspaceId}
-            projectId={projectId}
-            embedded
-          />
-        </TabsContent>
+        {/* Alerts Tab - requires project:alert:view */}
+        {canViewAlerts && (
+          <TabsContent value="alerts" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
+            <AlertCenterPage
+              workspaceId={workspaceId}
+              projectId={projectId}
+              embedded
+            />
+          </TabsContent>
+        )}
 
-        <TabsContent value="control" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-          <RuntimeControlPlanePanel
-            workspaceId={workspaceId}
-            projectId={projectId}
-          />
-        </TabsContent>
+        {/* Control Tab - requires project:settings:manage */}
+        {canViewControl && (
+          <TabsContent value="control" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
+            <RuntimeControlPlanePanel
+              workspaceId={workspaceId}
+              projectId={projectId}
+            />
+          </TabsContent>
+        )}
 
-        <TabsContent value="reports" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-          <ReleaseOpsDashboard />
-        </TabsContent>
+        {/* Reports Tab - requires project:usage:view */}
+        {canViewReports && (
+          <TabsContent value="reports" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
+            <ReleaseOpsDashboard />
+          </TabsContent>
+        )}
       </Tabs>
     </PageLayout>
   );

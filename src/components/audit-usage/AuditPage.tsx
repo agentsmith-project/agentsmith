@@ -97,6 +97,11 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   const searchParams = useSearchParams();
   const drilldownContext = React.useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);
   const searchParamsKey = searchParams.toString();
+  const traceSource = searchParams.get('trace_source') ?? undefined;
+  const traceRef = searchParams.get('trace_ref') ?? undefined;
+  const traceIncidentId = searchParams.get('trace_incident_id') ?? undefined;
+  const traceEscalationId = searchParams.get('trace_escalation_id') ?? undefined;
+  const traceRunId = searchParams.get('trace_run_id') ?? undefined;
 
   const [filters, setFilters] = React.useState<AuditListParams>(() =>
     buildAuditFiltersFromSearchParams(searchParams, defaultEndUserId),
@@ -279,6 +284,22 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
     >
       {drilldownContext ? (
         <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
+      ) : null}
+      {traceRef ? (
+        <div className="mb-3 rounded-md border border-subtle bg-bg-base/20 p-3" data-testid="audit__trace-context">
+          <p className="text-xs font-medium text-foreground">{commonT('trace_context_title')}</p>
+              <p className="mt-1 text-xs text-tertiary">
+                {commonT('trace_context_summary', {
+                  source: traceSource ?? 'unknown',
+                  ref: traceRef,
+                })}
+              </p>
+          <p className="mt-1 text-xs text-tertiary">
+            {traceIncidentId ? `incident=${traceIncidentId}` : null}
+            {traceEscalationId ? ` · escalation=${traceEscalationId}` : null}
+            {traceRunId ? ` · run=${traceRunId}` : null}
+          </p>
+        </div>
       ) : null}
       <div data-testid="audit__filters">
         <AuditFilters

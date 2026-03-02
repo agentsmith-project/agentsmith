@@ -81,6 +81,11 @@ export function UsagePage({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const traceSource = searchParams.get('trace_source') ?? undefined;
+  const traceRef = searchParams.get('trace_ref') ?? undefined;
+  const traceIncidentId = searchParams.get('trace_incident_id') ?? undefined;
+  const traceEscalationId = searchParams.get('trace_escalation_id') ?? undefined;
+  const traceRunId = searchParams.get('trace_run_id') ?? undefined;
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:usage:view');
   const canExportUsage = useHasPermission('project:usage:export');
@@ -523,6 +528,22 @@ export function UsagePage({
         />
       ) : (
         <div className="w-full space-y-3 min-h-0 flex-1 flex flex-col">
+          {traceRef ? (
+            <div className="rounded-md border border-subtle bg-bg-base/20 p-3" data-testid="usage__trace-context">
+              <p className="text-xs font-medium text-foreground">{commonT('trace_context_title')}</p>
+              <p className="mt-1 text-xs text-tertiary">
+                {commonT('trace_context_summary', {
+                  source: traceSource ?? 'unknown',
+                  ref: traceRef,
+                })}
+              </p>
+              <p className="mt-1 text-xs text-tertiary">
+                {traceIncidentId ? `incident=${traceIncidentId}` : null}
+                {traceEscalationId ? ` · escalation=${traceEscalationId}` : null}
+                {traceRunId ? ` · run=${traceRunId}` : null}
+              </p>
+            </div>
+          ) : null}
           <UsageKPICards kpi={kpiData} loading={kpiLoading} />
 
           <div data-testid="usage__filters">

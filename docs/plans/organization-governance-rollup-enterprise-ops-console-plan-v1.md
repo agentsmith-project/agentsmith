@@ -202,6 +202,7 @@
 15. `WP-04` 第二阶段推进：release-ops 页面已接入 governance evidence bridge，基于实时 runtime/usage/run/escalation 数据聚合 cost/deny/quota 焦点指标，用于治理入口后的即时判定
 16. `WP-04` 第二阶段推进：governance evidence bridge 已增加 trace 条目（usage blocker/warning + open escalation）用于 operator 级证据追踪，减少“只有汇总无证据”的验收风险
 17. `WP-04` 第二阶段推进：trace 条目已打通到 usage/audit 过滤视图；Audit 页面新增 URL 过滤参数恢复能力，确保从治理下钻进入后可直接看到一致证据窗口
+18. `WP-04` 第二阶段推进：trace 下钻链路已透传 `incident/escalation/run` 引用，并在 audit/usage 页面显示 trace context，强化 operator 对证据链来源的一致认知
 
 待完成：
 

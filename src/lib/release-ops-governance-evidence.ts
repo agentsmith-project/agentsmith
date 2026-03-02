@@ -28,6 +28,9 @@ export interface ReleaseOpsGovernanceEvidenceSnapshot {
     severity: 'blocked' | 'warning';
     message: string;
     timestamp?: string;
+    incidentId?: string;
+    escalationId?: string;
+    runId?: string;
   }>;
 }
 
@@ -109,6 +112,9 @@ export function buildReleaseOpsGovernanceEvidenceSnapshot(args: {
           severity: item.severity === 'critical' ? 'blocked' as const : 'warning' as const,
           message: item.title,
           timestamp: item.created_at,
+          incidentId: item.incident_id,
+          escalationId: item.id,
+          runId: item.run_id,
         })),
     ],
   };

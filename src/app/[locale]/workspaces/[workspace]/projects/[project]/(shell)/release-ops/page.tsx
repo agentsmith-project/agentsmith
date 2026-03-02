@@ -865,7 +865,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                             locale,
                             workspaceId,
                             projectId,
-                            source: item.source,
+                            trace: item,
                             sharedFilters: traceSharedFilters,
                             governanceQuery,
                           })}
@@ -2044,7 +2044,13 @@ function buildTraceDetailHref(args: {
   locale: string;
   workspaceId: string;
   projectId: string;
-  source: 'usage_blocker' | 'usage_warning' | 'escalation';
+  trace: {
+    id: string;
+    source: 'usage_blocker' | 'usage_warning' | 'escalation';
+    incidentId?: string;
+    escalationId?: string;
+    runId?: string;
+  };
   sharedFilters: {
     start_time: string;
     end_time: string;
@@ -2052,12 +2058,19 @@ function buildTraceDetailHref(args: {
   };
   governanceQuery: string;
 }): string {
+  const traceExtras = {
+    trace_source: args.trace.source,
+    trace_ref: args.trace.id,
+    trace_incident_id: args.trace.incidentId,
+    trace_escalation_id: args.trace.escalationId,
+    trace_run_id: args.trace.runId,
+  };
   const sharedQuery =
-    args.source === 'escalation'
-      ? buildSharedOpsFilterQuery(args.sharedFilters)
-      : buildSharedOpsFilterQuery(args.sharedFilters, { panel: 'usage' });
+    args.trace.source === 'escalation'
+      ? buildSharedOpsFilterQuery(args.sharedFilters, traceExtras)
+      : buildSharedOpsFilterQuery(args.sharedFilters, { panel: 'usage', ...traceExtras });
   const mergedQuery = mergeQueryStrings(sharedQuery, args.governanceQuery);
-  if (args.source === 'escalation') {
+  if (args.trace.source === 'escalation') {
     return `/${args.locale}/workspaces/${args.workspaceId}/projects/${args.projectId}/audit${mergedQuery}`;
   }
   return `/${args.locale}/workspaces/${args.workspaceId}/projects/${args.projectId}/usage${mergedQuery}`;

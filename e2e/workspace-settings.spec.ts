@@ -42,6 +42,14 @@ test.describe('Workspace Settings Page', () => {
     await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('ws-settings__project-open-resource-policy--proj_001')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('ws-settings__project-open-release-ops--proj_001')).toHaveAttribute(
+      'href',
+      /\/release-ops\?/,
+    );
+    await expect(authedPage.getByTestId('ws-settings__project-open-release-ops--proj_001')).toHaveAttribute(
+      'href',
+      /gov_from=workspace_settings/,
+    );
   });
 
   test('should display governance attention feed', async ({ authedPage }) => {
@@ -51,6 +59,22 @@ test.describe('Workspace Settings Page', () => {
   test('should display governance explainability summary', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('ws-settings__governance-explainability')).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('ws-settings__explain-open-blocked-project-audit')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('ws-settings__explain-open-blocked-project-release-ops')).toHaveAttribute(
+      'href',
+      /\/release-ops\?/,
+    );
+    await expect(authedPage.getByTestId('ws-settings__explain-open-blocked-project-release-ops')).toHaveAttribute(
+      'href',
+      /gov_reason=blocked_projects_release_readiness/,
+    );
+  });
+
+  test('should expose release-ops shortcut in governance attention feed', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('ws-settings__governance-attention')).toBeVisible({ timeout: 10000 });
+    const link = authedPage.getByTestId('ws-settings__attention-open-release-ops--project--proj_001');
+    await expect(link).toBeVisible({ timeout: 10000 });
+    await expect(link).toHaveAttribute('href', /\/release-ops\?/);
+    await expect(link).toHaveAttribute('href', /gov_from=workspace_settings/);
   });
 
   test('should display workspace members from mock data', async ({ authedPage }) => {

@@ -667,6 +667,96 @@ describe('verify-release-report: TDD Suite', () => {
       expect(report.summary?.status).toBe('fail');
       expect(report.summary?.recommendations?.some((item) => item.includes('organization_governance_drilldown_chain_missing'))).toBe(true);
     });
+
+    it('should assert organization-level issue source and overridable in release_policy summary', () => {
+      // RED Phase: This test ensures organization-level issues have correct metadata
+      // This prevents integration drift when connecting organization evidence to release_policy
+      const organizationEvidencePath = join(OUTPUT_DIR, 'organization-governance-evidence-blocked-for-release-policy.json');
+      const organizationEvidence = {
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['organization_compliance_hard_fail', 'organization_critical_escalation_unassigned'],
+        warnings: ['organization_pending_action'],
+        checks: {
+          org_overview_summary: true,
+          workspace_matrix: true,
+          actions_queue_execution: true,
+          evidence_drilldown_chain: false,
+        },
+      };
+      mkdirSync(OUTPUT_DIR, { recursive: true });
+      writeFileSync(organizationEvidencePath, JSON.stringify(organizationEvidence), 'utf-8');
+
+      runScript([
+        '--output', OUTPUT_DIR,
+        '--name', 'report-test',
+        '--dry-run',
+        '--organization-governance-evidence', organizationEvidencePath,
+      ]);
+
+      const report = readJsonReport(OUTPUT_DIR, 'report-test') as {
+        summary?: {
+          status?: string;
+          release_policy?: {
+            decision?: string;
+            blockers?: Array<{
+              id?: string;
+              severity?: string;
+              source?: string;
+              message?: string;
+              overridable?: boolean;
+            }>;
+            warnings?: Array<{
+              id?: string;
+              severity?: string;
+              source?: string;
+              message?: string;
+              overridable?: boolean;
+            }>;
+          };
+        };
+      };
+
+      // Assert: Organization-level blockers should have source='organization_governance' and overridable=false
+      expect(report.summary?.release_policy?.blockers).toBeDefined();
+
+      // Find organization governance blockers
+      const orgBlockers = report.summary.release_policy.blockers.filter(
+        (b) => b.source === 'organization_governance'
+      );
+
+      // Should have at least one organization governance blocker
+      expect(orgBlockers.length).toBeGreaterThan(0);
+
+      // All organization governance blockers must have overridable=false (hard fail)
+      orgBlockers.forEach((blocker) => {
+        expect(blocker.source).toBe('organization_governance');
+        expect(blocker.overridable).toBe(false);
+        expect(blocker.severity).toBe('blocker');
+      });
+
+      // Check for specific organization blockers
+      const complianceBlocker = orgBlockers.find((b) => b.id === 'organization_compliance_hard_fail');
+      expect(complianceBlocker?.overridable).toBe(false);
+      expect(complianceBlocker?.source).toBe('organization_governance');
+
+      const escalationBlocker = orgBlockers.find((b) => b.id === 'organization_critical_escalation_unassigned');
+      expect(escalationBlocker?.overridable).toBe(false);
+      expect(escalationBlocker?.source).toBe('organization_governance');
+
+      // Organization warnings should also have source='organization_governance' and overridable=false
+      const orgWarnings = report.summary.release_policy.warnings?.filter(
+        (w) => w.source === 'organization_governance'
+      ) ?? [];
+      if (orgWarnings.length > 0) {
+        orgWarnings.forEach((warning) => {
+          expect(warning.source).toBe('organization_governance');
+          expect(warning.overridable).toBe(false); // Organization warnings are also not overridable
+          expect(warning.severity).toBe('warning');
+        });
+      }
+    });
   });
 
   describe('RED Phase 4: Markdown Report', () => {

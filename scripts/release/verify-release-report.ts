@@ -939,23 +939,37 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
         run_count: usageReportEvidence.runner_health.run_count,
       } : undefined,
     } : undefined,
-    governance: governanceEvidence || workspaceGovernanceEvidence || organizationGovernanceEvidence ? {
+    governance: governanceEvidence || workspaceGovernanceEvidence ? {
       release_readiness:
         governanceEvidence?.release_readiness === 'blocked'
         || workspaceGovernanceEvidence?.release_readiness === 'blocked'
-        || organizationGovernanceEvidence?.release_readiness === 'blocked'
           ? 'blocked'
           : 'ready',
       blockers: [
         ...(governanceEvidence?.blockers ?? []),
         ...(workspaceGovernanceEvidence?.blockers ?? []),
-        ...(organizationGovernanceEvidence?.blockers ?? []),
       ],
       warnings: [
         ...(governanceEvidence?.warnings ?? []),
         ...(workspaceGovernanceEvidence?.warnings ?? []),
-        ...(organizationGovernanceEvidence?.warnings ?? []),
       ],
+    } : undefined,
+    organization: organizationGovernanceEvidence ? {
+      release_readiness: organizationGovernanceEvidence.release_readiness,
+      blockers: organizationGovernanceEvidence.blockers.map((id) => ({
+        id,
+        message: id,
+        severity: 'blocker' as const,
+        source: 'organization_governance' as const,
+        overridable: false,
+      })),
+      warnings: organizationGovernanceEvidence.warnings.map((id) => ({
+        id,
+        message: id,
+        severity: 'warning' as const,
+        source: 'organization_governance' as const,
+        overridable: false,
+      })),
     } : undefined,
     build: buildReliabilityEvidence ? {
       release_readiness: buildReliabilityEvidence.release_readiness,

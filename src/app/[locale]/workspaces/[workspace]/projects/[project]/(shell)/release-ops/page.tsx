@@ -535,6 +535,21 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const runPassRate = recentReleaseRuns.length > 0
     ? recentReleaseRuns.filter((item) => item.status === 'pass').length / recentReleaseRuns.length
     : undefined;
+
+  // Extract organization governance evidence from report for live policy comparison
+  const organizationEvidence = useMemo(() => {
+    const report = reportDetailQuery.data?.report as {
+      summary?: {
+        organization_governance_evidence?: {
+          release_readiness?: 'ready' | 'blocked';
+          blockers?: string[];
+          warnings?: string[];
+        };
+      };
+    } | undefined;
+    return report?.summary?.organization_governance_evidence;
+  }, [reportDetailQuery.data?.report]);
+
   const livePolicy = evaluateReleasePolicy({
     runtime: runtimeQuery.data ? {
       release_readiness: currentRuntimeReadiness === 'ready' ? 'ready' : 'blocked',
@@ -563,6 +578,23 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       due_soon: releaseEscalations.filter((item) =>
         item.status !== 'resolved' && item.sla_status === 'due_soon').length,
     },
+    organization: organizationEvidence ? {
+      release_readiness: organizationEvidence.release_readiness,
+      blockers: (organizationEvidence.blockers ?? []).map((id) => ({
+        id,
+        message: id,
+        severity: 'blocker' as const,
+        source: 'organization_governance' as const,
+        overridable: false,
+      })),
+      warnings: (organizationEvidence.warnings ?? []).map((id) => ({
+        id,
+        message: id,
+        severity: 'warning' as const,
+        source: 'organization_governance' as const,
+        overridable: false,
+      })),
+    } : undefined,
   });
   const artifactPolicy = reportSummary?.release_policy;
   const artifactPolicyEnforcement = reportDetailQuery.data?.policy_enforcement;

@@ -68,6 +68,36 @@ export default function WorkspacesOverviewPage() {
     }
     return actionsWithState.find((action) => action.id === selectedActionId) ?? actionsWithState[0] ?? null;
   }, [actionsWithState, selectedActionId]);
+  const selectedActionEvidence = useMemo(() => {
+    if (!orgRollup.rollup || !selectedAction) {
+      return null;
+    }
+
+    const workspaceSnapshot = orgRollup.rollup.workspaceRanking.find(
+      (item) => item.workspaceId === selectedAction.workspaceId,
+    );
+    const relatedAttention = orgRollup.rollup.attention.filter((item) => {
+      if (item.workspaceId !== selectedAction.workspaceId) {
+        return false;
+      }
+      if (selectedAction.projectId && item.projectId === selectedAction.projectId) {
+        return true;
+      }
+      if (selectedAction.memberId && item.memberId === selectedAction.memberId) {
+        return true;
+      }
+      return !selectedAction.projectId && !selectedAction.memberId;
+    });
+
+    return {
+      workspaceSnapshot,
+      relatedAttention,
+      blockedSignals: relatedAttention.filter((item) => item.severity === 'blocked').length,
+      warningSignals: relatedAttention.filter((item) => item.severity === 'warning').length,
+      projectSignals: relatedAttention.filter((item) => item.kind === 'project').length,
+      memberSignals: relatedAttention.filter((item) => item.kind === 'member').length,
+    };
+  }, [orgRollup.rollup, selectedAction]);
 
   return (
     <PageState state="success">
@@ -429,6 +459,88 @@ export default function WorkspacesOverviewPage() {
                       <p className="text-sm font-medium text-foreground">{selectedAction.workspaceName}</p>
                       <p className="text-xs text-tertiary">{t(`org_overview_action_type_${selectedAction.actionType}`)}</p>
                       <p className="text-xs text-tertiary">{selectedAction.description || t('org_overview_action_explain_reason_fallback')}</p>
+                      {selectedActionEvidence ? (
+                        <div
+                          className="rounded-sm border border-subtle bg-bg-base/20 p-3"
+                          data-testid="workspace-overview__action-explain-evidence"
+                        >
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-tertiary">
+                            {t('org_overview_action_explain_evidence_title')}
+                          </p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            <EvidenceMetric
+                              testId="workspace-overview__action-explain-metric-related-signals"
+                              label={t('org_overview_action_explain_related_signals')}
+                              value={selectedActionEvidence.relatedAttention.length}
+                            />
+                            <EvidenceMetric
+                              testId="workspace-overview__action-explain-metric-blocked-signals"
+                              label={t('org_overview_action_explain_blocked_signals')}
+                              value={selectedActionEvidence.blockedSignals}
+                            />
+                            <EvidenceMetric
+                              testId="workspace-overview__action-explain-metric-warning-signals"
+                              label={t('org_overview_action_explain_warning_signals')}
+                              value={selectedActionEvidence.warningSignals}
+                            />
+                            <EvidenceMetric
+                              testId="workspace-overview__action-explain-metric-project-signals"
+                              label={t('org_overview_action_explain_project_signals')}
+                              value={selectedActionEvidence.projectSignals}
+                            />
+                          </div>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            <EvidenceMetric
+                              testId="workspace-overview__action-explain-metric-member-signals"
+                              label={t('org_overview_action_explain_member_signals')}
+                              value={selectedActionEvidence.memberSignals}
+                            />
+                            <EvidenceMetric
+                              testId="workspace-overview__action-explain-metric-workspace-risk-score"
+                              label={t('org_overview_risk_score')}
+                              value={selectedActionEvidence.workspaceSnapshot?.riskScore ?? 0}
+                            />
+                            <EvidenceMetric
+                              testId="workspace-overview__action-explain-metric-workspace-blocked-items"
+                              label={t('org_overview_action_explain_workspace_blocked_items')}
+                              value={selectedActionEvidence.workspaceSnapshot?.blockedItems ?? 0}
+                            />
+                            <EvidenceMetric
+                              testId="workspace-overview__action-explain-metric-workspace-warning-items"
+                              label={t('org_overview_action_explain_workspace_warning_items')}
+                              value={selectedActionEvidence.workspaceSnapshot?.warningItems ?? 0}
+                            />
+                          </div>
+                          <p className="mt-2 text-xs text-tertiary">
+                            {t('org_overview_action_explain_workspace_risky_projects', {
+                              count: selectedActionEvidence.workspaceSnapshot?.riskyProjects ?? 0,
+                            })}
+                          </p>
+                          {selectedAction.projectId &&
+                          selectedActionEvidence.workspaceSnapshot?.topRiskProjectId === selectedAction.projectId ? (
+                            <p className="text-xs text-tertiary">{t('org_overview_action_explain_top_risk_project')}</p>
+                          ) : null}
+                          {selectedActionEvidence.relatedAttention.length > 0 ? (
+                            <div className="mt-2 space-y-1">
+                              <p className="text-[11px] uppercase tracking-[0.12em] text-tertiary">
+                                {t('org_overview_action_explain_related_feed_title')}
+                              </p>
+                              {selectedActionEvidence.relatedAttention.slice(0, 3).map((item) => {
+                                const itemIdForTest = item.id.replace(/:/g, '--');
+                                return (
+                                  <p
+                                    key={item.id}
+                                    className="text-xs text-tertiary"
+                                    data-testid={`workspace-overview__action-explain-related-item--${itemIdForTest}`}
+                                  >
+                                    {item.title} · {item.description}
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <div className="flex flex-wrap gap-2 pt-1">
                         <Link
                           href={`/${locale}/workspaces/${selectedAction.workspaceId}/settings`}
@@ -495,6 +607,15 @@ function MetricCard({ label, value }: { label: string; value: number }) {
     <div className="rounded-md border border-subtle bg-surface p-3">
       <p className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{label}</p>
       <p className="mt-1 text-lg font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function EvidenceMetric({ label, value, testId }: { label: string; value: number; testId: string }) {
+  return (
+    <div className="rounded-sm border border-subtle bg-surface px-2.5 py-2" data-testid={testId}>
+      <p className="text-[11px] uppercase tracking-[0.1em] text-tertiary">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold text-foreground">{value}</p>
     </div>
   );
 }

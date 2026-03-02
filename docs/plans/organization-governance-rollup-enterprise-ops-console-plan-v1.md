@@ -195,12 +195,12 @@
 8. `WP-03` 第二阶段推进：已接入 organization-actions 内部 API 合约与 Mock 路由，形成“服务端优先 + 本地镜像”状态同步
 9. `WP-04` 第一阶段已启动：建立 organization drill-down query contract，并在 overview -> audit/members/resource-policy 路径注入上下文
 10. `WP-04` 第一阶段推进：release-ops 页面已接入 drill-down 上下文提示，形成 organization -> release governance 连续链路
-11. `WP-04` 第二阶段已启动：organization overview 增加 action explain panel，聚合动作解释与证据跳转入口
+11. `WP-04` 第二阶段推进：organization overview action explain panel 已补齐 evidence summary（相关信号/阻塞预警分布/工作区风险快照）与证据条目聚合
 
 待完成：
 
 1. `WP-01` 第二阶段：与 workspace settings / release readiness 建立更强联动
 2. `WP-02` 第二阶段：矩阵排序与批量动作预览
 3. `WP-03` 第二阶段：接入真实后端 organization-actions 持久化与审计归档
-4. `WP-04` 第二阶段：action 到 policy/member/quota 证据面板与证据摘要（成本/拒绝/限额）闭环
+4. `WP-04` 第二阶段：补齐 action 到 policy/member/quota 的跨页面证据携带与成本/拒绝/限额证据闭环
 5. `WP-05` 组织级 release evidence 与 gate 集成

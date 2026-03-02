@@ -125,6 +125,12 @@ describe('WorkspacesOverviewPage', () => {
     render(<WorkspacesOverviewPage />);
     fireEvent.click(screen.getByTestId('workspace-overview__actions-queue-open-explain--action--ws_1--project--proj_1'));
 
+    expect(screen.getByTestId('workspace-overview__action-explain-evidence')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__action-explain-metric-related-signals')).toHaveTextContent('1');
+    expect(screen.getByTestId('workspace-overview__action-explain-metric-workspace-risk-score')).toHaveTextContent('20');
+    expect(
+      screen.getByTestId('workspace-overview__action-explain-related-item--ws_1--project--proj_1'),
+    ).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__action-explain-open-audit')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__action-explain-open-policy')).toBeInTheDocument();
   });

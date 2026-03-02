@@ -477,7 +477,13 @@
       "trace_stats_duration": "Duration: {value}",
       "trace_stats_warnings": "{count, plural, one {# warning} other {# warnings}}",
       "trace_stats_errors": "{count, plural, one {# error} other {# errors}}",
-      "trace_stats_truncated": "Showing latest slice"
+      "trace_stats_truncated": "Showing latest slice",
+      "trace_transport_title": "Transport recovery",
+      "trace_transport_kind_gap_fill": "SSE replay",
+      "trace_transport_kind_reconcile": "Trace reconcile",
+      "trace_transport_phase_start": "running",
+      "trace_transport_phase_done": "completed",
+      "trace_transport_phase_error": "failed"
     },
     "artifacts": {
       "title": "Artifacts",

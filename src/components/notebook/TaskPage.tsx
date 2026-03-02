@@ -76,9 +76,6 @@ export function TaskPage({
   const [traceLoadMoreLoadingByMessageId, setTraceLoadMoreLoadingByMessageId] = React.useState<Record<string, boolean>>({});
   const [sseDebugEvents, setSseDebugEvents] = React.useState<TaskSSEDebugEvent[]>([]);
   const [traceBackfillRefreshNonce, setTraceBackfillRefreshNonce] = React.useState(0);
-  const appendSseDebugEvent = React.useCallback((event: TaskSSEDebugEvent) => {
-    setSseDebugEvents((prev) => [...prev.slice(-4), event]);
-  }, []);
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
@@ -104,6 +101,7 @@ export function TaskPage({
     setIsAgentTurnRunning(false);
   }, []);
   const lastTraceEventIdRef = React.useRef<string | null>(null);
+  const syntheticTraceSeqRef = React.useRef(1_000_000);
 
   const mergeTraceEvents = React.useCallback((items: TaskTraceEvent[]) => {
     if (items.length === 0) return;
@@ -123,6 +121,60 @@ export function TaskPage({
       return changed ? next : prev;
     });
   }, []);
+
+  const activeTraceMessageId = React.useMemo(() => {
+    if (streamingMessageId) return streamingMessageId;
+    const latestAgentMessage = [...(messages ?? [])].reverse().find((message) => message.role === 'agent');
+    return latestAgentMessage?.id ?? null;
+  }, [messages, streamingMessageId]);
+
+  const appendSseDebugEvent = React.useCallback((event: TaskSSEDebugEvent, messageId?: string | null) => {
+    setSseDebugEvents((prev) => [...prev.slice(-4), event]);
+
+    const targetMessageId = messageId ?? activeTraceMessageId;
+    if (!targetMessageId) return;
+
+    const buildTransportTraceEvent = (
+      transportKind: 'gap_fill' | 'reconcile',
+      transportPhase: 'start' | 'done' | 'error',
+    ): TaskTraceEvent => ({
+      id: `transport:${transportKind}:${transportPhase}:${event.at}:${targetMessageId}`,
+      task_id: taskId,
+      message_id: targetMessageId,
+      run_id: 'transport',
+      seq: syntheticTraceSeqRef.current++,
+      at: event.at,
+      category: 'debug',
+      phase: transportPhase === 'start' ? 'start' : 'end',
+      status:
+        transportPhase === 'start'
+          ? 'running'
+          : transportPhase === 'done'
+            ? 'success'
+            : 'error',
+      name: `transport.${transportKind}`,
+      summary: event.summary,
+      details: {
+        transport_kind: transportKind,
+        transport_phase: transportPhase,
+        debug_phase: event.phase,
+      },
+    });
+
+    if (event.phase === 'trace_gap_fill_start') {
+      mergeTraceEvents([buildTransportTraceEvent('gap_fill', 'start')]);
+    } else if (event.phase === 'trace_gap_fill_done') {
+      mergeTraceEvents([buildTransportTraceEvent('gap_fill', 'done')]);
+    } else if (event.phase === 'trace_gap_fill_error') {
+      mergeTraceEvents([buildTransportTraceEvent('gap_fill', 'error')]);
+    } else if (event.phase === 'trace_reconcile_start') {
+      mergeTraceEvents([buildTransportTraceEvent('reconcile', 'start')]);
+    } else if (event.phase === 'trace_reconcile_done') {
+      mergeTraceEvents([buildTransportTraceEvent('reconcile', 'done')]);
+    } else if (event.phase === 'trace_reconcile_error') {
+      mergeTraceEvents([buildTransportTraceEvent('reconcile', 'error')]);
+    }
+  }, [activeTraceMessageId, mergeTraceEvents, taskId]);
 
   const fetchTracesForMessage = React.useCallback(async (messageId: string) => {
     if (!messageId) return;
@@ -279,9 +331,7 @@ export function TaskPage({
       setTaskUpdateCountForCurrentTurn(0);
       resetCurrentRunUiState();
     },
-    onDebug: isDev
-      ? appendSseDebugEvent
-      : undefined,
+    onDebug: appendSseDebugEvent,
     enabled: !!taskId && !taskLoading,
   });
 
@@ -294,13 +344,11 @@ export function TaskPage({
     if (prev === 'reconnecting' || prev === 'error' || prev === 'disconnected') {
       const afterId = lastTraceEventIdRef.current;
       if (!afterId) {
-        if (isDev) {
-          appendSseDebugEvent({
-            at: new Date().toISOString(),
-            phase: 'trace_gap_fill_start',
-            summary: 'mode=refetch after_id=none',
-          });
-        }
+        appendSseDebugEvent({
+          at: new Date().toISOString(),
+          phase: 'trace_reconcile_start',
+          summary: 'mode=refetch after_id=none',
+        });
         traceBackfillRequestedMessageIdsRef.current.clear();
         setTraceMetaByMessageId({});
         setTraceLoadingByMessageId({});
@@ -309,37 +357,31 @@ export function TaskPage({
         return;
       }
       // Refill only missing trace tail after reconnect to reduce payload size for long tasks.
-      if (isDev) {
-        appendSseDebugEvent({
-          at: new Date().toISOString(),
-          phase: 'trace_gap_fill_start',
-          summary: `mode=after_id after_id=${afterId}`,
-        });
-      }
+      appendSseDebugEvent({
+        at: new Date().toISOString(),
+        phase: 'trace_reconcile_start',
+        summary: `mode=after_id after_id=${afterId}`,
+      });
       void taskAPI.listTraces(workspaceId, projectId, taskId, {
         after_id: afterId,
         page_size: 500,
       }).then((resp) => {
-        if (isDev) {
-          appendSseDebugEvent({
-            at: new Date().toISOString(),
-            phase: 'trace_gap_fill_done',
-            summary: `items=${resp.items.length}`,
-          });
-        }
+        appendSseDebugEvent({
+          at: new Date().toISOString(),
+          phase: 'trace_reconcile_done',
+          summary: `items=${resp.items.length}`,
+        });
         mergeTraceEvents(resp.items);
       }).catch((err) => {
-        if (isDev) {
-          appendSseDebugEvent({
-            at: new Date().toISOString(),
-            phase: 'trace_gap_fill_error',
-            summary: 'task_traces_gap_fill_failed',
-          });
-        }
+        appendSseDebugEvent({
+          at: new Date().toISOString(),
+          phase: 'trace_reconcile_error',
+          summary: 'task_traces_reconcile_failed',
+        });
         handleError(err, { logContext: 'TaskPage.traceGapFill' });
       });
     }
-  }, [appendSseDebugEvent, connectionStatus, handleError, isDev, mergeTraceEvents, projectId, taskAPI, taskId, workspaceId]);
+  }, [appendSseDebugEvent, connectionStatus, handleError, mergeTraceEvents, projectId, taskAPI, taskId, workspaceId]);
 
   const handleSendMessage = async (content: string) => {
     try {

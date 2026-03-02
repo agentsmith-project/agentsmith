@@ -28,7 +28,10 @@ export interface TaskSSEDebugEvent {
     | 'disconnect'
     | 'trace_gap_fill_start'
     | 'trace_gap_fill_done'
-    | 'trace_gap_fill_error';
+    | 'trace_gap_fill_error'
+    | 'trace_reconcile_start'
+    | 'trace_reconcile_done'
+    | 'trace_reconcile_error';
   summary: string;
 }
 

@@ -40,6 +40,8 @@ type TraceStep = {
 
 type TraceViewMode = 'timeline' | 'raw';
 type TraceFilterMode = 'all' | 'progress' | 'tool' | 'alerts' | 'debug';
+type TransportTraceKind = 'gap_fill' | 'reconcile';
+type TransportTracePhase = 'start' | 'done' | 'error';
 
 function matchesTraceFilter(evt: TaskTraceEvent, mode: TraceFilterMode): boolean {
   switch (mode) {
@@ -56,6 +58,22 @@ function matchesTraceFilter(evt: TaskTraceEvent, mode: TraceFilterMode): boolean
     default:
       return true;
   }
+}
+
+function getTransportTraceMeta(evt: TaskTraceEvent): {
+  kind: TransportTraceKind;
+  phase: TransportTracePhase;
+} | null {
+  if (evt.category !== 'debug' || !evt.details) return null;
+  const transportKind = evt.details.transport_kind;
+  const transportPhase = evt.details.transport_phase;
+  if (
+    (transportKind === 'gap_fill' || transportKind === 'reconcile') &&
+    (transportPhase === 'start' || transportPhase === 'done' || transportPhase === 'error')
+  ) {
+    return { kind: transportKind, phase: transportPhase };
+  }
+  return null;
 }
 
 function splitConcatenatedJsonObjects(input: string): string[] {
@@ -296,6 +314,10 @@ export function MessageItem({
     () => sortedTraceEvents.filter((evt) => matchesTraceFilter(evt, traceFilterMode)),
     [sortedTraceEvents, traceFilterMode],
   );
+  const transportTraceEvents = React.useMemo(
+    () => sortedTraceEvents.filter((evt) => getTransportTraceMeta(evt) != null),
+    [sortedTraceEvents],
+  );
   const traceSteps = React.useMemo(() => aggregateTraceSteps(filteredTraceEvents), [filteredTraceEvents]);
   const traceErrorCount = React.useMemo(
     () => filteredTraceEvents.filter((evt) => evt.category === 'error').length,
@@ -470,6 +492,41 @@ export function MessageItem({
                     <span>{tNotebookConversation('trace_stats_truncated')}</span>
                   ) : null}
                 </div>
+                {traceViewMode === 'timeline' && transportTraceEvents.length > 0 ? (
+                  <div className="rounded-md border border-subtle/70 bg-background/50 p-2" data-testid="notebook__message-trace-transport">
+                    <div className="mb-2 text-[11px] uppercase tracking-wide text-tertiary">
+                      {tNotebookConversation('trace_transport_title')}
+                    </div>
+                    <div className="space-y-2">
+                      {transportTraceEvents.map((evt) => {
+                        const transportMeta = getTransportTraceMeta(evt)!;
+                        const phaseClass = transportMeta.phase === 'done'
+                          ? 'text-green-300'
+                          : transportMeta.phase === 'error'
+                            ? 'text-red-300'
+                            : 'text-blue-300';
+                        return (
+                          <div
+                            key={evt.id}
+                            className="flex flex-wrap items-center gap-2 text-xs"
+                            data-testid="notebook__message-trace-transport-item"
+                          >
+                            <span className="text-tertiary">
+                              {new Date(evt.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </span>
+                            <span className="text-primary">
+                              {tNotebookConversation(`trace_transport_kind_${transportMeta.kind}`)}
+                            </span>
+                            <span className={phaseClass}>
+                              {tNotebookConversation(`trace_transport_phase_${transportMeta.phase}`)}
+                            </span>
+                            <span className="text-tertiary">{evt.summary}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap items-center justify-between gap-2" data-testid="notebook__message-trace-toolbar">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="inline-flex items-center rounded-md border border-subtle bg-background/50 p-0.5">

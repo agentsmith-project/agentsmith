@@ -413,6 +413,58 @@ describe('MessageItem', () => {
       expect(stats).toHaveTextContent(/trace_stats_truncated/);
     });
 
+    it('surfaces transport recovery phases in timeline view', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'transport_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'transport',
+              seq: 1000001,
+              at: '2024-01-01T14:31:00Z',
+              category: 'debug',
+              phase: 'start',
+              status: 'running',
+              name: 'transport.gap_fill',
+              summary: 'last_event_id=evt-42',
+              details: {
+                transport_kind: 'gap_fill',
+                transport_phase: 'start',
+              },
+            },
+            {
+              id: 'transport_2',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'transport',
+              seq: 1000002,
+              at: '2024-01-01T14:31:02Z',
+              category: 'debug',
+              phase: 'end',
+              status: 'success',
+              name: 'transport.reconcile',
+              summary: 'items=3',
+              details: {
+                transport_kind: 'reconcile',
+                transport_phase: 'done',
+              },
+            },
+          ]}
+        />
+      );
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      const transportSection = screen.getByTestId('notebook__message-trace-transport');
+      expect(transportSection).toBeInTheDocument();
+      expect(screen.getAllByTestId('notebook__message-trace-transport-item')).toHaveLength(2);
+      expect(within(transportSection).getByText(/last_event_id=evt-42/)).toBeInTheDocument();
+      expect(within(transportSection).getByText(/items=3/)).toBeInTheDocument();
+    });
+
     it('shows loading state when execution details are being fetched', async () => {
       const user = userEvent.setup();
       render(

@@ -48,6 +48,11 @@ test.describe('Workspace Settings Page', () => {
     await expect(authedPage.getByTestId('ws-settings__governance-attention')).toBeVisible({ timeout: 10000 });
   });
 
+  test('should display governance explainability summary', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('ws-settings__governance-explainability')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('ws-settings__explain-open-blocked-project-audit')).toBeVisible({ timeout: 10000 });
+  });
+
   test('should display workspace members from mock data', async ({ authedPage }) => {
     const membersSection = authedPage.getByTestId('ws-settings__members');
     await expect(membersSection).toBeVisible({ timeout: 10000 });

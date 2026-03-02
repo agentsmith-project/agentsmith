@@ -3,6 +3,7 @@ import {
   buildWorkspaceGovernancePosture,
   buildWorkspaceMemberAdministration,
   buildWorkspaceGovernanceAttentionFeed,
+  buildWorkspaceGovernanceExplainabilitySummary,
 } from '@/lib/workspace-governance-posture';
 import type { Project, WorkspaceMember } from '@/lib/api/types';
 
@@ -212,5 +213,51 @@ describe('buildWorkspaceGovernanceAttentionFeed', () => {
     expect(feed[0]?.severity).toBe('blocked');
     expect(feed.some((item) => item.kind === 'project')).toBe(true);
     expect(feed.some((item) => item.kind === 'member')).toBe(true);
+  });
+});
+
+describe('buildWorkspaceGovernanceExplainabilitySummary', () => {
+  it('summarizes blocked and warning governance posture', () => {
+    const projects = buildWorkspaceGovernancePosture({
+      members,
+      projects: [
+        makeProject({ id: 'proj_blocked', visibility: 'public', join_policy: 'open' }),
+        makeProject({ id: 'proj_warning', governance_json: {}, limits_json: {} }),
+      ],
+    }).projects;
+    const memberEntries = buildWorkspaceMemberAdministration({
+      members: [
+        ...members,
+        {
+          id: 'wm_removed',
+          user_id: 'u_removed',
+          name: 'Removed Admin',
+          email: 'removed@example.com',
+          role: 'admin',
+          permissions: ['workspace:read'],
+          status: 'removed',
+          joined_at: '2026-03-01T00:00:00Z',
+        },
+      ],
+      projects: [
+        makeProject({
+          id: 'proj_scope',
+          governance_json: {
+            project_admins: ['u_removed'],
+          },
+        }),
+      ],
+    });
+
+    const summary = buildWorkspaceGovernanceExplainabilitySummary({
+      projects,
+      members: memberEntries,
+    });
+
+    expect(summary.blockedProjects).toBeGreaterThan(0);
+    expect(summary.warningProjects).toBeGreaterThan(0);
+    expect(summary.blockedMembers).toBeGreaterThan(0);
+    expect(summary.primaryBlockedProjectId).toBe('proj_blocked');
+    expect(summary.primaryBlockedMemberProjectId).toBe('proj_scope');
   });
 });

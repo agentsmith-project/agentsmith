@@ -160,6 +160,17 @@ describe('WorkspaceSettingsPage', () => {
     );
   });
 
+  it('renders governance explainability summary with quick drill-down actions', async () => {
+    render(<WorkspaceSettingsPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__governance-explainability')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('ws-settings__explain-open-blocked-project-audit')).toHaveAttribute(
+      'href',
+      '/en/workspaces/ws_1/projects/proj_1/audit',
+    );
+  });
+
   it('shows validation_error for invalid workspace param', async () => {
     mockUseParams.mockReturnValue({ workspace: '<script>', locale: 'en' });
     render(<WorkspaceSettingsPage />);

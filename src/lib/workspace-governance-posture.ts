@@ -71,6 +71,18 @@ export interface WorkspaceGovernanceAttentionItem {
   memberId?: string;
 }
 
+export interface WorkspaceGovernanceExplainabilitySummary {
+  blockedProjects: number;
+  warningProjects: number;
+  blockedMembers: number;
+  warningMembers: number;
+  quotaGapProjects: number;
+  exposedProjects: number;
+  primaryBlockedProjectId?: string;
+  primaryQuotaGapProjectId?: string;
+  primaryBlockedMemberProjectId?: string;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -352,4 +364,32 @@ export function buildWorkspaceGovernanceAttentionFeed(args: {
   return items
     .sort((left, right) => rank(left.severity) - rank(right.severity) || left.title.localeCompare(right.title))
     .slice(0, 8);
+}
+
+export function buildWorkspaceGovernanceExplainabilitySummary(args: {
+  projects: WorkspaceProjectGovernancePosture[];
+  members: WorkspaceMemberAdministrationEntry[];
+}): WorkspaceGovernanceExplainabilitySummary {
+  const blockedProjects = args.projects.filter((project) => project.readiness === 'blocked');
+  const warningProjects = args.projects.filter((project) => project.readiness === 'warning');
+  const blockedMembers = args.members.filter((member) => member.readiness === 'blocked');
+  const warningMembers = args.members.filter((member) => member.readiness === 'warning');
+  const quotaGapProjects = args.projects.filter((project) => project.riskCodes.includes('missing_source_library_quota'));
+  const exposedProjects = args.projects.filter((project) =>
+    project.riskCodes.includes('public_open_access')
+    || project.riskCodes.includes('public_visibility')
+    || project.riskCodes.includes('open_join_policy'),
+  );
+
+  return {
+    blockedProjects: blockedProjects.length,
+    warningProjects: warningProjects.length,
+    blockedMembers: blockedMembers.length,
+    warningMembers: warningMembers.length,
+    quotaGapProjects: quotaGapProjects.length,
+    exposedProjects: exposedProjects.length,
+    primaryBlockedProjectId: blockedProjects[0]?.projectId,
+    primaryQuotaGapProjectId: quotaGapProjects[0]?.projectId,
+    primaryBlockedMemberProjectId: blockedMembers[0]?.primaryProjectId,
+  };
 }

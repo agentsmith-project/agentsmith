@@ -22,6 +22,7 @@ import {
   buildWorkspaceGovernancePosture,
   buildWorkspaceMemberAdministration,
   buildWorkspaceGovernanceAttentionFeed,
+  buildWorkspaceGovernanceExplainabilitySummary,
 } from '@/lib/workspace-governance-posture';
 import { formatBytes } from '@/lib/utils/formatters';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
@@ -76,6 +77,13 @@ export default function WorkspaceSettingsPage() {
   );
   const attentionFeed = React.useMemo(
     () => buildWorkspaceGovernanceAttentionFeed({
+      projects: governancePosture.projects,
+      members: memberAdministration,
+    }),
+    [governancePosture.projects, memberAdministration],
+  );
+  const explainabilitySummary = React.useMemo(
+    () => buildWorkspaceGovernanceExplainabilitySummary({
       projects: governancePosture.projects,
       members: memberAdministration,
     }),
@@ -171,6 +179,66 @@ export default function WorkspaceSettingsPage() {
                   <div className="mt-1 text-lg font-semibold text-foreground">{governancePosture.summary.riskyProjects}</div>
                   <div className="mt-1 text-xs text-tertiary">
                     {t(`workspace_governance_status_${governancePosture.readiness}`)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 p-5 rounded-xl border border-border bg-surface" data-testid="ws-settings__governance-explainability">
+              <SectionHeading
+                eyebrow={t('workspace_explainability_eyebrow')}
+                title={t('workspace_explainability_title')}
+                subtitle={t('workspace_explainability_subtitle')}
+              />
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_explainability_blocked_projects')}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.blockedProjects}</div>
+                  {explainabilitySummary.primaryBlockedProjectId ? (
+                    <Link
+                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/audit`}
+                      className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mt-2 h-7 px-2')}
+                      data-testid="ws-settings__explain-open-blocked-project-audit"
+                    >
+                      {t('workspace_explainability_open_audit')}
+                    </Link>
+                  ) : null}
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_explainability_blocked_members')}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.blockedMembers}</div>
+                  {explainabilitySummary.primaryBlockedMemberProjectId ? (
+                    <Link
+                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedMemberProjectId}/members`}
+                      className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mt-2 h-7 px-2')}
+                      data-testid="ws-settings__explain-open-blocked-members"
+                    >
+                      {t('workspace_explainability_open_members')}
+                    </Link>
+                  ) : null}
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_explainability_quota_gap_projects')}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.quotaGapProjects}</div>
+                  {explainabilitySummary.primaryQuotaGapProjectId ? (
+                    <Link
+                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryQuotaGapProjectId}/resource-policy`}
+                      className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mt-2 h-7 px-2')}
+                      data-testid="ws-settings__explain-open-quota-policy"
+                    >
+                      {t('workspace_explainability_open_policy')}
+                    </Link>
+                  ) : null}
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_explainability_exposed_projects')}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.exposedProjects}</div>
+                  <div className="mt-2 text-xs text-tertiary">
+                    {t('workspace_explainability_warnings', {
+                      projects: explainabilitySummary.warningProjects,
+                      members: explainabilitySummary.warningMembers,
+                    })}
                   </div>
                 </div>
               </div>

@@ -1,6 +1,6 @@
 # AgentSmith 产品研发与治理方法论 v1
 
-更新时间：2026-03-01  
+更新时间：2026-03-02  
 状态：`current-baseline`
 
 ---
@@ -609,7 +609,107 @@
 
 ---
 
-## 10. 我们最重要的经验教训
+## 10. 团队推广落地包（建议作为统一训练模板）
+
+为便于在内部团队复制，建议把方法论落成固定“推广包”：
+
+1. `Playbook`：一页式工作流（从对象定义到收口门禁）
+2. `Template Set`：decision memo / implementation plan / closure note / runbook 模板
+3. `Gate Profile`：L0/L1/L2 标准门禁定义与触发条件
+4. `Evidence Spec`：需要沉淀哪些证据、格式和存放位置
+5. `Incident Kit`：分级、归因、升级、handoff、复盘模板
+6. `Role Guide`：不同角色的职责边界和交付物
+
+推广原则：
+
+1. 模板先行，减少团队自由发挥导致的语义漂移
+2. 统一产物路径，避免“知道做什么但找不到东西”
+3. 用最小必需集合启动，再按成熟度增量扩展
+
+---
+
+## 11. 角色分工与决策权（轻量 RACI）
+
+建议在内部统一以下责任边界：
+
+1. `Product Owner`：定义对象、状态机、验收语义；对“做什么”负责
+2. `Tech Lead`：定义 contract、架构边界、技术路线；对“怎么做”负责
+3. `QA/Release`：定义 gates 与 evidence；对“是否可发”负责
+4. `Ops/Runtime Owner`：定义 runbook、SLA、incident 处置；对“运行稳定”负责
+
+关键决策权建议：
+
+1. 是否调整核心 contract：`Tech Lead + Product Owner` 双签
+2. 是否带 blocker 发布：必须进入 `override`，且不可自批
+3. 是否关闭 incident：`Ops/Runtime Owner` 负责，`QA/Release` 复核
+4. 是否切换主线：需上一主线达到“功能+自动化+治理+文档”收口标准
+
+---
+
+## 12. 治理节奏与固定例会（Cadence）
+
+建议形成固定节奏，避免治理靠临时推动：
+
+1. 每日：runtime health + blocker 同步（15 分钟）
+2. 每周：contract drift review + gate failure review
+3. 每双周：incident taxonomy 与 override 使用复盘
+4. 每月：主线成熟度评估与方法论改进提案
+5. 每个里程碑：release readiness review（强制含 evidence 审核）
+
+会议输入必须是 artifact，不接受纯口头状态。
+
+---
+
+## 13. 方法论 KPI（用于团队内推广评估）
+
+为衡量方法论是否真正落地，建议追踪以下指标：
+
+1. `Gate Pass Rate`：主线在 L1/L2 首次通过率
+2. `Contract Drift Rate`：代码与 contract 不一致发现率
+3. `Escaped Defect Rate`：发布后结构性问题回流率
+4. `Incident MTTR`：事件平均恢复时间
+5. `Override Quality`：override 按期到期、补偿完成率
+6. `Evidence Completeness`：发布前证据完整度达标率
+7. `Doc Sync Lead Time`：关键变更到文档同步的时间差
+
+指标使用原则：
+
+1. 用于发现系统问题，不用于个人绩效惩罚
+2. 关注趋势，不迷信单点波动
+3. 与具体主线阶段结合解读
+
+---
+
+## 14. 常见反模式与纠偏方式
+
+反模式 A：`UI 先行，contract 事后补`
+
+1. 症状：页面可用但语义混乱、测试大量 brittle
+2. 纠偏：冻结对象和错误语义，先修 contract 再修 UI
+
+反模式 B：`只看功能通过，不看治理可执行`
+
+1. 症状：能跑 demo，不能稳定发布
+2. 纠偏：强制补齐 gate/evidence/policy/enforcement
+
+反模式 C：`把上游不稳定当免责理由`
+
+1. 症状：长期跳过真实链路验证
+2. 纠偏：区分 transient 和 structural failure，按分类治理
+
+反模式 D：`文档与系统分叉`
+
+1. 症状：新人按文档无法复现真实流程
+2. 纠偏：将文档更新纳入 DoD 与 gate checklist
+
+反模式 E：`override 常态化`
+
+1. 症状：高频例外掩盖结构性债务
+2. 纠偏：对高频 override 建立强制根因整改时限
+
+---
+
+## 15. 我们最重要的经验教训
 
 1. 先定义运行时真相，比先画后台页面重要
 2. contract 的统一比局部功能完成更重要
@@ -624,7 +724,7 @@
 
 ---
 
-## 11. 对团队成员的学习建议
+## 16. 对团队成员的学习建议
 
 如果是产品经理，优先学习：
 
@@ -652,7 +752,7 @@
 
 ---
 
-## 12. 本文档的维护规则
+## 17. 本文档的维护规则
 
 当以下任一项发生变化时，应更新本文档：
 
@@ -660,6 +760,12 @@
 2. release governance 机制发生变化
 3. incident / override / policy 的治理模型变化
 4. 团队把这套方法复制到新产品线，并形成新的稳定经验
+
+方法论文档本身建议采用轻量变更控制：
+
+1. 重大变更（对象模型、治理机制、gate 体系）需要评审记录
+2. 每次修改必须说明“新增/删除/替换”的原因
+3. 每季度做一次基线盘点，清理过时条款和重复表述
 
 相关基线文档：
 

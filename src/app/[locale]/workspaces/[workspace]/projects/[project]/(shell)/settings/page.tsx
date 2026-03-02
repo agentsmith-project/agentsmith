@@ -182,8 +182,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             className="[&>div>h1]:flex [&>div>h1]:items-center [&>div>h1]:gap-2"
             actions={(
               <div className="flex flex-wrap items-center gap-2">
-                <Button asChild variant="action" size="sm" data-testid="settings__open-runtime-control-plane">
-                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-control-plane`}>
+                {/* WP-03: Updated to new runtime-console route */}
+                <Button asChild variant="action" size="sm" data-testid="settings__open-runtime-console">
+                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-console`}>
                     {settingsT('runtime_open_control_plane')}
                   </Link>
                 </Button>
@@ -273,13 +274,15 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               <p className="text-sm text-tertiary">{settingsT('runtime_help')}</p>
             </div>
             <div className="flex justify-end gap-2">
+              {/* WP-03: Updated to new runtime-console route with monitoring tab */}
               <Button asChild variant="outline" size="sm" data-testid="settings__runtime-open-observability">
-                <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-observability`}>
+                <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-console?tab=monitoring`}>
                   {settingsT('runtime_observability_open_console')}
                 </Link>
               </Button>
+              {/* WP-03: Updated to new runtime-console route */}
               <Button asChild variant="outline" size="sm" data-testid="settings__runtime-open-control-plane">
-                <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-control-plane`}>
+                <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-console`}>
                   {settingsT('runtime_open_control_plane')}
                 </Link>
               </Button>

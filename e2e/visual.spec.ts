@@ -173,19 +173,50 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('settings-runtime.png', { fullPage: true });
   });
 
-  test('runtime control plane', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('runtime-control-plane'));
-    await expect(authedPage).toHaveScreenshot('runtime-control-plane.png', { fullPage: true });
+  // Runtime Console tests (WP-05: Replaced runtime-control-plane, runtime-observability, release-ops)
+  test('runtime console - overview', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('runtime-console'));
+    await expect(authedPage).toHaveScreenshot('runtime-console-overview.png', { fullPage: true });
   });
 
-  test('runtime observability', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('runtime-observability'));
-    await expect(authedPage).toHaveScreenshot('runtime-observability.png', { fullPage: true });
+  test('runtime console - monitoring', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('runtime-console'));
+    const tab = authedPage.getByTestId('tabs-trigger-monitoring');
+    if (await tab.isVisible()) {
+      await tab.click();
+      await authedPage.waitForTimeout(400);
+    }
+    await expect(authedPage).toHaveScreenshot('runtime-console-monitoring.png', { fullPage: true });
   });
 
-  test('release ops', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('release-ops'));
-    await expect(authedPage).toHaveScreenshot('release-ops.png', { fullPage: true });
+  test('runtime console - alerts', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('runtime-console'));
+    const tab = authedPage.getByTestId('tabs-trigger-alerts');
+    if (await tab.isVisible()) {
+      await tab.click();
+      await authedPage.waitForTimeout(400);
+    }
+    await expect(authedPage).toHaveScreenshot('runtime-console-alerts.png', { fullPage: true });
+  });
+
+  test('runtime console - control', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('runtime-console'));
+    const tab = authedPage.getByTestId('tabs-trigger-control');
+    if (await tab.isVisible()) {
+      await tab.click();
+      await authedPage.waitForTimeout(400);
+    }
+    await expect(authedPage).toHaveScreenshot('runtime-console-control.png', { fullPage: true });
+  });
+
+  test('runtime console - reports', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('runtime-console'));
+    const tab = authedPage.getByTestId('tabs-trigger-reports');
+    if (await tab.isVisible()) {
+      await tab.click();
+      await authedPage.waitForTimeout(400);
+    }
+    await expect(authedPage).toHaveScreenshot('runtime-console-reports.png', { fullPage: true });
   });
 
 });

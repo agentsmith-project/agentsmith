@@ -25,9 +25,7 @@ import {
   Shield,
   BarChart3,
   SlidersHorizontal,
-  Bell,
-  Activity,
-  Gauge,
+  Monitor,
 } from 'lucide-react';
 
 interface AppShellSidebarProps {
@@ -36,7 +34,7 @@ interface AppShellSidebarProps {
   className?: string;
 }
 
-type ProjectMenuSection = 'home' | 'build' | 'govern' | 'operate';
+type ProjectMenuSection = 'home' | 'use' | 'develop' | 'govern' | 'operate';
 
 type ProjectMenuItem = {
   icon: LucideIcon;
@@ -60,27 +58,30 @@ type ProjectMenuItem = {
 };
 
 const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
+  // Home section
   { icon: LayoutDashboard, labelKey: 'overview', href: 'overview', permission: 'project:read', section: 'home' },
-  { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:chat:access', section: 'build' },
-  { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:notebook:access', section: 'build' },
-  { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:source:use', section: 'build' },
-  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use', section: 'build' },
-  { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use', section: 'build' },
+  // Use section
+  { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:chat:access', section: 'use' },
+  { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:notebook:access', section: 'use' },
+  { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:source:use', section: 'use' },
+  // Develop section
+  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use', section: 'develop' },
+  // Govern section
+  { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use', section: 'govern' },
   { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:resource_policy:manage', section: 'govern' },
-  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:view', section: 'govern' },
   { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:credential:manage', section: 'govern' },
   { icon: Users, labelKey: 'members', href: 'members', permission: 'project:member:view', section: 'govern' },
+  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:view', section: 'govern' },
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:view', section: 'govern' },
-  { icon: Wrench, labelKey: 'runtime', href: 'runtime-control-plane', permission: 'project:settings:manage', section: 'operate' },
-  { icon: Activity, labelKey: 'runtime_observability', href: 'runtime-observability', permission: 'project:usage:view', section: 'operate' },
-  { icon: Gauge, labelKey: 'release_ops', href: 'release-ops', permission: 'project:usage:view', section: 'operate' },
-  { icon: Bell, labelKey: 'alerts', href: 'alerts', permission: 'project:alert:view', section: 'operate' },
-  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage', section: 'operate' },
+  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage', section: 'govern' },
+  // Operate section
+  { icon: Monitor, labelKey: 'runtime_console', href: 'runtime-console', permission: 'project:settings:manage', section: 'operate' },
 ];
 
 const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }> = [
   { id: 'home', labelKey: 'sidebar.home' },
-  { id: 'build', labelKey: 'sidebar.build' },
+  { id: 'use', labelKey: 'sidebar.use' },
+  { id: 'develop', labelKey: 'sidebar.develop' },
   { id: 'govern', labelKey: 'sidebar.govern' },
   { id: 'operate', labelKey: 'sidebar.operate' },
 ];

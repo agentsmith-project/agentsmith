@@ -168,9 +168,11 @@ export default function OverviewPage() {
   }
 
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
-  const runtimeHref = `${basePath}/runtime-observability${buildSharedOpsFilterQuery(timeRange)}`;
+  // WP-03: Updated to new runtime-console route with monitoring tab
+  const runtimeHref = `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery(timeRange)}`;
   const usageHref = `${basePath}/usage${buildSharedOpsFilterQuery(timeRange, { panel: 'usage' })}`;
-  const releaseOpsHref = `${basePath}/release-ops${buildSharedOpsFilterQuery(timeRange)}`;
+  // WP-03: Updated to new runtime-console route with control tab
+  const releaseOpsHref = `${basePath}/runtime-console?tab=control${buildSharedOpsFilterQuery(timeRange)}`;
 
   const runtime = runtimeQuery.data;
   const operationsSummary = operationsSummaryQuery.data;
@@ -228,7 +230,8 @@ export default function OverviewPage() {
       tone: 'blocked',
       title: t('attention.missing_price_title', { count: runtime?.health_summary.missing_price_facts ?? 0 }),
       body: t('attention.missing_price_body'),
-      href: `${basePath}/runtime-observability${buildSharedOpsFilterQuery({
+      // WP-03: Updated to new runtime-console route with monitoring tab
+      href: `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery({
         ...timeRange,
         result: 'error',
       })}`,
@@ -261,7 +264,8 @@ export default function OverviewPage() {
       tone: 'warning',
       title: t('attention.runtime_degradation_title'),
       body: t('attention.runtime_degradation_body'),
-      href: `${basePath}/runtime-observability${buildSharedOpsFilterQuery({
+      // WP-03: Updated to new runtime-console route with monitoring tab
+      href: `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery({
         ...timeRange,
         result: 'error',
       })}`,
@@ -296,7 +300,8 @@ export default function OverviewPage() {
           tone: runtimeTone,
           title: t('primary_actions.investigate_runtime_title'),
           body: t('primary_actions.investigate_runtime_body'),
-          href: `${basePath}/runtime-observability${buildSharedOpsFilterQuery({
+          // WP-03: Updated to new runtime-console route with monitoring tab
+          href: `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery({
             ...timeRange,
             result: runtimeTone === 'ready' ? undefined : 'error',
           })}`,
@@ -386,14 +391,16 @@ export default function OverviewPage() {
     {
       icon: Sparkles,
       label: t('actions.runtime'),
-      href: '/runtime-observability',
+      // WP-03: Updated to new runtime-console route with monitoring tab
+      href: '/runtime-console?tab=monitoring',
       description: t('actions.runtime_description'),
       requiresPermission: 'project:usage:view',
     },
     {
       icon: Gauge,
       label: tNav('release_ops'),
-      href: '/release-ops',
+      // WP-03: Updated to new runtime-console route with control tab
+      href: '/runtime-console?tab=control',
       description: t('actions.release_ops'),
       requiresPermission: 'project:usage:view',
     },

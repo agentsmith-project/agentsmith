@@ -20,14 +20,30 @@
   "nav": {
     "overview": "Overview",
     "chat": "Chat",
+    "notebook": "Notebook",
+    "files": "Files",
     "studio": "AI Studio",
     "sources": "Sources",
     "agents": "Agents",
     "endpoints": "Endpoints",
+    "resource_policy": "Resource Policy",
+    "credentials": "Credentials",
     "members": "Members",
     "audit": "Audit",
     "usage": "Usage",
     "settings": "Settings",
+    "runtime_console": "Runtime Console",
+    "sidebar": {
+      "home": "Home",
+      "use": "Use",
+      "develop": "Develop",
+      "govern": "Govern",
+      "operate": "Operate",
+      "build": "Build",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "projects": "Projects"
+    },
     "go_to_projects": "Go to Projects",
     "view_all_projects": "View All Projects",
     "no_workspaces": "No workspaces"
@@ -382,6 +398,17 @@
     "empty": {
       "title": "No usage data found",
       "description": "Try adjusting your filters or select a different time range"
+    }
+  },
+  "runtime_console": {
+    "title": "Runtime Console",
+    "subtitle": "Unified operations console for runtime observability, alerts, control, and reports",
+    "tabs": {
+      "overview": "Overview",
+      "monitoring": "Monitoring",
+      "alerts": "Alerts",
+      "control": "Control",
+      "reports": "Reports"
     }
   },
   "settings": {

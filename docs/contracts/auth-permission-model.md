@@ -28,6 +28,18 @@ Clarify the boundary between authentication data and authorization enforcement t
 - If frontend gate says "allow" but backend says "deny", backend result is authoritative.
 - Frontend must treat `403` as final and non-retryable for same request payload.
 
+## Frontend Navigation Sections
+
+> Updated: 2026-03-02 (Navigation Restructure WP-01/WP-02)
+
+| Section | Description | Pages |
+|---------|-------------|-------|
+| `home` | Overview and landing | Overview |
+| `use` | End-user daily AI tools | Chat, Notebook, Files |
+| `develop` | Developer agent building | Agents |
+| `govern` | Configuration and policy | Endpoints, Resource Policy, Credentials, Members, Usage, Audit, Settings |
+| `operate` | Runtime operations | Runtime Console |
+
 ## Contract Guidance
 
 - Use identical permission vocabulary in FE and BE.

@@ -105,7 +105,7 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
         ) : null}
         {workspaceId && projectId ? (
           <Link
-            href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/release-ops${drilldownQuery}`}
+            href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=control${drilldownQuery}`}
             className={cn(
               'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
               'hover:bg-hover',

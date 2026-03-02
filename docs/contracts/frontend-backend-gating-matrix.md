@@ -1,11 +1,13 @@
 # Frontend-Backend Gating Matrix (Page/Operation Level)
 
-Last updated: 2026-02-13
+Last updated: 2026-03-02 (Navigation Restructure)
 Owner: Frontend
 Audience: Backend auth team, QA, FE
 
 > Target MVP direction is `resource policy` as defined in
 > `docs/contracts/frontend-resource-policy-governance-v1.md`.
+
+> **Navigation Restructure (WP-01/WP-02)**: Section structure updated from Home+Build+Govern+Operate to Home+Use+Develop+Govern+Operate. Permission points unchanged.
 
 ## Purpose
 
@@ -54,6 +56,39 @@ Backend should enforce 401/403 according to this matrix. Frontend already applie
 | settings | delete project from settings | `project:settings:manage` | `DELETE /projects/{id}` | delete denied |
 | audit | view audit data | `project:audit:view` | `GET /audit` | component-level permission denied |
 | usage | view usage data | `project:usage:view` | `GET /usage`, `GET /usage/kpi` | component-level permission denied |
+
+## Runtime Console (Navigation Restructure - Merged Page)
+
+> New unified console combining runtime-control-plane, runtime-observability, release-ops, and alerts.
+
+| Tab | User Operation | Required Permission(s) | Backend API Group | FE Expected on 403 |
+|-----|----------------|------------------------|-------------------|-------------------|
+| overview | view runtime health and control plane | `project:settings:manage` | `GET /projects/{id}`, `GET /runtime/*` | tab-level permission denied, show access message |
+| monitoring | view runtime metrics and traces | `project:usage:view` | `GET /runtime/metrics`, `GET /runtime/traces` | tab-level permission denied, show access message |
+| alerts | view and manage alert rules | `project:alert:view` | `GET /alert-rules`, `GET /alert-notifications` | tab-level permission denied, show access message |
+| control | view release gates and control | `project:usage:view` | `GET /release-ops/*`, `GET /governance/*` | tab-level permission denied, show access message |
+| reports | view release reports and history | `project:usage:view` | `GET /release-reports` | tab-level permission denied, show access message |
+
+## Section Migration Table (Navigation Restructure)
+
+| Page | Old Section | New Section | Permission (unchanged) |
+|------|-------------|-------------|------------------------|
+| Chat | Build | Use | `project:chat:access` |
+| Notebook | Build | Use | `project:notebook:access` |
+| Files | Build | Use | `project:source:use` |
+| Agents | Build | Develop | `project:agent:use`, `project:agent:manage` |
+| Endpoints | Build | Govern | `project:endpoint:use`, `project:endpoint:manage` |
+| Settings | Operate | Govern | `project:settings:manage` |
+| Runtime Console (merged) | Operate (4 pages) | Operate | `project:settings:manage`, `project:usage:view`, `project:alert:view` |
+
+## Route Redirect Mapping (Documentation Reference)
+
+| Old Route | New Route | Default Tab |
+|-----------|-----------|-------------|
+| `/runtime-control-plane` | `/runtime-console` | `overview` |
+| `/runtime-observability` | `/runtime-console?tab=monitoring` | `monitoring` |
+| `/release-ops` | `/runtime-console?tab=control` | `control` |
+| `/alerts` | `/runtime-console?tab=alerts` | `alerts` |
 
 ## Notes for Backend Team
 

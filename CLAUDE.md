@@ -1,432 +1,100 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working with AgentSmith ( MBOS enterprise control plane frontend.
 
 ## Project Overview
 
-AgentSmith is the admin interface for the Microservices-Based Agent System (MBOS). It provides workspace/project isolation, intelligent agent management, and multilingual support (English/Chinese).
+AgentSmith = MBOS 企业级控制面前端。**三层职责**: AI 智能体使用与管理、 AI 资源治理, 运行与发布治理。
 
-**Tech Stack**: Next.js 15 (App Router), TypeScript 5.9, TailwindCSS, Radix UI, Zustand, React Query, next-intl
+**Stack**: Next.js 15 + TypeScript 5.9 + TailwindCSS + Radix UI + Zustand + React Query + next-intl
 
-**Workspace**: `/home/percy/works/mbos-v1/agentsmith`
+ **workspace**: `/home/percy/works/mbos-v1/agentsmith`
 
-## Common Commands
+## 项目宪法（必读)
 
-```bash
-# Development
-npm run dev              # Start dev server with Turbopack (port 3000)
-npm run build            # Production build
-npm run start            # Production server
-npm run lint             # ESLint
+> 宪法只规定思想与方法论，具体实现见 DEVELOPMENT.md 和 `docs/contracts/`, `docs/UXUI/`
 
-# Unit Tests (Vitest)
-npm run test             # Run unit tests
-npm run test:ui          # Vitest with UI
-npm run test:run         # Run tests without UI
-npm run test:coverage    # Test coverage report
+**定位**: 企业级控制面，非 ToC 产品，非低代码平台。 **后端为唯一权威**。
 
-# E2E Tests (Playwright)
-npm run test:e2e         # Playwright end-to-end tests
-npm run test:e2e:ui      # Playwright with UI
-npm run test:e2e:debug   # Playwright debug mode
+**范围**: 认证/身份, 工作区, 项目, Chat, Notebook, Files, Agents, Endpoints, 资源策略, 成员, 凭据, 审计与用量, 运行与发布治理, 设置.
 
-# Integration Tests
-npm run test:integration # Integration tests (bash script)
+**非范围**: 文件级策略, Chat/Notebook 独立配额, 角色名鉴权, 性能压测, E2E 覆盖后端鉴权.
 
-# Component Documentation
-npm run storybook        # Start Storybook (port 6006)
-npm run build-storybook  # Build Storybook static
+**设计原则**: (1) Token 唯一做门禁 (2) URL 为真相源 (3) 设计系统唯一来源 (4) 安全校验不可省.
 
-# OpenAPI Types
-npm run openapi:generate # Generate TypeScript types from OpenAPI spec
-```
+**禁止**: 角色名做门禁, 未定义权限点, 参数不做校验, 设计系统外样式, 生产代码用 any, 文案不纳入国际化, 未过门禁检查合并路由.
 
-## Architecture
+## 治理方法论(必读)
 
-### Routing Structure
+> 核心思想: 先定义对象和运行时真相， 再用合约、证据、门禁、治理控制把系统收成可运营、可发布、可追责的产品.
 
-Next.js App Router with i18n via `next-intl`:
+**六层架构**: Product Model → Runtime Truth → Contract First → Evidence Driven Delivery → Governance by Control Plane → Operational Closure
 
-```
-app/
-├── [locale]/            # Locale segment (en-US, zh-CN)
-│   ├── login/           # Authentication flow
-│   └── workspaces/
-│       └── [workspace]/
-│           └── projects/
-│               ├── [project]/
-│               │   └── (shell)/    # App shell routes (overview, chat, studio, sources, agents, endpoints, members, audit, usage, settings)
-│               └── page.tsx        # Project list
-└── globals.css          # Design system tokens
-```
+**工程原则**: Contract First, 分层收敛复杂度, 拒绝补丁式修复, 证据作为一等产物.
 
-**Key pattern**: Workspace/Project context is derived from URL params and synced to Zustand store via `useSyncAuthFromUrl` hook.
+**测试原则**: 分层验证 (type/contract → unit → integration → e2e → visual → real-lane → release report), mock/real lane 分离, 验收必须有 formal gate.
 
-### State Management
+**治理原则**: 治理是控制面, 统一策略引擎, 例外必须被治理, Incident 是治理主键, Ownership/SLA 是闭环.
 
-- **Zustand** (`lib/stores/`) for client-side state
-  - `authStore`: Auth state, workspace/project context, permissions
-  - Persistent to localStorage
-- **React Query** for server state with 1-minute stale time
-
-### API Architecture
-
-Dual-client pattern for easy mock/real switching:
-- `lib/api/client.ts` - API client interface
-- `lib/api/adapters/fetch-adapter.ts` - Real backend (NEXT_PUBLIC_API_BASE)
-- `lib/api/adapters/msw-adapter.ts` - MSW mocks for development
-- Environment switch: `NEXT_PUBLIC_USE_MSW=true`
-
-### Workspace/Project Context Model
-
-Hierarchical structure: User → Workspace → Project
-
-**Critical flows**:
-1. **Workspace change** → Automatically clears `currentProject`, filters projects by `workspace_id`, navigates to project list
-2. **Project change** → Updates `currentProject`, navigates to `/overview`
-3. **URL navigation** → `useSyncAuthFromUrl` syncs store from URL params (handles deep links, browser history)
-
-### Architecture (Post-Refactoring 2026-02-03)
-
-#### State Management
-- **Auth**: `lib/stores/authStore.ts` (Zustand) - user, token, currentWorkspace, currentProject
-- **Data**: React Query - workspaces, projects, members, sources, agents, endpoints, audit logs, usage stats
-- **URL**: Source of truth for workspace/project selection
-- **Sync**: `useSyncAuthFromUrl` hook keeps store in sync with URL params
-
-#### Component Patterns
-- **Compound components** with context (e.g., `MembersPage`, `SourcesPage`)
-  - Parent manages state and data fetching
-  - Child components receive data via context
-  - Co-located for better maintainability
-- **Custom hooks** for business logic
-  - `useMembersList` - member CRUD operations
-  - `useSourcesList` - source management
-  - `useWorkspaceNavigation` - navigation logic
-- **Reusable primitives**
-  - `FormDialog` - modal forms
-  - `Skeleton` - loading states
-  - `useTableSelection` - table row selection
-
-**Example compound component pattern:**
-```tsx
-// Parent Page component manages state/context
-export function MembersPage() {
-  const [members, setMembers] = useState([]);
-  const [selectedIds, setSelectedIds] = useState(new Set());
-
-  return (
-    <MembersContext value={{ members, selectedIds, setSelectedIds }}>
-      <MembersHeader />
-      <MembersTable />
-      <MembersBatchActions />
-    </MembersContext>
-  );
-}
-
-// Children consume context via custom hook
-function MembersHeader() {
-  const { members } = useMembersContext();
-  // ...
-}
-```
-
-#### Routing Structure
-- **Max depth**: 2-3 levels
-- **Route groups**: `(shell)` for shared layouts
-- **Loading states**: `loading.tsx` with skeletons
-- **Error handling**: `error.tsx` boundaries
-
-Example routing structure:
-```
-[locale]/workspaces/[workspace]/projects/[project]/(app)/[page]/
-├── layout.tsx          # Shell layout (Sidebar + Topbar)
-├── loading.tsx         # Loading skeleton
-├── error.tsx           # Error boundary
-└── page.tsx            # Page content
-```
-
-### Component Organization
-
-```
-src/
-├── components/
-│   ├── ui/                 # Design system (Radix primitives + custom)
-│   ├── app-shell/         # Layout (Topbar, Sidebar, navigation)
-│   ├── chat/              # Chat components
-│   ├── studio/            # AI Studio/Task components
-│   ├── sources/           # File/source management
-│   ├── members/           # Member management
-│   └── audit-usage/       # Audit & usage reports
-├── lib/
-│   ├── api/               # API client with adapter pattern
-│   ├── hooks/             # Custom React hooks
-│   ├── stores/            # Zustand stores
-│   ├── i18n/              # i18n configuration (DO NOT MODIFY)
-│   └── utils/             # Utilities
-├── messages/              # i18n message files (en-US.json, zh-CN.json)
-└── mocks/                 # MSW mock handlers
-```
-
-## Design System
-
-**Tokens**: Defined in `app/globals.css` as RGB triplets (supports alpha)
-
-Key tokens (use these, not arbitrary colors):
-- Backgrounds: `--bg-base`, `--bg-sidebar`, `--bg-surface`, `--bg-surface-high`, `--bg-hover`
-- Text: `--text-strong`, `--text-primary`, `--text-tertiary`, `--icon-default`
-- Accent: `--accent` (blue), `--success`, `--error`
-- Border: `--border`, `--border-subtle`
-
-**Style constraints**:
-- No high-saturation buttons (blue only for links/icons/highlights)
-- AI gradient only for AI identification (Logo, Avatar)
-- Shadows only on floating layers (Dropdown, Dialog, Toast)
-- Spacing base: 4px (use 8/12/16/24/32)
-- Sidebar: 260px fixed, item height 40px
-
-Tailwind classes map to tokens via `tailwind.config.js`.
-
-See `DESIGN_SYSTEM.md` and `docs/UXUI/00-设计系统/视觉设计系统-v1.md` for reference.
-
-## Internationalization (i18n)
-
-- **Library**: `next-intl`
-- **Languages**: `en-US` (English), `zh-CN` (Simplified Chinese)
-- **Message files**: `src/messages/en-US.json`, `src/messages/zh-CN.json`
-- **Usage**: `const t = useTranslations('namespace');` then `{t('key')}`
-
-**Rules** (from `docs/UXUI/01-通用规范/2026-02-03-i18n-内部指南-v1.md`):
-- Keys use `snake_case`
-- One key per meaning (reuse across project)
-- Common strings in `common` namespace
-- User-visible strings only (not variables, comments, console.log)
-- Namespace structure: `common`, `nav`, `auth`, `workspace`, `project`, `sources`, `members`, `studio`, `chat`, `audit`, `usage`, `overview`, `agents`, `endpoints`, `settings`, `errors`
-
-**DO NOT modify**: `src/i18n/request.ts`, `next.config.ts`, middleware, routing config
-
-## Environment Configuration
+## 常用命令
 
 ```bash
-# For local development with backend
-NEXT_PUBLIC_API_BASE=http://localhost:20000
-NEXT_PUBLIC_USE_MSW=true
-
-# For Keycloak auth (production)
-NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms
-NEXT_PUBLIC_KEYCLOAK_REALM=mbos
-NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
+npm run dev / build / start / lint / test / test:e2e / test:integration
+npm run contracts:check / contracts:check-openapi / openapi:check-generated
+make bootstrap / api-dev / web / e2e / deps-down
+ deps-reset
 ```
 
-## Important Files
+## 架构要点
 
-- `DEVELOPMENT.md` - Development setup and troubleshooting
-- `DESIGN_SYSTEM.md` - Design tokens and style guardrails
-- `docs/UXUI/2026-02-05-前端-testid-规范.md` - Test ID conventions
-- `docs/UXUI/01-通用规范/2026-02-03-i18n-内部指南-v1.md` - i18n implementation guide
-- `docs/UXUI/00-设计系统/视觉设计系统-v1.md` - Authoritative design system reference
-- `scripts/openapi/` - OpenAPI type generation utilities
-- `scripts/capture-screenshots.ts` - Screenshot capture script for documentation
+**路由**: App Router + next-intl, `[locale]/workspaces/[workspace]/projects/[project]/(shell)/` (URL 为真相源)
+**状态**: Zustand (authStore) + React Query, API 双客户端模式 (fetch/msw adapter)
+**组件**: compound components + context, co-located, 父级拉数与门禁, 子级消费
+**类型**: `lib/api/types/` (API 合约), `lib/types/` (前端专用)
 
-## Testing
+## 设计系统
+**tokens** (globals.css RGB): `--bg-*`, `--text-*`, `--accent`, `--success`, `--error`, `--border*`
+**约束**: 主行动色仅用于链接/高亮, AI 渐变仅用于 AI 标识, 阴影仅用于浮层, 间距基: 4px, 侧边栏: 260px
 
-### Unit Tests (Vitest)
-- **Framework**: Vitest with jsdom environment
-- **Location**: `**/__tests__/**/*.{test,spec}.{js,ts,tsx}` and `**/*.{test,spec}.{js,ts,tsx}`
-- **Coverage thresholds**: 40% statements, 35% branches, 40% functions, 45% lines
-- **Globals**: Enabled (describe, it, expect available globally)
-- **Path alias**: `@/*` maps to `./src/*`
+## i18n
+**library**: next-intl, **locales**: en-US, zh-CN, **keys**: snake_case, **namespaces**: common, nav, auth, workspace, project, sources, members, studio, chat, audit, usage, overview, agents, endpoints, settings, errors
 
-### E2E Tests (Playwright)
-- **Location**: `e2e/` directory
-- **Projects**:
-  - `smoke` - Smoke tests for all routes in both locales (26 tests)
-  - `chromium` - Full E2E tests for all pages and features (146 tests)
-  - `visual` - Visual regression tests with `toHaveScreenshot()` (29 tests)
-- **Timeouts**: 15s test timeout, 10s action/navigation timeouts
-- **Shared fixtures**: `e2e/fixtures/test-base.ts` provides `authedPage` fixture and `goToProject()` helper
-- **Mock data**: All tests use MSW with `src/mocks/fixtures/p0.json` as the single source of truth
-- **Visual baselines**: `e2e/__screenshots__/visual.spec.ts/` (update with `--update-snapshots`)
-- **data-testid spec**: `docs/UXUI/2026-02-05-前端-testid-规范.md`
-- **Test selector convention**: Use `data-testid` attributes (see below)
+## 环境配置
+- `NEXT_PUBLIC_API_BASE=http://localhost:20000`
+- `NEXT_PUBLIC_USE_MSW=true` (开发)
+- `NEXT_PUBLIC_KEYCLOAK_*` (生产)
 
-### Playwright Execution Notes (2026-02)
-- Prefer explicit server reuse in unstable environments:
-  - Start dev server in a persistent terminal session: `npm run dev:test -- --port 3001`
-  - Run Playwright with `BASE_URL=http://localhost:3001` to bypass managed `webServer` startup ambiguity.
-- Mandatory local test rule:
-  - Do **not** let Playwright manage frontend/backend service startup for integration testing.
-  - Always start backend/frontend manually first, then run Playwright against existing services via `BASE_URL` / `INTEGRATION_API_BASE`.
-  - In Codex sessions, the agent should start/stop required services automatically; do not require the user to manually boot services before integration/e2e runs.
-  - Before starting any service or test command, clear proxy environment variables (`http_proxy`, `https_proxy`, `all_proxy`, `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `no_proxy`, `NO_PROXY`).
-  - For every UI/layout/style change, the agent must run visual e2e (`--project=visual`) before handing off and report snapshot diffs explicitly.
-- For fast triage, run targeted smoke first:
-  - `npx playwright test --project=smoke e2e/smoke.spec.ts --grep "<route-pattern>" --max-failures=1 --workers=1`
-- If route navigation hangs, separate infra vs app failure:
-  - Verify server responsiveness with `curl http://localhost:3001/...`
-  - If server is unresponsive/high CPU, restart dev server before debugging test assertions.
-- Keep navigation robust in shared helpers:
-  - Use `domcontentloaded` + retry-on-`ERR_ABORTED` helper (`gotoAndWait`) instead of raw `page.goto`.
-- Debug order for route failures:
-  1. Confirm `page.goto` reaches response.
-  2. Check `page-state__success|error|page-layout` readiness markers.
-  3. Inspect `test-results/**/error-context.md` before changing selectors.
-- Avoid React Hook short-circuit patterns in route guards:
-  - Do not write `useHasPermission('a') || useHasPermission('b')`.
-  - Call hooks separately, then combine booleans. This prevents hook-order crashes that appear only in E2E runtime.
+## 核心文档
+- `docs/项目宪法.md` - 产品定位、范围边界、设计原则
+- `docs/design/agentsmith-product-engineering-governance-methodology-v1.md` - 治理方法论
+- `DEVELOPMENT.md` / `DESIGN_SYSTEM.md` - 开发与设计系统
+- `docs/contracts/` / `docs/plans/` / `docs/release/` - 合约、计划、发布
+- `docs/UXUI/` - UX/UI 规范
 
-### Test ID Convention
+## 测试
+**unit**: Vitest, jsdom, 40% coverage, `**/__tests__/**/*.test.*`
+**e2e**: Playwright, projects: smoke (26), chromium (146), visual (29), fixtures: `e2e/fixtures/test-base.ts`
+**执行**: 不让 Playwright 管理服务启动, 手动启动后用 `BASE_URL` 运行, 清理代理环境变量, UI 变更需跑 visual e2e
 
-Use `data-testid` attributes for stable test selectors. Format: `scope__element__state`
+## 测试 ID 规范
+**format**: `scope__element__state` (e.g., `login__submit`, `projects__create-button`)
+**规则**: 稳定, 唯一, 双下划线分隔
 
-Examples:
-- `login__submit`, `projects__create-button`, `agents__row`
-- `page-state__error`, `studio__task-header`
+## 安全
+**类型**: 生产代码禁 any, 使用类型守卫 `**认证**: SSE token 暴露风险, TODO: ticket-based auth
+**内容**: Markdown 图片仅渲染可信域
+**bundle**: 生产禁用 MSW (`NEXT_PUBLIC_USE_MSW=false`)
 
-Rules:
-- Must be stable (not depend on text/styles)
-- Must be unique per page
-- Apply to: key buttons, table rows, panels, dialogs, page states
-- Use double underscores (`__`) as separators (single underscores for multi-word element names)
+## 架构模式
+**Permission Gate**: 禁止 hook 短路 (`useHasPermission('a') || useHasPermission('b')` ❌, 分开调用后组合 ✅)
+**Auth Sync**: authStore 自动同步 token 到 API client
+**URL Validation**: 参数必须用 `validateWorkspaceParam()` / `validateProjectParam()` 校验
 
-See: `docs/UXUI/2026-02-05-前端-testid-规范.md`
+## 开发工作流
+**Route Gate**: 合并前 `npm run contracts:check` + `contracts:check-openapi` + `openapi:check-generated`
+**提交前**: `npm test` + `npm run lint` + `npx tsc --noEmit`
+**错误处理**: `useApiError` + ErrorBoundary
 
-### ESLint Configuration
-
-Important rules enforced:
-- `@typescript-eslint/no-explicit-any: error` - No `any` types in production code
-- `@typescript-eslint/no-unused-vars: error` - Prefix unused with underscore (`_`)
-- Exception: Test files allow `any` at `warn` level for flexibility
-- Test files: `**/*.test.ts`, `**/*.test.tsx`, `**/__tests__/**`, `**/mocks/**`
-
-## Security Guidelines
-
-### Type Safety
-- **Zero `any` types**: Production code must not use `any` types
-- Use proper type guards for validation: `validateWorkspaceParam()`, `validateProjectParam()`
-- ESLint rule `@typescript-eslint/no-explicit-any` is enforced
-
-### Secure Authentication
-- **SSE Token Exposure**: JWT tokens in SSE URLs are a known security risk
-  - Current implementation uses URL params (documented in `lib/api/sse-client.ts`)
-  - TODO: Implement ticket-based auth system (`POST /api/v1/sse-ticket`)
-  - See: Phase 2, Task 2.1
-
-### Content Security
-- **Markdown Images**: Only images from trusted domains are rendered
-  - Configure via `NEXT_PUBLIC_TRUSTED_IMAGE_DOMAINS` env var
-  - Default: NO images (safe default)
-  - See: Phase 2, Task 2.2
-
-### Bundle Security
-- **MSW Excluded**: MSW adapter is excluded from production bundle via dynamic imports
-  - Never use `NEXT_PUBLIC_USE_MSW=true` in production
-  - See: Phase 2, Task 2.3
-
-## Testing Requirements
-
-### Coverage Targets
-- Chat components: 80%+
-- AI Studio components: 75%+
-- Security components: 90%+
-
-### Test ID Conventions
-- Use `data-testid` attributes for stable test selectors
-- Format: `scope__element__state`
-- See: `docs/UXUI/2026-02-05-前端-testid-规范.md`
-
-### Critical Features Tested
-- Chat system: Message rendering, threading, markdown with security tests
-- AI Studio: Task execution, SSE handling, progress updates
-- Security: API keys, credentials, permission checks
-- Sources: File upload, quota management, AI Ready operations
-
-## Error Handling Patterns
-
-### useApiError Hook
-Use the standardized `useApiError` hook for consistent error handling:
-
-```tsx
-import { useApiError } from '@/lib/hooks/use-api-error';
-
-function MyComponent() {
-  const { handleError, error, clearError } = useApiError();
-
-  const mutation = useMutation({
-    onError: (err) => handleError(err, { context: 'Creating user' })
-  });
-}
-```
-
-### Error Boundaries
-Wrap route layouts with `ErrorBoundary` for graceful error handling:
-
-```tsx
-import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-
-<ErrorBoundary onError={(error) => console.error(error)}>
-  <YourPageContent />
-</ErrorBoundary>
-```
-
-## Development Workflow
-
-### Before Submitting Code
-1. Run tests: `npm test`
-2. Run linter: `npm run lint`
-3. Type check: `npx tsc --noEmit`
-4. Check for `any` types: `grep -r ": any" src/ --exclude-dir=__tests__`
-
-### Troubleshooting
-
-#### SSE Connection Issues
-- Check browser console for EventSource errors
-- Verify token is valid (not expired)
-- Check `NEXT_PUBLIC_API_BASE` is correct
-- See: `src/lib/api/sse-client.ts` for documented limitations
-
-#### Test Failures
-- Check mock setup for React Query, next/navigation, next-intl
-- Verify test IDs (`data-testid`) are present on elements
-- Check for timing issues - use `waitFor` for async operations
-
-## Development Notes
-
-- Turbopack for fast dev server startup
-- MSW for API mocking in development (quick login for testing)
-- Permission system: String-based (e.g., `'project:*'`, `'project:read'`)
-- Storybook for component development and documentation
-- Path aliases: `@/*`, `@/components/*`, `@/lib/*`, `@/app/*`, `@/types/*`
-- TypeScript strict mode enabled
-- Always prefer editing existing files over creating new ones
-- Pre-release rule: enforce strict current contract and remove obsolete payload paths immediately.
-
-## Running Single Tests
-
-```bash
-# Unit tests - run specific test file
-npm test -- src/components/chat/__tests__/MessageItem.test.tsx
-
-# Unit tests - run by pattern
-npm test -- chat
-
-# E2E tests - run specific test file
-npm run test:e2e -- e2e/smoke.spec.ts
-
-# E2E tests - run specific project
-npm run test:e2e -- --project=smoke
-
-# E2E tests - run specific test by line number
-npm run test:e2e -- e2e/smoke.spec.ts:15
-```
-
-## Important Architecture Patterns
-
-### Auth Store Token Synchronization
-The Zustand auth store automatically syncs its token to the API client singleton via a subscription (see `src/lib/stores/authStore.ts:128-155`). This guarantees the API client always has the latest auth state without manual syncing. When calling `setAuth()` or `clearAuth()`, or when persist rehydrates, the token is automatically synced.
-
-### URL Parameter Validation
-All workspace and project URL parameters MUST be validated using `validateWorkspaceParam()` and `validateProjectParam()` from `src/lib/utils/validate-url-params.ts`. Never use `as string` type assertions on URL params - this is a security risk (XSS/injection).
-
-### Development vs Production Persistence
-The auth store only persists to localStorage when `NEXT_PUBLIC_USE_MSW=true` (development). In production, auth state is NOT persisted and must be re-established on each session via proper authentication flow.
+## 常见问题 & 开发注意
+**SSE**: 检查 console EventSource, 验证 token | **测试失败**: 检查 mock, 验证 test ID, 用 waitFor
+**注意**: Turbopack 快速启动, MSW 快速登录, Storybook 组件开发, 优先编辑现有文件, 发布前移除过时 payload paths

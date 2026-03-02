@@ -2,9 +2,11 @@ import { test, expect, goTo } from './fixtures/test-base';
 import type { Page } from '@playwright/test';
 
 type TraceTarget = 'usage' | 'audit';
+// Updated for WP-05: Release Ops is now accessed via Runtime Console control tab
 const RELEASE_OPS_TRACE_ENTRY_PATH =
-  '/en-US/workspaces/ws_default/projects/proj_001/release-ops'
-  + '?gov_from=organization_overview'
+  '/en-US/workspaces/ws_default/projects/proj_001/runtime-console'
+  + '?tab=control'
+  + '&gov_from=organization_overview'
   + '&gov_kind=workspace'
   + '&gov_workspace_id=ws_default'
   + '&gov_project_id=proj_001'
@@ -14,7 +16,8 @@ async function findTraceLinkIndex(
   page: Page,
   target: TraceTarget,
 ): Promise<number> {
-  const links = page.locator('[data-testid^="release-ops__governance-trace-open--"]');
+  // Updated for WP-05: Using Runtime Console testid pattern
+  const links = page.locator('[data-testid^="release-ops__governance-trace-open--"], [data-testid^="runtime-console__control__trace-open--"]');
   const count = await links.count();
   for (let index = 0; index < count; index += 1) {
     const href = await links.nth(index).getAttribute('href');
@@ -31,10 +34,13 @@ test.describe('Release Ops Trace Drilldown', () => {
   });
 
   test('governance trace links drill down to usage and audit with trace context', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('release-ops__page')).toBeVisible({ timeout: 10000 });
+    // Updated for WP-05: Check for either old or new testid pattern during transition
+    const releaseOpsPage = authedPage.getByTestId('release-ops__dashboard').or(authedPage.getByTestId('release-ops__page'));
+    await expect(releaseOpsPage).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('release-ops__governance-evidence-bridge')).toBeVisible({ timeout: 10000 });
 
-    const traceLinks = authedPage.locator('[data-testid^="release-ops__governance-trace-open--"]');
+    // Support both old and new testid patterns
+    const traceLinks = authedPage.locator('[data-testid^="release-ops__governance-trace-open--"], [data-testid^="runtime-console__control__trace-open--"]');
     await expect(traceLinks.first()).toBeVisible({ timeout: 10000 });
 
     const usageIndex = await findTraceLinkIndex(authedPage, 'usage');
@@ -49,9 +55,11 @@ test.describe('Release Ops Trace Drilldown', () => {
     await expect(authedPage.getByTestId('usage__trace-context')).toBeVisible({ timeout: 10000 });
 
     await goTo(authedPage, RELEASE_OPS_TRACE_ENTRY_PATH);
-    await expect(authedPage.getByTestId('release-ops__page')).toBeVisible({ timeout: 10000 });
+    // Updated for WP-05: Support both old and new testid patterns
+    const releaseOpsPage = authedPage.getByTestId('release-ops__dashboard').or(authedPage.getByTestId('release-ops__page'));
+    await expect(releaseOpsPage).toBeVisible({ timeout: 10000 });
 
-    const refreshedTraceLinks = authedPage.locator('[data-testid^="release-ops__governance-trace-open--"]');
+    const refreshedTraceLinks = authedPage.locator('[data-testid^="release-ops__governance-trace-open--"], [data-testid^="runtime-console__control__trace-open--"]');
     const refreshedAuditIndex = await findTraceLinkIndex(authedPage, 'audit');
     expect(refreshedAuditIndex).toBeGreaterThanOrEqual(0);
     await refreshedTraceLinks.nth(refreshedAuditIndex).click();

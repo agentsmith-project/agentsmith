@@ -11,19 +11,19 @@ const SIDEBAR_NAV_ITEMS = [
   'overview',
   'chat',
   'notebook',
-  'resource_policy',
+  'files',
   'agents',
   'endpoints',
+  'resource_policy',
+  'credentials',
   'members',
-  'files',
-  'audit',
   'usage',
-  'runtime',
-  'release_ops',
+  'audit',
   'settings',
+  'runtime_console',
 ] as const;
 
-const SIDEBAR_SECTIONS = ['home', 'build', 'govern', 'operate'] as const;
+const SIDEBAR_SECTIONS = ['home', 'use', 'develop', 'govern', 'operate'] as const;
 
 test.describe('Sidebar', () => {
   test('renders with all nav items', async ({ authedPage }) => {
@@ -49,16 +49,14 @@ test.describe('Sidebar', () => {
     const sidebar = authedPage.getByTestId('sidebar');
     await expect(sidebar).toBeVisible({ timeout: 10000 });
 
-    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'runtime', 'release_ops', 'settings'] as const;
+    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'runtime_console', 'settings'] as const;
 
     for (const section of sectionsToTest) {
       const navItem = authedPage.getByTestId(`sidebar__nav-item--${section}`);
       const expectedPath = section === 'resource_policy'
         ? '/resource-policy'
-        : section === 'runtime'
-          ? '/runtime-control-plane'
-          : section === 'release_ops'
-          ? '/release-ops'
+        : section === 'runtime_console'
+          ? '/runtime-console'
           : `/${section}`;
       await expect(navItem).toHaveAttribute('href', new RegExp(`${expectedPath}$`));
       const targetHref = await navItem.getAttribute('href');

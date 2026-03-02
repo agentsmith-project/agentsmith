@@ -20,14 +20,30 @@
   "nav": {
     "overview": "概览",
     "chat": "聊天",
+    "notebook": "Notebook",
+    "files": "文件",
     "studio": "AI Studio",
     "sources": "文件",
     "agents": "智能体",
     "endpoints": "端点",
+    "resource_policy": "资源策略",
+    "credentials": "凭据",
     "members": "成员",
     "audit": "审计",
     "usage": "用量",
     "settings": "设置",
+    "runtime_console": "运行时控制台",
+    "sidebar": {
+      "home": "首页",
+      "use": "使用",
+      "develop": "开发",
+      "govern": "治理",
+      "operate": "运维",
+      "build": "构建",
+      "collapse": "收起",
+      "expand": "展开",
+      "projects": "项目"
+    },
     "go_to_projects": "前往项目列表",
     "view_all_projects": "查看所有项目",
     "no_workspaces": "暂无工作空间"
@@ -382,6 +398,17 @@
     "empty": {
       "title": "未找到用量数据",
       "description": "尝试调整筛选条件或选择不同的时间范围"
+    }
+  },
+  "runtime_console": {
+    "title": "运行时控制台",
+    "subtitle": "统一运维控制台，包含运行时可观测性、告警、控制和报告",
+    "tabs": {
+      "overview": "概览",
+      "monitoring": "监控",
+      "alerts": "告警",
+      "control": "控制",
+      "reports": "报告"
     }
   },
   "settings": {

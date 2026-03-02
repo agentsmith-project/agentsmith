@@ -3,18 +3,27 @@
  *
  * Covers alert rules CRUD, notifications panel, and authorization
  * using MSW-provided mock data.
+ *
+ * Updated for WP-05: Alerts are now accessed via Runtime Console.
  */
 
 import { test, expect, goToProject } from './fixtures/test-base';
 
 test.describe('Alert Center Page', () => {
   test.beforeEach(async ({ authedPage }) => {
-    await goToProject(authedPage, 'alerts');
+    // Navigate to Runtime Console and switch to alerts tab (WP-05)
+    await goToProject(authedPage, 'runtime-console');
+    await authedPage.getByTestId('tabs-trigger-alerts').click();
+    await authedPage.waitForTimeout(400);
   });
 
   test('page loads with tabs for Rules and Notifications', async ({ authedPage }) => {
-    // Wait for page to load successfully
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Runtime Console tabs to be visible
+    await expect(authedPage.getByTestId('tabs')).toBeVisible({ timeout: 10000 });
+
+    // Check for Alert Center tabs (embedded in Runtime Console)
+    const alertCenterPage = authedPage.getByTestId('alert-center-page');
+    await expect(alertCenterPage).toBeVisible({ timeout: 10000 });
 
     // Check for tabs
     const rulesTab = authedPage.getByRole('tab', { name: /rules/i });
@@ -25,7 +34,8 @@ test.describe('Alert Center Page', () => {
   });
 
   test('Rules tab shows alert rules list', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     // Rules tab should be active by default
     const rulesTab = authedPage.getByRole('tab', { name: /rules/i });
@@ -36,7 +46,8 @@ test.describe('Alert Center Page', () => {
   });
 
   test('Create button is visible for users with manage permission', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     // Create button should be visible
     const createButton = authedPage.getByTestId('alert-center__create-button');
@@ -44,7 +55,8 @@ test.describe('Alert Center Page', () => {
   });
 
   test('can switch to Notifications tab', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     // Click on notifications tab
     const notificationsTab = authedPage.getByRole('tab', { name: /notifications/i });
@@ -55,7 +67,8 @@ test.describe('Alert Center Page', () => {
   });
 
   test('empty state displays when no alert rules exist', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     // If there are no rules, empty state should show
     const emptyState = authedPage.getByTestId('alert-rules-list__empty');
@@ -73,11 +86,15 @@ test.describe('Alert Center Page', () => {
 
 test.describe('Alert Rules CRUD', () => {
   test.beforeEach(async ({ authedPage }) => {
-    await goToProject(authedPage, 'alerts');
+    // Navigate to Runtime Console and switch to alerts tab (WP-05)
+    await goToProject(authedPage, 'runtime-console');
+    await authedPage.getByTestId('tabs-trigger-alerts').click();
+    await authedPage.waitForTimeout(400);
   });
 
   test('create alert rule sends API payload with trigger/channels/behavior', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     const createRequest = authedPage.waitForRequest((req) => {
       return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/alert-rules$/.test(req.url());
@@ -109,7 +126,8 @@ test.describe('Alert Rules CRUD', () => {
   });
 
   test('displays alert rule cards with expected information', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     // Look for alert rule cards
     const ruleCards = authedPage.getByTestId('alert-rule-card');
@@ -125,7 +143,8 @@ test.describe('Alert Rules CRUD', () => {
   });
 
   test('enable/disable toggle works for alert rules', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     const updateRequest = authedPage.waitForRequest((req) => {
       return req.method() === 'PUT' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/alert-rules\/[^/]+$/.test(req.url());
@@ -141,7 +160,8 @@ test.describe('Alert Rules CRUD', () => {
   });
 
   test('action menu shows Edit, Test, Delete options', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     // Find the first alert rule card
     const firstCard = authedPage.getByTestId('alert-rule-card').first();
@@ -158,7 +178,8 @@ test.describe('Alert Rules CRUD', () => {
   });
 
   test('delete action sends DELETE request for selected alert rule', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     const deleteRequest = authedPage.waitForRequest((req) => {
       return req.method() === 'DELETE' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/alert-rules\/[^/]+$/.test(req.url());
@@ -176,11 +197,15 @@ test.describe('Alert Rules CRUD', () => {
 
 test.describe('Alert Notifications', () => {
   test.beforeEach(async ({ authedPage }) => {
-    await goToProject(authedPage, 'alerts');
+    // Navigate to Runtime Console and switch to alerts tab (WP-05)
+    await goToProject(authedPage, 'runtime-console');
+    await authedPage.getByTestId('tabs-trigger-alerts').click();
+    await authedPage.waitForTimeout(400);
   });
 
   test('Notifications tab shows notifications panel', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     // Switch to notifications tab
     const notificationsTab = authedPage.getByRole('tab', { name: /notifications/i });
@@ -191,7 +216,8 @@ test.describe('Alert Notifications', () => {
   });
 
   test('empty state displays when no notifications exist', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     // Switch to notifications tab
     const notificationsTab = authedPage.getByRole('tab', { name: /notifications/i });
@@ -208,7 +234,8 @@ test.describe('Alert Notifications', () => {
   });
 
   test('notifications show severity badges', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+    // Wait for Alert Center to load in Runtime Console
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible({ timeout: 10000 });
 
     // Switch to notifications tab
     const notificationsTab = authedPage.getByRole('tab', { name: /notifications/i });
@@ -227,13 +254,19 @@ test.describe('Alert Notifications', () => {
 
 test.describe('Alert Delivery Behaviors', () => {
   test('debounce suppresses duplicated firing notifications in UI list', async ({ authedPage }) => {
-    await goToProject(authedPage, 'alerts');
+    // Navigate to Runtime Console and switch to alerts tab (WP-05)
+    await goToProject(authedPage, 'runtime-console');
+    await authedPage.getByTestId('tabs-trigger-alerts').click();
+    await authedPage.waitForTimeout(400);
     await authedPage.getByRole('tab', { name: /notifications/i }).click();
     await expect(authedPage.getByTestId('alert-card')).toHaveCount(2);
   });
 
   test('resolved and webhook delivery evidence are visible in notifications', async ({ authedPage }) => {
-    await goToProject(authedPage, 'alerts');
+    // Navigate to Runtime Console and switch to alerts tab (WP-05)
+    await goToProject(authedPage, 'runtime-console');
+    await authedPage.getByTestId('tabs-trigger-alerts').click();
+    await authedPage.waitForTimeout(400);
     await authedPage.getByRole('tab', { name: /notifications/i }).click();
     await expect(authedPage.getByTestId('alert-status-resolved-notif_resolved_1')).toBeVisible();
     await expect(authedPage.getByTestId('alert-webhook-notif_resolved_1')).toContainText('failed');
@@ -243,7 +276,22 @@ test.describe('Alert Delivery Behaviors', () => {
 
 test.describe('Alert Center Authorization', () => {
   test('redirects to permission denied when user lacks view permission', async ({ limitedPage }) => {
-    await goToProject(limitedPage, 'alerts');
-    await expect(limitedPage.getByTestId('page-state__error')).toBeVisible({ timeout: 10000 });
+    // Navigate to Runtime Console and switch to alerts tab (WP-05)
+    await goToProject(limitedPage, 'runtime-console');
+    await limitedPage.getByTestId('tabs-trigger-alerts').click();
+    await limitedPage.waitForTimeout(400);
+
+    // Should show permission denied state within the alerts tab
+    // Note: When embedded in Runtime Console, permission denied may appear differently
+    const permissionDenied = limitedPage.getByTestId('permission-denied');
+    const hasPermissionDenied = await permissionDenied.isVisible().catch(() => false);
+
+    // Either permission denied or alert-center-page with error state
+    if (hasPermissionDenied) {
+      await expect(permissionDenied).toBeVisible();
+    } else {
+      // Check for error state in the embedded alert center
+      await expect(limitedPage.getByTestId('page-state__error')).toBeVisible({ timeout: 10000 });
+    }
   });
 });

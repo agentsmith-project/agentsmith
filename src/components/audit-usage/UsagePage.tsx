@@ -381,11 +381,12 @@ export function UsagePage({
     || !!apiFilters.model
     || !!apiFilters.result
     || !!apiFilters.error_class;
+  // WP-03: Updated to new runtime-console route with appropriate tabs
   const runtimeObservabilityHref = locale
-    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-observability${buildSharedOpsFilterQuery(apiFilters)}`
+    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery(apiFilters)}`
     : null;
   const releaseOpsHref = locale
-    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/release-ops${buildSharedOpsFilterQuery(apiFilters)}`
+    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=control${buildSharedOpsFilterQuery(apiFilters)}`
     : null;
   const traceQueryExtras = React.useMemo(
     () => ({

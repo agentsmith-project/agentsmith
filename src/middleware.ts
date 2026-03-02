@@ -18,8 +18,10 @@ export async function middleware(request: NextRequest) {
 
   // WP-03: Legacy route redirects for navigation restructure
   // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/{legacy-route}
+  // Note: Must match exact route only, not /alerts-xxx or /alerts/child
+  // Uses negative lookahead (?![^/]) to ensure route name is complete
   const legacyRouteMatch = pathname.match(
-    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/(runtime-control-plane|runtime-observability|release-ops|alerts)/,
+    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/(runtime-control-plane|runtime-observability|release-ops|alerts)(?![^/])(?:\?.*)?$/,
   );
 
   if (legacyRouteMatch) {

@@ -332,9 +332,9 @@ describe('RuntimeConsolePage', () => {
         />
       );
 
-      // Should show permission denied
-      expect(screen.getByText('Permission Denied')).toBeInTheDocument();
-      expect(screen.getByText(/You don't have permission to access any sections/)).toBeInTheDocument();
+      // Should show permission denied (using i18n key)
+      expect(screen.getByText('permission_denied.title')).toBeInTheDocument();
+      expect(screen.getByText(/permission_denied.message/)).toBeInTheDocument();
 
       // Tabs should not be rendered
       expect(screen.queryByTestId('tabs')).not.toBeInTheDocument();
@@ -400,6 +400,31 @@ describe('RuntimeConsolePage', () => {
       expect(() => within(tabsList).getByTestId('tabs-trigger-overview')).toThrow();
       expect(() => within(tabsList).getByTestId('tabs-trigger-alerts')).toThrow();
       expect(within(tabsList).getByTestId('tabs-trigger-control')).toBeInTheDocument();
+    });
+  });
+
+  describe('URL correction for unauthorized tabs', () => {
+    it('falls back to first accessible tab when requested tab is not accessible', () => {
+      // User only has usage:view permission (no control tab access)
+      mockPermissions['project:usage:view'] = true;
+      mockPermissions['project:alert:view'] = false;
+      mockPermissions['project:settings:manage'] = false;
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      // User should be on overview tab (first accessible), not control tab
+      const tabs = screen.getByTestId('tabs');
+      expect(tabs).toHaveAttribute('data-value', 'overview');
+
+      // Only accessible tabs should be visible
+      const tabsList = screen.getByTestId('tabs-list');
+      expect(within(tabsList).getByTestId('tabs-trigger-overview')).toBeInTheDocument();
+      expect(() => within(tabsList).getByTestId('tabs-trigger-control')).toThrow();
     });
   });
 });

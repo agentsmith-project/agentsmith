@@ -7,8 +7,9 @@
 
 describe('Route Redirect Logic - WP-03', () => {
   // Pattern from middleware for matching legacy routes
+  // Uses negative lookahead (?![^/]) to ensure route name is complete (not /alerts-xxx)
   const LEGACY_ROUTE_PATTERN =
-    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/(runtime-control-plane|runtime-observability|release-ops|alerts)/;
+    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/(runtime-control-plane|runtime-observability|release-ops|alerts)(?![^/])(?:\?.*)?$/;
 
   // Tab mapping from middleware
   const TAB_MAPPING: Record<string, string> = {
@@ -63,6 +64,22 @@ describe('Route Redirect Logic - WP-03', () => {
       ];
 
       for (const route of nonLegacyRoutes) {
+        const match = route.match(LEGACY_ROUTE_PATTERN);
+        expect(match).toBeNull();
+      }
+    });
+
+    it('should not match routes with trailing segments (regex fix)', () => {
+      // These should NOT be matched - they have extra path segments after the legacy route name
+      const trailingRoutes = [
+        '/en-US/workspaces/ws1/projects/prj1/alerts-xxx',
+        '/en-US/workspaces/ws1/projects/prj1/alerts/child',
+        '/en-US/workspaces/ws1/projects/prj1/runtime-control-plane/sub',
+        '/en-US/workspaces/ws1/projects/prj1/release-ops/dashboard',
+        '/en-US/workspaces/ws1/projects/prj1/runtime-observability/details',
+      ];
+
+      for (const route of trailingRoutes) {
         const match = route.match(LEGACY_ROUTE_PATTERN);
         expect(match).toBeNull();
       }

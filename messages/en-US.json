@@ -409,6 +409,10 @@
       "alerts": "Alerts",
       "control": "Control",
       "reports": "Reports"
+    },
+    "permission_denied": {
+      "title": "Permission Denied",
+      "message": "You don't have permission to access any sections of the Runtime Console. Required permissions: project:usage:view, project:alert:view, or project:settings:manage"
     }
   },
   "settings": {

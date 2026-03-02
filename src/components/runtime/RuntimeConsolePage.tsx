@@ -123,6 +123,7 @@ export function RuntimeConsolePage({
   React.useEffect(() => {
     const tabParam = searchParams.get('tab');
     let targetTab: RuntimeConsoleTab = 'overview';
+    let needsUrlCorrection = false;
 
     if (tabParam === 'overview' || tabParam === 'monitoring' ||
         tabParam === 'alerts' || tabParam === 'control' ||
@@ -132,14 +133,28 @@ export function RuntimeConsolePage({
       if (tabPermissions[requestedTab]) {
         targetTab = requestedTab;
       } else {
+        // User requested a tab they don't have permission for
         targetTab = firstAccessibleTab;
+        needsUrlCorrection = true;
       }
     } else {
       targetTab = firstAccessibleTab;
     }
 
     setActiveTab(targetTab);
-  }, [searchParams, tabPermissions, firstAccessibleTab]);
+
+    // Correct URL if user tried to access a tab they don't have permission for
+    if (needsUrlCorrection) {
+      const params = new URLSearchParams(searchParams.toString());
+      if (targetTab === 'overview') {
+        params.delete('tab');
+      } else {
+        params.set('tab', targetTab);
+      }
+      const correctedUrl = `${pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+      router.replace(correctedUrl, { scroll: false });
+    }
+  }, [searchParams, tabPermissions, firstAccessibleTab, pathname, router]);
 
   // If user has no accessible tabs, show permission denied
   if (accessibleTabs.length === 0) {
@@ -153,10 +168,9 @@ export function RuntimeConsolePage({
         )}
       >
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-          <h2 className="text-lg font-semibold text-foreground">Permission Denied</h2>
+          <h2 className="text-lg font-semibold text-foreground">{t('permission_denied.title')}</h2>
           <p className="mt-2 text-sm text-tertiary">
-            You don't have permission to access any sections of the Runtime Console.
-            Required permissions: project:usage:view, project:alert:view, or project:settings:manage
+            {t('permission_denied.message')}
           </p>
         </div>
       </PageLayout>

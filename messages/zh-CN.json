@@ -409,6 +409,10 @@
       "alerts": "告警",
       "control": "控制",
       "reports": "报告"
+    },
+    "permission_denied": {
+      "title": "权限不足",
+      "message": "您没有权限访问运行时控制台的任何部分。所需权限：project:usage:view、project:alert:view 或 project:settings:manage"
     }
   },
   "settings": {

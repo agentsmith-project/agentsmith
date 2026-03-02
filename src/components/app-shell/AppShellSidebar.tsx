@@ -40,6 +40,8 @@ type ProjectMenuItem = {
   icon: LucideIcon;
   labelKey: string;
   href: string;
+  // Permission is a contract token from src/lib/constants/permissions.ts
+  // Use '__multi__' for items that require multiple permission checks (handled in filter logic)
   permission:
     | 'project:read'
     | 'project:chat:access'
@@ -54,7 +56,7 @@ type ProjectMenuItem = {
     | 'project:audit:view'
     | 'project:usage:view'
     | 'project:settings:manage'
-    | 'project:runtime_console:access';
+    | '__multi__';
   section: ProjectMenuSection;
 };
 
@@ -77,7 +79,8 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage', section: 'govern' },
   // Operate section
   // Runtime Console is accessible if user has ANY of: usage:view, alert:view, settings:manage
-  { icon: Monitor, labelKey: 'runtime_console', href: 'runtime-console', permission: 'project:runtime_console:access', section: 'operate' },
+  // Uses '__multi__' marker to indicate special multi-permission handling in filter logic
+  { icon: Monitor, labelKey: 'runtime_console', href: 'runtime-console', permission: '__multi__', section: 'operate' },
 ];
 
 const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }> = [
@@ -137,7 +140,8 @@ export function AppShellSidebar({
         if (item.permission === 'project:member:view') return canViewMembers;
         if (item.permission === 'project:settings:manage') return canManageSettings;
         // Runtime Console: accessible if user has ANY of usage:view, alert:view, or settings:manage
-        if (item.permission === 'project:runtime_console:access') {
+        // Uses '__multi__' marker to indicate multi-permission check (not a contract token)
+        if (item.permission === '__multi__') {
           return canReadUsage || canViewAlerts || canManageSettings;
         }
         return true;

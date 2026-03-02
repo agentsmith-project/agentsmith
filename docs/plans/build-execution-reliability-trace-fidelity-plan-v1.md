@@ -1,7 +1,7 @@
 # Build Execution Reliability & Trace Fidelity Plan v1
 
-更新时间：2026-03-01  
-状态：`approved-recommendation`
+更新时间：2026-03-02  
+状态：`baseline-complete`
 
 前置文档：
 
@@ -180,3 +180,21 @@
 3. build failure explain 已进入正式产品界面
 4. build -> operate/govern diagnostics 工作流已打通
 5. build reliability evidence 已进入 release gate
+
+---
+
+## 7. 完成状态
+
+当前状态：`已完成`
+
+已完成项：
+
+1. `WP-01 Realtime Session Resilience`
+2. `WP-02 Notebook Trace Fidelity`
+3. `WP-03 Build Failure Explainability`
+4. `WP-04 Cross-Surface Build Diagnostics`
+5. `WP-05 Build Reliability Release Evidence`
+
+正式收口文档：
+
+1. `docs/design/build-execution-reliability-trace-fidelity-closure-review-v1.md`

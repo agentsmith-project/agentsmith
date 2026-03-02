@@ -1,7 +1,7 @@
 # Next Mainline Priority Review v2
 
-更新时间：2026-03-01  
-状态：`current-recommendation`
+更新时间：2026-03-02  
+状态：`baseline-complete`
 
 前置参考：
 
@@ -159,3 +159,15 @@ AgentSmith 当前已经完成了三条重主线：
 因此，下一主线最合理的是：
 
 `Build Execution Reliability & Trace Fidelity`
+
+---
+
+## 9. 状态更新
+
+这份评审提出的主线现已完成。
+
+正式收口文档：
+
+1. `docs/design/build-execution-reliability-trace-fidelity-closure-review-v1.md`
+
+后续如果继续，应视为新的主线评估，而不是继续沿用本评审作为当前推荐。

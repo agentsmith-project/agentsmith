@@ -2,7 +2,11 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import type { GovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
+import {
+  buildGovernanceDrilldownQuery,
+  type GovernanceDrilldownContext,
+} from '@/lib/governance-drilldown-context';
+import { classifyGovernanceEvidenceFocus, getGovernanceEvidenceCount } from '@/lib/governance-evidence';
 import { cn } from '@/lib/utils';
 
 interface GovernanceDrilldownBannerProps {
@@ -14,6 +18,9 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
   const t = useTranslations('common');
   const workspaceId = context.gov_workspace_id;
   const projectId = context.gov_project_id;
+  const drilldownQuery = buildGovernanceDrilldownQuery(context);
+  const focus = classifyGovernanceEvidenceFocus(context.gov_reason);
+  const evidenceCount = getGovernanceEvidenceCount(context);
   const evidenceMetrics = [
     { key: 'governance_drilldown_metric_related_signals', value: context.gov_related_signals },
     { key: 'governance_drilldown_metric_blocked_signals', value: context.gov_blocked_signals },
@@ -34,6 +41,12 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
           from: context.gov_from,
           kind: context.gov_kind,
           reason: context.gov_reason ?? t('governance_drilldown_reason_none'),
+        })}
+      </p>
+      <p className="mt-1 text-xs text-tertiary" data-testid="governance-drilldown__focus">
+        {t('governance_drilldown_focus', {
+          focus: t(`governance_drilldown_focus_${focus}`),
+          count: evidenceCount ?? 0,
         })}
       </p>
       {context.gov_action_id ? (
@@ -68,7 +81,7 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
         </Link>
         {workspaceId && projectId ? (
           <Link
-            href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`}
+            href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy${drilldownQuery}`}
             className={cn(
               'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
               'hover:bg-hover',
@@ -76,6 +89,42 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
             data-testid="governance-drilldown__open-policy"
           >
             {t('governance_drilldown_open_policy')}
+          </Link>
+        ) : null}
+        {workspaceId && projectId ? (
+          <Link
+            href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit${drilldownQuery}`}
+            className={cn(
+              'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+              'hover:bg-hover',
+            )}
+            data-testid="governance-drilldown__open-audit"
+          >
+            {t('governance_drilldown_open_audit')}
+          </Link>
+        ) : null}
+        {workspaceId && projectId ? (
+          <Link
+            href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/release-ops${drilldownQuery}`}
+            className={cn(
+              'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+              'hover:bg-hover',
+            )}
+            data-testid="governance-drilldown__open-release-ops"
+          >
+            {t('governance_drilldown_open_release_ops')}
+          </Link>
+        ) : null}
+        {workspaceId && projectId && context.gov_member_id ? (
+          <Link
+            href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/members?member_id=${context.gov_member_id}&member_tab=people${drilldownQuery.replace('?', '&')}`}
+            className={cn(
+              'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+              'hover:bg-hover',
+            )}
+            data-testid="governance-drilldown__open-members"
+          >
+            {t('governance_drilldown_open_members')}
           </Link>
         ) : null}
       </div>

@@ -384,6 +384,35 @@ describe('ConversationPanel', () => {
       expect(status).toHaveTextContent('Realtime task recovery exhausted');
       expect(status).toHaveTextContent('The task stream could not recover after multiple reconnect attempts.');
     });
+
+    it('shows diagnostics links when connection issues are present', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="error"
+          connectionErrorCode="TASK_EVENTS_STREAM_UNAVAILABLE"
+          diagnosticsLinks={{
+            runtime: '/runtime-observability?result=error',
+            releaseOps: '/release-ops?result=error',
+            agent: '/agents?agent=agent_123',
+          }}
+        />
+      );
+
+      expect(screen.getByTestId('notebook__sse-status-open-runtime')).toHaveAttribute(
+        'href',
+        '/runtime-observability?result=error',
+      );
+      expect(screen.getByTestId('notebook__sse-status-open-release-ops')).toHaveAttribute(
+        'href',
+        '/release-ops?result=error',
+      );
+      expect(screen.getByTestId('notebook__sse-status-open-agent')).toHaveAttribute(
+        'href',
+        '/agents?agent=agent_123',
+      );
+    });
   });
 
   describe('Empty Messages', () => {

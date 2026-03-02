@@ -34,6 +34,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { mapTraceHasMoreByMessageId, pruneTaskTraceMeta, upsertTaskTraceMeta, type TaskTraceMetaByMessageId } from '@/lib/utils/task-trace-meta';
 import { ensureDefaultUploadLibrary } from '@/lib/files/default-library';
 import { classifyNotebookTraceFailure, type NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
+import { buildAgentDiagnosticsLink, buildBuildDiagnosticsOpsQuery } from '@/lib/build-diagnostics-context';
 
 export interface TaskPageProps {
   workspaceId: string;
@@ -42,6 +43,7 @@ export interface TaskPageProps {
   canCreateTask: boolean;
   canUpdateTask: boolean;
   canDeleteTask: boolean;
+  diagnosticsBasePath?: string;
 }
 
 export function TaskPage({
@@ -51,6 +53,7 @@ export function TaskPage({
   canCreateTask,
   canUpdateTask,
   canDeleteTask,
+  diagnosticsBasePath,
 }: TaskPageProps) {
   const t = useTranslations('notebook.attached_files.url_dialog');
   const tTask = useTranslations('notebook.task');
@@ -58,6 +61,7 @@ export function TaskPage({
   const router = useRouter();
   const params = useParams();
   const locale = (params?.locale as string) || 'en-US';
+  const basePath = diagnosticsBasePath ?? `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const [fileSelectOpen, setFileSelectOpen] = React.useState(false);
   const [imageViewerOpen, setImageViewerOpen] = React.useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
@@ -98,6 +102,12 @@ export function TaskPage({
   const messagesKey = queryKeys.tasks.messages(workspaceId, projectId, taskId);
   const artifactsKey = queryKeys.tasks.artifacts(workspaceId, projectId, taskId);
   const taskDetailKey = queryKeys.tasks.detail(workspaceId, projectId, taskId);
+  const diagnosticsQuery = buildBuildDiagnosticsOpsQuery();
+  const notebookDiagnosticsLinks = React.useMemo(() => ({
+    runtime: `${basePath}/runtime-observability${diagnosticsQuery}`,
+    releaseOps: `${basePath}/release-ops${diagnosticsQuery}`,
+    agent: buildAgentDiagnosticsLink(basePath, task?.agent_id ?? null),
+  }), [basePath, diagnosticsQuery, task?.agent_id]);
 
   const resetCurrentRunUiState = React.useCallback(() => {
     setStreamingMessageId(null);
@@ -769,6 +779,7 @@ export function TaskPage({
           traceLoadingByMessageId={traceLoadingByMessageId}
           traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
           traceErrorByMessageId={traceErrorByMessageId}
+          diagnosticsLinks={notebookDiagnosticsLinks}
           onTraceExpand={fetchTracesForMessage}
           onTraceLoadMore={loadMoreTracesForMessage}
           onSendMessage={handleSendMessage}

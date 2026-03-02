@@ -125,6 +125,7 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
           canCreateTask={canAccessNotebook}
           canUpdateTask={canAccessNotebook}
           canDeleteTask={canAccessNotebook}
+          diagnosticsBasePath={basePath}
         />
       </PageLayout>
     </PageState>

@@ -36,6 +36,14 @@ test.describe('Agents Page', () => {
     await expect(authedPage.getByTestId('agents__open-endpoints')).toHaveAttribute('href', /\/endpoints$/);
   });
 
+  test('opens diagnostics panel when agent query context is present', async ({ authedPage }) => {
+    await authedPage.goto(
+      '/en-US/workspaces/ws_default/projects/proj_001/agents?agent=agent_001',
+      { waitUntil: 'domcontentloaded' },
+    );
+    await expect(authedPage.getByText(/support agent/i)).toBeVisible({ timeout: 10000 });
+  });
+
   test('create dialog opens with form fields', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('agents__table')).toBeVisible({ timeout: 10000 });
 

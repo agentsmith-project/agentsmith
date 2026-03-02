@@ -31,6 +31,7 @@ import { useChatVariants } from '@/lib/chat/use-chat-variants';
 import { useChatData } from '@/lib/chat/use-chat-data';
 import { useChatComposerActions } from '@/lib/chat/use-chat-composer-actions';
 import { buildChatViewModel } from '@/lib/chat/chat-view-model';
+import { buildAgentDiagnosticsLink, buildBuildDiagnosticsOpsQuery } from '@/lib/build-diagnostics-context';
 import { useChatMessageActions } from '@/lib/chat/use-chat-message-actions';
 import { useChatThreadActions } from '@/lib/chat/use-chat-thread-actions';
 import { useChatDeleteDialog } from '@/lib/chat/use-chat-delete-dialog';
@@ -246,6 +247,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const {
     activeStreamStatus,
     activeStreamingAssistant,
+    activeStreamErrorCode,
     activeStreamErrorMessage,
     mergedStreamingSessionIds,
     disabled,
@@ -469,6 +471,12 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
+  const diagnosticsQuery = buildBuildDiagnosticsOpsQuery();
+  const streamDiagnosticsLinks = {
+    runtime: `${basePath}/runtime-observability${diagnosticsQuery}`,
+    releaseOps: `${basePath}/release-ops${diagnosticsQuery}`,
+    agent: buildAgentDiagnosticsLink(basePath, activeExternalAgent?.id ?? activeSession?.external_agent_id ?? null),
+  };
 
   return (
     <PageState state="success">
@@ -544,7 +552,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             disabled={disabled}
             activeStreamStatus={activeStreamStatus}
             activeStreamingAssistant={activeStreamingAssistant}
-            activeStreamErrorCode={chatViewModel.activeStreamErrorCode}
+            activeStreamErrorCode={activeStreamErrorCode}
             activeStreamErrorMessage={activeStreamErrorMessage}
             suppressAutoScroll={suppressAutoScroll}
             createPending={createSessionMutation.isPending}
@@ -568,11 +576,15 @@ export default function ChatPage({ params }: ChatPageProps) {
               streamErrorTitleAgentTimeout: t('stream_error_title_agent_timeout'),
               streamErrorTitleAgentProtocol: t('stream_error_title_agent_protocol'),
               streamErrorTitleAgentUpstream: t('stream_error_title_agent_upstream'),
+              streamDiagnosticsRuntime: t('stream_diagnostics_runtime'),
+              streamDiagnosticsReleaseOps: t('stream_diagnostics_release_ops'),
+              streamDiagnosticsAgent: t('stream_diagnostics_agent'),
               selectThreadHint: t('no_active_thread_hint_select'),
               attachmentsDisabledReason: t('attachments.multimodal_required'),
               newThread: t('new_thread'),
               assistant: t('assistant'),
             }}
+            diagnosticsLinks={streamDiagnosticsLinks}
             onCreateThread={handleCreateThread}
             onRenameActiveSession={handleRenameActiveSession}
             onSelectActiveEndpoint={handleSelectActiveEndpoint}

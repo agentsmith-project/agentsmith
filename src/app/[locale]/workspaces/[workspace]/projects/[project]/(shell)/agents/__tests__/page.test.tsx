@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as nextNavigation from 'next/navigation';
 import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
 
 const mockList = vi.fn().mockResolvedValue({ items: [] });
@@ -50,6 +51,7 @@ import AgentsPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
 const mockUseIsProjectAdmin = vi.mocked(useIsProjectAdmin);
+const mockUseSearchParams = vi.spyOn(nextNavigation, 'useSearchParams');
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -65,6 +67,7 @@ function createWrapper() {
 
 describe('AgentsPage', () => {
   it('renders header and toolbar layout', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
     mockUseHasPermission.mockReturnValue(true);
     mockUseIsProjectAdmin.mockReturnValue(true);
     render(
@@ -89,6 +92,7 @@ describe('AgentsPage', () => {
   });
 
   it('opens delete confirmation and deletes an agent', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
     mockUseHasPermission.mockReturnValue(true);
     mockUseIsProjectAdmin.mockReturnValue(true);
     const user = userEvent.setup();
@@ -132,6 +136,7 @@ describe('AgentsPage', () => {
   });
 
   it('shows invalid parameter error state for unsafe route params', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
     mockUseHasPermission.mockReturnValue(true);
     mockUseIsProjectAdmin.mockReturnValue(true);
     render(
@@ -153,6 +158,7 @@ describe('AgentsPage', () => {
   });
 
   it('shows permission denied when user lacks read access', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
     mockUseHasPermission.mockReturnValue(false);
     mockUseIsProjectAdmin.mockReturnValue(false);
     render(
@@ -171,5 +177,42 @@ describe('AgentsPage', () => {
     });
 
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+  });
+
+  it('opens agent diagnostics panel from query parameter context', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('agent=agent_1'));
+    mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
+    mockList.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'agent_1',
+          name: 'Agent One',
+          description: 'Primary agent',
+          mode: 'external',
+          status: 'enabled',
+          interaction_mode: 'chat',
+          owner_name: 'owner',
+          admin_name: 'admin',
+        },
+      ],
+    });
+
+    render(
+      <AgentsPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Agent One')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Primary agent')).toBeInTheDocument();
   });
 });

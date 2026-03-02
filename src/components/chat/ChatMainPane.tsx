@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { AlertTriangle, MessageSquare, Plus } from 'lucide-react';
 
 import type { Agent, Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
@@ -12,7 +13,7 @@ import { ChatHeader } from '@/components/chat/ChatHeader';
 import { Composer } from '@/components/chat/Composer';
 import { Markdown } from '@/components/chat/Markdown';
 import { MessageList } from '@/components/chat/MessageList';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 
 export interface ChatMainPaneLabels {
   loading: string;
@@ -26,6 +27,9 @@ export interface ChatMainPaneLabels {
   streamErrorTitleAgentTimeout: string;
   streamErrorTitleAgentProtocol: string;
   streamErrorTitleAgentUpstream: string;
+  streamDiagnosticsRuntime: string;
+  streamDiagnosticsReleaseOps: string;
+  streamDiagnosticsAgent: string;
   newThread: string;
   selectThreadHint: string;
   attachmentsDisabledReason: string;
@@ -77,6 +81,11 @@ export interface ChatMainPaneProps {
   onRemoveAttachment: (attachmentId: string) => void;
   onRetryAttachment: (attachmentId: string) => void;
   onCancelEdit: () => void;
+  diagnosticsLinks?: {
+    runtime: string;
+    releaseOps: string;
+    agent?: string | null;
+  };
 }
 
 export function ChatMainPane(props: ChatMainPaneProps) {
@@ -125,6 +134,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     onRemoveAttachment,
     onRetryAttachment,
     onCancelEdit,
+    diagnosticsLinks,
   } = props;
 
   const showAppendFooter = Boolean(
@@ -250,6 +260,33 @@ export function ChatMainPane(props: ChatMainPaneProps) {
             <div className="min-w-0">
               <div className="text-sm font-medium text-error">{streamErrorTitle}</div>
               <div className="mt-1 text-xs text-tertiary">{activeStreamErrorMessage || labels.streamErrorHint}</div>
+              {diagnosticsLinks ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Link
+                    href={diagnosticsLinks.runtime}
+                    className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                    data-testid="chat__stream-error-open-runtime"
+                  >
+                    {labels.streamDiagnosticsRuntime}
+                  </Link>
+                  <Link
+                    href={diagnosticsLinks.releaseOps}
+                    className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                    data-testid="chat__stream-error-open-release-ops"
+                  >
+                    {labels.streamDiagnosticsReleaseOps}
+                  </Link>
+                  {diagnosticsLinks.agent ? (
+                    <Link
+                      href={diagnosticsLinks.agent}
+                      className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                      data-testid="chat__stream-error-open-agent"
+                    >
+                      {labels.streamDiagnosticsAgent}
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

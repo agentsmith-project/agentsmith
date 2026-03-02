@@ -63,6 +63,19 @@ test.describe('Chat Page', () => {
     await expect(authedPage.getByTestId('chat__open-files')).toHaveAttribute('href', /\/files$/);
   });
 
+  test('stream error banner links to diagnostics surfaces when visible', async ({ authedPage }) => {
+    const runtimeLink = authedPage.getByTestId('chat__stream-error-open-runtime');
+    if (!(await runtimeLink.isVisible().catch(() => false))) {
+      test.skip(true, 'Current MSW chat lane does not surface a stream error banner by default.');
+    }
+
+    await expect(runtimeLink).toHaveAttribute('href', /\/runtime-observability\?/);
+    await expect(authedPage.getByTestId('chat__stream-error-open-release-ops')).toHaveAttribute(
+      'href',
+      /\/release-ops\?/,
+    );
+  });
+
   test('should render thread search and model selector controls', async ({ authedPage }) => {
     await expect(authedPage.getByPlaceholder(/search threads/i)).toBeVisible({ timeout: 10000 });
     await expect(

@@ -1,8 +1,10 @@
 'use client';
 import * as React from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { MessageList } from './MessageList';
 import { ConversationInput } from './ConversationInput';
+import { buttonVariants } from '@/components/ui/button';
 import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
 import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
 import { classifyNotebookRealtimeFailure } from '@/lib/build-failure-explainability';
@@ -24,6 +26,11 @@ export interface ConversationPanelProps {
   onSendMessage: (content: string) => void;
   disabled?: boolean;
   sending?: boolean;
+  diagnosticsLinks?: {
+    runtime: string;
+    releaseOps: string;
+    agent?: string | null;
+  };
 }
 
 export function ConversationPanel({
@@ -43,6 +50,7 @@ export function ConversationPanel({
   onSendMessage,
   disabled = false,
   sending = false,
+  diagnosticsLinks,
 }: ConversationPanelProps) {
   const t = useTranslations('notebook.conversation');
   const [inputValue, setInputValue] = React.useState('');
@@ -114,6 +122,33 @@ export function ConversationPanel({
         <div className="border-b border-subtle px-4 py-2" data-testid="notebook__sse-status">
           <div className="text-xs font-medium text-primary">{connectionTitle}</div>
           <div className="mt-0.5 text-xs text-tertiary">{connectionDescription}</div>
+          {diagnosticsLinks ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Link
+                href={diagnosticsLinks.runtime}
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                data-testid="notebook__sse-status-open-runtime"
+              >
+                {t('open_runtime_observability')}
+              </Link>
+              <Link
+                href={diagnosticsLinks.releaseOps}
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                data-testid="notebook__sse-status-open-release-ops"
+              >
+                {t('open_release_ops')}
+              </Link>
+              {diagnosticsLinks.agent ? (
+                <Link
+                  href={diagnosticsLinks.agent}
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                  data-testid="notebook__sse-status-open-agent"
+                >
+                  {t('open_agent_diagnostics')}
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       )}
       <div className="flex-1 min-h-0">

@@ -6,11 +6,12 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import { Bot, Plus, Key, Pencil, Power, PowerOff, Trash2 } from 'lucide-react';
 import { getApiClient, AgentAPI } from '@/lib/api';
 import type { Agent, AgentDiagnostics } from '@/lib/api/types';
@@ -252,6 +253,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const tToast = useTranslations('common.toast');
   const tErrors = useTranslations('errors');
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogAgent, setEditDialogAgent] = useState<Agent | null>(null);
@@ -324,7 +326,16 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     },
   });
 
-  const agents = agentsData?.items || [];
+  const agents = useMemo(() => agentsData?.items ?? [], [agentsData?.items]);
+
+  useEffect(() => {
+    const requestedAgentId = searchParams.get('agent');
+    if (!requestedAgentId || agents.length === 0) return;
+    const matched = agents.find((agent) => agent.id === requestedAgentId);
+    if (!matched) return;
+    setDetailsAgent((prev) => (prev?.id === matched.id ? prev : matched));
+    setDetailsOpen(true);
+  }, [agents, searchParams]);
 
   const agentColumns = createAgentColumns(
     t,

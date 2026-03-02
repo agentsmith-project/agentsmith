@@ -119,6 +119,27 @@
 ✅ X passed (Y)
 ```
 
+#### 4.2.4 Evidence Pipeline 证据（如涉及）
+
+```txt
+# 粘贴 npm test -- governance-evidence 输出
+✅ Evidence Pipeline tests passed
+
+# 粘贴 npm test -- release-policy 输出
+✅ Release Policy tests passed
+```
+
+#### 4.2.5 Organization Governance 证据（如涉及）
+
+```txt
+# 粘贴 npx playwright test --project=chromium e2e/organization-governance.spec.ts 输出
+✅ Organization Governance Overview tests passed
+
+# 验证下钻功能
+✅ Governance drilldown links work correctly
+✅ Release Ops trace from organization overview works
+```
+
 ### 4.3 覆盖率证据（Coverage）
 
 ```txt
@@ -245,10 +266,18 @@ npm test               # 相关测试通过
 
 # 2. 契约检查（如涉及 API 变更）
 npm run contracts:check
+npm run contracts:check-openapi
 
 # 3. E2E 测试（如涉及相关页面）
 npm run test:e2e -- <spec>
 
-# 4. 无死代码
+# 4. Evidence Pipeline 相关（如涉及）
+npm test -- governance-evidence
+npm test -- release-policy
+
+# 5. Organization Governance 相关（如涉及）
+npm run test:e2e -- organization-governance.spec.ts
+
+# 6. 无死代码
 # 搜索: console.log, debugger, TODO, FIXME, @ts-ignore
 ```

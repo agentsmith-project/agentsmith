@@ -156,7 +156,11 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.getByTestId('ws-settings__governance-attention--project--proj_1')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__attention-open-audit--project--proj_1')).toHaveAttribute(
       'href',
-      '/en/workspaces/ws_1/projects/proj_1/audit',
+      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit?'),
+    );
+    expect(screen.getByTestId('ws-settings__attention-open-audit--project--proj_1')).toHaveAttribute(
+      'href',
+      expect.stringContaining('gov_from=workspace_settings'),
     );
   });
 
@@ -167,7 +171,11 @@ describe('WorkspaceSettingsPage', () => {
     });
     expect(screen.getByTestId('ws-settings__explain-open-blocked-project-audit')).toHaveAttribute(
       'href',
-      '/en/workspaces/ws_1/projects/proj_1/audit',
+      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit?'),
+    );
+    expect(screen.getByTestId('ws-settings__explain-open-blocked-project-audit')).toHaveAttribute(
+      'href',
+      expect.stringContaining('gov_reason=blocked_projects'),
     );
   });
 

@@ -26,6 +26,7 @@ import {
 } from '@/lib/workspace-governance-posture';
 import { formatBytes } from '@/lib/utils/formatters';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
+import { buildGovernanceDrilldownQuery } from '@/lib/governance-drilldown-context';
 
 function formatWorkspaceGroupAlias(groupAlias: string): string {
   switch (groupAlias) {
@@ -114,6 +115,25 @@ export default function WorkspaceSettingsPage() {
 
   const workspace = currentWorkspace || { id: workspaceId, name: workspaceId };
   const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
+  const buildWorkspaceEvidenceQuery = (args: {
+    kind: 'project' | 'member' | 'workspace';
+    projectId?: string;
+    memberId?: string;
+    reason: string;
+  }) =>
+    buildGovernanceDrilldownQuery({
+      gov_from: 'workspace_settings',
+      gov_kind: args.kind,
+      gov_workspace_id: workspaceId,
+      gov_project_id: args.projectId,
+      gov_member_id: args.memberId,
+      gov_reason: args.reason,
+      gov_blocked_signals: explainabilitySummary.blockedProjects + explainabilitySummary.blockedMembers,
+      gov_warning_signals: explainabilitySummary.warningProjects + explainabilitySummary.warningMembers,
+      gov_project_signals: explainabilitySummary.blockedProjects + explainabilitySummary.warningProjects,
+      gov_member_signals: explainabilitySummary.blockedMembers + explainabilitySummary.warningMembers,
+      gov_workspace_risky_projects: governancePosture.summary.riskyProjects,
+    });
 
   return (
     <PageState state="success">
@@ -197,7 +217,11 @@ export default function WorkspaceSettingsPage() {
                   <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.blockedProjects}</div>
                   {explainabilitySummary.primaryBlockedProjectId ? (
                     <Link
-                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/audit`}
+                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/audit${buildWorkspaceEvidenceQuery({
+                        kind: 'project',
+                        projectId: explainabilitySummary.primaryBlockedProjectId,
+                        reason: 'blocked_projects',
+                      })}`}
                       className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mt-2 h-7 px-2')}
                       data-testid="ws-settings__explain-open-blocked-project-audit"
                     >
@@ -210,7 +234,11 @@ export default function WorkspaceSettingsPage() {
                   <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.blockedMembers}</div>
                   {explainabilitySummary.primaryBlockedMemberProjectId ? (
                     <Link
-                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedMemberProjectId}/members`}
+                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedMemberProjectId}/members${buildWorkspaceEvidenceQuery({
+                        kind: 'member',
+                        projectId: explainabilitySummary.primaryBlockedMemberProjectId,
+                        reason: 'blocked_members',
+                      })}`}
                       className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mt-2 h-7 px-2')}
                       data-testid="ws-settings__explain-open-blocked-members"
                     >
@@ -223,7 +251,11 @@ export default function WorkspaceSettingsPage() {
                   <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.quotaGapProjects}</div>
                   {explainabilitySummary.primaryQuotaGapProjectId ? (
                     <Link
-                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryQuotaGapProjectId}/resource-policy`}
+                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryQuotaGapProjectId}/resource-policy${buildWorkspaceEvidenceQuery({
+                        kind: 'project',
+                        projectId: explainabilitySummary.primaryQuotaGapProjectId,
+                        reason: 'missing_source_library_quota',
+                      })}`}
                       className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mt-2 h-7 px-2')}
                       data-testid="ws-settings__explain-open-quota-policy"
                     >
@@ -254,62 +286,70 @@ export default function WorkspaceSettingsPage() {
                 <p className="mt-4 text-sm text-tertiary">{t('workspace_attention_empty')}</p>
               ) : (
                 <div className="mt-4 space-y-3">
-                  {attentionFeed.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-lg border border-subtle bg-bg-base/20 p-4"
-                      data-testid={`ws-settings__governance-attention--${item.id.replace(':', '--')}`}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <StatusBadge status={item.severity}>
-                              {t(`workspace_governance_status_${item.severity}`)}
-                            </StatusBadge>
-                            <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                  {attentionFeed.map((item) => {
+                    const attentionQuery = buildWorkspaceEvidenceQuery({
+                      kind: item.kind,
+                      projectId: item.projectId,
+                      memberId: item.memberId,
+                      reason: item.description,
+                    });
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-lg border border-subtle bg-bg-base/20 p-4"
+                        data-testid={`ws-settings__governance-attention--${item.id.replace(':', '--')}`}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <StatusBadge status={item.severity}>
+                                {t(`workspace_governance_status_${item.severity}`)}
+                              </StatusBadge>
+                              <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                            </div>
+                            <p className="mt-1 text-xs text-tertiary">
+                              {item.kind === 'project'
+                                ? t('workspace_attention_project_item', {
+                                    reason: item.description,
+                                  })
+                                : t('workspace_attention_member_item', {
+                                    reason: item.description,
+                                  })}
+                            </p>
                           </div>
-                          <p className="mt-1 text-xs text-tertiary">
-                            {item.kind === 'project'
-                              ? t('workspace_attention_project_item', {
-                                  reason: item.description,
-                                })
-                              : t('workspace_attention_member_item', {
-                                  reason: item.description,
-                                })}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {item.projectId ? (
-                            <Link
-                              href={`${workspaceBasePath}/projects/${item.projectId}/audit`}
-                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                              data-testid={`ws-settings__attention-open-audit--${item.id.replace(':', '--')}`}
-                            >
-                              {t('workspace_attention_open_audit')}
-                            </Link>
-                          ) : null}
-                          {item.projectId ? (
-                            <Link
-                              href={`${workspaceBasePath}/projects/${item.projectId}/resource-policy`}
-                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                              data-testid={`ws-settings__attention-open-resource-policy--${item.id.replace(':', '--')}`}
-                            >
-                              {t('workspace_attention_open_resource_policy')}
-                            </Link>
-                          ) : null}
-                          {item.projectId && item.memberId ? (
-                            <Link
-                              href={`${workspaceBasePath}/projects/${item.projectId}/members?member_id=${item.memberId}`}
-                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                              data-testid={`ws-settings__attention-open-members--${item.id.replace(':', '--')}`}
-                            >
-                              {t('workspace_attention_open_members')}
-                            </Link>
-                          ) : null}
+                          <div className="flex flex-wrap gap-2">
+                            {item.projectId ? (
+                              <Link
+                                href={`${workspaceBasePath}/projects/${item.projectId}/audit${attentionQuery}`}
+                                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                data-testid={`ws-settings__attention-open-audit--${item.id.replace(':', '--')}`}
+                              >
+                                {t('workspace_attention_open_audit')}
+                              </Link>
+                            ) : null}
+                            {item.projectId ? (
+                              <Link
+                                href={`${workspaceBasePath}/projects/${item.projectId}/resource-policy${attentionQuery}`}
+                                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                data-testid={`ws-settings__attention-open-resource-policy--${item.id.replace(':', '--')}`}
+                              >
+                                {t('workspace_attention_open_resource_policy')}
+                              </Link>
+                            ) : null}
+                            {item.projectId && item.memberId ? (
+                              <Link
+                                href={`${workspaceBasePath}/projects/${item.projectId}/members?member_id=${item.memberId}&member_tab=people${attentionQuery.replace('?', '&')}`}
+                                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                data-testid={`ws-settings__attention-open-members--${item.id.replace(':', '--')}`}
+                              >
+                                {t('workspace_attention_open_members')}
+                              </Link>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

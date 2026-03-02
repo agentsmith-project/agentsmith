@@ -84,7 +84,8 @@ export interface OrganizationGovernanceRollup {
  * Build drill-down URL for workspace navigation
  */
 function buildDrillDownUrl(baseUrl: string, workspaceId: string, projectId?: string, memberId?: string): string {
-  const basePath = `${baseUrl}/workspaces/${workspaceId}`;
+  // baseUrl already includes /{locale}/workspaces
+  const basePath = `${baseUrl}/${workspaceId}`;
 
   if (projectId) {
     // Navigate to project runtime console for project-level investigation
@@ -124,6 +125,20 @@ function calculateImpactScore(readiness: WorkspaceGovernanceReadiness, riskScore
   return riskScore;
 }
 
+/**
+ * Estimate effort in minutes based on action type and severity
+ */
+function estimateEffortMinutes(actionType: OrganizationGovernanceActionItem['actionType'], severity: WorkspaceGovernanceReadiness): number {
+  const baseEffort: Record<OrganizationGovernanceActionItem['actionType'], number> = {
+    investigate_project_risk: 15,
+    review_member_scope: 10,
+    review_workspace_posture: 20,
+  };
+
+  const severityMultiplier = severity === 'blocked' ? 1.5 : severity === 'warning' ? 1.2 : 1;
+  return Math.ceil(baseEffort[actionType] * severityMultiplier);
+}
+
 export function buildOrganizationGovernanceRollup(args: {
   workspaces: Workspace[];
   membersByWorkspaceId: Record<string, WorkspaceMember[]>;
@@ -135,6 +150,9 @@ export function buildOrganizationGovernanceRollup(args: {
   attention: OrganizationGovernanceAttentionItem[];
   actionsQueue: OrganizationGovernanceActionItem[];
 } {
+  const locale = args.locale ?? 'en-US';
+  const baseUrl = `/${locale}/workspaces`;
+  const now = new Date().toISOString();
   const ranking: OrganizationWorkspaceGovernanceSnapshot[] = [];
   const attention: OrganizationGovernanceAttentionItem[] = [];
 

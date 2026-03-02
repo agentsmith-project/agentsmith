@@ -69,34 +69,7 @@ export default function WorkspacesOverviewPage() {
     return actionsWithState.find((action) => action.id === selectedActionId) ?? actionsWithState[0] ?? null;
   }, [actionsWithState, selectedActionId]);
   const selectedActionEvidence = useMemo(() => {
-    if (!orgRollup.rollup || !selectedAction) {
-      return null;
-    }
-
-    const workspaceSnapshot = orgRollup.rollup.workspaceRanking.find(
-      (item) => item.workspaceId === selectedAction.workspaceId,
-    );
-    const relatedAttention = orgRollup.rollup.attention.filter((item) => {
-      if (item.workspaceId !== selectedAction.workspaceId) {
-        return false;
-      }
-      if (selectedAction.projectId && item.projectId === selectedAction.projectId) {
-        return true;
-      }
-      if (selectedAction.memberId && item.memberId === selectedAction.memberId) {
-        return true;
-      }
-      return !selectedAction.projectId && !selectedAction.memberId;
-    });
-
-    return {
-      workspaceSnapshot,
-      relatedAttention,
-      blockedSignals: relatedAttention.filter((item) => item.severity === 'blocked').length,
-      warningSignals: relatedAttention.filter((item) => item.severity === 'warning').length,
-      projectSignals: relatedAttention.filter((item) => item.kind === 'project').length,
-      memberSignals: relatedAttention.filter((item) => item.kind === 'member').length,
-    };
+    return getActionEvidence(orgRollup.rollup, selectedAction);
   }, [orgRollup.rollup, selectedAction]);
   const selectedActionDrilldownQuery = useMemo(() => {
     if (!selectedAction) {
@@ -110,8 +83,17 @@ export default function WorkspacesOverviewPage() {
       gov_project_id: selectedAction.projectId,
       gov_member_id: selectedAction.memberId,
       gov_reason: selectedAction.description,
+      gov_related_signals: selectedActionEvidence?.relatedAttention.length,
+      gov_blocked_signals: selectedActionEvidence?.blockedSignals,
+      gov_warning_signals: selectedActionEvidence?.warningSignals,
+      gov_project_signals: selectedActionEvidence?.projectSignals,
+      gov_member_signals: selectedActionEvidence?.memberSignals,
+      gov_workspace_risk_score: selectedActionEvidence?.workspaceSnapshot?.riskScore,
+      gov_workspace_blocked_items: selectedActionEvidence?.workspaceSnapshot?.blockedItems,
+      gov_workspace_warning_items: selectedActionEvidence?.workspaceSnapshot?.warningItems,
+      gov_workspace_risky_projects: selectedActionEvidence?.workspaceSnapshot?.riskyProjects,
     });
-  }, [selectedAction]);
+  }, [selectedAction, selectedActionEvidence]);
 
   return (
     <PageState state="success">
@@ -309,7 +291,8 @@ export default function WorkspacesOverviewPage() {
                     <div className="mt-3 space-y-2">
                       {actionsWithState.map((action) => {
                         const actionIdForTest = action.id.replace(/:/g, '--');
-                        const drilldownQuery = buildGovernanceDrilldownQuery({
+                        const actionEvidence = getActionEvidence(orgRollup.rollup, action);
+                        const actionDrilldownQuery = buildGovernanceDrilldownQuery({
                           gov_from: 'organization_overview',
                           gov_action_id: action.id,
                           gov_kind: action.memberId ? 'member' : action.projectId ? 'project' : 'workspace',
@@ -317,6 +300,15 @@ export default function WorkspacesOverviewPage() {
                           gov_project_id: action.projectId,
                           gov_member_id: action.memberId,
                           gov_reason: action.description,
+                          gov_related_signals: actionEvidence?.relatedAttention.length,
+                          gov_blocked_signals: actionEvidence?.blockedSignals,
+                          gov_warning_signals: actionEvidence?.warningSignals,
+                          gov_project_signals: actionEvidence?.projectSignals,
+                          gov_member_signals: actionEvidence?.memberSignals,
+                          gov_workspace_risk_score: actionEvidence?.workspaceSnapshot?.riskScore,
+                          gov_workspace_blocked_items: actionEvidence?.workspaceSnapshot?.blockedItems,
+                          gov_workspace_warning_items: actionEvidence?.workspaceSnapshot?.warningItems,
+                          gov_workspace_risky_projects: actionEvidence?.workspaceSnapshot?.riskyProjects,
                         });
                         return (
                         <div
@@ -395,7 +387,7 @@ export default function WorkspacesOverviewPage() {
                               {t('org_overview_action_open_explain')}
                             </button>
                             <Link
-                              href={`/${locale}/workspaces/${action.workspaceId}/settings${drilldownQuery}`}
+                              href={`/${locale}/workspaces/${action.workspaceId}/settings${actionDrilldownQuery}`}
                               className={cn(
                                 'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                 'hover:bg-hover',
@@ -406,7 +398,7 @@ export default function WorkspacesOverviewPage() {
                             </Link>
                             {action.projectId ? (
                               <Link
-                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/release-ops${drilldownQuery}`}
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/release-ops${actionDrilldownQuery}`}
                                 className={cn(
                                   'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                   'hover:bg-hover',
@@ -418,7 +410,7 @@ export default function WorkspacesOverviewPage() {
                             ) : null}
                             {action.projectId && action.memberId ? (
                               <Link
-                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/members?member_id=${action.memberId}&member_tab=people${drilldownQuery.replace('?', '&')}`}
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/members?member_id=${action.memberId}&member_tab=people${actionDrilldownQuery.replace('?', '&')}`}
                                 className={cn(
                                   'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                   'hover:bg-hover',
@@ -430,7 +422,7 @@ export default function WorkspacesOverviewPage() {
                             ) : null}
                             {action.projectId ? (
                               <Link
-                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/audit${drilldownQuery}`}
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/audit${actionDrilldownQuery}`}
                                 className={cn(
                                   'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                   'hover:bg-hover',
@@ -438,7 +430,7 @@ export default function WorkspacesOverviewPage() {
                                 data-testid={`workspace-overview__actions-queue-open-audit--${actionIdForTest}`}
                               >
                                 {t('org_overview_open_audit')}
-                              </Link>
+                                </Link>
                             ) : null}
                           </div>
                           {action.history.length > 0 ? (
@@ -644,4 +636,52 @@ function EvidenceMetric({ label, value, testId }: { label: string; value: number
       <p className="mt-0.5 text-sm font-semibold text-foreground">{value}</p>
     </div>
   );
+}
+
+type OrganizationRollupPayload = NonNullable<ReturnType<typeof useOrganizationGovernanceRollup>['rollup']>;
+
+interface ActionEvidence {
+  workspaceSnapshot: OrganizationRollupPayload['workspaceRanking'][number] | undefined;
+  relatedAttention: OrganizationRollupPayload['attention'];
+  blockedSignals: number;
+  warningSignals: number;
+  projectSignals: number;
+  memberSignals: number;
+}
+
+function getActionEvidence(
+  rollup: OrganizationRollupPayload | null | undefined,
+  action:
+    | {
+        workspaceId: string;
+        projectId?: string;
+        memberId?: string;
+      }
+    | null
+    | undefined,
+): ActionEvidence | null {
+  if (!rollup || !action) {
+    return null;
+  }
+  const workspaceSnapshot = rollup.workspaceRanking.find((item) => item.workspaceId === action.workspaceId);
+  const relatedAttention = rollup.attention.filter((item) => {
+    if (item.workspaceId !== action.workspaceId) {
+      return false;
+    }
+    if (action.projectId && item.projectId === action.projectId) {
+      return true;
+    }
+    if (action.memberId && item.memberId === action.memberId) {
+      return true;
+    }
+    return !action.projectId && !action.memberId;
+  });
+  return {
+    workspaceSnapshot,
+    relatedAttention,
+    blockedSignals: relatedAttention.filter((item) => item.severity === 'blocked').length,
+    warningSignals: relatedAttention.filter((item) => item.severity === 'warning').length,
+    projectSignals: relatedAttention.filter((item) => item.kind === 'project').length,
+    memberSignals: relatedAttention.filter((item) => item.kind === 'member').length,
+  };
 }

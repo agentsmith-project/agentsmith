@@ -135,6 +135,10 @@ describe('WorkspacesOverviewPage', () => {
       'href',
       expect.stringContaining('gov_action_id=action%3Aws_1%3Aproject%3Aproj_1'),
     );
+    expect(screen.getByTestId('workspace-overview__action-explain-open-audit')).toHaveAttribute(
+      'href',
+      expect.stringContaining('gov_related_signals=1'),
+    );
     expect(screen.getByTestId('workspace-overview__action-explain-open-policy')).toBeInTheDocument();
   });
 

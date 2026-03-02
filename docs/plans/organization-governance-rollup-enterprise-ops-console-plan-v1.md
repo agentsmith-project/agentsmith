@@ -204,11 +204,12 @@
 17. `WP-04` 第二阶段推进：trace 条目已打通到 usage/audit 过滤视图；Audit 页面新增 URL 过滤参数恢复能力，确保从治理下钻进入后可直接看到一致证据窗口
 18. `WP-04` 第二阶段推进：trace 下钻链路已透传 `incident/escalation/run` 引用，并在 audit/usage 页面显示 trace context，强化 operator 对证据链来源的一致认知
 19. `WP-04` 第二阶段推进：Audit 页面已支持 trace 引用精确匹配（含 metadata 全量扫描）并自动打开匹配事件详情，补齐“看到引用 -> 看到具体记录”的最后一步定位体验
+20. `WP-04` 第二阶段推进：AuditEvent contract 已增加标准 trace 字段，AuditAPI 已完成 trace 引用归一化（top-level + metadata 双通道提取），页面定位逻辑优先依赖标准字段，metadata 扫描仅保留兜底
 
 待完成：
 
 1. `WP-01` 第二阶段：与 workspace settings / release readiness 建立更强联动
 2. `WP-02` 第二阶段：矩阵排序与批量动作预览
 3. `WP-03` 第二阶段：接入真实后端 organization-actions 持久化与审计归档
-4. `WP-04` 第二阶段：将 trace 引用与后端标准化字段 contract 固化（避免依赖 metadata 扫描），并补充 e2e 场景验收
+4. `WP-04` 第二阶段：补充 e2e 场景验收，验证 release-ops trace -> audit/usage 精确定位链路在 UI 层的端到端稳定性
 5. `WP-05` 组织级 release evidence 与 gate 集成

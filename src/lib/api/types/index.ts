@@ -434,6 +434,10 @@ export interface AuditEvent {
   error_code?: string;
   error_message?: string;
   request_id: string;
+  trace_ref?: string;
+  trace_incident_id?: string;
+  trace_escalation_id?: string;
+  trace_run_id?: string;
   metadata_json: Record<string, unknown>; // 重命名 metadata -> metadata_json
 }
 

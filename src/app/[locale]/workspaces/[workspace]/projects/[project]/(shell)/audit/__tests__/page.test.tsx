@@ -140,8 +140,10 @@ describe('AuditPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('audit__trace-context')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('audit__trace-match-status')).toBeInTheDocument();
-    expect(screen.getByTestId('audit-detail-drawer-open')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('audit__trace-match-status')).toBeInTheDocument();
+      expect(screen.getByTestId('audit-detail-drawer-open')).toBeInTheDocument();
+    });
   });
 
   it('shows permission error when audit token is missing', async () => {

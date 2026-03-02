@@ -330,6 +330,85 @@ export interface UsageReportEvidence {
 export class AuditAPI {
   constructor(private client: ApiClient) {}
 
+  private static asRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null;
+  }
+
+  private static asString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+  }
+
+  private static normalizeActorType(value: unknown): 'user' | 'agent' | 'plugin' {
+    if (value === 'agent' || value === 'plugin') {
+      return value;
+    }
+    return 'user';
+  }
+
+  private static normalizeResult(value: unknown): 'ok' | 'error' {
+    return value === 'error' ? 'error' : 'ok';
+  }
+
+  private static extractTraceRefs(item: Record<string, unknown>, metadata: Record<string, unknown>) {
+    const getValue = (...keys: string[]) => {
+      for (const key of keys) {
+        const topValue = AuditAPI.asString(item[key]);
+        if (topValue) return topValue;
+        const metaValue = AuditAPI.asString(metadata[key]);
+        if (metaValue) return metaValue;
+      }
+      return undefined;
+    };
+    const incidentId = getValue('trace_incident_id', 'incident_id');
+    const escalationId = getValue('trace_escalation_id', 'escalation_id');
+    const runId = getValue('trace_run_id', 'run_id');
+    return {
+      trace_ref: getValue('trace_ref') ?? escalationId ?? incidentId ?? runId,
+      trace_incident_id: incidentId,
+      trace_escalation_id: escalationId,
+      trace_run_id: runId,
+    };
+  }
+
+  private static normalizeAuditEvent(
+    item: unknown,
+    workspaceId: string,
+    projectId: string,
+  ): AuditEvent {
+    const record = AuditAPI.asRecord(item) ?? {};
+    const metadata = AuditAPI.asRecord(record.metadata_json) ?? AuditAPI.asRecord(record.metadata) ?? {};
+    const traceRefs = AuditAPI.extractTraceRefs(record, metadata);
+    const id = AuditAPI.asString(record.id)
+      ?? AuditAPI.asString(record.request_id)
+      ?? `${workspaceId}-${projectId}-${AuditAPI.asString(record.timestamp) ?? 'audit'}`;
+    const timestamp = AuditAPI.asString(record.timestamp) ?? new Date(0).toISOString();
+    const requestId = AuditAPI.asString(record.request_id) ?? id;
+
+    return {
+      id,
+      timestamp,
+      workspace_id: AuditAPI.asString(record.workspace_id) ?? workspaceId,
+      project_id: AuditAPI.asString(record.project_id) ?? projectId,
+      actor_type: AuditAPI.normalizeActorType(record.actor_type),
+      actor_id: AuditAPI.asString(record.actor_id) ?? 'unknown',
+      action: AuditAPI.asString(record.action) ?? 'unknown',
+      resource_type: AuditAPI.asString(record.resource_type),
+      resource_id: AuditAPI.asString(record.resource_id),
+      end_user_id: AuditAPI.asString(record.end_user_id),
+      result: AuditAPI.normalizeResult(record.result),
+      error_code: AuditAPI.asString(record.error_code),
+      error_message: AuditAPI.asString(record.error_message),
+      request_id: requestId,
+      trace_ref: traceRefs.trace_ref,
+      trace_incident_id: traceRefs.trace_incident_id,
+      trace_escalation_id: traceRefs.trace_escalation_id,
+      trace_run_id: traceRefs.trace_run_id,
+      metadata_json: metadata,
+    };
+  }
+
   /**
    * List audit events with filters
    */
@@ -370,9 +449,16 @@ export class AuditAPI {
     }
 
     const query = searchParams.toString();
-    return this.client.get<PaginatedResponse<AuditEvent>>(
+    const response = await this.client.get<PaginatedResponse<unknown>>(
       `/workspaces/${workspaceId}/projects/${projectId}/audit${query ? `?${query}` : ''}`,
     );
+    const items = Array.isArray(response.items)
+      ? response.items.map((item) => AuditAPI.normalizeAuditEvent(item, workspaceId, projectId))
+      : [];
+    return {
+      ...response,
+      items,
+    };
   }
 }
 

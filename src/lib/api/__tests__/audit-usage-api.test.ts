@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { UsageAPI } from '@/lib/api/endpoints/audit-usage';
+import { AuditAPI, UsageAPI } from '@/lib/api/endpoints/audit-usage';
 
 describe('UsageAPI exportReport', () => {
   const client = {
@@ -205,5 +205,49 @@ describe('UsageAPI exportReport', () => {
     expect(postMock).toHaveBeenNthCalledWith(3, '/workspaces/ws_1/projects/proj_1/usage/report-schedules/usage_schedule_1/deliveries/delivery_1/acknowledge');
     expect(postMock).toHaveBeenNthCalledWith(4, '/workspaces/ws_1/projects/proj_1/usage/report-schedules/run-due');
     expect(getMock).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/usage/report-evidence');
+  });
+});
+
+describe('AuditAPI list normalization', () => {
+  it('normalizes trace references and metadata payload from wire response', async () => {
+    const getMock = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: 'audit_1',
+          timestamp: '2026-03-02T00:00:00.000Z',
+          actor_type: 'user',
+          actor_id: 'user_1',
+          action: 'release_gate_blocked',
+          result: 'error',
+          request_id: 'req_1',
+          metadata_json: {
+            incident_id: 'incident_1',
+            escalation_id: 'esc_1',
+            run_id: 'run_1',
+          },
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 25,
+      has_more: false,
+    });
+    const api = new AuditAPI({
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof AuditAPI>[0]);
+
+    const result = await api.list('ws_1', 'proj_1', {
+      start_time: '2026-03-01T00:00:00.000Z',
+      end_time: '2026-03-02T00:00:00.000Z',
+    });
+
+    expect(getMock).toHaveBeenCalledOnce();
+    const first = result.items[0];
+    expect(first?.workspace_id).toBe('ws_1');
+    expect(first?.project_id).toBe('proj_1');
+    expect(first?.trace_incident_id).toBe('incident_1');
+    expect(first?.trace_escalation_id).toBe('esc_1');
+    expect(first?.trace_run_id).toBe('run_1');
+    expect(first?.trace_ref).toBe('esc_1');
   });
 });

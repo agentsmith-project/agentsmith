@@ -85,10 +85,17 @@ function findTraceMatchedAuditEvent(
   );
   for (const event of events) {
     const metadata = event.metadata_json ?? {};
+    const normalizedRefs = [
+      event.trace_ref,
+      event.trace_incident_id,
+      event.trace_escalation_id,
+      event.trace_run_id,
+    ].filter((value): value is string => !!value && value.trim().length > 0);
     const matched = candidates.some((candidate) =>
       event.id === candidate
       || event.request_id === candidate
       || event.resource_id === candidate
+      || normalizedRefs.includes(candidate)
       || metadataContainsString(metadata, candidate),
     );
     if (matched) {

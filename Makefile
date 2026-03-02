@@ -781,6 +781,7 @@ governance-release-smoke:
 	}; \
 	$(MAKE) governance-pages-real-backend-smoke-strict; \
 	$(MAKE) governance-pages-real-backend-interaction-smoke-strict; \
+	$(MAKE) organization-governance-release-smoke; \
 	run_with_token_retry governance-policy-access-effect-smoke; \
 	run_with_token_retry governance-policy-group-access-effect-smoke; \
 	run_with_token_retry governance-policy-update-audit-smoke; \

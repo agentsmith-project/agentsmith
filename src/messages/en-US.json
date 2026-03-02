@@ -1345,6 +1345,7 @@
     "release_ops_governance_metric_critical_escalations": "Critical escalations",
     "release_ops_governance_trace_title": "Evidence trace",
     "release_ops_governance_trace_empty": "No trace items are available for the current governance focus.",
+    "release_ops_governance_trace_open": "Open evidence view",
     "release_ops_governance_trace_source_usage_blocker": "Usage blocker",
     "release_ops_governance_trace_source_usage_warning": "Usage warning",
     "release_ops_governance_trace_source_escalation": "Escalation",

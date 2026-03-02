@@ -201,11 +201,12 @@
 14. `WP-04` 第二阶段推进：治理 banner 已支持基于 reason 的证据焦点识别（cost/deny/quota 等）与统一 remediation 快捷入口（audit/release-ops/members/policy），并保持 context 透传
 15. `WP-04` 第二阶段推进：release-ops 页面已接入 governance evidence bridge，基于实时 runtime/usage/run/escalation 数据聚合 cost/deny/quota 焦点指标，用于治理入口后的即时判定
 16. `WP-04` 第二阶段推进：governance evidence bridge 已增加 trace 条目（usage blocker/warning + open escalation）用于 operator 级证据追踪，减少“只有汇总无证据”的验收风险
+17. `WP-04` 第二阶段推进：trace 条目已打通到 usage/audit 过滤视图；Audit 页面新增 URL 过滤参数恢复能力，确保从治理下钻进入后可直接看到一致证据窗口
 
 待完成：
 
 1. `WP-01` 第二阶段：与 workspace settings / release readiness 建立更强联动
 2. `WP-02` 第二阶段：矩阵排序与批量动作预览
 3. `WP-03` 第二阶段：接入真实后端 organization-actions 持久化与审计归档
-4. `WP-04` 第二阶段：把 governance evidence bridge 指标继续下钻到具体审计记录与可追责证据条目（operator 级）
+4. `WP-04` 第二阶段：把 trace 与后端 incident / event id 建立强关联，支持按证据条目精确定位单条审计记录
 5. `WP-05` 组织级 release evidence 与 gate 集成

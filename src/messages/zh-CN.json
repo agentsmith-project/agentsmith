@@ -1347,6 +1347,7 @@
     "release_ops_governance_metric_critical_escalations": "关键升级事件",
     "release_ops_governance_trace_title": "证据追踪",
     "release_ops_governance_trace_empty": "当前治理焦点下暂无证据条目。",
+    "release_ops_governance_trace_open": "打开证据视图",
     "release_ops_governance_trace_source_usage_blocker": "Usage 阻断项",
     "release_ops_governance_trace_source_usage_warning": "Usage 告警项",
     "release_ops_governance_trace_source_escalation": "升级事件",

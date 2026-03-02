@@ -36,6 +36,58 @@ function getDefaultTimeRange() {
   };
 }
 
+function asValidIsoTimestamp(value: string | null): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? undefined : new Date(timestamp).toISOString();
+}
+
+function asPositiveInt(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+  return parsed;
+}
+
+function buildAuditFiltersFromSearchParams(
+  searchParams: URLSearchParams,
+  defaultEndUserId?: string,
+): AuditListParams {
+  const defaults = getDefaultTimeRange();
+  const actorTypeRaw = searchParams.get('actor_type');
+  const resultRaw = searchParams.get('result');
+  const sortByRaw = searchParams.get('sort_by');
+  const sortOrderRaw = searchParams.get('sort_order');
+  const actorType =
+    actorTypeRaw === 'user' || actorTypeRaw === 'agent' || actorTypeRaw === 'plugin'
+      ? actorTypeRaw
+      : undefined;
+  const result = resultRaw === 'ok' || resultRaw === 'error' ? resultRaw : undefined;
+  const sortBy = sortByRaw === 'timestamp' ? sortByRaw : 'timestamp';
+  const sortOrder = sortOrderRaw === 'asc' || sortOrderRaw === 'desc' ? sortOrderRaw : 'desc';
+  return {
+    start_time: asValidIsoTimestamp(searchParams.get('start_time')) ?? defaults.start_time,
+    end_time: asValidIsoTimestamp(searchParams.get('end_time')) ?? defaults.end_time,
+    action: searchParams.get('action') ?? undefined,
+    actor_type: actorType,
+    actor_id: searchParams.get('actor_id') ?? undefined,
+    end_user_id: searchParams.get('end_user_id') ?? defaultEndUserId,
+    resource_type: searchParams.get('resource_type') ?? undefined,
+    resource_id: searchParams.get('resource_id') ?? undefined,
+    result,
+    page: asPositiveInt(searchParams.get('page')) ?? 1,
+    page_size: asPositiveInt(searchParams.get('page_size')) ?? 25,
+    sort_by: sortBy,
+    sort_order: sortOrder,
+  };
+}
+
 export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = 'en-US' }: AuditPageProps) {
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
@@ -44,21 +96,21 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const searchParams = useSearchParams();
   const drilldownContext = React.useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);
+  const searchParamsKey = searchParams.toString();
 
-  const [filters, setFilters] = React.useState<AuditListParams>(() => ({
-    ...getDefaultTimeRange(),
-    page: 1,
-    page_size: 25,
-    sort_by: 'timestamp',
-    sort_order: 'desc',
-    ...(defaultEndUserId && { end_user_id: defaultEndUserId }),
-  }));
+  const [filters, setFilters] = React.useState<AuditListParams>(() =>
+    buildAuditFiltersFromSearchParams(searchParams, defaultEndUserId),
+  );
   const [selectedEvent, setSelectedEvent] = React.useState<AuditEvent | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
   const { data, isLoading, error } = useAuditEvents(workspaceId, projectId, filters, {
     enabled: canReadAudit,
   });
+
+  React.useEffect(() => {
+    setFilters(buildAuditFiltersFromSearchParams(searchParams, defaultEndUserId));
+  }, [defaultEndUserId, searchParams, searchParamsKey]);
 
   if (!canReadAudit) {
     return (
@@ -117,8 +169,10 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   };
 
   const handleClearFilters = () => {
+    const defaults = getDefaultTimeRange();
     setFilters({
-      ...getDefaultTimeRange(),
+      start_time: defaults.start_time,
+      end_time: defaults.end_time,
       page: 1,
       page_size: 25,
       sort_by: 'timestamp',

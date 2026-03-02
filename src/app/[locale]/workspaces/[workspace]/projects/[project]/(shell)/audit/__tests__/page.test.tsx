@@ -1,5 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 import AuditPage from '../page';
 
@@ -18,6 +18,16 @@ const STABLE_PROJECT = {
   role: 'user' as const,
   permissions: ['project:audit:view'],
 };
+const mockSearchParams = new URLSearchParams();
+const mockUseSearchParams = vi.fn(() => mockSearchParams);
+
+vi.mock('next/navigation', async () => {
+  const actual = await vi.importActual<typeof import('next/navigation')>('next/navigation');
+  return {
+    ...actual,
+    useSearchParams: () => mockUseSearchParams(),
+  };
+});
 
 vi.mock('@/components/audit-usage/AuditFilters', () => ({
   AuditFilters: (props: any) => mockAuditFilters(props),
@@ -63,6 +73,38 @@ vi.mock('@/lib/stores/authStore', () => ({
 }));
 
 describe('AuditPage route', () => {
+  beforeEach(() => {
+    mockSearchParams.forEach((_value, key) => {
+      mockSearchParams.delete(key);
+    });
+  });
+
+  it('hydrates audit filters from URL search params', async () => {
+    mockSearchParams.set('start_time', '2026-02-28T00:00:00.000Z');
+    mockSearchParams.set('end_time', '2026-03-01T00:00:00.000Z');
+    mockSearchParams.set('result', 'error');
+    render(
+      <AuditPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockAuditFilters).toHaveBeenCalled();
+    });
+    const latestProps = mockAuditFilters.mock.calls.at(-1)?.[0] as { filters?: Record<string, string> } | undefined;
+    expect(latestProps?.filters?.result).toBe('error');
+    expect(latestProps?.filters?.start_time).toBe('2026-02-28T00:00:00.000Z');
+    expect(latestProps?.filters?.end_time).toBe('2026-03-01T00:00:00.000Z');
+    mockSearchParams.delete('start_time');
+    mockSearchParams.delete('end_time');
+    mockSearchParams.delete('result');
+  });
+
   it('shows permission error when audit token is missing', async () => {
     mockHasPermission.mockReturnValue(false);
     render(

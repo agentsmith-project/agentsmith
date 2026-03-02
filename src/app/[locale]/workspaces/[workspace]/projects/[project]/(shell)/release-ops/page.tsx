@@ -40,7 +40,7 @@ import { cn } from '@/lib/utils';
 import { evaluateReleasePolicy } from '@/lib/release-policy';
 import { Textarea } from '@/components/ui/textarea';
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
-import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
+import { buildGovernanceDrilldownQuery, parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
 import { buildReleaseOpsGovernanceEvidenceSnapshot } from '@/lib/release-ops-governance-evidence';
 
@@ -283,6 +283,10 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       escalations: releaseEscalations,
     });
   }, [drilldownContext, evidenceQuery.data, releaseEscalations, releaseRuns, runtimeQuery.data]);
+  const governanceQuery = useMemo(
+    () => (drilldownContext ? buildGovernanceDrilldownQuery(drilldownContext) : ''),
+    [drilldownContext],
+  );
   const recentReleaseReports = filteredReleaseReports.slice(0, 6);
   const recentPassRate = recentReleaseReports.length > 0
     ? recentReleaseReports.filter((item) => item.status === 'pass').length / recentReleaseReports.length
@@ -491,6 +495,11 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const contextWindowStart = selectedReportTimestamp
     ? new Date(new Date(selectedReportTimestamp).getTime() - 24 * 60 * 60 * 1000).toISOString()
     : undefined;
+  const traceSharedFilters = {
+    start_time: contextWindowStart ?? timeRange.start_time,
+    end_time: contextWindowEnd ?? timeRange.end_time,
+    result: 'error' as const,
+  };
   const runtimeContextHref = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-observability${buildSharedOpsFilterQuery({
     start_time: contextWindowStart,
     end_time: contextWindowEnd,
@@ -837,17 +846,35 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                       className="rounded-lg border border-subtle bg-bg-base/10 px-3 py-2 text-xs text-tertiary"
                       data-testid={`release-ops__governance-trace-item--${item.id}`}
                     >
-                      <span className="font-medium text-foreground">
-                        {settingsT(`release_ops_governance_trace_source_${item.source}`)}
-                      </span>
-                      {' · '}
-                      <span>{item.message}</span>
-                      {item.timestamp ? (
-                        <>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="font-medium text-foreground">
+                            {settingsT(`release_ops_governance_trace_source_${item.source}`)}
+                          </span>
                           {' · '}
-                          <span>{formatDateTime(item.timestamp)}</span>
-                        </>
-                      ) : null}
+                          <span>{item.message}</span>
+                          {item.timestamp ? (
+                            <>
+                              {' · '}
+                              <span>{formatDateTime(item.timestamp)}</span>
+                            </>
+                          ) : null}
+                        </div>
+                        <Link
+                          href={buildTraceDetailHref({
+                            locale,
+                            workspaceId,
+                            projectId,
+                            source: item.source,
+                            sharedFilters: traceSharedFilters,
+                            governanceQuery,
+                          })}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                          data-testid={`release-ops__governance-trace-open--${item.id}`}
+                        >
+                          {settingsT('release_ops_governance_trace_open')}
+                        </Link>
+                      </div>
                     </div>
                   ))
                 )}
@@ -2001,4 +2028,37 @@ function GovernanceEvidenceMetric({ label, value, testId }: { label: string; val
       <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
+}
+
+function mergeQueryStrings(baseQuery: string, governanceQuery: string): string {
+  if (!governanceQuery) {
+    return baseQuery;
+  }
+  if (!baseQuery) {
+    return governanceQuery;
+  }
+  return `${baseQuery}&${governanceQuery.replace(/^\?/, '')}`;
+}
+
+function buildTraceDetailHref(args: {
+  locale: string;
+  workspaceId: string;
+  projectId: string;
+  source: 'usage_blocker' | 'usage_warning' | 'escalation';
+  sharedFilters: {
+    start_time: string;
+    end_time: string;
+    result: 'error';
+  };
+  governanceQuery: string;
+}): string {
+  const sharedQuery =
+    args.source === 'escalation'
+      ? buildSharedOpsFilterQuery(args.sharedFilters)
+      : buildSharedOpsFilterQuery(args.sharedFilters, { panel: 'usage' });
+  const mergedQuery = mergeQueryStrings(sharedQuery, args.governanceQuery);
+  if (args.source === 'escalation') {
+    return `/${args.locale}/workspaces/${args.workspaceId}/projects/${args.projectId}/audit${mergedQuery}`;
+  }
+  return `/${args.locale}/workspaces/${args.workspaceId}/projects/${args.projectId}/usage${mergedQuery}`;
 }

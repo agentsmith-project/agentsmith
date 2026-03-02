@@ -132,6 +132,7 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.getByTestId('ws-settings__project-posture')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-posture--proj_1')).toBeInTheDocument();
     expect(screen.getByText('workspace_projects_risk_public_open_access')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-open-settings--proj_1')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/settings');
   });
 
   it('renders member administration risk view', async () => {
@@ -141,6 +142,10 @@ describe('WorkspaceSettingsPage', () => {
     });
     expect(screen.getByTestId('ws-settings__member-administration--wm_2')).toBeInTheDocument();
     expect(screen.getByText('workspace_member_admin_risk_removed_member_with_project_scope')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__member-open-members--wm_2')).toHaveAttribute(
+      'href',
+      '/en/workspaces/ws_1/projects/proj_2/members?member_id=wm_2',
+    );
   });
 
   it('shows validation_error for invalid workspace param', async () => {

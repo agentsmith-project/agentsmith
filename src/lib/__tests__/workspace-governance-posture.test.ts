@@ -145,6 +145,8 @@ describe('buildWorkspaceMemberAdministration', () => {
     expect(dev?.exposedProjects).toBe(1);
     expect(dev?.riskCodes).toContain('public_project_scope');
     expect(dev?.riskCodes).toContain('open_join_scope');
+    expect(dev?.primaryProjectId).toBe('proj_1');
+    expect(dev?.primaryExposedProjectId).toBe('proj_1');
   });
 
   it('uses governance group fallback from permissions when api field is missing', () => {

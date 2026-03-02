@@ -56,6 +56,8 @@ export interface WorkspaceMemberAdministrationEntry {
   ownedProjects: number;
   administeredProjects: number;
   exposedProjects: number;
+  primaryProjectId?: string;
+  primaryExposedProjectId?: string;
   riskCodes: WorkspaceMemberGovernanceRiskCode[];
 }
 
@@ -213,12 +215,17 @@ export function buildWorkspaceMemberAdministration(args: {
       let ownedProjects = 0;
       let administeredProjects = 0;
       let exposedProjects = 0;
+      let primaryProjectId: string | undefined;
+      let primaryExposedProjectId: string | undefined;
       const riskCodes: WorkspaceMemberGovernanceRiskCode[] = [];
 
       for (const project of projects) {
         const adminIds = getProjectAdminIds(project);
         const hasScope = project.owner_id === member.user_id || adminIds.includes(member.user_id);
         if (!hasScope) continue;
+        if (!primaryProjectId) {
+          primaryProjectId = project.id;
+        }
 
         if (project.owner_id === member.user_id) {
           ownedProjects += 1;
@@ -227,6 +234,9 @@ export function buildWorkspaceMemberAdministration(args: {
 
         if (project.status === 'active' && (project.visibility === 'public' || (project.join_policy ?? 'approval_required') === 'open')) {
           exposedProjects += 1;
+          if (!primaryExposedProjectId) {
+            primaryExposedProjectId = project.id;
+          }
           if (project.visibility === 'public') {
             riskCodes.push('public_project_scope');
           }
@@ -261,6 +271,8 @@ export function buildWorkspaceMemberAdministration(args: {
         ownedProjects,
         administeredProjects,
         exposedProjects,
+        primaryProjectId,
+        primaryExposedProjectId,
         riskCodes: Array.from(new Set(riskCodes)),
       };
     })

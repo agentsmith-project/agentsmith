@@ -38,6 +38,12 @@ test.describe('Workspace Settings Page', () => {
     await expect(authedPage.getByTestId('ws-settings__project-posture')).toBeVisible({ timeout: 10000 });
   });
 
+  test('should expose cross-project governance actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('ws-settings__project-open-resource-policy--proj_001')).toBeVisible({ timeout: 10000 });
+  });
+
   test('should display workspace members from mock data', async ({ authedPage }) => {
     const membersSection = authedPage.getByTestId('ws-settings__members');
     await expect(membersSection).toBeVisible({ timeout: 10000 });

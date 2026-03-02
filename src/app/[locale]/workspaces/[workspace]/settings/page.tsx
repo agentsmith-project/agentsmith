@@ -1,14 +1,17 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
+import { buttonVariants } from '@/components/ui/button';
 import { SectionHeading } from '@/components/ui/section-heading';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { cn } from '@/lib/utils';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
@@ -42,6 +45,7 @@ export default function WorkspaceSettingsPage() {
   const t = useTranslations('settings');
   const tErrors = useTranslations('errors');
   const tProjects = useTranslations('projects');
+  const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canManageGovernance = useHasWorkspacePermission('workspace:governance:update');
@@ -93,6 +97,7 @@ export default function WorkspaceSettingsPage() {
   }
 
   const workspace = currentWorkspace || { id: workspaceId, name: workspaceId };
+  const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
 
   return (
     <PageState state="success">
@@ -230,6 +235,30 @@ export default function WorkspaceSettingsPage() {
                           </div>
                         </div>
                       </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link
+                          href={`${workspaceBasePath}/projects/${project.projectId}/settings`}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                          data-testid={`ws-settings__project-open-settings--${project.projectId}`}
+                        >
+                          {t('workspace_projects_open_settings')}
+                        </Link>
+                        <Link
+                          href={`${workspaceBasePath}/projects/${project.projectId}/members`}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                          data-testid={`ws-settings__project-open-members--${project.projectId}`}
+                        >
+                          {t('workspace_projects_open_members')}
+                        </Link>
+                        <Link
+                          href={`${workspaceBasePath}/projects/${project.projectId}/resource-policy`}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                          data-testid={`ws-settings__project-open-resource-policy--${project.projectId}`}
+                        >
+                          {t('workspace_projects_open_resource_policy')}
+                        </Link>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -341,6 +370,27 @@ export default function WorkspaceSettingsPage() {
                           ))}
                         </div>
                       ) : null}
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {member.primaryProjectId ? (
+                          <Link
+                            href={`${workspaceBasePath}/projects/${member.primaryProjectId}/members?member_id=${member.memberId}`}
+                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                            data-testid={`ws-settings__member-open-members--${member.memberId}`}
+                          >
+                            {t('workspace_member_admin_open_members')}
+                          </Link>
+                        ) : null}
+                        {member.primaryExposedProjectId ? (
+                          <Link
+                            href={`${workspaceBasePath}/projects/${member.primaryExposedProjectId}/resource-policy`}
+                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                            data-testid={`ws-settings__member-open-resource-policy--${member.memberId}`}
+                          >
+                            {t('workspace_member_admin_open_resource_policy')}
+                          </Link>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>

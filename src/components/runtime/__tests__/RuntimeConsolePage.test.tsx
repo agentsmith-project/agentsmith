@@ -14,9 +14,12 @@ vi.mock('next-intl', () => ({
 }));
 
 // Mock next/navigation
+let mockSearchParams = new URLSearchParams();
+const mockRouterReplace = vi.fn();
+
 vi.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams(),
-  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => mockSearchParams,
+  useRouter: () => ({ replace: mockRouterReplace, push: vi.fn(), prefetch: vi.fn(), back: vi.fn(), forward: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/en-US/workspaces/ws1/projects/proj1/runtime-console',
 }));
 
@@ -109,6 +112,9 @@ describe('RuntimeConsolePage', () => {
     mockPermissions['project:usage:view'] = true;
     mockPermissions['project:alert:view'] = true;
     mockPermissions['project:settings:manage'] = true;
+    // Reset mock search params and router
+    mockSearchParams = new URLSearchParams();
+    mockRouterReplace.mockReset();
   });
 
   describe('with full permissions', () => {
@@ -404,11 +410,14 @@ describe('RuntimeConsolePage', () => {
   });
 
   describe('URL correction for unauthorized tabs', () => {
-    it('falls back to first accessible tab when requested tab is not accessible', () => {
+    it('corrects URL via router.replace when user tries to access unauthorized tab', () => {
       // User only has usage:view permission (no control tab access)
       mockPermissions['project:usage:view'] = true;
       mockPermissions['project:alert:view'] = false;
       mockPermissions['project:settings:manage'] = false;
+
+      // Simulate URL with ?tab=control (user doesn't have permission)
+      mockSearchParams = new URLSearchParams('tab=control');
 
       render(
         <RuntimeConsolePage
@@ -425,6 +434,63 @@ describe('RuntimeConsolePage', () => {
       const tabsList = screen.getByTestId('tabs-list');
       expect(within(tabsList).getByTestId('tabs-trigger-overview')).toBeInTheDocument();
       expect(() => within(tabsList).getByTestId('tabs-trigger-control')).toThrow();
+
+      // Verify router.replace was called to correct the URL
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        '/en-US/workspaces/ws1/projects/proj1/runtime-console',
+        { scroll: false }
+      );
+    });
+
+    it('corrects URL to specific tab when overview is not accessible', () => {
+      // User only has alert:view permission (no usage:view, no settings:manage)
+      mockPermissions['project:usage:view'] = false;
+      mockPermissions['project:alert:view'] = true;
+      mockPermissions['project:settings:manage'] = false;
+
+      // Simulate URL with ?tab=overview (user doesn't have permission)
+      mockSearchParams = new URLSearchParams('tab=overview');
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      // User should be on alerts tab (first accessible)
+      const tabs = screen.getByTestId('tabs');
+      expect(tabs).toHaveAttribute('data-value', 'alerts');
+
+      // Verify router.replace was called to correct the URL to ?tab=alerts
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        '/en-US/workspaces/ws1/projects/proj1/runtime-console?tab=alerts',
+        { scroll: false }
+      );
+    });
+
+    it('does not correct URL when user has permission for requested tab', () => {
+      // User has usage:view permission
+      mockPermissions['project:usage:view'] = true;
+      mockPermissions['project:alert:view'] = false;
+      mockPermissions['project:settings:manage'] = false;
+
+      // Simulate URL with ?tab=monitoring (user has permission)
+      mockSearchParams = new URLSearchParams('tab=monitoring');
+
+      render(
+        <RuntimeConsolePage
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
+      );
+
+      // User should be on monitoring tab
+      const tabs = screen.getByTestId('tabs');
+      expect(tabs).toHaveAttribute('data-value', 'monitoring');
+
+      // router.replace should NOT be called since user has permission
+      expect(mockRouterReplace).not.toHaveBeenCalled();
     });
   });
 });

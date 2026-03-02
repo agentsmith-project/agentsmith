@@ -148,6 +148,18 @@ describe('WorkspaceSettingsPage', () => {
     );
   });
 
+  it('renders governance attention feed with audit drill-downs', async () => {
+    render(<WorkspaceSettingsPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__governance-attention')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('ws-settings__governance-attention--project--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__attention-open-audit--project--proj_1')).toHaveAttribute(
+      'href',
+      '/en/workspaces/ws_1/projects/proj_1/audit',
+    );
+  });
+
   it('shows validation_error for invalid workspace param', async () => {
     mockUseParams.mockReturnValue({ workspace: '<script>', locale: 'en' });
     render(<WorkspaceSettingsPage />);

@@ -61,6 +61,16 @@ export interface WorkspaceMemberAdministrationEntry {
   riskCodes: WorkspaceMemberGovernanceRiskCode[];
 }
 
+export interface WorkspaceGovernanceAttentionItem {
+  id: string;
+  severity: WorkspaceGovernanceReadiness;
+  kind: 'project' | 'member';
+  title: string;
+  description: string;
+  projectId?: string;
+  memberId?: string;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -291,4 +301,55 @@ export function buildWorkspaceMemberAdministration(args: {
       };
       return rank(left.readiness) - rank(right.readiness) || left.name.localeCompare(right.name);
     });
+}
+
+export function buildWorkspaceGovernanceAttentionFeed(args: {
+  projects: WorkspaceProjectGovernancePosture[];
+  members: WorkspaceMemberAdministrationEntry[];
+}): WorkspaceGovernanceAttentionItem[] {
+  const items: WorkspaceGovernanceAttentionItem[] = [];
+
+  for (const project of args.projects) {
+    if (project.readiness !== 'blocked' && project.readiness !== 'warning') {
+      continue;
+    }
+    items.push({
+      id: `project:${project.projectId}`,
+      severity: project.readiness,
+      kind: 'project',
+      title: project.name,
+      description: project.riskCodes.join(', '),
+      projectId: project.projectId,
+    });
+  }
+
+  for (const member of args.members) {
+    if (member.readiness !== 'blocked' && member.readiness !== 'warning') {
+      continue;
+    }
+    items.push({
+      id: `member:${member.memberId}`,
+      severity: member.readiness,
+      kind: 'member',
+      title: member.name,
+      description: member.riskCodes.join(', '),
+      projectId: member.primaryProjectId,
+      memberId: member.memberId,
+    });
+  }
+
+  const rank = (severity: WorkspaceGovernanceReadiness) => {
+    switch (severity) {
+      case 'blocked':
+        return 0;
+      case 'warning':
+        return 1;
+      default:
+        return 2;
+    }
+  };
+
+  return items
+    .sort((left, right) => rank(left.severity) - rank(right.severity) || left.title.localeCompare(right.title))
+    .slice(0, 8);
 }

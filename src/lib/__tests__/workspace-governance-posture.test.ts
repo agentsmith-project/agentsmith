@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildWorkspaceGovernancePosture, buildWorkspaceMemberAdministration } from '@/lib/workspace-governance-posture';
+import {
+  buildWorkspaceGovernancePosture,
+  buildWorkspaceMemberAdministration,
+  buildWorkspaceGovernanceAttentionFeed,
+} from '@/lib/workspace-governance-posture';
 import type { Project, WorkspaceMember } from '@/lib/api/types';
 
 const members: WorkspaceMember[] = [
@@ -167,5 +171,46 @@ describe('buildWorkspaceMemberAdministration', () => {
     });
 
     expect(entries[0]?.governanceGroup).toBe('wheel');
+  });
+});
+
+describe('buildWorkspaceGovernanceAttentionFeed', () => {
+  it('prioritizes blocked project and member governance issues', () => {
+    const projects = buildWorkspaceGovernancePosture({
+      members,
+      projects: [makeProject({ visibility: 'public', join_policy: 'open' })],
+    }).projects;
+    const memberEntries = buildWorkspaceMemberAdministration({
+      members: [
+        ...members,
+        {
+          id: 'wm_3',
+          user_id: 'u_3',
+          name: 'Removed Admin',
+          email: 'removed@example.com',
+          role: 'admin',
+          permissions: ['workspace:read'],
+          status: 'removed',
+          joined_at: '2026-03-01T00:00:00Z',
+        },
+      ],
+      projects: [
+        makeProject({
+          id: 'proj_scope',
+          governance_json: {
+            project_admins: ['u_3'],
+          },
+        }),
+      ],
+    });
+
+    const feed = buildWorkspaceGovernanceAttentionFeed({
+      projects,
+      members: memberEntries,
+    });
+
+    expect(feed[0]?.severity).toBe('blocked');
+    expect(feed.some((item) => item.kind === 'project')).toBe(true);
+    expect(feed.some((item) => item.kind === 'member')).toBe(true);
   });
 });

@@ -21,6 +21,7 @@ import { buildProjectAdminSummary } from '@/lib/projects/project-view';
 import {
   buildWorkspaceGovernancePosture,
   buildWorkspaceMemberAdministration,
+  buildWorkspaceGovernanceAttentionFeed,
 } from '@/lib/workspace-governance-posture';
 import { formatBytes } from '@/lib/utils/formatters';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
@@ -72,6 +73,13 @@ export default function WorkspaceSettingsPage() {
   const memberAdministration = React.useMemo(
     () => buildWorkspaceMemberAdministration({ members, projects }),
     [members, projects],
+  );
+  const attentionFeed = React.useMemo(
+    () => buildWorkspaceGovernanceAttentionFeed({
+      projects: governancePosture.projects,
+      members: memberAdministration,
+    }),
+    [governancePosture.projects, memberAdministration],
   );
 
   if (!workspaceId) {
@@ -166,6 +174,76 @@ export default function WorkspaceSettingsPage() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div className="mt-5 p-5 rounded-xl border border-border bg-surface" data-testid="ws-settings__governance-attention">
+              <SectionHeading
+                eyebrow={t('workspace_attention_eyebrow')}
+                title={t('workspace_attention_title')}
+                subtitle={t('workspace_attention_subtitle')}
+              />
+              {attentionFeed.length === 0 ? (
+                <p className="mt-4 text-sm text-tertiary">{t('workspace_attention_empty')}</p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {attentionFeed.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-lg border border-subtle bg-bg-base/20 p-4"
+                      data-testid={`ws-settings__governance-attention--${item.id.replace(':', '--')}`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <StatusBadge status={item.severity}>
+                              {t(`workspace_governance_status_${item.severity}`)}
+                            </StatusBadge>
+                            <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                          </div>
+                          <p className="mt-1 text-xs text-tertiary">
+                            {item.kind === 'project'
+                              ? t('workspace_attention_project_item', {
+                                  reason: item.description,
+                                })
+                              : t('workspace_attention_member_item', {
+                                  reason: item.description,
+                                })}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {item.projectId ? (
+                            <Link
+                              href={`${workspaceBasePath}/projects/${item.projectId}/audit`}
+                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                              data-testid={`ws-settings__attention-open-audit--${item.id.replace(':', '--')}`}
+                            >
+                              {t('workspace_attention_open_audit')}
+                            </Link>
+                          ) : null}
+                          {item.projectId ? (
+                            <Link
+                              href={`${workspaceBasePath}/projects/${item.projectId}/resource-policy`}
+                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                              data-testid={`ws-settings__attention-open-resource-policy--${item.id.replace(':', '--')}`}
+                            >
+                              {t('workspace_attention_open_resource_policy')}
+                            </Link>
+                          ) : null}
+                          {item.projectId && item.memberId ? (
+                            <Link
+                              href={`${workspaceBasePath}/projects/${item.projectId}/members?member_id=${item.memberId}`}
+                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                              data-testid={`ws-settings__attention-open-members--${item.id.replace(':', '--')}`}
+                            >
+                              {t('workspace_attention_open_members')}
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="mt-5 p-5 rounded-xl border border-border bg-surface" data-testid="ws-settings__project-posture">

@@ -40,6 +40,8 @@ import { cn } from '@/lib/utils';
 import { evaluateReleasePolicy } from '@/lib/release-policy';
 import { Textarea } from '@/components/ui/textarea';
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
+import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
+import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
 
 interface ReleaseOpsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -142,6 +144,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const drilldownContext = useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);
   const errorsT = useTranslations('errors');
   const settingsT = useTranslations('settings');
   const usageT = useTranslations('usage');
@@ -767,6 +770,9 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
           />
         )}
       >
+        {drilldownContext ? (
+          <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
+        ) : null}
         <div className="space-y-3" data-testid="release-ops__page">
           <ReleaseOpsDashboard
             runtime={runtimeQuery.data}

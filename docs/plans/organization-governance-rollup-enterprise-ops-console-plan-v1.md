@@ -194,6 +194,7 @@
 7. `WP-03` 第二阶段已启动：动作队列支持状态回写（pending/in-progress/completed/blocked）与状态历史审计展示
 8. `WP-03` 第二阶段推进：已接入 organization-actions 内部 API 合约与 Mock 路由，形成“服务端优先 + 本地镜像”状态同步
 9. `WP-04` 第一阶段已启动：建立 organization drill-down query contract，并在 overview -> audit/members/resource-policy 路径注入上下文
+10. `WP-04` 第一阶段推进：release-ops 页面已接入 drill-down 上下文提示，形成 organization -> release governance 连续链路
 
 待完成：
 

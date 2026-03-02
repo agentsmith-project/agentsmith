@@ -88,6 +88,8 @@
     "governance_drilldown_open_members": "查看成员",
     "trace_context_title": "追踪上下文",
     "trace_context_summary": "来源：{source} · 引用：{ref}",
+    "trace_context_match_found": "已在当前审计窗口匹配到追踪引用。",
+    "trace_context_match_missing": "当前审计窗口未匹配到追踪引用。",
     "feature_availability": {
       "mock_only_title": "演示 / Mock 功能",
       "mock_only_description": "该页面在 MSW 演示模式下可用，但本地 API 后端尚未实现此功能。",

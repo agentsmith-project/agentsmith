@@ -55,6 +55,49 @@ function asPositiveInt(value: string | null): number | undefined {
   return parsed;
 }
 
+function metadataContainsString(value: unknown, expected: string): boolean {
+  if (typeof value === 'string') {
+    return value === expected;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => metadataContainsString(item, expected));
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).some((item) => metadataContainsString(item, expected));
+  }
+  return false;
+}
+
+function findTraceMatchedAuditEvent(
+  events: AuditEvent[],
+  trace: {
+    ref?: string;
+    incidentId?: string;
+    escalationId?: string;
+    runId?: string;
+  },
+): AuditEvent | null {
+  if (!trace.ref && !trace.incidentId && !trace.escalationId && !trace.runId) {
+    return null;
+  }
+  const candidates = [trace.ref, trace.incidentId, trace.escalationId, trace.runId].filter(
+    (value): value is string => !!value && value.trim().length > 0,
+  );
+  for (const event of events) {
+    const metadata = event.metadata_json ?? {};
+    const matched = candidates.some((candidate) =>
+      event.id === candidate
+      || event.request_id === candidate
+      || event.resource_id === candidate
+      || metadataContainsString(metadata, candidate),
+    );
+    if (matched) {
+      return event;
+    }
+  }
+  return null;
+}
+
 function buildAuditFiltersFromSearchParams(
   searchParams: URLSearchParams,
   defaultEndUserId?: string,
@@ -108,6 +151,8 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   );
   const [selectedEvent, setSelectedEvent] = React.useState<AuditEvent | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [traceMatchStatus, setTraceMatchStatus] = React.useState<'matched' | 'unmatched' | null>(null);
+  const lastAutoOpenedTraceRef = React.useRef<string | null>(null);
 
   const { data, isLoading, error } = useAuditEvents(workspaceId, projectId, filters, {
     enabled: canReadAudit,
@@ -116,6 +161,30 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   React.useEffect(() => {
     setFilters(buildAuditFiltersFromSearchParams(searchParams, defaultEndUserId));
   }, [defaultEndUserId, searchParams, searchParamsKey]);
+
+  React.useEffect(() => {
+    if (!traceRef || !data?.items || data.items.length === 0) {
+      setTraceMatchStatus(traceRef ? 'unmatched' : null);
+      return;
+    }
+    if (lastAutoOpenedTraceRef.current === traceRef) {
+      return;
+    }
+    const matched = findTraceMatchedAuditEvent(data.items, {
+      ref: traceRef,
+      incidentId: traceIncidentId,
+      escalationId: traceEscalationId,
+      runId: traceRunId,
+    });
+    if (matched) {
+      setSelectedEvent(matched);
+      setDrawerOpen(true);
+      setTraceMatchStatus('matched');
+      lastAutoOpenedTraceRef.current = traceRef;
+      return;
+    }
+    setTraceMatchStatus('unmatched');
+  }, [data?.items, traceEscalationId, traceIncidentId, traceRef, traceRunId]);
 
   if (!canReadAudit) {
     return (
@@ -299,6 +368,13 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
             {traceEscalationId ? ` · escalation=${traceEscalationId}` : null}
             {traceRunId ? ` · run=${traceRunId}` : null}
           </p>
+          {traceMatchStatus ? (
+            <p className="mt-1 text-xs text-tertiary" data-testid="audit__trace-match-status">
+              {traceMatchStatus === 'matched'
+                ? commonT('trace_context_match_found')
+                : commonT('trace_context_match_missing')}
+            </p>
+          ) : null}
         </div>
       ) : null}
       <div data-testid="audit__filters">

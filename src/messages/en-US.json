@@ -88,6 +88,8 @@
     "governance_drilldown_open_members": "Open members",
     "trace_context_title": "Trace context",
     "trace_context_summary": "Source: {source} · Ref: {ref}",
+    "trace_context_match_found": "Matched trace reference in current audit window.",
+    "trace_context_match_missing": "Trace reference not found in current audit window.",
     "feature_availability": {
       "mock_only_title": "Demo / mock-backed feature",
       "mock_only_description": "This page is available in MSW demo mode, but the local API backend does not implement this feature yet.",

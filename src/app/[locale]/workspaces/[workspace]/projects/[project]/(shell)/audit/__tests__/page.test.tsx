@@ -5,7 +5,7 @@ import AuditPage from '../page';
 
 const mockAuditFilters = vi.fn((_props: unknown) => <div data-testid="audit-filters" />);
 const mockHasPermission = vi.fn((_permission?: string) => true);
-const STABLE_AUDIT_ITEMS: [] = [];
+let STABLE_AUDIT_ITEMS: Array<Record<string, unknown>> = [];
 const STABLE_PROJECT = {
   id: 'proj_1',
   workspace_id: 'ws_1',
@@ -38,7 +38,8 @@ vi.mock('@/components/audit-usage/AuditTable', () => ({
 }));
 
 vi.mock('@/components/audit-usage/AuditDetailDrawer', () => ({
-  AuditDetailDrawer: () => null,
+  AuditDetailDrawer: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="audit-detail-drawer-open" /> : null,
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
@@ -74,6 +75,7 @@ vi.mock('@/lib/stores/authStore', () => ({
 
 describe('AuditPage route', () => {
   beforeEach(() => {
+    STABLE_AUDIT_ITEMS = [];
     mockSearchParams.forEach((_value, key) => {
       mockSearchParams.delete(key);
     });
@@ -103,6 +105,43 @@ describe('AuditPage route', () => {
     mockSearchParams.delete('start_time');
     mockSearchParams.delete('end_time');
     mockSearchParams.delete('result');
+  });
+
+  it('shows trace context and auto-opens matched audit detail', async () => {
+    STABLE_AUDIT_ITEMS = [{
+      id: 'audit_trace_1',
+      timestamp: '2026-03-02T00:00:00.000Z',
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      actor_type: 'user',
+      actor_id: 'user_1',
+      action: 'release_gate_blocked',
+      result: 'error',
+      request_id: 'req_trace_1',
+      metadata_json: {
+        incident_id: 'incident_1',
+        escalation_id: 'esc_1',
+      },
+    }];
+    mockSearchParams.set('trace_ref', 'trace-esc-1');
+    mockSearchParams.set('trace_incident_id', 'incident_1');
+    mockSearchParams.set('trace_escalation_id', 'esc_1');
+
+    render(
+      <AuditPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('audit__trace-context')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('audit__trace-match-status')).toBeInTheDocument();
+    expect(screen.getByTestId('audit-detail-drawer-open')).toBeInTheDocument();
   });
 
   it('shows permission error when audit token is missing', async () => {

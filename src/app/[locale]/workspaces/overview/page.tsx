@@ -177,6 +177,54 @@ export default function WorkspacesOverviewPage() {
                     </div>
                   )}
                 </section>
+
+                <section className="rounded-md border border-border bg-surface p-4" data-testid="workspace-overview__actions-queue">
+                  <h2 className="text-base font-semibold text-foreground">{t('org_overview_actions_queue_title')}</h2>
+                  {orgRollup.rollup.actionsQueue.length === 0 ? (
+                    <p className="mt-2 text-sm text-tertiary">{t('org_overview_actions_queue_empty')}</p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {orgRollup.rollup.actionsQueue.map((action) => (
+                        <div
+                          key={action.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-subtle bg-bg-base/20 p-3"
+                          data-testid={`workspace-overview__actions-queue-item--${action.id.replace(/:/g, '--')}`}
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">{action.workspaceName}</p>
+                            <p className="text-xs text-tertiary">{t(`org_overview_action_type_${action.actionType}`)}</p>
+                            <p className="mt-1 truncate text-xs text-tertiary">{action.title}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={action.severity}>{t(`org_overview_status_${action.severity}`)}</StatusBadge>
+                            <Link
+                              href={`/${locale}/workspaces/${action.workspaceId}/settings`}
+                              className={cn(
+                                'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                'hover:bg-hover',
+                              )}
+                              data-testid={`workspace-overview__actions-queue-open-settings--${action.id.replace(/:/g, '--')}`}
+                            >
+                              {t('org_overview_open_settings')}
+                            </Link>
+                            {action.projectId ? (
+                              <Link
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/release-ops`}
+                                className={cn(
+                                  'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                  'hover:bg-hover',
+                                )}
+                                data-testid={`workspace-overview__actions-queue-open-release-ops--${action.id.replace(/:/g, '--')}`}
+                              >
+                                {t('org_overview_open_release_ops')}
+                              </Link>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
               </>
             )}
           </div>

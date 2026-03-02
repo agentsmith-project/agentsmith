@@ -105,6 +105,7 @@ describe('WorkspaceSelectPage', () => {
           },
         ],
         attention: [],
+        actionsQueue: [],
       },
     });
 

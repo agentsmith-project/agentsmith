@@ -68,6 +68,18 @@ describe('WorkspacesOverviewPage', () => {
             projectId: 'proj_1',
           },
         ],
+        actionsQueue: [
+          {
+            id: 'action:ws_1:project:proj_1',
+            workspaceId: 'ws_1',
+            workspaceName: 'Workspace One',
+            projectId: 'proj_1',
+            severity: 'warning',
+            actionType: 'investigate_project_risk',
+            title: 'Project One',
+            description: 'public_visibility',
+          },
+        ],
       },
     });
   });
@@ -80,6 +92,8 @@ describe('WorkspacesOverviewPage', () => {
     expect(screen.getByTestId('workspace-overview__row--ws_1')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__attention')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__attention-item--ws_1--project--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__actions-queue')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__actions-queue-item--action--ws_1--project--proj_1')).toBeInTheDocument();
   });
 
   it('shows loading state', () => {

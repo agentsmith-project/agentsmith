@@ -75,6 +75,8 @@ describe('buildOrganizationGovernanceRollup', () => {
     expect(result.workspaceRanking[0]?.workspaceId).toBe('ws_1');
     expect(result.workspaceRanking[1]?.workspaceId).toBe('ws_2');
     expect(result.attention.length).toBeGreaterThan(0);
+    expect(result.actionsQueue.length).toBeGreaterThan(0);
+    expect(result.actionsQueue[0]?.actionType).toBe('investigate_project_risk');
   });
 
   it('returns ready summary when no risks are present', () => {
@@ -93,5 +95,6 @@ describe('buildOrganizationGovernanceRollup', () => {
     expect(result.summary.riskyWorkspaces).toBe(0);
     expect(result.summary.totalRiskyProjects).toBe(0);
     expect(result.attention).toHaveLength(0);
+    expect(result.actionsQueue).toHaveLength(0);
   });
 });

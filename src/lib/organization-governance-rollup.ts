@@ -30,6 +30,17 @@ export interface OrganizationGovernanceAttentionItem {
   memberId?: string;
 }
 
+export interface OrganizationGovernanceActionItem {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  projectId?: string;
+  severity: WorkspaceGovernanceReadiness;
+  actionType: 'investigate_project_risk' | 'review_member_scope' | 'review_workspace_posture';
+  title: string;
+  description: string;
+}
+
 export interface OrganizationGovernanceRollup {
   readiness: WorkspaceGovernanceReadiness;
   totalWorkspaces: number;
@@ -48,6 +59,7 @@ export function buildOrganizationGovernanceRollup(args: {
   summary: OrganizationGovernanceRollup;
   workspaceRanking: OrganizationWorkspaceGovernanceSnapshot[];
   attention: OrganizationGovernanceAttentionItem[];
+  actionsQueue: OrganizationGovernanceActionItem[];
 } {
   const ranking: OrganizationWorkspaceGovernanceSnapshot[] = [];
   const attention: OrganizationGovernanceAttentionItem[] = [];
@@ -125,6 +137,22 @@ export function buildOrganizationGovernanceRollup(args: {
     })
     .slice(0, 8);
 
+  const actionsQueue = attentionRanking.slice(0, 8).map<OrganizationGovernanceActionItem>((item) => ({
+    id: `action:${item.id}`,
+    workspaceId: item.workspaceId,
+    workspaceName: item.workspaceName,
+    projectId: item.projectId,
+    severity: item.severity,
+    actionType:
+      item.kind === 'project'
+        ? 'investigate_project_risk'
+        : item.memberId
+          ? 'review_member_scope'
+          : 'review_workspace_posture',
+    title: item.title,
+    description: item.description,
+  }));
+
   const blockedWorkspaces = workspaceRanking.filter((workspace) => workspace.readiness === 'blocked').length;
   const warningWorkspaces = workspaceRanking.filter((workspace) => workspace.readiness === 'warning').length;
   const riskyWorkspaces = blockedWorkspaces + warningWorkspaces;
@@ -144,5 +172,6 @@ export function buildOrganizationGovernanceRollup(args: {
     summary,
     workspaceRanking,
     attention: attentionRanking,
+    actionsQueue,
   };
 }

@@ -287,6 +287,13 @@ const releaseRuns: ReleaseGateRunListItem[] = [
     policy_enforcement: releaseReports[2]?.policy_enforcement,
     runtime_release_readiness: 'blocked',
     usage_release_readiness: 'blocked',
+    governance_blockers: [
+      { source: 'organization_governance', message: 'organization_governance_drilldown_chain_missing' },
+      { source: 'workspace_governance', message: 'workspace_governance_explainability_missing' },
+    ],
+    governance_warnings: [
+      { source: 'governance', message: 'governance_warning_pending_override_review' },
+    ],
     total_checks: 6,
     passed_checks: 3,
     failed_checks: 2,
@@ -402,6 +409,13 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
     release_policy_decision: 'blocked',
     runtime_release_readiness: 'blocked',
     usage_release_readiness: 'blocked',
+    governance_blockers: [
+      { source: 'organization_governance', message: 'organization_governance_drilldown_chain_missing' },
+      { source: 'workspace_governance', message: 'workspace_governance_explainability_missing' },
+    ],
+    governance_warnings: [
+      { source: 'governance', message: 'governance_warning_pending_override_review' },
+    ],
     assignee_user_id: 'user_oncall',
     assignee_name: 'Oncall Engineer',
     due_at: '2026-02-27T20:00:00.000Z',

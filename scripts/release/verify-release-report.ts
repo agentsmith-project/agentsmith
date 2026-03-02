@@ -374,6 +374,24 @@ async function generateReleaseReport(options: VerifyReleaseOptions): Promise<Rel
   };
 }
 
+function collectGovernanceIssues(summary: ReportSummary): {
+  blockers: Array<{ source: 'governance' | 'workspace_governance' | 'organization_governance'; message: string }>;
+  warnings: Array<{ source: 'governance' | 'workspace_governance' | 'organization_governance'; message: string }>;
+} {
+  return {
+    blockers: [
+      ...(summary.governance_release_evidence?.blockers ?? []).map((message) => ({ source: 'governance' as const, message })),
+      ...(summary.workspace_governance_evidence?.blockers ?? []).map((message) => ({ source: 'workspace_governance' as const, message })),
+      ...(summary.organization_governance_evidence?.blockers ?? []).map((message) => ({ source: 'organization_governance' as const, message })),
+    ],
+    warnings: [
+      ...(summary.governance_release_evidence?.warnings ?? []).map((message) => ({ source: 'governance' as const, message })),
+      ...(summary.workspace_governance_evidence?.warnings ?? []).map((message) => ({ source: 'workspace_governance' as const, message })),
+      ...(summary.organization_governance_evidence?.warnings ?? []).map((message) => ({ source: 'organization_governance' as const, message })),
+    ],
+  };
+}
+
 function buildReleaseGateRunHistory(
   reportName: string,
   report: ReleaseReport,
@@ -383,6 +401,7 @@ function buildReleaseGateRunHistory(
   const firstFailedCheck = failedChecks[0];
   const failureCategories = Array.from(new Set((report.summary.failure_categories ?? []).map((category) => category.category)));
   const incidentId = options.rerunOfRunId ? `incident-${options.rerunOfRunId}` : `incident-${reportName}`;
+  const governanceSignals = collectGovernanceIssues(report.summary);
   return {
     id: reportName,
     incident_id: incidentId,
@@ -398,6 +417,8 @@ function buildReleaseGateRunHistory(
     release_policy_decision: report.summary.release_policy?.decision,
     runtime_release_readiness: report.summary.runtime_release_evidence?.guardrails.release_readiness,
     usage_release_readiness: report.summary.usage_report_evidence?.release_readiness,
+    governance_blockers: governanceSignals.blockers,
+    governance_warnings: governanceSignals.warnings,
     total_checks: report.execution.total_checks,
     passed_checks: report.execution.passed,
     failed_checks: report.execution.failed,
@@ -431,6 +452,7 @@ async function buildReleaseEscalationEvent(
     : decision === 'warning'
       ? 'warning'
       : 'info';
+  const governanceSignals = collectGovernanceIssues(report.summary);
   const event: ReleaseEscalationEvent = {
     id: reportName,
     incident_id: run.incident_id,
@@ -455,6 +477,8 @@ async function buildReleaseEscalationEvent(
     release_policy_decision: decision,
     runtime_release_readiness: report.summary.runtime_release_evidence?.guardrails.release_readiness,
     usage_release_readiness: report.summary.usage_report_evidence?.release_readiness,
+    governance_blockers: governanceSignals.blockers,
+    governance_warnings: governanceSignals.warnings,
     failed_step_name: run.failed_step_name,
     failure_categories: run.failure_categories,
   };

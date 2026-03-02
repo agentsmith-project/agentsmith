@@ -412,6 +412,11 @@ export interface OrganizationGovernanceReleaseEvidence {
   note?: string;
 }
 
+export interface GovernanceEvidenceIssue {
+  source: 'governance' | 'workspace_governance' | 'organization_governance';
+  message: string;
+}
+
 export interface ReleaseGateRunHistory {
   /** Unique gate run id */
   id: string;
@@ -441,6 +446,10 @@ export interface ReleaseGateRunHistory {
   runtime_release_readiness?: 'ready' | 'blocked';
   /** Usage readiness captured for the run */
   usage_release_readiness?: 'ready' | 'blocked';
+  /** Structured governance blockers for run-level traceability */
+  governance_blockers: GovernanceEvidenceIssue[];
+  /** Structured governance warnings for run-level traceability */
+  governance_warnings: GovernanceEvidenceIssue[];
   /** Execution counters */
   total_checks: number;
   passed_checks: number;
@@ -481,6 +490,8 @@ export interface ReleaseEscalationEvent {
   release_policy_decision?: 'ready' | 'warning' | 'blocked';
   runtime_release_readiness?: 'ready' | 'blocked';
   usage_release_readiness?: 'ready' | 'blocked';
+  governance_blockers?: GovernanceEvidenceIssue[];
+  governance_warnings?: GovernanceEvidenceIssue[];
   failed_step_name?: string;
   failure_categories?: FailureType[];
   acknowledged_at?: string;

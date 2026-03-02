@@ -1,6 +1,11 @@
 import type { ApiClient } from '../client';
 import type { ReleasePolicyEnforcement } from '@/lib/release-policy';
 
+export interface GovernanceEvidenceIssue {
+  source: 'governance' | 'workspace_governance' | 'organization_governance';
+  message: string;
+}
+
 export interface ReleaseReportListItem {
   name: string;
   generated_at: string;
@@ -38,6 +43,8 @@ export interface ReleaseGateRunListItem {
   release_policy_decision?: 'ready' | 'warning' | 'blocked';
   runtime_release_readiness?: 'ready' | 'blocked';
   usage_release_readiness?: 'ready' | 'blocked';
+  governance_blockers?: GovernanceEvidenceIssue[];
+  governance_warnings?: GovernanceEvidenceIssue[];
   total_checks: number;
   passed_checks: number;
   failed_checks: number;
@@ -94,6 +101,8 @@ export interface ReleaseEscalationEvent {
   release_policy_decision?: 'ready' | 'warning' | 'blocked';
   runtime_release_readiness?: 'ready' | 'blocked';
   usage_release_readiness?: 'ready' | 'blocked';
+  governance_blockers?: GovernanceEvidenceIssue[];
+  governance_warnings?: GovernanceEvidenceIssue[];
   failed_step_name?: string;
   failure_categories?: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'quota' | 'rate_limit' | 'permission' | 'unknown'>;
   acknowledged_at?: string;

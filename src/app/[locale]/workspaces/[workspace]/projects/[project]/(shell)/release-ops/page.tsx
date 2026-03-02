@@ -1073,7 +1073,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                     </button>
                   ))}
                 </div>
-                {selectedEscalation ? (
+                  {selectedEscalation ? (
                   <div className="mt-3 rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__escalation-detail">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={selectedEscalation.severity === 'critical' ? 'secondary' : 'outline'}>{selectedEscalation.severity}</Badge>
@@ -1151,6 +1151,32 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           >
                             {settingsT('release_ops_escalations_assign')}
                           </Button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__escalation-governance-blockers">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_governance_blockers')}</div>
+                        <div className="mt-2 space-y-1">
+                          {(selectedEscalation.governance_blockers ?? []).length === 0 ? (
+                            <span className="text-sm text-tertiary">{commonT('empty')}</span>
+                          ) : (selectedEscalation.governance_blockers ?? []).map((item, index) => (
+                            <div key={`${item.source}-${index}`} className="text-sm text-foreground">
+                              [{settingsT(`release_ops_governance_issue_source_${item.source}`)}] {item.message}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__escalation-governance-warnings">
+                        <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_governance_warnings')}</div>
+                        <div className="mt-2 space-y-1">
+                          {(selectedEscalation.governance_warnings ?? []).length === 0 ? (
+                            <span className="text-sm text-tertiary">{commonT('empty')}</span>
+                          ) : (selectedEscalation.governance_warnings ?? []).map((item, index) => (
+                            <div key={`${item.source}-${index}`} className="text-sm text-foreground">
+                              [{settingsT(`release_ops_governance_issue_source_${item.source}`)}] {item.message}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>
@@ -1611,6 +1637,32 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                               <span className="text-sm text-tertiary">{commonT('empty')}</span>
                             ) : selectedRun.failure_categories.map((item, index) => (
                               <Badge key={`${item}-${index}`} variant="secondary">{item}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__run-governance-blockers">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_governance_blockers')}</div>
+                          <div className="mt-2 space-y-1">
+                            {(selectedRun.governance_blockers ?? []).length === 0 ? (
+                              <span className="text-sm text-tertiary">{commonT('empty')}</span>
+                            ) : (selectedRun.governance_blockers ?? []).map((item, index) => (
+                              <div key={`${item.source}-${index}`} className="text-sm text-foreground">
+                                [{settingsT(`release_ops_governance_issue_source_${item.source}`)}] {item.message}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid="release-ops__run-governance-warnings">
+                          <div className="text-[11px] uppercase tracking-wide text-tertiary">{settingsT('release_ops_governance_warnings')}</div>
+                          <div className="mt-2 space-y-1">
+                            {(selectedRun.governance_warnings ?? []).length === 0 ? (
+                              <span className="text-sm text-tertiary">{commonT('empty')}</span>
+                            ) : (selectedRun.governance_warnings ?? []).map((item, index) => (
+                              <div key={`${item.source}-${index}`} className="text-sm text-foreground">
+                                [{settingsT(`release_ops_governance_issue_source_${item.source}`)}] {item.message}
+                              </div>
                             ))}
                           </div>
                         </div>

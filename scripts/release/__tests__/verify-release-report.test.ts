@@ -163,6 +163,50 @@ describe('verify-release-report: TDD Suite', () => {
       expect(escalation.incident_id).toBe('incident-prior-run');
       expect(['gate_ready', 'gate_warning', 'gate_blocked']).toContain(escalation.event_type);
     });
+
+    it('records structured governance blockers in run and escalation artifacts', () => {
+      const organizationEvidencePath = join(OUTPUT_DIR, 'organization-governance-evidence-blocked-for-run.json');
+      writeFileSync(organizationEvidencePath, JSON.stringify({
+        source: 'artifact',
+        generated_at: new Date().toISOString(),
+        release_readiness: 'blocked',
+        blockers: ['organization_governance_drilldown_chain_missing'],
+        warnings: ['organization_governance_pending_actions_exist'],
+        checks: {
+          org_overview_summary: true,
+          workspace_matrix: true,
+          actions_queue_execution: true,
+          evidence_drilldown_chain: false,
+        },
+      }), 'utf-8');
+
+      runScript([
+        '--output', OUTPUT_DIR,
+        '--runs-output', RUNS_OUTPUT_DIR,
+        '--escalations-output', ESCALATIONS_OUTPUT_DIR,
+        '--name', 'report-governance-signals',
+        '--dry-run',
+        '--organization-governance-evidence', organizationEvidencePath,
+      ]);
+
+      const run = JSON.parse(readFileSync(join(RUNS_OUTPUT_DIR, 'report-governance-signals.json'), 'utf-8')) as {
+        governance_blockers?: Array<{ source?: string; message?: string }>;
+        governance_warnings?: Array<{ source?: string; message?: string }>;
+      };
+      expect(run.governance_blockers?.some((item) =>
+        item.source === 'organization_governance' && item.message === 'organization_governance_drilldown_chain_missing')).toBe(true);
+      expect(run.governance_warnings?.some((item) =>
+        item.source === 'organization_governance' && item.message === 'organization_governance_pending_actions_exist')).toBe(true);
+
+      const escalation = JSON.parse(readFileSync(join(ESCALATIONS_OUTPUT_DIR, 'report-governance-signals.json'), 'utf-8')) as {
+        governance_blockers?: Array<{ source?: string; message?: string }>;
+        governance_warnings?: Array<{ source?: string; message?: string }>;
+      };
+      expect(escalation.governance_blockers?.some((item) =>
+        item.source === 'organization_governance' && item.message === 'organization_governance_drilldown_chain_missing')).toBe(true);
+      expect(escalation.governance_warnings?.some((item) =>
+        item.source === 'organization_governance' && item.message === 'organization_governance_pending_actions_exist')).toBe(true);
+    });
   });
 
   describe('RED Phase 2: Execution Results', () => {

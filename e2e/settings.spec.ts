@@ -243,6 +243,8 @@ test.describe('Settings Page', () => {
     await expect(authedPage.getByTestId('release-ops__runner-operation-0')).toBeVisible();
     await authedPage.getByTestId('release-ops__run-item-0').click();
     await expect(authedPage.getByTestId('release-ops__run-detail')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__run-governance-blockers')).toBeVisible();
+    await expect(authedPage.getByTestId('release-ops__run-governance-warnings')).toBeVisible();
     await authedPage.getByTestId('release-ops__run-open-artifact').click();
     await expect(authedPage.getByTestId('release-ops__report-detail')).toBeVisible();
   });

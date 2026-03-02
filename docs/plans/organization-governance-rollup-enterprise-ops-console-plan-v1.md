@@ -208,6 +208,7 @@
 21. `WP-04` 第二阶段推进：已新增 Playwright e2e 场景，覆盖 `release-ops` 治理 trace 下钻到 `usage/audit` 的 URL 参数透传与 trace context UI 验证（含 audit 匹配状态提示）
 22. `WP-05` 第一阶段推进：已新增 organization governance release smoke（契约 + e2e）与 evidence artifact，`release:report` 已接入 `organization_governance_evidence` 加载/阻塞判定/markdown 展示，并新增 CLI 透传参数
 23. `WP-05` 第二阶段推进：`governance-release-smoke` 默认流程已并入 `organization-governance-release-smoke`，`verify-release` 主线默认覆盖组织级治理验收
+24. `WP-05` 第三阶段推进：release run / escalation 已新增结构化 `governance_blockers` 与 `governance_warnings`（governance/workspace/organization source），并在 release-ops 详情面板可视化，支持按 incident/run 追溯治理阻塞来源
 
 待完成：
 

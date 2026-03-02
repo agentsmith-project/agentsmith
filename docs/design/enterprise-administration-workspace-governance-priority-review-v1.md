@@ -1,7 +1,7 @@
 # Enterprise Administration & Workspace Governance Priority Review v1
 
 更新时间：2026-03-02  
-状态：`current-recommendation`
+状态：`baseline-complete`
 
 前置参考：
 

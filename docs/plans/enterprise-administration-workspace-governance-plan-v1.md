@@ -1,7 +1,7 @@
 # Enterprise Administration & Workspace Governance Plan v1
 
 更新时间：2026-03-02  
-状态：`approved-recommendation`
+状态：`baseline-complete`
 
 前置文档：
 
@@ -174,3 +174,15 @@
 3. 至少一类 cross-project governance bulk action 已落地
 4. workspace explainability / audit drill-down 已打通
 5. workspace governance evidence 已进入 release gate
+
+---
+
+## 7. 完成状态
+
+当前状态：`baseline-complete`
+
+`WP-01` 到 `WP-05` 已全部完成，且已进入正式验收基线。
+
+对应收口文档：
+
+1. `docs/design/enterprise-administration-workspace-governance-closure-review-v1.md`

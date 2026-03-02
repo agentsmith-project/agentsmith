@@ -93,7 +93,10 @@ describe('WorkspacesOverviewPage', () => {
     expect(screen.getByTestId('workspace-overview__matrix')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__search')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__readiness-filter')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__sort')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__matrix-select-all')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__row--ws_1')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__batch-preview')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__attention')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__attention-item--ws_1--project--proj_1')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__actions-queue')).toBeInTheDocument();
@@ -119,6 +122,66 @@ describe('WorkspacesOverviewPage', () => {
 
     expect(screen.getByText('org_overview_action_status_in_progress')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__actions-queue-history--action--ws_1--project--proj_1')).toBeInTheDocument();
+  });
+
+  it('supports workspace matrix sorting', () => {
+    mockUseOrganizationGovernanceRollup.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetchRollup,
+      rollup: {
+        summary: {
+          readiness: 'warning',
+          totalWorkspaces: 2,
+          blockedWorkspaces: 1,
+          warningWorkspaces: 1,
+          riskyWorkspaces: 2,
+          totalRiskyProjects: 3,
+        },
+        workspaceRanking: [
+          {
+            workspaceId: 'ws_z',
+            workspaceName: 'Zulu Workspace',
+            readiness: 'blocked',
+            riskScore: 90,
+            blockedItems: 2,
+            warningItems: 1,
+            riskyProjects: 2,
+            totalProjects: 4,
+            topRiskProjectId: 'proj_z',
+          },
+          {
+            workspaceId: 'ws_a',
+            workspaceName: 'Alpha Workspace',
+            readiness: 'warning',
+            riskScore: 30,
+            blockedItems: 0,
+            warningItems: 2,
+            riskyProjects: 1,
+            totalProjects: 3,
+            topRiskProjectId: 'proj_a',
+          },
+        ],
+        attention: [],
+        actionsQueue: [],
+      },
+    });
+
+    render(<WorkspacesOverviewPage />);
+    fireEvent.change(screen.getByTestId('workspace-overview__sort'), { target: { value: 'name_asc' } });
+    const rows = screen.getAllByTestId(/workspace-overview__row--/);
+    expect(rows[0]).toHaveTextContent('Alpha Workspace');
+    expect(rows[1]).toHaveTextContent('Zulu Workspace');
+  });
+
+  it('supports batch preview and batch status updates', () => {
+    render(<WorkspacesOverviewPage />);
+    fireEvent.click(screen.getByTestId('workspace-overview__matrix-select--ws_1'));
+    expect(screen.getByTestId('workspace-overview__batch-preview-count')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__batch-preview-item--action--ws_1--project--proj_1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('workspace-overview__batch-mark-completed'));
+    expect(screen.getAllByText('org_overview_action_status_completed').length).toBeGreaterThan(0);
   });
 
   it('opens explain panel from an action item', () => {

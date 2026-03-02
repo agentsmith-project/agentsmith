@@ -209,10 +209,9 @@
 22. `WP-05` 第一阶段推进：已新增 organization governance release smoke（契约 + e2e）与 evidence artifact，`release:report` 已接入 `organization_governance_evidence` 加载/阻塞判定/markdown 展示，并新增 CLI 透传参数
 23. `WP-05` 第二阶段推进：`governance-release-smoke` 默认流程已并入 `organization-governance-release-smoke`，`verify-release` 主线默认覆盖组织级治理验收
 24. `WP-05` 第三阶段推进：release run / escalation 已新增结构化 `governance_blockers` 与 `governance_warnings`（governance/workspace/organization source），并在 release-ops 详情面板可视化，支持按 incident/run 追溯治理阻塞来源
+25. `WP-02` 第二阶段推进：组织治理矩阵已支持排序（风险分/阻塞项/名称）与工作区批量选择，新增 batch actions preview（覆盖动作数量/状态分布/批量状态回写），补齐跨工作区治理执行前预览能力
 
 待完成：
 
 1. `WP-01` 第二阶段：与 workspace settings / release readiness 建立更强联动
-2. `WP-02` 第二阶段：矩阵排序与批量动作预览
-3. `WP-03` 第二阶段：接入真实后端 organization-actions 持久化与审计归档
-4. `WP-05` 第三阶段：组织治理 evidence 与 release gate 产物联动可观测性增强（按 run 追溯组织治理阻塞来源）
+2. `WP-03` 第二阶段：接入真实后端 organization-actions 持久化与审计归档

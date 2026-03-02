@@ -90,6 +90,28 @@ export interface SSEOptions {
   onMessage?: (data: string) => void;
 }
 
+export class SSETicketError extends Error {
+  constructor(
+    public code:
+      | 'SSE_TICKET_UNAVAILABLE'
+      | 'SSE_TICKET_UNAUTHORIZED'
+      | 'SSE_TICKET_RATE_LIMITED'
+      | 'SSE_TICKET_UPSTREAM'
+      | 'SSE_TICKET_NETWORK_ERROR'
+      | 'SSE_TICKET_INVALID_RESPONSE',
+    message: string,
+    public statusCode?: number,
+  ) {
+    super(message);
+    this.name = 'SSETicketError';
+  }
+}
+
+interface SSETicketFetchResult {
+  ticket: string | null;
+  error?: SSETicketError;
+}
+
 /**
  * Create an authenticated SSE connection
  *
@@ -159,27 +181,60 @@ export async function fetchSSETicket(
   token: string | null,
   apiBase: string,
 ): Promise<string | null> {
-  if (!token) return null;
+  const result = await exchangeSSETicket(token, apiBase);
+  return result.ticket;
+}
+
+async function exchangeSSETicket(
+  token: string | null,
+  apiBase: string,
+): Promise<SSETicketFetchResult> {
+  if (!token) return { ticket: null };
   const url = `${apiBase.replace(/\/+$/, '')}/sse-ticket`;
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return SSE_ALLOW_JWT_FALLBACK ? token : null;
+    if (!res.ok) {
+      if (SSE_ALLOW_JWT_FALLBACK) {
+        return { ticket: token };
+      }
+      return {
+        ticket: null,
+        error: mapTicketResponseError(res.status),
+      };
+    }
     const data = (await res.json()) as { ticket?: string; ticket_id?: string };
     // Contract field is `ticket`; keep `ticket_id` for backward compatibility.
     if (typeof data?.ticket === 'string' && data.ticket.length > 0) {
-      return data.ticket;
+      return { ticket: data.ticket };
     }
     if (typeof data?.ticket_id === 'string' && data.ticket_id.length > 0) {
-      return data.ticket_id;
+      return { ticket: data.ticket_id };
+    }
+    if (!SSE_ALLOW_JWT_FALLBACK) {
+      return {
+        ticket: null,
+        error: new SSETicketError(
+          'SSE_TICKET_INVALID_RESPONSE',
+          'SSE ticket endpoint did not return a usable ticket.',
+        ),
+      };
     }
   } catch {
     // Network or parse error
-    return SSE_ALLOW_JWT_FALLBACK ? token : null;
+    return SSE_ALLOW_JWT_FALLBACK
+      ? { ticket: token }
+      : {
+        ticket: null,
+        error: new SSETicketError(
+          'SSE_TICKET_NETWORK_ERROR',
+          'Failed to reach the SSE ticket endpoint.',
+        ),
+      };
   }
-  return SSE_ALLOW_JWT_FALLBACK ? token : null;
+  return SSE_ALLOW_JWT_FALLBACK ? { ticket: token } : { ticket: null };
 }
 
 /**
@@ -199,7 +254,11 @@ export async function createAuthenticatedSSEAsync(
   options: SSEOptions | undefined,
   apiBase: string,
 ): Promise<EventSource> {
-  const ticket = await fetchSSETicket(token, apiBase);
+  const result = await exchangeSSETicket(token, apiBase);
+  if (token && !result.ticket && result.error) {
+    throw result.error;
+  }
+  const ticket = result.ticket;
   return createAuthenticatedSSE(path, ticket, options);
 }
 
@@ -210,4 +269,33 @@ export async function createAuthenticatedSSEAsync(
  */
 function getSSETicket(token: string): string {
   return token;
+}
+
+function mapTicketResponseError(statusCode: number): SSETicketError {
+  if (statusCode === 401 || statusCode === 403) {
+    return new SSETicketError(
+      'SSE_TICKET_UNAUTHORIZED',
+      'SSE ticket request was rejected by authentication or authorization policy.',
+      statusCode,
+    );
+  }
+  if (statusCode === 404) {
+    return new SSETicketError(
+      'SSE_TICKET_UNAVAILABLE',
+      'SSE ticket endpoint is not available in this environment.',
+      statusCode,
+    );
+  }
+  if (statusCode === 429) {
+    return new SSETicketError(
+      'SSE_TICKET_RATE_LIMITED',
+      'SSE ticket request was rate limited.',
+      statusCode,
+    );
+  }
+  return new SSETicketError(
+    'SSE_TICKET_UPSTREAM',
+    'SSE ticket exchange failed due to an upstream server error.',
+    statusCode,
+  );
 }

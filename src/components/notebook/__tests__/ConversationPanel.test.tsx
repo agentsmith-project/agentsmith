@@ -8,6 +8,33 @@ import userEvent from '@testing-library/user-event';
 import { ConversationPanel } from '../ConversationPanel';
 import type { TaskMessage } from '@/lib/types/task';
 
+vi.mock('next-intl', () => ({
+  useTranslations: (namespace?: string) => (key: string) => {
+    const dict: Record<string, string> = {
+      'notebook.conversation.realtime_status_connecting_title': 'Connecting realtime session',
+      'notebook.conversation.realtime_status_connecting_description': 'Opening the live task stream for this notebook run.',
+      'notebook.conversation.realtime_status_reconnecting_title': 'Recovering live task stream',
+      'notebook.conversation.realtime_status_reconnecting_description': 'Reconnecting and replaying recent task events.',
+      'notebook.conversation.realtime_status_disconnected_title': 'Live task stream disconnected',
+      'notebook.conversation.realtime_status_disconnected_description': 'The task stream is offline. Retry or refresh to resume updates.',
+      'notebook.conversation.realtime_status_error_title': 'Live task stream recovery failed',
+      'notebook.conversation.realtime_status_error_description': 'Recent reconnect attempts did not recover the stream. Retry or refresh to continue.',
+      'notebook.conversation.realtime_status_ticket_unavailable_title': 'Realtime ticket service unavailable',
+      'notebook.conversation.realtime_status_ticket_unavailable_description': 'This environment is not exposing the SSE ticket endpoint for notebook runs.',
+      'notebook.conversation.realtime_status_ticket_unauthorized_title': 'Realtime ticket request denied',
+      'notebook.conversation.realtime_status_ticket_unauthorized_description': 'The current session is not allowed to open a realtime notebook stream.',
+      'notebook.conversation.realtime_status_ticket_rate_limited_title': 'Realtime ticket request rate limited',
+      'notebook.conversation.realtime_status_ticket_rate_limited_description': 'Ticket issuance is temporarily throttled. Retry after the current limit window clears.',
+      'notebook.conversation.realtime_status_ticket_network_title': 'Realtime ticket exchange failed',
+      'notebook.conversation.realtime_status_ticket_network_description': 'The client could not establish the ticket needed for realtime notebook updates.',
+      'notebook.conversation.realtime_status_reconcile_failed_title': 'Trace recovery needs manual refresh',
+      'notebook.conversation.realtime_status_reconcile_failed_description': 'The realtime stream reconnected, but trace backfill did not complete. Refresh to rebuild the task timeline.',
+    };
+    const scoped = namespace ? `${namespace}.${key}` : key;
+    return dict[scoped] ?? scoped;
+  },
+}));
+
 vi.mock('../ConversationInput', () => ({
   ConversationInput: ({ value, onChange, onSend, disabled, sending }: any) => (
     <div data-testid="conversation-input">
@@ -289,6 +316,37 @@ describe('ConversationPanel', () => {
       const status = screen.getByTestId('notebook__sse-status');
       expect(status).toHaveTextContent('Live task stream recovery failed');
       expect(status).toHaveTextContent('Recent reconnect attempts did not recover the stream. Retry or refresh to continue.');
+    });
+
+    it('shows ticket-unavailable explanation when ticket exchange is missing', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="error"
+          connectionErrorCode="SSE_TICKET_UNAVAILABLE"
+        />
+      );
+
+      const status = screen.getByTestId('notebook__sse-status');
+      expect(status).toHaveTextContent('Realtime ticket service unavailable');
+      expect(status).toHaveTextContent('This environment is not exposing the SSE ticket endpoint for notebook runs.');
+    });
+
+    it('shows reconcile-failed explanation with runtime message', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          connectionStatus="error"
+          connectionErrorCode="TRACE_RECONCILE_FAILED"
+          connectionErrorMessage="Trace tail fetch returned 503"
+        />
+      );
+
+      const status = screen.getByTestId('notebook__sse-status');
+      expect(status).toHaveTextContent('Trace recovery needs manual refresh');
+      expect(status).toHaveTextContent('Trace tail fetch returned 503');
     });
   });
 

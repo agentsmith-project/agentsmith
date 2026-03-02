@@ -9,7 +9,12 @@ export type NotebookRealtimeFailureKind =
   | 'connecting'
   | 'reconnecting'
   | 'disconnected'
-  | 'error';
+  | 'error'
+  | 'ticket_unavailable'
+  | 'ticket_unauthorized'
+  | 'ticket_rate_limited'
+  | 'ticket_network'
+  | 'reconcile_failed';
 
 export function classifyChatStreamFailure(errorCode?: string | null): ChatStreamFailureKind {
   switch (errorCode) {
@@ -28,7 +33,26 @@ export function classifyChatStreamFailure(errorCode?: string | null): ChatStream
 
 export function classifyNotebookRealtimeFailure(
   connectionStatus: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error',
+  errorCode?: string | null,
 ): NotebookRealtimeFailureKind | null {
   if (connectionStatus === 'connected') return null;
+  if (connectionStatus === 'error') {
+    switch (errorCode) {
+      case 'SSE_TICKET_UNAVAILABLE':
+        return 'ticket_unavailable';
+      case 'SSE_TICKET_UNAUTHORIZED':
+        return 'ticket_unauthorized';
+      case 'SSE_TICKET_RATE_LIMITED':
+        return 'ticket_rate_limited';
+      case 'SSE_TICKET_NETWORK_ERROR':
+      case 'SSE_TICKET_UPSTREAM':
+      case 'SSE_TICKET_INVALID_RESPONSE':
+        return 'ticket_network';
+      case 'TRACE_RECONCILE_FAILED':
+        return 'reconcile_failed';
+      default:
+        return 'error';
+    }
+  }
   return connectionStatus;
 }

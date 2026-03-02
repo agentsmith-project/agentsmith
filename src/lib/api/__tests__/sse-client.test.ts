@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createAuthenticatedSSE, fetchSSETicket } from '../sse-client';
+import { createAuthenticatedSSE, createAuthenticatedSSEAsync, fetchSSETicket, SSETicketError } from '../sse-client';
 
 // Mock EventSource class
 class MockEventSource {
@@ -390,20 +390,19 @@ describe('SSE Ticket Migration - Smoke Tests (Full Flow)', () => {
     });
     globalThis.fetch = mockFetch;
 
-    const sseModule = await import('../sse-client');
-    const { createAuthenticatedSSEAsync } = sseModule;
+    await expect(
+      createAuthenticatedSSEAsync(
+        '/api/v1/chat/stream',
+        jwtToken,
+        undefined,
+        apiBase,
+      ),
+    ).rejects.toMatchObject({
+      name: 'SSETicketError',
+      code: 'SSE_TICKET_UNAVAILABLE',
+    } satisfies Partial<SSETicketError>);
 
-    // Still creates EventSource; URL will not include ticket/JWT when strict mode fallback is disabled.
-    const eventSource = await createAuthenticatedSSEAsync(
-      '/api/v1/chat/stream',
-      jwtToken,
-      undefined,
-      apiBase,
-    );
-
-    expect(eventSource).toBeInstanceOf(EventSource);
     expect(mockFetch).toHaveBeenCalled();
-    expect(eventSource.url).toBe('/api/v1/chat/stream');
   });
 
   it('smoke: deterministic user assignment for grayscale rollout', async () => {

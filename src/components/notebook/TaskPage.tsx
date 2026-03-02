@@ -76,6 +76,8 @@ export function TaskPage({
   const [traceLoadMoreLoadingByMessageId, setTraceLoadMoreLoadingByMessageId] = React.useState<Record<string, boolean>>({});
   const [sseDebugEvents, setSseDebugEvents] = React.useState<TaskSSEDebugEvent[]>([]);
   const [traceBackfillRefreshNonce, setTraceBackfillRefreshNonce] = React.useState(0);
+  const [realtimeFailureCode, setRealtimeFailureCode] = React.useState<string | null>(null);
+  const [realtimeFailureMessage, setRealtimeFailureMessage] = React.useState<string | null>(null);
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
@@ -263,7 +265,7 @@ export function TaskPage({
   // SSE connection for real-time updates
   const isDev = process.env.NODE_ENV === 'development';
   const showSseDebugPanel = isDev && process.env.NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL === '1';
-  const { connectionStatus } = useTaskSSE(workspaceId, projectId, taskId, {
+  const { connectionStatus, connectionErrorCode, connectionErrorMessage } = useTaskSSE(workspaceId, projectId, taskId, {
     onMessage: (message: TaskMessage) => {
       // Update streaming content for the active streaming message
       if (streamingMessageId === message.id) {
@@ -327,15 +329,31 @@ export function TaskPage({
         resetCurrentRunUiState();
       }
     },
-    onError: () => {
+    onError: (error) => {
       setTaskUpdateCountForCurrentTurn(0);
       resetCurrentRunUiState();
+      setRealtimeFailureCode(
+        typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+          ? error.code
+          : null,
+      );
+      setRealtimeFailureMessage(error.message);
     },
     onDebug: appendSseDebugEvent,
     enabled: !!taskId && !taskLoading,
   });
 
   const previousConnectionStatusRef = React.useRef<typeof connectionStatus | null>(null);
+  React.useEffect(() => {
+    if (connectionErrorCode || connectionErrorMessage) {
+      setRealtimeFailureCode(connectionErrorCode ?? null);
+      setRealtimeFailureMessage(connectionErrorMessage ?? null);
+    } else if (connectionStatus === 'connected') {
+      setRealtimeFailureCode(null);
+      setRealtimeFailureMessage(null);
+    }
+  }, [connectionErrorCode, connectionErrorMessage, connectionStatus]);
+
   React.useEffect(() => {
     const prev = previousConnectionStatusRef.current;
     previousConnectionStatusRef.current = connectionStatus;
@@ -366,6 +384,8 @@ export function TaskPage({
         after_id: afterId,
         page_size: 500,
       }).then((resp) => {
+        setRealtimeFailureCode(null);
+        setRealtimeFailureMessage(null);
         appendSseDebugEvent({
           at: new Date().toISOString(),
           phase: 'trace_reconcile_done',
@@ -373,6 +393,8 @@ export function TaskPage({
         });
         mergeTraceEvents(resp.items);
       }).catch((err) => {
+        setRealtimeFailureCode('TRACE_RECONCILE_FAILED');
+        setRealtimeFailureMessage(err instanceof Error ? err.message : 'Task trace reconcile failed.');
         appendSseDebugEvent({
           at: new Date().toISOString(),
           phase: 'trace_reconcile_error',
@@ -700,6 +722,8 @@ export function TaskPage({
             streamingMessageId={streamingMessageId}
           streamingContent={streamingContent}
           connectionStatus={connectionStatus}
+          connectionErrorCode={realtimeFailureCode}
+          connectionErrorMessage={realtimeFailureMessage}
           traceEventsByMessageId={traceEventsByMessageId}
           traceHasMoreByMessageId={mapTraceHasMoreByMessageId(traceMetaByMessageId)}
           traceLoadingByMessageId={traceLoadingByMessageId}

@@ -11,6 +11,8 @@ export interface ConversationPanelProps {
   streamingMessageId?: string | null;
   streamingContent?: string | null;
   connectionStatus?: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
+  connectionErrorCode?: string | null;
+  connectionErrorMessage?: string | null;
   traceEventsByMessageId?: Record<string, TaskTraceEvent[]>;
   traceHasMoreByMessageId?: Record<string, boolean>;
   traceLoadingByMessageId?: Record<string, boolean>;
@@ -27,6 +29,8 @@ export function ConversationPanel({
   streamingMessageId,
   streamingContent,
   connectionStatus,
+  connectionErrorCode,
+  connectionErrorMessage,
   traceEventsByMessageId,
   traceHasMoreByMessageId,
   traceLoadingByMessageId,
@@ -40,7 +44,7 @@ export function ConversationPanel({
   const t = useTranslations('notebook.conversation');
   const [inputValue, setInputValue] = React.useState('');
   const connectionFailureKind = connectionStatus
-    ? classifyNotebookRealtimeFailure(connectionStatus)
+    ? classifyNotebookRealtimeFailure(connectionStatus, connectionErrorCode)
     : null;
 
   const connectionTitle = connectionFailureKind === 'connecting'
@@ -49,9 +53,19 @@ export function ConversationPanel({
       ? t('realtime_status_reconnecting_title')
       : connectionFailureKind === 'disconnected'
         ? t('realtime_status_disconnected_title')
-        : connectionFailureKind === 'error'
-          ? t('realtime_status_error_title')
-          : null;
+        : connectionFailureKind === 'ticket_unavailable'
+          ? t('realtime_status_ticket_unavailable_title')
+          : connectionFailureKind === 'ticket_unauthorized'
+            ? t('realtime_status_ticket_unauthorized_title')
+            : connectionFailureKind === 'ticket_rate_limited'
+              ? t('realtime_status_ticket_rate_limited_title')
+              : connectionFailureKind === 'ticket_network'
+                ? t('realtime_status_ticket_network_title')
+                : connectionFailureKind === 'reconcile_failed'
+                  ? t('realtime_status_reconcile_failed_title')
+                  : connectionFailureKind === 'error'
+                    ? t('realtime_status_error_title')
+                    : null;
 
   const connectionDescription = connectionFailureKind === 'connecting'
     ? t('realtime_status_connecting_description')
@@ -59,9 +73,19 @@ export function ConversationPanel({
       ? t('realtime_status_reconnecting_description')
       : connectionFailureKind === 'disconnected'
         ? t('realtime_status_disconnected_description')
-        : connectionFailureKind === 'error'
-          ? t('realtime_status_error_description')
-          : null;
+        : connectionFailureKind === 'ticket_unavailable'
+          ? t('realtime_status_ticket_unavailable_description')
+          : connectionFailureKind === 'ticket_unauthorized'
+            ? t('realtime_status_ticket_unauthorized_description')
+            : connectionFailureKind === 'ticket_rate_limited'
+              ? t('realtime_status_ticket_rate_limited_description')
+              : connectionFailureKind === 'ticket_network'
+                ? t('realtime_status_ticket_network_description')
+                : connectionFailureKind === 'reconcile_failed'
+                  ? connectionErrorMessage || t('realtime_status_reconcile_failed_description')
+                  : connectionFailureKind === 'error'
+                    ? connectionErrorMessage || t('realtime_status_error_description')
+                    : null;
 
   const handleSend = () => {
     if (inputValue.trim().length === 0) return;

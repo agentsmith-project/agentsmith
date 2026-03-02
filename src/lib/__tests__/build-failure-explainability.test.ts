@@ -19,6 +19,11 @@ describe('build failure explainability helpers', () => {
     expect(classifyNotebookRealtimeFailure('reconnecting')).toBe('reconnecting');
     expect(classifyNotebookRealtimeFailure('disconnected')).toBe('disconnected');
     expect(classifyNotebookRealtimeFailure('error')).toBe('error');
+    expect(classifyNotebookRealtimeFailure('error', 'SSE_TICKET_UNAVAILABLE')).toBe('ticket_unavailable');
+    expect(classifyNotebookRealtimeFailure('error', 'SSE_TICKET_UNAUTHORIZED')).toBe('ticket_unauthorized');
+    expect(classifyNotebookRealtimeFailure('error', 'SSE_TICKET_RATE_LIMITED')).toBe('ticket_rate_limited');
+    expect(classifyNotebookRealtimeFailure('error', 'SSE_TICKET_NETWORK_ERROR')).toBe('ticket_network');
+    expect(classifyNotebookRealtimeFailure('error', 'TRACE_RECONCILE_FAILED')).toBe('reconcile_failed');
     expect(classifyNotebookRealtimeFailure('connected')).toBeNull();
   });
 });

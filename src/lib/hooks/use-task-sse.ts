@@ -80,6 +80,8 @@ export function useTaskSSE(
   const [connectionStatus, setConnectionStatus] = useState<
     'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error'
   >('disconnected');
+  const [connectionErrorCode, setConnectionErrorCode] = useState<string | null>(null);
+  const [connectionErrorMessage, setConnectionErrorMessage] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -134,6 +136,8 @@ export function useTaskSSE(
       : sseUrl;
 
     setConnectionStatus('connecting');
+    setConnectionErrorCode(null);
+    setConnectionErrorMessage(null);
     emitDebug({ phase: 'connect_start', summary: `connecting task=${taskId}` });
 
     void (async () => {
@@ -153,6 +157,8 @@ export function useTaskSSE(
 
         eventSource.onopen = () => {
           setConnectionStatus('connected');
+          setConnectionErrorCode(null);
+          setConnectionErrorMessage(null);
           reconnectAttemptsRef.current = 0;
           emitDebug({ phase: 'open', summary: 'sse_open' });
           if (lastEventIdRef.current) {
@@ -224,6 +230,8 @@ export function useTaskSSE(
             }, reconnectInterval);
           } else {
             setConnectionStatus('error');
+            setConnectionErrorCode('SSE_RECONNECT_EXHAUSTED');
+            setConnectionErrorMessage(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`);
             emitDebug({ phase: 'reconnect_exhausted', summary: `max=${maxReconnectAttempts}` });
             callbacksRef.current.onError?.(
               new Error(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`)
@@ -234,7 +242,13 @@ export function useTaskSSE(
         eventSourceRef.current = eventSource;
       } catch (err) {
         setConnectionStatus('error');
-        emitDebug({ phase: 'ticket_error', summary: 'sse_ticket_or_connect_failed' });
+        const message = err instanceof Error ? err.message : 'SSE connection failed';
+        const code = typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string'
+          ? err.code
+          : 'SSE_TICKET_OR_CONNECT_FAILED';
+        setConnectionErrorCode(code);
+        setConnectionErrorMessage(message);
+        emitDebug({ phase: 'ticket_error', summary: `code=${code}` });
         if (lastEventIdRef.current) {
           emitDebug({
             phase: 'trace_gap_fill_error',
@@ -274,11 +288,15 @@ export function useTaskSSE(
     }
     setConnectionStatus('disconnected');
     reconnectAttemptsRef.current = 0;
+    setConnectionErrorCode(null);
+    setConnectionErrorMessage(null);
     emitDebug({ phase: 'disconnect', summary: 'manual_disconnect' });
   }, [emitDebug]);
 
   return {
     connectionStatus,
+    connectionErrorCode,
+    connectionErrorMessage,
     connect,
     disconnect,
   };

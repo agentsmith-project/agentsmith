@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useTaskSSE } from '../use-task-sse';
+import { createAuthenticatedSSEAsync } from '@/lib/api/sse-client';
 
 type MockES = {
   readyState: number;
@@ -203,5 +204,27 @@ describe('useTaskSSE', () => {
     expect(onDebug).toHaveBeenCalledWith(
       expect.objectContaining({ phase: 'trace_gap_fill_done', summary: 'last_event_id=evt-42' }),
     );
+  });
+
+  it('exposes ticket failure codes when initial SSE connect fails before EventSource opens', async () => {
+    vi.mocked(createAuthenticatedSSEAsync).mockRejectedValueOnce(
+      Object.assign(new Error('SSE ticket endpoint is not available in this environment.'), {
+        code: 'SSE_TICKET_UNAVAILABLE',
+      }),
+    );
+
+    const { result } = renderHook(() =>
+      useTaskSSE('ws_default', 'proj_1', 'task_4', {
+        reconnectInterval: 10,
+        maxReconnectAttempts: 1,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.connectionStatus).toBe('error');
+    });
+
+    expect(result.current.connectionErrorCode).toBe('SSE_TICKET_UNAVAILABLE');
+    expect(result.current.connectionErrorMessage).toContain('ticket endpoint');
   });
 });

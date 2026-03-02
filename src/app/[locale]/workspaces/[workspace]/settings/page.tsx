@@ -7,10 +7,16 @@ import { Settings as SettingsIcon } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
+import { SectionHeading } from '@/components/ui/section-heading';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
+import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspaceGovernance } from '@/lib/hooks/use-workspace-governance';
+import { buildProjectAdminSummary } from '@/lib/projects/project-view';
+import { buildWorkspaceGovernancePosture } from '@/lib/workspace-governance-posture';
+import { formatBytes } from '@/lib/utils/formatters';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 function formatWorkspaceGroupAlias(groupAlias: string): string {
@@ -32,13 +38,30 @@ export default function WorkspaceSettingsPage() {
   const params = useParams();
   const t = useTranslations('settings');
   const tErrors = useTranslations('errors');
+  const tProjects = useTranslations('projects');
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canManageGovernance = useHasWorkspacePermission('workspace:governance:update');
   const { data: currentWorkspace } = useWorkspace(workspaceId ?? '');
   const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
+  const { data: projects = [] } = useProjects(workspaceId ?? '');
   const { getMemberGovernanceGroup, updateMemberGovernanceGroup, isUpdating } = useWorkspaceGovernance(workspaceId ?? '');
   useSyncAuthFromUrl();
+  const memberNameById = React.useMemo(
+    () => new Map(members.map((member) => [member.user_id, member.name])),
+    [members],
+  );
+  const adminSummaryByProjectId = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const project of projects) {
+      map.set(project.id, buildProjectAdminSummary(project, memberNameById));
+    }
+    return map;
+  }, [memberNameById, projects]);
+  const governancePosture = React.useMemo(
+    () => buildWorkspaceGovernancePosture({ members, projects, adminSummaryByProjectId }),
+    [adminSummaryByProjectId, members, projects],
+  );
 
   if (!workspaceId) {
     return (
@@ -87,6 +110,123 @@ export default function WorkspaceSettingsPage() {
                   <p className="text-primary" data-testid="ws-settings__name">{workspace.name}</p>
                 </div>
               </div>
+            </div>
+
+            <div className="mt-5 p-5 rounded-xl border border-border bg-surface" data-testid="ws-settings__governance-overview">
+              <SectionHeading
+                eyebrow={t('workspace_governance_eyebrow')}
+                title={t('workspace_governance_title')}
+                subtitle={t('workspace_governance_subtitle')}
+                actions={(
+                  <StatusBadge status={governancePosture.readiness}>
+                    {t(`workspace_governance_status_${governancePosture.readiness}`)}
+                  </StatusBadge>
+                )}
+              />
+
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_governance_summary_active_members')}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{governancePosture.summary.activeMembers}</div>
+                  <div className="mt-1 text-xs text-tertiary">
+                    {t('workspace_governance_summary_wheel_members', { count: governancePosture.summary.wheelMembers })}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_governance_summary_active_projects')}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{governancePosture.summary.activeProjects}</div>
+                  <div className="mt-1 text-xs text-tertiary">
+                    {t('workspace_governance_summary_total_projects', { count: governancePosture.summary.totalProjects })}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_governance_summary_exposed_projects')}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{governancePosture.summary.publicProjects}</div>
+                  <div className="mt-1 text-xs text-tertiary">
+                    {t('workspace_governance_summary_open_join_projects', { count: governancePosture.summary.openJoinProjects })}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_governance_summary_attention_projects')}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{governancePosture.summary.riskyProjects}</div>
+                  <div className="mt-1 text-xs text-tertiary">
+                    {t(`workspace_governance_status_${governancePosture.readiness}`)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 p-5 rounded-xl border border-border bg-surface" data-testid="ws-settings__project-posture">
+              <SectionHeading
+                eyebrow={t('workspace_projects_eyebrow')}
+                title={t('workspace_projects_title')}
+                subtitle={t('workspace_projects_subtitle')}
+              />
+              {governancePosture.projects.length === 0 ? (
+                <p className="mt-4 text-sm text-tertiary">{t('workspace_projects_empty')}</p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {governancePosture.projects.map((project) => (
+                    <div
+                      key={project.projectId}
+                      className="rounded-lg border border-subtle bg-bg-base/20 p-4"
+                      data-testid={`ws-settings__project-posture--${project.projectId}`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-foreground">{project.name}</p>
+                            <StatusBadge status={project.readiness === 'info' ? 'info' : project.readiness}>
+                              {project.readiness === 'info'
+                                ? t('workspace_projects_status_info')
+                                : t(`workspace_governance_status_${project.readiness}`)}
+                            </StatusBadge>
+                          </div>
+                          <p className="mt-1 text-xs text-tertiary">
+                            {t('workspace_projects_meta', {
+                              visibility: tProjects(`visibility.${project.visibility}`),
+                              joinPolicy: tProjects(project.joinPolicy),
+                              status: project.status,
+                            })}
+                          </p>
+                        </div>
+                        <div className="text-right text-xs text-tertiary">
+                          <div>{t('workspace_projects_admin_summary')}</div>
+                          <div className="mt-1 text-sm text-foreground">{project.adminSummary}</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {project.riskCodes.map((riskCode) => (
+                          <StatusBadge
+                            key={riskCode}
+                            status={riskCode === 'public_open_access' ? 'blocked' : riskCode === 'archived_project' ? 'info' : 'warning'}
+                          >
+                            {t(`workspace_projects_risk_${riskCode}`)}
+                          </StatusBadge>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-lg border border-subtle bg-bg-base/10 p-3">
+                          <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_projects_quota_total_files')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">
+                            {project.sourceLibraryMaxTotalFiles?.toLocaleString() ?? t('workspace_projects_quota_missing')}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-subtle bg-bg-base/10 p-3">
+                          <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_projects_quota_max_file_size')}</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">
+                            {project.sourceLibraryMaxFileSizeBytes !== undefined
+                              ? formatBytes(project.sourceLibraryMaxFileSizeBytes)
+                              : t('workspace_projects_quota_missing')}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="mt-5 p-5 rounded-xl border border-border bg-surface" data-testid="ws-settings__members">

@@ -14,6 +14,29 @@ const STABLE_MEMBERS = [
     joined_at: '2026-02-01T00:00:00Z',
   },
 ];
+const STABLE_PROJECTS = [
+  {
+    id: 'proj_1',
+    workspace_id: 'ws_1',
+    name: 'Open Project',
+    owner_id: 'u_1',
+    visibility: 'public',
+    join_policy: 'open',
+    status: 'active',
+    governance_json: {
+      quotas: {
+        source_library: {
+          max_total_files: 2000,
+          max_file_size_bytes: 104857600,
+        },
+      },
+    },
+    runtime_preferences_json: {},
+    limits_json: {},
+    created_at: '2026-03-01T00:00:00Z',
+    updated_at: '2026-03-01T00:00:00Z',
+  },
+];
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
 
@@ -42,6 +65,12 @@ vi.mock('@/lib/hooks/use-workspaces', () => ({
   }),
 }));
 
+vi.mock('@/lib/hooks/use-projects-queries', () => ({
+  useProjects: () => ({
+    data: STABLE_PROJECTS,
+  }),
+}));
+
 vi.mock('@/components/app-shell/Topbar', () => ({
   Topbar: () => <div data-testid="topbar" />,
 }));
@@ -62,6 +91,16 @@ describe('WorkspaceSettingsPage', () => {
       expect(screen.getByText('workspace_members')).toBeInTheDocument();
     });
     expect(screen.getByText('dev1@example.com')).toBeInTheDocument();
+  });
+
+  it('renders governance overview and project posture', async () => {
+    render(<WorkspaceSettingsPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__governance-overview')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('ws-settings__project-posture')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-posture--proj_1')).toBeInTheDocument();
+    expect(screen.getByText('workspace_projects_risk_public_open_access')).toBeInTheDocument();
   });
 
   it('shows validation_error for invalid workspace param', async () => {

@@ -33,6 +33,11 @@ test.describe('Workspace Settings Page', () => {
     await expect(membersSection).toBeVisible({ timeout: 10000 });
   });
 
+  test('should display governance overview and project posture sections', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('ws-settings__governance-overview')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('ws-settings__project-posture')).toBeVisible({ timeout: 10000 });
+  });
+
   test('should display workspace members from mock data', async ({ authedPage }) => {
     const membersSection = authedPage.getByTestId('ws-settings__members');
     await expect(membersSection).toBeVisible({ timeout: 10000 });

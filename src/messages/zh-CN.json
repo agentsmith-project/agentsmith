@@ -480,6 +480,7 @@
       "trace_stats_warnings": "{count, plural, one {# 条告警} other {# 条告警}}",
       "trace_stats_errors": "{count, plural, one {# 条错误} other {# 条错误}}",
       "trace_stats_truncated": "当前显示最近一段",
+      "trace_stats_transport": "{count, plural, one {# 条传输事件} other {# 条传输事件}}",
       "trace_transport_title": "传输恢复",
       "trace_transport_kind_gap_fill": "SSE 回放",
       "trace_transport_kind_reconcile": "轨迹补齐",

@@ -76,6 +76,10 @@ function getTransportTraceMeta(evt: TaskTraceEvent): {
   return null;
 }
 
+function isExecutionTraceEvent(evt: TaskTraceEvent): boolean {
+  return getTransportTraceMeta(evt) == null;
+}
+
 function splitConcatenatedJsonObjects(input: string): string[] {
   const items: string[] = [];
   let depth = 0;
@@ -185,10 +189,11 @@ function decodeCodexEventText(raw: string): string {
 }
 
 function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
-  if (traceEvents.length === 0) {
+  const executionTraceEvents = traceEvents.filter(isExecutionTraceEvent);
+  if (executionTraceEvents.length === 0) {
     return { status: 'idle', stepCount: 0 };
   }
-  const sorted = [...traceEvents].sort((a, b) => {
+  const sorted = [...executionTraceEvents].sort((a, b) => {
     if (a.seq !== b.seq) return a.seq - b.seq;
     return a.at.localeCompare(b.at);
   });
@@ -232,8 +237,9 @@ function computeDurationMs(startedAt?: string, endedAt?: string): number | undef
 }
 
 function aggregateTraceSteps(traceEvents: TaskTraceEvent[]): TraceStep[] {
-  if (traceEvents.length === 0) return [];
-  const sorted = [...traceEvents].sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
+  const executionTraceEvents = traceEvents.filter(isExecutionTraceEvent);
+  if (executionTraceEvents.length === 0) return [];
+  const sorted = [...executionTraceEvents].sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
   const steps: TraceStep[] = [];
   const activeByName = new Map<string, number>();
 
@@ -314,18 +320,22 @@ export function MessageItem({
     () => sortedTraceEvents.filter((evt) => matchesTraceFilter(evt, traceFilterMode)),
     [sortedTraceEvents, traceFilterMode],
   );
+  const filteredExecutionTraceEvents = React.useMemo(
+    () => filteredTraceEvents.filter(isExecutionTraceEvent),
+    [filteredTraceEvents],
+  );
   const transportTraceEvents = React.useMemo(
     () => sortedTraceEvents.filter((evt) => getTransportTraceMeta(evt) != null),
     [sortedTraceEvents],
   );
-  const traceSteps = React.useMemo(() => aggregateTraceSteps(filteredTraceEvents), [filteredTraceEvents]);
+  const traceSteps = React.useMemo(() => aggregateTraceSteps(filteredExecutionTraceEvents), [filteredExecutionTraceEvents]);
   const traceErrorCount = React.useMemo(
-    () => filteredTraceEvents.filter((evt) => evt.category === 'error').length,
-    [filteredTraceEvents],
+    () => filteredExecutionTraceEvents.filter((evt) => evt.category === 'error').length,
+    [filteredExecutionTraceEvents],
   );
   const traceWarningCount = React.useMemo(
-    () => filteredTraceEvents.filter((evt) => evt.category === 'warning').length,
-    [filteredTraceEvents],
+    () => filteredExecutionTraceEvents.filter((evt) => evt.category === 'warning').length,
+    [filteredExecutionTraceEvents],
   );
   const formatDuration = (ms?: number) => {
     if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
@@ -478,7 +488,7 @@ export function MessageItem({
             ) : (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-tertiary" data-testid="notebook__message-trace-stats">
-                  <span>{tNotebookConversation('trace_stats_events', { count: filteredTraceEvents.length })}</span>
+                  <span>{tNotebookConversation('trace_stats_events', { count: filteredExecutionTraceEvents.length })}</span>
                   {traceSummary.durationMs != null ? (
                     <span>{tNotebookConversation('trace_stats_duration', { value: formatDuration(traceSummary.durationMs) })}</span>
                   ) : null}
@@ -490,6 +500,9 @@ export function MessageItem({
                   ) : null}
                   {traceHasMore ? (
                     <span>{tNotebookConversation('trace_stats_truncated')}</span>
+                  ) : null}
+                  {transportTraceEvents.length > 0 ? (
+                    <span>{tNotebookConversation('trace_stats_transport', { count: transportTraceEvents.length })}</span>
                   ) : null}
                 </div>
                 {traceViewMode === 'timeline' && transportTraceEvents.length > 0 ? (

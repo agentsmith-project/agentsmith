@@ -461,8 +461,10 @@ describe('MessageItem', () => {
       const transportSection = screen.getByTestId('notebook__message-trace-transport');
       expect(transportSection).toBeInTheDocument();
       expect(screen.getAllByTestId('notebook__message-trace-transport-item')).toHaveLength(2);
+      expect(screen.getByTestId('notebook__message-trace-toggle')).not.toHaveTextContent(/last_event_id=evt-42/);
       expect(within(transportSection).getByText(/last_event_id=evt-42/)).toBeInTheDocument();
       expect(within(transportSection).getByText(/items=3/)).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__message-trace-stats')).toHaveTextContent(/trace_stats_transport/);
     });
 
     it('shows loading state when execution details are being fetched', async () => {

@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { MessageList } from './MessageList';
 import { ConversationInput } from './ConversationInput';
 import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
+import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
 import { classifyNotebookRealtimeFailure } from '@/lib/build-failure-explainability';
 
 export interface ConversationPanelProps {
@@ -17,6 +18,7 @@ export interface ConversationPanelProps {
   traceHasMoreByMessageId?: Record<string, boolean>;
   traceLoadingByMessageId?: Record<string, boolean>;
   traceLoadMoreLoadingByMessageId?: Record<string, boolean>;
+  traceErrorByMessageId?: Record<string, { kind: NotebookTraceFailureKind; message: string }>;
   onTraceExpand?: (messageId: string) => void;
   onTraceLoadMore?: (messageId: string) => void;
   onSendMessage: (content: string) => void;
@@ -35,6 +37,7 @@ export function ConversationPanel({
   traceHasMoreByMessageId,
   traceLoadingByMessageId,
   traceLoadMoreLoadingByMessageId,
+  traceErrorByMessageId,
   onTraceExpand,
   onTraceLoadMore,
   onSendMessage,
@@ -110,6 +113,7 @@ export function ConversationPanel({
           traceHasMoreByMessageId={traceHasMoreByMessageId}
           traceLoadingByMessageId={traceLoadingByMessageId}
           traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
+          traceErrorByMessageId={traceErrorByMessageId}
           disabled={disabled}
           onTraceExpand={onTraceExpand}
           onTraceLoadMore={onTraceLoadMore}

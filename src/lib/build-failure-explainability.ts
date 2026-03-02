@@ -1,3 +1,5 @@
+import { ApiError } from '@/lib/api/client';
+
 export type ChatStreamFailureKind =
   | 'agent_offline'
   | 'agent_timeout'
@@ -15,6 +17,12 @@ export type NotebookRealtimeFailureKind =
   | 'ticket_rate_limited'
   | 'ticket_network'
   | 'reconcile_failed';
+
+export type NotebookTraceFailureKind =
+  | 'trace_unavailable'
+  | 'trace_forbidden'
+  | 'trace_network'
+  | 'trace_failed';
 
 export function classifyChatStreamFailure(errorCode?: string | null): ChatStreamFailureKind {
   switch (errorCode) {
@@ -55,4 +63,19 @@ export function classifyNotebookRealtimeFailure(
     }
   }
   return connectionStatus;
+}
+
+export function classifyNotebookTraceFailure(error: unknown): NotebookTraceFailureKind {
+  if (error instanceof ApiError) {
+    if (error.isNotFoundError()) {
+      return 'trace_unavailable';
+    }
+    if (error.isPermissionError()) {
+      return 'trace_forbidden';
+    }
+    if (error.isNetworkError() || error.isServerError()) {
+      return 'trace_network';
+    }
+  }
+  return 'trace_failed';
 }

@@ -31,6 +31,10 @@ vi.mock('next-intl', () => ({
       'copied': 'Copied!',
       'copy_failed': 'Failed to copy',
       'copy': 'Copy',
+      'trace_error_unavailable_title': 'Trace details unavailable',
+      'trace_error_forbidden_title': 'Trace access denied',
+      'trace_error_network_title': 'Trace retrieval failed',
+      'trace_error_failed_title': 'Trace details could not be loaded',
     };
     return translations[key] || key;
   },
@@ -547,6 +551,40 @@ describe('MessageItem', () => {
       );
       await user.click(screen.getByTestId('notebook__message-trace-toggle'));
       expect(screen.getByTestId('notebook__message-trace-load-more')).toHaveTextContent(/trace_load_more_loading/);
+    });
+  });
+
+  describe('Trace Failure Explainability', () => {
+    it('shows unavailable trace explanation inside the trace panel', async () => {
+      const user = userEvent.setup();
+      renderComponent(mockAgentMessage, {
+        traceError: {
+          kind: 'trace_unavailable',
+          message: 'Task trace stream has not been persisted for this run.',
+        },
+      });
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+
+      const panel = screen.getByTestId('notebook__message-trace-error');
+      expect(panel).toHaveTextContent('Trace details unavailable');
+      expect(panel).toHaveTextContent('Task trace stream has not been persisted for this run.');
+    });
+
+    it('shows forbidden trace explanation inside the trace panel', async () => {
+      const user = userEvent.setup();
+      renderComponent(mockAgentMessage, {
+        traceError: {
+          kind: 'trace_forbidden',
+          message: 'The current session cannot read task trace details.',
+        },
+      });
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+
+      const panel = screen.getByTestId('notebook__message-trace-error');
+      expect(panel).toHaveTextContent('Trace access denied');
+      expect(panel).toHaveTextContent('The current session cannot read task trace details.');
     });
   });
 

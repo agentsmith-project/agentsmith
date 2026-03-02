@@ -1,6 +1,7 @@
 'use client';
 import * as React from 'react';
 import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
+import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
 import { MessageItem } from './MessageItem';
 import { EmptyState } from '@/components/ui/loading';
 
@@ -12,6 +13,7 @@ export interface MessageListProps {
   traceHasMoreByMessageId?: Record<string, boolean>;
   traceLoadingByMessageId?: Record<string, boolean>;
   traceLoadMoreLoadingByMessageId?: Record<string, boolean>;
+  traceErrorByMessageId?: Record<string, { kind: NotebookTraceFailureKind; message: string }>;
   disabled?: boolean;
   onTraceExpand?: (messageId: string) => void;
   onTraceLoadMore?: (messageId: string) => void;
@@ -25,6 +27,7 @@ export function MessageList({
   traceHasMoreByMessageId,
   traceLoadingByMessageId,
   traceLoadMoreLoadingByMessageId,
+  traceErrorByMessageId,
   disabled = false,
   onTraceExpand,
   onTraceLoadMore,
@@ -79,6 +82,7 @@ export function MessageList({
           traceHasMore={traceHasMoreByMessageId?.[message.id] ?? false}
           traceDetailsLoading={traceLoadingByMessageId?.[message.id] ?? false}
           traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[message.id] ?? false}
+          traceError={traceErrorByMessageId?.[message.id]}
           disabled={disabled}
           onTraceExpand={onTraceExpand}
           onTraceLoadMore={onTraceLoadMore}
@@ -98,6 +102,7 @@ export function MessageList({
           traceHasMore={traceHasMoreByMessageId?.[streamingMessageId] ?? false}
           traceDetailsLoading={traceLoadingByMessageId?.[streamingMessageId] ?? false}
           traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[streamingMessageId] ?? false}
+          traceError={traceErrorByMessageId?.[streamingMessageId]}
           disabled={disabled}
           onTraceExpand={onTraceExpand}
           onTraceLoadMore={onTraceLoadMore}

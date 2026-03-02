@@ -33,6 +33,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { mapTraceHasMoreByMessageId, pruneTaskTraceMeta, upsertTaskTraceMeta, type TaskTraceMetaByMessageId } from '@/lib/utils/task-trace-meta';
 import { ensureDefaultUploadLibrary } from '@/lib/files/default-library';
+import { classifyNotebookTraceFailure, type NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
 
 export interface TaskPageProps {
   workspaceId: string;
@@ -74,6 +75,7 @@ export function TaskPage({
   const [traceMetaByMessageId, setTraceMetaByMessageId] = React.useState<TaskTraceMetaByMessageId>({});
   const [traceLoadingByMessageId, setTraceLoadingByMessageId] = React.useState<Record<string, boolean>>({});
   const [traceLoadMoreLoadingByMessageId, setTraceLoadMoreLoadingByMessageId] = React.useState<Record<string, boolean>>({});
+  const [traceErrorByMessageId, setTraceErrorByMessageId] = React.useState<Record<string, { kind: NotebookTraceFailureKind; message: string }>>({});
   const [sseDebugEvents, setSseDebugEvents] = React.useState<TaskSSEDebugEvent[]>([]);
   const [traceBackfillRefreshNonce, setTraceBackfillRefreshNonce] = React.useState(0);
   const [realtimeFailureCode, setRealtimeFailureCode] = React.useState<string | null>(null);
@@ -190,8 +192,21 @@ export function TaskPage({
       });
       mergeTraceEvents(resp.items);
       setTraceMetaByMessageId((prev) => upsertTaskTraceMeta(prev, messageId, resp));
+      setTraceErrorByMessageId((prev) => {
+        if (!prev[messageId]) return prev;
+        const next = { ...prev };
+        delete next[messageId];
+        return next;
+      });
     } catch (err) {
       traceBackfillRequestedMessageIdsRef.current.delete(messageId);
+      setTraceErrorByMessageId((prev) => ({
+        ...prev,
+        [messageId]: {
+          kind: classifyNotebookTraceFailure(err),
+          message: err instanceof Error ? err.message : 'Task trace details could not be loaded.',
+        },
+      }));
       handleError(err, { logContext: 'TaskPage.traceMessageBackfill' });
     } finally {
       setTraceLoadingByMessageId((prev) => {
@@ -217,7 +232,20 @@ export function TaskPage({
       });
       mergeTraceEvents(resp.items);
       setTraceMetaByMessageId((prev) => upsertTaskTraceMeta(prev, messageId, resp));
+      setTraceErrorByMessageId((prev) => {
+        if (!prev[messageId]) return prev;
+        const next = { ...prev };
+        delete next[messageId];
+        return next;
+      });
     } catch (err) {
+      setTraceErrorByMessageId((prev) => ({
+        ...prev,
+        [messageId]: {
+          kind: classifyNotebookTraceFailure(err),
+          message: err instanceof Error ? err.message : 'Task trace details could not be loaded.',
+        },
+      }));
       handleError(err, { logContext: 'TaskPage.traceMessageLoadMore' });
     } finally {
       setTraceLoadMoreLoadingByMessageId((prev) => {
@@ -257,6 +285,18 @@ export function TaskPage({
           continue;
         }
         next[id] = loading;
+      }
+      return changed ? next : prev;
+    });
+    setTraceErrorByMessageId((prev) => {
+      let changed = false;
+      const next: typeof prev = {};
+      for (const [id, value] of Object.entries(prev)) {
+        if (!messageIds.has(id)) {
+          changed = true;
+          continue;
+        }
+        next[id] = value;
       }
       return changed ? next : prev;
     });
@@ -728,6 +768,7 @@ export function TaskPage({
           traceHasMoreByMessageId={mapTraceHasMoreByMessageId(traceMetaByMessageId)}
           traceLoadingByMessageId={traceLoadingByMessageId}
           traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
+          traceErrorByMessageId={traceErrorByMessageId}
           onTraceExpand={fetchTracesForMessage}
           onTraceLoadMore={loadMoreTracesForMessage}
           onSendMessage={handleSendMessage}

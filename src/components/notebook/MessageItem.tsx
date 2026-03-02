@@ -3,6 +3,7 @@ import * as React from 'react';
 import { Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
+import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ export interface MessageItemProps {
   traceDetailsLoading?: boolean;
   traceHasMore?: boolean;
   traceLoadMoreLoading?: boolean;
+  traceError?: { kind: NotebookTraceFailureKind; message: string };
   disabled?: boolean;
   onTraceExpand?: (messageId: string) => void;
   onTraceLoadMore?: (messageId: string) => void;
@@ -294,6 +296,7 @@ export function MessageItem({
   traceDetailsLoading = false,
   traceHasMore = false,
   traceLoadMoreLoading = false,
+  traceError,
   disabled = false,
   onTraceExpand,
   onTraceLoadMore,
@@ -320,6 +323,16 @@ export function MessageItem({
     () => sortedTraceEvents.filter((evt) => matchesTraceFilter(evt, traceFilterMode)),
     [sortedTraceEvents, traceFilterMode],
   );
+  const traceErrorTitle = traceError?.kind === 'trace_unavailable'
+    ? tNotebookConversation('trace_error_unavailable_title')
+    : traceError?.kind === 'trace_forbidden'
+      ? tNotebookConversation('trace_error_forbidden_title')
+      : traceError?.kind === 'trace_network'
+        ? tNotebookConversation('trace_error_network_title')
+        : traceError?.kind === 'trace_failed'
+          ? tNotebookConversation('trace_error_failed_title')
+          : null;
+  const traceErrorDescription = traceError?.message ?? null;
   const filteredExecutionTraceEvents = React.useMemo(
     () => filteredTraceEvents.filter(isExecutionTraceEvent),
     [filteredTraceEvents],
@@ -477,11 +490,22 @@ export function MessageItem({
         </div>
         {canShowTraceToggle && traceExpanded && (
           <div className="mt-3 rounded-md border border-subtle bg-background/40 p-3" data-testid="notebook__message-trace-panel">
+            {traceErrorTitle ? (
+              <div
+                className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 p-2 text-xs"
+                data-testid="notebook__message-trace-error"
+              >
+                <div className="font-medium text-red-200">{traceErrorTitle}</div>
+                {traceErrorDescription ? (
+                  <div className="mt-0.5 text-red-100/90">{traceErrorDescription}</div>
+                ) : null}
+              </div>
+            ) : null}
             {traceDetailsLoading && !hasTrace ? (
               <div className="text-xs text-tertiary" data-testid="notebook__message-trace-loading">
                 {tNotebookConversation('trace_details_loading')}
               </div>
-            ) : !hasTrace ? (
+            ) : !hasTrace && !traceErrorTitle ? (
               <div className="text-xs text-tertiary" data-testid="notebook__message-trace-empty">
                 {tNotebookConversation('trace_no_details')}
               </div>

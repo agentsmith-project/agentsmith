@@ -8,8 +8,10 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { useOrganizationGovernanceRollup } from '@/lib/hooks/use-organization-governance-rollup';
+import { useOrganizationActions } from '@/lib/hooks/use-organization-actions';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 import { cn } from '@/lib/utils';
+import type { OrganizationActionStatus } from '@/lib/stores/organization-actions-store';
 
 export default function WorkspacesOverviewPage() {
   const params = useParams();
@@ -54,6 +56,7 @@ export default function WorkspacesOverviewPage() {
       return true;
     });
   }, [orgRollup.rollup?.actionsQueue, readinessFilter, searchQuery]);
+  const { actionsWithState, updateActionStatus } = useOrganizationActions(filteredActionsQueue);
 
   return (
     <PageState state="success">
@@ -237,30 +240,84 @@ export default function WorkspacesOverviewPage() {
 
                 <section className="rounded-md border border-border bg-surface p-4" data-testid="workspace-overview__actions-queue">
                   <h2 className="text-base font-semibold text-foreground">{t('org_overview_actions_queue_title')}</h2>
-                  {filteredActionsQueue.length === 0 ? (
+                  {actionsWithState.length === 0 ? (
                     <p className="mt-2 text-sm text-tertiary">{t('org_overview_actions_queue_empty')}</p>
                   ) : (
                     <div className="mt-3 space-y-2">
-                      {filteredActionsQueue.map((action) => (
+                      {actionsWithState.map((action) => {
+                        const actionIdForTest = action.id.replace(/:/g, '--');
+                        return (
                         <div
                           key={action.id}
                           className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-subtle bg-bg-base/20 p-3"
-                          data-testid={`workspace-overview__actions-queue-item--${action.id.replace(/:/g, '--')}`}
+                          data-testid={`workspace-overview__actions-queue-item--${actionIdForTest}`}
                         >
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-foreground">{action.workspaceName}</p>
                             <p className="text-xs text-tertiary">{t(`org_overview_action_type_${action.actionType}`)}</p>
                             <p className="mt-1 truncate text-xs text-tertiary">{action.title}</p>
+                            {action.updatedAt ? (
+                              <p className="mt-1 text-[11px] text-tertiary">
+                                {t('org_overview_action_updated_at', { value: new Date(action.updatedAt).toLocaleString() })}
+                              </p>
+                            ) : null}
                           </div>
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <StatusBadge status={mapActionStatusToBadge(action.currentStatus)}>
+                              {t(`org_overview_action_status_${action.currentStatus}`)}
+                            </StatusBadge>
                             <StatusBadge status={action.severity}>{t(`org_overview_status_${action.severity}`)}</StatusBadge>
+                            <button
+                              type="button"
+                              className={cn(
+                                'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                'hover:bg-hover',
+                              )}
+                              onClick={() => updateActionStatus(action.id, 'in_progress')}
+                              data-testid={`workspace-overview__actions-queue-mark-in-progress--${actionIdForTest}`}
+                            >
+                              {t('org_overview_action_mark_in_progress')}
+                            </button>
+                            <button
+                              type="button"
+                              className={cn(
+                                'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                'hover:bg-hover',
+                              )}
+                              onClick={() => updateActionStatus(action.id, 'completed')}
+                              data-testid={`workspace-overview__actions-queue-mark-completed--${actionIdForTest}`}
+                            >
+                              {t('org_overview_action_mark_completed')}
+                            </button>
+                            <button
+                              type="button"
+                              className={cn(
+                                'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                'hover:bg-hover',
+                              )}
+                              onClick={() => updateActionStatus(action.id, 'blocked')}
+                              data-testid={`workspace-overview__actions-queue-mark-blocked--${actionIdForTest}`}
+                            >
+                              {t('org_overview_action_mark_blocked')}
+                            </button>
+                            <button
+                              type="button"
+                              className={cn(
+                                'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+                                'hover:bg-hover',
+                              )}
+                              onClick={() => updateActionStatus(action.id, 'pending')}
+                              data-testid={`workspace-overview__actions-queue-mark-pending--${actionIdForTest}`}
+                            >
+                              {t('org_overview_action_mark_pending')}
+                            </button>
                             <Link
                               href={`/${locale}/workspaces/${action.workspaceId}/settings`}
                               className={cn(
                                 'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                 'hover:bg-hover',
                               )}
-                              data-testid={`workspace-overview__actions-queue-open-settings--${action.id.replace(/:/g, '--')}`}
+                              data-testid={`workspace-overview__actions-queue-open-settings--${actionIdForTest}`}
                             >
                               {t('org_overview_open_settings')}
                             </Link>
@@ -271,14 +328,31 @@ export default function WorkspacesOverviewPage() {
                                   'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                   'hover:bg-hover',
                                 )}
-                                data-testid={`workspace-overview__actions-queue-open-release-ops--${action.id.replace(/:/g, '--')}`}
+                                data-testid={`workspace-overview__actions-queue-open-release-ops--${actionIdForTest}`}
                               >
                                 {t('org_overview_open_release_ops')}
                               </Link>
                             ) : null}
                           </div>
+                          {action.history.length > 0 ? (
+                            <div className="w-full rounded-sm border border-subtle bg-surface px-3 py-2" data-testid={`workspace-overview__actions-queue-history--${actionIdForTest}`}>
+                              <p className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('org_overview_action_history')}</p>
+                              <div className="mt-1 space-y-1">
+                                {action.history.slice(-3).reverse().map((event) => (
+                                  <p key={event.id} className="text-xs text-tertiary">
+                                    {t('org_overview_action_history_line', {
+                                      status: t(`org_overview_action_status_${event.status}`),
+                                      actor: event.actorName,
+                                      at: new Date(event.at).toLocaleString(),
+                                    })}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </section>
@@ -289,6 +363,19 @@ export default function WorkspacesOverviewPage() {
       </PageLayout>
     </PageState>
   );
+}
+
+function mapActionStatusToBadge(status: OrganizationActionStatus) {
+  switch (status) {
+    case 'in_progress':
+      return 'active' as const;
+    case 'completed':
+      return 'success' as const;
+    case 'blocked':
+      return 'blocked' as const;
+    default:
+      return 'paused' as const;
+  }
 }
 
 function MetricCard({ label, value }: { label: string; value: number }) {

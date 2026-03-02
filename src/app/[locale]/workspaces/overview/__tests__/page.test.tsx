@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useOrganizationActionsStore } from '@/lib/stores/organization-actions-store';
 
 const mockUseWorkspaces = vi.fn();
 const mockUseOrganizationGovernanceRollup = vi.fn();
@@ -22,6 +23,7 @@ import WorkspacesOverviewPage from '../page';
 
 describe('WorkspacesOverviewPage', () => {
   beforeEach(() => {
+    useOrganizationActionsStore.getState()._resetForTests?.();
     mockRefetchWorkspaces.mockClear();
     mockRefetchRollup.mockClear();
     mockUseWorkspaces.mockReturnValue({
@@ -104,6 +106,14 @@ describe('WorkspacesOverviewPage', () => {
 
     expect(screen.queryByTestId('workspace-overview__row--ws_1')).not.toBeInTheDocument();
     expect(screen.getByText('org_overview_matrix_empty_filtered')).toBeInTheDocument();
+  });
+
+  it('updates action status and shows audit history', () => {
+    render(<WorkspacesOverviewPage />);
+    fireEvent.click(screen.getByTestId('workspace-overview__actions-queue-mark-in-progress--action--ws_1--project--proj_1'));
+
+    expect(screen.getByText('org_overview_action_status_in_progress')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__actions-queue-history--action--ws_1--project--proj_1')).toBeInTheDocument();
   });
 
   it('shows loading state', () => {

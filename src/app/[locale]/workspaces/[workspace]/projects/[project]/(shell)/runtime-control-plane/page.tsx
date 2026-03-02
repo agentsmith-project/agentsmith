@@ -88,8 +88,6 @@ export default function RuntimeControlPlanePage({ params }: RuntimeControlPlaneP
           <RuntimeObservabilityConsole
             workspaceId={workspaceId}
             projectId={projectId}
-            locale={resolvedParams.locale}
-            embedded
           />
           <RuntimeControlPlanePanel workspaceId={workspaceId} projectId={projectId} />
         </div>

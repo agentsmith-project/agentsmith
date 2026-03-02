@@ -22,7 +22,7 @@ export function hasProjectPermission(project: Project, permission: string): bool
 }
 
 export function buildProjectAdminSummary(
-  project: Project,
+  project: Pick<ProjectWithMembership, 'governance_json' | 'owner_id'>,
   memberNameById: Map<string, string>,
 ): string {
   const rawAdmins = project.governance_json?.['project_admins'];

@@ -909,7 +909,7 @@ function classifyRuntimeErrorClass(errorCode?: string): 'provider_retryable' | '
   return 'system_error';
 }
 
-function toRuntimeFact(item: Record<string, unknown>): RuntimeFactLike {
+function toRuntimeFact(item: RuntimeFactLike | Record<string, unknown>): RuntimeFactLike {
   const runtime = typeof item.runtime === 'object' && item.runtime
     ? item.runtime as RuntimeFactLike['runtime']
     : undefined;
@@ -928,7 +928,7 @@ function toRuntimeFact(item: Record<string, unknown>): RuntimeFactLike {
   };
 }
 
-function buildRuntimeObservabilitySummary(records: Array<Record<string, unknown>>, start: string, end: string) {
+function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Record<string, unknown>>, start: string, end: string) {
   const facts = records.map(toRuntimeFact);
   const errorClassCounts = {
     provider_retryable: 0,
@@ -1161,7 +1161,7 @@ function buildRuntimeObservabilitySummary(records: Array<Record<string, unknown>
   };
 }
 
-function buildUsageOperationsSummary(records: Array<Record<string, unknown>>) {
+function buildUsageOperationsSummary(records: Array<RuntimeFactLike | Record<string, unknown>>) {
   const facts = records.map(toRuntimeFact);
   const providerAgg = new Map<string, { provider: string; requests: number; errors: number; estimated_cost: number }>();
   const modelAgg = new Map<string, { provider: string; model: string; requests: number; errors: number; estimated_cost: number }>();
@@ -1522,7 +1522,9 @@ export const usageHandlers = [
     const groupBy = url.searchParams.get('group_by') === 'hour' ? 'hour' : 'day';
     const usageItems = p0.usage as Array<{ resource_type?: string | null }> | undefined;
     const hasStructuredUsage = Array.isArray(usageItems) && usageItems.some((item) => Boolean(item?.resource_type));
-    const baseItems = (hasStructuredUsage ? p0.usage : usageRecordFixtures).filter((item) => {
+    const baseItems = (hasStructuredUsage
+      ? (p0.usage as unknown as UsageLikeRecord[])
+      : (usageRecordFixtures as unknown as UsageLikeRecord[])).filter((item) => {
       if (resourceType && item.resource_type !== resourceType) return false;
       if (resourceId && item.resource_id !== resourceId) return false;
       if (endUserId && item.end_user_id !== endUserId) return false;

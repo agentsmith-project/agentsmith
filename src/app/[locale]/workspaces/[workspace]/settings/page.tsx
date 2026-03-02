@@ -405,7 +405,7 @@ export default function WorkspaceSettingsPage() {
                           <p className="mt-1 text-xs text-tertiary">
                             {t('workspace_projects_meta', {
                               visibility: tProjects(`visibility.${project.visibility}`),
-                              joinPolicy: tProjects(project.joinPolicy),
+                              joinPolicy: tProjects(project.joinPolicy ?? 'approval_required'),
                               status: project.status,
                             })}
                           </p>

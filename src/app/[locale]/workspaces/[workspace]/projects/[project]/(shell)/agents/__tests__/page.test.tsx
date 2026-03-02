@@ -66,8 +66,11 @@ function createWrapper() {
 }
 
 describe('AgentsPage', () => {
+  const mockReadonlySearchParams = (query = '') =>
+    new URLSearchParams(query) as unknown as ReturnType<typeof nextNavigation.useSearchParams>;
+
   it('renders header and toolbar layout', async () => {
-    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+    mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(true);
     mockUseIsProjectAdmin.mockReturnValue(true);
     render(
@@ -92,7 +95,7 @@ describe('AgentsPage', () => {
   });
 
   it('opens delete confirmation and deletes an agent', async () => {
-    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+    mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(true);
     mockUseIsProjectAdmin.mockReturnValue(true);
     const user = userEvent.setup();
@@ -136,7 +139,7 @@ describe('AgentsPage', () => {
   });
 
   it('shows invalid parameter error state for unsafe route params', async () => {
-    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+    mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(true);
     mockUseIsProjectAdmin.mockReturnValue(true);
     render(
@@ -158,7 +161,7 @@ describe('AgentsPage', () => {
   });
 
   it('shows permission denied when user lacks read access', async () => {
-    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+    mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(false);
     mockUseIsProjectAdmin.mockReturnValue(false);
     render(
@@ -180,7 +183,7 @@ describe('AgentsPage', () => {
   });
 
   it('opens agent diagnostics panel from query parameter context', async () => {
-    mockUseSearchParams.mockReturnValue(new URLSearchParams('agent=agent_1'));
+    mockUseSearchParams.mockReturnValue(mockReadonlySearchParams('agent=agent_1'));
     mockUseHasPermission.mockReturnValue(true);
     mockUseIsProjectAdmin.mockReturnValue(true);
     mockList.mockResolvedValueOnce({

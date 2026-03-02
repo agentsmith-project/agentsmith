@@ -1,6 +1,6 @@
 import type { ChatSession } from '@/lib/api/types';
 
-export type SessionStreamStatus = 'idle' | 'connecting' | 'streaming' | 'stopped' | 'error';
+export type SessionStreamStatus = 'idle' | 'connecting' | 'recovering' | 'streaming' | 'stopped' | 'error';
 
 export interface SessionStreamingAssistant {
   messageId?: string | null;

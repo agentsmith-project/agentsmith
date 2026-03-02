@@ -801,8 +801,9 @@ export function UsageReportSchedulesPanel({
                 !draft.name.trim()
                 || (draft.delivery_channel === 'webhook' && (
                   !draft.webhook_url.trim()
-                  || (draft.credential_ref.trim() && !draft.secret_header_name.trim() && !draft.signature_header_name.trim())
-                  || (!draft.credential_ref.trim() && (draft.secret_header_name.trim() || draft.signature_header_name.trim()))
+                  || (draft.credential_ref.trim().length > 0 && !draft.secret_header_name.trim() && !draft.signature_header_name.trim())
+                  || (draft.credential_ref.trim().length === 0
+                    && (draft.secret_header_name.trim().length > 0 || draft.signature_header_name.trim().length > 0))
                   || !hasValidTimeout(draft.timeout_seconds)
                   || !hasValidRetryAttempts(draft.retry_attempts)
                   || !hasValidRetryBackoff(draft.retry_backoff_ms)

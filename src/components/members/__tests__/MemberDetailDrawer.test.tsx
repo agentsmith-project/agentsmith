@@ -94,7 +94,7 @@ describe('MemberDetailDrawer', () => {
         onOpenChange={() => {}}
         member={baseMember}
         permissions={{ platform_permissions: ['project:read'] }}
-        quotaOverrides={{ daily_tokens: 1000 }}
+        quotaOverrides={{ endpoint: { daily_token_limit: 1000 } }}
         effectiveAccessSnapshot={{
           membership: {
             project_id: 'proj_1',
@@ -105,7 +105,7 @@ describe('MemberDetailDrawer', () => {
             joined_at: '2026-02-01T00:00:00Z',
           },
           permissions: { platform_permissions: ['project:read'] },
-          quota_overrides: { daily_tokens: 1000 },
+          quota_overrides: { endpoint: { daily_token_limit: 1000 } },
           effective_permissions: ['project:read'],
           membership_status: 'suspended',
         }}
@@ -130,7 +130,7 @@ describe('MemberDetailDrawer', () => {
     expect(screen.getByTestId('member-detail__effective-access-summary')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__membership-status')).toHaveTextContent('effective_access.membership_status.suspended');
     expect(screen.getByTestId('member-detail__effective-permissions')).toHaveTextContent('project:read');
-    expect(screen.getByTestId('member-detail__effective-quotas')).toHaveTextContent('daily_tokens: 1000');
+    expect(screen.getByTestId('member-detail__effective-quotas')).toHaveTextContent('endpoint.daily_token_limit: 1000');
     expect(screen.getByTestId('member-detail__authorize-result')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__matched-policy')).toHaveTextContent('endpoint/endpoint_1');
   });

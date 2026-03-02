@@ -303,7 +303,7 @@ export default function OverviewPage() {
           // WP-03: Updated to new runtime-console route with monitoring tab
           href: `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery({
             ...timeRange,
-            result: runtimeTone === 'ready' ? undefined : 'error',
+            result: 'error',
           })}`,
           actionLabel: t('primary_actions.open_runtime'),
         }
@@ -325,9 +325,8 @@ export default function OverviewPage() {
           body: t('primary_actions.review_cost_anomalies_body'),
           href: `${basePath}/usage${buildSharedOpsFilterQuery({
             ...timeRange,
-            panel: 'usage',
             result: costTone === 'blocked' ? 'error' : undefined,
-          })}`,
+          }, { panel: 'usage' })}`,
           actionLabel: t('primary_actions.open_usage'),
         }
       : {

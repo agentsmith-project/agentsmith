@@ -121,11 +121,26 @@ export function ProtectedRoute({
               const expiresIn = typeof persisted.tokenExpiresAt === 'number'
                 ? Math.max(1, Math.floor((persisted.tokenExpiresAt - Date.now()) / 1000))
                 : undefined;
-              state.setAuth(persisted.user, persisted.token, {
-                refreshToken: persisted.refreshToken ?? null,
-                expiresIn,
-              });
-              return true;
+              if (
+                typeof persisted.user.id === 'string'
+                && typeof persisted.user.email === 'string'
+                && typeof persisted.user.name === 'string'
+              ) {
+                state.setAuth(
+                  {
+                    id: persisted.user.id,
+                    email: persisted.user.email,
+                    name: persisted.user.name,
+                    locale: persisted.user.locale,
+                  },
+                  persisted.token,
+                  {
+                    refreshToken: persisted.refreshToken ?? null,
+                    expiresIn,
+                  },
+                );
+                return true;
+              }
             }
           } catch {
             // Ignore malformed localStorage and continue normal fallback.

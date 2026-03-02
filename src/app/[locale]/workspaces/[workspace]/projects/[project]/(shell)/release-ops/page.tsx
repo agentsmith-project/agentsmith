@@ -38,6 +38,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { evaluateReleasePolicy } from '@/lib/release-policy';
+import { resolveOrganizationEvidence } from '@/lib/release-ops-organization-evidence';
 import { Textarea } from '@/components/ui/textarea';
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 import { buildGovernanceDrilldownQuery, parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
@@ -536,19 +537,10 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     ? recentReleaseRuns.filter((item) => item.status === 'pass').length / recentReleaseRuns.length
     : undefined;
 
-  // Extract organization governance evidence from report for live policy comparison
-  const organizationEvidence = useMemo(() => {
-    const report = reportDetailQuery.data?.report as {
-      summary?: {
-        organization_governance_evidence?: {
-          release_readiness?: 'ready' | 'blocked';
-          blockers?: string[];
-          warnings?: string[];
-        };
-      };
-    } | undefined;
-    return report?.summary?.organization_governance_evidence;
-  }, [reportDetailQuery.data?.report]);
+  const organizationEvidenceResolution = useMemo(
+    () => resolveOrganizationEvidence(reportSummary),
+    [reportSummary],
+  );
 
   const livePolicy = evaluateReleasePolicy({
     runtime: runtimeQuery.data ? {
@@ -578,23 +570,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
       due_soon: releaseEscalations.filter((item) =>
         item.status !== 'resolved' && item.sla_status === 'due_soon').length,
     },
-    organization: organizationEvidence ? {
-      release_readiness: organizationEvidence.release_readiness,
-      blockers: (organizationEvidence.blockers ?? []).map((id) => ({
-        id,
-        message: id,
-        severity: 'blocker' as const,
-        source: 'organization_governance' as const,
-        overridable: false,
-      })),
-      warnings: (organizationEvidence.warnings ?? []).map((id) => ({
-        id,
-        message: id,
-        severity: 'warning' as const,
-        source: 'organization_governance' as const,
-        overridable: false,
-      })),
-    } : undefined,
+    organization: organizationEvidenceResolution.policyInput,
   });
   const artifactPolicy = reportSummary?.release_policy;
   const artifactPolicyEnforcement = reportDetailQuery.data?.policy_enforcement;
@@ -1028,7 +1004,27 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
                           pending:{latestArtifactEnforcement.pending_override_count}
                         </span>
                       ) : null}
+                      <span className="text-xs text-tertiary" data-testid="release-ops__compare-org-evidence-status">
+                        {settingsT('release_ops_compare_org_evidence')}
+                        {': '}
+                        {organizationEvidenceResolution.availability === 'loaded'
+                          ? settingsT('release_ops_compare_org_evidence_loaded', {
+                            source: settingsT(
+                              organizationEvidenceResolution.source === 'summary'
+                                ? 'release_ops_compare_org_evidence_source_summary'
+                                : 'release_ops_compare_org_evidence_source_policy',
+                            ),
+                            blockers: organizationEvidenceResolution.blockerCount,
+                            warnings: organizationEvidenceResolution.warningCount,
+                          })
+                          : settingsT('release_ops_compare_org_evidence_missing')}
+                      </span>
                     </div>
+                    {organizationEvidenceResolution.availability === 'missing' ? (
+                      <p className="mt-2 text-xs text-warning" data-testid="release-ops__compare-org-evidence-missing-hint">
+                        {settingsT('release_ops_compare_org_evidence_hint_missing')}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>

@@ -35,6 +35,22 @@ function extractQuotasFromGovernance(governance?: Record<string, unknown>): Quot
   return quotas ?? {};
 }
 
+function flattenQuotaOverrides(
+  source: Record<string, unknown>,
+  prefix = ''
+): Array<{ key: string; value: string }> {
+  return Object.entries(source).flatMap(([key, value]) => {
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    if (value === null || value === undefined) {
+      return [];
+    }
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      return flattenQuotaOverrides(value as Record<string, unknown>, nextKey);
+    }
+    return [{ key: nextKey, value: String(value) }];
+  });
+}
+
 export interface MemberDetailDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -182,6 +198,11 @@ export function MemberDetailDrawer({
     return quotaOverrides ?? {};
   }, [appliedQuotaTemplateId, quotaTemplates, quotaOverrides]);
 
+  const effectiveQuotaEntries = React.useMemo(
+    () => flattenQuotaOverrides((effectiveAccessSnapshot?.quota_overrides ?? quotaOverrides ?? {}) as Record<string, unknown>),
+    [effectiveAccessSnapshot?.quota_overrides, quotaOverrides]
+  );
+
   const handleSavePermissions = React.useCallback(
     (permissions: string[], mode: 'template' | 'custom', template?: string) => {
       onSavePermissions?.(permissions, mode, template);
@@ -199,13 +220,13 @@ export function MemberDetailDrawer({
   );
 
   const handleAuthorizationCheck = React.useCallback(async () => {
-    if (!onRunAuthorizationCheck) return;
+    if (!onRunAuthorizationCheck || !member) return;
     await onRunAuthorizationCheck({
       resourceType: authorizeResourceType,
       resourceId: authorizeResourceId.trim() || member.id,
       action: authorizeAction.trim() || 'read',
     });
-  }, [authorizeAction, authorizeResourceId, authorizeResourceType, member.id, onRunAuthorizationCheck]);
+  }, [authorizeAction, authorizeResourceId, authorizeResourceType, member, onRunAuthorizationCheck]);
 
   if (!member) return null;
 
@@ -300,12 +321,12 @@ export function MemberDetailDrawer({
                   {t('effective_access.quota_label')}
                 </p>
                 <div className="flex flex-wrap gap-2" data-testid="member-detail__effective-quotas">
-                  {Object.entries(effectiveAccessSnapshot?.quota_overrides ?? quotaOverrides ?? {}).map(([key, value]) => (
+                  {effectiveQuotaEntries.map(({ key, value }) => (
                     <Badge key={key} variant="outline">
-                      {key}: {String(value)}
+                      {key}: {value}
                     </Badge>
                   ))}
-                  {Object.keys(effectiveAccessSnapshot?.quota_overrides ?? quotaOverrides ?? {}).length === 0 ? (
+                  {effectiveQuotaEntries.length === 0 ? (
                     <span className="text-sm text-tertiary">{t('effective_access.no_quota_overrides')}</span>
                   ) : null}
                 </div>

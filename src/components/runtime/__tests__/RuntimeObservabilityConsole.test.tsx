@@ -3,35 +3,36 @@ import { describe, expect, it, vi } from 'vitest';
 import { RuntimeObservabilityConsole } from '../RuntimeObservabilityConsole';
 
 const replaceMock = vi.fn();
-
-const useUsageFactsMock = vi.fn(() => ({
-  data: {
-    items: [
-      {
-        id: 'fact_1',
-        timestamp: '2026-02-28T14:01:00.000Z',
-        workspace_id: 'ws_1',
-        project_id: 'proj_1',
-        resource_type: 'endpoint',
-        resource_id: 'endpoint_runtime',
-        request_id: 'req_1',
-        requests: 1,
-        tokens_total: 128,
-        result: 'ok',
-        runtime: {
-          provider: 'secondaryok',
-          resolved_model: 'model-b',
-          estimated_cost: 0.0031,
-          fallback_hops: 1,
-          pricing_version: 'global-v1',
-          attempts: [],
+const { useUsageFactsMock } = vi.hoisted(() => ({
+  useUsageFactsMock: vi.fn(() => ({
+    data: {
+      items: [
+        {
+          id: 'fact_1',
+          timestamp: '2026-02-28T14:01:00.000Z',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          resource_type: 'endpoint',
+          resource_id: 'endpoint_runtime',
+          request_id: 'req_1',
+          requests: 1,
+          tokens_total: 128,
+          result: 'ok',
+          runtime: {
+            provider: 'secondaryok',
+            resolved_model: 'model-b',
+            estimated_cost: 0.0031,
+            fallback_hops: 1,
+            pricing_version: 'global-v1',
+            attempts: [],
+          },
+          metadata_json: {},
         },
-        metadata_json: {},
-      },
-    ],
-  },
-  isLoading: false,
-  isFetching: false,
+      ],
+    },
+    isLoading: false,
+    isFetching: false,
+  })),
 }));
 
 vi.mock('next-intl', () => ({
@@ -127,7 +128,7 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
     isFetching: false,
     refetch: vi.fn(),
   }),
-  useUsageFacts: (...args: unknown[]) => useUsageFactsMock(...args),
+  useUsageFacts: useUsageFactsMock,
 }));
 
 describe('RuntimeObservabilityConsole', () => {
@@ -160,7 +161,6 @@ describe('RuntimeObservabilityConsole', () => {
       <RuntimeObservabilityConsole
         workspaceId="ws_1"
         projectId="proj_1"
-        locale="en-US"
       />,
     );
 

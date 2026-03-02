@@ -199,11 +199,12 @@
 12. `WP-04` 第二阶段推进：drill-down context contract 已扩展 evidence 数值字段，治理 banner 统一渲染跨页面证据指标（signals/risk score/blocked/warning），避免各页面重复解释实现
 13. `WP-04` 第二阶段推进：workspace settings explainability/attention 快捷入口已统一注入 `workspace_settings` 来源的 drill-down context，形成组织入口到项目治理页的可追踪证据链
 14. `WP-04` 第二阶段推进：治理 banner 已支持基于 reason 的证据焦点识别（cost/deny/quota 等）与统一 remediation 快捷入口（audit/release-ops/members/policy），并保持 context 透传
+15. `WP-04` 第二阶段推进：release-ops 页面已接入 governance evidence bridge，基于实时 runtime/usage/run/escalation 数据聚合 cost/deny/quota 焦点指标，用于治理入口后的即时判定
 
 待完成：
 
 1. `WP-01` 第二阶段：与 workspace settings / release readiness 建立更强联动
 2. `WP-02` 第二阶段：矩阵排序与批量动作预览
 3. `WP-03` 第二阶段：接入真实后端 organization-actions 持久化与审计归档
-4. `WP-04` 第二阶段：将 cost/deny/quota 焦点接入真实后端统计证据与审计聚合数据，完成业务级证据闭环
+4. `WP-04` 第二阶段：把 governance evidence bridge 指标继续下钻到具体审计记录与可追责证据条目（operator 级）
 5. `WP-05` 组织级 release evidence 与 gate 集成

@@ -42,6 +42,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
+import { buildReleaseOpsGovernanceEvidenceSnapshot } from '@/lib/release-ops-governance-evidence';
 
 interface ReleaseOpsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -270,6 +271,18 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
     () => (escalationsQuery.data?.items ?? []).slice(0, 6),
     [escalationsQuery.data?.items],
   );
+  const governanceEvidenceSnapshot = useMemo(() => {
+    if (!drilldownContext) {
+      return null;
+    }
+    return buildReleaseOpsGovernanceEvidenceSnapshot({
+      context: drilldownContext,
+      runtime: runtimeQuery.data,
+      usageEvidence: evidenceQuery.data,
+      runs: releaseRuns,
+      escalations: releaseEscalations,
+    });
+  }, [drilldownContext, evidenceQuery.data, releaseEscalations, releaseRuns, runtimeQuery.data]);
   const recentReleaseReports = filteredReleaseReports.slice(0, 6);
   const recentPassRate = recentReleaseReports.length > 0
     ? recentReleaseReports.filter((item) => item.status === 'pass').length / recentReleaseReports.length
@@ -774,6 +787,45 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
           <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
         ) : null}
         <div className="space-y-3" data-testid="release-ops__page">
+          {governanceEvidenceSnapshot ? (
+            <section className="rounded-xl border border-border bg-surface p-4" data-testid="release-ops__governance-evidence-bridge">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <SectionHeading
+                  eyebrow={commonT('review')}
+                  title={settingsT('release_ops_governance_evidence_title')}
+                  subtitle={settingsT('release_ops_governance_evidence_subtitle')}
+                />
+                <StatusBadge status={governanceEvidenceSnapshot.focus === 'other' ? 'info' : 'warning'}>
+                  {settingsT(`release_ops_governance_focus_${governanceEvidenceSnapshot.focus}`)}
+                </StatusBadge>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <GovernanceEvidenceMetric
+                  testId="release-ops__governance-signals-total"
+                  label={settingsT('release_ops_governance_metric_total_signals')}
+                  value={governanceEvidenceSnapshot.totalSignals}
+                />
+                <GovernanceEvidenceMetric
+                  testId="release-ops__governance-signals-blocked"
+                  label={settingsT('release_ops_governance_metric_blocked_signals')}
+                  value={governanceEvidenceSnapshot.blockedSignals}
+                />
+                <GovernanceEvidenceMetric
+                  testId="release-ops__governance-signals-warning"
+                  label={settingsT('release_ops_governance_metric_warning_signals')}
+                  value={governanceEvidenceSnapshot.warningSignals}
+                />
+                {governanceEvidenceSnapshot.metrics.map((metric) => (
+                  <GovernanceEvidenceMetric
+                    key={metric.key}
+                    testId={`release-ops__governance-metric-${metric.key}`}
+                    label={settingsT(`release_ops_governance_metric_${metric.key}`)}
+                    value={metric.value}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
           <ReleaseOpsDashboard
             runtime={runtimeQuery.data}
             usageEvidence={evidenceQuery.data}
@@ -1911,5 +1963,14 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
         </div>
       </PageLayout>
     </PageState>
+  );
+}
+
+function GovernanceEvidenceMetric({ label, value, testId }: { label: string; value: number; testId: string }) {
+  return (
+    <div className="rounded-lg border border-subtle bg-bg-base/20 p-3" data-testid={testId}>
+      <div className="text-[11px] uppercase tracking-wide text-tertiary">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
+    </div>
   );
 }

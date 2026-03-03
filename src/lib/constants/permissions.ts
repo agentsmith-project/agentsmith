@@ -70,7 +70,6 @@ export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
 
 export const HIGH_RISK_PERMISSIONS = [
   'project:agent:public',
-  'project:agent:publish',
   'project:manage',
 ] as const;
 

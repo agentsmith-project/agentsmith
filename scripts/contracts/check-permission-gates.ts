@@ -22,6 +22,22 @@ type PageReport = {
   hasAuthFallbackGate: boolean;
 };
 
+type DeprecatedTokenUsage = {
+  file: string;
+  token: string;
+};
+
+const DEPRECATED_PERMISSION_TOKENS = [
+  'project:endpoint:invoke',
+  'project:agent:create',
+  'project:agent:publish',
+] as const;
+
+const DEPRECATED_TOKEN_ALLOWLIST = new Set<string>([
+  'src/lib/constants/permissions.ts',
+  'src/lib/hooks/use-permissions.ts',
+]);
+
 function collectPageFiles(dir: string): string[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const files: string[] = [];
@@ -34,6 +50,23 @@ function collectPageFiles(dir: string): string[] {
     if (entry.isFile() && entry.name === 'page.tsx') {
       files.push(fullPath);
     }
+  }
+  return files;
+}
+
+function collectTsSourceFiles(dir: string): string[] {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectTsSourceFiles(fullPath));
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (!fullPath.endsWith('.ts') && !fullPath.endsWith('.tsx')) continue;
+    if (fullPath.includes(`${path.sep}__tests__${path.sep}`)) continue;
+    files.push(fullPath);
   }
   return files;
 }
@@ -104,6 +137,25 @@ function hasAuthFallbackGate(pageFile: string, source: string): boolean {
   return readFallback || createFallback;
 }
 
+function collectDeprecatedTokenUsageInSource(): DeprecatedTokenUsage[] {
+  const srcDir = path.join(ROOT, 'src');
+  if (!fs.existsSync(srcDir)) return [];
+  const files = collectTsSourceFiles(srcDir);
+  const results: DeprecatedTokenUsage[] = [];
+
+  for (const file of files) {
+    const rel = toWorkspaceRelative(file);
+    if (DEPRECATED_TOKEN_ALLOWLIST.has(rel)) continue;
+    const source = fs.readFileSync(file, 'utf8');
+    for (const token of DEPRECATED_PERMISSION_TOKENS) {
+      if (source.includes(token)) {
+        results.push({ file: rel, token });
+      }
+    }
+  }
+  return results;
+}
+
 function main(): void {
   const known = collectKnownPermissions();
   const pageFiles = [
@@ -134,6 +186,7 @@ function main(): void {
   const pagesMissingInvalidParamTest: string[] = [];
   const pagesMissingForbiddenTest: string[] = [];
   const pagesWithAuthFallbackGate: string[] = [];
+  const deprecatedTokenUsage = collectDeprecatedTokenUsageInSource();
 
   for (const report of reports) {
     for (const permission of report.permissions) {
@@ -218,6 +271,14 @@ function main(): void {
     console.error('\nPages with non-strict auth fallback gate logic:');
     for (const page of pagesWithAuthFallbackGate) {
       console.error(`  - ${page}`);
+    }
+  }
+
+  if (deprecatedTokenUsage.length > 0) {
+    hasErrors = true;
+    console.error('\nDeprecated permission tokens found in source code:');
+    for (const row of deprecatedTokenUsage) {
+      console.error(`  - ${row.file}: ${row.token}`);
     }
   }
 

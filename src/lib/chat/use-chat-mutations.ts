@@ -49,6 +49,17 @@ export function useChatMutations(args: UseChatMutationsArgs) {
     return btoa(binary);
   };
 
+  const resolveUploadedObjectName = (
+    uploadedObject: { name?: string; key: string },
+    fallbackName: string,
+  ): string => {
+    const trimmed = uploadedObject.name?.trim();
+    if (trimmed) return trimmed;
+    const keyName = uploadedObject.key.split('/').pop()?.trim();
+    if (keyName) return keyName;
+    return fallbackName;
+  };
+
   const createAttachmentFromLibraryObject = async (input: {
     sessionId: string;
     libraryId: string;
@@ -110,8 +121,9 @@ export function useChatMutations(args: UseChatMutationsArgs) {
       prefix,
       true,
     );
+    const uploadedName = resolveUploadedObjectName(uploadedObject, filename);
     const attachment = await chatAPI.initAttachment(workspaceId, projectId, input.sessionId, {
-      file_name: uploadedObject.name,
+      file_name: uploadedName,
       file_type: uploadedObject.content_type || 'text/plain',
       file_size: uploadedObject.size_bytes,
       content_base64: await blobToBase64(file),
@@ -120,7 +132,7 @@ export function useChatMutations(args: UseChatMutationsArgs) {
         url: normalized,
         imported_library_id: library.id,
         imported_key: uploadedObject.key,
-        name: uploadedObject.name,
+        name: uploadedName,
         content_type: uploadedObject.content_type || 'text/plain',
         size_bytes: uploadedObject.size_bytes,
       },
@@ -212,11 +224,12 @@ export function useChatMutations(args: UseChatMutationsArgs) {
         prefix,
         true,
       );
+      const uploadedName = resolveUploadedObjectName(uploadedObject, input.file.name);
       const result = await createAttachmentFromLibraryObject({
         sessionId: input.sessionId,
         libraryId: library.id,
         key: uploadedObject.key,
-        name: uploadedObject.name,
+        name: uploadedName,
         contentType: uploadedObject.content_type || input.file.type || undefined,
         blob: input.file,
       });

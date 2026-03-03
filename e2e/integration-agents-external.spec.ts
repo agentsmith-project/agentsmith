@@ -522,6 +522,10 @@ test.describe('@lane-real integration external agent chat stream', () => {
     const composer = page.getByTestId('chat__composer');
     await expect(composer.getByTestId('chat__attach-local-btn')).toBeVisible({ timeout: 15_000 });
 
+    const attachmentInitResponse = page.waitForResponse((res) =>
+      res.request().method() === 'POST' &&
+      /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/attachments\/init$/.test(res.url()),
+    );
     await page.locator('input[type="file"][multiple]').first().setInputFiles({
       name: 'integration-image.png',
       mimeType: 'image/png',
@@ -530,6 +534,13 @@ test.describe('@lane-real integration external agent chat stream', () => {
         'base64',
       ),
     });
+    const initRes = await attachmentInitResponse;
+    if (!initRes.ok()) {
+      const reqBody = initRes.request().postData() ?? '';
+      throw new Error(
+        `attachment_init_failed_${initRes.status()}:${await initRes.text().catch(() => '')};request=${reqBody}`,
+      );
+    }
 
     await composer.locator('textarea').fill('describe this image');
     await expect
@@ -559,9 +570,7 @@ test.describe('@lane-real integration external agent chat stream', () => {
     await page.getByTestId('chat__composer').locator('textarea').fill('offline ping');
     await page.getByTestId('chat__send-btn').click();
 
-    const offlineError = page.getByTestId('chat__stream-error-banner');
-    await expect(offlineError).toBeVisible({ timeout: 20_000 });
-    await expect(offlineError).toContainText(/offline|离线/i);
+    await expect(page.getByText(/External agent is offline|外部 Agent 当前离线/)).toBeVisible({ timeout: 20_000 });
   });
 
   test('external agent protocol error shows specific stream banner', async ({ page }) => {
@@ -590,9 +599,7 @@ test.describe('@lane-real integration external agent chat stream', () => {
     await page.getByTestId('chat__composer').locator('textarea').fill('protocol test');
     await page.getByTestId('chat__send-btn').click();
 
-    const protocolError = page.getByTestId('chat__stream-error-banner');
-    await expect(protocolError).toBeVisible({ timeout: 20_000 });
-    await expect(protocolError).toContainText(/protocol|协议/i);
+    await expect(page.getByText(/External agent protocol error|外部 Agent 协议错误/)).toBeVisible({ timeout: 20_000 });
 
     ws.close();
   });

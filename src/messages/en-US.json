@@ -879,6 +879,10 @@
       "capability_video_generation": "Video Generation",
       "catalog_models": "Catalog Models",
       "select_from_catalog": "Select from catalog (optional)",
+      "catalog_context_tokens": "Context Tokens",
+      "catalog_output_tokens": "Output Tokens",
+      "catalog_input_price": "Input Price (USD / 1M)",
+      "catalog_output_price": "Output Price (USD / 1M)",
       "open_wizard_button": "Open Wizard",
       "wizard_description": "Create custom OpenAI or Anthropic compatible endpoints with validation.",
       "compatibility_interface": "Compatibility Interface"
@@ -903,6 +907,9 @@
     "import_failed": "Import failed",
     "import_success": "Endpoints imported successfully",
     "export_success": "Endpoints exported successfully",
+    "sync_catalog": "Sync Catalog",
+    "catalog_sync_success": "Catalog synced successfully",
+    "catalog_sync_failed": "Catalog sync failed",
     "table": {
       "name": "Name",
       "url": "URL",
@@ -990,6 +997,7 @@
         "name_required": "Endpoint name is required.",
         "model_required": "Model ID is required.",
         "credential_required": "Please select a credential.",
+        "invalid_number": "Please enter a valid numeric value.",
         "auth": "Authentication failed. Check your API key.",
         "network": "Network error. Could not reach the endpoint.",
         "timeout": "Request timed out. The endpoint took too long to respond.",
@@ -1020,6 +1028,20 @@
         "rerank": "Reranker",
         "image_generation": "Image Generation",
         "video_generation": "Video Generation"
+      },
+      "runtime_profile": {
+        "title": "Runtime Profile",
+        "max_context_tokens": "Max Context Tokens",
+        "max_output_tokens": "Max Output Tokens",
+        "supports_file": "Supports File",
+        "supports_tool_call": "Supports Tool Call",
+        "supports_reasoning": "Supports Reasoning",
+        "price_input_per_1m": "Input Price (USD / 1M)",
+        "price_output_per_1m": "Output Price (USD / 1M)",
+        "cache_read_discount_ratio": "Cache Read Discount Ratio",
+        "cache_write_discount_ratio": "Cache Write Discount Ratio",
+        "yes": "Yes",
+        "no": "No"
       }
     },
     "protocol_labels": {

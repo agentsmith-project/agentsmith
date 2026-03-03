@@ -52,5 +52,7 @@ describe('endpoint-resource-service', () => {
 
     expect(endpoint.protocol).toBe('anthropic_compatible');
     expect(endpoint.meta?.compatibility_interface).toBe('anthropic_compatible');
+    expect(endpoint.runtime_profile?.max_context_tokens).toBeGreaterThan(0);
+    expect(endpoint.runtime_profile?.price_input_per_1m).toBe(0);
   });
 });

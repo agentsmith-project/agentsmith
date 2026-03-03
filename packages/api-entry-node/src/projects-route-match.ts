@@ -176,6 +176,11 @@ export type ProjectsRoute =
   | { kind: 'runtimePricingVersions'; workspaceId: string; projectId: string }
   | { kind: 'runtimePricingVersionActivate'; workspaceId: string; projectId: string; pricingVersionId: string }
   | { kind: 'runtimePricingCompare'; workspaceId: string; projectId: string }
+  | { kind: 'runtimeCatalogProviders'; workspaceId: string; projectId: string }
+  | { kind: 'runtimeCatalogModels'; workspaceId: string; projectId: string }
+  | { kind: 'runtimeCatalogSync'; workspaceId: string; projectId: string }
+  | { kind: 'runtimeCatalogJobs'; workspaceId: string; projectId: string }
+  | { kind: 'runtimeCatalogStatus'; workspaceId: string; projectId: string }
   | { kind: 'credentials'; workspaceId: string; projectId: string }
   | { kind: 'credentialItem'; workspaceId: string; projectId: string; credentialId: string }
   | { kind: 'credentialRotate'; workspaceId: string; projectId: string; credentialId: string };
@@ -1276,6 +1281,61 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'runtimePricingCompare',
       workspaceId: decodeURIComponent(runtimePricingCompareMatched[1]),
       projectId: decodeURIComponent(runtimePricingCompareMatched[2]),
+    };
+  }
+
+  const runtimeCatalogProvidersMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/providers\/?$/,
+  );
+  if (runtimeCatalogProvidersMatched) {
+    return {
+      kind: 'runtimeCatalogProviders',
+      workspaceId: decodeURIComponent(runtimeCatalogProvidersMatched[1]),
+      projectId: decodeURIComponent(runtimeCatalogProvidersMatched[2]),
+    };
+  }
+
+  const runtimeCatalogModelsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/models\/?$/,
+  );
+  if (runtimeCatalogModelsMatched) {
+    return {
+      kind: 'runtimeCatalogModels',
+      workspaceId: decodeURIComponent(runtimeCatalogModelsMatched[1]),
+      projectId: decodeURIComponent(runtimeCatalogModelsMatched[2]),
+    };
+  }
+
+  const runtimeCatalogSyncMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/sync\/?$/,
+  );
+  if (runtimeCatalogSyncMatched) {
+    return {
+      kind: 'runtimeCatalogSync',
+      workspaceId: decodeURIComponent(runtimeCatalogSyncMatched[1]),
+      projectId: decodeURIComponent(runtimeCatalogSyncMatched[2]),
+    };
+  }
+
+  const runtimeCatalogJobsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/jobs\/?$/,
+  );
+  if (runtimeCatalogJobsMatched) {
+    return {
+      kind: 'runtimeCatalogJobs',
+      workspaceId: decodeURIComponent(runtimeCatalogJobsMatched[1]),
+      projectId: decodeURIComponent(runtimeCatalogJobsMatched[2]),
+    };
+  }
+
+  const runtimeCatalogStatusMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/status\/?$/,
+  );
+  if (runtimeCatalogStatusMatched) {
+    return {
+      kind: 'runtimeCatalogStatus',
+      workspaceId: decodeURIComponent(runtimeCatalogStatusMatched[1]),
+      projectId: decodeURIComponent(runtimeCatalogStatusMatched[2]),
     };
   }
 

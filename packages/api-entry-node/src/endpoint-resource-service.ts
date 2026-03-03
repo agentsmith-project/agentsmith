@@ -9,6 +9,7 @@ import type {
   EndpointImportItem,
   EndpointImportPayload,
   EndpointModelBinding,
+  EndpointRuntimeProfile,
   EndpointRecord,
 } from './resource-models.js';
 
@@ -97,6 +98,60 @@ export class EndpointResourceService {
 
   private inferCompatibilityInterface(protocol: EndpointRecord['protocol']): 'openai_compatible' | 'anthropic_compatible' {
     return protocol === 'anthropic_compatible' ? 'anthropic_compatible' : 'openai_compatible';
+  }
+
+  private normalizeRuntimeProfile(
+    profile: EndpointRuntimeProfile | undefined,
+    fallback?: EndpointRuntimeProfile,
+  ): EndpointRuntimeProfile | undefined {
+    const source = profile ?? fallback;
+    if (!source) return undefined;
+    const clampRatio = (value: number | undefined, defaultValue = 0): number => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return defaultValue;
+      if (value < 0) return 0;
+      if (value > 1) return 1;
+      return value;
+    };
+    const asPositiveInt = (value: number | undefined, defaultValue: number): number => {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return defaultValue;
+      return Math.floor(value);
+    };
+    const asNonNegative = (value: number | undefined, defaultValue = 0): number => {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return defaultValue;
+      return value;
+    };
+    return {
+      max_context_tokens: asPositiveInt(source.max_context_tokens, fallback?.max_context_tokens ?? 128000),
+      max_output_tokens: asPositiveInt(source.max_output_tokens, fallback?.max_output_tokens ?? 8192),
+      supports_file: source.supports_file ?? fallback?.supports_file ?? false,
+      supports_tool_call: source.supports_tool_call ?? fallback?.supports_tool_call ?? true,
+      supports_reasoning: source.supports_reasoning ?? fallback?.supports_reasoning ?? false,
+      price_input_per_1m: asNonNegative(source.price_input_per_1m, fallback?.price_input_per_1m ?? 0),
+      price_output_per_1m: asNonNegative(source.price_output_per_1m, fallback?.price_output_per_1m ?? 0),
+      cache_read_discount_ratio: clampRatio(
+        source.cache_read_discount_ratio,
+        fallback?.cache_read_discount_ratio ?? 0,
+      ),
+      cache_write_discount_ratio: source.cache_write_discount_ratio === undefined
+        ? fallback?.cache_write_discount_ratio
+        : clampRatio(source.cache_write_discount_ratio, fallback?.cache_write_discount_ratio ?? 0),
+    };
+  }
+
+  private defaultRuntimeProfileForEndpoint(input: Partial<EndpointRecord>): EndpointRuntimeProfile | undefined {
+    const isCustom = input.type === 'custom' || input.provider_family === 'custom';
+    if (!isCustom) return undefined;
+    return {
+      max_context_tokens: 128000,
+      max_output_tokens: 8192,
+      supports_file: false,
+      supports_tool_call: true,
+      supports_reasoning: false,
+      price_input_per_1m: 0,
+      price_output_per_1m: 0,
+      cache_read_discount_ratio: 0,
+      cache_write_discount_ratio: 0,
+    };
   }
 
   private normalizeEndpointFields(input: Partial<EndpointRecord>, fallbackOpenAIModel?: string): {
@@ -313,6 +368,10 @@ export class EndpointResourceService {
       defaults: normalized.defaults,
       health: input.health ?? { status: 'unknown' },
       meta: input.meta,
+      runtime_profile: this.normalizeRuntimeProfile(
+        input.runtime_profile,
+        this.defaultRuntimeProfileForEndpoint(input),
+      ),
       limits: input.limits,
       created_at: now,
       updated_at: now,
@@ -360,6 +419,10 @@ export class EndpointResourceService {
       capabilities: normalized.capabilities,
       models: normalized.models,
       defaults: normalized.defaults,
+      runtime_profile: this.normalizeRuntimeProfile(
+        patch.runtime_profile,
+        existing.runtime_profile ?? this.defaultRuntimeProfileForEndpoint({ ...existing, ...patch }),
+      ),
       updated_at: new Date().toISOString(),
     };
     updated.meta = {

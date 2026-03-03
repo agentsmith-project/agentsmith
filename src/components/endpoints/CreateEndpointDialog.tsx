@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { EndpointAPI, CredentialsAPI, getApiClient } from '@/lib/api';
+import { EndpointAPI, CredentialsAPI, RuntimeAPI, getApiClient } from '@/lib/api';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
 import type { EndpointCapabilityType } from '@/lib/api/types';
 import {
@@ -62,6 +62,16 @@ export function CreateEndpointDialog({
   const locale = useLocale();
   const tWizard = useTranslations('endpoints.custom_wizard');
   type CapabilityOption = EndpointCapabilityType;
+  type CatalogModelOption = {
+    model_id: string;
+    name: string;
+    capabilities: EndpointCapabilityType[];
+    limit?: {
+      context?: number;
+      output?: number;
+    };
+    cost?: Record<string, number | Record<string, number>>;
+  };
 
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -79,11 +89,39 @@ export function CreateEndpointDialog({
 
   const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
   const credentialsAPI = React.useMemo(() => new CredentialsAPI(getApiClient()), []);
+  const runtimeAPI = React.useMemo(() => new RuntimeAPI(getApiClient()), []);
   const selectedProvider = React.useMemo(() => getProviderOption(provider), [provider]);
   const requiresManualBaseUrl = selectedProvider.default_base_url.length === 0;
-  const providerModels = React.useMemo(
+  const fallbackProviderModels = React.useMemo<CatalogModelOption[]>(
     () => getModelsByCapability(selectedProvider, capability),
     [selectedProvider, capability],
+  );
+
+  const { data: runtimeCatalogModelsData } = useQuery({
+    queryKey: ['runtime-catalog-models', workspaceId, projectId, provider, capability],
+    queryFn: () =>
+      runtimeAPI.listCatalogModels(workspaceId, projectId, {
+        provider: provider === 'custom' ? undefined : provider,
+        capability,
+      }),
+    enabled: open && !!workspaceId && !!projectId && provider !== 'custom',
+  });
+
+  const providerModels = React.useMemo<CatalogModelOption[]>(() => {
+    const runtimeItems = runtimeCatalogModelsData?.items ?? [];
+    if (runtimeItems.length === 0) return fallbackProviderModels;
+    return runtimeItems.map((item) => ({
+      model_id: item.model_id,
+      name: item.name || item.model_id,
+      capabilities: item.capabilities as EndpointCapabilityType[],
+      limit: item.limit,
+      cost: item.cost,
+    }));
+  }, [runtimeCatalogModelsData?.items, fallbackProviderModels]);
+
+  const selectedCatalogModel = React.useMemo(
+    () => providerModels.find((item) => item.model_id === openaiModel),
+    [providerModels, openaiModel],
   );
 
   const { data: credentials = [] } = useQuery({
@@ -207,6 +245,19 @@ export function CreateEndpointDialog({
             : capability === 'image_generation'
               ? { image_model_id: openaiModel.trim() }
               : { video_model_id: openaiModel.trim() },
+      runtime_profile: provider === 'custom'
+        ? {
+          max_context_tokens: 128000,
+          max_output_tokens: 8192,
+          supports_file: capability === 'multimodal_completion',
+          supports_tool_call: true,
+          supports_reasoning: false,
+          price_input_per_1m: 0,
+          price_output_per_1m: 0,
+          cache_read_discount_ratio: 0,
+          cache_write_discount_ratio: 0,
+        }
+        : undefined,
     };
 
     if (limitsExpanded && (maxRequestsPerMinute || timeoutSeconds)) {
@@ -454,6 +505,22 @@ export function CreateEndpointDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {selectedCatalogModel && (
+                <div className="rounded-sm border border-subtle bg-surface-low p-3 text-xs text-secondary">
+                  <p>
+                    {t('create_dialog.catalog_context_tokens')}: {selectedCatalogModel.limit?.context ?? '-'}
+                  </p>
+                  <p>
+                    {t('create_dialog.catalog_output_tokens')}: {selectedCatalogModel.limit?.output ?? '-'}
+                  </p>
+                  <p>
+                    {t('create_dialog.catalog_input_price')}: {typeof selectedCatalogModel.cost?.input === 'number' ? selectedCatalogModel.cost?.input : '-'}
+                  </p>
+                  <p>
+                    {t('create_dialog.catalog_output_price')}: {typeof selectedCatalogModel.cost?.output === 'number' ? selectedCatalogModel.cost?.output : '-'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

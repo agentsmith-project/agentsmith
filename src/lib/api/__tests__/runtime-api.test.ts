@@ -179,6 +179,25 @@ describe('RuntimeAPI', () => {
     });
   });
 
+  it('calls runtime catalog lifecycle endpoints', async () => {
+    const mock = createClient();
+    const api = new RuntimeAPI(toApiClient(mock));
+
+    await api.getCatalogStatus('ws_1', 'proj_1');
+    await api.listCatalogProviders('ws_1', 'proj_1');
+    await api.listCatalogModels('ws_1', 'proj_1', { provider: 'openai', capability: 'reasoning', q: 'gpt' });
+    await api.listCatalogJobs('ws_1', 'proj_1');
+    await api.syncCatalog('ws_1', 'proj_1');
+
+    expect(mock.get).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/catalog/status');
+    expect(mock.get).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/catalog/providers');
+    expect(mock.get).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/runtime/catalog/models?provider=openai&capability=reasoning&q=gpt',
+    );
+    expect(mock.get).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/catalog/jobs');
+    expect(mock.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/runtime/catalog/sync', {});
+  });
+
   it('probes unified chat and preserves non-2xx runtime payloads', async () => {
     const mock = createClient();
     const api = new RuntimeAPI(toApiClient(mock));

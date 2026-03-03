@@ -10,6 +10,7 @@ import type {
   EndpointDefaults,
   EndpointModelBinding,
   EndpointProtocol,
+  EndpointRuntimeProfile,
   EndpointProviderFamily,
   PaginationParams,
   PaginatedResponse,
@@ -29,6 +30,7 @@ export interface CreateEndpointRequest {
   models?: EndpointModelBinding[];
   defaults?: EndpointDefaults;
   meta?: Record<string, string>;
+  runtime_profile?: EndpointRuntimeProfile;
   limits?: {
     max_requests_per_minute?: number;
     max_requests_per_day?: number;
@@ -49,6 +51,7 @@ export interface UpdateEndpointRequest {
   models?: EndpointModelBinding[];
   defaults?: EndpointDefaults;
   meta?: Record<string, string>;
+  runtime_profile?: EndpointRuntimeProfile;
   status?: 'active' | 'disabled';
   limits?: {
     max_requests_per_minute?: number;

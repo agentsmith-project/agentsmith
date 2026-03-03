@@ -28,6 +28,7 @@ This directory contains only current-state documents: functional contracts, arch
 - `endpoints-capability-contract.md`
 - `endpoint-proxy-protocol-bridge-contract.md`
 - `models-catalog-offline.md`
+- `models-catalog-runtime-governance-contract.md`
 - `files-frontend-module-map.md` (Files module contract)
 - `files-object-browser-contract.md` (Files object browser backend contract)
 - `resource-policy-frontend-module-map.md`

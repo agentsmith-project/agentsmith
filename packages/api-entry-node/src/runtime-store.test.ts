@@ -111,4 +111,38 @@ describe('runtime-store', () => {
     expect((await store.findAlias(scope, 'assistant-main'))?.target_model).toBe('gpt-4o');
     expect((await store.findCombo(scope, 'prod-chat'))?.fallback_policy.max_hops).toBe(1);
   });
+
+  it('stores catalog versions and resolves active catalog snapshot metadata', async () => {
+    const store = createRuntimeStore(new InMemoryJsonDocStore());
+    const versionA = {
+      id: 'catver_a',
+      source: 'seed',
+      source_hash: 'hash_a',
+      schema_kind: 'models.dev.normalized' as const,
+      provider_count: 1,
+      model_count: 1,
+      status: 'staged' as const,
+      created_by: 'system',
+      created_at: store.nowIso(),
+    };
+    const versionB = {
+      ...versionA,
+      id: 'catver_b',
+      source_hash: 'hash_b',
+    };
+    await store.upsertCatalogVersion(versionA);
+    await store.upsertCatalogVersion(versionB);
+    await store.setActiveCatalogVersion(versionB.id);
+
+    const active = await store.getActiveCatalogVersion();
+    expect(active?.id).toBe('catver_b');
+
+    const versions = await store.listCatalogVersions();
+    const statusMap = new Map(versions.map((item) => [item.id, item.status]));
+    expect(statusMap.get('catver_a')).toBe('staged');
+    expect(statusMap.get('catver_b')).toBe('active');
+
+    const metadata = await store.getCatalogMetadata();
+    expect(metadata?.active_version_id).toBe('catver_b');
+  });
 });

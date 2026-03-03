@@ -115,6 +115,7 @@ const mockApiClient = {
 
 const mockCreate = vi.fn();
 const mockList = vi.fn();
+const mockListCatalogModels = vi.fn().mockResolvedValue({ items: [] });
 
 // Mock API
 vi.mock('@/lib/api', () => ({
@@ -124,6 +125,9 @@ vi.mock('@/lib/api', () => ({
   } as any,
   CredentialsAPI: class {
     list = mockList;
+  } as any,
+  RuntimeAPI: class {
+    listCatalogModels = mockListCatalogModels;
   } as any,
 }));
 
@@ -202,6 +206,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCreate.mockResolvedValue({ id: 'endpoint-1' });
   mockList.mockResolvedValue([]);
+  mockListCatalogModels.mockResolvedValue({ items: [] });
 });
 
 function createWrapper() {

@@ -881,6 +881,10 @@
       "capability_video_generation": "视频生成",
       "catalog_models": "目录模型",
       "select_from_catalog": "从目录选择（可选）",
+      "catalog_context_tokens": "上下文 Token",
+      "catalog_output_tokens": "输出 Token",
+      "catalog_input_price": "输入价格 (USD / 1M)",
+      "catalog_output_price": "输出价格 (USD / 1M)",
       "open_wizard_button": "打开向导",
       "wizard_description": "创建自定义 OpenAI 或 Anthropic 兼容端点并进行验证。",
       "compatibility_interface": "兼容接口"
@@ -905,6 +909,9 @@
     "import_failed": "导入失败",
     "import_success": "端点导入成功",
     "export_success": "端点导出成功",
+    "sync_catalog": "同步目录",
+    "catalog_sync_success": "目录同步成功",
+    "catalog_sync_failed": "目录同步失败",
     "table": {
       "name": "名称",
       "url": "URL",
@@ -992,6 +999,7 @@
         "name_required": "端点名称不能为空。",
         "model_required": "模型 ID 不能为空。",
         "credential_required": "请选择凭据。",
+        "invalid_number": "请输入有效的数字值。",
         "auth": "认证失败，请检查 API 密钥。",
         "network": "网络错误，无法访问端点。",
         "timeout": "请求超时，端点响应时间过长。",
@@ -1022,6 +1030,20 @@
         "rerank": "重排序",
         "image_generation": "图像生成",
         "video_generation": "视频生成"
+      },
+      "runtime_profile": {
+        "title": "运行配置",
+        "max_context_tokens": "最大上下文 Token",
+        "max_output_tokens": "最大输出 Token",
+        "supports_file": "支持文件",
+        "supports_tool_call": "支持 Tool Call",
+        "supports_reasoning": "支持 Reasoning",
+        "price_input_per_1m": "输入价格 (USD / 1M)",
+        "price_output_per_1m": "输出价格 (USD / 1M)",
+        "cache_read_discount_ratio": "缓存命中折扣比例",
+        "cache_write_discount_ratio": "缓存写入折扣比例",
+        "yes": "是",
+        "no": "否"
       }
     },
     "protocol_labels": {

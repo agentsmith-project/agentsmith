@@ -375,6 +375,76 @@ export interface RuntimePricingCompareResponse {
   }>;
 }
 
+export interface RuntimeCatalogVersion {
+  id: string;
+  source: string;
+  source_etag?: string;
+  source_hash: string;
+  schema_kind: 'models.dev.raw' | 'models.dev.normalized';
+  provider_count: number;
+  model_count: number;
+  status: 'staged' | 'active' | 'archived' | 'failed';
+  created_by: string;
+  created_at: string;
+  activated_at?: string;
+}
+
+export interface RuntimeCatalogProvider {
+  id: string;
+  version_id: string;
+  provider_key: string;
+  provider_id: string;
+  name: string;
+  api?: string;
+  doc?: string;
+  npm?: string;
+  env: string[];
+  model_count: number;
+}
+
+export interface RuntimeCatalogModel {
+  id: string;
+  version_id: string;
+  provider_key: string;
+  provider_id: string;
+  provider_name: string;
+  model_id: string;
+  name: string;
+  family?: string;
+  reasoning?: boolean;
+  tool_call?: boolean;
+  capabilities: string[];
+  modalities?: {
+    input?: string[];
+    output?: string[];
+  };
+  limit?: {
+    context?: number;
+    input?: number;
+    output?: number;
+  };
+  cost?: Record<string, number | Record<string, number>>;
+}
+
+export interface RuntimeCatalogSyncJob {
+  id: string;
+  source: string;
+  trigger: 'manual' | 'bootstrap';
+  status: 'running' | 'succeeded' | 'failed';
+  started_at: string;
+  finished_at?: string;
+  version_id?: string;
+  error_message?: string;
+}
+
+export interface RuntimeCatalogStatusResponse {
+  initialized: boolean;
+  active_version: RuntimeCatalogVersion | null;
+  provider_count: number;
+  model_count: number;
+  last_job: RuntimeCatalogSyncJob | null;
+}
+
 export class RuntimeAPI {
   constructor(private client: ApiClient) {}
 
@@ -546,6 +616,40 @@ export class RuntimeAPI {
     payload: { baseline_version_id: string; candidate_version_id: string },
   ): Promise<RuntimePricingCompareResponse> {
     return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/pricing/compare`, payload);
+  }
+
+  async getCatalogStatus(workspaceId: string, projectId: string): Promise<RuntimeCatalogStatusResponse> {
+    return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/catalog/status`);
+  }
+
+  async listCatalogProviders(
+    workspaceId: string,
+    projectId: string,
+  ): Promise<{ version: RuntimeCatalogVersion; items: RuntimeCatalogProvider[] }> {
+    return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/catalog/providers`);
+  }
+
+  async listCatalogModels(
+    workspaceId: string,
+    projectId: string,
+    params?: { provider?: string; capability?: string; q?: string },
+  ): Promise<{ version: RuntimeCatalogVersion; items: RuntimeCatalogModel[]; total: number }> {
+    const search = new URLSearchParams();
+    if (params?.provider) search.set('provider', params.provider);
+    if (params?.capability) search.set('capability', params.capability);
+    if (params?.q) search.set('q', params.q);
+    const suffix = search.toString();
+    return this.client.get(
+      `/workspaces/${workspaceId}/projects/${projectId}/runtime/catalog/models${suffix ? `?${suffix}` : ''}`,
+    );
+  }
+
+  async listCatalogJobs(workspaceId: string, projectId: string): Promise<{ items: RuntimeCatalogSyncJob[] }> {
+    return this.client.get(`/workspaces/${workspaceId}/projects/${projectId}/runtime/catalog/jobs`);
+  }
+
+  async syncCatalog(workspaceId: string, projectId: string): Promise<{ version: RuntimeCatalogVersion }> {
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/runtime/catalog/sync`, {});
   }
 
   async dryRunRouting(

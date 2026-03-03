@@ -43,6 +43,7 @@ export interface EndpointRecord {
   defaults?: EndpointDefaults;
   health?: EndpointHealth;
   meta?: Record<string, string>;
+  runtime_profile?: EndpointRuntimeProfile;
   limits?: {
     max_requests_per_minute?: number;
     max_requests_per_day?: number;
@@ -51,6 +52,18 @@ export interface EndpointRecord {
   };
   created_at: string;
   updated_at: string;
+}
+
+export interface EndpointRuntimeProfile {
+  max_context_tokens: number;
+  max_output_tokens: number;
+  supports_file: boolean;
+  supports_tool_call: boolean;
+  supports_reasoning: boolean;
+  price_input_per_1m: number;
+  price_output_per_1m: number;
+  cache_read_discount_ratio: number;
+  cache_write_discount_ratio?: number;
 }
 
 export type EndpointProviderFamily =

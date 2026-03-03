@@ -23,6 +23,11 @@ vi.mock('@/lib/api', () => ({
       ]),
     };
   }),
+  RuntimeAPI: vi.fn().mockImplementation(function () {
+    return {
+      listCatalogModels: vi.fn().mockResolvedValue({ items: [] }),
+    };
+  }),
 }));
 
 vi.mock('@/lib/hooks/use-api-error', () => ({

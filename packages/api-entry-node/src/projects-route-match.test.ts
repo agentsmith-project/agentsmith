@@ -255,6 +255,41 @@ describe('matchProjectsRoute', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
     });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/providers'),
+    ).toEqual({
+      kind: 'runtimeCatalogProviders',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/models'),
+    ).toEqual({
+      kind: 'runtimeCatalogModels',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/sync'),
+    ).toEqual({
+      kind: 'runtimeCatalogSync',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/jobs'),
+    ).toEqual({
+      kind: 'runtimeCatalogJobs',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/status'),
+    ).toEqual({
+      kind: 'runtimeCatalogStatus',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
   });
 
   it('matches usage report lifecycle routes', () => {

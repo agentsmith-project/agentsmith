@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { Server, Plus, Upload, Download } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { APIError, resolveApiErrorPresentation } from '@/lib/api/errors';
 import type { Endpoint } from '@/lib/api/types';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
@@ -30,6 +31,7 @@ import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
 import { useEndpointsMutations } from '@/lib/endpoints/use-endpoints-mutations';
 import type { ImportOpenAICompatiblePayload } from '@/lib/endpoints/types';
 import { useEndpointsTableColumns } from '@/lib/endpoints/use-endpoints-table-columns';
+import { RuntimeAPI, getApiClient } from '@/lib/api';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -103,6 +105,27 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
             return `${resolved.title}: ${resolved.description}`;
           })()
         : t('import_failed');
+      toast.error(message);
+    },
+  });
+
+  const runtimeAPI = new RuntimeAPI(getApiClient());
+  const syncCatalogMutation = useMutation({
+    mutationFn: () => runtimeAPI.syncCatalog(workspaceId, projectId),
+    onSuccess: () => {
+      toast.success(t('catalog_sync_success'));
+    },
+    onError: (error: unknown) => {
+      const message = error instanceof APIError
+        ? (() => {
+          const resolved = resolveApiErrorPresentation({
+            error,
+            t: tErrors,
+            fallbackMessage: t('catalog_sync_failed'),
+          });
+          return `${resolved.title}: ${resolved.description}`;
+        })()
+        : t('catalog_sync_failed');
       toast.error(message);
     },
   });
@@ -304,6 +327,14 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
             >
               <Download className="w-4 h-4" />
               {t('export')}
+            </Button>
+            <Button
+              onClick={() => syncCatalogMutation.mutate()}
+              disabled={!canManageEndpoints || syncCatalogMutation.isPending}
+              data-testid="endpoints__sync-catalog-btn"
+              variant="outline"
+            >
+              {t('sync_catalog')}
             </Button>
             <Button
               onClick={() => setCreateDialogOpen(true)}

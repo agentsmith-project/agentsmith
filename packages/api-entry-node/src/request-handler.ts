@@ -242,8 +242,21 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'runtimeRoutingAliases'
     || route.kind === 'runtimeRoutingCombos'
     || route.kind === 'runtimePricing'
+    || route.kind === 'runtimeCatalogProviders'
+    || route.kind === 'runtimeCatalogModels'
+    || route.kind === 'runtimeCatalogSync'
+    || route.kind === 'runtimeCatalogJobs'
+    || route.kind === 'runtimeCatalogStatus'
   ) {
     if (route.kind === 'llmUnifiedChat') {
+      return ['project:endpoint:use'];
+    }
+    if (
+      route.kind === 'runtimeCatalogProviders'
+      || route.kind === 'runtimeCatalogModels'
+      || route.kind === 'runtimeCatalogJobs'
+      || route.kind === 'runtimeCatalogStatus'
+    ) {
       return ['project:endpoint:use'];
     }
     return ['project:endpoint:manage'];

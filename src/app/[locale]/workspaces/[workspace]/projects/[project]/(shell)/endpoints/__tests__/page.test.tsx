@@ -35,6 +35,11 @@ vi.mock('@/lib/api', () => ({
       delete: vi.fn().mockResolvedValue(undefined),
     };
   }),
+  RuntimeAPI: vi.fn().mockImplementation(function () {
+    return {
+      syncCatalog: vi.fn().mockResolvedValue({ version: { id: 'cat_1' } }),
+    };
+  }),
 }));
 
 vi.mock('@/components/endpoints/CreateEndpointDialog', () => ({

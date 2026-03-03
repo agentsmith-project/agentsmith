@@ -21,6 +21,7 @@ import {
 import { dryRunRuntimeRouting } from './runtime-routing-dry-run.js';
 import {
   createRuntimeStore,
+  type RuntimeCatalogModelProjectionRecord,
   type RuntimeModelAliasRecord,
   type RuntimeModelCatalogEntryRecord,
   type RuntimeModelComboRecord,
@@ -28,6 +29,11 @@ import {
   type RuntimePricingVersionRecord,
   type RuntimeProviderConnectionRecord,
 } from './runtime-store.js';
+import {
+  listRuntimeCatalogJobs,
+  readActiveCatalogSnapshot,
+  syncRuntimeCatalogFromModelsDev,
+} from './runtime-catalog-service.js';
 import {
   parseRuntimeAliasPayload,
   parseRuntimeAliasUpdatePayload,
@@ -105,6 +111,22 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
   const runtimeStore = createRuntimeStore(deps.docStore);
   const projectScope = { workspaceId, projectId };
 
+  const filterCatalogModels = (
+    items: RuntimeCatalogModelProjectionRecord[],
+    reqUrl: string | undefined,
+  ): RuntimeCatalogModelProjectionRecord[] => {
+    const url = new URL(reqUrl ?? '', 'http://localhost');
+    const provider = url.searchParams.get('provider');
+    const capability = url.searchParams.get('capability');
+    const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
+    return items.filter((item) => {
+      if (provider && item.provider_key !== provider && item.provider_id !== provider) return false;
+      if (capability && !item.capabilities.includes(capability)) return false;
+      if (q && !`${item.provider_name} ${item.model_id} ${item.name}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  };
+
   if (route.kind === 'llmUnifiedChat' && method === 'POST') {
     const result = await executeRuntimeUnifiedChat({
       deps,
@@ -143,6 +165,59 @@ export async function handleRuntimeRoute(args: RuntimeHandlerArgs): Promise<bool
       rawBody: await readBody(req),
     });
     json(res, result.statusCode, result.body);
+    return true;
+  }
+
+  if (route.kind === 'runtimeCatalogStatus' && method === 'GET') {
+    const snapshot = await readActiveCatalogSnapshot(deps.docStore);
+    const jobs = await listRuntimeCatalogJobs(deps.docStore);
+    json(res, 200, {
+      initialized: Boolean(snapshot.version),
+      active_version: snapshot.version,
+      provider_count: snapshot.providers.length,
+      model_count: snapshot.models.length,
+      last_job: jobs[0] ?? null,
+    });
+    return true;
+  }
+
+  if (route.kind === 'runtimeCatalogProviders' && method === 'GET') {
+    const snapshot = await readActiveCatalogSnapshot(deps.docStore);
+    if (!snapshot.version) {
+      json(res, 503, { error_code: 'CATALOG_NOT_INITIALIZED', message: 'runtime_catalog_not_initialized' });
+      return true;
+    }
+    json(res, 200, {
+      version: snapshot.version,
+      items: snapshot.providers.sort((a, b) => a.name.localeCompare(b.name)),
+    });
+    return true;
+  }
+
+  if (route.kind === 'runtimeCatalogModels' && method === 'GET') {
+    const snapshot = await readActiveCatalogSnapshot(deps.docStore);
+    if (!snapshot.version) {
+      json(res, 503, { error_code: 'CATALOG_NOT_INITIALIZED', message: 'runtime_catalog_not_initialized' });
+      return true;
+    }
+    const items = filterCatalogModels(snapshot.models, req.url);
+    json(res, 200, {
+      version: snapshot.version,
+      items,
+      total: items.length,
+    });
+    return true;
+  }
+
+  if (route.kind === 'runtimeCatalogJobs' && method === 'GET') {
+    const jobs = await listRuntimeCatalogJobs(deps.docStore);
+    json(res, 200, { items: jobs });
+    return true;
+  }
+
+  if (route.kind === 'runtimeCatalogSync' && method === 'POST') {
+    const version = await syncRuntimeCatalogFromModelsDev(deps.docStore, user.id);
+    json(res, 201, { version });
     return true;
   }
 

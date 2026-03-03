@@ -35,6 +35,94 @@ export type RuntimeModelCatalogEntryRecord = {
   updated_at: string;
 };
 
+export type RuntimeCatalogVersionStatus = 'staged' | 'active' | 'archived' | 'failed';
+
+export type RuntimeCatalogVersionRecord = {
+  id: string;
+  source: string;
+  source_etag?: string;
+  source_hash: string;
+  schema_kind: 'models.dev.raw' | 'models.dev.normalized';
+  provider_count: number;
+  model_count: number;
+  status: RuntimeCatalogVersionStatus;
+  created_by: string;
+  created_at: string;
+  activated_at?: string;
+};
+
+export type RuntimeCatalogSyncJobRecord = {
+  id: string;
+  source: string;
+  trigger: 'manual' | 'bootstrap';
+  status: 'running' | 'succeeded' | 'failed';
+  started_at: string;
+  finished_at?: string;
+  version_id?: string;
+  error_message?: string;
+};
+
+export type RuntimeCatalogProviderProjectionRecord = {
+  id: string;
+  version_id: string;
+  provider_key: string;
+  provider_id: string;
+  name: string;
+  api?: string;
+  doc?: string;
+  npm?: string;
+  env: string[];
+  model_count: number;
+};
+
+export type RuntimeCatalogModelProjectionRecord = {
+  id: string;
+  version_id: string;
+  provider_key: string;
+  provider_id: string;
+  provider_name: string;
+  model_id: string;
+  name: string;
+  family?: string;
+  attachment?: boolean;
+  reasoning?: boolean;
+  tool_call?: boolean;
+  structured_output?: boolean;
+  temperature?: boolean;
+  knowledge?: string;
+  release_date?: string;
+  last_updated?: string;
+  open_weights?: boolean;
+  status?: 'alpha' | 'beta' | 'deprecated';
+  modalities?: {
+    input?: string[];
+    output?: string[];
+  };
+  cost?: Record<string, number | Record<string, number>>;
+  limit?: {
+    context?: number;
+    input?: number;
+    output?: number;
+  };
+  capabilities: string[];
+  meta_source: 'models.dev';
+};
+
+export type RuntimeCatalogRawDocumentRecord = {
+  id: string;
+  version_id: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type RuntimeCatalogMetadataRecord = {
+  id: 'runtime_catalog_metadata';
+  active_version_id?: string;
+  latest_successful_sync_at?: string;
+  initialized_from_seed?: boolean;
+  updated_at: string;
+};
+
 export type RuntimeModelAliasRecord = {
   id: string;
   workspace_id: string;
@@ -128,6 +216,12 @@ const ALIASES_COLLECTION = 'runtime_model_aliases';
 const COMBOS_COLLECTION = 'runtime_model_combos';
 const PRICING_COLLECTION = 'runtime_pricing_maps';
 const PRICING_VERSIONS_COLLECTION = 'runtime_pricing_versions';
+const CATALOG_VERSIONS_COLLECTION = 'runtime_catalog_versions';
+const CATALOG_JOBS_COLLECTION = 'runtime_catalog_sync_jobs';
+const CATALOG_PROVIDERS_COLLECTION = 'runtime_catalog_projection_providers';
+const CATALOG_MODELS_COLLECTION = 'runtime_catalog_projection_models';
+const CATALOG_RAW_COLLECTION = 'runtime_catalog_raw_documents';
+const CATALOG_METADATA_COLLECTION = 'runtime_catalog_metadata';
 
 function scopeFilter(scope: RuntimeProjectScope) {
   return {
@@ -277,6 +371,92 @@ export function createRuntimeStore(docStore: JsonDocStorePort) {
         source: 'missing',
         active_versions: activeVersions,
       };
+    },
+    listCatalogVersions() {
+      return docStore.list<RuntimeCatalogVersionRecord>(CATALOG_VERSIONS_COLLECTION, {});
+    },
+    getCatalogVersion(versionId: string) {
+      return docStore.get<RuntimeCatalogVersionRecord>(CATALOG_VERSIONS_COLLECTION, versionId);
+    },
+    upsertCatalogVersion(record: RuntimeCatalogVersionRecord) {
+      return docStore.upsert(CATALOG_VERSIONS_COLLECTION, record.id, record);
+    },
+    listCatalogJobs() {
+      return docStore.list<RuntimeCatalogSyncJobRecord>(CATALOG_JOBS_COLLECTION, {});
+    },
+    getCatalogJob(jobId: string) {
+      return docStore.get<RuntimeCatalogSyncJobRecord>(CATALOG_JOBS_COLLECTION, jobId);
+    },
+    upsertCatalogJob(record: RuntimeCatalogSyncJobRecord) {
+      return docStore.upsert(CATALOG_JOBS_COLLECTION, record.id, record);
+    },
+    async setActiveCatalogVersion(versionId: string) {
+      const versions = await this.listCatalogVersions();
+      const now = nowIso();
+      for (const version of versions) {
+        const nextStatus: RuntimeCatalogVersionStatus = version.id === versionId ? 'active' : (version.status === 'active' ? 'archived' : version.status);
+        const updated: RuntimeCatalogVersionRecord = {
+          ...version,
+          status: nextStatus,
+          activated_at: version.id === versionId ? now : version.activated_at,
+        };
+        await this.upsertCatalogVersion(updated);
+      }
+      const metadata = await this.getCatalogMetadata();
+      await this.upsertCatalogMetadata({
+        id: 'runtime_catalog_metadata',
+        active_version_id: versionId,
+        latest_successful_sync_at: now,
+        initialized_from_seed: metadata?.initialized_from_seed ?? false,
+        updated_at: now,
+      });
+    },
+    listCatalogProviders(versionId: string) {
+      return docStore.list<RuntimeCatalogProviderProjectionRecord>(CATALOG_PROVIDERS_COLLECTION, {
+        version_id: versionId,
+      });
+    },
+    listCatalogModels(versionId: string) {
+      return docStore.list<RuntimeCatalogModelProjectionRecord>(CATALOG_MODELS_COLLECTION, {
+        version_id: versionId,
+      });
+    },
+    upsertCatalogProvider(record: RuntimeCatalogProviderProjectionRecord) {
+      return docStore.upsert(CATALOG_PROVIDERS_COLLECTION, record.id, record);
+    },
+    upsertCatalogModel(record: RuntimeCatalogModelProjectionRecord) {
+      return docStore.upsert(CATALOG_MODELS_COLLECTION, record.id, record);
+    },
+    upsertCatalogRawDocument(record: RuntimeCatalogRawDocumentRecord) {
+      return docStore.upsert(CATALOG_RAW_COLLECTION, record.id, record);
+    },
+    async clearCatalogVersionData(versionId: string) {
+      const providers = await this.listCatalogProviders(versionId);
+      const models = await this.listCatalogModels(versionId);
+      for (const provider of providers) {
+        await docStore.delete(CATALOG_PROVIDERS_COLLECTION, provider.id);
+      }
+      for (const model of models) {
+        await docStore.delete(CATALOG_MODELS_COLLECTION, model.id);
+      }
+    },
+    getCatalogMetadata() {
+      return docStore.get<RuntimeCatalogMetadataRecord>(CATALOG_METADATA_COLLECTION, 'runtime_catalog_metadata');
+    },
+    upsertCatalogMetadata(record: RuntimeCatalogMetadataRecord) {
+      return docStore.upsert(CATALOG_METADATA_COLLECTION, record.id, record);
+    },
+    async getActiveCatalogVersion() {
+      const metadata = await this.getCatalogMetadata();
+      if (metadata?.active_version_id) {
+        return this.getCatalogVersion(metadata.active_version_id);
+      }
+      const versions = await this.listCatalogVersions();
+      return versions.find((item) => item.status === 'active') ?? null;
+    },
+    async isCatalogEmpty() {
+      const versions = await this.listCatalogVersions();
+      return versions.length === 0;
     },
   };
 }

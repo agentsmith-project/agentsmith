@@ -7,6 +7,22 @@ const EXPECTED_PHASES = ['start', 'update', 'end'] as const;
 const EXPECTED_STATUSES = ['running', 'success', 'error', 'cancelled'] as const;
 const EXPECTED_ARTIFACT_TYPES = ['text', 'image', 'file', 'other'] as const;
 
+async function resolveAsyncApiSpecPath(): Promise<string> {
+  const candidates = [
+    path.resolve(process.cwd(), 'docs/contracts/specs/asyncapi.json'),
+    path.resolve(process.cwd(), '../../docs/contracts/specs/asyncapi.json'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // continue
+    }
+  }
+  throw new Error('asyncapi_spec_not_found');
+}
+
 function readPropertySchema(
   asyncApi: Record<string, unknown>,
   propertyName: string,
@@ -31,7 +47,7 @@ function readSchema(
 
 describe('Agent runtime contract sync', () => {
   it('keeps AgentResponseEventPayload enums and raw field aligned with AsyncAPI', async () => {
-    const asyncApiPath = path.resolve(process.cwd(), 'docs/contracts/specs/asyncapi.json');
+    const asyncApiPath = await resolveAsyncApiSpecPath();
     const raw = await fs.readFile(asyncApiPath, 'utf-8');
     const asyncApi = JSON.parse(raw) as Record<string, unknown>;
 
@@ -49,7 +65,7 @@ describe('Agent runtime contract sync', () => {
   });
 
   it('keeps AgentResponseArtifactPayload shape aligned with AsyncAPI', async () => {
-    const asyncApiPath = path.resolve(process.cwd(), 'docs/contracts/specs/asyncapi.json');
+    const asyncApiPath = await resolveAsyncApiSpecPath();
     const raw = await fs.readFile(asyncApiPath, 'utf-8');
     const asyncApi = JSON.parse(raw) as Record<string, unknown>;
 

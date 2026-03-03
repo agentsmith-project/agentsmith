@@ -108,6 +108,15 @@ export function CustomEndpointWizard({
   const [modelId, setModelId] = React.useState('');
   const [capability, setCapability] = React.useState<EndpointCapabilityType>('chat_completion');
   const [credentialRef, setCredentialRef] = React.useState<string>('');
+  const [maxContextTokens, setMaxContextTokens] = React.useState('128000');
+  const [maxOutputTokens, setMaxOutputTokens] = React.useState('8192');
+  const [supportsFile, setSupportsFile] = React.useState(false);
+  const [supportsToolCall, setSupportsToolCall] = React.useState(true);
+  const [supportsReasoning, setSupportsReasoning] = React.useState(false);
+  const [priceInputPer1m, setPriceInputPer1m] = React.useState('0');
+  const [priceOutputPer1m, setPriceOutputPer1m] = React.useState('0');
+  const [cacheReadDiscountRatio, setCacheReadDiscountRatio] = React.useState('0');
+  const [cacheWriteDiscountRatio, setCacheWriteDiscountRatio] = React.useState('0');
   const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
   const [validationResult, setValidationResult] = React.useState<ValidateEndpointResponse | null>(null);
   const [isValidating, setIsValidating] = React.useState(false);
@@ -162,9 +171,30 @@ export function CustomEndpointWizard({
     setModelId('');
     setCapability('chat_completion');
     setCredentialRef('');
+    setMaxContextTokens('128000');
+    setMaxOutputTokens('8192');
+    setSupportsFile(false);
+    setSupportsToolCall(true);
+    setSupportsReasoning(false);
+    setPriceInputPer1m('0');
+    setPriceOutputPer1m('0');
+    setCacheReadDiscountRatio('0');
+    setCacheWriteDiscountRatio('0');
     setValidationErrors([]);
     setValidationResult(null);
     setIsValidating(false);
+  };
+
+  const applyRecommendedDefaults = () => {
+    setMaxContextTokens('128000');
+    setMaxOutputTokens('8192');
+    setSupportsFile(false);
+    setSupportsToolCall(true);
+    setSupportsReasoning(false);
+    setPriceInputPer1m('0');
+    setPriceOutputPer1m('0');
+    setCacheReadDiscountRatio('0');
+    setCacheWriteDiscountRatio('0');
   };
 
   React.useEffect(() => {
@@ -249,6 +279,30 @@ export function CustomEndpointWizard({
     if (!credentialRef) {
       errors.push({ field: 'credentialRef', message: tErrors('credential_required') });
     }
+    const context = Number(maxContextTokens);
+    const output = Number(maxOutputTokens);
+    const inputPrice = Number(priceInputPer1m);
+    const outputPrice = Number(priceOutputPer1m);
+    const cacheRead = Number(cacheReadDiscountRatio);
+    const cacheWrite = Number(cacheWriteDiscountRatio);
+    if (!Number.isFinite(context) || context <= 0) {
+      errors.push({ field: 'maxContextTokens', message: tErrors('invalid_number') });
+    }
+    if (!Number.isFinite(output) || output <= 0 || (Number.isFinite(context) && output > context)) {
+      errors.push({ field: 'maxOutputTokens', message: tErrors('invalid_number') });
+    }
+    if (!Number.isFinite(inputPrice) || inputPrice < 0) {
+      errors.push({ field: 'priceInputPer1m', message: tErrors('invalid_number') });
+    }
+    if (!Number.isFinite(outputPrice) || outputPrice < 0) {
+      errors.push({ field: 'priceOutputPer1m', message: tErrors('invalid_number') });
+    }
+    if (!Number.isFinite(cacheRead) || cacheRead < 0 || cacheRead > 1) {
+      errors.push({ field: 'cacheReadDiscountRatio', message: tErrors('invalid_number') });
+    }
+    if (!Number.isFinite(cacheWrite) || cacheWrite < 0 || cacheWrite > 1) {
+      errors.push({ field: 'cacheWriteDiscountRatio', message: tErrors('invalid_number') });
+    }
 
     setValidationErrors(errors);
     return errors.length === 0;
@@ -298,8 +352,19 @@ export function CustomEndpointWizard({
             : capability === 'rerank'
               ? { rerank_model_id: modelId.trim() }
               : capability === 'image_generation'
-                ? { image_model_id: modelId.trim() }
-                : { video_model_id: modelId.trim() },
+              ? { image_model_id: modelId.trim() }
+              : { video_model_id: modelId.trim() },
+      runtime_profile: {
+        max_context_tokens: Number(maxContextTokens),
+        max_output_tokens: Number(maxOutputTokens),
+        supports_file: supportsFile,
+        supports_tool_call: supportsToolCall,
+        supports_reasoning: supportsReasoning,
+        price_input_per_1m: Number(priceInputPer1m),
+        price_output_per_1m: Number(priceOutputPer1m),
+        cache_read_discount_ratio: Number(cacheReadDiscountRatio),
+        cache_write_discount_ratio: Number(cacheWriteDiscountRatio),
+      },
     };
 
     createMutation.mutate(data);
@@ -325,6 +390,15 @@ export function CustomEndpointWizard({
     ? name.trim().length > 0 && baseUrl.trim().length > 0 && isValidHttpsUrl(baseUrl)
     : step === 2
       ? modelId.trim().length > 0 && credentialRef.length > 0
+        && Number(maxContextTokens) > 0
+        && Number(maxOutputTokens) > 0
+        && Number(maxOutputTokens) <= Number(maxContextTokens)
+        && Number(priceInputPer1m) >= 0
+        && Number(priceOutputPer1m) >= 0
+        && Number(cacheReadDiscountRatio) >= 0
+        && Number(cacheReadDiscountRatio) <= 1
+        && Number(cacheWriteDiscountRatio) >= 0
+        && Number(cacheWriteDiscountRatio) <= 1
       : validationResult?.valid === true;
 
   return (
@@ -527,6 +601,86 @@ export function CustomEndpointWizard({
                 {getErrorForField('credentialRef') && (
                   <p className="text-sm text-error">{getErrorForField('credentialRef')}</p>
                 )}
+              </div>
+
+              <div className="space-y-3 rounded-sm border border-subtle p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-foreground">{t('runtime_profile.title')}</p>
+                  <button
+                    type="button"
+                    className="text-xs text-accent hover:underline"
+                    onClick={applyRecommendedDefaults}
+                    data-testid="wizard-runtime-profile-defaults"
+                  >
+                    {t('use_default')}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-secondary">{t('runtime_profile.max_context_tokens')}</label>
+                    <Input value={maxContextTokens} onChange={(e) => setMaxContextTokens(e.target.value)} />
+                    {getErrorForField('maxContextTokens') && <p className="text-xs text-error">{getErrorForField('maxContextTokens')}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-secondary">{t('runtime_profile.max_output_tokens')}</label>
+                    <Input value={maxOutputTokens} onChange={(e) => setMaxOutputTokens(e.target.value)} />
+                    {getErrorForField('maxOutputTokens') && <p className="text-xs text-error">{getErrorForField('maxOutputTokens')}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-secondary">{t('runtime_profile.price_input_per_1m')}</label>
+                    <Input value={priceInputPer1m} onChange={(e) => setPriceInputPer1m(e.target.value)} />
+                    {getErrorForField('priceInputPer1m') && <p className="text-xs text-error">{getErrorForField('priceInputPer1m')}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-secondary">{t('runtime_profile.price_output_per_1m')}</label>
+                    <Input value={priceOutputPer1m} onChange={(e) => setPriceOutputPer1m(e.target.value)} />
+                    {getErrorForField('priceOutputPer1m') && <p className="text-xs text-error">{getErrorForField('priceOutputPer1m')}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-secondary">{t('runtime_profile.cache_read_discount_ratio')}</label>
+                    <Input value={cacheReadDiscountRatio} onChange={(e) => setCacheReadDiscountRatio(e.target.value)} />
+                    {getErrorForField('cacheReadDiscountRatio') && <p className="text-xs text-error">{getErrorForField('cacheReadDiscountRatio')}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-secondary">{t('runtime_profile.cache_write_discount_ratio')}</label>
+                    <Input value={cacheWriteDiscountRatio} onChange={(e) => setCacheWriteDiscountRatio(e.target.value)} />
+                    {getErrorForField('cacheWriteDiscountRatio') && <p className="text-xs text-error">{getErrorForField('cacheWriteDiscountRatio')}</p>}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-secondary">{t('runtime_profile.supports_file')}</label>
+                    <Select value={String(supportsFile)} onValueChange={(v) => setSupportsFile(v === 'true')}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">{t('runtime_profile.yes')}</SelectItem>
+                        <SelectItem value="false">{t('runtime_profile.no')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-secondary">{t('runtime_profile.supports_tool_call')}</label>
+                    <Select value={String(supportsToolCall)} onValueChange={(v) => setSupportsToolCall(v === 'true')}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">{t('runtime_profile.yes')}</SelectItem>
+                        <SelectItem value="false">{t('runtime_profile.no')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-secondary">{t('runtime_profile.supports_reasoning')}</label>
+                    <Select value={String(supportsReasoning)} onValueChange={(v) => setSupportsReasoning(v === 'true')}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">{t('runtime_profile.yes')}</SelectItem>
+                        <SelectItem value="false">{t('runtime_profile.no')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
 
               {/* Summary */}

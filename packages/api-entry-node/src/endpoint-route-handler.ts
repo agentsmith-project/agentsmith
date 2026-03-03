@@ -27,6 +27,34 @@ interface AnyRoute {
 
 type EndpointRecordInput = Partial<EndpointRecord>;
 
+function hasValidRuntimeProfile(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const profile = value as Record<string, unknown>;
+  const positiveNumber = (field: string) => typeof profile[field] === 'number' && Number.isFinite(profile[field]) && (profile[field] as number) > 0;
+  const nonNegativeNumber = (field: string) => typeof profile[field] === 'number' && Number.isFinite(profile[field]) && (profile[field] as number) >= 0;
+  const boolField = (field: string) => typeof profile[field] === 'boolean';
+  const ratio = (field: string) => typeof profile[field] === 'number' && Number.isFinite(profile[field]) && (profile[field] as number) >= 0 && (profile[field] as number) <= 1;
+  if (
+    !positiveNumber('max_context_tokens')
+    || !positiveNumber('max_output_tokens')
+    || !boolField('supports_file')
+    || !boolField('supports_tool_call')
+    || !boolField('supports_reasoning')
+    || !nonNegativeNumber('price_input_per_1m')
+    || !nonNegativeNumber('price_output_per_1m')
+    || !ratio('cache_read_discount_ratio')
+  ) {
+    return false;
+  }
+  if (
+    typeof profile.cache_write_discount_ratio !== 'undefined'
+    && !ratio('cache_write_discount_ratio')
+  ) {
+    return false;
+  }
+  return (profile.max_output_tokens as number) <= (profile.max_context_tokens as number);
+}
+
 interface EndpointHandlerArgs {
   route: AnyRoute;
   method: string;
@@ -516,6 +544,10 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_required_fields_missing' });
       return true;
     }
+    if (raw.runtime_profile !== undefined && !hasValidRuntimeProfile(raw.runtime_profile)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_runtime_profile_invalid' });
+      return true;
+    }
     try {
       const created = await deps.endpointResourceService.createEndpoint(
         route.workspaceId,
@@ -553,6 +585,10 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
   if (route.kind === 'endpointItem' && method === 'PUT' && route.workspaceId && route.projectId && route.endpointId) {
     const raw = (await readBody(req)) as EndpointRecordInput;
+    if (raw.runtime_profile !== undefined && !hasValidRuntimeProfile(raw.runtime_profile)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_runtime_profile_invalid' });
+      return true;
+    }
     const updated = await deps.endpointResourceService.updateEndpoint(
       route.workspaceId,
       route.projectId,

@@ -55,6 +55,7 @@ async function executeRoute(params: {
   };
   method: string;
   body?: unknown;
+  reqUrl?: string;
 }): Promise<TestResponse> {
   const response: TestResponse = { statusCode: 200, ended: false, headers: {} };
   const responseHeaders: Record<string, string> = {};
@@ -83,7 +84,7 @@ async function executeRoute(params: {
   await handleRuntimeRoute({
     route: params.route,
     method: params.method,
-    req: { headers: {} } as http.IncomingMessage,
+    req: { headers: {}, url: params.reqUrl } as http.IncomingMessage,
     res,
     deps: params.deps,
     user: { id: 'user_test', email: 'u@test', name: 'U' },
@@ -127,6 +128,86 @@ describe('runtime-route-handler', () => {
     const payload = listRes.body as { items: Array<{ provider: string }> };
     expect(payload.items).toHaveLength(1);
     expect(payload.items[0]?.provider).toBe('openai');
+  });
+
+  it('exposes runtime catalog status/providers/models/jobs and syncs from remote source', async () => {
+    const deps = createDeps();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          openai: {
+            id: 'openai',
+            name: 'OpenAI',
+            models: {
+              'gpt-4o': {
+                id: 'gpt-4o',
+                name: 'GPT-4o',
+                reasoning: true,
+                tool_call: true,
+                modalities: { input: ['text'], output: ['text'] },
+              },
+            },
+          },
+        }),
+        { status: 200 },
+      )) as typeof fetch;
+
+    try {
+      const syncRes = await executeRoute({
+        deps,
+        route: { kind: 'runtimeCatalogSync', workspaceId, projectId },
+        method: 'POST',
+      });
+      expect(syncRes.statusCode).toBe(201);
+
+      const statusRes = await executeRoute({
+        deps,
+        route: { kind: 'runtimeCatalogStatus', workspaceId, projectId },
+        method: 'GET',
+      });
+      expect(statusRes.statusCode).toBe(200);
+      const statusPayload = statusRes.body as {
+        initialized: boolean;
+        provider_count: number;
+        model_count: number;
+      };
+      expect(statusPayload.initialized).toBe(true);
+      expect(statusPayload.provider_count).toBe(1);
+      expect(statusPayload.model_count).toBe(1);
+
+      const providersRes = await executeRoute({
+        deps,
+        route: { kind: 'runtimeCatalogProviders', workspaceId, projectId },
+        method: 'GET',
+      });
+      expect(providersRes.statusCode).toBe(200);
+      const providersPayload = providersRes.body as { items: Array<{ provider_key: string }> };
+      expect(providersPayload.items[0]?.provider_key).toBe('openai');
+
+      const modelsRes = await executeRoute({
+        deps,
+        route: { kind: 'runtimeCatalogModels', workspaceId, projectId },
+        method: 'GET',
+        reqUrl: `/api/v1/workspaces/${workspaceId}/projects/${projectId}/runtime/catalog/models?capability=reasoning`,
+      });
+      expect(modelsRes.statusCode).toBe(200);
+      const modelsPayload = modelsRes.body as { items: Array<{ model_id: string }> };
+      expect(modelsPayload.items).toHaveLength(1);
+      expect(modelsPayload.items[0]?.model_id).toBe('gpt-4o');
+
+      const jobsRes = await executeRoute({
+        deps,
+        route: { kind: 'runtimeCatalogJobs', workspaceId, projectId },
+        method: 'GET',
+      });
+      expect(jobsRes.statusCode).toBe(200);
+      const jobsPayload = jobsRes.body as { items: Array<{ status: string; trigger: string }> };
+      expect(jobsPayload.items[0]?.status).toBe('succeeded');
+      expect(jobsPayload.items[0]?.trigger).toBe('manual');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('updates and reads runtime pricing map', async () => {

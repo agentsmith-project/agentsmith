@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useQuery } from '@tanstack/react-query';
-import { CredentialsAPI, EndpointAPI, getApiClient } from '@/lib/api';
+import { CredentialsAPI, EndpointAPI, RuntimeAPI, getApiClient } from '@/lib/api';
 import type { Endpoint, EndpointCapabilityType } from '@/lib/api/types';
 import {
   ENDPOINT_PROVIDER_OPTIONS,
@@ -51,6 +51,16 @@ export function EditEndpointDialog({
   const commonT = useTranslations('common');
   const { handleError } = useApiError();
   type CapabilityOption = EndpointCapabilityType;
+  type CatalogModelOption = {
+    model_id: string;
+    name: string;
+    capabilities: EndpointCapabilityType[];
+    limit?: {
+      context?: number;
+      output?: number;
+    };
+    cost?: Record<string, number | Record<string, number>>;
+  };
 
   const [provider, setProvider] = React.useState<ProviderOption>('openai');
   const [capability, setCapability] = React.useState<CapabilityOption>('chat_completion');
@@ -60,14 +70,51 @@ export function EditEndpointDialog({
   const [baseUrl, setBaseUrl] = React.useState(endpoint.base_url);
   const [status, setStatus] = React.useState<'active' | 'disabled'>(endpoint.status);
   const [credentialRef, setCredentialRef] = React.useState(endpoint.credential_ref ?? '');
+  const [maxContextTokens, setMaxContextTokens] = React.useState(String(endpoint.runtime_profile?.max_context_tokens ?? 128000));
+  const [maxOutputTokens, setMaxOutputTokens] = React.useState(String(endpoint.runtime_profile?.max_output_tokens ?? 8192));
+  const [supportsFile, setSupportsFile] = React.useState(endpoint.runtime_profile?.supports_file ?? false);
+  const [supportsToolCall, setSupportsToolCall] = React.useState(endpoint.runtime_profile?.supports_tool_call ?? true);
+  const [supportsReasoning, setSupportsReasoning] = React.useState(endpoint.runtime_profile?.supports_reasoning ?? false);
+  const [priceInputPer1m, setPriceInputPer1m] = React.useState(String(endpoint.runtime_profile?.price_input_per_1m ?? 0));
+  const [priceOutputPer1m, setPriceOutputPer1m] = React.useState(String(endpoint.runtime_profile?.price_output_per_1m ?? 0));
+  const [cacheReadDiscountRatio, setCacheReadDiscountRatio] = React.useState(String(endpoint.runtime_profile?.cache_read_discount_ratio ?? 0));
+  const [cacheWriteDiscountRatio, setCacheWriteDiscountRatio] = React.useState(String(endpoint.runtime_profile?.cache_write_discount_ratio ?? 0));
   const [isSaving, setIsSaving] = React.useState(false);
 
   const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
   const credentialsAPI = React.useMemo(() => new CredentialsAPI(getApiClient()), []);
+  const runtimeAPI = React.useMemo(() => new RuntimeAPI(getApiClient()), []);
   const selectedProvider = React.useMemo(() => getProviderOption(provider), [provider]);
-  const providerModels = React.useMemo(
+  const fallbackProviderModels = React.useMemo<CatalogModelOption[]>(
     () => getModelsByCapability(selectedProvider, capability),
     [selectedProvider, capability],
+  );
+
+  const { data: runtimeCatalogModelsData } = useQuery({
+    queryKey: ['runtime-catalog-models', workspaceId, projectId, provider, capability, 'edit'],
+    queryFn: () =>
+      runtimeAPI.listCatalogModels(workspaceId, projectId, {
+        provider: provider === 'custom' ? undefined : provider,
+        capability,
+      }),
+    enabled: open && !!workspaceId && !!projectId && provider !== 'custom',
+  });
+
+  const providerModels = React.useMemo<CatalogModelOption[]>(() => {
+    const runtimeItems = runtimeCatalogModelsData?.items ?? [];
+    if (runtimeItems.length === 0) return fallbackProviderModels;
+    return runtimeItems.map((item) => ({
+      model_id: item.model_id,
+      name: item.name || item.model_id,
+      capabilities: item.capabilities as EndpointCapabilityType[],
+      limit: item.limit,
+      cost: item.cost,
+    }));
+  }, [runtimeCatalogModelsData?.items, fallbackProviderModels]);
+
+  const selectedCatalogModel = React.useMemo(
+    () => providerModels.find((item) => item.model_id === openaiModel),
+    [providerModels, openaiModel],
   );
 
   const { data: credentials = [] } = useQuery({
@@ -84,6 +131,15 @@ export function EditEndpointDialog({
     setBaseUrl(endpoint.base_url);
     setStatus(endpoint.status);
     setCredentialRef(endpoint.credential_ref ?? '');
+    setMaxContextTokens(String(endpoint.runtime_profile?.max_context_tokens ?? 128000));
+    setMaxOutputTokens(String(endpoint.runtime_profile?.max_output_tokens ?? 8192));
+    setSupportsFile(endpoint.runtime_profile?.supports_file ?? false);
+    setSupportsToolCall(endpoint.runtime_profile?.supports_tool_call ?? true);
+    setSupportsReasoning(endpoint.runtime_profile?.supports_reasoning ?? false);
+    setPriceInputPer1m(String(endpoint.runtime_profile?.price_input_per_1m ?? 0));
+    setPriceOutputPer1m(String(endpoint.runtime_profile?.price_output_per_1m ?? 0));
+    setCacheReadDiscountRatio(String(endpoint.runtime_profile?.cache_read_discount_ratio ?? 0));
+    setCacheWriteDiscountRatio(String(endpoint.runtime_profile?.cache_write_discount_ratio ?? 0));
     const family = endpoint.provider_family ?? 'openai';
     setProvider(
       family === 'anthropic' ||
@@ -133,8 +189,19 @@ export function EditEndpointDialog({
               : capability === 'rerank'
                 ? { rerank_model_id: openaiModel.trim() }
                 : capability === 'image_generation'
-                  ? { image_model_id: openaiModel.trim() }
-                  : { video_model_id: openaiModel.trim() },
+                ? { image_model_id: openaiModel.trim() }
+                : { video_model_id: openaiModel.trim() },
+        runtime_profile: {
+          max_context_tokens: Number(maxContextTokens),
+          max_output_tokens: Number(maxOutputTokens),
+          supports_file: supportsFile,
+          supports_tool_call: supportsToolCall,
+          supports_reasoning: supportsReasoning,
+          price_input_per_1m: Number(priceInputPer1m),
+          price_output_per_1m: Number(priceOutputPer1m),
+          cache_read_discount_ratio: Number(cacheReadDiscountRatio),
+          cache_write_discount_ratio: Number(cacheWriteDiscountRatio),
+        },
       });
       toast.success(t('edit_dialog.success'));
       onSuccess?.();
@@ -281,14 +348,14 @@ export function EditEndpointDialog({
 
             {providerModels.length > 0 && (
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Catalog Models</label>
+                <label className="text-sm font-medium text-foreground">{t('create_dialog.catalog_models')}</label>
                 <Select
                   value={openaiModel}
                   onValueChange={setOpenaiModel}
                   disabled={isSaving}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select from catalog (optional)" />
+                    <SelectValue placeholder={t('create_dialog.select_from_catalog')} />
                   </SelectTrigger>
                   <SelectContent>
                     {providerModels.slice(0, 100).map((model) => (
@@ -298,6 +365,22 @@ export function EditEndpointDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedCatalogModel && (
+                  <div className="rounded-sm border border-subtle bg-surface-low p-3 text-xs text-secondary">
+                    <p>
+                      {t('create_dialog.catalog_context_tokens')}: {selectedCatalogModel.limit?.context ?? '-'}
+                    </p>
+                    <p>
+                      {t('create_dialog.catalog_output_tokens')}: {selectedCatalogModel.limit?.output ?? '-'}
+                    </p>
+                    <p>
+                      {t('create_dialog.catalog_input_price')}: {typeof selectedCatalogModel.cost?.input === 'number' ? selectedCatalogModel.cost?.input : '-'}
+                    </p>
+                    <p>
+                      {t('create_dialog.catalog_output_price')}: {typeof selectedCatalogModel.cost?.output === 'number' ? selectedCatalogModel.cost?.output : '-'}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -345,6 +428,41 @@ export function EditEndpointDialog({
                   <SelectItem value="disabled">{t('status_disabled')}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-3 rounded-sm border border-subtle p-3">
+              <p className="text-sm font-medium text-foreground">{t('custom_wizard.runtime_profile.title')}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Input value={maxContextTokens} onChange={(e) => setMaxContextTokens(e.target.value)} />
+                <Input value={maxOutputTokens} onChange={(e) => setMaxOutputTokens(e.target.value)} />
+                <Input value={priceInputPer1m} onChange={(e) => setPriceInputPer1m(e.target.value)} />
+                <Input value={priceOutputPer1m} onChange={(e) => setPriceOutputPer1m(e.target.value)} />
+                <Input value={cacheReadDiscountRatio} onChange={(e) => setCacheReadDiscountRatio(e.target.value)} />
+                <Input value={cacheWriteDiscountRatio} onChange={(e) => setCacheWriteDiscountRatio(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <Select value={String(supportsFile)} onValueChange={(v) => setSupportsFile(v === 'true')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">{t('custom_wizard.runtime_profile.yes')}</SelectItem>
+                    <SelectItem value="false">{t('custom_wizard.runtime_profile.no')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={String(supportsToolCall)} onValueChange={(v) => setSupportsToolCall(v === 'true')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">{t('custom_wizard.runtime_profile.yes')}</SelectItem>
+                    <SelectItem value="false">{t('custom_wizard.runtime_profile.no')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={String(supportsReasoning)} onValueChange={(v) => setSupportsReasoning(v === 'true')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">{t('custom_wizard.runtime_profile.yes')}</SelectItem>
+                    <SelectItem value="false">{t('custom_wizard.runtime_profile.no')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 

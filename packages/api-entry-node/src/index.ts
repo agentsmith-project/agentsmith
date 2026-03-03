@@ -11,6 +11,7 @@ import { handleRequest } from './request-handler.js';
 import { createUsageReportRunner } from './usage-report-runner.js';
 import { createUsageReportDeliveryDispatcher } from './usage-report-delivery.js';
 import { createReleaseGateRunner } from './release-gate-runner.js';
+import { ensureRuntimeCatalogBootstrap } from './runtime-catalog-service.js';
 
 export type { NodeApiDeps } from './node-api-deps.js';
 export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
@@ -28,6 +29,11 @@ export function createNodeApiServer(
   lifecycle?: Pick<ProjectRepoFactoryResult, 'shutdown'>,
   options?: CreateNodeApiServerOptions,
 ): http.Server {
+  void ensureRuntimeCatalogBootstrap(deps.docStore).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : 'unknown_error';
+    process.stderr.write(`[api-entry-node] runtime catalog bootstrap failed: ${message}\n`);
+  });
+
   const usageReportDeliveryDispatch = createUsageReportDeliveryDispatcher({
     getCredentialSecret: (workspaceId, projectId, credentialId) =>
       deps.endpointResourceService.getCredentialSecret(workspaceId, projectId, credentialId),

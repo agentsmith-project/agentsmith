@@ -122,7 +122,7 @@ export function useCanAccessCredentials(): { canRead: boolean; canManage: boolea
 }
 
 export function useCanAccessChat(): boolean {
-  return useHasPermission('project:endpoint:invoke');
+  return useHasPermission('project:endpoint:use');
 }
 
 export function useCanUseChat(): boolean {
@@ -134,7 +134,7 @@ export function useCanManageChatSessions(): boolean {
 }
 
 export function useCanAccessNotebook(): boolean {
-  return useHasPermission('project:endpoint:invoke');
+  return useHasPermission('project:endpoint:use');
 }
 
 export function useCanReadTasks(): boolean {

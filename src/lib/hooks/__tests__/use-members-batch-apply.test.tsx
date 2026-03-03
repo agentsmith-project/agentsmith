@@ -127,7 +127,7 @@ describe('batch apply hooks partial success', () => {
     await act(async () => {
       await result.current.mutateAsync({
         memberIds: ['m_1', 'm_2', 'm_3'],
-        permissions: ['project:endpoint:invoke'],
+        permissions: ['project:endpoint:use'],
         template: 'developer',
       });
     });

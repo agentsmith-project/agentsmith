@@ -37,7 +37,7 @@ describe('MemberAPI', () => {
 
   it('keeps canonical platform_permissions payload unchanged', async () => {
     const mockGet = vi.fn().mockResolvedValue({
-      platform_permissions: ['project:endpoint:invoke'],
+      platform_permissions: ['project:endpoint:use'],
       resource_permissions: {
         endpoint: ['endpoint:use'],
       },
@@ -47,7 +47,7 @@ describe('MemberAPI', () => {
     const result = await api.getPermissions('ws_1', 'proj_1', 'u_1');
 
     expect(result).toEqual({
-      platform_permissions: ['project:endpoint:invoke'],
+      platform_permissions: ['project:endpoint:use'],
       resource_permissions: {
         endpoint: ['endpoint:use'],
       },

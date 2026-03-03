@@ -162,7 +162,7 @@ describe('M3 Integration: Governance Evidence Chain', () => {
     // 1. Check permission (creates audit)
     const authzResult = await checkPermission({
       member_id,
-      permission: 'project:endpoint:invoke',
+      permission: 'project:endpoint:use',
       resource_context: { workspace_id, project_id },
     });
 

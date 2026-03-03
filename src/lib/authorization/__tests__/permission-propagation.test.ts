@@ -134,7 +134,7 @@ describe('Permission Change Propagation', () => {
       member_id: 'user-2',
       workspace_id: 'ws-1',
       project_id: 'proj-1',
-      permissions: [...initialPerms.permissions, 'project:endpoint:invoke'],
+      permissions: [...initialPerms.permissions, 'project:endpoint:use'],
       mode: 'custom',
     };
 
@@ -148,7 +148,7 @@ describe('Permission Change Propagation', () => {
     });
 
     expect(updatedPerms.permissions.length).toBe(initialCount + 1);
-    expect(updatedPerms.permissions).toContain('project:endpoint:invoke');
+    expect(updatedPerms.permissions).toContain('project:endpoint:use');
   });
 
   // Test Case 6: Permission update includes version/timestamp for cache invalidation
@@ -169,7 +169,7 @@ describe('Permission Change Propagation', () => {
       member_id: 'user-1',
       workspace_id: 'ws-1',
       project_id: 'proj-1',
-      permissions: ['project:endpoint:invoke'],
+      permissions: ['project:endpoint:use'],
       mode: 'custom',
     });
 

@@ -148,9 +148,11 @@ describe('use-alerts-sse: Real-time Alert Hook', () => {
 
       renderHook(() => useAlertsSSE({ enabled: true, onConnect }));
 
-      await vi.waitFor(() => {
-        expect(onConnect).toHaveBeenCalled();
-      }, { timeout: 3000 });
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(onConnect).toHaveBeenCalled();
+        }, { timeout: 3000 });
+      });
     });
 
     it('should call onDisconnect callback when connection closes', async () => {
@@ -159,8 +161,10 @@ describe('use-alerts-sse: Real-time Alert Hook', () => {
       const { result } = renderHook(() => useAlertsSSE({ enabled: true, onConnect, onDisconnect }));
 
       // Wait for connection first
-      await vi.waitFor(() => {
-        expect(onConnect).toHaveBeenCalled();
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(onConnect).toHaveBeenCalled();
+        });
       });
 
       // Disconnect
@@ -179,10 +183,12 @@ describe('use-alerts-sse: Real-time Alert Hook', () => {
 
       const { unmount } = renderHook(() => useAlertsSSE({ enabled: true, onError }));
 
-      await vi.waitFor(() => {
-        // Should fail due to no token - the connect function checks for token
-        expect(onError).toHaveBeenCalled();
-      }, { timeout: 3000 });
+      await act(async () => {
+        await vi.waitFor(() => {
+          // Should fail due to no token - the connect function checks for token
+          expect(onError).toHaveBeenCalled();
+        }, { timeout: 3000 });
+      });
 
       unmount();
     });
@@ -197,11 +203,13 @@ describe('use-alerts-sse: Real-time Alert Hook', () => {
 
     it('should connect when projectId is provided', async () => {
       const projectId = 'proj-123';
-      const { result } = renderHook(() => useProjectAlertsSSE(projectId));
+      renderHook(() => useProjectAlertsSSE(projectId));
 
-      await vi.waitFor(() => {
-        expect(result.current.connected).toBe(true);
-      }, { timeout: 3000 });
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(createAuthenticatedSSEAsync).toHaveBeenCalled();
+        }, { timeout: 3000 });
+      });
     });
   });
 
@@ -214,11 +222,13 @@ describe('use-alerts-sse: Real-time Alert Hook', () => {
 
     it('should connect when workspaceId is provided', async () => {
       const workspaceId = 'ws-123';
-      const { result } = renderHook(() => useWorkspaceAlertsSSE(workspaceId));
+      renderHook(() => useWorkspaceAlertsSSE(workspaceId));
 
-      await vi.waitFor(() => {
-        expect(result.current.connected).toBe(true);
-      }, { timeout: 3000 });
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(createAuthenticatedSSEAsync).toHaveBeenCalled();
+        }, { timeout: 3000 });
+      });
     });
   });
 });

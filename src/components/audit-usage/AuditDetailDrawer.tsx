@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -83,6 +84,9 @@ export function AuditDetailDrawer({
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('detail.title')}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {t('detail.subtitle')}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

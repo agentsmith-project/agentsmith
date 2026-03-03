@@ -92,8 +92,8 @@ describe('RuntimeConsoleRoute', () => {
       });
     });
 
-    it('grants access when user has project:settings:manage permission', async () => {
-      permissionFn = (permission?: string) => permission === 'project:settings:manage';
+    it('grants access when user has project:manage permission', async () => {
+      permissionFn = (permission?: string) => permission === 'project:manage';
 
       render(
         <RuntimeConsoleRoute
@@ -235,7 +235,7 @@ describe('RuntimeConsoleRoute', () => {
 
   describe('query parameter handling', () => {
     it('passes through locale parameter correctly', async () => {
-      permissionFn = (permission?: string) => permission === 'project:settings:manage';
+      permissionFn = (permission?: string) => permission === 'project:manage';
 
       render(
         <RuntimeConsoleRoute

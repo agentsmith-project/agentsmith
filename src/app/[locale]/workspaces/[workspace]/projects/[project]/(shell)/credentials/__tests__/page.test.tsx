@@ -30,7 +30,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn((permission: string) => permission === 'project:settings:manage'),
+  useHasPermission: vi.fn((permission: string) => permission === 'project:manage'),
 }));
 
 vi.mock('@/components/credentials/CreateCredentialDialog', () => ({
@@ -165,7 +165,7 @@ describe('CredentialsPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:settings:manage');
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
     mockList.mockResolvedValue(mockCredentials);
     mockDelete.mockResolvedValue(undefined);
   });

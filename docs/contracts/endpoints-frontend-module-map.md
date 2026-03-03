@@ -23,9 +23,9 @@ Applies to route:
 
 - Read access requires one of:
   - `project:endpoint:use`
-  - `project:endpoint:manage`
+  - `project:manage`
 - Mutations require:
-  - `project:endpoint:manage`
+  - `project:manage`
 - No compatibility fallback paths.
 - Fail fast on invalid payload and invalid params.
 

@@ -73,39 +73,39 @@ export function useHasAllPermissions(permissions: string[]): boolean {
 
 // Semantic aliases mapped to token checks.
 export function useIsOwnerOrAdmin(): boolean {
-  return useHasPermission('project:settings:manage');
+  return useHasPermission('project:manage');
 }
 
 export function useIsOwner(): boolean {
-  return useHasPermission('project:settings:manage');
+  return useHasPermission('project:manage');
 }
 
 export function useIsProjectAdmin(): boolean {
-  return useHasPermission('project:settings:manage');
+  return useHasPermission('project:manage');
 }
 
 export function useCanManageProject(): boolean {
-  return useHasPermission('project:settings:manage');
+  return useHasPermission('project:manage');
 }
 
 export function useCanManageMemberGovernance(): boolean {
-  return useHasPermission('project:settings:manage');
+  return useHasPermission('project:manage');
 }
 
 export function useCanManageResourcePolicy(): boolean {
-  return useHasPermission('project:settings:manage');
+  return useHasPermission('project:manage');
 }
 
 export function useCanReadProjectPolicy(): boolean {
-  return useHasPermission('project:settings:manage');
+  return useHasPermission('project:manage');
 }
 
 export function useCanUpdateProjectPolicy(): boolean {
-  return useHasPermission('project:settings:manage');
+  return useHasPermission('project:manage');
 }
 
 export function useCanAccessCredentials(): { canRead: boolean; canManage: boolean } {
-  const canManage = useHasPermission('project:settings:manage');
+  const canManage = useHasPermission('project:manage');
   return useMemo(() => ({ canRead: canManage, canManage }), [canManage]);
 }
 

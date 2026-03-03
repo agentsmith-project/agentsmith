@@ -227,7 +227,7 @@ Required permissions:
 
 - **View Audit**: `project:endpoint:use`
 - **View Usage**: `project:endpoint:use`
-- **Export Data**: `project:settings:manage` or `project:settings:manage`
+- **Export Data**: `project:manage` or `project:manage`
 - **View Details**: `project:endpoint:use`
 
 ## Troubleshooting

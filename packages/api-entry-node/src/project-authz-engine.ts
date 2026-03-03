@@ -261,10 +261,10 @@ function mapProjectActionToPermission(action: string): string | null {
   if (action.startsWith('project.usage.')) return 'project:endpoint:use';
   if (action === 'project.read') return 'project:endpoint:use';
   if (action === 'project.delete' || action === 'project.update' || action.startsWith('project.settings.')) {
-    return 'project:settings:manage';
+    return 'project:manage';
   }
   if (action.startsWith('project.member.') || action.startsWith('project.governance.')) {
-    return 'project:settings:manage';
+    return 'project:manage';
   }
   return 'project:endpoint:use';
 }
@@ -273,14 +273,17 @@ function mapResourceActionToPermission(resourceType: Exclude<ResourceType, 'proj
   if (resourceType === 'endpoint') {
     return /invoke|proxy|rerank|image|video|read|list/i.test(action)
       ? 'project:endpoint:use'
-      : 'project:endpoint:manage';
+      : 'project:manage';
   }
   if (resourceType === 'source_library') {
     return /read|list|download|browse/i.test(action)
       ? 'project:endpoint:use'
-      : 'project:settings:manage';
+      : 'project:manage';
   }
-  return /invoke|run|read|list|use/i.test(action) ? 'project:agent:use' : 'project:agent:manage';
+  if (/public|publish|unpublish/i.test(action)) {
+    return 'project:agent:public';
+  }
+  return 'project:agent:manage';
 }
 
 export function mapAuthorizationRequestToPermission(args: {

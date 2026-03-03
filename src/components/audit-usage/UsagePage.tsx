@@ -88,8 +88,8 @@ export function UsagePage({
   const traceRunId = searchParams.get('trace_run_id') ?? undefined;
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:endpoint:use');
-  const canExportUsage = useHasPermission('project:settings:manage');
-  const canManageReportSchedules = useHasPermission('project:settings:manage');
+  const canExportUsage = useHasPermission('project:manage');
+  const canManageReportSchedules = useHasPermission('project:manage');
   const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 

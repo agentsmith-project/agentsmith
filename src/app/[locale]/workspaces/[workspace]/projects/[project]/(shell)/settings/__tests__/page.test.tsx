@@ -25,7 +25,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn((permission: string) => permission === 'project:settings:manage'),
+  useHasPermission: vi.fn((permission: string) => permission === 'project:manage'),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -91,11 +91,11 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
 describe('SettingsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:settings:manage');
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
   });
 
   it('renders settings page when params and permission are valid', async () => {
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:settings:manage');
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
     render(
       <SettingsPage
         params={Promise.resolve({

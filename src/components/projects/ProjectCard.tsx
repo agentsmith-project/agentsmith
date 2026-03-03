@@ -23,7 +23,7 @@ export function ProjectCard({
   adminSummary: string;
   t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
-  const canManageSettings = hasProjectPermission(project, 'project:settings:manage');
+  const canManageSettings = hasProjectPermission(project, 'project:manage');
   return (
     <div
       onClick={onClick}

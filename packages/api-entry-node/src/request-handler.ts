@@ -170,7 +170,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
 
   if (isTaskRoute(route)) {
     if (route.kind === 'taskMessages' && method === 'POST') {
-      return ['project:endpoint:use', 'project:agent:use'];
+      return ['project:endpoint:use', 'project:agent:manage'];
     }
     return ['project:endpoint:use'];
   }
@@ -205,16 +205,16 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'projectMemberChangeHistory'
     || route.kind === 'projectResourcePolicy'
   ) {
-    return ['project:settings:manage'];
+    return ['project:manage'];
   }
 
   if (isAgentRoute(route)) {
-    if (method === 'GET') return ['project:agent:use'];
+    if (method === 'GET') return ['project:agent:manage'];
     return ['project:agent:manage'];
   }
 
   if (route.kind === 'credentials' || route.kind === 'credentialItem' || route.kind === 'credentialRotate') {
-    return ['project:settings:manage'];
+    return ['project:manage'];
   }
 
   if (
@@ -242,7 +242,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     ) {
       return ['project:endpoint:use'];
     }
-    return ['project:endpoint:manage'];
+    return ['project:manage'];
   }
 
   if (
@@ -268,7 +268,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     ) {
       return ['project:endpoint:use'];
     }
-    return ['project:endpoint:manage'];
+    return ['project:manage'];
   }
 
   return ['project:endpoint:use'];
@@ -1073,7 +1073,7 @@ export async function handleRequest(
         requiredPermissions:
           body.subject.type === 'user' && body.subject.id === user.id
             ? ['project:endpoint:use']
-            : ['project:settings:manage'],
+            : ['project:manage'],
       });
       if (actorGate.decisions.some((item) => !item.granted)) {
         json(res, 403, { error_code: 'FORBIDDEN', message: 'forbidden' });
@@ -1229,6 +1229,7 @@ export async function handleRequest(
         req,
         res,
         deps,
+        user,
         json,
         readBody,
       });

@@ -37,10 +37,10 @@ Add new Section definitions:
 | Chat | Build | Use | `project:endpoint:use` |
 | Notebook | Build | Use | `project:endpoint:use` |
 | Files | Build | Use | `project:endpoint:use` |
-| Agents | Build | Develop | `project:agent:use`, `project:agent:manage` |
-| Endpoints | Build | Govern | `project:endpoint:use`, `project:endpoint:manage` |
-| Settings | Operate | Govern | `project:settings:manage` |
-| Runtime Control Plane | Operate | Operate | `project:settings:manage` |
+| Agents | Build | Develop | `project:agent:manage`, `project:agent:manage` |
+| Endpoints | Build | Govern | `project:endpoint:use`, `project:manage` |
+| Settings | Operate | Govern | `project:manage` |
+| Runtime Control Plane | Operate | Operate | `project:manage` |
 | Runtime Observability | Operate | Operate | `project:endpoint:use` |
 | Release Ops | Operate | Operate | `project:endpoint:use` |
 | Alerts | Operate | Operate | `project:endpoint:use` |
@@ -51,7 +51,7 @@ Add to `frontend-backend-gating-matrix.md` Matrix:
 
 | Page | User Operation | Required Permission(s) | Backend API Group | FE Expected on 403 |
 |------|----------------|------------------------|-------------------|-------------------|
-| runtime console | view overview tab | `project:settings:manage` | `GET /projects/{id}`, `GET /runtime/health` | tab-level permission denied |
+| runtime console | view overview tab | `project:manage` | `GET /projects/{id}`, `GET /runtime/health` | tab-level permission denied |
 | runtime console | view monitoring tab | `project:endpoint:use` | `GET /runtime/metrics`, `GET /runtime/traces` | tab-level permission denied |
 | runtime console | view alerts tab | `project:endpoint:use` | `GET /alert-rules`, `GET /alert-notifications` | tab-level permission denied |
 | runtime console | view control tab | `project:endpoint:use` | `GET /release-ops/*`, `GET /governance/*` | tab-level permission denied |
@@ -77,12 +77,12 @@ All permission points remain unchanged. Only the Section grouping changes:
 | `project:endpoint:use` | Build | Use |
 | `project:endpoint:use` | Build | Use |
 | `project:endpoint:use` | Build | Use |
-| `project:endpoint:manage` | Build | Use |
-| `project:agent:use` | Build | Develop |
+| `project:manage` | Build | Use |
+| `project:agent:manage` | Build | Develop |
 | `project:agent:manage` | Build | Develop |
 | `project:endpoint:use` | Build | Govern |
-| `project:endpoint:manage` | Build | Govern |
-| `project:settings:manage` | Operate | Govern |
+| `project:manage` | Build | Govern |
+| `project:manage` | Operate | Govern |
 
 ## Testing Checklist
 

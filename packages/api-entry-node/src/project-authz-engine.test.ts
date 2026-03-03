@@ -20,7 +20,7 @@ describe('project-authz-engine', () => {
       id: 'pt_manage',
       project_id: projectId,
       name: 'Managers',
-      permissions: ['project:settings:manage'],
+      permissions: ['project:manage'],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -44,7 +44,7 @@ describe('project-authz-engine', () => {
       projectOwnerId: 'user_owner',
       actorUserId: 'user_test',
     }));
-    expect(permissions.has('project:settings:manage')).toBe(true);
+    expect(permissions.has('project:manage')).toBe(true);
     expect(permissions.has('project:endpoint:use')).toBe(true);
     expect(permissions.has('project:endpoint:use')).toBe(true);
   });
@@ -138,7 +138,7 @@ describe('project-authz-engine', () => {
 
   it('maps authorization actions to project permission tokens', () => {
     expect(mapAuthorizationRequestToPermission({ resourceType: 'endpoint', action: 'endpoint.invoke' })).toBe('project:endpoint:use');
-    expect(mapAuthorizationRequestToPermission({ resourceType: 'source_library', action: 'source_library.upload' })).toBe('project:endpoint:manage');
-    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.member.view' })).toBe('project:settings:manage');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'source_library', action: 'source_library.upload' })).toBe('project:manage');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.member.view' })).toBe('project:manage');
   });
 });

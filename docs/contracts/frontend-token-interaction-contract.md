@@ -24,7 +24,7 @@ Related docs:
 2. Frontend runtime gate is token-only.
 3. Chat and Notebook are access-only modules in MVP.
 4. Resource usage limits are governed by resource policy rules, not by extra chat/notebook quotas.
-5. Credentials are governed by `project:settings:manage` only in MVP.
+5. Credentials are governed by `project:manage` only in MVP.
 
 ## Canonical Token Set (MVP)
 
@@ -40,18 +40,18 @@ Related docs:
 
 ### Resources
 - `project:endpoint:use`
-- `project:endpoint:manage`
+- `project:manage`
 - `project:endpoint:use`
-- `project:endpoint:manage`
-- `project:agent:use`
+- `project:manage`
+- `project:agent:manage`
 - `project:agent:manage`
 
 ### Governance
-- `project:settings:manage`
-- `project:settings:manage`
-- `project:settings:manage`
-- `project:settings:manage`
-- `project:settings:manage`
+- `project:manage`
+- `project:manage`
+- `project:manage`
+- `project:manage`
+- `project:manage`
 
 ### Observability
 - `project:endpoint:use`
@@ -65,23 +65,23 @@ Related docs:
 - Notebook list/detail: `project:endpoint:use`
 - Files: `project:endpoint:use`
 - Endpoints: `project:endpoint:use`
-- Agents: `project:agent:use`
-- Members: `project:settings:manage`
-- Credentials: `project:settings:manage`
-- Resource Policy: `project:settings:manage`
-- Settings: `project:settings:manage`
+- Agents: `project:agent:manage`
+- Members: `project:manage`
+- Credentials: `project:manage`
+- Resource Policy: `project:manage`
+- Settings: `project:manage`
 - Audit: `project:endpoint:use`
 - Usage: `project:endpoint:use`
 
 ## Action-Level Gate Contract
 
-- Source create/update/delete: `project:endpoint:manage`
-- Endpoint create/update/delete: `project:endpoint:manage`
+- Source create/update/delete: `project:manage`
+- Endpoint create/update/delete: `project:manage`
 - Agent create/update/delete/key issue/key revoke: `project:agent:manage`
-- Members invite/remove/template/group/policy apply: `project:settings:manage`
-- Settings update/delete project: `project:settings:manage`
-- Resource policy save: `project:settings:manage`
-- Credentials create/rotate/delete: `project:settings:manage`
+- Members invite/remove/template/group/policy apply: `project:manage`
+- Settings update/delete project: `project:manage`
+- Resource policy save: `project:manage`
+- Credentials create/rotate/delete: `project:manage`
 
 ## UI Behavior Contract
 

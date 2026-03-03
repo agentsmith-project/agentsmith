@@ -2,18 +2,14 @@ import type { WorkspaceRecord } from './resource-models.js';
 
 export const OWNER_PROJECT_PERMISSIONS = [
   'project:endpoint:use',
-  'project:endpoint:manage',
-  'project:agent:use',
   'project:agent:manage',
-  'project:settings:manage',
+  'project:agent:public',
+  'project:manage',
 ] as const;
 
 const OPERATOR_PROJECT_PERMISSIONS = [
   'project:endpoint:use',
-  'project:endpoint:manage',
-  'project:agent:use',
   'project:agent:manage',
-  'project:settings:manage',
 ] as const;
 
 export const OWNER_WORKSPACE_PERMISSIONS = [

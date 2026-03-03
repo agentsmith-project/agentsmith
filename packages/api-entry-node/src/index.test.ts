@@ -574,10 +574,10 @@ describe('api-entry-node projects routes', () => {
     const got = (await getRes.json()) as { owner_id: string; permissions: string[] };
     expect(got.owner_id).toBe('user_external');
     expect(got.permissions).toContain('project:endpoint:use');
-    expect(got.permissions).toContain('project:endpoint:manage');
-    expect(got.permissions).toContain('project:endpoint:manage');
-    expect(got.permissions).toContain('project:settings:manage');
-    expect(got.permissions).not.toContain('project:settings:manage');
+    expect(got.permissions).toContain('project:manage');
+    expect(got.permissions).toContain('project:manage');
+    expect(got.permissions).toContain('project:manage');
+    expect(got.permissions).not.toContain('project:manage');
   });
 
   it('returns validation error for invalid payload', async () => {
@@ -1093,7 +1093,7 @@ describe('api-entry-node projects routes', () => {
     };
     expect(members.total).toBe(1);
     expect(members.items[0]?.id).toBe('user_test');
-    expect(members.items[0]?.permissions).toContain('project:settings:manage');
+    expect(members.items[0]?.permissions).toContain('project:manage');
 
     const joinRequestsRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/join-requests');
     expect(joinRequestsRes.status).toBe(200);
@@ -1128,7 +1128,7 @@ describe('api-entry-node projects routes', () => {
     };
     expect(membership.user_id).toBe('user_test');
     expect(membership.project_id).toBe('proj_1');
-    expect(membership.permissions).toContain('project:settings:manage');
+    expect(membership.permissions).toContain('project:manage');
   });
 
   it('supports minimal project members governance write endpoints', async () => {
@@ -1499,7 +1499,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'Analyst',
           description: 'Read and operate',
-          permissions: ['project:endpoint:use', 'project:settings:manage'],
+          permissions: ['project:endpoint:use', 'project:manage'],
         }),
       },
     );
@@ -1513,7 +1513,7 @@ describe('api-entry-node projects routes', () => {
     };
     expect(created.project_id).toBe('proj_1');
     expect(created.name).toBe('Analyst');
-    expect(created.permissions).toContain('project:settings:manage');
+    expect(created.permissions).toContain('project:manage');
     expect(created.built_in).toBe(false);
 
     const patchRes = await apiFetch(
@@ -1578,7 +1578,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Should Fail',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1593,7 +1593,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Managers',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1624,7 +1624,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Allowed after template',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1652,7 +1652,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Should Fail',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1667,7 +1667,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           mode: 'custom',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1681,7 +1681,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Allowed via member custom perms',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1719,7 +1719,7 @@ describe('api-entry-node projects routes', () => {
       allowed: false,
       decision: {
         source: 'permission',
-        rule_id: 'project:settings:manage',
+        rule_id: 'project:manage',
         reason: 'permission_not_granted',
       },
     });
@@ -1733,7 +1733,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Managers',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1774,7 +1774,7 @@ describe('api-entry-node projects routes', () => {
       allowed: true,
       decision: {
         source: 'permission',
-        rule_id: 'project:settings:manage',
+        rule_id: 'project:manage',
         reason: 'granted_by_member_governance',
       },
     });
@@ -1802,7 +1802,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Managers',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1855,7 +1855,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Should Fail Suspended',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1905,7 +1905,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Recovered Access',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -1929,7 +1929,7 @@ describe('api-entry-node projects routes', () => {
       allowed: true,
       decision: {
         source: 'permission',
-        rule_id: 'project:settings:manage',
+        rule_id: 'project:manage',
         reason: 'granted_by_member_governance',
       },
     });
@@ -1957,7 +1957,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Lifecycle Managers',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -2043,7 +2043,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Suspended Should Fail',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -2102,7 +2102,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Restored Should Pass',
-          permissions: ['project:settings:manage'],
+          permissions: ['project:manage'],
         }),
       },
     );
@@ -2219,7 +2219,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           mode: 'custom',
-          permissions: ['project:settings:manage', 'project:settings:manage'],
+          permissions: ['project:manage', 'project:manage'],
         }),
       },
     );
@@ -2231,7 +2231,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(getPermsAfterRes.status).toBe(200);
     expect(await getPermsAfterRes.json()).toEqual({
-      platform_permissions: ['project:settings:manage', 'project:settings:manage'],
+      platform_permissions: ['project:manage', 'project:manage'],
       resource_permissions: undefined,
     });
 

@@ -186,11 +186,11 @@ if (hasPermission('project:agent:manage') && currentAgent.developers.includes(cu
 | `project:endpoint:use` | Build | Use | 访问 Chat |
 | `project:endpoint:use` | Build | Use | 访问 Notebook |
 | `project:endpoint:use` | Build | Use | 使用文件库 |
-| `project:agent:use` | Build | Develop | 使用智能体 |
+| `project:agent:manage` | Build | Develop | 使用智能体 |
 | `project:agent:manage` | Build | Develop | 管理智能体和密钥（开发权限） |
 | `project:endpoint:use` | Build | Govern | 使用端点 |
-| `project:endpoint:manage` | Build | Govern | 管理端点 |
-| `project:settings:manage` | Operate | Govern | 管理项目设置 |
+| `project:manage` | Build | Govern | 管理端点 |
+| `project:manage` | Operate | Govern | 管理项目设置 |
 
 **Notebook 调试功能**需要同时满足：
 1. `project:agent:manage` 权限

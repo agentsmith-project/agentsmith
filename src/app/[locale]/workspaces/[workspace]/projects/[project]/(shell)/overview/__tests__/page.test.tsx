@@ -31,7 +31,7 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
   useCurrentPermissions: vi.fn(() => [
     'project:endpoint:use',
     'project:endpoint:use',
-    'project:agent:use',
+    'project:agent:manage',
     'project:endpoint:use',
     'project:endpoint:use',
   ]),

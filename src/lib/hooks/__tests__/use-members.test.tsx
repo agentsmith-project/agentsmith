@@ -335,7 +335,7 @@ describe('useUpdateMemberPermissions', () => {
       }
     );
 
-    const customPermissions = ['project:endpoint:use', 'project:settings:manage'];
+    const customPermissions = ['project:endpoint:use', 'project:manage'];
 
     await act(async () => {
       await result.current.mutateAsync({
@@ -358,7 +358,7 @@ describe('useApplyTemplateToMember', () => {
     await act(async () => {
       await result.current.mutateAsync({
         memberId,
-        permissions: ['project:endpoint:use', 'project:settings:manage'],
+        permissions: ['project:endpoint:use', 'project:manage'],
         template: 'developer',
       });
     });

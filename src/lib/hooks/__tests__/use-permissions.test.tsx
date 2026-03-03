@@ -73,7 +73,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:endpoint:use', 'project:settings:manage'],
+        permissions: ['project:endpoint:use', 'project:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -82,7 +82,7 @@ describe('use-permissions hooks', () => {
         wrapper: createWrapper(),
       });
 
-      expect(result.current).toEqual(['project:endpoint:use', 'project:settings:manage']);
+      expect(result.current).toEqual(['project:endpoint:use', 'project:manage']);
     });
 
     it('should return empty permissions for project without membership', () => {
@@ -151,7 +151,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:endpoint:use', 'project:settings:manage'],
+        permissions: ['project:endpoint:use', 'project:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -178,7 +178,7 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useHasPermission('project:settings:manage'), {
+      const { result } = renderHook(() => useHasPermission('project:manage'), {
         wrapper: createWrapper(),
       });
 
@@ -273,7 +273,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:settings:manage'],
+        permissions: ['project:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -295,7 +295,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:settings:manage'],
+        permissions: ['project:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -317,7 +317,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:settings:manage'],
+        permissions: ['project:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -351,7 +351,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:settings:manage'],
+        permissions: ['project:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -373,7 +373,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:settings:manage'],
+        permissions: ['project:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -425,7 +425,7 @@ describe('use-permissions hooks', () => {
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
       const { result } = renderHook(
-        () => useHasAnyPermission(['project:endpoint:use', 'project:write', 'project:settings:manage']),
+        () => useHasAnyPermission(['project:endpoint:use', 'project:write', 'project:manage']),
         { wrapper: createWrapper() }
       );
 
@@ -448,7 +448,7 @@ describe('use-permissions hooks', () => {
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
       const { result } = renderHook(
-        () => useHasAnyPermission(['project:write', 'project:settings:manage']),
+        () => useHasAnyPermission(['project:write', 'project:manage']),
         { wrapper: createWrapper() }
       );
 
@@ -500,7 +500,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:endpoint:use', 'project:write', 'project:settings:manage'],
+        permissions: ['project:endpoint:use', 'project:write', 'project:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });

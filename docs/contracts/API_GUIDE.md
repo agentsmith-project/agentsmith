@@ -95,14 +95,14 @@ Response:
 | GET | `/api/v1/workspaces/{workspaceId}/projects` | List projects | `workspace:read` |
 | POST | `/api/v1/workspaces/{workspaceId}/projects` | Create project | `workspace:project:create` |
 | GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Get project | `project:endpoint:use` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Update project | `project:settings:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Delete project | `project:settings:manage` |
+| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Update project | `project:manage` |
+| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Delete project | `project:manage` |
 
 ### Authorization (Epic A1)
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/authorize` | Unified authorization check | `project:settings:manage` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/authorize` | Unified authorization check | `project:manage` |
 
 ### SSE (Epic B1)
 
@@ -114,8 +114,8 @@ Response:
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export` | Export audit logs | `project:settings:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/check` | Check quota before operation | `project:settings:manage` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export` | Export audit logs | `project:manage` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/check` | Check quota before operation | `project:manage` |
 
 ### Chat
 
@@ -128,59 +128,59 @@ Response:
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents` | List agents | `project:agent:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents` | List agents | `project:agent:manage` |
 | POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents` | Create agent | `project:agent:manage` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Get agent | `project:agent:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Get agent | `project:agent:manage` |
 | PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Update agent | `project:agent:manage` |
 | DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Delete agent | `project:agent:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/run` | Run agent task | `project:agent:use` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/run` | Run agent task | `project:agent:manage` |
 
 ### Endpoints
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
 | GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints` | List endpoints | `project:endpoint:use` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints` | Create endpoint | `project:endpoint:manage` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints` | Create endpoint | `project:manage` |
 | GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Get endpoint | `project:endpoint:use` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Update endpoint | `project:endpoint:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Delete endpoint | `project:endpoint:manage` |
+| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Update endpoint | `project:manage` |
+| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Delete endpoint | `project:manage` |
 
 ### Sources (Files)
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
 | GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources` | List sources | `project:endpoint:use` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources` | Create source | `project:endpoint:manage` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources` | Create source | `project:manage` |
 | GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Get source | `project:endpoint:use` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Update source | `project:endpoint:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Delete source | `project:endpoint:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/upload` | Upload file | `project:endpoint:manage` |
+| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Update source | `project:manage` |
+| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Delete source | `project:manage` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/upload` | Upload file | `project:manage` |
 
 ### Credentials
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials` | List credentials | `project:settings:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials` | Create credential | `project:settings:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}` | Delete credential | `project:settings:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}/rotate` | Rotate credential | `project:settings:manage` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials` | List credentials | `project:manage` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials` | Create credential | `project:manage` |
+| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}` | Delete credential | `project:manage` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}/rotate` | Rotate credential | `project:manage` |
 
 ### Members
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/members` | List members | `project:settings:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/invites` | Create invite | `project:settings:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/invites/{inviteId}` | Delete invite | `project:settings:manage` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}` | Update member | `project:settings:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}` | Remove member | `project:settings:manage` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/members` | List members | `project:manage` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/invites` | Create invite | `project:manage` |
+| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/invites/{inviteId}` | Delete invite | `project:manage` |
+| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}` | Update member | `project:manage` |
+| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}` | Remove member | `project:manage` |
 
 ### Audit Logs
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
 | GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit` | Get audit logs | `project:endpoint:use` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export` | Export audit logs | `project:settings:manage` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export` | Export audit logs | `project:manage` |
 
 ### Usage
 
@@ -224,7 +224,7 @@ Response:
     "code": "PERMISSION_DENIED",
     "message": "You do not have permission to perform this action",
     "details": {
-      "required_permission": "project:settings:manage",
+      "required_permission": "project:manage",
       "resource": "proj_123"
     }
   }

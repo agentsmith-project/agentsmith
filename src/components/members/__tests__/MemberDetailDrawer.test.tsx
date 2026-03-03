@@ -77,7 +77,7 @@ describe('MemberDetailDrawer', () => {
         open
         onOpenChange={() => {}}
         member={{ ...baseMember, id: 'u_2' }}
-        permissions={{ platform_permissions: ['project:endpoint:use', 'project:settings:manage'] }}
+        permissions={{ platform_permissions: ['project:endpoint:use', 'project:manage'] }}
       />
     );
 

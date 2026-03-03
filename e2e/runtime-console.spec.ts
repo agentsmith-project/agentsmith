@@ -133,10 +133,10 @@ test.describe('Runtime Console', () => {
 
 test.describe('Runtime Console - Permission-Based URL Correction', () => {
   test('redirects to first available tab when user lacks permission for requested tab', async ({ limitedPage }) => {
-    // limitedPage uses user_004 which has project:endpoint:use but NOT project:settings:manage
+    // limitedPage uses user_004 which has project:endpoint:use but NOT project:manage
     await goToProject(limitedPage, 'overview');
 
-    // Navigate directly to control tab (requires project:settings:manage)
+    // Navigate directly to control tab (requires project:manage)
     await limitedPage.goto(limitedPage.url().replace('overview', 'runtime-console?tab=control'));
 
     // Page should load and redirect to overview tab (first accessible for usage:view permission)
@@ -151,7 +151,7 @@ test.describe('Runtime Console - Permission-Based URL Correction', () => {
   });
 
   test('preserves URL correction in browser history', async ({ limitedPage }) => {
-    // limitedPage uses user_004 which lacks project:settings:manage
+    // limitedPage uses user_004 which lacks project:manage
     await goToProject(limitedPage, 'overview');
 
     // Navigate to control tab (user doesn't have permission)

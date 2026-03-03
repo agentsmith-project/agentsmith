@@ -262,12 +262,15 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
-  const canAgentRead = useHasPermission('project:agent:use');
+  const canAgentRead = useHasPermission('project:agent:manage');
   const canAgentCreate = useHasPermission('project:agent:manage');
   const canAgentUpdate = useHasPermission('project:agent:manage');
   const canAgentDelete = useHasPermission('project:agent:manage');
   const canAgentKeyIssue = useHasPermission('project:agent:manage');
   const canAgentKeyRevoke = useHasPermission('project:agent:manage');
+  const canAgentPublicPermission = useHasPermission('project:agent:public');
+  const canProjectManagePermission = useHasPermission('project:manage');
+  const canAgentPublic = canAgentPublicPermission || canProjectManagePermission;
   const canReadAgents = canAgentRead || canAgentCreate || canAgentUpdate || canAgentDelete;
   const canManageAgents = canAgentCreate || canAgentUpdate || canAgentDelete;
   const canIssueAgentKeys = canAgentKeyIssue || canAgentKeyRevoke;
@@ -515,6 +518,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           workspaceId={workspaceId}
           projectId={projectId}
           agent={editDialogAgent}
+          canSetVisibility={canAgentPublic}
           onSuccess={invalidateAgents}
         />
 

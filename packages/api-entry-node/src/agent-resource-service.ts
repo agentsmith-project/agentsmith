@@ -47,6 +47,17 @@ export class AgentResourceService {
     return items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
+  async listVisibleAgents(
+    workspaceId: string,
+    projectId: string,
+    actorUserId: string,
+    includeAll: boolean,
+  ): Promise<AgentRecord[]> {
+    const all = await this.listAgents(workspaceId, projectId);
+    if (includeAll) return all;
+    return all.filter((item) => item.owner_id === actorUserId || item.visibility === 'public');
+  }
+
   async getAgent(workspaceId: string, projectId: string, agentId: string): Promise<AgentRecord | null> {
     const item = await this.docStore.get<AgentRecord>(AgentResourceService.agentsCollection, agentId);
     if (!item) return null;
@@ -74,6 +85,7 @@ export class AgentResourceService {
       runtime_preferences_json: input.runtime_preferences_json,
       owner_id: input.owner_id,
       admin_id: input.admin_id,
+      visibility: input.visibility === 'public' ? 'public' : 'private',
       capabilities: input.capabilities ?? {
         streaming_completion: true,
         multimodal_completion: false,
@@ -87,6 +99,16 @@ export class AgentResourceService {
     };
     await this.docStore.upsert(AgentResourceService.agentsCollection, agent.id, agent);
     return agent;
+  }
+
+  canAccessAgent(agent: AgentRecord, actorUserId: string, includeAll: boolean): boolean {
+    if (includeAll) return true;
+    return agent.owner_id === actorUserId || agent.visibility === 'public';
+  }
+
+  canManageAgent(agent: AgentRecord, actorUserId: string, includeAll: boolean): boolean {
+    if (includeAll) return true;
+    return agent.owner_id === actorUserId;
   }
 
   async updateAgent(

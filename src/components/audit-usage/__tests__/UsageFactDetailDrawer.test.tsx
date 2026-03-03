@@ -76,7 +76,7 @@ describe('UsageFactDetailDrawer', () => {
             result: 'error',
             error_code: 'FORBIDDEN',
             metadata_json: {
-              missing_permissions: ['project:settings:manage'],
+              missing_permissions: ['project:manage'],
               authz_decision: {
                 membership_status: 'suspended',
               },
@@ -87,7 +87,7 @@ describe('UsageFactDetailDrawer', () => {
     );
 
     const governance = screen.getByTestId('usage__detail-governance-fact_forbidden_1');
-    expect(governance).toHaveTextContent('project:settings:manage');
+    expect(governance).toHaveTextContent('project:manage');
     expect(governance).toHaveTextContent('suspended');
     expect(screen.queryByTestId('usage__detail-open-resource-policy-fact_forbidden_1')).not.toBeInTheDocument();
   });

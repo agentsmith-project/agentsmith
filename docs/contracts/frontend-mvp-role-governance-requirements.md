@@ -57,7 +57,7 @@ This document is the product-facing source for UX behavior; API-level details re
 
 1. Credentials module gate is token-only in frontend navigation and page access.
 2. Effective access condition for credentials is:
-- must have `project:settings:manage`
+- must have `project:manage`
 3. Even for authorized users, credentials display is metadata-only:
 - name
 - fingerprint
@@ -130,7 +130,7 @@ This document is the product-facing source for UX behavior; API-level details re
 1. Workspace settings includes governance grouping UI (`wheel` / `user`).
 2. Runtime permission checks are token-only for project and resource operations.
 3. Governance write operations follow token gates at route/action level.
-4. Credentials gate follows token condition: `project:settings:manage`.
+4. Credentials gate follows token condition: `project:manage`.
 5. Projects list interaction and admin clarity:
 - unpinned project table rows are directly clickable to open project overview
 - pinned project cards and table action buttons are clickable and no longer blocked by row-level event conflicts

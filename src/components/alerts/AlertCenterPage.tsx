@@ -73,7 +73,7 @@ export function AlertCenterPage({
 
   // Authorization checks
   const canViewAlerts = useHasPermission('project:endpoint:use');
-  const canManageAlerts = useHasPermission('project:settings:manage');
+  const canManageAlerts = useHasPermission('project:manage');
 
   // Permission denied
   if (!canViewAlerts) {

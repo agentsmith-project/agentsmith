@@ -203,7 +203,7 @@ main() {
       -X POST "${perm_templates_url}" \
       -H "Authorization: Bearer ${member_token}" \
       -H "Content-Type: application/json" \
-      --data "{\"name\":\"${smoke_name}\",\"permissions\":[\"project:settings:manage\"]}" || true
+      --data "{\"name\":\"${smoke_name}\",\"permissions\":[\"project:manage\"]}" || true
   )"
   if [[ "${denied_code}" != "403" ]]; then
     err "expected 403 before grant, got HTTP ${denied_code}"
@@ -218,14 +218,14 @@ main() {
     exit 1
   fi
 
-  info "granting project:settings:manage to member"
+  info "granting project:manage to member"
   local patch_grant_code
   patch_grant_code="$(
     curl -sS -o "${patch_file}" -w '%{http_code}' \
       -X PATCH "${member_perms_url}" \
       -H "Authorization: Bearer ${owner_token}" \
       -H "Content-Type: application/json" \
-      --data '{"mode":"custom","permissions":["project:settings:manage"]}' || true
+      --data '{"mode":"custom","permissions":["project:manage"]}' || true
   )"
   if [[ "${patch_grant_code}" != "204" ]]; then
     err "failed to grant member permission (HTTP ${patch_grant_code})"
@@ -241,7 +241,7 @@ main() {
       -X POST "${perm_templates_url}" \
       -H "Authorization: Bearer ${member_token}" \
       -H "Content-Type: application/json" \
-      --data "{\"name\":\"${smoke_name}\",\"permissions\":[\"project:settings:manage\"]}" || true
+      --data "{\"name\":\"${smoke_name}\",\"permissions\":[\"project:manage\"]}" || true
   )"
   if [[ "${allowed_code}" != "200" ]]; then
     err "expected 200 after grant, got HTTP ${allowed_code}"

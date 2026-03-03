@@ -198,7 +198,7 @@ describe('buildOrganizationGovernanceRollup', () => {
       const result = buildOrganizationGovernanceRollup({
         workspaces,
         membersByWorkspaceId: {
-          ws_2: [makeMember({ id: 'wm_2', permissions: ['workspace:read', 'project:settings:manage'] })],
+          ws_2: [makeMember({ id: 'wm_2', permissions: ['workspace:read', 'project:manage'] })],
         },
         projectsByWorkspaceId: {
           ws_2: riskyProjects,
@@ -215,7 +215,7 @@ describe('buildOrganizationGovernanceRollup', () => {
       const result = buildOrganizationGovernanceRollup({
         workspaces,
         membersByWorkspaceId: {
-          ws_medium: [makeMember({ id: 'wm_medium', permissions: ['workspace:read', 'project:settings:manage'] })],
+          ws_medium: [makeMember({ id: 'wm_medium', permissions: ['workspace:read', 'project:manage'] })],
         },
         projectsByWorkspaceId: {
           ws_medium: [makeProject({ workspace_id: 'ws_medium', visibility: 'public' })],
@@ -338,7 +338,7 @@ describe('buildOrganizationGovernanceRollup', () => {
       const result = buildOrganizationGovernanceRollup({
         workspaces,
         membersByWorkspaceId: {
-          ws_warning: [makeMember({ id: 'wm_2', permissions: ['workspace:read', 'project:settings:manage'] })],
+          ws_warning: [makeMember({ id: 'wm_2', permissions: ['workspace:read', 'project:manage'] })],
         },
         projectsByWorkspaceId: {
           ws_warning: [makeProject({ workspace_id: 'ws_warning', visibility: 'public' })],

@@ -20,7 +20,7 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
   const PAGE_SIZE = 20;
   const t = useTranslations('members');
   const context = useMembersContext();
-  const canReadMembers = useHasPermission('project:settings:manage');
+  const canReadMembers = useHasPermission('project:manage');
   const canManageMembers = useCanManageMemberGovernance();
   const searchParams = useSearchParams();
   const [search, setSearch] = React.useState('');
@@ -48,15 +48,15 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
   const getAccessProfile = React.useCallback((member: { permissions?: string[] }) => {
     const permissions = new Set(member.permissions ?? []);
     const hasGovernanceManage =
-      permissions.has('project:settings:manage') ||
-      permissions.has('project:settings:manage') ||
-      permissions.has('project:settings:manage') ||
-      permissions.has('project:settings:manage');
+      permissions.has('project:manage') ||
+      permissions.has('project:manage') ||
+      permissions.has('project:manage') ||
+      permissions.has('project:manage');
     if (hasGovernanceManage) return 'governance';
 
     const hasResourceManage =
-      permissions.has('project:settings:manage') ||
-      permissions.has('project:endpoint:manage') ||
+      permissions.has('project:manage') ||
+      permissions.has('project:manage') ||
       permissions.has('project:agent:manage');
     if (hasResourceManage) return 'resource_manage';
 

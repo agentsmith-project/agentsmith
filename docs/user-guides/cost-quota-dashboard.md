@@ -152,8 +152,8 @@ The dashboard integrates with the Alert Center for proactive monitoring:
 Required permissions to access dashboard features:
 
 - **View Dashboard**: `project:endpoint:use`
-- **Export Data**: `project:settings:manage`
-- **Manage Alerts**: `project:settings:manage`
+- **Export Data**: `project:manage`
+- **Manage Alerts**: `project:manage`
 
 ## Related Features
 

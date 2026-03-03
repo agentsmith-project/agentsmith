@@ -15,10 +15,10 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Source of truth: `src/lib/constants/permissions.ts`.
 - Project-level permissions in MVP are intentionally reduced to five:
   - `project:endpoint:use`
-  - `project:endpoint:manage`
-  - `project:agent:use`
+  - `project:manage`
   - `project:agent:manage`
-  - `project:settings:manage`
+  - `project:agent:manage`
+  - `project:manage`
 
 3. `Frontend gate`
 - Uses permission points to drive UX states (show/hide/disable/error state).

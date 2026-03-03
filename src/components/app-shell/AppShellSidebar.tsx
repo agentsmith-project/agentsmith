@@ -44,8 +44,8 @@ type ProjectMenuItem = {
   // Use '__multi__' for items that require multiple permission checks (handled in filter logic)
   permission:
     | 'project:endpoint:use'
-    | 'project:agent:use'
-    | 'project:settings:manage'
+    | 'project:agent:manage'
+    | 'project:manage'
     | '__multi__';
   section: ProjectMenuSection;
 };
@@ -58,15 +58,15 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:endpoint:use', section: 'use' },
   { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:endpoint:use', section: 'use' },
   // Develop section
-  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use', section: 'develop' },
+  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:manage', section: 'develop' },
   // Govern section
   { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use', section: 'govern' },
-  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:settings:manage', section: 'govern' },
-  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:settings:manage', section: 'govern' },
-  { icon: Users, labelKey: 'members', href: 'members', permission: 'project:settings:manage', section: 'govern' },
+  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:manage', section: 'govern' },
+  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:manage', section: 'govern' },
+  { icon: Users, labelKey: 'members', href: 'members', permission: 'project:manage', section: 'govern' },
   { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:endpoint:use', section: 'govern' },
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:endpoint:use', section: 'govern' },
-  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage', section: 'govern' },
+  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:manage', section: 'govern' },
   // Operate section
   // Runtime Console is accessible for users with endpoint use or settings manage.
   { icon: Monitor, labelKey: 'runtime_console', href: 'runtime-console', permission: '__multi__', section: 'operate' },
@@ -102,10 +102,10 @@ export function AppShellSidebar({
   const canViewAlerts = useHasPermission('project:endpoint:use');
   const canReadAudit = useHasPermission('project:endpoint:use');
   const canReadUsage = useHasPermission('project:endpoint:use');
-  const canReadAgents = useHasPermission('project:agent:use');
-  const canManageCredentials = useHasPermission('project:settings:manage');
-  const canViewMembers = useHasPermission('project:settings:manage');
-  const canManageSettings = useHasPermission('project:settings:manage');
+  const canReadAgents = useHasPermission('project:agent:manage');
+  const canManageCredentials = useHasPermission('project:manage');
+  const canViewMembers = useHasPermission('project:manage');
+  const canManageSettings = useHasPermission('project:manage');
   const canManageResourcePolicy = useCanManageResourcePolicy();
 
   const workspaceId = params?.workspace as string | undefined;
@@ -127,8 +127,8 @@ export function AppShellSidebar({
             || canReadUsage
           );
         }
-        if (item.permission === 'project:agent:use') return canReadAgents;
-        if (item.permission === 'project:settings:manage') {
+        if (item.permission === 'project:agent:manage') return canReadAgents;
+        if (item.permission === 'project:manage') {
           return canManageResourcePolicy || canManageCredentials || canViewMembers || canManageSettings;
         }
         if (item.permission === '__multi__') {

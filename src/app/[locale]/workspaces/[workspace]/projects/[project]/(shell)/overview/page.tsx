@@ -378,7 +378,7 @@ export default function OverviewPage() {
       label: tNav('agents'),
       href: '/agents',
       description: t('actions.agents'),
-      requiresPermission: 'project:agent:use',
+      requiresPermission: 'project:agent:manage',
     },
     {
       icon: Server,

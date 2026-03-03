@@ -130,6 +130,7 @@ export interface Agent {
   /** Maintainer (admin) */
   admin_id?: string;
   admin_name?: string;
+  visibility?: 'private' | 'public';
   /** Expected interaction: chat, notebook, or both */
   interaction_mode?: AgentInteractionMode;
   capabilities?: {

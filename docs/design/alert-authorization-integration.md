@@ -14,7 +14,7 @@ Following the Epic A permission pattern, alert management requires these permiss
 // Add to src/lib/constants/permissions.ts
 ALERT: [
   'project:endpoint:use',        // View alert center and notifications
-  'project:settings:manage',     // Create/edit/delete alert rules
+  'project:manage',     // Create/edit/delete alert rules
   'project:endpoint:use',     // Receive alert notifications
 ] as const,
 ```
@@ -63,7 +63,7 @@ export function AlertCenterPage({ workspaceId, projectId }: AlertCenterPageProps
 
 ```typescript
 export function AlertRulesList({ rules, onEdit, onDelete, onToggle }: AlertRulesListProps) {
-  const canManage = useHasPermission('project:settings:manage');
+  const canManage = useHasPermission('project:manage');
 
   return (
     <div>
@@ -85,7 +85,7 @@ export function AlertRulesList({ rules, onEdit, onDelete, onToggle }: AlertRules
 
 ```typescript
 export function AlertRuleFormDialog({ rule, onSave, onCancel }: Props) {
-  const canManage = useHasPermission('project:settings:manage');
+  const canManage = useHasPermission('project:manage');
 
   // Redirect or disable if no permission
   if (!canManage) {
@@ -146,7 +146,7 @@ const alertAuditEvents = [
 - [ ] Add alert to `HIGH_RISK_PERMISSIONS` if applicable
 - [ ] Update permission templates with alert permissions
 - [ ] Implement `useHasPermission('project:endpoint:use')` in AlertCenterPage
-- [ ] Implement `useHasPermission('project:settings:manage')` in rule management
+- [ ] Implement `useHasPermission('project:manage')` in rule management
 - [ ] Add alert resource type to policy system
 - [ ] Create audit events for alert operations
 - [ ] Add tests for authorization behavior

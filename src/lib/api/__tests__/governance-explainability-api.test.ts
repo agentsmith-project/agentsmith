@@ -82,7 +82,7 @@ describe('GovernanceExplainabilityAPI', () => {
         joined_at: '2026-03-01T00:00:00.000Z',
       })
       .mockResolvedValueOnce({
-        platform_permissions: ['project:endpoint:use', 'project:endpoint:manage'],
+        platform_permissions: ['project:endpoint:use', 'project:manage'],
       })
       .mockResolvedValueOnce({
         overrides: { daily_tokens: 5000 },
@@ -95,7 +95,7 @@ describe('GovernanceExplainabilityAPI', () => {
     expect(mock.get).toHaveBeenNthCalledWith(2, '/workspaces/ws_1/projects/proj_1/members/user_1/permissions');
     expect(mock.get).toHaveBeenNthCalledWith(3, '/workspaces/ws_1/projects/proj_1/members/user_1/quota-overrides');
     expect(snapshot.membership_status).toBe('suspended');
-    expect(snapshot.effective_permissions).toEqual(['project:endpoint:use', 'project:endpoint:manage']);
+    expect(snapshot.effective_permissions).toEqual(['project:endpoint:use', 'project:manage']);
     expect(snapshot.quota_overrides).toEqual({ daily_tokens: 5000 });
   });
 
@@ -126,10 +126,10 @@ describe('GovernanceExplainabilityAPI', () => {
       {
         error_code: 'FORBIDDEN',
         message: 'forbidden',
-        missing_permissions: ['project:settings:manage'],
+        missing_permissions: ['project:manage'],
         authz_decision: {
           membership_status: 'suspended',
-          decisions: [{ permission: 'project:settings:manage', granted: false, reason: 'membership_suspended', source: 'permission', membership_status: 'suspended' }],
+          decisions: [{ permission: 'project:manage', granted: false, reason: 'membership_suspended', source: 'permission', membership_status: 'suspended' }],
         },
       },
     );

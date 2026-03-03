@@ -28,7 +28,7 @@ export default function RuntimeConsoleRoute({ params }: RuntimeConsoleRouteProps
   // Check permissions - users need at least one of these to access the console
   const canViewUsage = useHasPermission('project:endpoint:use');
   const canViewAlerts = useHasPermission('project:endpoint:use');
-  const canManageSettings = useHasPermission('project:settings:manage');
+  const canManageSettings = useHasPermission('project:manage');
   const canAccessConsole = canViewUsage || canViewAlerts || canManageSettings;
 
   useEffect(() => {

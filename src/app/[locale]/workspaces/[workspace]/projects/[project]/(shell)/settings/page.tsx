@@ -58,8 +58,8 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const tErrors = useTranslations('errors');
   const { handleError } = useApiError();
   const queryClient = useQueryClient();
-  const canReadSettings = useHasPermission('project:settings:manage');
-  const canManageSettings = useHasPermission('project:settings:manage');
+  const canReadSettings = useHasPermission('project:manage');
+  const canManageSettings = useHasPermission('project:manage');
   const canDeleteProject = canManageSettings;
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);

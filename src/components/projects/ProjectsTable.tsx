@@ -137,7 +137,7 @@ export function ProjectsTable({
         header: '',
         cell: ({ row }) => {
           const canDeleteProject = canDeleteProjectByWorkspacePermission;
-          const canManageSettings = hasProjectPermission(row.original, 'project:settings:manage');
+          const canManageSettings = hasProjectPermission(row.original, 'project:manage');
           return (
             <div className="flex items-center gap-1">
               <Button

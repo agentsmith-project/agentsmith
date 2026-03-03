@@ -25,6 +25,7 @@ export interface CreateAgentRequest {
     max_file_count?: number;
     max_total_bytes?: number;
   };
+  visibility?: 'private' | 'public';
 }
 
 export interface UpdateAgentRequest {
@@ -48,6 +49,7 @@ export interface UpdateAgentRequest {
     max_file_count?: number;
     max_total_bytes?: number;
   };
+  visibility?: 'private' | 'public';
 }
 
 export class AgentAPI {

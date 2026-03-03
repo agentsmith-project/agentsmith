@@ -1,22 +1,20 @@
 /**
  * Simplified MVP Permission Model
  *
- * Project-level permissions are intentionally reduced to:
+ * Project-level permissions:
  * - project:endpoint:use
- * - project:endpoint:manage
- * - project:agent:use
  * - project:agent:manage
- * - project:settings:manage
+ * - project:agent:public
+ * - project:manage
  */
 
 export const PLATFORM_PERMISSIONS = {
   WORKSPACE: ['workspace:read', 'workspace:project:create'] as const,
   PROJECT: [
     'project:endpoint:use',
-    'project:endpoint:manage',
-    'project:agent:use',
     'project:agent:manage',
-    'project:settings:manage',
+    'project:agent:public',
+    'project:manage',
   ] as const,
 } as const;
 
@@ -28,11 +26,10 @@ export const ALL_PLATFORM_PERMISSIONS = [
 export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'workspace:read': 'View workspace info',
   'workspace:project:create': 'Create projects in workspace',
-  'project:endpoint:use': 'Use product capabilities through endpoints',
-  'project:endpoint:manage': 'Manage endpoints and endpoint-level runtime controls',
-  'project:agent:use': 'Use agent capabilities',
-  'project:agent:manage': 'Manage agents and agent runtime controls',
-  'project:settings:manage': 'Manage project settings and governance configuration',
+  'project:endpoint:use': 'Use project endpoints',
+  'project:agent:manage': 'Create and manage own agents, and use visible agents',
+  'project:agent:public': 'Publish or unpublish agents for project-wide visibility',
+  'project:manage': 'Manage all project resources and governance settings',
 };
 
 export const PLATFORM_PERMISSIONS_GROUPED = [
@@ -51,13 +48,8 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
 export const GROUP_TEMPLATES = {
   owner: [...PLATFORM_PERMISSIONS.PROJECT],
   admin: [...PLATFORM_PERMISSIONS.PROJECT],
-  developer: [
-    'project:endpoint:use',
-    'project:endpoint:manage',
-    'project:agent:use',
-    'project:agent:manage',
-  ],
-  user: ['project:endpoint:use', 'project:agent:use'],
+  developer: ['project:endpoint:use', 'project:agent:manage'],
+  user: ['project:endpoint:use', 'project:agent:manage'],
 } as const;
 
 export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
@@ -68,9 +60,8 @@ export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
 } as const;
 
 export const HIGH_RISK_PERMISSIONS = [
-  'project:endpoint:manage',
-  'project:agent:manage',
-  'project:settings:manage',
+  'project:agent:public',
+  'project:manage',
 ] as const;
 
 export type PlatformPermission = (typeof ALL_PLATFORM_PERMISSIONS)[number];

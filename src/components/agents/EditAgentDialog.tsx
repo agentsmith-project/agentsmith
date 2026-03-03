@@ -26,6 +26,7 @@ export interface EditAgentDialogProps {
   workspaceId: string;
   projectId: string;
   agent: Agent | null;
+  canSetVisibility?: boolean;
   onSuccess?: () => void;
 }
 
@@ -35,6 +36,7 @@ export function EditAgentDialog({
   workspaceId,
   projectId,
   agent,
+  canSetVisibility = false,
   onSuccess,
 }: EditAgentDialogProps) {
   const t = useTranslations('agents');
@@ -50,6 +52,7 @@ export function EditAgentDialog({
   const [externalMaxFileCount, setExternalMaxFileCount] = React.useState('');
   const [externalMaxTotalBytes, setExternalMaxTotalBytes] = React.useState('');
   const [notebookEndpointId, setNotebookEndpointId] = React.useState('');
+  const [visibility, setVisibility] = React.useState<'private' | 'public'>('private');
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
 
@@ -89,6 +92,7 @@ export function EditAgentDialog({
           ? String(agent.capabilities.max_total_bytes)
           : '',
       );
+      setVisibility(agent.visibility === 'public' ? 'public' : 'private');
     }
   }, [open, agent]);
 
@@ -136,6 +140,7 @@ export function EditAgentDialog({
             : undefined,
         }
         : undefined,
+      visibility: canSetVisibility ? visibility : undefined,
     };
 
     if (agent.mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both') && !notebookEndpointId.trim()) {
@@ -199,6 +204,19 @@ export function EditAgentDialog({
             <div className="px-3 py-2 rounded-sm border border-subtle bg-surface-low text-primary text-sm capitalize">
               {agent.mode}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">{commonT('visibility')}</label>
+            <select
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as 'private' | 'public')}
+              disabled={updateMutation.isPending || !canSetVisibility}
+              className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-70"
+            >
+              <option value="private">{commonT('private')}</option>
+              <option value="public">{commonT('public')}</option>
+            </select>
           </div>
 
           <div className="space-y-2">

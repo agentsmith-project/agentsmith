@@ -167,6 +167,7 @@ export interface AgentRecord {
   interaction_mode?: 'chat' | 'notebook' | 'both';
   owner_id?: string;
   admin_id?: string;
+  visibility?: 'private' | 'public';
   capabilities?: {
     streaming_completion?: boolean;
     multimodal_completion?: boolean;

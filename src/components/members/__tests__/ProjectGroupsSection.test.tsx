@@ -41,7 +41,7 @@ vi.mock('@/lib/hooks/use-members', () => ({
         id: 'm_2',
         name: 'Bob',
         email: 'bob@example.com',
-        permissions: ['project:settings:manage'],
+        permissions: ['project:manage'],
       },
     ],
     refetch: mockRefetchMembers,

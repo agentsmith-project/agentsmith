@@ -76,7 +76,7 @@ describe('M3 Integration: SSE Ticket + Audit Trail', () => {
 
     const result = await checkPermission({
       member_id: 'user-1',
-      permission: 'project:settings:manage',
+      permission: 'project:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',

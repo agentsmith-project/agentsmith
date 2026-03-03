@@ -9,7 +9,7 @@
  * - Overview: project:endpoint:use
  * - Monitoring: project:endpoint:use
  * - Alerts: project:endpoint:use
- * - Control: project:settings:manage
+ * - Control: project:manage
  * - Reports: project:endpoint:use
  */
 
@@ -42,7 +42,7 @@ const TAB_CONFIGS: readonly TabConfig[] = [
   { value: 'overview', labelKey: 'tabs.overview', permission: 'project:endpoint:use', testId: 'tabs-trigger-overview' },
   { value: 'monitoring', labelKey: 'tabs.monitoring', permission: 'project:endpoint:use', testId: 'tabs-trigger-monitoring' },
   { value: 'alerts', labelKey: 'tabs.alerts', permission: 'project:endpoint:use', testId: 'tabs-trigger-alerts' },
-  { value: 'control', labelKey: 'tabs.control', permission: 'project:settings:manage', testId: 'tabs-trigger-control' },
+  { value: 'control', labelKey: 'tabs.control', permission: 'project:manage', testId: 'tabs-trigger-control' },
   { value: 'reports', labelKey: 'tabs.reports', permission: 'project:endpoint:use', testId: 'tabs-trigger-reports' },
 ] as const;
 
@@ -65,7 +65,7 @@ export function RuntimeConsolePage({
   const canViewOverview = useHasPermission('project:endpoint:use');
   const canViewMonitoring = useHasPermission('project:endpoint:use');
   const canViewAlerts = useHasPermission('project:endpoint:use');
-  const canViewControl = useHasPermission('project:settings:manage');
+  const canViewControl = useHasPermission('project:manage');
   const canViewReports = useHasPermission('project:endpoint:use');
 
   // Map of tab permissions
@@ -235,7 +235,7 @@ export function RuntimeConsolePage({
           </TabsContent>
         )}
 
-        {/* Control Tab - requires project:settings:manage */}
+        {/* Control Tab - requires project:manage */}
         {canViewControl && (
           <TabsContent value="control" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
             <RuntimeControlPlanePanel

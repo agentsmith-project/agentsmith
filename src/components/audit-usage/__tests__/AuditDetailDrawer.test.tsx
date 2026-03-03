@@ -80,7 +80,7 @@ describe('AuditDetailDrawer', () => {
           error_message: 'forbidden',
           request_id: 'req_2',
           metadata_json: {
-            missing_permissions: ['project:settings:manage'],
+            missing_permissions: ['project:manage'],
             authz_decision: {
               membership_status: 'suspended',
             },
@@ -90,7 +90,7 @@ describe('AuditDetailDrawer', () => {
     );
 
     const governance = screen.getByTestId('audit__detail-governance');
-    expect(governance).toHaveTextContent('project:settings:manage');
+    expect(governance).toHaveTextContent('project:manage');
     expect(governance).toHaveTextContent('suspended');
     expect(screen.queryByTestId('audit__detail-open-resource-policy')).not.toBeInTheDocument();
   });

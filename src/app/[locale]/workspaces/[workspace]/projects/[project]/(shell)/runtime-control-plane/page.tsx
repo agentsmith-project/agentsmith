@@ -22,7 +22,7 @@ export default function RuntimeControlPlanePage({ params }: RuntimeControlPlaneP
   const tErrors = useTranslations('errors');
   const settingsT = useTranslations('settings');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
-  const canManage = useHasPermission('project:settings:manage');
+  const canManage = useHasPermission('project:manage');
 
   useEffect(() => {
     params.then((p) => setResolvedParams({

@@ -574,9 +574,7 @@ describe('api-entry-node projects routes', () => {
     const got = (await getRes.json()) as { owner_id: string; permissions: string[] };
     expect(got.owner_id).toBe('user_external');
     expect(got.permissions).toContain('project:endpoint:use');
-    expect(got.permissions).toContain('project:manage');
-    expect(got.permissions).toContain('project:manage');
-    expect(got.permissions).toContain('project:manage');
+    expect(got.permissions).toContain('project:agent:manage');
     expect(got.permissions).not.toContain('project:manage');
   });
 
@@ -611,6 +609,12 @@ describe('api-entry-node projects routes', () => {
 
   it('supports create and list sources flow', async () => {
     const { baseUrl } = startServer();
+    const defaultLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
+    );
+    expect(defaultLibraryRes.status).toBe(200);
+    const defaultLibrary = (await defaultLibraryRes.json()) as { id: string };
 
     const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources');
     expect(listBefore.status).toBe(200);
@@ -626,7 +630,7 @@ describe('api-entry-node projects routes', () => {
         },
         body: JSON.stringify({
           name: 'hello.txt',
-          library_id: 'lib_a',
+          library_id: defaultLibrary.id,
           content_type: 'text/plain',
           content_base64: Buffer.from('hello', 'utf-8').toString('base64'),
         }),
@@ -648,7 +652,7 @@ describe('api-entry-node projects routes', () => {
         },
         body: JSON.stringify({
           name: 'readme.txt',
-          library_id: 'lib_b',
+          library_id: defaultLibrary.id,
           content_type: 'text/plain',
           content_base64: Buffer.from('abc', 'utf-8').toString('base64'),
         }),
@@ -664,12 +668,12 @@ describe('api-entry-node projects routes', () => {
 
     const listLibA = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources?library_id=lib_a',
+      `/api/v1/workspaces/ws_default/projects/proj_1/sources?library_id=${defaultLibrary.id}`,
     );
     expect(listLibA.status).toBe(200);
     const listedLibA = (await listLibA.json()) as { items: Array<{ id: string; library_id?: string }> };
-    expect(listedLibA.items).toHaveLength(1);
-    expect(listedLibA.items[0].library_id).toBe('lib_a');
+    expect(listedLibA.items).toHaveLength(2);
+    expect(listedLibA.items.every((item) => item.library_id === defaultLibrary.id)).toBe(true);
 
     const detail = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}`);
     expect(detail.status).toBe(200);
@@ -681,11 +685,11 @@ describe('api-entry-node projects routes', () => {
 
     const quotaLibA = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources/quota?library_id=lib_a',
+      `/api/v1/workspaces/ws_default/projects/proj_1/sources/quota?library_id=${defaultLibrary.id}`,
     );
     expect(quotaLibA.status).toBe(200);
     const quotaLibAJson = (await quotaLibA.json()) as { storage: { used: number } };
-    expect(quotaLibAJson.storage.used).toBe(5);
+    expect(quotaLibAJson.storage.used).toBe(8);
 
     const aiReadyStart = await apiFetch(
       baseUrl,
@@ -834,6 +838,12 @@ describe('api-entry-node projects routes', () => {
 
   it('lists attached source details for a notebook task', async () => {
     const { baseUrl } = startServer();
+    const defaultLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
+    );
+    expect(defaultLibraryRes.status).toBe(200);
+    const defaultLibrary = (await defaultLibraryRes.json()) as { id: string };
 
     const createSourceRes = await apiFetch(
       baseUrl,
@@ -843,7 +853,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'notebook-input.txt',
-          library_id: 'lib_a',
+          library_id: defaultLibrary.id,
           content_type: 'text/plain',
           content_base64: Buffer.from('hello', 'utf-8').toString('base64'),
         }),
@@ -942,7 +952,10 @@ describe('api-entry-node projects routes', () => {
 
     const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
     expect(listBefore.status).toBe(200);
-    expect(await listBefore.json()).toEqual({ items: [] });
+    const listBeforeBody = (await listBefore.json()) as { items: Array<{ name: string; system_managed_kind?: string }> };
+    expect(listBeforeBody.items).toHaveLength(1);
+    expect(listBeforeBody.items[0]?.name).toBe('My Uploads');
+    expect(listBeforeBody.items[0]?.system_managed_kind).toBe('default_personal_uploads');
 
     const createRes = await apiFetch(
       baseUrl,
@@ -983,8 +996,8 @@ describe('api-entry-node projects routes', () => {
     const listAfter = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
     const listed = (await listAfter.json()) as { items: Array<{ id: string }> };
     expect(listAfter.status).toBe(200);
-    expect(listed.items).toHaveLength(1);
-    expect(listed.items[0].id).toBe(created.id);
+    expect(listed.items).toHaveLength(2);
+    expect(listed.items.some((item) => item.id === created.id)).toBe(true);
 
     const deleteRes = await apiFetch(
       baseUrl,

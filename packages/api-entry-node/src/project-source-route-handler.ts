@@ -121,8 +121,8 @@ const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Arr
   };
 }>>>();
 
-function isManagedPolicyResourceType(resourceType: string): resourceType is 'endpoint' {
-  return resourceType === 'endpoint';
+function isManagedPolicyResourceType(resourceType: string): resourceType is 'endpoint' | 'source_library' | 'agent' {
+  return resourceType === 'endpoint' || resourceType === 'source_library' || resourceType === 'agent';
 }
 
 function projectScopedKey(workspaceId: string, projectId: string) {
@@ -224,7 +224,7 @@ async function ensureDefaultPersonalLibraryForUser(args: {
     actorId: args.userId,
     input: {
       name: DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
-      visibility: 'private',
+      visibility: 'shared',
       system_managed_kind: 'default_personal_uploads',
     },
   });
@@ -1693,27 +1693,28 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       userId: user.id,
       deps,
     });
-    const libraryId = requestUrl.searchParams.get('library_id') ?? undefined;
-    if (libraryId) {
-      const libraries = await deps.listSourceLibrariesUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-      });
-      const matched = libraries.items.find((item) => item.id === libraryId);
-      if (!matched || matched.created_by_user_id !== user.id) {
-        json(res, 403, { error_code: 'FORBIDDEN', message: 'source_library_not_visible' });
-        return true;
-      }
+    const requestedLibraryId = requestUrl.searchParams.get('library_id') ?? undefined;
+    const libraries = await deps.listSourceLibrariesUseCase.execute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    const ownedLibraries = libraries.items.filter((item) => item.created_by_user_id === user.id);
+    const libraryId = requestedLibraryId ?? ownedLibraries[0]?.id;
+    if (!libraryId) {
+      json(res, 200, { items: [] });
+      return true;
+    }
+    const matched = ownedLibraries.find((item) => item.id === libraryId);
+    if (!matched) {
+      json(res, 403, { error_code: 'FORBIDDEN', message: 'source_library_not_visible' });
+      return true;
     }
     const listed = await deps.listSourcesUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId,
     });
-    json(res, 200, {
-      ...listed,
-      items: listed.items.filter((item) => item.created_by_user_id === user.id),
-    });
+    json(res, 200, listed);
     return true;
   }
 
@@ -1789,7 +1790,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       actorId: user.id,
       input: {
         name: DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
-        visibility: 'private',
+        visibility: 'shared',
         system_managed_kind: 'default_personal_uploads',
       },
     });
@@ -1812,13 +1813,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       return true;
     }
     const input = CreateSourceLibraryRequestSchema.parse(raw);
-    if (input.visibility !== 'private') {
-      json(res, 422, {
-        error_code: 'VALIDATION_ERROR',
-        message: 'source_library_visibility_must_be_private',
-      });
-      return true;
-    }
     if (input.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME) {
       const listed = await deps.listSourceLibrariesUseCase.execute({
         workspaceId: route.workspaceId,
@@ -1838,7 +1832,10 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       actorId: user.id,
-      input,
+      input: {
+        ...input,
+        visibility: input.visibility ?? 'shared',
+      },
     });
     json(res, 201, created);
     return true;
@@ -2177,18 +2174,14 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     }
     const raw = await readBody(req);
     const input = UpdateSourceLibraryRequestSchema.parse(raw);
-    if (input.visibility !== undefined && input.visibility !== 'private') {
-      json(res, 422, {
-        error_code: 'VALIDATION_ERROR',
-        message: 'source_library_visibility_must_be_private',
-      });
-      return true;
-    }
     const updated = await deps.updateSourceLibraryUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
-      input,
+      input: {
+        ...input,
+        visibility: input.visibility ?? target.visibility,
+      },
     });
     json(res, 200, updated);
     return true;

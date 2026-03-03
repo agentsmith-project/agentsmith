@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -8,6 +8,7 @@ import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
 import { createUsageReportSchedule, recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
 import type { ReleaseGateRunnerController } from './release-gate-runner.js';
+import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 
 const servers: Server[] = [];
 const originalKeycloakIssuer = process.env.KEYCLOAK_ISSUER_URL;
@@ -3901,6 +3902,129 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(patchInvalidRes.status).toBe(422);
+  });
+
+  it('fails fast when creating internal agent without sandbox manager configured', async () => {
+    const { baseUrl } = startServer();
+
+    const createInternalRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'internal-no-sandbox',
+          mode: 'internal',
+          interaction_mode: 'chat',
+          config: {
+            image: 'runner:v1',
+          },
+        }),
+      },
+    );
+    expect(createInternalRes.status).toBe(422);
+    const body = (await createInternalRes.json()) as { error_code?: string };
+    expect(body.error_code).toBe('AGENT_SANDBOX_NOT_CONFIGURED');
+  });
+
+  it('returns AGENT_SANDBOX_NOT_CONFIGURED for internal agent chat stream without pod manager', async () => {
+    const { baseUrl, deps } = startServer();
+    const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-chat',
+      mode: 'internal',
+      interaction_mode: 'chat',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+    });
+
+    const createSessionRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ external_agent_id: internalAgent.id, model: 'gpt-5-codex' }),
+      },
+    );
+    expect(createSessionRes.status).toBe(201);
+    const session = (await createSessionRes.json()) as { id: string };
+
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: { role: 'user', content: 'hello internal' },
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(422);
+    const body = (await streamRes.json()) as { error_code?: string };
+    expect(body.error_code).toBe('AGENT_SANDBOX_NOT_CONFIGURED');
+  });
+
+  it('releases internal workload pod when notebook task is closed', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const releasePod = vi.fn(async () => undefined);
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    };
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-notebook',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      runtime_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const taskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Internal Task',
+          agent_id: internalAgent.id,
+          initial_inputs: [],
+        }),
+      },
+    );
+    expect(taskRes.status).toBe(201);
+    const task = (await taskRes.json()) as { id: string };
+
+    const closeRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'closed' }),
+      },
+    );
+    expect(closeRes.status).toBe(200);
+    expect(releasePod).toHaveBeenCalledWith('ws_default', 'proj_1', sanitizeWorkloadId(task.id));
   });
 
   it('runs notebook task message through external runtime and enforces single active run per task', async () => {

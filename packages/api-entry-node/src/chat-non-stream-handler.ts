@@ -168,7 +168,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     const externalAgentId = typeof raw.external_agent_id === 'string' ? raw.external_agent_id : undefined;
     if (externalAgentId) {
       const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
-      if (!agent || agent.mode !== 'external' || agent.status !== 'enabled') {
+      if (!agent || agent.status !== 'enabled') {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'external_agent_unavailable' });
         return true;
       }
@@ -231,7 +231,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     const patch = { ...raw };
     if (typeof raw.external_agent_id === 'string' && raw.external_agent_id.length > 0) {
       const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, raw.external_agent_id);
-      if (!agent || agent.mode !== 'external' || agent.status !== 'enabled') {
+      if (!agent || agent.status !== 'enabled') {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'external_agent_unavailable' });
         return true;
       }

@@ -55,7 +55,8 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
 3. Backend creates assistant placeholder, marks task run active.
 4. Backend dispatches `server.request.start` to external runtime with:
    - normal chat payload (`messages`, `model`, etc.)
-   - `runtime_context` (`workspace_id/project_id/task_id/run_id/username/endpoint_proxy_base/user_bearer_token/wire_api/model`)
+   - `runtime_context` (`workspace_id/project_id/task_id/run_id/username/user_bearer_token/wire_api/model`)
+   - static proxy config comes from `server.hello.resource_proxy.base_url`
 5. `agent-codex-runner`:
    - creates `/tmp/<username>/<task_id>`;
    - generates task-scoped `.codex/config.toml`;

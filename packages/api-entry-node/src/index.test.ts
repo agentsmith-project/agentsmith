@@ -4007,7 +4007,6 @@ describe('api-entry-node projects routes', () => {
               base_url?: string;
             };
             runtime_context?: {
-              endpoint_proxy_base?: string;
               api_base?: string;
               user_bearer_token?: string;
               notebook_mode?: boolean;
@@ -4023,9 +4022,7 @@ describe('api-entry-node projects routes', () => {
         resolve({
           requestId: msg.request_id,
           helloProxyBase,
-          endpointProxyBase: typeof msg.payload?.runtime_context?.endpoint_proxy_base === 'string'
-            ? msg.payload.runtime_context.endpoint_proxy_base
-            : null,
+          endpointProxyBase: null,
           apiBase: msg.payload?.runtime_context?.api_base ?? '',
           userToken: msg.payload?.runtime_context?.user_bearer_token ?? '',
           notebookMode: typeof msg.payload?.runtime_context?.notebook_mode === 'boolean'

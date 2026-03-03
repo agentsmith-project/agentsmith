@@ -471,7 +471,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     codex_config: join(codexConfigDir, 'config.toml'),
     model,
     wire_api: wireApi,
-    endpoint_proxy_base: endpointProxyBase,
+    resource_proxy_base: endpointProxyBase,
     proxy_source: 'server_hello',
     has_user_bearer_token: Boolean(runtimeContext.user_bearer_token && runtimeContext.user_bearer_token.trim()),
     notebook_mode: isNotebookMode,

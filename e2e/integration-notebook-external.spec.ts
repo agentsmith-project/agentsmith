@@ -127,12 +127,14 @@ function startMockOpenAIUpstream(): {
   };
 }
 
-type StartMessage = {
+type RuntimeWsMessage = {
   type?: string;
   request_id?: string;
   payload?: {
+    resource_proxy?: {
+      base_url?: string;
+    };
     runtime_context?: {
-      endpoint_proxy_base?: string;
       user_bearer_token?: string;
       task_id?: string;
       run_id?: string;
@@ -230,13 +232,18 @@ test.describe('@lane-real integration notebook external runtime', () => {
         taskId: string;
         runId: string;
       }>((resolve, reject) => {
+        let helloProxyBase = '';
         ws = new WebSocket(wsUrl, { headers: { Authorization: `Bearer ${keyPayload.key}` } });
         ws.once('error', reject);
         ws.on('message', (raw) => {
-          const msg = JSON.parse(raw.toString('utf-8')) as StartMessage;
+          const msg = JSON.parse(raw.toString('utf-8')) as RuntimeWsMessage;
+          if (msg.type === 'server.hello') {
+            helloProxyBase = msg.payload?.resource_proxy?.base_url ?? '';
+            return;
+          }
           if (msg.type !== 'server.request.start' || !msg.request_id) return;
           const runtimeContext = msg.payload?.runtime_context ?? {};
-          const endpointProxyBase = runtimeContext.endpoint_proxy_base ?? '';
+          const endpointProxyBase = helloProxyBase;
           const userToken = runtimeContext.user_bearer_token ?? '';
           const taskId = runtimeContext.task_id ?? '';
           const runId = runtimeContext.run_id ?? '';

@@ -61,7 +61,7 @@
 - Check:
   - `runtime_preferences.notebook.endpoint_id` exists.
   - Endpoint is active and reachable.
-  - `runtime_context.endpoint_proxy_base` matches current API host/port.
+  - `server.hello.resource_proxy.base_url` matches current API host/port.
   - Runner emits valid frame schema (`delta` string, done/error shape).
 - Fix:
   - Reconfigure notebook endpoint binding.

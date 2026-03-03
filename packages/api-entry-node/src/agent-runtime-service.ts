@@ -144,10 +144,24 @@ function firstHeaderValue(input: string | string[] | undefined): string | null {
 function inferRequestOrigin(req: http.IncomingMessage): string | null {
   const host = firstHeaderValue(req.headers['x-forwarded-host'])
     ?? firstHeaderValue(req.headers.host);
-  if (!host) return null;
   const proto = firstHeaderValue(req.headers['x-forwarded-proto'])
     ?? (((req.socket as { encrypted?: boolean }).encrypted ?? false) ? 'https' : 'http');
-  return `${proto}://${host}`;
+  if (host) {
+    return `${proto}://${host}`;
+  }
+  const wsBase = process.env.AGENT_RUNTIME_WS_BASE_URL?.trim();
+  if (wsBase) {
+    try {
+      const parsed = new URL(wsBase.replace(/^wss?:\/\//, (m) => (m === 'wss://' ? 'https://' : 'http://')));
+      return parsed.origin;
+    } catch {
+      // ignore malformed env and keep probing fallback
+    }
+  }
+  if (typeof req.socket.localPort === 'number' && req.socket.localPort > 0) {
+    return `http://localhost:${req.socket.localPort}`;
+  }
+  return null;
 }
 
 function readAgentNotebookEndpointId(agent: { runtime_preferences_json?: unknown }): string | null {

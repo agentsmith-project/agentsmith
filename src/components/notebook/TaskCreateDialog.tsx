@@ -57,6 +57,9 @@ export function TaskCreateDialog({
     ),
     [agentsData?.items],
   );
+  const isAgentSelectable = React.useCallback((agent: { mode: string; presence?: string }) => (
+    agent.mode === 'internal' || agent.presence === 'online' || agent.presence === 'managed'
+  ), []);
 
   // Reset form when dialog opens
   React.useEffect(() => {
@@ -144,13 +147,21 @@ export function TaskCreateDialog({
                   <div className="py-4 text-center text-sm text-tertiary">{commonT('empty')}</div>
                 ) : (
                   agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
+                    <SelectItem
+                      key={agent.id}
+                      value={agent.id}
+                      disabled={!isAgentSelectable(agent)}
+                    >
                       {agent.name}
+                      {!isAgentSelectable(agent) ? ` (${t('agent_option_offline')})` : ''}
                     </SelectItem>
                   ))
                 )}
               </SelectContent>
             </Select>
+            <p className="text-xs text-tertiary">
+              {t('agent_online_only_hint')}
+            </p>
           </div>
 
           <div className="rounded-md bg-surface-high border border-subtle p-3 flex items-start gap-2">

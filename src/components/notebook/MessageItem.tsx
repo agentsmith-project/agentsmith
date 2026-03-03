@@ -200,17 +200,43 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
     return a.at.localeCompare(b.at);
   });
   const stepEvents = sorted.filter((evt) => evt.category !== 'debug' && evt.category !== 'lifecycle');
-  const terminal = [...sorted].reverse().find((evt) => evt.status && evt.status !== 'running');
-  const running = [...sorted].reverse().find((evt) => evt.status === 'running' || evt.phase === 'start');
+  const terminalCandidateByEvent = (evt: TaskTraceEvent): Exclude<TraceSummary['status'], 'running' | 'idle'> | null => {
+    if (evt.status === 'success' || evt.status === 'error' || evt.status === 'cancelled') {
+      return evt.status;
+    }
+    if (evt.phase !== 'end') return null;
+    if (evt.category === 'error') return 'error';
+    return 'success';
+  };
+  const terminalIndex = (() => {
+    for (let i = sorted.length - 1; i >= 0; i -= 1) {
+      if (terminalCandidateByEvent(sorted[i]!) != null) return i;
+    }
+    return -1;
+  })();
+  const runningIndex = (() => {
+    for (let i = sorted.length - 1; i >= 0; i -= 1) {
+      const evt = sorted[i]!;
+      if (evt.status === 'running' || evt.phase === 'start') return i;
+    }
+    return -1;
+  })();
+  const terminalStatus = terminalIndex >= 0 ? terminalCandidateByEvent(sorted[terminalIndex]!) : null;
+  const resolvedStatus = (
+    runningIndex > terminalIndex
+      ? 'running'
+      : terminalStatus ?? (runningIndex >= 0 ? 'running' : 'idle')
+  );
   const startedAt = sorted[0]?.at ? Date.parse(sorted[0].at) : NaN;
-  const endedAtCandidate = terminal?.at ? Date.parse(terminal.at) : (sorted[sorted.length - 1]?.at ? Date.parse(sorted[sorted.length - 1]!.at) : NaN);
+  const endedAtEvent = terminalIndex >= 0 ? sorted[terminalIndex] : sorted[sorted.length - 1];
+  const endedAtCandidate = endedAtEvent?.at ? Date.parse(endedAtEvent.at) : NaN;
   const durationMs = Number.isFinite(startedAt) && Number.isFinite(endedAtCandidate)
     ? Math.max(0, endedAtCandidate - startedAt)
     : undefined;
   return {
-    status: terminal?.status ?? (running ? 'running' : 'idle'),
+    status: resolvedStatus,
     stepCount: Math.max(1, stepEvents.length || sorted.length),
-    currentStep: (running ?? sorted[sorted.length - 1])?.summary,
+    currentStep: sorted[sorted.length - 1]?.summary,
     ...(typeof durationMs === 'number' ? { durationMs } : {}),
   };
 }

@@ -29,12 +29,14 @@ import { TaskAPI, FilesAPI } from '@/lib/api';
 import { getApiClient } from '@/lib/api';
 import type { Artifact, TaskMessage, TaskTraceEvent } from '@/lib/types/task';
 import { useRouter, useParams } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { mapTraceHasMoreByMessageId, pruneTaskTraceMeta, upsertTaskTraceMeta, type TaskTraceMetaByMessageId } from '@/lib/utils/task-trace-meta';
 import { ensureDefaultUploadLibrary } from '@/lib/files/default-library';
 import { classifyNotebookTraceFailure, type NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
 import { buildAgentDiagnosticsLink, buildBuildDiagnosticsOpsQuery } from '@/lib/build-diagnostics-context';
+import { AgentAPI } from '@/lib/api/endpoints/agents';
+import { toast } from '@/components/ui/toast';
 
 export interface TaskPageProps {
   workspaceId: string;
@@ -57,6 +59,7 @@ export function TaskPage({
 }: TaskPageProps) {
   const t = useTranslations('notebook.attached_files.url_dialog');
   const tTask = useTranslations('notebook.task');
+  const tConversation = useTranslations('notebook.conversation');
   const tCommon = useTranslations('common');
   const router = useRouter();
   const params = useParams();
@@ -89,9 +92,17 @@ export function TaskPage({
   const { handleError } = useErrorHandler();
   const filesAPI = React.useMemo(() => new FilesAPI(getApiClient()), []);
   const taskAPI = React.useMemo(() => new TaskAPI(getApiClient()), []);
+  const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
   const localFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const traceBackfillRequestedMessageIdsRef = React.useRef<Set<string>>(new Set());
   const { data: task, isLoading: taskLoading } = useTask(workspaceId, projectId, taskId);
+  const { data: taskAgent } = useQuery({
+    queryKey: ['task-agent', workspaceId, projectId, task?.agent_id],
+    queryFn: () => agentAPI.get(workspaceId, projectId, task?.agent_id ?? ''),
+    enabled: !!task?.agent_id,
+    staleTime: 10_000,
+    retry: false,
+  });
   const { data: messages } = useTaskMessages(workspaceId, projectId, taskId);
   const { data: artifacts } = useTaskArtifacts(workspaceId, projectId, taskId);
   const sendMessage = useSendMessage();
@@ -457,6 +468,12 @@ export function TaskPage({
   }, [appendSseDebugEvent, connectionStatus, handleError, mergeTraceEvents, projectId, taskAPI, taskId, workspaceId]);
 
   const handleSendMessage = async (content: string) => {
+    if (taskAgent?.mode === 'external' && taskAgent.presence !== 'online') {
+      setRealtimeFailureCode('AGENT_OFFLINE');
+      setRealtimeFailureMessage(tConversation('agent_offline'));
+      toast.error(tConversation('agent_offline_send_blocked'));
+      return;
+    }
     try {
       // Clear previous streaming state
       setStreamingMessageId(null);
@@ -730,7 +747,14 @@ export function TaskPage({
   }
 
   const isDisabled = task.status === 'closed' || task.status === 'archived';
-  const isConversationInputDisabled = isDisabled || !canUpdateTask || sendMessage.isPending || isAgentTurnRunning;
+  const isExternalAgentOffline = taskAgent?.mode === 'external' && taskAgent.presence !== 'online';
+  const isConversationInputDisabled = (
+    isDisabled
+    || !canUpdateTask
+    || sendMessage.isPending
+    || isAgentTurnRunning
+    || isExternalAgentOffline
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -738,6 +762,7 @@ export function TaskPage({
         task={task}
         workspaceId={workspaceId}
         projectId={projectId}
+        agentPresence={taskAgent?.presence ?? null}
         canDeleteTask={canDeleteTask}
         onCreateNew={canCreateTask ? handleCreateNew : undefined}
         onEdit={canUpdateTask ? () => setEditDialogOpen(true) : undefined}

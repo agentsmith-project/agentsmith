@@ -29,6 +29,7 @@ export interface TaskHeaderProps {
   task: Task;
   workspaceId: string;
   projectId: string;
+  agentPresence?: 'online' | 'offline' | 'managed' | null;
   canDeleteTask?: boolean;
   onCreateNew?: () => void;
   onEdit?: () => void;
@@ -46,6 +47,7 @@ export function TaskHeader({
   task,
   workspaceId,
   projectId,
+  agentPresence = null,
   canDeleteTask = true,
   onCreateNew,
   onEdit,
@@ -87,6 +89,24 @@ export function TaskHeader({
 
   const statusConfig = getStatusConfig(t);
   const statusInfo = statusConfig[task.status];
+  const agentPresenceLabel = (
+    agentPresence === 'online'
+      ? t('agent_presence_online')
+      : agentPresence === 'managed'
+        ? t('agent_presence_managed')
+        : agentPresence === 'offline'
+          ? t('agent_presence_offline')
+          : t('agent_presence_unknown')
+  );
+  const agentPresenceVariant: 'default' | 'secondary' | 'destructive' | 'outline' = (
+    agentPresence === 'online'
+      ? 'default'
+      : agentPresence === 'managed'
+        ? 'secondary'
+        : agentPresence === 'offline'
+          ? 'destructive'
+          : 'outline'
+  );
 
   return (
     <div
@@ -119,6 +139,9 @@ export function TaskHeader({
           <h1 className="text-base font-semibold text-foreground truncate">{task.title}</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-sm text-tertiary">Agent: {task.agent_name}</span>
+            <Badge variant={agentPresenceVariant} className="text-xs">
+              {agentPresenceLabel}
+            </Badge>
             <Badge variant={statusInfo.variant} className="text-xs">
               {statusInfo.label}
             </Badge>

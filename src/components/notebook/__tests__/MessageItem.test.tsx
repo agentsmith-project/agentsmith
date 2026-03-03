@@ -373,6 +373,58 @@ describe('MessageItem', () => {
       expect(toggle).toHaveTextContent(/3s/);
     });
 
+    it('prefers recovered success when a later end event follows an error', () => {
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+            {
+              id: 'trace_2',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 2,
+              at: '2024-01-01T14:31:02Z',
+              category: 'error',
+              phase: 'end',
+              status: 'error',
+              name: 'codex.exec',
+              summary: 'Upstream timeout',
+            },
+            {
+              id: 'trace_3',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 3,
+              at: '2024-01-01T14:31:04Z',
+              category: 'artifact',
+              phase: 'end',
+              name: 'artifact.discovered',
+              summary: 'Artifact discovered: charts.png',
+            },
+          ]}
+        />
+      );
+
+      const toggle = screen.getByTestId('notebook__message-trace-toggle');
+      expect(toggle).toHaveTextContent(/trace_status_success/);
+      expect(toggle).not.toHaveTextContent(/trace_status_error/);
+    });
+
     it('shows trace panel stats (events/errors/truncated)', async () => {
       const user = userEvent.setup();
       render(

@@ -29,7 +29,8 @@ All frames are JSON objects:
 ## 3. Server -> Agent Events
 
 - `server.hello`
-  - payload: `{ "protocol_version": "1.0", "heartbeat_interval_sec": 15 }`
+  - payload: `{ "protocol_version": "1.0", "heartbeat_interval_sec": 15, "resource_proxy"?: { "base_url": "https://.../endpoints/{endpointId}/proxy" } }`
+  - `resource_proxy.base_url` is static per agent connection and is derived from agent runtime preferences (`runtime_preferences_json.notebook.endpoint_id`).
 - `server.request.start`
   - payload:
     - `model: string`
@@ -42,7 +43,6 @@ All frames are JSON objects:
       - `run_id: string`
       - `username: string`
       - `endpoint_id: string`
-      - `endpoint_proxy_base: string`
       - `api_base?: string` (for notebook helper scripts / file download access)
       - `user_bearer_token: string`
       - `wire_api: \"chat\" | \"responses\"`
@@ -156,8 +156,8 @@ tsx packages/api-entry-node/examples/external-agent-echo.ts
 
 ## 10. Risk Register (Notebook Codex v1)
 
-- `R1` user token forwarding to external runner:
-  - For notebook codex runs, MBOS may forward user bearer token in runtime context for proxy auth/audit.
+- `R1` user token forwarding to runner:
+  - MBOS forwards user bearer token in runtime context for project proxy auth/audit.
   - This token must stay in-memory only and must never be logged/persisted.
   - Follow-up hardening: replace with short-lived ticket exchange.
 

@@ -187,6 +187,12 @@ components:
                 type: string
               heartbeat_interval_sec:
                 type: integer
+              resource_proxy:
+                type: object
+                additionalProperties: false
+                properties:
+                  base_url:
+                    type: string
     serverRequestStart:
       name: server.request.start
       payload:
@@ -235,8 +241,6 @@ components:
                   username:
                     type: string
                   endpoint_id:
-                    type: string
-                  endpoint_proxy_base:
                     type: string
                   api_base:
                     type: string

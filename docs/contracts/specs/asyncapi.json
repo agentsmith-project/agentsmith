@@ -277,6 +277,15 @@
                 },
                 "heartbeat_interval_sec": {
                   "type": "integer"
+                },
+                "resource_proxy": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "base_url": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -345,9 +354,6 @@
                       "type": "string"
                     },
                     "endpoint_id": {
-                      "type": "string"
-                    },
-                    "endpoint_proxy_base": {
                       "type": "string"
                     },
                     "user_bearer_token": {

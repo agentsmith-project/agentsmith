@@ -2,7 +2,7 @@ import type http from 'node:http';
 import { Readable } from 'node:stream';
 import type { ChatRoute } from './chat-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
-import type { AuthenticatedUser } from './auth.js';
+import { extractBearerToken, type AuthenticatedUser } from './auth.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { resolveImageMimeType, toImageDataUrl } from './chat-image-utils.js';
 import {
@@ -82,6 +82,11 @@ function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: str
 
 function toDataUrl(attachment: ChatAttachmentRecord, mimeType: string | null): string | null {
   return toImageDataUrl(attachment.content_base64, mimeType);
+}
+
+function buildProxyUsername(user: AuthenticatedUser): string {
+  const base = (user.email || user.id || 'unknown').toLowerCase();
+  return base.replace(/[^a-z0-9._-]/g, '_').slice(0, 64) || 'unknown';
 }
 
 function readLegacyAttachmentIds(rawAttachments: unknown): string[] | null {
@@ -711,6 +716,10 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   if (useExternalAgent) {
     const externalAgentId = session.external_agent_id ?? '';
     try {
+      const rawBearerToken = extractBearerToken(req);
+      if (!rawBearerToken) {
+        throw new AgentStreamRouteError('UNAUTHORIZED', 'user_token_missing');
+      }
       const dispatched = await deps.agentRuntimeService.dispatchStreamingRequest({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -718,6 +727,14 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         agentId: externalAgentId,
         model: raw.model ?? session.model,
         messages: upstreamMessages,
+        runtimeContext: {
+          workspace_id: route.workspaceId,
+          project_id: route.projectId,
+          username: buildProxyUsername(user),
+          user_bearer_token: rawBearerToken,
+          model: raw.model ?? session.model,
+          notebook_mode: false,
+        },
       });
 
       res.statusCode = 200;
@@ -1002,7 +1019,8 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         },
       );
       if (!res.headersSent) {
-        json(res, 502, { error_code: mappedError.code, message: mappedError.message });
+        const statusCode = mappedError.code === 'UNAUTHORIZED' ? 401 : 502;
+        json(res, statusCode, { error_code: mappedError.code, message: mappedError.message });
       } else if (isWritable(res)) {
         broadcast(streamId, 'error', {
           error_code: mappedError.code,

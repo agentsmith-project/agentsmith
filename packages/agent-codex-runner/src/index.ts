@@ -25,6 +25,7 @@ type ServerStartPayload = {
     task_id?: string;
     run_id?: string;
     username?: string;
+    session_id?: string;
     endpoint_proxy_base?: string;
     api_base?: string;
     user_bearer_token?: string;
@@ -50,10 +51,16 @@ type ServerStartPayload = {
   };
 };
 
+type ServerHelloPayload = {
+  resource_proxy?: {
+    base_url?: string;
+  };
+};
+
 type AgentMessage = {
   type?: string;
   request_id?: string;
-  payload?: ServerStartPayload;
+  payload?: ServerStartPayload | ServerHelloPayload;
 };
 
 const wsUrl = process.env.MBOS_AGENT_WS_URL;
@@ -84,6 +91,7 @@ const timedOutRequestIds = new Set<string>();
 const traceSeqByRequestId = new Map<string, number>();
 const codexSessionReadyByCwd = new Set<string>();
 const reportedArtifactsByCwd = new Map<string, Set<string>>();
+let connectedResourceProxyBase = '';
 type FilterStats = RunnerFilterStats;
 const filterStatsByRequestId = new Map<string, FilterStats>();
 
@@ -183,6 +191,11 @@ function parseCodexJsonLine(line: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function normalizeProxyBase(input: unknown): string {
+  if (typeof input !== 'string') return '';
+  return input.trim().replace(/\/+$/, '');
 }
 
 function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
@@ -432,7 +445,11 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       taskInputsCount: taskInputs.length,
     })}User request:\n${userPrompt}`
     : userPrompt;
-  const endpointProxyBase = (runtimeContext.endpoint_proxy_base ?? '').replace(/\/+$/, '');
+  const endpointProxyBase = normalizeProxyBase(runtimeContext.endpoint_proxy_base)
+    || connectedResourceProxyBase;
+  if (!endpointProxyBase) {
+    throw new Error('resource_proxy_base_missing');
+  }
   // codex-cli >=0.104 no longer accepts wire_api=chat in provider config.
   const wireApi = 'responses';
 
@@ -457,6 +474,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     model,
     wire_api: wireApi,
     endpoint_proxy_base: endpointProxyBase,
+    proxy_source: normalizeProxyBase(runtimeContext.endpoint_proxy_base) ? 'runtime_context' : 'server_hello',
     has_user_bearer_token: Boolean(runtimeContext.user_bearer_token && runtimeContext.user_bearer_token.trim()),
     notebook_mode: isNotebookMode,
     task_inputs_count: taskInputs.length,
@@ -769,6 +787,16 @@ ws.on('message', (raw) => {
     return;
   }
 
+  if (message.type === 'server.hello') {
+    const payload = message.payload as ServerHelloPayload | undefined;
+    const nextProxyBase = normalizeProxyBase(payload?.resource_proxy?.base_url);
+    if (nextProxyBase) {
+      connectedResourceProxyBase = nextProxyBase;
+      debugLog('received server hello resource proxy', { base_url: connectedResourceProxyBase });
+    }
+    return;
+  }
+
   if (message.type === 'server.ping') {
     ws.send(
       JSON.stringify({
@@ -805,14 +833,15 @@ ws.on('message', (raw) => {
   if (message.type !== 'server.request.start' || !message.request_id || !message.payload) {
     return;
   }
+  const startPayload = message.payload as ServerStartPayload;
   debugLog('received start', {
     request_id: message.request_id,
-    model: message.payload.runtime_context?.model ?? message.payload.model ?? null,
-    wire_api: message.payload.runtime_context?.wire_api ?? null,
-    task_id: message.payload.runtime_context?.task_id ?? null,
+    model: startPayload.runtime_context?.model ?? startPayload.model ?? null,
+    wire_api: startPayload.runtime_context?.wire_api ?? null,
+    task_id: startPayload.runtime_context?.task_id ?? null,
   });
 
-  void runCodexRequest(message.request_id, message.payload).catch((error) => {
+  void runCodexRequest(message.request_id, startPayload).catch((error) => {
     sendTraceEvent(message.request_id!, {
       category: 'error',
       phase: 'end',
@@ -835,6 +864,7 @@ ws.on('close', () => {
     }
   }
   runningByRequestId.clear();
+  connectedResourceProxyBase = '';
   for (const requestId of timeoutByRequestId.keys()) {
     clearRequestTimers(requestId);
   }

@@ -52,6 +52,7 @@ interface AgentSocketState {
   workspaceId: string;
   projectId: string;
   connectedAt: string;
+  resourceProxyBaseUrl?: string;
   pendingByRequestId: Map<string, PendingStream>;
 }
 
@@ -131,6 +132,33 @@ function inferRemoteIp(req: http.IncomingMessage): string | undefined {
     return forwardedFor.split(',')[0]?.trim();
   }
   return req.socket.remoteAddress ?? undefined;
+}
+
+function firstHeaderValue(input: string | string[] | undefined): string | null {
+  if (!input) return null;
+  const raw = Array.isArray(input) ? input[0] : input;
+  const first = raw.split(',')[0]?.trim();
+  return first && first.length > 0 ? first : null;
+}
+
+function inferRequestOrigin(req: http.IncomingMessage): string | null {
+  const host = firstHeaderValue(req.headers['x-forwarded-host'])
+    ?? firstHeaderValue(req.headers.host);
+  if (!host) return null;
+  const proto = firstHeaderValue(req.headers['x-forwarded-proto'])
+    ?? (((req.socket as { encrypted?: boolean }).encrypted ?? false) ? 'https' : 'http');
+  return `${proto}://${host}`;
+}
+
+function readAgentNotebookEndpointId(agent: { runtime_preferences_json?: unknown }): string | null {
+  const preferences = agent.runtime_preferences_json;
+  if (!isPlainRecord(preferences)) return null;
+  const notebook = preferences.notebook;
+  if (!isPlainRecord(notebook)) return null;
+  const endpointId = notebook.endpoint_id;
+  if (typeof endpointId !== 'string') return null;
+  const trimmed = endpointId.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function debugRuntime(message: string): void {
@@ -291,7 +319,17 @@ export class AgentRuntimeService {
         JSON.stringify({
           type: 'server.hello',
           timestamp: new Date().toISOString(),
-          payload: { protocol_version: '1.0', heartbeat_interval_sec: 15 },
+          payload: {
+            protocol_version: '1.0',
+            heartbeat_interval_sec: 15,
+            ...(socketState.resourceProxyBaseUrl
+              ? {
+                resource_proxy: {
+                  base_url: socketState.resourceProxyBaseUrl,
+                },
+              }
+              : {}),
+          },
         }),
       );
 
@@ -346,6 +384,13 @@ export class AgentRuntimeService {
         return;
       }
       debugRuntime(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
+      const notebookEndpointId = readAgentNotebookEndpointId(agent);
+      const origin = inferRequestOrigin(req);
+      const resourceProxyBaseUrl = notebookEndpointId && origin
+        ? `${origin}/api/v1/workspaces/${encodeURIComponent(keyRecord.workspace_id)}`
+          + `/projects/${encodeURIComponent(keyRecord.project_id)}`
+          + `/endpoints/${encodeURIComponent(notebookEndpointId)}/proxy`
+        : undefined;
 
       const existing = this.socketsByAgentId.get(agentId);
       if (existing) {
@@ -367,6 +412,7 @@ export class AgentRuntimeService {
           workspaceId: keyRecord.workspace_id,
           projectId: keyRecord.project_id,
           connectedAt: new Date().toISOString(),
+          ...(resourceProxyBaseUrl ? { resourceProxyBaseUrl } : {}),
           pendingByRequestId: new Map(),
         });
         this.agentResourceService.markAgentConnected(agentId, {

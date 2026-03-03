@@ -29,7 +29,7 @@ afterEach(async () => {
   servers.length = 0;
 });
 
-async function setupRuntime() {
+async function setupRuntime(options?: { endpointId?: string }) {
   const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
   const runtime = new AgentRuntimeService(agentResourceService);
   const server = http.createServer((_req, res) => {
@@ -45,6 +45,15 @@ async function setupRuntime() {
   const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
     name: 'runtime-agent',
     mode: 'external',
+    ...(options?.endpointId
+      ? {
+        runtime_preferences_json: {
+          notebook: {
+            endpoint_id: options.endpointId,
+          },
+        },
+      }
+      : {}),
   });
   const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
 
@@ -52,6 +61,18 @@ async function setupRuntime() {
     headers: { Authorization: `Bearer ${keyPair.key}` },
   });
   sockets.push(ws);
+  const helloFramePromise = new Promise<Record<string, unknown>>((resolve) => {
+    ws.on('message', (raw) => {
+      try {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.hello') {
+          resolve(message);
+        }
+      } catch {
+        // ignore invalid frames in test helper
+      }
+    });
+  });
   await new Promise<void>((resolve, reject) => {
     ws.once('open', () => resolve());
     ws.once('error', reject);
@@ -62,10 +83,29 @@ async function setupRuntime() {
     runtime,
     agent,
     ws,
+    wsBase,
+    helloFramePromise,
   };
 }
 
 describe('AgentRuntimeService', () => {
+  it('includes static resource proxy base in server.hello when agent endpoint is configured', async () => {
+    const { wsBase, helloFramePromise } = await setupRuntime({ endpointId: 'ep_hello' });
+    const hello = await helloFramePromise;
+    expect(hello.type).toBe('server.hello');
+    const payload = (hello.payload ?? {}) as {
+      protocol_version?: string;
+      heartbeat_interval_sec?: number;
+      resource_proxy?: { base_url?: string };
+    };
+    expect(payload.protocol_version).toBe('1.0');
+    expect(payload.heartbeat_interval_sec).toBe(15);
+    expect(payload.resource_proxy?.base_url).toBe(
+      `${wsBase.replace(/^ws:\/\//, 'http://')}`
+      + `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_hello/proxy`,
+    );
+  });
+
   it('merges agent.ready payload into runtime preferences without dropping notebook config', async () => {
     const { agentResourceService, agent, ws } = await setupRuntime();
     await agentResourceService.updateAgent('ws_default', 'proj_1', agent.id, {

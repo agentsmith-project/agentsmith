@@ -238,11 +238,6 @@ export async function runNotebookTaskWithExternalAgent(input: {
       attachedInputs: task.attached_inputs as NotebookTaskInputRefRecord[],
       debugLog,
     });
-    const proxyBase = `${publicBaseUrl.replace(/\/+$/, '')}`
-      + `/api/v1/workspaces/${encodeURIComponent(task.workspace_id)}`
-      + `/projects/${encodeURIComponent(task.project_id)}`
-      + `/endpoints/${encodeURIComponent(endpointId)}/proxy`;
-
     const dispatched = await deps.agentRuntimeService.dispatchStreamingRequest({
       workspaceId: task.workspace_id,
       projectId: task.project_id,
@@ -257,7 +252,6 @@ export async function runNotebookTaskWithExternalAgent(input: {
         run_id: runId,
         username: userHandle,
         endpoint_id: endpointId,
-        endpoint_proxy_base: proxyBase,
         api_base: publicBaseUrl.replace(/\/+$/, ''),
         user_bearer_token: rawBearerToken,
         wire_api: wireApi,

@@ -3984,13 +3984,15 @@ describe('api-entry-node projects routes', () => {
 
     const runtimeReceived = new Promise<{
       requestId: string;
-      endpointProxyBase: string;
+      helloProxyBase: string;
+      endpointProxyBase: string | null;
       apiBase: string;
       userToken: string;
       notebookMode: boolean | null;
       taskInputsCount: number | null;
       close: () => void;
     }>((resolve) => {
+      let helloProxyBase = '';
       const ws = new WebSocket(wsUrl, {
         headers: { Authorization: `Bearer ${keyPayload.key}` },
       });
@@ -4001,6 +4003,9 @@ describe('api-entry-node projects routes', () => {
           type?: string;
           request_id?: string;
           payload?: {
+            resource_proxy?: {
+              base_url?: string;
+            };
             runtime_context?: {
               endpoint_proxy_base?: string;
               api_base?: string;
@@ -4010,10 +4015,17 @@ describe('api-entry-node projects routes', () => {
             };
           };
         };
+        if (msg.type === 'server.hello') {
+          helloProxyBase = msg.payload?.resource_proxy?.base_url ?? '';
+          return;
+        }
         if (msg.type !== 'server.request.start' || !msg.request_id) return;
         resolve({
           requestId: msg.request_id,
-          endpointProxyBase: msg.payload?.runtime_context?.endpoint_proxy_base ?? '',
+          helloProxyBase,
+          endpointProxyBase: typeof msg.payload?.runtime_context?.endpoint_proxy_base === 'string'
+            ? msg.payload.runtime_context.endpoint_proxy_base
+            : null,
           apiBase: msg.payload?.runtime_context?.api_base ?? '',
           userToken: msg.payload?.runtime_context?.user_bearer_token ?? '',
           notebookMode: typeof msg.payload?.runtime_context?.notebook_mode === 'boolean'
@@ -4115,9 +4127,10 @@ describe('api-entry-node projects routes', () => {
     expect(runtime.apiBase).toBe(baseUrl);
     expect(runtime.notebookMode).toBe(true);
     expect(runtime.taskInputsCount).toBe(0);
-    expect(runtime.endpointProxyBase).toBe(
+    expect(runtime.helloProxyBase).toBe(
       `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy`,
     );
+    expect(runtime.endpointProxyBase).toBeNull();
 
     let messagesBody: Array<{ role: string; content: string }> = [];
     for (let attempt = 0; attempt < 20; attempt += 1) {

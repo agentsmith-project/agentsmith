@@ -1,46 +1,34 @@
-/**
- * CreateEndpointDialog component tests
- *
- * Test coverage:
- * 1. All text uses i18n (no hardcoded strings)
- * 2. "Use default" button shows/hides correctly based on provider
- * 3. Form validation behavior
- * 4. Error handling and display
- */
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { CreateEndpointDialog } from '../CreateEndpointDialog';
 
-// Mock translations
 const mockTranslations = {
   endpoints: {
     create_dialog: {
       title: 'Create Endpoint',
-      description: 'Add a new LLM endpoint to your project',
+      description: 'Add endpoint',
       name: 'Name',
-      name_placeholder: 'e.g. GPT-4o',
+      name_placeholder: 'Endpoint name',
+      name_hint: 'Name hint',
       model_id: 'Model ID',
-      model_id_placeholder: 'e.g. gpt-4o, claude-3.5-sonnet',
+      model_id_placeholder: 'Model placeholder',
       provider: 'Provider',
-      provider_openai: 'OpenAI',
-      provider_anthropic: 'Anthropic',
       provider_custom: 'Custom',
       compatibility_interface: 'Compatibility Interface',
       base_url: 'Base URL',
       credential: 'Credential',
-      no_credentials: 'No credentials in this project.',
+      no_credentials: 'No credentials',
       create_credential_first: 'Create credential first',
-      credential_required: 'Please select a credential',
-      base_url_required: 'Base URL is required for custom providers',
-      model_conflict: 'Model ID already exists in this project',
-      failed: 'Failed to create endpoint',
-      limits: 'Limits (optional)',
-      max_rpm: 'Max requests/min',
-      timeout_seconds: 'Timeout (seconds)',
-      success: 'Endpoint created successfully',
+      credential_required: 'Credential required',
+      base_url_required: 'Base URL required',
+      model_conflict: 'Model conflict',
+      failed: 'Failed',
+      limits: 'Limits',
+      max_rpm: 'Max RPM',
+      timeout_seconds: 'Timeout',
+      success: 'Created',
       capability: 'Endpoint Capability',
       capability_chat_completion: 'Chat Completion',
       capability_multimodal_completion: 'Multimodal Completion',
@@ -49,89 +37,79 @@ const mockTranslations = {
       capability_image_generation: 'Image Generation',
       capability_video_generation: 'Video Generation',
       catalog_models: 'Catalog Models',
-      select_from_catalog: 'Select from catalog (optional)',
-      wizard_description: 'Create custom OpenAI or Anthropic compatible endpoints with validation.',
+      select_from_catalog: 'Select from catalog',
+      wizard_description: 'Custom wizard description',
       open_wizard_button: 'Open Wizard',
+      catalog_context_tokens: 'Context',
+      catalog_output_tokens: 'Output',
+      catalog_input_price: 'Input Price',
+      catalog_output_price: 'Output Price',
+      name_conflict: 'Name conflict',
     },
     custom_wizard: {
-      title: 'Create Custom Endpoint',
       use_default: 'Use default',
+      title: 'Create Custom Endpoint',
+    },
+    protocol_labels: {
+      openai_compatible: 'OpenAI Compatible',
+      anthropic_compatible: 'Anthropic Compatible',
     },
   },
   common: {
     cancel: 'Cancel',
     create: 'Create',
     placeholders: {
-      enter_description: 'Enter a description',
+      enter_description: 'Enter description',
       select: 'Select',
-      optional: 'Optional',
     },
   },
   errors: {
     api_error: 'API Error',
-    network_error: 'Network error',
+    network_error: 'Network Error',
   },
 };
 
-// Helper to resolve nested keys
-function resolveTranslation(obj: any, path: string): string {
+function resolveTranslation(obj: unknown, path: string): string {
   const keys = path.split('.');
-  let result = obj;
+  let current: unknown = obj;
   for (const key of keys) {
-    if (result && typeof result === 'object' && key in result) {
-      result = result[key];
-    } else {
-      return path; // Return the path if not found
-    }
+    if (!current || typeof current !== 'object' || !(key in current)) return path;
+    current = (current as Record<string, unknown>)[key];
   }
-  return typeof result === 'string' ? result : path;
+  return typeof current === 'string' ? current : path;
 }
 
 vi.mock('next-intl', () => ({
-  useTranslations: (namespace: string) => {
-    return (key: string) => {
-      const fullKey = namespace ? `${namespace}.${key}` : key;
-      return resolveTranslation(mockTranslations, fullKey);
-    };
-  },
+  useTranslations: (namespace: string) => (key: string) => resolveTranslation(mockTranslations, `${namespace}.${key}`),
   useLocale: () => 'en',
   NextIntlClientProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-// Mock next/image
-vi.mock('next/image', () => ({
-  default: ({ alt, ...props }: any) => <img alt={alt} {...props} />,
-}));
-
-// Mock next/link
 vi.mock('next/link', () => ({
-  default: ({ children, ...props }: any) => <a {...props}>{children}</a>,
+  default: ({ children, ...props }: React.ComponentProps<'a'>) => <a {...props}>{children}</a>,
 }));
-
-// Mock API client
-const mockApiClient = {
-  request: vi.fn(),
-};
 
 const mockCreate = vi.fn();
-const mockList = vi.fn();
-const mockListCatalogModels = vi.fn().mockResolvedValue({ items: [] });
+const mockListCredentials = vi.fn();
+const mockListEndpoints = vi.fn();
+const mockListCatalogProviders = vi.fn();
+const mockListCatalogModels = vi.fn();
 
-// Mock API
 vi.mock('@/lib/api', () => ({
-  getApiClient: vi.fn(() => mockApiClient),
+  getApiClient: vi.fn(() => ({ request: vi.fn() })),
   EndpointAPI: class {
     create = mockCreate;
-  } as any,
+    list = mockListEndpoints;
+  },
   CredentialsAPI: class {
-    list = mockList;
-  } as any,
+    list = mockListCredentials;
+  },
   RuntimeAPI: class {
+    listCatalogProviders = mockListCatalogProviders;
     listCatalogModels = mockListCatalogModels;
-  } as any,
+  },
 }));
 
-// Mock toast
 vi.mock('@/components/ui/toast', () => ({
   toast: {
     success: vi.fn(),
@@ -139,252 +117,101 @@ vi.mock('@/components/ui/toast', () => ({
   },
 }));
 
-// Mock provider catalog
-vi.mock('@/lib/endpoints/provider-catalog', () => ({
-  ENDPOINT_PROVIDER_OPTIONS: [
-    {
-      key: 'openai',
-      display_name: 'OpenAI',
-      logo_path: '/logos/openai.svg',
-      family: 'openai',
-      protocol: 'openai_compatible',
-      compatibility_interface: 'openai_compatible',
-      default_base_url: 'https://api.openai.com/v1',
-      models: [
-        { model_id: 'gpt-4o', name: 'GPT-4o', capabilities: ['chat_completion'] },
-      ],
-    },
-    {
-      key: 'anthropic',
-      display_name: 'Anthropic',
-      logo_path: '/logos/anthropic.svg',
-      family: 'anthropic',
-      protocol: 'anthropic_compatible',
-      compatibility_interface: 'anthropic_compatible',
-      default_base_url: 'https://api.anthropic.com/v1',
-      models: [],
-    },
-  ],
-  getProviderOption: (provider: string) => {
-    const providers: Record<string, any> = {
-      openai: {
-        key: 'openai',
-        display_name: 'OpenAI',
-        family: 'openai',
-        protocol: 'openai_compatible',
-        compatibility_interface: 'openai_compatible',
-        default_base_url: 'https://api.openai.com/v1',
-      },
-      anthropic: {
-        key: 'anthropic',
-        display_name: 'Anthropic',
-        family: 'anthropic',
-        protocol: 'anthropic_compatible',
-        compatibility_interface: 'anthropic_compatible',
-        default_base_url: 'https://api.anthropic.com/v1',
-      },
-      custom: {
-        key: 'custom',
-        display_name: 'Custom',
-        family: 'custom',
-        protocol: 'openai_compatible',
-        compatibility_interface: 'openai_compatible',
-        default_base_url: '',
-      },
-    };
-    return providers[provider] || providers.custom;
-  },
-  getModelsByCapability: () => [],
-}));
-
-// Mock CustomEndpointWizard
 vi.mock('../CustomEndpointWizard', () => ({
-  CustomEndpointWizard: () => null,
+  CustomEndpointWizard: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="custom-endpoint-wizard">wizard-open</div> : null,
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockCreate.mockResolvedValue({ id: 'endpoint-1' });
-  mockList.mockResolvedValue([]);
-  mockListCatalogModels.mockResolvedValue({ items: [] });
+  mockCreate.mockResolvedValue({ id: 'ep_1' });
+  mockListCredentials.mockResolvedValue([{ id: 'cred_1', name: 'Main Key', fingerprint: 'abcd1234' }]);
+  mockListEndpoints.mockResolvedValue({ items: [] });
+  mockListCatalogProviders.mockResolvedValue({
+    version: { id: 'v1' },
+    items: [
+      {
+        id: 'p1',
+        version_id: 'v1',
+        provider_key: 'openai',
+        provider_id: 'openai',
+        name: 'OpenAI',
+        api: 'https://api.openai.com/v1',
+        env: [],
+        model_count: 1,
+      },
+    ],
+  });
+  mockListCatalogModels.mockResolvedValue({
+    version: { id: 'v1' },
+    total: 1,
+    items: [
+      {
+        id: 'm1',
+        version_id: 'v1',
+        provider_key: 'openai',
+        provider_id: 'openai',
+        provider_name: 'OpenAI',
+        model_id: 'gpt-4o',
+        name: 'GPT-4o',
+        capabilities: ['chat_completion'],
+        limit: { context: 128000, output: 8192 },
+        cost: { input: 2.5, output: 10 },
+      },
+    ],
+  });
 });
 
-function createWrapper() {
+function renderDialog() {
   const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-
-  const TestWrapper = ({ children }: { children: React.ReactNode }) => (
+  return render(
     <QueryClientProvider client={queryClient}>
       <NextIntlClientProvider locale="en" messages={mockTranslations}>
-        {children}
+        <CreateEndpointDialog
+          open
+          onOpenChange={vi.fn()}
+          workspaceId="ws_1"
+          projectId="proj_1"
+        />
       </NextIntlClientProvider>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
-
-  return TestWrapper;
 }
 
-const defaultProps = {
-  open: true,
-  onOpenChange: vi.fn(),
-  workspaceId: 'workspace-1',
-  projectId: 'project-1',
-};
-
 describe('CreateEndpointDialog', () => {
-  describe('i18n completeness', () => {
-    it('should use i18n for "Endpoint Capability" label', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
-
-      await waitFor(() => {
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.capability)).toBeInTheDocument();
-      });
+  it('shows custom endpoint entry as an external button', async () => {
+    renderDialog();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Open Wizard' })).toBeInTheDocument();
     });
-
-    it('should use i18n for all capability options', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
-
-      // Verify the capability label uses i18n
-      await waitFor(() => {
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.capability)).toBeInTheDocument();
-      });
-
-      // Verify at least one capability option is rendered using i18n
-      // Use getAllByText since the text appears in multiple places (label + options)
-      const capabilityOptions = screen.getAllByText(mockTranslations.endpoints.create_dialog.capability_chat_completion);
-      expect(capabilityOptions.length).toBeGreaterThan(0);
-    });
-
-    it('should use i18n for "Open Wizard" button when custom provider is selected', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
-
-      // Find provider select by text content (Radix Select)
-      const providerLabel = screen.getByText(/Provider/i);
-      expect(providerLabel).toBeInTheDocument();
-
-      // The wizard button should appear when custom is selected
-      // For now just verify the component renders without hardcoded strings
-      await waitFor(() => {
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.provider_custom)).toBeInTheDocument();
-      });
-    });
-
-    it('should use i18n for custom wizard description text', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
-
-      // Verify wizard description is available in translations
-      await waitFor(() => {
-        expect(mockTranslations.endpoints.create_dialog.wizard_description).toBe(
-          'Create custom OpenAI or Anthropic compatible endpoints with validation.'
-        );
-      });
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wizard' }));
+    expect(screen.getByTestId('custom-endpoint-wizard')).toBeInTheDocument();
   });
 
-  describe('"Use default" button for Base URL', () => {
-    it('should show "Use default" button for OpenAI provider', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
-
-      await waitFor(() => {
-        expect(screen.getByTestId('endpoint-use-default-url')).toBeInTheDocument();
-      });
+  it('hides manual model/base-url/limits inputs in provider catalog flow', async () => {
+    renderDialog();
+    await waitFor(() => {
+      expect(screen.getByText('Catalog Models')).toBeInTheDocument();
     });
-
-    it('should NOT show "Use default" button for Custom provider', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
-
-      // Default provider is OpenAI, so button should be shown
-      await waitFor(() => {
-        expect(screen.getByTestId('endpoint-use-default-url')).toBeInTheDocument();
-      });
-
-      // The component logic checks if provider has a default_base_url
-      // For custom provider, default_base_url is empty, so button should be hidden
-      // This is tested implicitly by the component behavior
-    });
-
-    it('should use i18n for "Use default" button text', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
-
-      await waitFor(() => {
-        const button = screen.getByTestId('endpoint-use-default-url');
-        expect(button).toHaveTextContent(mockTranslations.endpoints.custom_wizard.use_default);
-      });
-    });
+    expect(screen.queryByLabelText('Model ID')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Base URL')).not.toBeInTheDocument();
+    expect(screen.queryByText('Limits')).not.toBeInTheDocument();
   });
 
-  describe('Form validation', () => {
-    it('should disable submit button when required fields are empty', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
+  it('auto-selects a catalog model and keeps create disabled before credential selection', async () => {
+    renderDialog();
 
-      await waitFor(() => {
-        const submitButton = screen.getByRole('button', { name: mockTranslations.common.create });
-        expect(submitButton).toBeDisabled();
-      });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Name *')).toBeInTheDocument();
     });
 
-    it('should have proper i18n for placeholder text', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
+    fireEvent.change(screen.getByLabelText('Name *'), { target: { value: 'endpoint-openai' } });
 
-      await waitFor(() => {
-        // Check that placeholder uses i18n key (resolved to actual text)
-        const modelInput = screen.getByPlaceholderText(mockTranslations.endpoints.create_dialog.model_id_placeholder);
-        expect(modelInput).toBeInTheDocument();
-      });
-    });
-  });
-
-  describe('Component structure', () => {
-    it('should render all form fields with proper labels', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
-
-      await waitFor(() => {
-        // Name field
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.name)).toBeInTheDocument();
-        // Model ID field
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.model_id)).toBeInTheDocument();
-        // Capability field
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.capability)).toBeInTheDocument();
-        // Provider field
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.provider)).toBeInTheDocument();
-        // Base URL field
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.base_url)).toBeInTheDocument();
-        // Credential field
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.credential)).toBeInTheDocument();
-        // Limits field
-        expect(screen.getByText(mockTranslations.endpoints.create_dialog.limits)).toBeInTheDocument();
-      });
-    });
-
-    it('should use i18n for "Optional" placeholder', async () => {
-      mockList.mockResolvedValue([]);
-      render(<CreateEndpointDialog {...defaultProps} />, { wrapper: createWrapper() });
-
-      // Expand limits section
-      await waitFor(async () => {
-        const limitsButton = screen.getByText(mockTranslations.endpoints.create_dialog.limits);
-        fireEvent.click(limitsButton);
-      });
-
-      await waitFor(() => {
-        // Check that optional placeholder is shown
-        const optionalInputs = screen.getAllByPlaceholderText(mockTranslations.common.placeholders.optional);
-        expect(optionalInputs.length).toBeGreaterThan(0);
-      });
+    await waitFor(() => {
+      expect(screen.getAllByText(/GPT-4o/).length).toBeGreaterThan(0);
+      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
     });
   });
 });

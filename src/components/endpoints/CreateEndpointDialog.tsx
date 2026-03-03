@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { EndpointAPI, CredentialsAPI, RuntimeAPI, getApiClient } from '@/lib/api';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
@@ -57,7 +57,6 @@ export function CreateEndpointDialog({
   const tErrors = useTranslations('errors');
   const commonT = useTranslations('common');
   const locale = useLocale();
-  const tWizard = useTranslations('endpoints.custom_wizard');
   type CapabilityOption = EndpointCapabilityType;
   type CatalogModelOption = {
     model_id: string;
@@ -73,13 +72,9 @@ export function CreateEndpointDialog({
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [openaiModel, setOpenaiModel] = React.useState('');
-  const [baseUrl, setBaseUrl] = React.useState('');
   const [provider, setProvider] = React.useState<string>('openai');
   const [capability, setCapability] = React.useState<CapabilityOption>('chat_completion');
   const [credentialRef, setCredentialRef] = React.useState<string>('');
-  const [limitsExpanded, setLimitsExpanded] = React.useState(false);
-  const [maxRequestsPerMinute, setMaxRequestsPerMinute] = React.useState<string>('');
-  const [timeoutSeconds, setTimeoutSeconds] = React.useState<string>('');
 
   // Custom wizard state
   const [showCustomWizard, setShowCustomWizard] = React.useState(false);
@@ -100,16 +95,15 @@ export function CreateEndpointDialog({
     () => providerOptions.find((item) => item.key === provider) ?? CUSTOM_RUNTIME_PROVIDER_OPTION,
     [providerOptions, provider],
   );
-  const requiresManualBaseUrl = selectedProvider.default_base_url.length === 0;
 
   const { data: runtimeCatalogModelsData } = useQuery({
     queryKey: ['runtime-catalog-models', workspaceId, projectId, provider, capability],
     queryFn: () =>
       runtimeAPI.listCatalogModels(workspaceId, projectId, {
-        provider: provider === 'custom' ? undefined : provider,
+        provider,
         capability,
       }),
-    enabled: open && !!workspaceId && !!projectId && provider !== 'custom',
+    enabled: open && !!workspaceId && !!projectId,
   });
 
   const providerModels = React.useMemo<CatalogModelOption[]>(() => {
@@ -191,13 +185,9 @@ export function CreateEndpointDialog({
     setName('');
     setDescription('');
     setOpenaiModel('');
-    setBaseUrl('');
     setProvider('openai');
     setCapability('chat_completion');
     setCredentialRef('');
-    setLimitsExpanded(false);
-    setMaxRequestsPerMinute('');
-    setTimeoutSeconds('');
   };
 
   React.useEffect(() => {
@@ -208,10 +198,21 @@ export function CreateEndpointDialog({
 
   React.useEffect(() => {
     if (!open || providerOptions.length === 0) return;
-    if (provider !== 'custom' && providerOptions.some((item) => item.key === provider)) return;
-    const preferred = providerOptions.find((item) => item.key === 'openai')?.key ?? providerOptions[0]?.key ?? 'custom';
+    if (providerOptions.some((item) => item.key === provider)) return;
+    const preferred = providerOptions.find((item) => item.key === 'openai')?.key ?? providerOptions[0]?.key ?? 'openai';
     setProvider(preferred);
   }, [open, provider, providerOptions]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    if (providerModels.length === 0) {
+      setOpenaiModel('');
+      return;
+    }
+    if (!providerModels.some((item) => item.model_id === openaiModel)) {
+      setOpenaiModel(providerModels[0]?.model_id ?? '');
+    }
+  }, [open, providerModels, openaiModel]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,12 +226,12 @@ export function CreateEndpointDialog({
       toast.error(t('create_dialog.name_conflict'));
       return;
     }
-    if (requiresManualBaseUrl && !baseUrl.trim()) {
+    if (!selectedProvider.default_base_url?.trim()) {
       toast.error(t('create_dialog.base_url_required'));
       return;
     }
 
-    const url = baseUrl.trim() || selectedProvider.default_base_url || '';
+    const url = selectedProvider.default_base_url.trim();
 
     const data: CreateEndpointRequest = {
       name: name.trim(),
@@ -243,7 +244,7 @@ export function CreateEndpointDialog({
       protocol: selectedProvider.protocol,
       meta: {
         compatibility_interface: selectedProvider.compatibility_interface,
-        catalog_provider_key: provider === 'custom' ? 'custom' : provider,
+        catalog_provider_key: provider,
       },
       capabilities: [{ type: capability, enabled: true, default_model_id: openaiModel.trim() }],
       models: [{ capability, model_id: openaiModel.trim(), display_name: openaiModel.trim() }],
@@ -258,30 +259,8 @@ export function CreateEndpointDialog({
             : capability === 'image_generation'
               ? { image_model_id: openaiModel.trim() }
               : { video_model_id: openaiModel.trim() },
-      runtime_profile: provider === 'custom'
-        ? {
-          max_context_tokens: 128000,
-          max_output_tokens: 8192,
-          supports_file: capability === 'multimodal_completion',
-          supports_tool_call: true,
-          supports_reasoning: false,
-          price_input_per_1m: 0,
-          price_output_per_1m: 0,
-          cache_read_discount_ratio: 0,
-          cache_write_discount_ratio: 0,
-        }
-        : undefined,
+      runtime_profile: undefined,
     };
-
-    if (limitsExpanded && (maxRequestsPerMinute || timeoutSeconds)) {
-      data.limits = {};
-      if (maxRequestsPerMinute.trim()) {
-        data.limits.max_requests_per_minute = parseInt(maxRequestsPerMinute, 10);
-      }
-      if (timeoutSeconds.trim()) {
-        data.limits.timeout_seconds = parseInt(timeoutSeconds, 10);
-      }
-    }
 
     createMutation.mutate(data);
   };
@@ -297,7 +276,7 @@ export function CreateEndpointDialog({
     !duplicateNameExists &&
     openaiModel.trim().length > 0 &&
     credentialRef.length > 0 &&
-    (!requiresManualBaseUrl || baseUrl.trim().length > 0) &&
+    selectedProvider.default_base_url.trim().length > 0 &&
     !createMutation.isPending;
 
   return (
@@ -348,21 +327,6 @@ export function CreateEndpointDialog({
             />
           </div>
 
-          <div className="space-y-2 order-6">
-            <label htmlFor="endpoint-model" className="text-sm font-medium text-foreground">
-              {t('create_dialog.model_id')} <span className="text-error">*</span>
-            </label>
-            <Input
-              id="endpoint-model"
-              value={openaiModel}
-              onChange={(e) => setOpenaiModel(e.target.value)}
-              placeholder={t('create_dialog.model_id_placeholder')}
-              disabled={createMutation.isPending}
-              required
-              className="font-mono"
-            />
-          </div>
-
           <div className="space-y-2 order-2">
             <label className="text-sm font-medium text-foreground">
               {t('create_dialog.capability')} <span className="text-error">*</span>
@@ -387,9 +351,21 @@ export function CreateEndpointDialog({
           </div>
 
           <div className="space-y-2 order-1">
-            <label className="text-sm font-medium text-foreground">
-              {t('create_dialog.provider')} <span className="text-error">*</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-foreground">
+                {t('create_dialog.provider')} <span className="text-error">*</span>
+              </label>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowCustomWizard(true)}
+                disabled={createMutation.isPending}
+              >
+                <Sparkles className="mr-1 h-4 w-4" />
+                {t('create_dialog.open_wizard_button')}
+              </Button>
+            </div>
             <Select
               value={provider}
               onValueChange={setProvider}
@@ -406,12 +382,6 @@ export function CreateEndpointDialog({
                     </span>
                   </SelectItem>
                 ))}
-                <SelectItem value="custom">
-                  <span className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-accent" />
-                    {t('create_dialog.provider_custom')}
-                  </span>
-                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -423,69 +393,6 @@ export function CreateEndpointDialog({
             <div className="rounded-sm border border-subtle bg-surface-low px-3 py-2 text-sm text-foreground">
               {resolveEndpointProtocolLabel(t, selectedProvider.protocol)}
             </div>
-          </div>
-
-          {/* Show wizard button for custom provider */}
-          {provider === 'custom' && (
-            <div className="space-y-2 order-8">
-              <div className="rounded-sm bg-accent/5 border border-accent/20 p-4">
-                <div className="flex items-start gap-3">
-                  <Sparkles className="w-5 h-5 text-accent mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">
-                      {tWizard('title')}
-                    </p>
-                    <p className="text-xs text-tertiary mt-1">
-                      {t('create_dialog.wizard_description')}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() => setShowCustomWizard(true)}
-                    >
-                      {t('create_dialog.open_wizard_button')}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2 order-7">
-            <div className="flex items-center justify-between">
-              <label htmlFor="endpoint-base-url" className="text-sm font-medium text-foreground">
-                {t('create_dialog.base_url')}
-                {provider === 'custom' && <span className="text-error"> *</span>}
-              </label>
-              {(provider === 'openai' || selectedProvider.default_base_url) && (
-                <button
-                  type="button"
-                  onClick={() => setBaseUrl(
-                    provider === 'openai'
-                      ? 'https://api.openai.com/v1'
-                      : selectedProvider.default_base_url
-                  )}
-                  className="text-xs text-accent hover:underline"
-                  data-testid="endpoint-use-default-url"
-                >
-                  {tWizard('use_default')}
-                </button>
-              )}
-            </div>
-            <Input
-              id="endpoint-base-url"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={
-                provider === 'openai'
-                  ? 'https://api.openai.com/v1'
-                  : selectedProvider.default_base_url || 'https://your-api.example.com/v1'
-              }
-              disabled={createMutation.isPending}
-              className="font-mono text-sm"
-            />
           </div>
 
           {providerModels.length > 0 && (
@@ -526,6 +433,12 @@ export function CreateEndpointDialog({
             </div>
           )}
 
+          {providerModels.length === 0 && (
+            <div className="order-3 rounded-sm border border-subtle bg-surface-low p-3 text-xs text-secondary">
+              {t('create_dialog.select_from_catalog')}
+            </div>
+          )}
+
           <div className="space-y-2 order-9">
             <label className="text-sm font-medium text-foreground">
               {t('create_dialog.credential')} <span className="text-error">*</span>
@@ -557,53 +470,6 @@ export function CreateEndpointDialog({
                   ))}
                 </SelectContent>
               </Select>
-            )}
-          </div>
-
-          <div className="space-y-2 order-10">
-            <button
-              type="button"
-              onClick={() => setLimitsExpanded((v) => !v)}
-              className="flex items-center gap-2 text-sm text-primary hover:text-foreground"
-            >
-              {limitsExpanded ? (
-                <ChevronDown className="w-4 h-4" />
-              ) : (
-                <ChevronRight className="w-4 h-4" />
-              )}
-              {t('create_dialog.limits')}
-            </button>
-            {limitsExpanded && (
-              <div className="grid grid-cols-2 gap-4 pl-6">
-                <div className="space-y-1">
-                  <label htmlFor="endpoint-rpm" className="text-xs text-tertiary">
-                    {t('create_dialog.max_rpm')}
-                  </label>
-                  <Input
-                    id="endpoint-rpm"
-                    type="number"
-                    min={1}
-                    value={maxRequestsPerMinute}
-                    onChange={(e) => setMaxRequestsPerMinute(e.target.value)}
-                    placeholder={commonT('placeholders.optional')}
-                    disabled={createMutation.isPending}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label htmlFor="endpoint-timeout" className="text-xs text-tertiary">
-                    {t('create_dialog.timeout_seconds')}
-                  </label>
-                  <Input
-                    id="endpoint-timeout"
-                    type="number"
-                    min={1}
-                    value={timeoutSeconds}
-                    onChange={(e) => setTimeoutSeconds(e.target.value)}
-                    placeholder={commonT('placeholders.optional')}
-                    disabled={createMutation.isPending}
-                  />
-                </div>
-              </div>
             )}
           </div>
 

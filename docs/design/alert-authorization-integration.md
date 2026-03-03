@@ -13,9 +13,9 @@ Following the Epic A permission pattern, alert management requires these permiss
 ```typescript
 // Add to src/lib/constants/permissions.ts
 ALERT: [
-  'project:alert:view',        // View alert center and notifications
-  'project:alert:manage',     // Create/edit/delete alert rules
-  'project:alert:notify',     // Receive alert notifications
+  'project:endpoint:use',        // View alert center and notifications
+  'project:settings:manage',     // Create/edit/delete alert rules
+  'project:endpoint:use',     // Receive alert notifications
 ] as const,
 ```
 
@@ -27,8 +27,8 @@ ALERT: [
 |------|-------------------|
 | owner | All alert permissions |
 | admin | All alert permissions |
-| developer | project:alert:view, project:alert:notify |
-| user | project:alert:notify |
+| developer | project:endpoint:use, project:endpoint:use |
+| user | project:endpoint:use |
 
 ### High-Risk Alert Operations
 
@@ -47,7 +47,7 @@ import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
 export function AlertCenterPage({ workspaceId, projectId }: AlertCenterPageProps) {
-  const canView = useHasPermission('project:alert:view');
+  const canView = useHasPermission('project:endpoint:use');
 
   if (!canView) {
     return <PageState type="permission-denied" />;
@@ -63,7 +63,7 @@ export function AlertCenterPage({ workspaceId, projectId }: AlertCenterPageProps
 
 ```typescript
 export function AlertRulesList({ rules, onEdit, onDelete, onToggle }: AlertRulesListProps) {
-  const canManage = useHasPermission('project:alert:manage');
+  const canManage = useHasPermission('project:settings:manage');
 
   return (
     <div>
@@ -85,7 +85,7 @@ export function AlertRulesList({ rules, onEdit, onDelete, onToggle }: AlertRules
 
 ```typescript
 export function AlertRuleFormDialog({ rule, onSave, onCancel }: Props) {
-  const canManage = useHasPermission('project:alert:manage');
+  const canManage = useHasPermission('project:settings:manage');
 
   // Redirect or disable if no permission
   if (!canManage) {
@@ -145,8 +145,8 @@ const alertAuditEvents = [
 - [ ] Add alert permissions to `src/lib/constants/permissions.ts`
 - [ ] Add alert to `HIGH_RISK_PERMISSIONS` if applicable
 - [ ] Update permission templates with alert permissions
-- [ ] Implement `useHasPermission('project:alert:view')` in AlertCenterPage
-- [ ] Implement `useHasPermission('project:alert:manage')` in rule management
+- [ ] Implement `useHasPermission('project:endpoint:use')` in AlertCenterPage
+- [ ] Implement `useHasPermission('project:settings:manage')` in rule management
 - [ ] Add alert resource type to policy system
 - [ ] Create audit events for alert operations
 - [ ] Add tests for authorization behavior

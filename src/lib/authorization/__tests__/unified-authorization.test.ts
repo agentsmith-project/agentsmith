@@ -24,7 +24,7 @@ describe('Unified Authorization Engine', () => {
   it('should check a single permission through unified engine', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-1',
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -42,7 +42,7 @@ describe('Unified Authorization Engine', () => {
   it('should check multiple permissions with AND logic', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-1',
-      permissions: ['project:member:manage', 'project:settings:manage'],
+      permissions: ['project:settings:manage', 'project:settings:manage'],
       operator: 'AND',
       resource_context: {
         workspace_id: 'ws-1',
@@ -61,7 +61,7 @@ describe('Unified Authorization Engine', () => {
   it('should check multiple permissions with OR logic', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-2',
-      permissions: ['project:member:manage', 'project:agent:use'],
+      permissions: ['project:settings:manage', 'project:agent:use'],
       operator: 'OR',
       resource_context: {
         workspace_id: 'ws-1',
@@ -78,7 +78,7 @@ describe('Unified Authorization Engine', () => {
   it('should return denial when permission not granted', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-3',
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -96,7 +96,7 @@ describe('Unified Authorization Engine', () => {
   it('should route all permission checks through unified engine', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-1',
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -115,7 +115,7 @@ describe('Unified Authorization Engine', () => {
   it('should validate resource context is provided', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-1',
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: '', // Invalid empty workspace
         project_id: 'proj-1',
@@ -129,7 +129,7 @@ describe('Unified Authorization Engine', () => {
   it('should create audit trail for authorization checks', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-1',
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',

@@ -26,9 +26,9 @@ export default function MembersRoute({ params }: MembersPageProps) {
   const tErrors = useTranslations('errors');
   const t = useTranslations('members');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
-  const canProjectMemberRead = useHasPermission('project:member:view');
-  const canProjectAdminGrant = useHasPermission('project:member:manage');
-  const canProjectAdminRevoke = useHasPermission('project:member:manage');
+  const canProjectMemberRead = useHasPermission('project:settings:manage');
+  const canProjectAdminGrant = useHasPermission('project:settings:manage');
+  const canProjectAdminRevoke = useHasPermission('project:settings:manage');
   const canReadMembers = canProjectMemberRead || canProjectAdminGrant || canProjectAdminRevoke;
   const featureAvailability = getFeatureAvailability('members');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('members');

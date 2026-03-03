@@ -1,32 +1,19 @@
 import type { WorkspaceRecord } from './resource-models.js';
 
 export const OWNER_PROJECT_PERMISSIONS = [
-  'project:read',
-  'project:chat:access',
-  'project:notebook:access',
-  'project:source:use',
-  'project:source:manage',
   'project:endpoint:use',
   'project:endpoint:manage',
   'project:agent:use',
   'project:agent:manage',
-  'project:resource_policy:manage',
-  'project:credential:manage',
   'project:settings:manage',
-  'project:member:view',
-  'project:member:manage',
-  'project:audit:view',
-  'project:usage:view',
 ] as const;
 
 const OPERATOR_PROJECT_PERMISSIONS = [
-  'project:read',
-  'project:chat:access',
-  'project:source:use',
-  'project:source:manage',
   'project:endpoint:use',
   'project:endpoint:manage',
-  'project:credential:manage',
+  'project:agent:use',
+  'project:agent:manage',
+  'project:settings:manage',
 ] as const;
 
 export const OWNER_WORKSPACE_PERMISSIONS = [

@@ -541,7 +541,7 @@ These ids must match, otherwise project membership permissions are resolved as e
 
 Permission gate model (MVP) is token-first:
 - Project list visibility checks `workspace:read` and data membership presence.
-- Do not require `project:read` as a workspace-level permission token.
+- Do not require `project:endpoint:use` as a workspace-level permission token.
 - Project internal routes use project membership permission tokens.
 
 Pinned project state is persisted in localStorage key:

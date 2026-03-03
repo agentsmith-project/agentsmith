@@ -109,7 +109,7 @@ export default function OverviewPage() {
   const workspaceId = validateWorkspaceParam(params.workspace);
   const projectId = validateProjectParam(params.project);
   const locale = (params.locale as string) || 'en-US';
-  const canReadOverview = useHasPermission('project:read');
+  const canReadOverview = useHasPermission('project:endpoint:use');
   const currentPermissions = useCurrentPermissions();
   const isValidParams = !!workspaceId && !!projectId;
 
@@ -364,14 +364,14 @@ export default function OverviewPage() {
       label: tNav('chat'),
       href: '/chat',
       description: t('actions.chat'),
-      requiresPermission: 'project:chat:access',
+      requiresPermission: 'project:endpoint:use',
     },
     {
       icon: Wrench,
       label: tNav('notebook'),
       href: '/notebook',
       description: t('actions.notebook'),
-      requiresPermission: 'project:notebook:access',
+      requiresPermission: 'project:endpoint:use',
     },
     {
       icon: Bot,
@@ -393,7 +393,7 @@ export default function OverviewPage() {
       // WP-03: Updated to new runtime-console route with monitoring tab
       href: '/runtime-console?tab=monitoring',
       description: t('actions.runtime_description'),
-      requiresPermission: 'project:usage:view',
+      requiresPermission: 'project:endpoint:use',
     },
     {
       icon: Gauge,
@@ -401,7 +401,7 @@ export default function OverviewPage() {
       // WP-03: Updated to new runtime-console route with control tab
       href: '/runtime-console?tab=control',
       description: t('actions.release_ops'),
-      requiresPermission: 'project:usage:view',
+      requiresPermission: 'project:endpoint:use',
     },
   ];
 

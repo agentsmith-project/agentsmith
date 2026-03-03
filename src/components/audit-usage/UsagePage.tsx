@@ -87,9 +87,9 @@ export function UsagePage({
   const traceEscalationId = searchParams.get('trace_escalation_id') ?? undefined;
   const traceRunId = searchParams.get('trace_run_id') ?? undefined;
   const queryClient = useQueryClient();
-  const canReadUsage = useHasPermission('project:usage:view');
-  const canExportUsage = useHasPermission('project:usage:export');
-  const canManageReportSchedules = useHasPermission('project:usage:report_schedule');
+  const canReadUsage = useHasPermission('project:endpoint:use');
+  const canExportUsage = useHasPermission('project:settings:manage');
+  const canManageReportSchedules = useHasPermission('project:settings:manage');
   const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 

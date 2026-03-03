@@ -183,9 +183,9 @@ if (hasPermission('project:agent:manage') && currentAgent.developers.includes(cu
 
 | 权限点 | 当前 Section | 新 Section | 说明 |
 |--------|--------------|------------|------|
-| `project:chat:access` | Build | Use | 访问 Chat |
-| `project:notebook:access` | Build | Use | 访问 Notebook |
-| `project:source:use` | Build | Use | 使用文件库 |
+| `project:endpoint:use` | Build | Use | 访问 Chat |
+| `project:endpoint:use` | Build | Use | 访问 Notebook |
+| `project:endpoint:use` | Build | Use | 使用文件库 |
 | `project:agent:use` | Build | Develop | 使用智能体 |
 | `project:agent:manage` | Build | Develop | 管理智能体和密钥（开发权限） |
 | `project:endpoint:use` | Build | Govern | 使用端点 |

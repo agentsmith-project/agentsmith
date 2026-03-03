@@ -204,7 +204,7 @@ export const memberHandlers = [
     const membership = memberProjectMembershipFixtures.find((m) => m.user_id === params.id);
 
     return HttpResponse.json({
-      platform_permissions: membership?.permissions ?? ['project:read'],
+      platform_permissions: membership?.permissions ?? [...GROUP_TEMPLATES.user],
     });
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj/members/:id/permissions', async ({ params, request }) => {

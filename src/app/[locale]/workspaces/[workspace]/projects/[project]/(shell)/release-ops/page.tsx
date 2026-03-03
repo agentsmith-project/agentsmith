@@ -153,7 +153,7 @@ export default function ReleaseOpsPage({ params }: ReleaseOpsPageProps) {
   const commonT = useTranslations('common');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const [timeRange] = useState(defaultTimeRange);
-  const canReadUsage = useHasPermission('project:usage:view');
+  const canReadUsage = useHasPermission('project:endpoint:use');
   const searchParamsKey = searchParams.toString();
   const [selectedReportName, setSelectedReportName] = useState<string | undefined>(searchParams.get('report') ?? undefined);
   const [selectedRunId, setSelectedRunId] = useState<string | undefined>(searchParams.get('run') ?? undefined);

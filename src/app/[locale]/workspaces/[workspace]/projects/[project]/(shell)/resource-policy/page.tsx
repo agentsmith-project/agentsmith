@@ -11,16 +11,14 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { AgentAPI, AuditAPI, EndpointAPI, MemberAPI, FilesAPI, getApiClient } from '@/lib/api';
+import { AuditAPI, EndpointAPI, MemberAPI, getApiClient } from '@/lib/api';
 import type { Member, ProjectGroup } from '@/lib/api/endpoints/members';
 import type {
-  Agent,
   Endpoint,
   PolicyRule,
   PolicyRuleKey,
   ResourcePolicy,
   ResourcePolicyUpdateRequest,
-  FileLibrary,
 } from '@/lib/api/types';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -93,7 +91,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const [explainSubjectId, setExplainSubjectId] = useState('');
   const [explainAction, setExplainAction] = useState('invoke');
   const [authorizationResult, setAuthorizationResult] = useState<GovernanceAuthorizationResponse | null>(null);
-  const canUpdatePolicy = useHasPermission('project:resource_policy:manage');
+  const canUpdatePolicy = useHasPermission('project:settings:manage');
   const canReadPolicy = canUpdatePolicy;
 
   useEffect(() => {
@@ -109,25 +107,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const locale = resolvedParams?.locale ?? 'en-US';
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const endpointAPI = useMemo(() => new EndpointAPI(getApiClient()), []);
-  const sourcesAPI = useMemo(() => new FilesAPI(getApiClient()), []);
-  const agentAPI = useMemo(() => new AgentAPI(getApiClient()), []);
   const memberAPI = useMemo(() => new MemberAPI(getApiClient()), []);
   const auditAPI = useMemo(() => new AuditAPI(getApiClient()), []);
 
   const { data: endpointsData, isLoading: endpointsLoading } = useQuery({
     queryKey: ['resource-policy', 'endpoints', workspaceId, projectId],
     queryFn: () => endpointAPI.list(workspaceId, projectId),
-    enabled: !!workspaceId && !!projectId && canReadPolicy,
-  });
-
-  const { data: librariesData, isLoading: librariesLoading } = useQuery({
-    queryKey: ['resource-policy', 'source-libraries', workspaceId, projectId],
-    queryFn: () => sourcesAPI.listLibraries(workspaceId, projectId),
-    enabled: !!workspaceId && !!projectId && canReadPolicy,
-  });
-  const { data: agentsData, isLoading: agentsLoading } = useQuery({
-    queryKey: ['resource-policy', 'agents', workspaceId, projectId],
-    queryFn: () => agentAPI.list(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId && canReadPolicy,
   });
 
@@ -138,26 +123,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       name: item.name,
       subtitle: item.openai_model,
     }));
-    const sourceLibraries = (librariesData?.items ?? []).map((item: FileLibrary) => ({
-      id: item.id,
-      type: 'source_library' as const,
-      name: item.name,
-      subtitle: item.description,
-    }));
-    const agents = (agentsData?.items ?? []).map((item: Agent) => ({
-      id: item.id,
-      type: 'agent' as const,
-      name: item.name,
-      subtitle: item.mode,
-    }));
-    return [...endpoints, ...agents, ...sourceLibraries];
-  }, [endpointsData?.items, librariesData?.items, agentsData?.items]);
+    return endpoints;
+  }, [endpointsData?.items]);
 
   const groupedRows = useMemo(() => {
     return {
       endpoint: rows.filter((row) => row.type === 'endpoint'),
-      agent: rows.filter((row) => row.type === 'agent'),
-      source_library: rows.filter((row) => row.type === 'source_library'),
     };
   }, [rows]);
 
@@ -181,7 +152,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     return map;
   }, [policyQueries, rows]);
 
-  const isLoading = endpointsLoading || librariesLoading || agentsLoading;
+  const isLoading = endpointsLoading;
   const getRowPolicyState = (row: ResourceRow) => {
     const rowIndex = rows.findIndex((item) => item.id === row.id && item.type === row.type);
     const rowKey = `${row.type}:${row.id}`;
@@ -256,7 +227,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     const resourceType = searchParams.get('resource_type');
     const resourceId = searchParams.get('resource_id');
     if (!resourceType || !resourceId) return;
-    if (resourceType !== 'endpoint' && resourceType !== 'source_library' && resourceType !== 'agent') return;
+    if (resourceType !== 'endpoint') return;
     const matched = rows.find((row) => row.type === resourceType && row.id === resourceId);
     if (matched && (selectedResource?.type !== matched.type || selectedResource.id !== matched.id)) {
       setSelectedResource(matched);
@@ -1014,7 +985,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
 }
 
 function getDefaultActionForResourceType(resourceType: ResourceRow['type']): string {
-  if (resourceType === 'source_library') return 'upload';
+  if (resourceType !== 'endpoint') return 'invoke';
   return 'invoke';
 }
 

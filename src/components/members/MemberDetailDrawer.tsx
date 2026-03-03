@@ -66,7 +66,7 @@ export interface MemberDetailDrawerProps {
   authorizationCheckResult?: GovernanceAuthorizationResponse | null;
   isCheckingAuthorization?: boolean;
   onRunAuthorizationCheck?: (payload: {
-    resourceType: 'project' | 'endpoint' | 'source_library' | 'agent';
+    resourceType: 'endpoint';
     resourceId: string;
     action: string;
   }) => Promise<unknown>;
@@ -75,7 +75,7 @@ export interface MemberDetailDrawerProps {
   onViewHistory?: () => void;
   onViewQuotaHistory?: () => void;
   initialAuthorization?: {
-    resourceType: 'project' | 'endpoint' | 'source_library' | 'agent';
+    resourceType: 'endpoint';
     resourceId: string;
     action: string;
   };
@@ -128,7 +128,7 @@ export function MemberDetailDrawer({
   const [activeTab, setActiveTab] = React.useState<'effective_access' | 'permissions' | 'quota'>('effective_access');
   const [appliedPermTemplateId, setAppliedPermTemplateId] = React.useState<string | null>(null);
   const [appliedQuotaTemplateId, setAppliedQuotaTemplateId] = React.useState<string | null>(null);
-  const [authorizeResourceType, setAuthorizeResourceType] = React.useState<'project' | 'endpoint' | 'source_library' | 'agent'>('project');
+  const [authorizeResourceType, setAuthorizeResourceType] = React.useState<'endpoint'>('endpoint');
   const [authorizeResourceId, setAuthorizeResourceId] = React.useState('');
   const [authorizeAction, setAuthorizeAction] = React.useState('read');
   const initializedPermTemplateMemberIdRef = React.useRef<string | null>(null);
@@ -157,7 +157,7 @@ export function MemberDetailDrawer({
     setActiveTab('effective_access');
     setAppliedPermTemplateId(null);
     setAppliedQuotaTemplateId(null);
-    setAuthorizeResourceType('project');
+    setAuthorizeResourceType('endpoint');
     setAuthorizeResourceId('');
     setAuthorizeAction('read');
     initializedPermTemplateMemberIdRef.current = null;
@@ -344,16 +344,13 @@ export function MemberDetailDrawer({
                   <Label className="text-sm">{t('effective_access.resource_type')}</Label>
                   <Select
                     value={authorizeResourceType}
-                    onValueChange={(value) => setAuthorizeResourceType(value as 'project' | 'endpoint' | 'source_library' | 'agent')}
+                    onValueChange={(value) => setAuthorizeResourceType(value as 'endpoint')}
                   >
                     <SelectTrigger data-testid="member-detail__authorize-resource-type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="project">project</SelectItem>
                       <SelectItem value="endpoint">endpoint</SelectItem>
-                      <SelectItem value="source_library">source_library</SelectItem>
-                      <SelectItem value="agent">agent</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

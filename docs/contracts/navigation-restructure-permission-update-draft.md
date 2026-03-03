@@ -34,16 +34,16 @@ Add new Section definitions:
 
 | Page | Old Section | New Section | Permission (unchanged) |
 |------|-------------|-------------|------------------------|
-| Chat | Build | Use | `project:chat:access` |
-| Notebook | Build | Use | `project:notebook:access` |
-| Files | Build | Use | `project:source:use` |
+| Chat | Build | Use | `project:endpoint:use` |
+| Notebook | Build | Use | `project:endpoint:use` |
+| Files | Build | Use | `project:endpoint:use` |
 | Agents | Build | Develop | `project:agent:use`, `project:agent:manage` |
 | Endpoints | Build | Govern | `project:endpoint:use`, `project:endpoint:manage` |
 | Settings | Operate | Govern | `project:settings:manage` |
 | Runtime Control Plane | Operate | Operate | `project:settings:manage` |
-| Runtime Observability | Operate | Operate | `project:usage:view` |
-| Release Ops | Operate | Operate | `project:usage:view` |
-| Alerts | Operate | Operate | `project:alert:view` |
+| Runtime Observability | Operate | Operate | `project:endpoint:use` |
+| Release Ops | Operate | Operate | `project:endpoint:use` |
+| Alerts | Operate | Operate | `project:endpoint:use` |
 
 #### 2.2 New Runtime Console Entry
 
@@ -52,10 +52,10 @@ Add to `frontend-backend-gating-matrix.md` Matrix:
 | Page | User Operation | Required Permission(s) | Backend API Group | FE Expected on 403 |
 |------|----------------|------------------------|-------------------|-------------------|
 | runtime console | view overview tab | `project:settings:manage` | `GET /projects/{id}`, `GET /runtime/health` | tab-level permission denied |
-| runtime console | view monitoring tab | `project:usage:view` | `GET /runtime/metrics`, `GET /runtime/traces` | tab-level permission denied |
-| runtime console | view alerts tab | `project:alert:view` | `GET /alert-rules`, `GET /alert-notifications` | tab-level permission denied |
-| runtime console | view control tab | `project:usage:view` | `GET /release-ops/*`, `GET /governance/*` | tab-level permission denied |
-| runtime console | view reports tab | `project:usage:view` | `GET /release-reports` | tab-level permission denied |
+| runtime console | view monitoring tab | `project:endpoint:use` | `GET /runtime/metrics`, `GET /runtime/traces` | tab-level permission denied |
+| runtime console | view alerts tab | `project:endpoint:use` | `GET /alert-rules`, `GET /alert-notifications` | tab-level permission denied |
+| runtime console | view control tab | `project:endpoint:use` | `GET /release-ops/*`, `GET /governance/*` | tab-level permission denied |
+| runtime console | view reports tab | `project:endpoint:use` | `GET /release-reports` | tab-level permission denied |
 
 ### 3. Route Redirect Entries
 
@@ -74,10 +74,10 @@ All permission points remain unchanged. Only the Section grouping changes:
 
 | Permission Point | Old Section | New Section |
 |------------------|-------------|-------------|
-| `project:chat:access` | Build | Use |
-| `project:notebook:access` | Build | Use |
-| `project:source:use` | Build | Use |
-| `project:source:manage` | Build | Use |
+| `project:endpoint:use` | Build | Use |
+| `project:endpoint:use` | Build | Use |
+| `project:endpoint:use` | Build | Use |
+| `project:endpoint:manage` | Build | Use |
 | `project:agent:use` | Build | Develop |
 | `project:agent:manage` | Build | Develop |
 | `project:endpoint:use` | Build | Govern |

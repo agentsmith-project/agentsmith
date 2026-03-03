@@ -26,7 +26,7 @@ export default function AuditPage({ params }: AuditPageProps) {
   } | null>(null);
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const canViewAudit = useHasPermission('project:audit:view');
+  const canViewAudit = useHasPermission('project:endpoint:use');
   const featureAvailability = getFeatureAvailability('audit');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('audit');
 

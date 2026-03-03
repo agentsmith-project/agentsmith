@@ -257,16 +257,16 @@ export function resolveVisibleProjectPermissionsForActor(args: {
 }
 
 function mapProjectActionToPermission(action: string): string | null {
-  if (action.startsWith('project.member.')) {
-    return action.endsWith('.view') ? 'project:member:view' : 'project:member:manage';
-  }
-  if (action.startsWith('project.audit.')) return 'project:audit:view';
-  if (action.startsWith('project.usage.')) return 'project:usage:view';
-  if (action === 'project.read') return 'project:read';
+  if (action.startsWith('project.audit.')) return 'project:endpoint:use';
+  if (action.startsWith('project.usage.')) return 'project:endpoint:use';
+  if (action === 'project.read') return 'project:endpoint:use';
   if (action === 'project.delete' || action === 'project.update' || action.startsWith('project.settings.')) {
     return 'project:settings:manage';
   }
-  return 'project:read';
+  if (action.startsWith('project.member.') || action.startsWith('project.governance.')) {
+    return 'project:settings:manage';
+  }
+  return 'project:endpoint:use';
 }
 
 function mapResourceActionToPermission(resourceType: Exclude<ResourceType, 'project'>, action: string): string {
@@ -277,8 +277,8 @@ function mapResourceActionToPermission(resourceType: Exclude<ResourceType, 'proj
   }
   if (resourceType === 'source_library') {
     return /read|list|download|browse/i.test(action)
-      ? 'project:source:use'
-      : 'project:source:manage';
+      ? 'project:endpoint:use'
+      : 'project:settings:manage';
   }
   return /invoke|run|read|list|use/i.test(action) ? 'project:agent:use' : 'project:agent:manage';
 }

@@ -18,14 +18,8 @@ export const RESOURCE_POLICY_RULE_MATRIX: Record<
     rate: ['endpoint.requests_per_minute'],
     quota: ['endpoint.daily_token_limit', 'endpoint.requests_per_day'],
   },
-  source_library: {
-    rate: ['source_library.requests_per_minute'],
-    quota: ['source_library.max_total_files', 'source_library.max_file_size_bytes'],
-  },
-  agent: {
-    rate: ['agent.requests_per_minute'],
-    quota: [],
-  },
+  source_library: { rate: [], quota: [] },
+  agent: { rate: [], quota: [] },
 };
 
 export type PolicyRuleBucket = 'rate' | 'quota';
@@ -69,42 +63,8 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       subjectPlaceholderKey: 'subject_placeholders.endpoint.requests_per_day',
     },
   ],
-  source_library: [
-    {
-      key: 'source_library.requests_per_minute',
-      bucket: 'rate',
-      labelKey: 'rules.source_library.requests_per_minute',
-      rootInputId: 'resource-policy-library-requests-per-minute',
-      rootTestId: 'resource-policy__library-requests-per-minute',
-      subjectPlaceholderKey: 'subject_placeholders.source_library.requests_per_minute',
-    },
-    {
-      key: 'source_library.max_total_files',
-      bucket: 'quota',
-      labelKey: 'rules.source_library.max_total_files',
-      rootInputId: 'resource-policy-library-max-files',
-      rootTestId: 'resource-policy__library-max-total-files',
-      subjectPlaceholderKey: 'subject_placeholders.source_library.max_total_files',
-    },
-    {
-      key: 'source_library.max_file_size_bytes',
-      bucket: 'quota',
-      labelKey: 'rules.source_library.max_file_size_bytes',
-      rootInputId: 'resource-policy-library-max-file-size',
-      rootTestId: 'resource-policy__library-max-file-size-bytes',
-      subjectPlaceholderKey: 'subject_placeholders.source_library.max_file_size_bytes',
-    },
-  ],
-  agent: [
-    {
-      key: 'agent.requests_per_minute',
-      bucket: 'rate',
-      labelKey: 'rules.agent.requests_per_minute',
-      rootInputId: 'resource-policy-agent-requests-per-minute',
-      rootTestId: 'resource-policy__agent-requests-per-minute',
-      subjectPlaceholderKey: 'subject_placeholders.agent.requests_per_minute',
-    },
-  ],
+  source_library: [],
+  agent: [],
 };
 
 export function getRuleDefinitionsForResource(resourceType: PolicyResourceType): ResourcePolicyRuleDefinition[] {
@@ -190,6 +150,16 @@ export function validatePolicyRulesForResource(
   rateLimits?: PolicyRateLimit,
   quotaLimits?: PolicyQuotaLimit
 ): { valid: true } | { valid: false; invalidKeys: PolicyRuleKey[] } {
+  if (resourceType !== 'endpoint') {
+    const unsupportedKeys = [
+      ...(rateLimits?.rules?.map((rule) => rule.key) ?? []),
+      ...(quotaLimits?.rules?.map((rule) => rule.key) ?? []),
+    ];
+    return {
+      valid: false,
+      invalidKeys: unsupportedKeys,
+    };
+  }
   const allowed = RESOURCE_POLICY_RULE_MATRIX[resourceType];
   const invalidRateKeys = findInvalidRuleKeys(rateLimits?.rules, allowed.rate);
   const invalidQuotaKeys = findInvalidRuleKeys(quotaLimits?.rules, allowed.quota);

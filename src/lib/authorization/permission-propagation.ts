@@ -35,11 +35,11 @@ const permissionCache = new Map<string, MemberPermissionsResponse>();
 
 // Simulated permission data for different users
 const simulatedPermissions = new Map<string, string[]>([
-  ['user-1', ['project:member:manage', 'project:settings:manage', 'project:resource_policy:manage']],
+  ['user-1', ['project:settings:manage', 'project:settings:manage', 'project:settings:manage']],
   ['user-2', ['project:endpoint:use', 'project:agent:use']], // Has project:agent:use for OR test
-  ['user-3', ['project:source:use']],
+  ['user-3', ['project:endpoint:use']],
   ['user-4', []],
-  ['user-5', ['project:endpoint:use', 'project:source:use']],
+  ['user-5', ['project:endpoint:use', 'project:endpoint:use']],
 ]);
 
 // Generate version identifier from timestamp
@@ -66,9 +66,9 @@ export async function updateMemberPermissions(
   if (mode === 'template' && template) {
     // In production, this would fetch template permissions
     newPermissions = template === 'admin'
-      ? ['project:member:manage', 'project:agent:manage', 'project:endpoint:manage']
+      ? ['project:settings:manage', 'project:agent:manage', 'project:endpoint:manage']
       : template === 'owner'
-        ? ['project:member:manage', 'project:settings:manage', 'project:resource_policy:manage']
+        ? ['project:settings:manage', 'project:settings:manage', 'project:settings:manage']
         : permissions ?? [];
   } else {
     newPermissions = permissions ?? [];

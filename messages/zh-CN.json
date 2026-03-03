@@ -473,7 +473,7 @@
     },
     "permission_denied": {
       "title": "权限不足",
-      "message": "您没有权限访问运行时控制台的任何部分。所需权限：project:usage:view、project:alert:view 或 project:settings:manage"
+      "message": "您没有权限访问运行时控制台的任何部分。所需权限：project:endpoint:use、project:endpoint:use 或 project:settings:manage"
     }
   },
   "settings": {
@@ -648,9 +648,9 @@
       "permissions_list": "权限列表",
       "default_templates": {
         "owner": "所有者",
-        "owner_description": "所有权限（包括 project:delete）",
+        "owner_description": "所有权限（包括 project:settings:manage）",
         "admin": "管理员",
-        "admin_description": "除 project:delete 外的所有权限",
+        "admin_description": "除 project:settings:manage 外的所有权限",
         "developer": "开发者",
         "developer_description": "代理密钥、UserData、AgentThread",
         "user": "用户",

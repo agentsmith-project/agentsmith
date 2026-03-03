@@ -29,7 +29,7 @@ export default function UsagePage({ params }: UsagePageProps) {
     locale?: string;
   } | null>(null);
   const currentUser = useAuthStore((s) => s.user);
-  const canViewUsage = useHasPermission('project:usage:view');
+  const canViewUsage = useHasPermission('project:endpoint:use');
   const featureAvailability = getFeatureAvailability('usage');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('usage');
   const workspaceId = resolvedParams?.workspace ?? '';

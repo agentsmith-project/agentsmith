@@ -19,7 +19,7 @@ describe('explainPermissionDecision', () => {
   it('should explain template permission granted from owner role', async () => {
     const decision: PermissionDecision = {
       member_id: 'user-1',
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -60,7 +60,7 @@ describe('explainPermissionDecision', () => {
   it('should explain permission granted from group membership', async () => {
     const decision: PermissionDecision = {
       member_id: 'user-3',
-      permission: 'project:source:use',
+      permission: 'project:endpoint:use',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -81,7 +81,7 @@ describe('explainPermissionDecision', () => {
   it('should explain why permission was denied', async () => {
     const decision: PermissionDecision = {
       member_id: 'user-4',
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -122,7 +122,7 @@ describe('explainPermissionDecision', () => {
   it('should provide UI-friendly explanation in English and Chinese', async () => {
     const decision: PermissionDecision = {
       member_id: 'user-1',
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',

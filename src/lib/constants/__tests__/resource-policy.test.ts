@@ -6,13 +6,13 @@ import {
 } from '@/lib/constants/resource-policy';
 
 describe('validatePolicyRulesForResource', () => {
-  it('accepts agent requests-per-minute rule', () => {
+  it('rejects non-endpoint resource policy rules', () => {
     const result = validatePolicyRulesForResource(
       'agent',
       { rules: [{ key: 'agent.requests_per_minute', value: 3 }] },
       undefined
     );
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
   });
 
   it('rejects endpoint agent-rate rule', () => {

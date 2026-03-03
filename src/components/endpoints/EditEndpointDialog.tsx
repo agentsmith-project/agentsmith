@@ -154,7 +154,7 @@ export function EditEndpointDialog({
       endpoint.models?.[0]?.capability ??
       'chat_completion';
     setCapability(selectedCapability);
-  }, [open, endpoint]);
+  }, [open, endpoint, isEndpointCustom]);
 
   React.useEffect(() => {
     if (!open || isEndpointCustom || providerOptions.length === 0) return;

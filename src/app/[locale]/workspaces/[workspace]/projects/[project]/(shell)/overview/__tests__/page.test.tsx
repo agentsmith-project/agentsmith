@@ -29,11 +29,11 @@ vi.mock('@/lib/hooks/use-sync-auth-from-url', () => ({
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
   useCurrentPermissions: vi.fn(() => [
-    'project:chat:access',
-    'project:notebook:access',
+    'project:endpoint:use',
+    'project:endpoint:use',
     'project:agent:use',
     'project:endpoint:use',
-    'project:usage:view',
+    'project:endpoint:use',
   ]),
 }));
 

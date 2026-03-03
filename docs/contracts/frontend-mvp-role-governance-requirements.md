@@ -57,7 +57,7 @@ This document is the product-facing source for UX behavior; API-level details re
 
 1. Credentials module gate is token-only in frontend navigation and page access.
 2. Effective access condition for credentials is:
-- must have `project:credential:manage`
+- must have `project:settings:manage`
 3. Even for authorized users, credentials display is metadata-only:
 - name
 - fingerprint
@@ -81,8 +81,8 @@ This document is the product-facing source for UX behavior; API-level details re
 - new resources inherit project defaults
 - project admin can add per-resource/per-subject overrides when needed
 4. Chat / Notebook page access uses dedicated access tokens:
-- `project:chat:access`
-- `project:notebook:access`
+- `project:endpoint:use`
+- `project:endpoint:use`
 5. Chat / Notebook do not define independent quota/rate rules in MVP.
 - usage constraints are surfaced from endpoint/source_library/agent policy outcomes
 
@@ -130,7 +130,7 @@ This document is the product-facing source for UX behavior; API-level details re
 1. Workspace settings includes governance grouping UI (`wheel` / `user`).
 2. Runtime permission checks are token-only for project and resource operations.
 3. Governance write operations follow token gates at route/action level.
-4. Credentials gate follows token condition: `project:credential:manage`.
+4. Credentials gate follows token condition: `project:settings:manage`.
 5. Projects list interaction and admin clarity:
 - unpinned project table rows are directly clickable to open project overview
 - pinned project cards and table action buttons are clickable and no longer blocked by row-level event conflicts

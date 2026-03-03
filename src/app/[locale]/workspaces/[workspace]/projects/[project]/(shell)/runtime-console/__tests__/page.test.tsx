@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import RuntimeConsoleRoute from '../page';
 
 // Mock permissions - will be configured in each test
-let permissionFn: (permission?: string) => boolean = (permission?: string) => permission === 'project:usage:view';
+let permissionFn: (permission?: string) => boolean = (permission?: string) => permission === 'project:endpoint:use';
 
 // Mock RuntimeConsolePage component
 vi.mock('@/components/runtime/RuntimeConsolePage', () => ({
@@ -50,12 +50,12 @@ describe('RuntimeConsoleRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset to default permission
-    permissionFn = (permission?: string) => permission === 'project:usage:view';
+    permissionFn = (permission?: string) => permission === 'project:endpoint:use';
   });
 
   describe('access control', () => {
-    it('grants access when user has project:usage:view permission', async () => {
-      permissionFn = (permission?: string) => permission === 'project:usage:view';
+    it('grants access when user has project:endpoint:use permission', async () => {
+      permissionFn = (permission?: string) => permission === 'project:endpoint:use';
 
       render(
         <RuntimeConsoleRoute
@@ -74,8 +74,8 @@ describe('RuntimeConsoleRoute', () => {
       expect(screen.getByTestId('runtime-console__project')).toHaveTextContent('proj_test');
     });
 
-    it('grants access when user has project:alert:view permission', async () => {
-      permissionFn = (permission?: string) => permission === 'project:alert:view';
+    it('grants access when user has project:endpoint:use permission', async () => {
+      permissionFn = (permission?: string) => permission === 'project:endpoint:use';
 
       render(
         <RuntimeConsoleRoute
@@ -112,7 +112,7 @@ describe('RuntimeConsoleRoute', () => {
 
     it('grants access when user has multiple permissions', async () => {
       permissionFn = (permission?: string) =>
-        permission === 'project:usage:view' || permission === 'project:alert:view';
+        permission === 'project:endpoint:use' || permission === 'project:endpoint:use';
 
       render(
         <RuntimeConsoleRoute
@@ -151,7 +151,7 @@ describe('RuntimeConsoleRoute', () => {
 
   describe('parameter validation', () => {
     it('shows loading state while resolving params', async () => {
-      permissionFn = (permission?: string) => permission === 'project:usage:view';
+      permissionFn = (permission?: string) => permission === 'project:endpoint:use';
 
       render(
         <RuntimeConsoleRoute
@@ -173,7 +173,7 @@ describe('RuntimeConsoleRoute', () => {
     });
 
     it('shows error for invalid workspace parameter', async () => {
-      permissionFn = (permission?: string) => permission === 'project:usage:view';
+      permissionFn = (permission?: string) => permission === 'project:endpoint:use';
 
       render(
         <RuntimeConsoleRoute
@@ -192,7 +192,7 @@ describe('RuntimeConsoleRoute', () => {
     });
 
     it('shows error for invalid project parameter', async () => {
-      permissionFn = (permission?: string) => permission === 'project:usage:view';
+      permissionFn = (permission?: string) => permission === 'project:endpoint:use';
 
       render(
         <RuntimeConsoleRoute
@@ -213,7 +213,7 @@ describe('RuntimeConsoleRoute', () => {
 
   describe('tab permission boundaries', () => {
     it('renders RuntimeConsolePage with correct props', async () => {
-      permissionFn = (permission?: string) => permission === 'project:usage:view';
+      permissionFn = (permission?: string) => permission === 'project:endpoint:use';
 
       render(
         <RuntimeConsoleRoute

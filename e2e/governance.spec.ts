@@ -260,7 +260,7 @@ test.describe('Epic A: Governance – Authorization & Policy', () => {
       // Note: This tests the integration I implemented
     });
 
-    test('alert center respects project:alert:view permission', async ({ authedPage }) => {
+    test('alert center respects project:endpoint:use permission', async ({ authedPage }) => {
       // Try to navigate to alerts
       await authedPage.goto('/en-US/workspaces/ws_001/projects/proj_001/alerts');
 
@@ -271,19 +271,18 @@ test.describe('Epic A: Governance – Authorization & Policy', () => {
   });
 
   test.describe('Governance Consistency Across Resources', () => {
-    test('endpoint, agent, and source_library all have policy controls', async ({ authedPage }) => {
+    test('resource policy only exposes endpoint controls', async ({ authedPage }) => {
       await goToProject(authedPage, 'resource-policy');
       await expect(authedPage.getByTestId('resource-policy__table')).toBeVisible({ timeout: 10000 });
 
-      // Verify all resource groups exist
+      // Endpoint is the only managed resource in resource policy.
       await expect(authedPage.getByTestId('resource-policy__group--endpoint')).toBeVisible();
-      await expect(authedPage.getByTestId('resource-policy__group--agent')).toBeVisible();
-      await expect(authedPage.getByTestId('resource-policy__group--source_library')).toBeVisible();
+      await expect(authedPage.getByTestId('resource-policy__group--agent')).toHaveCount(0);
+      await expect(authedPage.getByTestId('resource-policy__group--source_library')).toHaveCount(0);
 
-      // Verify each resource type has at least one row
       await expect(authedPage.locator('[data-testid^="resource-policy__row--endpoint--"]').first()).toBeVisible();
-      await expect(authedPage.locator('[data-testid^="resource-policy__row--agent--"]').first()).toBeVisible();
-      await expect(authedPage.locator('[data-testid^="resource-policy__row--source_library--"]').first()).toBeVisible();
+      await expect(authedPage.locator('[data-testid^="resource-policy__row--agent--"]')).toHaveCount(0);
+      await expect(authedPage.locator('[data-testid^="resource-policy__row--source_library--"]')).toHaveCount(0);
     });
 
     test('policy controls are consistent: access_mode, quota_limits, rate_limits', async ({ authedPage }) => {

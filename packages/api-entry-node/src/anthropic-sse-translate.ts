@@ -119,7 +119,7 @@ export async function pipeAnthropicSseAsOpenAiChat(
 
   let responseId = `chatcmpl_${Date.now()}`;
   let model = String(requestBody.model ?? '');
-  let created = Math.floor(Date.now() / 1000);
+  const created = Math.floor(Date.now() / 1000);
   let finishReason: 'stop' | 'tool_calls' = 'stop';
   let promptTokens = 0;
   let completionTokens = 0;

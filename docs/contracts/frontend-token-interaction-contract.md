@@ -24,7 +24,7 @@ Related docs:
 2. Frontend runtime gate is token-only.
 3. Chat and Notebook are access-only modules in MVP.
 4. Resource usage limits are governed by resource policy rules, not by extra chat/notebook quotas.
-5. Credentials are governed by `project:credential:manage` only in MVP.
+5. Credentials are governed by `project:settings:manage` only in MVP.
 
 ## Canonical Token Set (MVP)
 
@@ -34,54 +34,54 @@ Related docs:
 - `workspace:governance:update`
 
 ### Project base and access
-- `project:read`
-- `project:chat:access`
-- `project:notebook:access`
+- `project:endpoint:use`
+- `project:endpoint:use`
+- `project:endpoint:use`
 
 ### Resources
-- `project:source:use`
-- `project:source:manage`
+- `project:endpoint:use`
+- `project:endpoint:manage`
 - `project:endpoint:use`
 - `project:endpoint:manage`
 - `project:agent:use`
 - `project:agent:manage`
 
 ### Governance
-- `project:resource_policy:manage`
-- `project:credential:manage`
 - `project:settings:manage`
-- `project:member:view`
-- `project:member:manage`
+- `project:settings:manage`
+- `project:settings:manage`
+- `project:settings:manage`
+- `project:settings:manage`
 
 ### Observability
-- `project:audit:view`
-- `project:usage:view`
+- `project:endpoint:use`
+- `project:endpoint:use`
 
 ## Route-Level Gate Contract
 
 - Projects list: `workspace:read`
-- Project overview: `project:read`
-- Chat: `project:chat:access`
-- Notebook list/detail: `project:notebook:access`
-- Files: `project:source:use`
+- Project overview: `project:endpoint:use`
+- Chat: `project:endpoint:use`
+- Notebook list/detail: `project:endpoint:use`
+- Files: `project:endpoint:use`
 - Endpoints: `project:endpoint:use`
 - Agents: `project:agent:use`
-- Members: `project:member:view`
-- Credentials: `project:credential:manage`
-- Resource Policy: `project:resource_policy:manage`
+- Members: `project:settings:manage`
+- Credentials: `project:settings:manage`
+- Resource Policy: `project:settings:manage`
 - Settings: `project:settings:manage`
-- Audit: `project:audit:view`
-- Usage: `project:usage:view`
+- Audit: `project:endpoint:use`
+- Usage: `project:endpoint:use`
 
 ## Action-Level Gate Contract
 
-- Source create/update/delete: `project:source:manage`
+- Source create/update/delete: `project:endpoint:manage`
 - Endpoint create/update/delete: `project:endpoint:manage`
 - Agent create/update/delete/key issue/key revoke: `project:agent:manage`
-- Members invite/remove/template/group/policy apply: `project:member:manage`
+- Members invite/remove/template/group/policy apply: `project:settings:manage`
 - Settings update/delete project: `project:settings:manage`
-- Resource policy save: `project:resource_policy:manage`
-- Credentials create/rotate/delete: `project:credential:manage`
+- Resource policy save: `project:settings:manage`
+- Credentials create/rotate/delete: `project:settings:manage`
 
 ## UI Behavior Contract
 

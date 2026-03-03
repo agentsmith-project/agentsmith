@@ -69,7 +69,7 @@ async function mockLogin(page: Page) {
             name: 'Research Project',
             visibility: 'private',
             role: 'admin',
-            permissions: ['project:read', 'project:agent:create'],
+            permissions: ['project:endpoint:use', 'project:agent:manage'],
             status: 'active',
           },
         ],

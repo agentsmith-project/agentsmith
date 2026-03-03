@@ -11,9 +11,14 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Typical fields: subject/user id, expiration, optional permission claims.
 
 2. `Permission point`
-- Canonical action identifier (for example `project:admin:grant`).
+- Canonical action identifier.
 - Source of truth: `src/lib/constants/permissions.ts`.
-- Access-only examples in MVP: `project:chat:access`, `project:notebook:access`.
+- Project-level permissions in MVP are intentionally reduced to five:
+  - `project:endpoint:use`
+  - `project:endpoint:manage`
+  - `project:agent:use`
+  - `project:agent:manage`
+  - `project:settings:manage`
 
 3. `Frontend gate`
 - Uses permission points to drive UX states (show/hide/disable/error state).
@@ -43,6 +48,6 @@ Clarify the boundary between authentication data and authorization enforcement t
 ## Contract Guidance
 
 - Use identical permission vocabulary in FE and BE.
-- Keep endpoint-level required permissions in `frontend-token-interaction-contract.md`.
+- Do not introduce new permission points without updating this file and `src/lib/constants/permissions.ts`.
 - Keep page/operation mapping in `frontend-backend-gating-matrix.md`.
 - Keep status/error schema in the active contract set in `docs/contracts/`.

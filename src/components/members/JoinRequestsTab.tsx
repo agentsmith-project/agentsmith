@@ -30,7 +30,7 @@ export function JoinRequestsTab({
   onReject,
 }: JoinRequestsTabProps) {
   const t = useTranslations('members.join_requests');
-  const canApprove = useHasPermission('project:member:manage');
+  const canApprove = useHasPermission('project:settings:manage');
   const approveMutation = useApproveJoinRequest(workspaceId, projectId);
   const rejectMutation = useRejectJoinRequest(workspaceId, projectId);
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false);

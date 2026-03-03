@@ -133,7 +133,7 @@ function parentPrefixForPrefix(prefix: string) {
 export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPageProps) {
   const t = useTranslations('files');
   const tErrors = useTranslations('errors');
-  const canManage = useHasPermission('project:source:manage');
+  const canManage = useHasPermission('project:settings:manage');
   const { layoutMode } = useProjectLayoutMode();
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 

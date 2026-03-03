@@ -1,35 +1,33 @@
 # Frontend MVP Resource Policy & Governance (v1)
 
-Last updated: 2026-02-08
+Last updated: 2026-03-03
 Status: active working contract
 Owner: Frontend
 
 ## Purpose
 
-Define the MVP model for resource access and consumption governance.
-This contract supersedes ACL-first wording in older contracts.
+Define the MVP model for endpoint resource access and consumption governance.
+This contract supersedes older multi-resource policy wording.
 
 ## Scope
 
-1. MVP resources do not distinguish private/shared at data model level.
-2. Resource types in scope:
+1. Resource policy management scope is endpoint-only.
+2. Managed resource type in scope:
 - `endpoint`
-- `source_library`
-- `agent`
-3. Only `project admin` can create/update/delete resources.
+3. Only `project admin` can create/update/delete resource policy.
 4. Chat / Notebook do not define independent rate/quota rules in MVP.
-   - Usage feedback comes from resolved endpoint/source_library/agent policy results.
+   - Usage feedback comes from resolved endpoint policy results.
 
 ## Core Principles
 
 1. Keep permission tokens for operation authorization (manage actions).
-2. Use resource policy for runtime usage control:
-- who can access a resource
-- how much each user can consume on that resource
+2. Use endpoint resource policy for runtime usage control:
+- who can access an endpoint
+- how much each user can consume on that endpoint
 3. Default posture:
-- all project members can access all resources
-- all resources inherit project default governance rules
-4. New resources inherit project defaults immediately at creation time.
+- all project members can access all endpoints
+- all endpoints inherit project default governance rules
+4. New endpoints inherit project defaults immediately at creation time.
 5. `allow_list` mode requires at least one valid subject (`user` or `group`).
 6. Subject selection in frontend should come from project members and project groups selectors (no free-text by default).
 
@@ -37,21 +35,17 @@ This contract supersedes ACL-first wording in older contracts.
 
 1. `permission token`: can/cannot perform management operations.
 2. `resource policy`: access + rate/quota constraints on usage path.
-3. `project defaults`: baseline governance per resource type.
-4. `resource override`: per-resource exception to defaults.
-5. `subject override`: per-user/per-group exception to resource/default policy.
-6. `source_library tuple`: a bound triple for one library instance:
-- object namespace (`object_prefix`)
-- document namespace (`doc_namespace`)
-- vector namespace (`vector_namespace`)
+3. `project defaults`: baseline governance for endpoints.
+4. `resource override`: per-endpoint exception to defaults.
+5. `subject override`: per-user/per-group exception to endpoint/default policy.
 
 ## Policy Resolution Order
 
 From highest priority to lowest:
 
-1. `subject override` (user/group on a resource)
-2. `resource override` (resource instance)
-3. `project defaults` (resource type defaults)
+1. `subject override` (user/group on an endpoint)
+2. `resource override` (endpoint instance)
+3. `project defaults` (endpoint defaults)
 
 Conflict rule:
 - priority: `subject override` > `resource override` > `project defaults`
@@ -64,28 +58,21 @@ project_policy:
   defaults:
     endpoint:
       access: allow_all_members
+      rate_limits:
+        rules:
+          - key: endpoint.requests_per_minute
+            value: number | null
       quota_limits:
         rules:
           - key: endpoint.daily_token_limit
             value: number | null
             window: day
-    source_library:
-      access: allow_all_members
-      quota_limits:
-        rules:
-          - key: source_library.max_total_files
+          - key: endpoint.requests_per_day
             value: number | null
-          - key: source_library.max_file_size_bytes
-            value: number | null
-    agent:
-      access: allow_all_members
-      rate_limits:
-        rules:
-          - key: agent.requests_per_minute
-            value: number | null
+            window: day
 
 resource_overrides:
-  - resource_type: endpoint | source_library | agent
+  - resource_type: endpoint
     resource_id: string
     access: allow_all_members | allow_list
     allowed_subjects:
@@ -97,7 +84,7 @@ resource_overrides:
       rules: []
 
 subject_overrides:
-  - resource_type: endpoint | source_library | agent
+  - resource_type: endpoint
     resource_id: string
     subject_type: user | group
     subject_id: string
@@ -109,25 +96,14 @@ subject_overrides:
 
 ## Resource Type Rule Matrix (MVP)
 
-1. `agent`
-- allowed rate keys: `agent.requests_per_minute`
-- allowed quota keys: none
-- usage semantics: only request count is meaningful for agent usage; token metrics are not used for agent governance decisions
-
-2. `endpoint`
+1. `endpoint`
 - allowed rate keys: `endpoint.requests_per_minute`
 - allowed quota keys: `endpoint.daily_token_limit`, `endpoint.requests_per_day`
-
-3. `source_library`
-- allowed rate keys: `source_library.requests_per_minute`
-- allowed quota keys:
-  - `source_library.max_total_files`
-  - `source_library.max_file_size_bytes`
 
 ## Extensibility Constraints (Freeze)
 
 1. Limit payloads use rule-list format (`rules[]`) instead of fixed fields.
-2. Frontend validates rule keys by resource-type matrix before request.
+2. Frontend validates rule keys by endpoint matrix before request.
 3. New limits are introduced by adding rule keys + form renderer registration, not changing core schema.
 4. Policy resolution is centralized, not duplicated in page components.
 5. Backend should expose supported rule keys/version for forward compatibility.
@@ -135,42 +111,24 @@ subject_overrides:
 ## Runtime Enforcement Flow
 
 1. Check operation permission token.
-2. Resolve resource policy (subject > resource > default).
+2. Resolve endpoint policy (subject > resource > default).
 3. Check access allow.
    - if `access_mode=allow_list`, at least one subject must be present
 4. Check rate limits.
 5. Check quota limits.
-6. For `source_library`, resolve and lock the tuple context (`object_prefix`, `doc_namespace`, `vector_namespace`) for this request.
-7. Return standard deny/limit errors when blocked.
-
-## Source Library Tuple Consistency Rules
-
-1. Every `source_library` must persist tuple metadata:
-- `object_prefix`
-- `doc_namespace`
-- `vector_namespace`
-
-2. All file and AIReady operations must carry `source_library_id`.
-3. Backend must reject tuple mismatch with a deterministic validation/business error.
-4. Frontend must reset list/detail/task panels after library switch and re-fetch under the new `source_library_id`.
-5. AIReady ingestion result must be traceable to the same tuple as the source file.
-
-## Default Limits (To Be Decided)
-
-Defaults should be configurable in project policy and not hardcoded in frontend.
-Unset (`null`) means no limit for that field.
+6. Return standard deny/limit errors when blocked.
 
 ## API Contract Direction
 
 1. Read/update project defaults:
 - `GET /workspaces/{ws}/projects/{project}/governance/defaults`
 - `PATCH /workspaces/{ws}/projects/{project}/governance/defaults`
-2. Read/update resource policy:
-- `GET /workspaces/{ws}/projects/{project}/resources/{type}/{id}/policy`
-- `PATCH /workspaces/{ws}/projects/{project}/resources/{type}/{id}/policy`
+2. Read/update endpoint policy:
+- `GET /workspaces/{ws}/projects/{project}/resources/endpoint/{id}/policy`
+- `PATCH /workspaces/{ws}/projects/{project}/resources/endpoint/{id}/policy`
 3. Read/update subject override:
-- `PUT /workspaces/{ws}/projects/{project}/resources/{type}/{id}/subjects/{subjectType}/{subjectId}/policy`
-- `DELETE /workspaces/{ws}/projects/{project}/resources/{type}/{id}/subjects/{subjectType}/{subjectId}/policy`
+- `PUT /workspaces/{ws}/projects/{project}/resources/endpoint/{id}/subjects/{subjectType}/{subjectId}/policy`
+- `DELETE /workspaces/{ws}/projects/{project}/resources/endpoint/{id}/subjects/{subjectType}/{subjectId}/policy`
 
 ## Audit Requirements
 
@@ -184,10 +142,11 @@ Every policy mutation should record:
 
 ## Out of Scope (MVP)
 
-1. File-level policy inside files library.
-2. Advanced override conflict UI explainers beyond basic preview.
-3. Cross-project governance templates.
-4. Chat/Notebook-specific quota or rate-limit dimensions.
+1. File-library policy management in resource policy page.
+2. Agent policy management in resource policy page.
+3. Advanced override conflict UI explainers beyond basic preview.
+4. Cross-project governance templates.
+5. Chat/Notebook-specific quota or rate-limit dimensions.
 
 ## Contract Notes
 

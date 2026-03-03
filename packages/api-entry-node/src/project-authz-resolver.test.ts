@@ -11,7 +11,7 @@ describe('resolveProjectPermissionsForRequest', () => {
       id: 'pt_manage',
       project_id: projectId,
       name: 'Managers',
-      permissions: ['project:member:manage'],
+      permissions: ['project:settings:manage'],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -32,7 +32,7 @@ describe('resolveProjectPermissionsForRequest', () => {
       actorUserId: 'user_test',
     }));
 
-    expect(perms.has('project:chat:access')).toBe(true);
-    expect(perms.has('project:member:manage')).toBe(true);
+    expect(perms.has('project:endpoint:use')).toBe(true);
+    expect(perms.has('project:settings:manage')).toBe(true);
   });
 });

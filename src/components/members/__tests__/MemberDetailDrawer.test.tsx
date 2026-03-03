@@ -77,7 +77,7 @@ describe('MemberDetailDrawer', () => {
         open
         onOpenChange={() => {}}
         member={{ ...baseMember, id: 'u_2' }}
-        permissions={{ platform_permissions: ['project:read', 'project:member:view'] }}
+        permissions={{ platform_permissions: ['project:endpoint:use', 'project:settings:manage'] }}
       />
     );
 
@@ -93,20 +93,20 @@ describe('MemberDetailDrawer', () => {
         open
         onOpenChange={() => {}}
         member={baseMember}
-        permissions={{ platform_permissions: ['project:read'] }}
+        permissions={{ platform_permissions: ['project:endpoint:use'] }}
         quotaOverrides={{ endpoint: { daily_token_limit: 1000 } }}
         effectiveAccessSnapshot={{
           membership: {
             project_id: 'proj_1',
             user_id: 'u_1',
             role: 'admin',
-            permissions: ['project:read'],
+            permissions: ['project:endpoint:use'],
             status: 'suspended',
             joined_at: '2026-02-01T00:00:00Z',
           },
-          permissions: { platform_permissions: ['project:read'] },
+          permissions: { platform_permissions: ['project:endpoint:use'] },
           quota_overrides: { endpoint: { daily_token_limit: 1000 } },
-          effective_permissions: ['project:read'],
+          effective_permissions: ['project:endpoint:use'],
           membership_status: 'suspended',
         }}
         authorizationCheckResult={{
@@ -129,7 +129,7 @@ describe('MemberDetailDrawer', () => {
 
     expect(screen.getByTestId('member-detail__effective-access-summary')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__membership-status')).toHaveTextContent('effective_access.membership_status.suspended');
-    expect(screen.getByTestId('member-detail__effective-permissions')).toHaveTextContent('project:read');
+    expect(screen.getByTestId('member-detail__effective-permissions')).toHaveTextContent('project:endpoint:use');
     expect(screen.getByTestId('member-detail__effective-quotas')).toHaveTextContent('endpoint.daily_token_limit: 1000');
     expect(screen.getByTestId('member-detail__authorize-result')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__matched-policy')).toHaveTextContent('endpoint/endpoint_1');

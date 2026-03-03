@@ -121,6 +121,10 @@ const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Arr
   };
 }>>>();
 
+function isManagedPolicyResourceType(resourceType: string): resourceType is 'endpoint' {
+  return resourceType === 'endpoint';
+}
+
 function projectScopedKey(workspaceId: string, projectId: string) {
   return `${workspaceId}:${projectId}`;
 }
@@ -1499,13 +1503,17 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.resourceType
     && route.resourceId
   ) {
+    if (!isManagedPolicyResourceType(route.resourceType)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'unsupported_resource_type' });
+      return true;
+    }
     json(
       res,
       200,
       getProjectResourcePolicyOrDefault(
         route.workspaceId,
         route.projectId,
-        route.resourceType as 'endpoint' | 'source_library' | 'agent',
+        route.resourceType,
         route.resourceId,
       ),
     );
@@ -1520,6 +1528,10 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.resourceType
     && route.resourceId
   ) {
+    if (!isManagedPolicyResourceType(route.resourceType)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'unsupported_resource_type' });
+      return true;
+    }
     const body = await readBody(req) as {
       access_mode?: 'allow_all_members' | 'allow_list';
       allowed_subjects?: Array<{
@@ -1535,7 +1547,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'access_mode and allowed_subjects are required' });
       return true;
     }
-    const resourceType = route.resourceType as 'endpoint' | 'source_library' | 'agent';
+    const resourceType = route.resourceType;
     const rateValidation = validatePolicyRuleKeys({
       resourceType,
       kind: 'rate_limits',

@@ -170,9 +170,9 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
 
   if (isTaskRoute(route)) {
     if (route.kind === 'taskMessages' && method === 'POST') {
-      return ['project:notebook:access', 'project:agent:use', 'project:endpoint:use'];
+      return ['project:endpoint:use', 'project:agent:use'];
     }
-    return ['project:notebook:access'];
+    return ['project:endpoint:use'];
   }
 
   if (
@@ -182,7 +182,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'usageTimeseries'
     || route.kind === 'quotaSummary'
   ) {
-    return route.kind === 'audit' ? ['project:audit:view'] : ['project:usage:view'];
+    return ['project:endpoint:use'];
   }
 
   if (
@@ -205,24 +205,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'projectMemberChangeHistory'
     || route.kind === 'projectResourcePolicy'
   ) {
-    if (
-      route.kind === 'projectJoinRequestApprove'
-      || route.kind === 'projectJoinRequestReject'
-      || route.kind === 'projectPermissionTemplates'
-      || route.kind === 'projectPermissionTemplateItem'
-      || route.kind === 'projectQuotaTemplates'
-      || route.kind === 'projectQuotaTemplateItem'
-      || route.kind === 'projectQuotaTemplateApply'
-      || route.kind === 'projectGroupItem'
-      || route.kind === 'projectGroupApplyTemplate'
-      || route.kind === 'projectMembershipItem'
-      || route.kind === 'projectMemberPermissions'
-      || route.kind === 'projectMemberQuotaOverrides'
-      || route.kind === 'projectResourcePolicy'
-    ) {
-      return method === 'GET' ? ['project:member:view'] : ['project:member:manage'];
-    }
-    return ['project:member:view'];
+    return ['project:settings:manage'];
   }
 
   if (isAgentRoute(route)) {
@@ -231,7 +214,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
   }
 
   if (route.kind === 'credentials' || route.kind === 'credentialItem' || route.kind === 'credentialRotate') {
-    return ['project:credential:manage'];
+    return ['project:settings:manage'];
   }
 
   if (
@@ -288,7 +271,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     return ['project:endpoint:manage'];
   }
 
-  return [];
+  return ['project:endpoint:use'];
 }
 
 export function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
@@ -1089,8 +1072,8 @@ export async function handleRequest(
         actorUserId: user.id,
         requiredPermissions:
           body.subject.type === 'user' && body.subject.id === user.id
-            ? ['project:read']
-            : ['project:member:view'],
+            ? ['project:endpoint:use']
+            : ['project:settings:manage'],
       });
       if (actorGate.decisions.some((item) => !item.granted)) {
         json(res, 403, { error_code: 'FORBIDDEN', message: 'forbidden' });

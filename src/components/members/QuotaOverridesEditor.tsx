@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Check, RotateCw } from 'lucide-react';
-import { formatBytes } from '@/lib/utils/formatters';
 import type { QuotaOverride } from '@/lib/api/types';
 
 export interface QuotaOverridesEditorProps {
@@ -19,14 +18,11 @@ export interface QuotaOverridesEditorProps {
 }
 
 type QuotaPath =
-  | ['endpoint', 'daily_token_limit']
-  | ['source_library', 'max_total_files']
-  | ['source_library', 'max_file_size_bytes']
-  | ['agent', 'max_concurrency'];
+  | ['endpoint', 'daily_token_limit'];
 
 interface QuotaFieldDefinition {
   id: string;
-  section: 'endpoint' | 'source_library' | 'agent';
+  section: 'endpoint';
   path: QuotaPath;
   labelKey: string;
   format?: (value: number) => string;
@@ -46,31 +42,10 @@ const QUOTA_FIELD_DEFINITIONS: QuotaFieldDefinition[] = [
     labelKey: 'fields.endpoint_daily_token_limit',
     unitKey: 'units.tokens_per_day',
   },
-  {
-    id: 'source_library.max_total_files',
-    section: 'source_library',
-    path: ['source_library', 'max_total_files'],
-    labelKey: 'fields.source_library_max_total_files',
-    unitKey: 'units.files',
-  },
-  {
-    id: 'source_library.max_file_size_bytes',
-    section: 'source_library',
-    path: ['source_library', 'max_file_size_bytes'],
-    labelKey: 'fields.source_library_max_file_size_bytes',
-    format: formatBytes,
-  },
-  {
-    id: 'agent.max_concurrency',
-    section: 'agent',
-    path: ['agent', 'max_concurrency'],
-    labelKey: 'fields.agent_max_concurrency',
-    unitKey: 'units.concurrency',
-  },
 ];
 
 const QUOTA_SECTIONS: Array<{
-  id: 'endpoint' | 'source_library' | 'agent';
+  id: 'endpoint';
   titleKey: string;
   descriptionKey: string;
 }> = [
@@ -79,31 +54,13 @@ const QUOTA_SECTIONS: Array<{
     titleKey: 'sections.endpoint_title',
     descriptionKey: 'sections.endpoint_description',
   },
-  {
-    id: 'source_library',
-    titleKey: 'sections.source_library_title',
-    descriptionKey: 'sections.source_library_description',
-  },
-  {
-    id: 'agent',
-    titleKey: 'sections.agent_title',
-    descriptionKey: 'sections.agent_description',
-  },
 ];
 
 function getValueAtPath(data: QuotaOverride, [scope, key]: QuotaPath): number | undefined {
-  switch (scope) {
-    case 'endpoint':
-      return key === 'daily_token_limit' ? data.endpoint?.daily_token_limit : undefined;
-    case 'source_library':
-      if (key === 'max_total_files') return data.source_library?.max_total_files;
-      if (key === 'max_file_size_bytes') return data.source_library?.max_file_size_bytes;
-      return undefined;
-    case 'agent':
-      return key === 'max_concurrency' ? data.agent?.max_concurrency : undefined;
-    default:
-      return undefined;
+  if (scope === 'endpoint' && key === 'daily_token_limit') {
+    return data.endpoint?.daily_token_limit;
   }
+  return undefined;
 }
 
 function setValueAtPath(
@@ -128,45 +85,6 @@ function setValueAtPath(
     }
     return next;
   }
-
-  if (scope === 'source_library') {
-    const scoped = { ...(next.source_library ?? {}) };
-    if (key === 'max_total_files') {
-      if (value === undefined) {
-        delete scoped.max_total_files;
-      } else {
-        scoped.max_total_files = value;
-      }
-    }
-    if (key === 'max_file_size_bytes') {
-      if (value === undefined) {
-        delete scoped.max_file_size_bytes;
-      } else {
-        scoped.max_file_size_bytes = value;
-      }
-    }
-    if (Object.keys(scoped).length === 0) {
-      delete next.source_library;
-    } else {
-      next.source_library = scoped;
-    }
-    return next;
-  }
-
-  const scoped = { ...(next.agent ?? {}) };
-  if (key === 'max_concurrency') {
-    if (value === undefined) {
-      delete scoped.max_concurrency;
-    } else {
-      scoped.max_concurrency = value;
-    }
-  }
-  if (Object.keys(scoped).length === 0) {
-    delete next.agent;
-  } else {
-    next.agent = scoped;
-  }
-
   return next;
 }
 

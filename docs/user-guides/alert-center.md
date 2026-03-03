@@ -263,10 +263,10 @@ If you receive too many alerts:
 
 Required permissions:
 
-- **View Alerts**: `project:alert:view`
-- **Create Rules**: `project:alert:manage`
-- **Delete Rules**: `project:alert:manage`
-- **Export Alerts**: `project:audit:export`
+- **View Alerts**: `project:endpoint:use`
+- **Create Rules**: `project:settings:manage`
+- **Delete Rules**: `project:settings:manage`
+- **Export Alerts**: `project:settings:manage`
 
 ## Related Features
 

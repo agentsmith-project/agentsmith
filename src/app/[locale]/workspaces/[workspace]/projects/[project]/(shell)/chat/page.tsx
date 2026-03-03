@@ -62,7 +62,7 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const token = useAuthStore((s) => s.token);
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
-  const canAccessChat = useHasPermission('project:chat:access');
+  const canAccessChat = useHasPermission('project:endpoint:use');
   const canReadThreads = canAccessChat;
   const canUseChat = canAccessChat;
   const canManageChatSessions = canAccessChat;

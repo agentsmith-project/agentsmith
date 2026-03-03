@@ -37,7 +37,7 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 **平台层（Edge 入口拦截）**
 - 粗粒度控制，避免大量无权限请求打到 Backend
 - 存储：Redis Set
-- 命名：`{domain}:{object}:{verb}`（如 `project:member:manage`）
+- 命名：`{domain}:{object}:{verb}`（如 `project:settings:manage`）
 
 **资源层（Backend 最终裁决）**
 - 细粒度控制，支持 **deny wins**
@@ -54,7 +54,7 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 | 角色 | 特性 | 平台层权限数 |
 |------|------|-------------|
 | **Owner** | 不可转移，拥有所有权限 | 46 |
-| **Admin** | 除 project:delete 外全部 | 45 |
+| **Admin** | 除 project:settings:manage 外全部 | 45 |
 | **Developer** | 可开发、签发 agent key、写 UserData | 28 |
 | **User** | 只读 + 基础使用，受限配额 | 15 |
 
@@ -152,16 +152,16 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 - `workspace:read`、`workspace:project:create`
 
 ### Project
-- `project:read`、`project:update`、`project:delete`、`project:visibility:update`
+- `project:endpoint:use`、`project:settings:manage`、`project:settings:manage`、`project:settings:manage`
 
 ### Membership
-- `project:join:request`、`project:join:approve`、`project:member:read`、`project:member:manage`
+- `project:join:request`、`project:join:approve`、`project:settings:manage`、`project:settings:manage`
 
 ### Policy & Governance
 - `project:policy:read`、`project:policy:update`、`project:audit:read`、`project:usage:read`
 
 ### Sources
-- `project:source:read`、`project:source:upload`、`project:source:delete`、`project:source:download`
+- `project:endpoint:use`、`project:endpoint:manage`、`project:endpoint:manage`、`project:endpoint:use`
 
 ### Agent
 - `agent:read`、`agent:manage`、`agent:key:issue`、`agent:key:revoke`

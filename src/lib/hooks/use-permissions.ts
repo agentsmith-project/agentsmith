@@ -73,7 +73,7 @@ export function useHasAllPermissions(permissions: string[]): boolean {
 
 // Semantic aliases mapped to token checks.
 export function useIsOwnerOrAdmin(): boolean {
-  return useHasPermission('project:member:manage');
+  return useHasPermission('project:settings:manage');
 }
 
 export function useIsOwner(): boolean {
@@ -81,7 +81,7 @@ export function useIsOwner(): boolean {
 }
 
 export function useIsProjectAdmin(): boolean {
-  return useHasPermission('project:member:manage');
+  return useHasPermission('project:settings:manage');
 }
 
 export function useCanManageProject(): boolean {
@@ -89,11 +89,11 @@ export function useCanManageProject(): boolean {
 }
 
 export function useCanManageMemberGovernance(): boolean {
-  return useHasPermission('project:member:manage');
+  return useHasPermission('project:settings:manage');
 }
 
 export function useCanManageResourcePolicy(): boolean {
-  return useHasPermission('project:resource_policy:manage');
+  return useHasPermission('project:settings:manage');
 }
 
 export function useCanReadProjectPolicy(): boolean {
@@ -105,12 +105,12 @@ export function useCanUpdateProjectPolicy(): boolean {
 }
 
 export function useCanAccessCredentials(): { canRead: boolean; canManage: boolean } {
-  const canManage = useHasPermission('project:credential:manage');
+  const canManage = useHasPermission('project:settings:manage');
   return useMemo(() => ({ canRead: canManage, canManage }), [canManage]);
 }
 
 export function useCanAccessChat(): boolean {
-  return useHasPermission('project:chat:access');
+  return useHasPermission('project:endpoint:use');
 }
 
 export function useCanUseChat(): boolean {
@@ -122,7 +122,7 @@ export function useCanManageChatSessions(): boolean {
 }
 
 export function useCanAccessNotebook(): boolean {
-  return useHasPermission('project:notebook:access');
+  return useHasPermission('project:endpoint:use');
 }
 
 export function useCanReadTasks(): boolean {

@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, FolderOpen, Server } from 'lucide-react';
+import { Server } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { ResourcePolicyStatusBadge, type ResourcePolicyStatus } from '@/componen
 
 export type ResourceRow = {
   id: string;
-  type: 'endpoint' | 'source_library' | 'agent';
+  type: 'endpoint';
   name: string;
   subtitle?: string;
 };
@@ -21,8 +21,6 @@ export function ResourcePolicyTable({
 }: {
   groupedRows: {
     endpoint: ResourceRow[];
-    agent: ResourceRow[];
-    source_library: ResourceRow[];
   };
   selectedResource: ResourceRow | null;
   onSelectResource: (row: ResourceRow) => void;
@@ -37,7 +35,7 @@ export function ResourcePolicyTable({
 
   return (
     <div className="space-y-2" data-testid="resource-policy__table">
-      {(['endpoint', 'agent', 'source_library'] as const).map((resourceType) => {
+      {(['endpoint'] as const).map((resourceType) => {
         const typeRows = groupedRows[resourceType];
         if (typeRows.length === 0) return null;
         return (
@@ -70,8 +68,6 @@ export function ResourcePolicyTable({
                 >
                   <div className="flex items-center gap-2">
                     {row.type === 'endpoint' && <Server className="h-4 w-4 text-icon-default" />}
-                    {row.type === 'source_library' && <FolderOpen className="h-4 w-4 text-icon-default" />}
-                    {row.type === 'agent' && <Bot className="h-4 w-4 text-icon-default" />}
                     <div>
                       <p className="text-sm text-foreground">{row.name}</p>
                       {row.subtitle ? <p className="text-xs text-tertiary">{row.subtitle}</p> : null}

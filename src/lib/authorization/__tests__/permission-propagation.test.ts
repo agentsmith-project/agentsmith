@@ -25,7 +25,7 @@ describe('Permission Change Propagation', () => {
       member_id: 'user-1',
       workspace_id: 'ws-1',
       project_id: 'proj-1',
-      permissions: ['project:member:manage'], // Add new permission
+      permissions: ['project:settings:manage'], // Add new permission
       mode: 'custom',
     };
 
@@ -39,7 +39,7 @@ describe('Permission Change Propagation', () => {
       project_id: 'proj-1',
     });
 
-    expect(currentPerms.permissions).toContain('project:member:manage');
+    expect(currentPerms.permissions).toContain('project:settings:manage');
   });
 
   // Test Case 2: Adding permission is reflected in next authorization check
@@ -114,8 +114,8 @@ describe('Permission Change Propagation', () => {
       project_id: 'proj-1',
     });
 
-    // Admin template should include project:member:manage
-    expect(currentPerms.permissions).toContain('project:member:manage');
+    // Admin template should include project:settings:manage
+    expect(currentPerms.permissions).toContain('project:settings:manage');
   });
 
   // Test Case 5: No stale cache after permission update
@@ -134,7 +134,7 @@ describe('Permission Change Propagation', () => {
       member_id: 'user-2',
       workspace_id: 'ws-1',
       project_id: 'proj-1',
-      permissions: [...initialPerms.permissions, 'project:audit:view'],
+      permissions: [...initialPerms.permissions, 'project:endpoint:use'],
       mode: 'custom',
     };
 
@@ -148,7 +148,7 @@ describe('Permission Change Propagation', () => {
     });
 
     expect(updatedPerms.permissions.length).toBe(initialCount + 1);
-    expect(updatedPerms.permissions).toContain('project:audit:view');
+    expect(updatedPerms.permissions).toContain('project:endpoint:use');
   });
 
   // Test Case 6: Permission update includes version/timestamp for cache invalidation
@@ -169,7 +169,7 @@ describe('Permission Change Propagation', () => {
       member_id: 'user-1',
       workspace_id: 'ws-1',
       project_id: 'proj-1',
-      permissions: ['project:chat:access'],
+      permissions: ['project:endpoint:use'],
       mode: 'custom',
     });
 

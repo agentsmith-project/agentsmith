@@ -20,7 +20,7 @@ describe('project-authz-engine', () => {
       id: 'pt_manage',
       project_id: projectId,
       name: 'Managers',
-      permissions: ['project:member:manage'],
+      permissions: ['project:settings:manage'],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -35,7 +35,7 @@ describe('project-authz-engine', () => {
     });
     getProjectMemberPermissionsState(workspaceId, projectId).set('user_test', {
       mode: 'custom',
-      permissions: ['project:usage:view'],
+      permissions: ['project:endpoint:use'],
     });
 
     const permissions = new Set(resolveProjectPermissionsForActor({
@@ -44,9 +44,9 @@ describe('project-authz-engine', () => {
       projectOwnerId: 'user_owner',
       actorUserId: 'user_test',
     }));
-    expect(permissions.has('project:member:manage')).toBe(true);
-    expect(permissions.has('project:usage:view')).toBe(true);
-    expect(permissions.has('project:chat:access')).toBe(true);
+    expect(permissions.has('project:settings:manage')).toBe(true);
+    expect(permissions.has('project:endpoint:use')).toBe(true);
+    expect(permissions.has('project:endpoint:use')).toBe(true);
   });
 
   it('denies all required permissions when membership is suspended', () => {
@@ -65,7 +65,7 @@ describe('project-authz-engine', () => {
       projectId,
       projectOwnerId: 'user_owner',
       actorUserId: 'user_test',
-      requiredPermissions: ['project:chat:access', 'project:source:use'],
+      requiredPermissions: ['project:endpoint:use', 'project:endpoint:use'],
     });
 
     expect(evaluation.membership_status).toBe('suspended');
@@ -138,7 +138,7 @@ describe('project-authz-engine', () => {
 
   it('maps authorization actions to project permission tokens', () => {
     expect(mapAuthorizationRequestToPermission({ resourceType: 'endpoint', action: 'endpoint.invoke' })).toBe('project:endpoint:use');
-    expect(mapAuthorizationRequestToPermission({ resourceType: 'source_library', action: 'source_library.upload' })).toBe('project:source:manage');
-    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.member.view' })).toBe('project:member:view');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'source_library', action: 'source_library.upload' })).toBe('project:endpoint:manage');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.member.view' })).toBe('project:settings:manage');
   });
 });

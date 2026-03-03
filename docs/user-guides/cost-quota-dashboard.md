@@ -132,7 +132,7 @@ The dashboard integrates with the Alert Center for proactive monitoring:
 
 - Refresh the page
 - Check your internet connection
-- Verify you have `project:usage:view` permission
+- Verify you have `project:endpoint:use` permission
 
 ### Data Not Updating
 
@@ -151,9 +151,9 @@ The dashboard integrates with the Alert Center for proactive monitoring:
 
 Required permissions to access dashboard features:
 
-- **View Dashboard**: `project:usage:view`
-- **Export Data**: `project:usage:export`
-- **Manage Alerts**: `project:alert:manage`
+- **View Dashboard**: `project:endpoint:use`
+- **Export Data**: `project:settings:manage`
+- **Manage Alerts**: `project:settings:manage`
 
 ## Related Features
 

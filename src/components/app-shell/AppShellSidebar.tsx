@@ -43,18 +43,8 @@ type ProjectMenuItem = {
   // Permission is a contract token from src/lib/constants/permissions.ts
   // Use '__multi__' for items that require multiple permission checks (handled in filter logic)
   permission:
-    | 'project:read'
-    | 'project:chat:access'
-    | 'project:notebook:access'
-    | 'project:source:use'
-    | 'project:agent:use'
     | 'project:endpoint:use'
-    | 'project:alert:view'
-    | 'project:resource_policy:manage'
-    | 'project:credential:manage'
-    | 'project:member:view'
-    | 'project:audit:view'
-    | 'project:usage:view'
+    | 'project:agent:use'
     | 'project:settings:manage'
     | '__multi__';
   section: ProjectMenuSection;
@@ -62,24 +52,23 @@ type ProjectMenuItem = {
 
 const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   // Home section
-  { icon: LayoutDashboard, labelKey: 'overview', href: 'overview', permission: 'project:read', section: 'home' },
+  { icon: LayoutDashboard, labelKey: 'overview', href: 'overview', permission: 'project:endpoint:use', section: 'home' },
   // Use section
-  { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:chat:access', section: 'use' },
-  { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:notebook:access', section: 'use' },
-  { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:source:use', section: 'use' },
+  { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:endpoint:use', section: 'use' },
+  { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:endpoint:use', section: 'use' },
+  { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:endpoint:use', section: 'use' },
   // Develop section
   { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use', section: 'develop' },
   // Govern section
   { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use', section: 'govern' },
-  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:resource_policy:manage', section: 'govern' },
-  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:credential:manage', section: 'govern' },
-  { icon: Users, labelKey: 'members', href: 'members', permission: 'project:member:view', section: 'govern' },
-  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:usage:view', section: 'govern' },
-  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:view', section: 'govern' },
+  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:settings:manage', section: 'govern' },
+  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:settings:manage', section: 'govern' },
+  { icon: Users, labelKey: 'members', href: 'members', permission: 'project:settings:manage', section: 'govern' },
+  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:endpoint:use', section: 'govern' },
+  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:endpoint:use', section: 'govern' },
   { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:settings:manage', section: 'govern' },
   // Operate section
-  // Runtime Console is accessible if user has ANY of: usage:view, alert:view, settings:manage
-  // Uses '__multi__' marker to indicate special multi-permission handling in filter logic
+  // Runtime Console is accessible for users with endpoint use or settings manage.
   { icon: Monitor, labelKey: 'runtime_console', href: 'runtime-console', permission: '__multi__', section: 'operate' },
 ];
 
@@ -105,17 +94,17 @@ export function AppShellSidebar({
   const pathname = usePathname();
   const t = useTranslations('nav');
   const [collapsed, setCollapsed] = React.useState(false);
-  const canReadOverview = useHasPermission('project:read');
-  const canAccessChat = useHasPermission('project:chat:access');
-  const canAccessNotebook = useHasPermission('project:notebook:access');
-  const canUseSources = useHasPermission('project:source:use');
+  const canReadOverview = useHasPermission('project:endpoint:use');
+  const canAccessChat = useHasPermission('project:endpoint:use');
+  const canAccessNotebook = useHasPermission('project:endpoint:use');
+  const canUseSources = useHasPermission('project:endpoint:use');
   const canUseEndpoints = useHasPermission('project:endpoint:use');
-  const canViewAlerts = useHasPermission('project:alert:view');
-  const canReadAudit = useHasPermission('project:audit:view');
-  const canReadUsage = useHasPermission('project:usage:view');
+  const canViewAlerts = useHasPermission('project:endpoint:use');
+  const canReadAudit = useHasPermission('project:endpoint:use');
+  const canReadUsage = useHasPermission('project:endpoint:use');
   const canReadAgents = useHasPermission('project:agent:use');
-  const canManageCredentials = useHasPermission('project:credential:manage');
-  const canViewMembers = useHasPermission('project:member:view');
+  const canManageCredentials = useHasPermission('project:settings:manage');
+  const canViewMembers = useHasPermission('project:settings:manage');
   const canManageSettings = useHasPermission('project:settings:manage');
   const canManageResourcePolicy = useCanManageResourcePolicy();
 
@@ -126,21 +115,22 @@ export function AppShellSidebar({
 
   const projectMenuItems = currentProject
     ? PROJECT_MENU_ITEMS.filter((item) => {
-        if (item.permission === 'project:read') return canReadOverview;
-        if (item.permission === 'project:chat:access') return canAccessChat;
-        if (item.permission === 'project:notebook:access') return canAccessNotebook;
-        if (item.permission === 'project:source:use') return canUseSources;
-        if (item.permission === 'project:endpoint:use') return canUseEndpoints;
-        if (item.permission === 'project:alert:view') return canViewAlerts;
-        if (item.permission === 'project:audit:view') return canReadAudit;
-        if (item.permission === 'project:usage:view') return canReadUsage;
-        if (item.permission === 'project:resource_policy:manage') return canManageResourcePolicy;
+        if (item.permission === 'project:endpoint:use') {
+          return (
+            canReadOverview
+            || canAccessChat
+            || canAccessNotebook
+            || canUseSources
+            || canUseEndpoints
+            || canViewAlerts
+            || canReadAudit
+            || canReadUsage
+          );
+        }
         if (item.permission === 'project:agent:use') return canReadAgents;
-        if (item.permission === 'project:credential:manage') return canManageCredentials;
-        if (item.permission === 'project:member:view') return canViewMembers;
-        if (item.permission === 'project:settings:manage') return canManageSettings;
-        // Runtime Console: accessible if user has ANY of usage:view, alert:view, or settings:manage
-        // Uses '__multi__' marker to indicate multi-permission check (not a contract token)
+        if (item.permission === 'project:settings:manage') {
+          return canManageResourcePolicy || canManageCredentials || canViewMembers || canManageSettings;
+        }
         if (item.permission === '__multi__') {
           return canReadUsage || canViewAlerts || canManageSettings;
         }

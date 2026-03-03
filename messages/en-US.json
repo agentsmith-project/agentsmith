@@ -473,7 +473,7 @@
     },
     "permission_denied": {
       "title": "Permission Denied",
-      "message": "You don't have permission to access any sections of the Runtime Console. Required permissions: project:usage:view, project:alert:view, or project:settings:manage"
+      "message": "You don't have permission to access any sections of the Runtime Console. Required permissions: project:endpoint:use, project:endpoint:use, or project:settings:manage"
     }
   },
   "settings": {
@@ -646,9 +646,9 @@
       "permissions_list": "Permissions",
       "default_templates": {
         "owner": "Owner",
-        "owner_description": "All permissions (including project:delete)",
+        "owner_description": "All permissions (including project:settings:manage)",
         "admin": "Admin",
-        "admin_description": "All permissions except project:delete",
+        "admin_description": "All permissions except project:settings:manage",
         "developer": "Developer",
         "developer_description": "Agent keys, UserData, AgentThread",
         "user": "User",

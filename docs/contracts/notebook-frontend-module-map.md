@@ -16,7 +16,7 @@ Terminology note:
 ## Current Structure
 
 1. `notebook/page.tsx`
-- Route param validation and permission gate (`project:notebook:access`).
+- Route param validation and permission gate (`project:endpoint:use`).
 - Uses shared project layout mode (`useProjectLayoutMode`) to control page width:
   - `standard` -> `contentWidth="wide"`
   - `ultrawide` -> `contentWidth="full"`

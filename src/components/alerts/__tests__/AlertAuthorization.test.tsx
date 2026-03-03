@@ -15,40 +15,26 @@ import {
 } from '@/lib/constants/permissions';
 
 describe('Alert Center Authorization (TDD)', () => {
-  // Test 1: All three alert permissions are defined
-  it('should have all three alert permissions defined', () => {
-    expect(PLATFORM_PERMISSIONS.ALERT).toEqual([
-      'project:alert:view',
-      'project:alert:manage',
-      'project:alert:notify',
-    ]);
+  it('should include required alert permissions in project scope', () => {
+    expect(PLATFORM_PERMISSIONS.PROJECT).toContain('project:endpoint:use');
+    expect(PLATFORM_PERMISSIONS.PROJECT).toContain('project:settings:manage');
   });
 
-  // Test 2: project:alert:manage is a high-risk permission
-  it('should mark project:alert:manage as high-risk', () => {
-    expect(HIGH_RISK_PERMISSIONS).toContain('project:alert:manage');
+  it('should mark project:settings:manage as high-risk', () => {
+    expect(HIGH_RISK_PERMISSIONS).toContain('project:settings:manage');
   });
 
-  // Test 3: Group templates include appropriate alert permissions
   it('should include alert permissions in group templates correctly', () => {
-    // Owner should have all alert permissions
-    expect(GROUP_TEMPLATES.owner).toContain('project:alert:view');
-    expect(GROUP_TEMPLATES.owner).toContain('project:alert:manage');
-    expect(GROUP_TEMPLATES.owner).toContain('project:alert:notify');
+    expect(GROUP_TEMPLATES.owner).toContain('project:endpoint:use');
+    expect(GROUP_TEMPLATES.owner).toContain('project:settings:manage');
 
-    // Admin should have all alert permissions
-    expect(GROUP_TEMPLATES.admin).toContain('project:alert:view');
-    expect(GROUP_TEMPLATES.admin).toContain('project:alert:manage');
-    expect(GROUP_TEMPLATES.admin).toContain('project:alert:notify');
+    expect(GROUP_TEMPLATES.admin).toContain('project:endpoint:use');
+    expect(GROUP_TEMPLATES.admin).toContain('project:settings:manage');
 
-    // Developer should have view and notify
-    expect(GROUP_TEMPLATES.developer).toContain('project:alert:view');
-    expect(GROUP_TEMPLATES.developer).toContain('project:alert:notify');
-    expect(GROUP_TEMPLATES.developer).not.toContain('project:alert:manage');
+    expect(GROUP_TEMPLATES.developer).toContain('project:endpoint:use');
+    expect(GROUP_TEMPLATES.developer).not.toContain('project:settings:manage');
 
-    // User should only have notify
-    expect(GROUP_TEMPLATES.user).toContain('project:alert:notify');
-    expect(GROUP_TEMPLATES.user).not.toContain('project:alert:view');
-    expect(GROUP_TEMPLATES.user).not.toContain('project:alert:manage');
+    expect(GROUP_TEMPLATES.user).toContain('project:endpoint:use');
+    expect(GROUP_TEMPLATES.user).not.toContain('project:settings:manage');
   });
 });

@@ -31,7 +31,7 @@ describe('M3 Integration: Governance Evidence Chain', () => {
   it('should create audit trail when permission is checked', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-1',
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -97,7 +97,7 @@ describe('M3 Integration: Governance Evidence Chain', () => {
   it('should provide denial reason when permission is denied', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-4', // Denied user
-      permission: 'project:member:manage',
+      permission: 'project:settings:manage',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',

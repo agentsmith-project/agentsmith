@@ -225,10 +225,10 @@ Example: "Why did this request fail?"
 
 Required permissions:
 
-- **View Audit**: `project:audit:view`
-- **View Usage**: `project:usage:view`
-- **Export Data**: `project:audit:export` or `project:usage:export`
-- **View Details**: `project:audit:view`
+- **View Audit**: `project:endpoint:use`
+- **View Usage**: `project:endpoint:use`
+- **Export Data**: `project:settings:manage` or `project:settings:manage`
+- **View Details**: `project:endpoint:use`
 
 ## Troubleshooting
 
@@ -236,7 +236,7 @@ Required permissions:
 
 - Refresh the page
 - Check time range selector (default: last 24 hours)
-- Verify you have `project:audit:view` permission
+- Verify you have `project:endpoint:use` permission
 
 ### No Events Showing
 

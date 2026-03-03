@@ -46,7 +46,7 @@ describe('use-governance-explainability', () => {
           joined_at: '2026-03-01T00:00:00.000Z',
         })
         .mockResolvedValueOnce({
-          platform_permissions: ['project:read'],
+          platform_permissions: ['project:endpoint:use'],
         })
         .mockResolvedValueOnce({
           overrides: { daily_tokens: 1000 },
@@ -68,7 +68,7 @@ describe('use-governance-explainability', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.effective_permissions).toEqual(['project:read']);
+    expect(result.current.data?.effective_permissions).toEqual(['project:endpoint:use']);
   });
 
   it('runs authorization checks through mutation', async () => {

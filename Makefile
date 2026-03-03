@@ -4,6 +4,7 @@
 	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-runtime-proxy-billing e2e-int-local \
 	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api e2e-int-runtime-proxy-billing-local-api \
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto e2e-int-runtime-proxy-billing-auto \
+	e2e-int-core-local-api e2e-int-core-auto release-core-smoke \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
@@ -110,6 +111,9 @@ help:
 	@echo "  make e2e-int-notebook-agent-auto # auto start deps+api+web and run notebook external-agent integration spec"
 	@echo "  make e2e-int-chat-ux-auto   # auto start deps+api+web and run targeted chat UX integration checks"
 	@echo "  make e2e-int-runtime-proxy-billing-auto # auto start deps+api+web and run runtime proxy/billing integration spec"
+	@echo "  make e2e-int-core-local-api # run MVP real-backend core smoke against already-running API/Web"
+	@echo "  make e2e-int-core-auto      # auto start deps+api+web and run MVP real-backend core smoke"
+	@echo "  make release-core-smoke     # MVP release baseline: core real-lane smoke + endpoint quota policy smoke + release report"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT and write /tmp/agentsmith_user_token.txt"
@@ -571,6 +575,43 @@ e2e-int-runtime-proxy-billing-auto:
 	KEYCLOAK_URL=$(KEYCLOAK_URL) \
 	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-runtime-proxy-billing.spec.ts
+
+e2e-int-core-local-api:
+	@set -e; \
+	echo "[make] running integration-minimal..."; \
+	BASE_URL=http://localhost:$(PORT_WEB) INTEGRATION_API_BASE=http://localhost:$(PORT_API) \
+	npx playwright test --config playwright.config.integration.ts e2e/integration-minimal.spec.ts --project=chromium --workers=1; \
+	echo "[make] running integration-chat-protocols..."; \
+	BASE_URL=http://localhost:$(PORT_WEB) INTEGRATION_API_BASE=http://localhost:$(PORT_API) \
+	npx playwright test --config playwright.config.integration.ts e2e/integration-chat-protocols.spec.ts --project=chromium --workers=1; \
+	echo "[make] running integration-chat stream-error recovery set..."; \
+	BASE_URL=http://localhost:$(PORT_WEB) INTEGRATION_API_BASE=http://localhost:$(PORT_API) \
+	npx playwright test --config playwright.config.integration.ts e2e/integration-chat.spec.ts --project=chromium --workers=1 \
+	--grep "chat surfaces upstream 429 message and can recover|chat surfaces upstream 401 message and can recover|chat surfaces upstream 403 message and can recover"
+
+e2e-int-core-auto:
+	@set -e; \
+	echo "[make] auto smoke: integration-minimal"; \
+	INTEGRATION_API_PORT=$(PORT_API) INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) KEYCLOAK_REALM=$(KEYCLOAK_REALM) KEYCLOAK_URL=$(KEYCLOAK_URL) KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	./scripts/run-integration-e2e-full.sh e2e/integration-minimal.spec.ts; \
+	echo "[make] auto smoke: integration-chat-protocols"; \
+	INTEGRATION_BOOTSTRAP_DEPS=false INTEGRATION_INIT_DEPS=false \
+	INTEGRATION_API_PORT=$(PORT_API) INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) KEYCLOAK_REALM=$(KEYCLOAK_REALM) KEYCLOAK_URL=$(KEYCLOAK_URL) KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	./scripts/run-integration-e2e-full.sh e2e/integration-chat-protocols.spec.ts; \
+	echo "[make] auto smoke: integration-chat stream-error recovery"; \
+	INTEGRATION_BOOTSTRAP_DEPS=false INTEGRATION_INIT_DEPS=false \
+	INTEGRATION_API_PORT=$(PORT_API) INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) KEYCLOAK_REALM=$(KEYCLOAK_REALM) KEYCLOAK_URL=$(KEYCLOAK_URL) KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts \
+	--grep "chat surfaces upstream 429 message and can recover|chat surfaces upstream 401 message and can recover|chat surfaces upstream 403 message and can recover"
+
+release-core-smoke:
+	@set -e; \
+	$(MAKE) e2e-int-core-local-api; \
+	$(MAKE) governance-policy-requests-quota-effect-smoke; \
+	$(MAKE) release-report REPORT_ARCHIVE=1
 
 agent-test-runner:
 	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \

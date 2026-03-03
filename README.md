@@ -65,6 +65,7 @@ make api-dev
 make web
 make notebook-agent-refresh-token
 make notebook-agent-init-resources
+make e2e-int-core-local-api
 ```
 
 ### Quality Gates
@@ -73,6 +74,7 @@ make notebook-agent-init-resources
 make gate-pr
 make gate-premerge
 make gate-release
+make release-core-smoke
 ```
 
 ### Dependency Recovery (only when environment is broken)
@@ -129,6 +131,7 @@ src/
 
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
 - [Release Governance Control Plane](./docs/user-guides/release-governance-control-plane.md) — 运行与发布治理控制面的操作基线
+- [MVP Core Smoke Runbook](./docs/user-guides/mvp-core-smoke-runbook.md) — 真实后端 MVP 核心回归执行手册
 - [Product Engineering Governance Methodology](./docs/design/agentsmith-product-engineering-governance-methodology-v1.md) — 产品设计、工程交付与治理方法论基线
 - [Design System](./DESIGN_SYSTEM.md)
 - [Development Guide](./DEVELOPMENT.md)

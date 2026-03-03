@@ -102,7 +102,11 @@
       "profile": "Profile",
       "api_keys": "API Keys",
       "language": "Language",
-      "logout": "Logout"
+      "logout": "Logout",
+      "permission_tokens": "Permission Tokens",
+      "workspace_permissions": "Workspace",
+      "project_permissions": "Project",
+      "no_permissions": "No permissions"
     },
     "placeholders": {
       "search": "Search...",

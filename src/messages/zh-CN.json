@@ -102,7 +102,11 @@
       "profile": "个人资料",
       "api_keys": "API 密钥",
       "language": "语言",
-      "logout": "退出登录"
+      "logout": "退出登录",
+      "permission_tokens": "权限 Token",
+      "workspace_permissions": "工作区",
+      "project_permissions": "项目",
+      "no_permissions": "无权限"
     },
     "placeholders": {
       "search": "搜索...",

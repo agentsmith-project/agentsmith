@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 import { useProjects, useProject } from '@/lib/hooks/use-projects-queries';
 import { broadcastProjectLayoutMode, useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
+import { useCurrentPermissions, useCurrentWorkspacePermissions } from '@/lib/hooks/use-permissions';
 import {
   Tooltip,
   TooltipContent,
@@ -40,6 +41,8 @@ export function Topbar({ className = '' }: TopbarProps) {
   const { data: workspaces } = useWorkspaces();
   const { data: projects } = useProjects(workspaceId || '');
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
+  const projectPermissions = useCurrentPermissions();
+  const workspacePermissions = useCurrentWorkspacePermissions();
   const { layoutMode, showLayoutToggle } = useProjectLayoutMode();
 
   // Get current workspace from workspaces list
@@ -211,6 +214,8 @@ export function Topbar({ className = '' }: TopbarProps) {
         {/* User Menu */}
         <UserMenu
           user={user}
+          projectPermissions={projectPermissions}
+          workspacePermissions={workspacePermissions}
           onProfile={handleProfile}
           onApiKeys={handleApiKeys}
           onLanguageSwitch={handleLanguageSwitch}

@@ -37,6 +37,7 @@ import {
   getProviderOption,
   type ProviderOption,
 } from '@/lib/endpoints/provider-catalog';
+import { resolveEndpointProtocolLabel } from '@/lib/endpoints/protocol-utils';
 import { toast } from '@/components/ui/toast';
 import { CustomEndpointWizard } from './CustomEndpointWizard';
 
@@ -190,6 +191,9 @@ export function CreateEndpointDialog({
       credential_ref: credentialRef,
       provider_family: selectedProvider.family,
       protocol: selectedProvider.protocol,
+      meta: {
+        compatibility_interface: selectedProvider.compatibility_interface,
+      },
       capabilities: [{ type: capability, enabled: true, default_model_id: openaiModel.trim() }],
       models: [{ capability, model_id: openaiModel.trim(), display_name: openaiModel.trim() }],
       defaults: capability === 'chat_completion'
@@ -357,6 +361,15 @@ export function CreateEndpointDialog({
                 </SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2 order-2">
+            <label className="text-sm font-medium text-foreground">
+              {t('create_dialog.compatibility_interface')}
+            </label>
+            <div className="rounded-sm border border-subtle bg-surface-low px-3 py-2 text-sm text-foreground">
+              {resolveEndpointProtocolLabel(t, selectedProvider.protocol)}
+            </div>
           </div>
 
           {/* Show wizard button for custom provider */}

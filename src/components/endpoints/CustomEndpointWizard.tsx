@@ -283,6 +283,9 @@ export function CustomEndpointWizard({
       base_url: baseUrl.trim(),
       provider_family: 'custom',
       protocol: protocol,
+      meta: {
+        compatibility_interface: protocol,
+      },
       credential_ref: credentialRef,
       capabilities: [{ type: capability, enabled: true, default_model_id: modelId.trim() }],
       models: [{ capability, model_id: modelId.trim(), display_name: modelId.trim() }],

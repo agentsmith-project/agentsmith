@@ -25,6 +25,7 @@ export interface ProviderCatalogOption {
   logo_path?: string;
   family: EndpointProviderFamily;
   protocol: CreateEndpointRequest['protocol'];
+  compatibility_interface: CustomEndpointProtocol;
   default_base_url: string;
   models: ProviderModelOption[];
 }
@@ -50,23 +51,56 @@ const PROVIDER_CONFIG: Record<
   {
     family: EndpointProviderFamily;
     protocol: CreateEndpointRequest['protocol'];
+    compatibility_interface: CustomEndpointProtocol;
     default_base_url: string;
   }
 > = {
-  openai: { family: 'openai', protocol: 'openai_compatible', default_base_url: 'https://api.openai.com/v1' },
-  anthropic: { family: 'anthropic', protocol: 'openai_compatible', default_base_url: '' },
-  deepseek: { family: 'deepseek', protocol: 'openai_compatible', default_base_url: 'https://api.deepseek.com/v1' },
-  minimax: { family: 'minimax', protocol: 'openai_compatible', default_base_url: 'https://api.minimax.chat/v1' },
-  kimi: { family: 'kimi', protocol: 'openai_compatible', default_base_url: 'https://api.moonshot.cn/v1' },
+  openai: {
+    family: 'openai',
+    protocol: 'openai_compatible',
+    compatibility_interface: 'openai_compatible',
+    default_base_url: 'https://api.openai.com/v1',
+  },
+  anthropic: {
+    family: 'anthropic',
+    protocol: 'anthropic_compatible',
+    compatibility_interface: 'anthropic_compatible',
+    default_base_url: 'https://api.anthropic.com/v1',
+  },
+  deepseek: {
+    family: 'deepseek',
+    protocol: 'openai_compatible',
+    compatibility_interface: 'openai_compatible',
+    default_base_url: 'https://api.deepseek.com/v1',
+  },
+  minimax: {
+    family: 'minimax',
+    protocol: 'openai_compatible',
+    compatibility_interface: 'openai_compatible',
+    default_base_url: 'https://api.minimax.chat/v1',
+  },
+  kimi: {
+    family: 'kimi',
+    protocol: 'openai_compatible',
+    compatibility_interface: 'openai_compatible',
+    default_base_url: 'https://api.moonshot.cn/v1',
+  },
   google: {
     family: 'google',
-    protocol: 'google_gemini',
+    protocol: 'openai_compatible',
+    compatibility_interface: 'openai_compatible',
     default_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
   },
-  glm: { family: 'glm', protocol: 'glm_native', default_base_url: 'https://open.bigmodel.cn/api/paas/v4' },
+  glm: {
+    family: 'glm',
+    protocol: 'openai_compatible',
+    compatibility_interface: 'openai_compatible',
+    default_base_url: 'https://open.bigmodel.cn/api/coding/paas/v4',
+  },
   alibaba: {
     family: 'alibaba',
-    protocol: 'dashscope_native',
+    protocol: 'openai_compatible',
+    compatibility_interface: 'openai_compatible',
     default_base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   },
 };
@@ -100,6 +134,7 @@ export const ENDPOINT_PROVIDER_OPTIONS: ProviderCatalogOption[] = DEFAULT_PROVID
     logo_path: catalogProvider?.logo_path,
     family: config.family,
     protocol: config.protocol,
+    compatibility_interface: config.compatibility_interface,
     default_base_url: config.default_base_url,
     models: catalogProvider?.models ?? [],
   };
@@ -110,6 +145,7 @@ export const CUSTOM_PROVIDER_OPTION: ProviderCatalogOption = {
   display_name: 'Custom',
   family: 'custom',
   protocol: 'openai_compatible', // Default, user can override
+  compatibility_interface: 'openai_compatible',
   default_base_url: '',
   models: [],
 };

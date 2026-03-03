@@ -94,7 +94,9 @@
       "base_url": "https://api.openai.com/v1",
       "status": "active",
       "created_at": "2026-02-01T00:00:00Z",
-      "updated_at": "2026-02-01T00:00:00Z"
+      "updated_at": "2026-02-01T00:00:00Z",
+      "provider_family": "openai",
+      "protocol": "openai_compatible"
     },
     {
       "id": "ep_2",
@@ -106,7 +108,9 @@
       "base_url": "https://api.anthropic.com/v1",
       "status": "active",
       "created_at": "2026-01-20T00:00:00Z",
-      "updated_at": "2026-01-28T00:00:00Z"
+      "updated_at": "2026-01-28T00:00:00Z",
+      "provider_family": "anthropic",
+      "protocol": "anthropic_compatible"
     }
   ],
   "agents": [
@@ -377,8 +381,15 @@
       "created_at": "2026-02-27T14:30:00Z",
       "status": "unread",
       "actions": [
-        { "label": "View Usage", "url": "/usage", "primary": true },
-        { "label": "Dismiss", "handler": "dismiss" }
+        {
+          "label": "View Usage",
+          "url": "/usage",
+          "primary": true
+        },
+        {
+          "label": "Dismiss",
+          "handler": "dismiss"
+        }
       ]
     },
     {
@@ -410,19 +421,40 @@
     "total_requests": 4500,
     "total_tokens": 2400000,
     "total_errors": 23,
-    "total_cost_usd": 12.50,
+    "total_cost_usd": 12.5,
     "requests_change_percent": 5.2,
     "tokens_change_percent": 3.1,
     "errors_change_percent": -2.5
   },
   "dashboard_trend": [
-    { "timestamp": "2026-02-01T00:00:00Z", "value": 4500 },
-    { "timestamp": "2026-02-02T00:00:00Z", "value": 4800 },
-    { "timestamp": "2026-02-03T00:00:00Z", "value": 4600 },
-    { "timestamp": "2026-02-04T00:00:00Z", "value": 5100 },
-    { "timestamp": "2026-02-05T00:00:00Z", "value": 5300 },
-    { "timestamp": "2026-02-06T00:00:00Z", "value": 4900 },
-    { "timestamp": "2026-02-07T00:00:00Z", "value": 5200 }
+    {
+      "timestamp": "2026-02-01T00:00:00Z",
+      "value": 4500
+    },
+    {
+      "timestamp": "2026-02-02T00:00:00Z",
+      "value": 4800
+    },
+    {
+      "timestamp": "2026-02-03T00:00:00Z",
+      "value": 4600
+    },
+    {
+      "timestamp": "2026-02-04T00:00:00Z",
+      "value": 5100
+    },
+    {
+      "timestamp": "2026-02-05T00:00:00Z",
+      "value": 5300
+    },
+    {
+      "timestamp": "2026-02-06T00:00:00Z",
+      "value": 4900
+    },
+    {
+      "timestamp": "2026-02-07T00:00:00Z",
+      "value": 5200
+    }
   ],
   "top_resources": [
     {
@@ -432,7 +464,7 @@
       "requests": 15230,
       "tokens": 8450000,
       "errors": 45,
-      "cost_usd": 12.50
+      "cost_usd": 12.5
     },
     {
       "resource_id": "ag_1",
@@ -441,7 +473,7 @@
       "requests": 8450,
       "tokens": 4200000,
       "errors": 12,
-      "cost_usd": 6.20
+      "cost_usd": 6.2
     }
   ],
   "top_users": [
@@ -451,7 +483,7 @@
       "requests": 8450,
       "tokens": 4500000,
       "errors": 12,
-      "cost_usd": 6.20
+      "cost_usd": 6.2
     },
     {
       "end_user_id": "user_2",
@@ -459,7 +491,7 @@
       "requests": 5200,
       "tokens": 2800000,
       "errors": 8,
-      "cost_usd": 3.80
+      "cost_usd": 3.8
     }
   ],
   "anomalies": [
@@ -470,9 +502,16 @@
       "type": "requests_spike",
       "description": "Unusual spike in requests",
       "value": 12500,
-      "expected_range": { "min": 3000, "max": 6000 },
+      "expected_range": {
+        "min": 3000,
+        "max": 6000
+      },
       "affected_resources": [
-        { "type": "endpoint", "id": "ep_1", "name": "OpenAI Main" }
+        {
+          "type": "endpoint",
+          "id": "ep_1",
+          "name": "OpenAI Main"
+        }
       ]
     }
   ]

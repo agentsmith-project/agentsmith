@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { EndpointStatusBadge } from '@/components/endpoints/EndpointStatusBadge';
 import { ProviderLogo } from '@/components/endpoints/ProviderLogo';
 import { Badge } from '@/components/ui/badge';
+import { resolveEndpointProtocolLabel } from '@/lib/endpoints/protocol-utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -185,6 +186,19 @@ export function useEndpointsTableColumns({
             <Badge variant="outline" className={colors[capability] || 'bg-tertiary/15 text-tertiary border-tertiary/30'}>
               {getCapabilityLabel(t, capability)}
             </Badge>
+          );
+        },
+      }),
+
+      // Compatibility interface column
+      columnHelper.accessor('protocol', {
+        header: t('table.compatibility_interface') || 'Compatibility',
+        cell: (info) => {
+          const endpoint = info.row.original;
+          return (
+            <span className="text-xs font-medium text-tertiary">
+              {resolveEndpointProtocolLabel(t, endpoint.protocol)}
+            </span>
           );
         },
       }),

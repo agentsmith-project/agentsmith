@@ -92,7 +92,7 @@ describe('useEndpointsTableColumns', () => {
   describe('Column Definitions', () => {
     it('should return all expected columns', () => {
       const columns = renderColumns({ onTestConnection: mockOnTestConnection });
-      expect(columns).toHaveLength(8); // provider, name, model, capability, health, pricing, admin_status, actions
+      expect(columns).toHaveLength(9); // provider, name, model, capability, compatibility, health, pricing, admin_status, actions
     });
 
     it('should include provider column with logo', () => {

@@ -184,9 +184,7 @@
       "build": "Build",
       "govern": "Govern",
       "operate": "Operate"
-    },
-    "notebook": "Notebook",
-    "files": "文件"
+    }
   },
   "auth": {
     "login": "登录",
@@ -884,7 +882,8 @@
       "catalog_models": "目录模型",
       "select_from_catalog": "从目录选择（可选）",
       "open_wizard_button": "打开向导",
-      "wizard_description": "创建自定义 OpenAI 或 Anthropic 兼容端点并进行验证。"
+      "wizard_description": "创建自定义 OpenAI 或 Anthropic 兼容端点并进行验证。",
+      "compatibility_interface": "兼容接口"
     },
     "status_active": "活跃",
     "status_disabled": "已禁用",
@@ -919,7 +918,8 @@
       "pricing": "定价",
       "pricing_input": "输入",
       "pricing_output": "输出",
-      "admin_status": "状态"
+      "admin_status": "状态",
+      "compatibility_interface": "兼容接口"
     },
     "status_badge": {
       "healthy": "健康",
@@ -1023,6 +1023,13 @@
         "image_generation": "图像生成",
         "video_generation": "视频生成"
       }
+    },
+    "protocol_labels": {
+      "openai_compatible": "OpenAI 兼容",
+      "anthropic_compatible": "Anthropic 兼容",
+      "google_gemini": "Google Gemini 原生",
+      "glm_native": "GLM 原生",
+      "dashscope_native": "DashScope 原生"
     }
   },
   "audit": {

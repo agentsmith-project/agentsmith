@@ -26,6 +26,7 @@ import {
   getProviderOption,
   type ProviderOption,
 } from '@/lib/endpoints/provider-catalog';
+import { resolveEndpointProtocolLabel } from '@/lib/endpoints/protocol-utils';
 import { toast } from '@/components/ui/toast';
 import { useApiError } from '@/lib/hooks/use-api-error';
 
@@ -117,6 +118,9 @@ export function EditEndpointDialog({
         credential_ref: credentialRef,
         provider_family: selectedProvider.family,
         protocol: selectedProvider.protocol,
+        meta: {
+          compatibility_interface: selectedProvider.compatibility_interface,
+        },
         capabilities: [{ type: capability, enabled: true, default_model_id: openaiModel.trim() }],
         models: [{ capability, model_id: openaiModel.trim(), display_name: openaiModel.trim() }],
         defaults:
@@ -251,6 +255,15 @@ export function EditEndpointDialog({
                   <SelectItem value="custom">{t('create_dialog.provider_custom')}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                {t('create_dialog.compatibility_interface')}
+              </label>
+              <div className="rounded-sm border border-subtle bg-surface-low px-3 py-2 text-sm text-foreground">
+                {resolveEndpointProtocolLabel(t, selectedProvider.protocol)}
+              </div>
             </div>
 
             <div className="space-y-2">

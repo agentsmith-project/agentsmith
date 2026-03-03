@@ -182,9 +182,7 @@
       "build": "Build",
       "govern": "Govern",
       "operate": "Operate"
-    },
-    "notebook": "Notebook",
-    "files": "Files"
+    }
   },
   "auth": {
     "login": "Login",
@@ -882,7 +880,8 @@
       "catalog_models": "Catalog Models",
       "select_from_catalog": "Select from catalog (optional)",
       "open_wizard_button": "Open Wizard",
-      "wizard_description": "Create custom OpenAI or Anthropic compatible endpoints with validation."
+      "wizard_description": "Create custom OpenAI or Anthropic compatible endpoints with validation.",
+      "compatibility_interface": "Compatibility Interface"
     },
     "status_active": "Active",
     "status_disabled": "Disabled",
@@ -917,7 +916,8 @@
       "pricing": "Pricing",
       "pricing_input": "Input",
       "pricing_output": "Output",
-      "admin_status": "Status"
+      "admin_status": "Status",
+      "compatibility_interface": "Compatibility"
     },
     "status_badge": {
       "healthy": "Healthy",
@@ -1021,6 +1021,13 @@
         "image_generation": "Image Generation",
         "video_generation": "Video Generation"
       }
+    },
+    "protocol_labels": {
+      "openai_compatible": "OpenAI Compatible",
+      "anthropic_compatible": "Anthropic Compatible",
+      "google_gemini": "Google Gemini Native",
+      "glm_native": "GLM Native",
+      "dashscope_native": "DashScope Native"
     }
   },
   "audit": {

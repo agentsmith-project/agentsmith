@@ -597,6 +597,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     }
   }
 
+  let missingImageDataUrl = false;
   const upstreamMessages = await Promise.all(messages.map(async (item) => {
     if (item.role !== 'user' || !item.attachment_snapshots || item.attachment_snapshots.length === 0) {
       return { role: item.role, content: item.content };
@@ -621,6 +622,8 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           type: 'image_url',
           image_url: { url: dataUrl },
         });
+      } else if (imageMimeType) {
+        missingImageDataUrl = true;
       } else {
         parts.push({
           type: 'text',
@@ -633,6 +636,10 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     }
     return { role: item.role, content: parts };
   }));
+  if (missingImageDataUrl) {
+    json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_image_data_url_unavailable' });
+    return true;
+  }
 
   const variantMeta = await deps.chatResourceService.buildNextAssistantVariant(
     route.workspaceId,

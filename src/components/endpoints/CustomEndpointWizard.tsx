@@ -517,6 +517,7 @@ export function CustomEndpointWizard({
                   placeholder={t('name_placeholder')}
                   data-testid="wizard-name-input"
                 />
+                <p className="text-xs text-tertiary">{t('name_hint')}</p>
                 {getErrorForField('name') && (
                   <p className="text-sm text-error">{getErrorForField('name')}</p>
                 )}
@@ -598,6 +599,7 @@ export function CustomEndpointWizard({
                   className="font-mono text-sm"
                   data-testid="wizard-model-id-input"
                 />
+                <p className="text-xs text-tertiary">{t('model_id_hint')}</p>
                 {getErrorForField('modelId') && (
                   <p className="text-sm text-error">{getErrorForField('modelId')}</p>
                 )}

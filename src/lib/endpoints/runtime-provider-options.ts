@@ -29,6 +29,27 @@ function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function fallbackProviderBaseUrl(providerKey: string, displayName: string): string {
+  const key = normalizeKey(providerKey);
+  const name = normalizeKey(displayName);
+  if (key === 'openai' || name.includes('openai')) return 'https://api.openai.com/v1';
+  if (key === 'anthropic' || name.includes('anthropic')) return 'https://api.anthropic.com/v1';
+  if (key.includes('deepseek') || name.includes('deepseek')) return 'https://api.deepseek.com/v1';
+  if (key.includes('moonshot') || key === 'kimi' || name.includes('moonshot') || name.includes('kimi')) {
+    return 'https://api.moonshot.cn/v1';
+  }
+  if (key.includes('zhipu') || key === 'glm' || name.includes('zhipu') || name.includes('glm')) {
+    return 'https://open.bigmodel.cn/api/coding/paas/v4';
+  }
+  if (key.includes('google') || name.includes('google')) {
+    return 'https://generativelanguage.googleapis.com/v1beta/openai';
+  }
+  if (key.includes('qwen') || key.includes('dashscope') || name.includes('qwen') || name.includes('dashscope')) {
+    return 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  }
+  return '';
+}
+
 function isLikelyChinaProvider(key: string, name: string): boolean {
   const composite = `${normalizeKey(key)} ${normalizeKey(name)}`;
   return [
@@ -113,13 +134,14 @@ export function buildRuntimeProviderOptions(
   const sorted = sortRuntimeProviders(providers);
   return sorted.map((provider) => {
     const protocol = inferProtocol(provider);
+    const api = (provider.api ?? '').trim();
     return {
       key: provider.provider_key,
       display_name: provider.name,
       family: inferProviderFamily(provider.provider_key),
       protocol,
       compatibility_interface: protocol === 'anthropic_compatible' ? 'anthropic_compatible' : 'openai_compatible',
-      default_base_url: provider.api ?? '',
+      default_base_url: api || fallbackProviderBaseUrl(provider.provider_key, provider.name),
     };
   });
 }

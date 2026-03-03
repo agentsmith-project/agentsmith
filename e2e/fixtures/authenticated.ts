@@ -1,7 +1,7 @@
 import { Page } from '@playwright/test';
 
 export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'test@example.com', userId = 'user_001') {
-  await page.addInitScript(({ wsId, userEmail, userId }) => {
+  const inject = ({ wsId, userEmail, userId }: { wsId: string; userEmail: string; userId: string }) => {
     window.__MBOS_AUTH_SETUP__ = true;
     window.__MBOS_AUTH_E2E_CONTEXT__ = { wsId, userEmail, userId };
 
@@ -53,5 +53,14 @@ export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'tes
 
     // Preserve signature compatibility (workspace is derived from URL in-app).
     void wsId;
-  }, { wsId, userEmail, userId });
+  };
+
+  // 1) Ensure every future document gets auth pre-seeded before app bootstraps.
+  await page.addInitScript(inject, { wsId, userEmail, userId });
+
+  // 2) Also seed auth for the current document immediately (if already on app origin),
+  // so first-round queries don't race and trigger session recovery redirects.
+  await page.evaluate(inject, { wsId, userEmail, userId }).catch(() => {
+    // about:blank / cross-origin pages can reject evaluate; initScript path still covers next navigation.
+  });
 }

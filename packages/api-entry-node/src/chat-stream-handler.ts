@@ -337,6 +337,67 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       });
       return true;
     }
+    const endpointRateCheck = checkAndConsumeProjectResourceRateLimitsForUser({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceType: 'endpoint',
+      resourceId: endpoint.id,
+      userId: user.id,
+      policy: endpointPolicyCheck.policy,
+    });
+    if (!endpointRateCheck.allowed) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'resource_policy.rate_limited',
+        result: 'error',
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+        errorMessage: 'resource_policy_rate_limited',
+        metadata: {
+          governance_kind: 'resource_policy',
+          enforcement_kind: 'rate_limit',
+          effective_limit_per_minute: endpointRateCheck.effective_limit_per_minute,
+          retry_after_seconds: endpointRateCheck.retry_after_seconds,
+          scope: endpointRateCheck.scope,
+          rate_key: 'endpoint.requests_per_minute',
+          source: 'chat_stream_preflight',
+          session_id: route.sessionId,
+        },
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        endUserId: user.id,
+        requests: 1,
+        result: 'error',
+        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
+        metadata: {
+          stage: 'preflight',
+          governance_kind: 'resource_policy',
+          enforcement_kind: 'rate_limit',
+          effective_limit_per_minute: endpointRateCheck.effective_limit_per_minute,
+          retry_after_seconds: endpointRateCheck.retry_after_seconds,
+          scope: endpointRateCheck.scope,
+          rate_key: 'endpoint.requests_per_minute',
+          source: 'chat_stream_preflight',
+          session_id: route.sessionId,
+        },
+      });
+      res.setHeader('Retry-After', String(endpointRateCheck.retry_after_seconds));
+      json(res, 429, {
+        error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+        message: 'resource_policy_rate_limited',
+        resource_type: 'endpoint',
+        resource_id: endpoint.id,
+        retry_after_seconds: endpointRateCheck.retry_after_seconds,
+      });
+      return true;
+    }
   }
   const apiKey = endpoint?.credential_ref
     ? await deps.endpointResourceService.getCredentialSecret(

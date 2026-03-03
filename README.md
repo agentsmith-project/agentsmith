@@ -46,6 +46,43 @@ npm run build
 npm start
 ```
 
+## Make Quick Commands
+
+Use this minimal command set for daily work.
+
+### Daily
+
+```bash
+make dev-up
+make dev-down
+make urls
+```
+
+### Real Backend Manual Testing
+
+```bash
+make api-dev
+make web
+make notebook-agent-refresh-token
+make notebook-agent-init-resources
+```
+
+### Quality Gates
+
+```bash
+make gate-pr
+make gate-premerge
+make gate-release
+```
+
+### Dependency Recovery (only when environment is broken)
+
+```bash
+make bootstrap
+make deps-down
+make deps-reset
+```
+
 ## Environment
 
 Copy `.env.example` to `.env.local` and configure:

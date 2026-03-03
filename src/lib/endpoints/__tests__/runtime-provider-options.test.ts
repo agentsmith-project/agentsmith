@@ -68,4 +68,12 @@ describe('runtime-provider-options', () => {
       compatibility_interface: 'openai_compatible',
     });
   });
+
+  it('falls back to known provider base url when api is missing', () => {
+    const options = buildRuntimeProviderOptions([
+      provider('openai', 'OpenAI', ''),
+    ]);
+
+    expect(options[0]?.default_base_url).toBe('https://api.openai.com/v1');
+  });
 });

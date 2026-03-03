@@ -124,6 +124,12 @@ vi.mock('../CustomEndpointWizard', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  if (!HTMLElement.prototype.scrollIntoView) {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      value: vi.fn(),
+      writable: true,
+    });
+  }
   mockCreate.mockResolvedValue({ id: 'ep_1' });
   mockListCredentials.mockResolvedValue([{ id: 'cred_1', name: 'Main Key', fingerprint: 'abcd1234' }]);
   mockListEndpoints.mockResolvedValue({ items: [] });
@@ -137,6 +143,16 @@ beforeEach(() => {
         provider_id: 'openai',
         name: 'OpenAI',
         api: 'https://api.openai.com/v1',
+        env: [],
+        model_count: 1,
+      },
+      {
+        id: 'p2',
+        version_id: 'v1',
+        provider_key: 'zhipuai',
+        provider_id: 'zhipuai',
+        name: 'Zhipu AI',
+        api: 'https://open.bigmodel.cn/api/coding/paas/v4',
         env: [],
         model_count: 1,
       },
@@ -190,13 +206,13 @@ describe('CreateEndpointDialog', () => {
     expect(screen.getByTestId('custom-endpoint-wizard')).toBeInTheDocument();
   });
 
-  it('hides manual model/base-url/limits inputs in provider catalog flow', async () => {
+  it('shows base-url input in provider catalog flow', async () => {
     renderDialog();
     await waitFor(() => {
       expect(screen.getByText('Catalog Models')).toBeInTheDocument();
     });
     expect(screen.queryByLabelText('Model ID')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Base URL')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Base URL *')).toBeInTheDocument();
     expect(screen.queryByText('Limits')).not.toBeInTheDocument();
   });
 
@@ -212,6 +228,36 @@ describe('CreateEndpointDialog', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/GPT-4o/).length).toBeGreaterThan(0);
       expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+      expect(screen.getByLabelText('Base URL *')).toHaveValue('https://api.openai.com/v1');
+    });
+  });
+
+  it('updates base url when provider changes', async () => {
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Base URL *')).toHaveValue('https://api.openai.com/v1');
+    });
+
+    const providerTrigger = screen
+      .getAllByRole('combobox')
+      .find((element) => element.textContent?.includes('OpenAI'));
+    expect(providerTrigger).toBeDefined();
+    fireEvent.click(providerTrigger as HTMLElement);
+    let providerOption: HTMLElement | null = null;
+    await waitFor(() => {
+      const candidates = screen.getAllByText('Zhipu AI');
+      providerOption = (candidates
+        .map((node) => node.closest('[role="option"]'))
+        .find((node): node is HTMLElement => node instanceof HTMLElement))
+        ?? null;
+      expect(providerOption).not.toBeNull();
+    });
+    expect(providerOption).toBeInstanceOf(HTMLElement);
+    fireEvent.click(providerOption!);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Base URL *')).toHaveValue('https://open.bigmodel.cn/api/coding/paas/v4');
     });
   });
 });

@@ -101,20 +101,24 @@ Custom endpoint rules:
 - Custom endpoint must declare compatibility interface explicitly.
 - If custom endpoint model matches catalog entry, system may auto-hydrate metadata but must keep provenance.
 
-## Admin API Contract (Required)
+## Runtime API Contract (Required)
 
-- `POST /api/v1/admin/model-catalog/sync`
-- `GET /api/v1/admin/model-catalog/sync-jobs`
-- `GET /api/v1/admin/model-catalog/versions`
-- `POST /api/v1/admin/model-catalog/versions/{versionId}:activate`
-- `POST /api/v1/admin/model-catalog/versions/{versionId}:rollback`
-- `GET /api/v1/admin/model-catalog/providers`
-- `GET /api/v1/admin/model-catalog/models`
+- `GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/status`
+- `GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/providers`
+- `GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/models`
+- `GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/jobs`
+- `POST /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/sync`
+
+Contract alignment gates:
+
+- `docs/contracts/specs/openapi.json` must include all five paths.
+- `docs/contracts/specs/openapi-route-kind-map.json` must map all five route kinds.
+- `npm run contracts:check-openapi` must pass before merge.
 
 Permission boundary:
 
-- Sync/activate/rollback: `platform:endpoint-catalog:manage`
-- Read catalog for endpoint form use: existing endpoint read/manage permissions
+- Catalog sync: `project:settings:manage`
+- Catalog read for endpoint forms: existing endpoint read/manage permissions
 
 ## Governance Evidence Contract
 

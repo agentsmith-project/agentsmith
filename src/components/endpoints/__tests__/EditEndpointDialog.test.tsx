@@ -93,4 +93,38 @@ describe('EditEndpointDialog', () => {
       credential_ref: 'cred_1',
     }));
   });
+
+  it('hides provider selector for custom endpoints', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EditEndpointDialog
+          open
+          onOpenChange={vi.fn()}
+          workspaceId="ws_1"
+          projectId="prj_1"
+          endpoint={{
+            id: 'ep_custom_1',
+            project_id: 'prj_1',
+            name: 'Custom Anthropic',
+            description: 'Custom endpoint',
+            openai_model: 'glm-4.5',
+            type: 'custom',
+            protocol: 'anthropic_compatible',
+            base_url: 'https://open.bigmodel.cn/api/anthropic',
+            credential_ref: 'cred_1',
+            status: 'active',
+            created_at: '2026-02-01T00:00:00Z',
+            updated_at: '2026-02-01T00:00:00Z',
+          }}
+        />
+      </QueryClientProvider>
+    );
+
+    expect(screen.queryByText('create_dialog.provider')).not.toBeInTheDocument();
+  });
 });

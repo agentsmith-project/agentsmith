@@ -44,8 +44,6 @@ function createProps(overrides: Partial<ChatMainPaneProps> = {}): ChatMainPanePr
     disabled: false,
     activeStreamStatus: 'error',
     activeStreamingAssistant: null,
-    activeStreamErrorCode: 'AGENT_UPSTREAM',
-    activeStreamErrorMessage: 'Upstream 503',
     suppressAutoScroll: false,
     createPending: false,
     createMessagePending: false,
@@ -61,15 +59,6 @@ function createProps(overrides: Partial<ChatMainPaneProps> = {}): ChatMainPanePr
       noActiveThreadDescription: 'No active thread',
       noActiveThreadHint: 'Create a thread',
       noEndpointHint: 'Need endpoint',
-      streamErrorHint: 'Error',
-      streamErrorTitleInterrupted: 'Interrupted',
-      streamErrorTitleAgentOffline: 'Offline',
-      streamErrorTitleAgentTimeout: 'Timeout',
-      streamErrorTitleAgentProtocol: 'Protocol',
-      streamErrorTitleAgentUpstream: 'Upstream',
-      streamDiagnosticsRuntime: 'Open Runtime',
-      streamDiagnosticsReleaseOps: 'Open Release Ops',
-      streamDiagnosticsAgent: 'Open Agent Diagnostics',
       newThread: 'New Thread',
       selectThreadHint: 'Select thread',
       attachmentsDisabledReason: 'Disabled',
@@ -94,46 +83,21 @@ function createProps(overrides: Partial<ChatMainPaneProps> = {}): ChatMainPanePr
     onRemoveAttachment: vi.fn(),
     onRetryAttachment: vi.fn(),
     onCancelEdit: vi.fn(),
-    diagnosticsLinks: {
-      runtime: '/runtime-observability?result=error',
-      releaseOps: '/release-ops?result=error',
-      agent: '/agents?agent=agent_1',
-    },
     ...overrides,
   };
 }
 
 describe('ChatMainPane', () => {
-  it('shows cross-surface diagnostics links for stream errors', () => {
+  it('does not render stream error banner', () => {
     render(<ChatMainPane {...createProps()} />);
 
-    expect(screen.getByTestId('chat__stream-error-open-runtime')).toHaveAttribute(
-      'href',
-      '/runtime-observability?result=error',
-    );
-    expect(screen.getByTestId('chat__stream-error-open-release-ops')).toHaveAttribute(
-      'href',
-      '/release-ops?result=error',
-    );
-    expect(screen.getByTestId('chat__stream-error-open-agent')).toHaveAttribute(
-      'href',
-      '/agents?agent=agent_1',
-    );
+    expect(screen.queryByTestId('chat__stream-error-banner')).not.toBeInTheDocument();
   });
 
-  it('omits agent diagnostics link when no agent link is available', () => {
-    render(
-      <ChatMainPane
-        {...createProps({
-          diagnosticsLinks: {
-            runtime: '/runtime-observability?result=error',
-            releaseOps: '/release-ops?result=error',
-            agent: null,
-          },
-        })}
-      />,
-    );
+  it('renders message list and composer normally in error state', () => {
+    render(<ChatMainPane {...createProps()} />);
 
-    expect(screen.queryByTestId('chat__stream-error-open-agent')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-message-list')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-composer')).toBeInTheDocument();
   });
 });

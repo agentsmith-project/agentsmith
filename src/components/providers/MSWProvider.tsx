@@ -15,6 +15,10 @@ export function MSWProvider({ children }: { children: React.ReactNode }) {
     () => process.env.NEXT_PUBLIC_USE_MSW === 'true',
     [],
   );
+  const strictReady = useMemo(
+    () => process.env.NEXT_PUBLIC_MSW_STRICT_READY === 'true',
+    [],
+  );
   const [ready, setReady] = useState(!useMsw);
 
   useEffect(() => {
@@ -22,8 +26,12 @@ export function MSWProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     const timeout = window.setTimeout(() => {
       if (!cancelled) {
-        console.warn('[MSW] init timeout, continuing without blocking UI');
-        setReady(true);
+        if (strictReady) {
+          console.warn('[MSW] init timeout, strict mode keeps UI blocked until worker is ready');
+        } else {
+          console.warn('[MSW] init timeout, continuing without blocking UI');
+          setReady(true);
+        }
       }
     }, 5000);
 
@@ -39,7 +47,7 @@ export function MSWProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [useMsw]);
+  }, [strictReady, useMsw]);
 
   if (!ready) {
     return (

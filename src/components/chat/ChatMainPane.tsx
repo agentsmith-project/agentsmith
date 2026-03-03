@@ -1,19 +1,17 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
-import { AlertTriangle, MessageSquare, Plus } from 'lucide-react';
+import { MessageSquare, Plus } from 'lucide-react';
 
 import type { Agent, Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
 import { deriveChatComposerState } from '@/lib/chat/composer-state';
 import type { SessionStreamStatus, SessionStreamingAssistant } from '@/lib/chat/stream-state';
-import { classifyChatStreamFailure } from '@/lib/build-failure-explainability';
 
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { Composer } from '@/components/chat/Composer';
 import { Markdown } from '@/components/chat/Markdown';
 import { MessageList } from '@/components/chat/MessageList';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 
 export interface ChatMainPaneLabels {
   loading: string;
@@ -21,15 +19,6 @@ export interface ChatMainPaneLabels {
   noActiveThreadDescription: string;
   noActiveThreadHint: string;
   noEndpointHint: string;
-  streamErrorHint: string;
-  streamErrorTitleInterrupted: string;
-  streamErrorTitleAgentOffline: string;
-  streamErrorTitleAgentTimeout: string;
-  streamErrorTitleAgentProtocol: string;
-  streamErrorTitleAgentUpstream: string;
-  streamDiagnosticsRuntime: string;
-  streamDiagnosticsReleaseOps: string;
-  streamDiagnosticsAgent: string;
   newThread: string;
   selectThreadHint: string;
   attachmentsDisabledReason: string;
@@ -49,8 +38,6 @@ export interface ChatMainPaneProps {
   disabled: boolean;
   activeStreamStatus: SessionStreamStatus;
   activeStreamingAssistant: SessionStreamingAssistant | null;
-  activeStreamErrorCode: string | null;
-  activeStreamErrorMessage: string | null;
   suppressAutoScroll: boolean;
   createPending: boolean;
   createMessagePending: boolean;
@@ -81,11 +68,6 @@ export interface ChatMainPaneProps {
   onRemoveAttachment: (attachmentId: string) => void;
   onRetryAttachment: (attachmentId: string) => void;
   onCancelEdit: () => void;
-  diagnosticsLinks?: {
-    runtime: string;
-    releaseOps: string;
-    agent?: string | null;
-  };
 }
 
 export function ChatMainPane(props: ChatMainPaneProps) {
@@ -102,8 +84,6 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     disabled,
     activeStreamStatus,
     activeStreamingAssistant,
-    activeStreamErrorCode,
-    activeStreamErrorMessage,
     suppressAutoScroll,
     createPending,
     createMessagePending,
@@ -134,7 +114,6 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     onRemoveAttachment,
     onRetryAttachment,
     onCancelEdit,
-    diagnosticsLinks,
   } = props;
 
   const showAppendFooter = Boolean(
@@ -152,17 +131,6 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     initAttachmentPending,
   });
   const composerDisabled = composerState !== 'ready';
-  const showStreamErrorBanner = activeStreamStatus === 'error' && Boolean(currentSessionId);
-  const streamFailureKind = classifyChatStreamFailure(activeStreamErrorCode);
-  const streamErrorTitle = streamFailureKind === 'agent_offline'
-    ? labels.streamErrorTitleAgentOffline
-    : streamFailureKind === 'agent_timeout'
-      ? labels.streamErrorTitleAgentTimeout
-      : streamFailureKind === 'agent_protocol'
-        ? labels.streamErrorTitleAgentProtocol
-        : streamFailureKind === 'agent_upstream'
-          ? labels.streamErrorTitleAgentUpstream
-          : labels.streamErrorTitleInterrupted;
   const composerDisabledReason =
     composerState === 'no_thread'
       ? labels.noActiveThreadHint
@@ -247,50 +215,6 @@ export function ChatMainPane(props: ChatMainPaneProps) {
           />
         )}
       </div>
-
-      {showStreamErrorBanner ? (
-        <div
-          className="mx-4 mb-3 rounded-lg border border-error/30 bg-error/10 px-3 py-2"
-          data-testid="chat__stream-error-banner"
-          role="status"
-          aria-live="polite"
-        >
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 text-error" aria-hidden />
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-error">{streamErrorTitle}</div>
-              <div className="mt-1 text-xs text-tertiary">{activeStreamErrorMessage || labels.streamErrorHint}</div>
-              {diagnosticsLinks ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Link
-                    href={diagnosticsLinks.runtime}
-                    className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                    data-testid="chat__stream-error-open-runtime"
-                  >
-                    {labels.streamDiagnosticsRuntime}
-                  </Link>
-                  <Link
-                    href={diagnosticsLinks.releaseOps}
-                    className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                    data-testid="chat__stream-error-open-release-ops"
-                  >
-                    {labels.streamDiagnosticsReleaseOps}
-                  </Link>
-                  {diagnosticsLinks.agent ? (
-                    <Link
-                      href={diagnosticsLinks.agent}
-                      className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                      data-testid="chat__stream-error-open-agent"
-                    >
-                      {labels.streamDiagnosticsAgent}
-                    </Link>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePicked} />
 

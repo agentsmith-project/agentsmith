@@ -75,6 +75,7 @@ export function CreateEndpointDialog({
   const [provider, setProvider] = React.useState<string>('openai');
   const [capability, setCapability] = React.useState<CapabilityOption>('chat_completion');
   const [credentialRef, setCredentialRef] = React.useState<string>('');
+  const [baseUrl, setBaseUrl] = React.useState('');
 
   // Custom wizard state
   const [showCustomWizard, setShowCustomWizard] = React.useState(false);
@@ -188,6 +189,7 @@ export function CreateEndpointDialog({
     setProvider('openai');
     setCapability('chat_completion');
     setCredentialRef('');
+    setBaseUrl('');
   };
 
   React.useEffect(() => {
@@ -202,6 +204,13 @@ export function CreateEndpointDialog({
     const preferred = providerOptions.find((item) => item.key === 'openai')?.key ?? providerOptions[0]?.key ?? 'openai';
     setProvider(preferred);
   }, [open, provider, providerOptions]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    // Keep base URL synced with selected provider preset.
+    // When provider has no preset, leave it empty for manual input.
+    setBaseUrl(selectedProvider.default_base_url.trim());
+  }, [open, provider, selectedProvider.default_base_url]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -226,12 +235,12 @@ export function CreateEndpointDialog({
       toast.error(t('create_dialog.name_conflict'));
       return;
     }
-    if (!selectedProvider.default_base_url?.trim()) {
+    if (!baseUrl.trim()) {
       toast.error(t('create_dialog.base_url_required'));
       return;
     }
 
-    const url = selectedProvider.default_base_url.trim();
+    const url = baseUrl.trim();
 
     const data: CreateEndpointRequest = {
       name: name.trim(),
@@ -276,7 +285,7 @@ export function CreateEndpointDialog({
     !duplicateNameExists &&
     openaiModel.trim().length > 0 &&
     credentialRef.length > 0 &&
-    selectedProvider.default_base_url.trim().length > 0 &&
+    baseUrl.trim().length > 0 &&
     !createMutation.isPending;
 
   return (
@@ -398,6 +407,7 @@ export function CreateEndpointDialog({
           {providerModels.length > 0 && (
             <div className="space-y-2 order-3">
               <label className="text-sm font-medium text-foreground">{t('create_dialog.catalog_models')}</label>
+              <p className="text-xs text-tertiary">{t('create_dialog.model_id_hint')}</p>
               <Select
                 value={openaiModel}
                 onValueChange={setOpenaiModel}
@@ -438,6 +448,20 @@ export function CreateEndpointDialog({
               {t('create_dialog.select_from_catalog')}
             </div>
           )}
+
+          <div className="space-y-2 order-8">
+            <label htmlFor="endpoint-base-url" className="text-sm font-medium text-foreground">
+              {t('create_dialog.base_url')} <span className="text-error">*</span>
+            </label>
+            <Input
+              id="endpoint-base-url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.example.com/v1"
+              disabled={createMutation.isPending}
+              required
+            />
+          </div>
 
           <div className="space-y-2 order-9">
             <label className="text-sm font-medium text-foreground">

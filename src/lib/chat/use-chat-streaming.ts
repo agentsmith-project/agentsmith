@@ -33,6 +33,7 @@ export interface UseChatStreamingArgs {
   queryClient: QueryClient;
   messages: {
     streamError: string;
+    streamErrorEmptyResponse: string;
     streamingFailed: string;
     stopRequiredBeforeReplaceFailed: string;
     stopFailedRetry: string;
@@ -75,6 +76,7 @@ function mapStreamErrorMessage(error: unknown, messages: UseChatStreamingArgs['m
   const mapped = resolveErrorMessageByCode(
     code,
     {
+      CHAT_EMPTY_RESPONSE: messages.streamErrorEmptyResponse,
       AGENT_TIMEOUT: messages.streamErrorAgentTimeout,
       AGENT_PROTOCOL_ERROR: messages.streamErrorAgentProtocol,
       AGENT_UPSTREAM_ERROR: messages.streamErrorAgentUpstream,
@@ -385,6 +387,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     messages.streamErrorAgentTimeout,
     messages.streamErrorAgentUpstream,
     messages.streamError,
+    messages.streamErrorEmptyResponse,
     messages.streamingFailed,
     patchStreamAssistantInCache,
     projectId,
@@ -611,6 +614,10 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         } else if (ev.event === 'done') {
           break;
         }
+      }
+
+      if (content.length === 0) {
+        throw new StreamUiError('CHAT_EMPTY_RESPONSE', messages.streamErrorEmptyResponse);
       }
 
       throttler.flush();

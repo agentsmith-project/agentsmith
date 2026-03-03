@@ -3687,6 +3687,107 @@ describe('api-entry-node projects routes', () => {
     ws.close();
   });
 
+  it('enforces endpoint requests_per_minute policy for chat stream preflight', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startOpenAICompatibleUpstreamServer();
+
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'chat-rate-cred', value: 'sk-chat-rate' }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const endpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-rate-endpoint',
+          openai_model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(endpointRes.status).toBe(201);
+    const endpoint = (await endpointRes.json()) as { id: string };
+
+    const patchPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1 }] },
+        }),
+      },
+    );
+    expect(patchPolicyRes.status).toBe(204);
+
+    const createSessionRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint_id: endpoint.id, model: 'deepseek-chat' }),
+      },
+    );
+    expect(createSessionRes.status).toBe(201);
+    const session = (await createSessionRes.json()) as { id: string };
+
+    const firstStreamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint_id: endpoint.id, model: 'deepseek-chat', input: { role: 'user', content: 'first' } }),
+      },
+    );
+    expect(firstStreamRes.status).toBe(200);
+    await firstStreamRes.text();
+
+    const secondStreamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ endpoint_id: endpoint.id, model: 'deepseek-chat', input: { role: 'user', content: 'second' } }),
+      },
+    );
+    expect(secondStreamRes.status).toBe(429);
+    const secondBody = (await secondStreamRes.json()) as {
+      error_code?: string;
+      message?: string;
+      resource_type?: string;
+      resource_id?: string;
+      retry_after_seconds?: number;
+    };
+    expect(secondBody).toMatchObject({
+      error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+      message: 'resource_policy_rate_limited',
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+    });
+    expect(typeof secondBody.retry_after_seconds).toBe('number');
+
+  });
+
   it('returns AGENT_OFFLINE when external agent session streams without active runtime socket', async () => {
     const { baseUrl } = startServer();
 

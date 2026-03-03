@@ -14,7 +14,7 @@ const useManagedDevServer = !process.env.BASE_URL;
 const localWorkers = Number(process.env.PW_WORKERS ?? 6);
 const isCI = !!process.env.CI;
 
-const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port 3001')].join(
+const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true NEXT_PUBLIC_MSW_STRICT_READY=true npm run dev:test -- --port 3001')].join(
   ' ',
 );
 

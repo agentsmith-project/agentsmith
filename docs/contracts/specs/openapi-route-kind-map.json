@@ -367,6 +367,26 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/compare",
     "method": "post"
   },
+  "runtimeCatalogProviders": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/providers",
+    "method": "get"
+  },
+  "runtimeCatalogModels": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/models",
+    "method": "get"
+  },
+  "runtimeCatalogSync": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/sync",
+    "method": "post"
+  },
+  "runtimeCatalogJobs": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/jobs",
+    "method": "get"
+  },
+  "runtimeCatalogStatus": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/status",
+    "method": "get"
+  },
   "agentItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}",
     "method": "get"

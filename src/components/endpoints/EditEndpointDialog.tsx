@@ -59,6 +59,7 @@ export function EditEndpointDialog({
     cost?: Record<string, number | Record<string, number>>;
   };
 
+  const isEndpointCustom = endpoint.type === 'custom' || endpoint.provider_family === 'custom';
   const [provider, setProvider] = React.useState<string>('openai');
   const [capability, setCapability] = React.useState<CapabilityOption>('chat_completion');
   const [name, setName] = React.useState(endpoint.name);
@@ -84,7 +85,7 @@ export function EditEndpointDialog({
   const { data: runtimeCatalogProvidersData } = useQuery({
     queryKey: ['runtime-catalog-providers', workspaceId, projectId, 'edit'],
     queryFn: () => runtimeAPI.listCatalogProviders(workspaceId, projectId),
-    enabled: open && !!workspaceId && !!projectId,
+    enabled: open && !!workspaceId && !!projectId && !isEndpointCustom,
   });
   const providerOptions = React.useMemo(
     () => buildRuntimeProviderOptions(runtimeCatalogProvidersData?.items ?? []),
@@ -94,7 +95,7 @@ export function EditEndpointDialog({
     () => providerOptions.find((item) => item.key === provider) ?? CUSTOM_RUNTIME_PROVIDER_OPTION,
     [providerOptions, provider],
   );
-  const isCustomProvider = provider === 'custom';
+  const isCustomProvider = isEndpointCustom || provider === 'custom';
 
   const { data: runtimeCatalogModelsData } = useQuery({
     queryKey: ['runtime-catalog-models', workspaceId, projectId, provider, capability, 'edit'],
@@ -147,7 +148,7 @@ export function EditEndpointDialog({
     setCacheReadDiscountRatio(String(endpoint.runtime_profile?.cache_read_discount_ratio ?? 0));
     setCacheWriteDiscountRatio(String(endpoint.runtime_profile?.cache_write_discount_ratio ?? 0));
     const catalogProviderKey = endpoint.meta?.catalog_provider_key;
-    setProvider(catalogProviderKey ?? endpoint.provider_family ?? 'openai');
+    setProvider(isEndpointCustom ? 'custom' : (catalogProviderKey ?? endpoint.provider_family ?? 'openai'));
     const selectedCapability =
       endpoint.capabilities?.find((item) => item.enabled)?.type ??
       endpoint.models?.[0]?.capability ??
@@ -156,11 +157,11 @@ export function EditEndpointDialog({
   }, [open, endpoint]);
 
   React.useEffect(() => {
-    if (!open || providerOptions.length === 0) return;
+    if (!open || isEndpointCustom || providerOptions.length === 0) return;
     if (provider === 'custom' || providerOptions.some((item) => item.key === provider)) return;
     const preferred = providerOptions.find((item) => item.key === 'openai')?.key ?? providerOptions[0]?.key ?? 'custom';
     setProvider(preferred);
-  }, [open, provider, providerOptions]);
+  }, [open, provider, providerOptions, isEndpointCustom]);
 
   React.useEffect(() => {
     if (!open || isCustomProvider || providerModels.length === 0) return;
@@ -182,6 +183,7 @@ export function EditEndpointDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const protocolForSubmit = isEndpointCustom ? (endpoint.protocol ?? 'openai_compatible') : selectedProvider.protocol;
     const resolvedBaseUrl = isCustomProvider
       ? baseUrl.trim()
       : selectedProvider.default_base_url.trim() || baseUrl.trim();
@@ -195,10 +197,12 @@ export function EditEndpointDialog({
         base_url: resolvedBaseUrl,
         status,
         credential_ref: credentialRef,
-        provider_family: selectedProvider.family,
-        protocol: selectedProvider.protocol,
+        provider_family: isEndpointCustom ? 'custom' : selectedProvider.family,
+        protocol: protocolForSubmit,
         meta: {
-          compatibility_interface: selectedProvider.compatibility_interface,
+          compatibility_interface: isEndpointCustom
+            ? (endpoint.meta?.compatibility_interface ?? protocolForSubmit)
+            : selectedProvider.compatibility_interface,
           catalog_provider_key: isCustomProvider ? 'custom' : provider,
         },
         capabilities: [{ type: capability, enabled: true, default_model_id: openaiModel.trim() }],
@@ -314,30 +318,32 @@ export function EditEndpointDialog({
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                {t('create_dialog.provider')} <span className="text-error">*</span>
-              </label>
-              <Select
-                value={provider}
-                onValueChange={setProvider}
-                disabled={isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {providerOptions.map((item) => (
-                    <SelectItem key={item.key} value={item.key}>
-                      <span className="flex items-center gap-2">
-                        <span>{item.display_name}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="custom">{t('create_dialog.provider_custom')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {!isEndpointCustom && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  {t('create_dialog.provider')} <span className="text-error">*</span>
+                </label>
+                <Select
+                  value={provider}
+                  onValueChange={setProvider}
+                  disabled={isSaving}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providerOptions.map((item) => (
+                      <SelectItem key={item.key} value={item.key}>
+                        <span className="flex items-center gap-2">
+                          <span>{item.display_name}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="custom">{t('create_dialog.provider_custom')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">

@@ -358,6 +358,27 @@ make governance-policy-effect-smoke
   - Intended for real backend mode page validation (not MSW-only UI smoke)
   - `governance-policy-effect-smoke` temporarily patches the current endpoint policy (RPM=1), validates a 429 rate-limit hit, checks Audit/Usage evidence, then restores the original policy
 
+### 5.4.4 Internal Agent Sandbox Smoke (fail-fast expected)
+- Required env for internal mode:
+```bash
+export SANDBOX_MANAGER_URL=http://<sandbox-manager-host>:8080
+export SANDBOX_SERVICE_KEY=<sandbox-service-key>
+```
+- Optional (recommended explicit runtime ws base):
+```bash
+export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
+```
+- Smoke checklist:
+  - Create internal agent with `config.image` and notebook `runtime_preferences.notebook.endpoint_id`.
+  - Confirm create/list/get agent responses do not contain `_internal_raw_key`.
+  - Create chat session with `external_agent_id=<internal_agent_id>`, send a stream request.
+  - Expected fail-fast when env missing: `422 AGENT_SANDBOX_NOT_CONFIGURED`.
+  - Expected normal path when env exists: first request may cold-start pod, then stream starts.
+  - Close/delete notebook task: pod release should be triggered by API.
+- Contract notes:
+  - Runner static proxy source is only `server.hello.resource_proxy.base_url`.
+  - Per-request auth token remains in `runtime_context.user_bearer_token` (no proxy-base fallback).
+
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.
 - Our task workdirs are ephemeral (`/tmp/<username>/<task_id>`) and are not trusted by default.

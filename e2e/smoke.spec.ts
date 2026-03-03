@@ -35,6 +35,48 @@ function isAcceptableError(text: string): boolean {
   return ACCEPTABLE_ERROR_PATTERNS.some((pattern) => text.includes(pattern));
 }
 
+async function recoverSessionIfNeeded(page: import('@playwright/test').Page) {
+  const expiredState = page.getByText(/Session expired|会话已失效/i).first();
+  const loginButton = page.getByRole('button', { name: /Login with Keycloak|使用 Keycloak 登录/i }).first();
+  const needsRecover = (await expiredState.isVisible().catch(() => false))
+    || (await loginButton.isVisible().catch(() => false));
+  if (!needsRecover) return;
+  await withAuth(page, WS_ID, 'test@example.com', 'user_001');
+  await goToProject(page, 'endpoints');
+}
+
+async function ensureEndpointsPageReady(page: import('@playwright/test').Page) {
+  const table = page.getByTestId('endpoints__table');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await table.isVisible().catch(() => false)) return;
+    await recoverSessionIfNeeded(page);
+    await goToProject(page, 'endpoints');
+    if (await table.isVisible().catch(() => false)) return;
+    await page.waitForTimeout(250);
+  }
+  await expect(table).toBeVisible({ timeout: 10000 });
+}
+
+async function pickSelectOption(
+  container: import('@playwright/test').Locator,
+  page: import('@playwright/test').Page,
+  option: RegExp,
+) {
+  const triggers = container.locator('[role="combobox"]');
+  const count = await triggers.count();
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const trigger = triggers.nth(i);
+    await trigger.click();
+    const target = page.getByRole('option', { name: option }).first();
+    if (await target.isVisible({ timeout: 600 }).catch(() => false)) {
+      await target.click();
+      return true;
+    }
+    await page.keyboard.press('Escape');
+  }
+  return false;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -175,4 +217,37 @@ test.describe('Smoke: App Shell on Project Pages', () => {
       await expect(sidebar).toBeVisible({ timeout: 5_000 });
     });
   }
+});
+
+test.describe('Smoke: Endpoints Create Flow', () => {
+  test.setTimeout(120_000);
+
+  test('opens create dialog and custom wizard without frontend errors', async ({ authedPage }) => {
+    const errors: string[] = [];
+    authedPage.on('console', (msg) => {
+      if (msg.type() === 'error' && !isAcceptableError(msg.text())) {
+        errors.push(msg.text());
+      }
+    });
+
+    await goToProject(authedPage, 'endpoints');
+    await ensureEndpointsPageReady(authedPage);
+
+    await authedPage.getByTestId('endpoints__create-btn').click();
+    const dialog = authedPage.getByTestId('endpoints__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    const providerPicked = await pickSelectOption(dialog, authedPage, /Custom|自定义/i);
+    expect(providerPicked).toBe(true);
+
+    await expect(dialog.getByRole('button', { name: /Open Wizard|打开向导/i })).toBeVisible();
+    await dialog.getByRole('button', { name: /Open Wizard|打开向导/i }).click();
+
+    const wizard = authedPage.getByTestId('endpoints__custom-wizard');
+    await expect(wizard).toBeVisible();
+    await expect(wizard.getByTestId('wizard-name-input')).toBeVisible();
+    await expect(wizard.getByTestId('wizard-base-url-input')).toBeVisible();
+
+    expect(errors, 'Unexpected console errors in endpoints create smoke flow').toHaveLength(0);
+  });
 });

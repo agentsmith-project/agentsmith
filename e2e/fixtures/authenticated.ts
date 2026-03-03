@@ -32,7 +32,7 @@ export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'tes
         return false;
       }
       const state = authStore.getState();
-      if (!state.isAuthenticated && typeof state.setAuth === 'function') {
+      if (typeof state.setAuth === 'function') {
         state.setAuth(user, token, {
           refreshToken,
           expiresIn: 60 * 60,

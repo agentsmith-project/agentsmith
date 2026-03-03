@@ -6,6 +6,7 @@
  */
 
 import { test, expect, goToProject } from './fixtures/test-base';
+import { withAuth } from './fixtures/authenticated';
 
 async function pickSelectOption(
   dialog: import('@playwright/test').Locator,
@@ -28,6 +29,7 @@ async function pickSelectOption(
 }
 
 async function ensureCredentialExists(page: import('@playwright/test').Page) {
+  await ensureEndpointsPageReady(page);
   await goToProject(page, 'credentials');
   const rows = page.getByTestId('credentials__table__row');
   if ((await rows.count()) === 0) {
@@ -41,11 +43,49 @@ async function ensureCredentialExists(page: import('@playwright/test').Page) {
     await expect(rows.first()).toBeVisible({ timeout: 10000 });
   }
   await goToProject(page, 'endpoints');
+  await ensureEndpointsPageReady(page);
+}
+
+async function recoverSessionIfNeeded(page: import('@playwright/test').Page) {
+  const expiredState = page.getByText(/Session expired|会话已失效/i).first();
+  const loginButton = page.getByRole('button', { name: /Login with Keycloak|使用 Keycloak 登录/i }).first();
+  const needsRecover = (await expiredState.isVisible().catch(() => false))
+    || (await loginButton.isVisible().catch(() => false));
+  if (!needsRecover) return;
+
+  await withAuth(page, 'ws_default', 'test@example.com', 'user_001');
+  await goToProject(page, 'endpoints');
+}
+
+async function ensureEndpointsPageReady(page: import('@playwright/test').Page) {
+  const table = page.getByTestId('endpoints__table');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tableVisible = await table.isVisible().catch(() => false);
+    if (tableVisible) return;
+    await recoverSessionIfNeeded(page);
+    await goToProject(page, 'endpoints');
+    if (await table.isVisible().catch(() => false)) return;
+    await page.waitForTimeout(250);
+  }
+  await expect(table).toBeVisible({ timeout: 10000 });
+}
+
+async function openCustomWizardFromCreateDialog(page: import('@playwright/test').Page) {
+  await ensureEndpointsPageReady(page);
+  await page.getByTestId('endpoints__create-btn').click();
+  const dialog = page.getByTestId('endpoints__create-dialog');
+  await expect(dialog).toBeVisible();
+  await pickSelectOption(dialog, page, /Custom|自定义/i);
+  await dialog.getByRole('button', { name: /Open Wizard|打开向导/i }).click();
+  const wizard = page.getByTestId('endpoints__custom-wizard');
+  await expect(wizard).toBeVisible({ timeout: 5000 });
+  return wizard;
 }
 
 test.describe('Endpoints Page', () => {
   test.beforeEach(async ({ authedPage }) => {
     await goToProject(authedPage, 'endpoints');
+    await ensureEndpointsPageReady(authedPage);
   });
 
   test('table renders with endpoint rows', async ({ authedPage }) => {
@@ -247,6 +287,21 @@ test.describe('Endpoints Page', () => {
     expect(payload.limits?.timeout_seconds).toBe(45);
   });
 
+  test('create dialog shows name uniqueness hint and prevents duplicate names', async ({ authedPage }) => {
+    await ensureEndpointsPageReady(authedPage);
+    await authedPage.getByTestId('endpoints__create-btn').click();
+    const dialog = authedPage.getByTestId('endpoints__create-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Existing endpoint in mock data: OpenAI Main
+    await dialog.locator('#endpoint-name').fill('OpenAI Main');
+    await expect(dialog.getByText(/model alias|模型别名/i)).toBeVisible();
+    await expect(dialog.getByText(/already exists|已存在同名端点/i)).toBeVisible();
+
+    await dialog.getByRole('textbox', { name: /model id|模型 ID/i }).fill('dup-model-id');
+    await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled();
+  });
+
   test.describe('Custom Endpoint Wizard', () => {
     test('opens wizard when custom provider is selected', async ({ authedPage }) => {
       await ensureCredentialExists(authedPage);
@@ -387,6 +442,81 @@ test.describe('Endpoints Page', () => {
 
       // Create button should be enabled - validation is optional
       await expect(wizard.getByTestId('wizard-create-button')).toBeEnabled();
+    });
+
+    test('accepts GLM coding URL without /v1 and creates endpoint', async ({ authedPage }) => {
+      const wizard = await openCustomWizardFromCreateDialog(authedPage);
+
+      await wizard.getByTestId('wizard-name-input').fill(`E2E GLM Coding ${Date.now()}`);
+      await wizard.getByTestId('wizard-base-url-input').fill('https://open.bigmodel.cn/api/coding/paas/v4');
+
+      let nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
+      await expect(nextBtn).toBeEnabled();
+      await nextBtn.click();
+
+      await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible();
+      await wizard.getByTestId('wizard-model-id-input').fill('glm-4.5');
+
+      nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
+      if (!(await nextBtn.isEnabled().catch(() => false))) {
+        const credentialPicked = await pickSelectOption(
+          wizard,
+          authedPage,
+          /OpenAI API Key|Anthropic API Key|E2E Credential/i,
+        );
+        expect(credentialPicked).toBe(true);
+      }
+      await nextBtn.click();
+      await expect(wizard.getByTestId('wizard-create-button')).toBeEnabled();
+
+      const createRequestPromise = authedPage.waitForRequest((req) => {
+        return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/endpoints$/.test(req.url());
+      });
+      await wizard.getByTestId('wizard-create-button').click();
+
+      const req = await createRequestPromise;
+      const payload = req.postDataJSON() as { base_url?: string; type?: string; protocol?: string };
+      expect(payload.type).toBe('custom');
+      expect(payload.protocol).toBe('openai_compatible');
+      expect(payload.base_url).toBe('https://open.bigmodel.cn/api/coding/paas/v4');
+    });
+
+    test('accepts GLM anthropic URL and can pass validation check', async ({ authedPage }) => {
+      const wizard = await openCustomWizardFromCreateDialog(authedPage);
+
+      await wizard.getByTestId('wizard-name-input').fill(`E2E GLM Anthropic ${Date.now()}`);
+      await wizard.getByTestId('protocol-anthropic_compatible').click();
+      await wizard.getByTestId('wizard-base-url-input').fill('https://open.bigmodel.cn/api/anthropic');
+
+      let nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
+      await expect(nextBtn).toBeEnabled();
+      await nextBtn.click();
+
+      await wizard.getByTestId('wizard-model-id-input').fill('glm-5');
+      nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
+      if (!(await nextBtn.isEnabled().catch(() => false))) {
+        const credentialPicked = await pickSelectOption(
+          wizard,
+          authedPage,
+          /OpenAI API Key|Anthropic API Key|E2E Credential/i,
+        );
+        expect(credentialPicked).toBe(true);
+      }
+      await nextBtn.click();
+
+      await expect(wizard.getByTestId('wizard-check-button')).toBeVisible();
+      await wizard.getByTestId('wizard-check-button').click();
+      await expect(wizard.getByText(/Connection successful|连接成功/i)).toBeVisible({ timeout: 10000 });
+    });
+
+    test('rejects non-https URL in wizard step 1', async ({ authedPage }) => {
+      const wizard = await openCustomWizardFromCreateDialog(authedPage);
+
+      await wizard.getByTestId('wizard-name-input').fill('E2E Invalid URL');
+      await wizard.getByTestId('wizard-base-url-input').fill('http://open.bigmodel.cn/api/anthropic');
+
+      const nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
+      await expect(nextBtn).toBeDisabled();
     });
   });
 });

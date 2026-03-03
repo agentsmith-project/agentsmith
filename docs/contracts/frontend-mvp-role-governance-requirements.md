@@ -21,15 +21,15 @@ Capture current MVP frontend governance requirements for identity, project autho
 
 1. `project:manage` is the project owner-grade permission and can manage all project resources and governance configuration.
 2. Endpoint and credential lifecycle operations are controlled by `project:manage`.
-3. Runtime usage entry points (chat/notebook/endpoints invocation) are controlled by `project:endpoint:invoke`.
+3. Runtime usage entry points (chat/notebook/endpoints invocation) are controlled by `project:endpoint:use`.
 
 ## Agent Governance
 
-1. `project:agent:create`
+1. `project:agent:manage`
 - create and manage own agents
 - use agents that are visible to current user
 
-2. `project:agent:publish`
+2. `project:agent:public`
 - publish/unpublish agent visibility to the whole project
 
 3. Visibility model

@@ -43,9 +43,10 @@ interface EndpointHandlerArgs {
     options: {
       upstreamUrl: string;
       apiKey: string;
+      endpointProtocol?: string;
+      proxyPath?: string;
       model?: string;
       timeoutSeconds?: number;
-      responsesFallbackToChat?: boolean;
     },
   ) => Promise<{ upstream_status: number; tokens_total?: number }>;
 }
@@ -389,11 +390,10 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       const proxyResult = await proxyJsonRequest(req, res, {
         upstreamUrl: buildUpstreamUrl(endpoint.base_url, resolved.proxyPath || proxyPath),
         apiKey,
+        endpointProtocol: endpoint.protocol,
+        proxyPath,
         model: resolvedModel,
         timeoutSeconds: endpoint.limits?.timeout_seconds,
-        responsesFallbackToChat:
-          proxyPath.replace(/^\/+/, '') === 'responses'
-          && endpoint.protocol === 'openai_compatible',
       });
       await writeProjectUsageFact(deps, {
         workspaceId: route.workspaceId,

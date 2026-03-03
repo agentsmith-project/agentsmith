@@ -264,6 +264,104 @@ function startSlowOpenAICompatibleUpstreamServer(): {
   return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
 }
 
+function startProtocolBridgeUpstreamServer(): {
+  server: Server;
+  baseUrl: string;
+  lastBody: () => unknown;
+  lastPath: () => string;
+} {
+  let body: unknown = null;
+  let path = '';
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      path = req.url ?? '';
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const text = Buffer.concat(chunks).toString('utf-8');
+      body = text ? JSON.parse(text) : {};
+
+      if (req.url?.includes('/messages')) {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            id: 'msg_bridge_1',
+            type: 'message',
+            role: 'assistant',
+            model: 'claude-sonnet-4-5',
+            content: [{ type: 'text', text: 'Hello from anthropic upstream.' }],
+            stop_reason: 'end_turn',
+            usage: { input_tokens: 4, output_tokens: 6 },
+          }),
+        );
+        return;
+      }
+
+      if (req.url?.includes('/chat/completions')) {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            id: 'chatcmpl_bridge_1',
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: 'gpt-4o-mini',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'Hello from openai upstream.' },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
+          }),
+        );
+        return;
+      }
+
+      if (req.url?.includes('/responses')) {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            id: 'resp_bridge_1',
+            object: 'response',
+            status: 'completed',
+            model: 'gpt-4o-mini',
+            output: [
+              {
+                id: 'msg_resp_1',
+                type: 'message',
+                role: 'assistant',
+                status: 'completed',
+                content: [{ type: 'output_text', text: 'Hello from responses upstream.' }],
+              },
+            ],
+            output_text: 'Hello from responses upstream.',
+            usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 },
+          }),
+        );
+        return;
+      }
+
+      res.statusCode = 404;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'not_found' }));
+    })();
+  });
+  server.listen(0);
+  servers.push(server);
+  const address = server.address() as AddressInfo;
+  return {
+    server,
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    lastBody: () => body,
+    lastPath: () => path,
+  };
+}
+
 function parseSseEventPayload(text: string, event: string): Record<string, unknown> | null {
   const blocks = text.split('\n\n').map((item) => item.trim()).filter(Boolean);
   for (const block of blocks) {
@@ -7763,6 +7861,187 @@ describe('api-entry-node projects routes', () => {
         message: 'delivery_config.webhook_url is required for webhook delivery',
       }),
     );
+  });
+
+  it('bridges openai chat/completions requests to anthropic-compatible endpoint through unified proxy', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startProtocolBridgeUpstreamServer();
+
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'bridge-ant-key', type: 'api_key', value: 'sk-ant' }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const endpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'bridge-anthropic-endpoint',
+          openai_model: 'claude-sonnet-4-5',
+          type: 'anthropic',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          provider_family: 'anthropic',
+          protocol: 'anthropic_compatible',
+        }),
+      },
+    );
+    expect(endpointRes.status).toBe(201);
+    const endpoint = (await endpointRes.json()) as { id: string };
+
+    const proxyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored-by-proxy',
+          messages: [{ role: 'user', content: 'hello' }],
+        }),
+      },
+    );
+    expect(proxyRes.status).toBe(200);
+    expect(proxyRes.headers.get('x-agentsmith-proxy-source-protocol')).toBe('openai_completion');
+    expect(proxyRes.headers.get('x-agentsmith-proxy-target-protocol')).toBe('anthropic');
+    expect(proxyRes.headers.get('x-agentsmith-proxy-converted')).toBe('1');
+    const payload = (await proxyRes.json()) as {
+      object?: string;
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    expect(payload.object).toBe('chat.completion');
+    expect(payload.choices?.[0]?.message?.content).toBe('Hello from anthropic upstream.');
+    expect(upstream.lastPath()).toBe('/v1/messages');
+  });
+
+  it('bridges anthropic messages requests to openai-compatible endpoint through unified proxy', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startProtocolBridgeUpstreamServer();
+
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'bridge-oa-key', type: 'api_key', value: 'sk-oa' }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const endpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'bridge-openai-endpoint',
+          openai_model: 'gpt-4o-mini',
+          type: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          provider_family: 'openai',
+          protocol: 'openai_compatible',
+        }),
+      },
+    );
+    expect(endpointRes.status).toBe(201);
+    const endpoint = (await endpointRes.json()) as { id: string };
+
+    const proxyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/messages`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello from anthropic client' }] }],
+          max_tokens: 128,
+        }),
+      },
+    );
+    expect(proxyRes.status).toBe(200);
+    expect(proxyRes.headers.get('x-agentsmith-proxy-source-protocol')).toBe('anthropic');
+    expect(proxyRes.headers.get('x-agentsmith-proxy-target-protocol')).toBe('openai_completion');
+    expect(proxyRes.headers.get('x-agentsmith-proxy-converted')).toBe('1');
+    const payload = (await proxyRes.json()) as {
+      type?: string;
+      content?: Array<{ type?: string; text?: string }>;
+    };
+    expect(payload.type).toBe('message');
+    expect(payload.content?.[0]?.text).toBe('Hello from openai upstream.');
+    expect(upstream.lastPath()).toBe('/v1/chat/completions');
+  });
+
+  it('bridges openai responses requests to anthropic-compatible endpoint through unified proxy', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startProtocolBridgeUpstreamServer();
+
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'bridge-ant-key-resp', type: 'api_key', value: 'sk-ant-resp' }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const endpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'bridge-anthropic-responses-endpoint',
+          openai_model: 'claude-sonnet-4-5',
+          type: 'anthropic',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          provider_family: 'anthropic',
+          protocol: 'anthropic_compatible',
+        }),
+      },
+    );
+    expect(endpointRes.status).toBe(201);
+    const endpoint = (await endpointRes.json()) as { id: string };
+
+    const proxyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/responses`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5',
+          input: 'hello via responses',
+        }),
+      },
+    );
+    expect(proxyRes.status).toBe(200);
+    expect(proxyRes.headers.get('x-agentsmith-proxy-source-protocol')).toBe('openai_responses');
+    expect(proxyRes.headers.get('x-agentsmith-proxy-target-protocol')).toBe('anthropic');
+    expect(proxyRes.headers.get('x-agentsmith-proxy-converted')).toBe('1');
+    const payload = (await proxyRes.json()) as { object?: string; output_text?: string };
+    expect(payload.object).toBe('response');
+    expect(payload.output_text).toBe('Hello from anthropic upstream.');
+    expect(upstream.lastPath()).toBe('/v1/messages');
   });
 
   it('rejects webhook usage report schedule creation when credential_ref has no auth binding headers', async () => {

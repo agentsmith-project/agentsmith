@@ -1,9 +1,13 @@
 import type http from 'node:http';
 import {
-  buildResponsesSsePayload,
-  translateChatCompletionResponseToResponses,
-  translateResponsesRequestToChat,
-} from './responses-chat-compat.js';
+  buildProxyBridgePlan,
+  translateProxyResponsePayload,
+} from './protocol-bridge.js';
+import {
+  pipeAnthropicSseAsResponses,
+  pipeAnthropicSseAsOpenAiChat,
+  pipeOpenAiChatSseAsAnthropic,
+} from './anthropic-sse-translate.js';
 import { pipeTranslatedChatSseAsResponses } from './responses-sse-translate.js';
 
 function debugEndpointProxy(message: string, extra?: Record<string, unknown>): void {
@@ -33,6 +37,14 @@ function summarizeChatLikeBody(body: Record<string, unknown>): Record<string, un
         : (typeof body.tool_choice === 'object' && body.tool_choice !== null ? 'object' : null),
     max_tokens: typeof body.max_tokens === 'number' ? body.max_tokens : null,
   };
+}
+
+function inferProxyPathFromUpstreamUrl(upstreamUrl: string): string {
+  const normalized = upstreamUrl.replace(/\?.*$/, '').replace(/\/+$/, '').toLowerCase();
+  if (normalized.endsWith('/chat/completions')) return 'chat/completions';
+  if (normalized.endsWith('/responses')) return 'responses';
+  if (normalized.endsWith('/messages')) return 'messages';
+  return upstreamUrl.split('/').slice(-2).join('/');
 }
 
 export function json(res: http.ServerResponse, status: number, data: unknown): void {
@@ -78,9 +90,10 @@ export async function proxyJsonRequest(
   options: {
     upstreamUrl: string;
     apiKey: string;
+    endpointProtocol?: string;
+    proxyPath?: string;
     model?: string;
     timeoutSeconds?: number;
-    responsesFallbackToChat?: boolean;
   },
 ): Promise<{ upstream_status: number; tokens_total?: number }> {
   const method = req.method ?? 'POST';
@@ -95,14 +108,44 @@ export async function proxyJsonRequest(
     body.model = options.model;
   }
 
-  const useResponsesFallback = options.responsesFallbackToChat === true && method === 'POST';
+  const normalizedProxyPath =
+    typeof options.proxyPath === 'string' && options.proxyPath.trim()
+      ? options.proxyPath.trim()
+      : inferProxyPathFromUpstreamUrl(options.upstreamUrl);
+  const bridgePlan = buildProxyBridgePlan({
+    endpointProtocol: options.endpointProtocol,
+    proxyPath: normalizedProxyPath,
+    upstreamUrl: options.upstreamUrl,
+    body,
+  });
+  res.setHeader('x-agentsmith-proxy-source-protocol', bridgePlan.sourceProtocol);
+  res.setHeader('x-agentsmith-proxy-target-protocol', bridgePlan.targetProtocol);
+  res.setHeader(
+    'x-agentsmith-proxy-converted',
+    bridgePlan.sourceProtocol === bridgePlan.targetProtocol ? '0' : '1',
+  );
+  const useResponsesFallback =
+    bridgePlan.sourceProtocol === 'openai_responses' && bridgePlan.targetProtocol === 'openai_completion';
+  const requestedResponsesStream = bridgePlan.isStreamingRequest;
+  const unsupportedCrossProtocolStream =
+    bridgePlan.isStreamingRequest
+    && bridgePlan.sourceProtocol !== bridgePlan.targetProtocol
+    && !(bridgePlan.sourceProtocol === 'anthropic' && bridgePlan.targetProtocol === 'openai_completion')
+    && !(bridgePlan.sourceProtocol === 'openai_completion' && bridgePlan.targetProtocol === 'anthropic')
+    && !(bridgePlan.sourceProtocol === 'openai_responses' && bridgePlan.targetProtocol === 'anthropic')
+    && !bridgePlan.canTranslateStreamingResponse;
+  if (unsupportedCrossProtocolStream) {
+    json(res, 422, {
+      error_code: 'PROTOCOL_STREAM_CONVERSION_NOT_SUPPORTED',
+      message: 'streaming_protocol_conversion_not_supported',
+      source_protocol: bridgePlan.sourceProtocol,
+      target_protocol: bridgePlan.targetProtocol,
+    });
+    return { upstream_status: 422 };
+  }
 
-  const requestedResponsesStream = useResponsesFallback && body.stream === true;
-
-  const upstreamUrl = useResponsesFallback
-    ? options.upstreamUrl.replace(/\/responses\/?$/i, '/chat/completions')
-    : options.upstreamUrl;
-  const upstreamBody = useResponsesFallback ? translateResponsesRequestToChat(body) : body;
+  const upstreamUrl = bridgePlan.upstreamUrl;
+  const upstreamBody = bridgePlan.upstreamBody;
 
   const abortController = new AbortController();
   const timeoutMs = Math.max(1, options.timeoutSeconds ?? 120) * 1000;
@@ -131,11 +174,19 @@ export async function proxyJsonRequest(
       && requestedResponsesStream
       && upstreamRes.ok
       && (upstreamRes.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream');
+    const isStreamingPassthrough =
+      bridgePlan.sourceProtocol === bridgePlan.targetProtocol
+      && bridgePlan.isStreamingRequest
+      && upstreamRes.ok
+      && (upstreamRes.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream');
     debugEndpointProxy('upstream_response', {
       status: upstreamRes.status,
       content_type: upstreamRes.headers.get('content-type') ?? null,
       streaming_chat_upstream: isStreamingChatUpstream,
+      streaming_passthrough: isStreamingPassthrough,
       use_responses_fallback: useResponsesFallback,
+      source_protocol: bridgePlan.sourceProtocol,
+      target_protocol: bridgePlan.targetProtocol,
     });
 
     if (isStreamingChatUpstream && upstreamRes.body) {
@@ -146,6 +197,60 @@ export async function proxyJsonRequest(
         fallbackMode: useResponsesFallback,
         debug: debugEndpointProxy,
       });
+      return { upstream_status: upstreamRes.status };
+    }
+
+    const isStreamingAnthropicToOpenAi =
+      bridgePlan.sourceProtocol === 'openai_completion'
+      && bridgePlan.targetProtocol === 'anthropic'
+      && bridgePlan.isStreamingRequest
+      && upstreamRes.ok
+      && (upstreamRes.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream');
+    if (isStreamingAnthropicToOpenAi && upstreamRes.body) {
+      res.statusCode = upstreamRes.status;
+      res.setHeader('content-type', 'text/event-stream; charset=utf-8');
+      await pipeAnthropicSseAsOpenAiChat(upstreamRes.body, res, upstreamBody);
+      return { upstream_status: upstreamRes.status };
+    }
+
+    const isStreamingAnthropicToResponses =
+      bridgePlan.sourceProtocol === 'openai_responses'
+      && bridgePlan.targetProtocol === 'anthropic'
+      && bridgePlan.isStreamingRequest
+      && upstreamRes.ok
+      && (upstreamRes.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream');
+    if (isStreamingAnthropicToResponses && upstreamRes.body) {
+      res.statusCode = upstreamRes.status;
+      res.setHeader('content-type', 'text/event-stream; charset=utf-8');
+      await pipeAnthropicSseAsResponses(upstreamRes.body, res, upstreamBody);
+      return { upstream_status: upstreamRes.status };
+    }
+
+    const isStreamingOpenAiToAnthropic =
+      bridgePlan.sourceProtocol === 'anthropic'
+      && bridgePlan.targetProtocol === 'openai_completion'
+      && bridgePlan.isStreamingRequest
+      && upstreamRes.ok
+      && (upstreamRes.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream');
+    if (isStreamingOpenAiToAnthropic && upstreamRes.body) {
+      res.statusCode = upstreamRes.status;
+      res.setHeader('content-type', 'text/event-stream; charset=utf-8');
+      await pipeOpenAiChatSseAsAnthropic(upstreamRes.body, res, upstreamBody);
+      return { upstream_status: upstreamRes.status };
+    }
+
+    if (isStreamingPassthrough && upstreamRes.body) {
+      res.statusCode = upstreamRes.status;
+      res.setHeader('content-type', upstreamRes.headers.get('content-type') ?? 'text/event-stream; charset=utf-8');
+      const reader = upstreamRes.body.getReader();
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        if (next.value) {
+          res.write(next.value);
+        }
+      }
+      res.end();
       return { upstream_status: upstreamRes.status };
     }
 
@@ -161,14 +266,9 @@ export async function proxyJsonRequest(
     } catch {
       // Non-JSON or partial payloads are still proxied; usage extraction is best-effort.
     }
-    if (useResponsesFallback && upstreamRes.ok) {
-      const translatedResponse = translateChatCompletionResponseToResponses(payload.toString('utf-8'), upstreamBody);
-      if (requestedResponsesStream) {
-        payload = Buffer.from(buildResponsesSsePayload(translatedResponse), 'utf-8');
-        contentType = 'text/event-stream; charset=utf-8';
-      } else {
-        payload = Buffer.from(JSON.stringify(translatedResponse));
-      }
+    if (upstreamRes.ok && bridgePlan.sourceProtocol !== bridgePlan.targetProtocol) {
+      payload = Buffer.from(translateProxyResponsePayload(payload.toString('utf-8'), bridgePlan), 'utf-8');
+      contentType = 'application/json; charset=utf-8';
     }
     res.statusCode = upstreamRes.status;
     res.setHeader('content-type', contentType);

@@ -51,7 +51,16 @@ describe('endpoint protocol router', () => {
     expect(isCapabilitySupportedByProtocol('glm_native', 'rerank')).toBe(false);
     expect(isCapabilitySupportedByProtocol('dashscope_native', 'rerank')).toBe(false);
     expect(isCapabilitySupportedByProtocol('openai_compatible', 'rerank')).toBe(true);
+    expect(isCapabilitySupportedByProtocol('anthropic_compatible', 'chat_completion')).toBe(true);
+    expect(isCapabilitySupportedByProtocol('anthropic_compatible', 'rerank')).toBe(false);
     expect(isCapabilitySupportedByProtocol('google_gemini', 'image_generation')).toBe(true);
   });
-});
 
+  it('routes anthropic compatible chat traffic to messages endpoint', () => {
+    const endpoint = buildEndpoint('anthropic_compatible');
+    expect(resolveEndpointTaskRoute(endpoint, 'chat')).toEqual({
+      capability: 'chat_completion',
+      proxyPath: 'messages',
+    });
+  });
+});

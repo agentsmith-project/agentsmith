@@ -27,6 +27,8 @@ export class EndpointResourceService {
     const cleaned = baseUrl.trim().replace(/\/+$/, '');
     return cleaned
       .replace(/\/chat\/completions$/i, '')
+      .replace(/\/responses$/i, '')
+      .replace(/\/messages$/i, '')
       .replace(/\/embeddings$/i, '')
       .replace(/\/rerank$/i, '')
       .replace(/\/images\/generations$/i, '')
@@ -74,6 +76,7 @@ export class EndpointResourceService {
 
   private inferProtocol(baseUrl: string, fallback: EndpointRecord['protocol']): EndpointRecord['protocol'] {
     if (fallback) return fallback;
+    if (baseUrl.includes('/anthropic') || /api\\.anthropic\\.com/i.test(baseUrl)) return 'anthropic_compatible';
     if (baseUrl.includes('generativelanguage.googleapis.com')) return 'google_gemini';
     if (baseUrl.includes('bigmodel.cn')) return 'glm_native';
     if (baseUrl.includes('dashscope.aliyuncs.com')) return 'dashscope_native';
@@ -85,10 +88,15 @@ export class EndpointResourceService {
     fallback: EndpointRecord['provider_family'],
   ): EndpointRecord['provider_family'] {
     if (fallback) return fallback;
+    if (protocol === 'anthropic_compatible') return 'anthropic';
     if (protocol === 'google_gemini') return 'google';
     if (protocol === 'glm_native') return 'glm';
     if (protocol === 'dashscope_native') return 'alibaba';
     return 'custom';
+  }
+
+  private inferCompatibilityInterface(protocol: EndpointRecord['protocol']): 'openai_compatible' | 'anthropic_compatible' {
+    return protocol === 'anthropic_compatible' ? 'anthropic_compatible' : 'openai_compatible';
   }
 
   private normalizeEndpointFields(input: Partial<EndpointRecord>, fallbackOpenAIModel?: string): {
@@ -309,6 +317,10 @@ export class EndpointResourceService {
       created_at: now,
       updated_at: now,
     };
+    endpoint.meta = {
+      ...(endpoint.meta ?? {}),
+      compatibility_interface: this.inferCompatibilityInterface(protocol),
+    };
     await this.docStore.upsert(EndpointResourceService.endpointsCollection, endpoint.id, endpoint);
     return endpoint;
   }
@@ -349,6 +361,10 @@ export class EndpointResourceService {
       models: normalized.models,
       defaults: normalized.defaults,
       updated_at: new Date().toISOString(),
+    };
+    updated.meta = {
+      ...(updated.meta ?? {}),
+      compatibility_interface: this.inferCompatibilityInterface(protocol),
     };
     await this.docStore.upsert(EndpointResourceService.endpointsCollection, endpointId, updated);
     return updated;

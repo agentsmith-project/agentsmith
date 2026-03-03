@@ -26,6 +26,9 @@ export function isCapabilitySupportedByProtocol(
   if (effectiveProtocol === 'openai_compatible') {
     return true;
   }
+  if (effectiveProtocol === 'anthropic_compatible') {
+    return capability === 'chat_completion' || capability === 'multimodal_completion';
+  }
   if (effectiveProtocol === 'google_gemini') {
     return capability !== 'rerank';
   }
@@ -69,6 +72,11 @@ export function resolveEndpointTaskRoute(
   // Current production default: all supported providers are configured via OpenAI-compatible
   // endpoints. Keep protocol branch explicit for future native provider adapters.
   switch (endpoint.protocol) {
+    case 'anthropic_compatible':
+      if (action === 'chat') {
+        return { capability: 'chat_completion', proxyPath: 'messages' };
+      }
+      return base;
     case 'google_gemini':
     case 'glm_native':
     case 'dashscope_native':

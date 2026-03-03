@@ -65,6 +65,7 @@ export type EndpointProviderFamily =
   | 'custom';
 export type EndpointProtocol =
   | 'openai_compatible'
+  | 'anthropic_compatible'
   | 'google_gemini'
   | 'glm_native'
   | 'dashscope_native';

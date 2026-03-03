@@ -129,7 +129,6 @@ describe('http-utils', () => {
       upstreamUrl: 'http://example.com/v1/responses',
       apiKey: 'test-key',
       timeoutSeconds: 5,
-      responsesFallbackToChat: true,
     });
 
     expect(upstream).toHaveBeenCalledTimes(1);
@@ -143,6 +142,9 @@ describe('http-utils', () => {
     expect(translated.output?.[0]?.type).toBe('message');
     expect(translated.output?.[0]?.role).toBe('assistant');
     expect(headers.get('content-type')).toContain('application/json');
+    expect(headers.get('x-agentsmith-proxy-source-protocol')).toBe('openai_responses');
+    expect(headers.get('x-agentsmith-proxy-target-protocol')).toBe('openai_completion');
+    expect(headers.get('x-agentsmith-proxy-converted')).toBe('1');
 
     vi.unstubAllGlobals();
   });
@@ -207,7 +209,7 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/chat/completions',
       apiKey: 'test-key',
-      responsesFallbackToChat: true,
+      proxyPath: 'responses',
     });
 
     expect(upstream).toHaveBeenCalledTimes(1);
@@ -264,7 +266,7 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/chat/completions',
       apiKey: 'test-key',
-      responsesFallbackToChat: true,
+      proxyPath: 'responses',
     });
 
     const translated = JSON.parse(responseBody) as {
@@ -330,7 +332,7 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/chat/completions',
       apiKey: 'test-key',
-      responsesFallbackToChat: true,
+      proxyPath: 'responses',
     });
 
     expect(upstream).toHaveBeenCalledTimes(1);
@@ -381,7 +383,6 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/responses',
       apiKey: 'test-key',
-      responsesFallbackToChat: true,
     });
 
     expect(upstream).toHaveBeenCalledTimes(1);
@@ -433,7 +434,6 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/responses',
       apiKey: 'test-key',
-      responsesFallbackToChat: true,
     });
 
     expect(upstream).toHaveBeenCalledTimes(1);
@@ -498,7 +498,6 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/responses',
       apiKey: 'test-key',
-      responsesFallbackToChat: true,
     });
 
     expect(headers.get('content-type')).toContain('text/event-stream');
@@ -555,7 +554,6 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/responses',
       apiKey: 'k',
-      responsesFallbackToChat: true,
     });
 
     expect(out).toContain('event: response.completed');
@@ -610,7 +608,6 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/responses',
       apiKey: 'k',
-      responsesFallbackToChat: true,
     });
 
     expect(out).toContain('event: response.function_call_arguments.delta');
@@ -667,12 +664,147 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/responses',
       apiKey: 'k',
-      responsesFallbackToChat: true,
     });
 
     expect(out).toContain('event: response.completed');
     expect(out).toContain('UPSTREAM_STREAM_ERROR');
     expect(out).toContain('upstream bad');
+    vi.unstubAllGlobals();
+  });
+
+  it('translates anthropic streaming messages into responses SSE when client uses responses path', async () => {
+    const encoder = new TextEncoder();
+    const sseText = [
+      'event: message_start',
+      'data: {"type":"message_start","message":{"id":"msg_2","model":"claude-sonnet-4-5","usage":{"input_tokens":2,"output_tokens":0}}}',
+      '',
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"anthropic->responses"}}',
+      '',
+      'event: message_delta',
+      'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}',
+      '',
+      'event: message_stop',
+      'data: {"type":"message_stop"}',
+      '',
+    ].join('\n');
+
+    const upstream = vi.fn(async (_url: string, _init?: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(sseText));
+          controller.close();
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+      });
+    });
+    vi.stubGlobal('fetch', upstream);
+
+    const req = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from(
+          JSON.stringify({
+            model: 'claude-sonnet-4-5',
+            stream: true,
+            input: 'hi',
+          }),
+        );
+      },
+    } as unknown as import('node:http').IncomingMessage;
+
+    let out = '';
+    const res = {
+      statusCode: 0,
+      setHeader() {},
+      write(chunk: string) {
+        out += chunk;
+      },
+      end(chunk?: string | Buffer) {
+        if (chunk) out += Buffer.isBuffer(chunk) ? chunk.toString('utf-8') : String(chunk);
+      },
+    } as unknown as import('node:http').ServerResponse;
+
+    await proxyJsonRequest(req, res, {
+      upstreamUrl: 'http://example.com/v1/responses',
+      apiKey: 'k',
+      endpointProtocol: 'anthropic_compatible',
+      proxyPath: 'responses',
+    });
+
+    expect(out).toContain('event: response.created');
+    expect(out).toContain('event: response.output_text.delta');
+    expect(out).toContain('anthropic->responses');
+    expect(out).toContain('event: response.completed');
+    vi.unstubAllGlobals();
+  });
+
+  it('translates openai chat streaming into anthropic SSE when client uses messages path', async () => {
+    const encoder = new TextEncoder();
+    const sseText = [
+      'data: {"id":"chatcmpl_a","object":"chat.completion.chunk","created":1,"model":"glm-5","choices":[{"index":0,"delta":{"role":"assistant","content":"hello "},"finish_reason":null}]}',
+      '',
+      'data: {"id":"chatcmpl_a","object":"chat.completion.chunk","created":1,"model":"glm-5","choices":[{"index":0,"delta":{"content":"anthropic"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4}}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    const upstream = vi.fn(async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(sseText));
+          controller.close();
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+      });
+    });
+    vi.stubGlobal('fetch', upstream);
+
+    const req = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from(JSON.stringify({
+          model: 'glm-5',
+          stream: true,
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+        }));
+      },
+    } as unknown as import('node:http').IncomingMessage;
+
+    let out = '';
+    const res = {
+      statusCode: 0,
+      setHeader() {},
+      write(chunk: string) {
+        out += chunk;
+      },
+      end(chunk?: string | Buffer) {
+        if (chunk) out += Buffer.isBuffer(chunk) ? chunk.toString('utf-8') : String(chunk);
+      },
+    } as unknown as import('node:http').ServerResponse;
+
+    await proxyJsonRequest(req, res, {
+      upstreamUrl: 'http://example.com/v1/messages',
+      apiKey: 'k',
+      endpointProtocol: 'openai_compatible',
+      proxyPath: 'messages',
+    });
+
+    expect(out).toContain('event: message_start');
+    expect(out).toContain('event: content_block_delta');
+    expect(out).toContain('"text":"hello "');
+    expect(out).toContain('"text":"anthropic"');
+    expect(out).toContain('event: message_stop');
     vi.unstubAllGlobals();
   });
 });

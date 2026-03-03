@@ -1,6 +1,6 @@
 import { test, expect, goToProject } from './fixtures/test-base';
 
-test.describe('Resource Policy Page (endpoint-only)', () => {
+test.describe('Resource Policy Page', () => {
   test.beforeEach(async ({ authedPage }) => {
     await goToProject(authedPage, 'resource-policy');
     await expect(authedPage.getByTestId('resource-policy__table')).toBeVisible({ timeout: 10000 });
@@ -12,12 +12,9 @@ test.describe('Resource Policy Page (endpoint-only)', () => {
     await expect(authedPage.getByTestId('resource-policy__open-audit')).toHaveAttribute('href', /\/audit$/);
   });
 
-  test('renders endpoint group only', async ({ authedPage }) => {
+  test('renders resource policy groups', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('resource-policy__group--endpoint')).toBeVisible();
     await expect(authedPage.locator('[data-testid^="resource-policy__row--endpoint--"]').first()).toBeVisible();
-
-    await expect(authedPage.locator('[data-testid="resource-policy__group--agent"]')).toHaveCount(0);
-    await expect(authedPage.locator('[data-testid="resource-policy__group--source_library"]')).toHaveCount(0);
   });
 
   test('blocks save when allow_list has no subject', async ({ authedPage }) => {

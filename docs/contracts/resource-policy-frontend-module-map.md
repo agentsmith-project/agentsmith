@@ -9,7 +9,7 @@ Target route:
 - Owns route param validation, permission gating, query/mutation wiring, and top-level state orchestration.
 
 - `src/components/resource-policy/ResourcePolicyTable.tsx`
-- Owns endpoint-only list rendering and selection UI only.
+- Owns managed resource list rendering and selection UI.
 - Receives resolved row status from parent; does not fetch policy data directly.
 
 - `src/lib/resource-policy/editor-utils.ts`
@@ -24,9 +24,9 @@ Target route:
 ## Guardrails
 
 - Keep API calls and mutation orchestration in `page.tsx` or dedicated hooks.
-- Keep endpoint list rendering concerns in `ResourcePolicyTable.tsx`.
+- Keep resource list rendering concerns in `ResourcePolicyTable.tsx`.
 - Keep rule parsing/merging/formatting logic in pure utility modules.
-- Resource policy management scope is endpoint-only (no source library / agent policy management in this page).
+- Resource policy management scope includes `endpoint`, `source_library`, and `agent`.
 - Add tests in:
 1. Route-level behavior: `.../resource-policy/__tests__/page.test.tsx`
 2. Pure rule helpers: `src/lib/resource-policy/__tests__/*` when helper logic expands.

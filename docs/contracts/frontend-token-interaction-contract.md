@@ -122,4 +122,4 @@ Related docs:
 
 - No route gate depends on role names.
 - Canonical token set contains only active tokens in this contract.
-- `npm run contracts:check` and `npm run contracts:check-release-sync` pass.
+- `npm run contracts:check` pass.

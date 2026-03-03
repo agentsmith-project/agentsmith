@@ -129,14 +129,14 @@ function createWrapper() {
   };
 }
 
-describe('ResourcePolicyPage endpoint-only', () => {
+describe('ResourcePolicyPage', () => {
   beforeEach(() => {
     mockSearchParams.forEach((_, key) => mockSearchParams.delete(key));
     mockMutateAsync.mockClear();
     mockUseHasPermission.mockReturnValue(true);
   });
 
-  it('renders endpoint group only', async () => {
+  it('renders endpoint group', async () => {
     render(
       <ResourcePolicyPage
         params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
@@ -147,8 +147,6 @@ describe('ResourcePolicyPage endpoint-only', () => {
     await waitFor(() => {
       expect(screen.getByTestId('resource-policy__group--endpoint')).toBeInTheDocument();
     });
-    expect(screen.queryByTestId('resource-policy__group--agent')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('resource-policy__group--source_library')).not.toBeInTheDocument();
   });
 
   it('saves endpoint policy changes', async () => {

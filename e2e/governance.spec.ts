@@ -271,18 +271,13 @@ test.describe('Epic A: Governance – Authorization & Policy', () => {
   });
 
   test.describe('Governance Consistency Across Resources', () => {
-    test('resource policy only exposes endpoint controls', async ({ authedPage }) => {
+    test('resource policy exposes managed resource controls', async ({ authedPage }) => {
       await goToProject(authedPage, 'resource-policy');
       await expect(authedPage.getByTestId('resource-policy__table')).toBeVisible({ timeout: 10000 });
 
-      // Endpoint is the only managed resource in resource policy.
+      // Endpoint must always be present; other managed resources depend on project data.
       await expect(authedPage.getByTestId('resource-policy__group--endpoint')).toBeVisible();
-      await expect(authedPage.getByTestId('resource-policy__group--agent')).toHaveCount(0);
-      await expect(authedPage.getByTestId('resource-policy__group--source_library')).toHaveCount(0);
-
       await expect(authedPage.locator('[data-testid^="resource-policy__row--endpoint--"]').first()).toBeVisible();
-      await expect(authedPage.locator('[data-testid^="resource-policy__row--agent--"]')).toHaveCount(0);
-      await expect(authedPage.locator('[data-testid^="resource-policy__row--source_library--"]')).toHaveCount(0);
     });
 
     test('policy controls are consistent: access_mode, quota_limits, rate_limits', async ({ authedPage }) => {

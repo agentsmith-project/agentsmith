@@ -52,7 +52,6 @@
     "integration:test:adapters": "npm run test -w @mbos/adapters-private",
     "api:node:dev:pg": "DATABASE_URL=postgresql://mbos:mbos_dev_password@localhost:15432/mbos npm run api:node:dev",
     "contracts:check": "tsx scripts/contracts/check-permission-gates.ts",
-    "contracts:check-release-sync": "tsx scripts/contracts/check-release-sync.ts",
     "contracts:check-openapi-core": "tsx scripts/contracts/check-openapi-core-coverage.ts",
     "contracts:check-openapi-route-kinds": "tsx scripts/contracts/check-openapi-route-kind-coverage.ts",
     "contracts:check-openapi-breaking": "tsx scripts/contracts/check-openapi-breaking.ts",

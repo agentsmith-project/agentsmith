@@ -353,6 +353,7 @@ gate-release:
 # Generate release report (JSON + Markdown) after verify-release
 # Use REPORT_NAME=name to customize, REPORT_COMMIT_RANGE=range to specify commits
 # Use REPORT_ARCHIVE=1 to create timestamped archive
+# Use REPORT_CHECKS=check1,check2 to run a subset of release checks
 # Use REPORT_RUNTIME_EVIDENCE=/abs/path/runtime-release-evidence.json to reuse an existing runtime evidence artifact
 # Use REPORT_WORKSPACE_GOVERNANCE_EVIDENCE=/abs/path/workspace-governance-release-evidence.json to reuse an existing workspace governance evidence artifact
 # Use REPORT_ORGANIZATION_GOVERNANCE_EVIDENCE=/abs/path/organization-governance-release-evidence.json to reuse an existing organization governance evidence artifact
@@ -361,12 +362,14 @@ release-report:
 	NAME=$${REPORT_NAME:-}; \
 	RANGE=$${REPORT_COMMIT_RANGE:-}; \
 	ARCHIVE=$${REPORT_ARCHIVE:-}; \
+	CHECKS=$${REPORT_CHECKS:-}; \
 	RUNTIME_EVIDENCE=$${REPORT_RUNTIME_EVIDENCE:-}; \
 	WORKSPACE_GOVERNANCE_EVIDENCE=$${REPORT_WORKSPACE_GOVERNANCE_EVIDENCE:-}; \
 	ORGANIZATION_GOVERNANCE_EVIDENCE=$${REPORT_ORGANIZATION_GOVERNANCE_EVIDENCE:-}; \
 	EXTRA_ARGS=""; \
 	[ -n "$$NAME" ] && EXTRA_ARGS="$$EXTRA_ARGS --name $$NAME"; \
 	[ -n "$$RANGE" ] && EXTRA_ARGS="$$EXTRA_ARGS --commit-range $$RANGE"; \
+	[ -n "$$CHECKS" ] && EXTRA_ARGS="$$EXTRA_ARGS --checks $$CHECKS"; \
 	[ -n "$$RUNTIME_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --runtime-evidence $$RUNTIME_EVIDENCE"; \
 	[ -n "$$WORKSPACE_GOVERNANCE_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --workspace-governance-evidence $$WORKSPACE_GOVERNANCE_EVIDENCE"; \
 	[ -n "$$ORGANIZATION_GOVERNANCE_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --organization-governance-evidence $$ORGANIZATION_GOVERNANCE_EVIDENCE"; \
@@ -616,8 +619,9 @@ e2e-int-core-auto:
 release-core-smoke:
 	@set -e; \
 	$(MAKE) e2e-int-core-local-api; \
+	BASE_URL=$${BASE_URL:-http://localhost:3001} $(MAKE) notebook-agent-refresh-token; \
 	$(MAKE) governance-policy-requests-quota-effect-smoke; \
-	$(MAKE) release-report REPORT_ARCHIVE=1
+	$(MAKE) release-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
 
 agent-test-runner:
 	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \

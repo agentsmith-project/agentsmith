@@ -69,7 +69,7 @@ When focusing on MVP go-live readiness, run this smaller real-backend baseline f
 ```bash
 make e2e-int-core-local-api
 make governance-policy-requests-quota-effect-smoke
-make release-report REPORT_ARCHIVE=1
+make release-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
 ```
 
 Or one command:
@@ -84,7 +84,7 @@ This baseline covers:
 2. Endpoint protocol bridge chat streaming (`openai_compatible` / `anthropic_compatible`)
 3. Chat stream-error surfacing and recovery (429/401/403)
 4. Endpoint requests-per-minute quota policy effect
-5. Archived release report generation
+5. Archived release report generation (contract/type check subset)
 
 ### Basic Usage
 

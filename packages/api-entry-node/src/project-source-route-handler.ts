@@ -2178,10 +2178,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: route.libraryId,
-      input: {
-        ...input,
-        visibility: input.visibility ?? target.visibility,
-      },
+      input,
     });
     json(res, 200, updated);
     return true;

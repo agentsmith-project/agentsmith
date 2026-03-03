@@ -11,6 +11,7 @@ interface OpenAiToolCallDelta {
 
 interface OpenAiChunk {
   id?: string;
+  object?: string;
   created?: number;
   model?: string;
   choices?: Array<{

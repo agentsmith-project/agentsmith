@@ -285,7 +285,7 @@ export function anthropicRequestToOpenAiChat(body: Record<string, unknown>): Rec
             },
           };
         })
-        .filter((tool): tool is Record<string, unknown> => Boolean(tool))
+        .filter((tool): tool is NonNullable<typeof tool> => tool !== null)
     : [];
   if (openAiTools.length > 0) translated.tools = openAiTools;
   const openAiToolChoice = mapAnthropicToolChoiceToOpenAi(body.tool_choice);

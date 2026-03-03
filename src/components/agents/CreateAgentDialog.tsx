@@ -53,6 +53,12 @@ export function CreateAgentDialog({
   const [externalMaxFileCount, setExternalMaxFileCount] = React.useState('8');
   const [externalMaxTotalBytes, setExternalMaxTotalBytes] = React.useState(String(60 * 1024 * 1024));
   const [notebookEndpointId, setNotebookEndpointId] = React.useState('');
+  const [cpuRequest, setCpuRequest] = React.useState('500m');
+  const [cpuLimit, setCpuLimit] = React.useState('2');
+  const [memoryRequest, setMemoryRequest] = React.useState('512Mi');
+  const [memoryLimit, setMemoryLimit] = React.useState('4Gi');
+  const [idleTimeoutSec, setIdleTimeoutSec] = React.useState('1800');
+  const [maxLifetimeSec, setMaxLifetimeSec] = React.useState('86400');
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
 
@@ -84,6 +90,12 @@ export function CreateAgentDialog({
     setExternalMaxFileCount('8');
     setExternalMaxTotalBytes(String(60 * 1024 * 1024));
     setNotebookEndpointId('');
+    setCpuRequest('500m');
+    setCpuLimit('2');
+    setMemoryRequest('512Mi');
+    setMemoryLimit('4Gi');
+    setIdleTimeoutSec('1800');
+    setMaxLifetimeSec('86400');
   };
 
   React.useEffect(() => {
@@ -126,16 +138,41 @@ export function CreateAgentDialog({
         toast.error(t('create_dialog.image_required'));
         return;
       }
+      if (!notebookEndpointId.trim()) {
+        toast.error(t('create_dialog.notebook_endpoint_required'));
+        return;
+      }
       const env: Record<string, string> = {};
       envEntries.forEach(({ key, value }) => {
         if (key.trim()) env[key.trim()] = value;
       });
+      const parsedIdleTimeoutSec = Number.parseInt(idleTimeoutSec, 10);
+      const parsedMaxLifetimeSec = Number.parseInt(maxLifetimeSec, 10);
       data.config = {
         image: image.trim(),
+        endpoint_id: notebookEndpointId.trim(),
+        cpu_request: cpuRequest.trim() || undefined,
+        cpu_limit: cpuLimit.trim() || undefined,
+        memory_request: memoryRequest.trim() || undefined,
+        memory_limit: memoryLimit.trim() || undefined,
+        idle_timeout_sec: Number.isFinite(parsedIdleTimeoutSec) && parsedIdleTimeoutSec > 0
+          ? parsedIdleTimeoutSec
+          : undefined,
+        max_lifetime_sec: Number.isFinite(parsedMaxLifetimeSec) && parsedMaxLifetimeSec > 0
+          ? parsedMaxLifetimeSec
+          : undefined,
         env: Object.keys(env).length > 0 ? env : undefined,
         max_concurrent_sessions_override: maxConcurrentSessions.trim()
           ? parseInt(maxConcurrentSessions, 10)
           : undefined,
+      };
+      data.runtime_preferences = {
+        notebook: {
+          executor: 'codex_cli',
+          endpoint_id: notebookEndpointId.trim(),
+          wire_api: 'responses',
+          model: 'gpt-5-codex',
+        },
       };
     }
 
@@ -294,6 +331,20 @@ export function CreateAgentDialog({
               </div>
 
               <div className="space-y-2">
+                <label htmlFor="internal-notebook-endpoint-id" className="text-sm text-primary">
+                  {t('create_dialog.notebook_endpoint_id')} <span className="text-error">*</span>
+                </label>
+                <Input
+                  id="internal-notebook-endpoint-id"
+                  value={notebookEndpointId}
+                  onChange={(event) => setNotebookEndpointId(event.target.value)}
+                  placeholder="ep_xxx"
+                  disabled={createMutation.isPending}
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <label className="text-sm text-primary">{t('create_dialog.env')}</label>
                 <div className="space-y-2">
                   {envEntries.map((entry, i) => (
@@ -347,6 +398,33 @@ export function CreateAgentDialog({
                   placeholder={t('create_dialog.max_concurrent_sessions_placeholder')}
                   disabled={createMutation.isPending}
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.cpu_request')}</label>
+                  <Input value={cpuRequest} onChange={(e) => setCpuRequest(e.target.value)} disabled={createMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.cpu_limit')}</label>
+                  <Input value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} disabled={createMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.memory_request')}</label>
+                  <Input value={memoryRequest} onChange={(e) => setMemoryRequest(e.target.value)} disabled={createMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.memory_limit')}</label>
+                  <Input value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} disabled={createMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.idle_timeout_sec')}</label>
+                  <Input type="number" min={60} value={idleTimeoutSec} onChange={(e) => setIdleTimeoutSec(e.target.value)} disabled={createMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.max_lifetime_sec')}</label>
+                  <Input type="number" min={600} value={maxLifetimeSec} onChange={(e) => setMaxLifetimeSec(e.target.value)} disabled={createMutation.isPending} />
+                </div>
               </div>
             </div>
           )}

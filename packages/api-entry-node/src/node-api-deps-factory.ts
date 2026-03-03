@@ -58,6 +58,8 @@ import { EndpointResourceService } from './endpoint-resource-service.js';
 import { ChatResourceService } from './chat-resource-service.js';
 import { AgentResourceService } from './agent-resource-service.js';
 import { AgentRuntimeService } from './agent-runtime-service.js';
+import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
+import { SandboxManagerClient } from './sandbox-manager-client.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 
 export function createDefaultNodeApiDeps(): NodeApiDeps {
@@ -184,6 +186,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   lifecycle: Pick<ProjectRepoFactoryResult, 'shutdown'>;
   repoMode: 'postgres' | 'memory';
 } {
+  const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim() || '';
+  const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
+  if ((sandboxUrl && !sandboxServiceKey) || (!sandboxUrl && sandboxServiceKey)) {
+    throw new Error('sandbox_manager_config_incomplete');
+  }
+
   const factory = createProjectRepoFactoryResult({
     databaseUrl: env.DATABASE_URL,
   });
@@ -214,6 +222,16 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const endpointResourceService = new EndpointResourceService(docStore);
   const agentResourceService = new AgentResourceService(docStore);
   const agentRuntimeService = new AgentRuntimeService(agentResourceService);
+  const internalAgentPodManager = sandboxUrl && sandboxServiceKey
+    ? new InternalAgentPodManagerImpl(
+      new SandboxManagerClient(sandboxUrl, sandboxServiceKey),
+      agentRuntimeService,
+      (env.AGENT_RUNTIME_WS_BASE_URL?.trim() || `ws://localhost:${env.PORT ?? '20000'}`).replace(/\/+$/, ''),
+      {
+        startupTimeoutMs: Number(env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS ?? '120000'),
+      },
+    )
+    : undefined;
   const sourceBucket = env.MINIO_BUCKET ?? 'mbos-dev';
   const parser = new Utf8DocumentParser();
   const chunker = new FixedCharTextChunker({
@@ -262,6 +280,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       endpointResourceService,
       agentResourceService,
       agentRuntimeService,
+      ...(internalAgentPodManager ? { internalAgentPodManager } : {}),
       sourceBucket,
       aiReadyJobQueue,
       createAIReadyJobUseCase: new CreateAIReadyJobUseCase(

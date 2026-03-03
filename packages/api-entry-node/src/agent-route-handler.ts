@@ -43,6 +43,33 @@ function validateNotebookEndpoint(runtimePreferences: Record<string, unknown> | 
   return typeof endpointId === 'string' && endpointId.trim().length > 0;
 }
 
+function readObject(input: unknown): Record<string, unknown> | undefined {
+  return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : undefined;
+}
+
+function stripInternalConfigFields(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!config) return undefined;
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (key.startsWith('_internal_')) continue;
+    next[key] = value;
+  }
+  return next;
+}
+
+function sanitizeAgentForApi<T extends { config?: Record<string, unknown> | undefined }>(agent: T): T {
+  return {
+    ...agent,
+    ...(agent.config ? { config: stripInternalConfigFields(agent.config) } : {}),
+  };
+}
+
+function readInternalImage(config: unknown): string {
+  const cfg = readObject(config);
+  const image = typeof cfg?.image === 'string' ? cfg.image.trim() : '';
+  return image;
+}
+
 function toPublicKeyRecord(item: {
   id: string;
   agent_id: string;
@@ -75,7 +102,13 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       user.id,
       canManageProject,
     );
-    json(res, 200, { items, total: items.length, page: 1, page_size: items.length, has_more: false });
+    json(res, 200, {
+      items: items.map((item) => sanitizeAgentForApi(item)),
+      total: items.length,
+      page: 1,
+      page_size: items.length,
+      has_more: false,
+    });
     return true;
   }
 
@@ -99,17 +132,28 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_notebook_endpoint_required' });
       return true;
     }
+    const mode = raw.mode === 'internal' ? 'internal' : 'external';
+    if (mode === 'internal') {
+      if (!deps.internalAgentPodManager) {
+        json(res, 422, { error_code: 'AGENT_SANDBOX_NOT_CONFIGURED', message: 'agent_sandbox_not_configured' });
+        return true;
+      }
+      if (!readInternalImage(raw.config)) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_internal_image_required' });
+        return true;
+      }
+    }
     const created = await deps.agentResourceService.createAgent(route.workspaceId, route.projectId, {
       name,
       description: typeof raw.description === 'string' ? raw.description : undefined,
-      mode: raw.mode === 'internal' ? 'internal' : 'external',
+      mode,
       interaction_mode:
         raw.interaction_mode === 'chat' || raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both'
           ? raw.interaction_mode
           : 'both',
       status: raw.status === 'disabled' ? 'disabled' : 'enabled',
-      config: typeof raw.config === 'object' && raw.config !== null ? (raw.config as Record<string, unknown>) as never : undefined,
       runtime_preferences_json: runtimePreferences,
+      config: readObject(raw.config) as never,
       capabilities:
         typeof raw.capabilities === 'object' && raw.capabilities !== null
           ? (raw.capabilities as Record<string, unknown>) as never
@@ -118,7 +162,26 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       admin_id: user.id,
       visibility: 'private',
     });
-    json(res, 201, created);
+    let responseAgent = created;
+    if (mode === 'internal') {
+      const createdKey = await deps.agentResourceService.createAgentKey(
+        route.workspaceId,
+        route.projectId,
+        created.id,
+      );
+      const currentConfig = readObject(created.config) ?? {};
+      const updated = await deps.agentResourceService.updateAgent(route.workspaceId, route.projectId, created.id, {
+        config: {
+          ...currentConfig,
+          _internal_key_id: createdKey.record.id,
+          _internal_raw_key: createdKey.key,
+        } as never,
+      });
+      if (updated) {
+        responseAgent = updated;
+      }
+    }
+    json(res, 201, sanitizeAgentForApi(responseAgent));
     return true;
   }
 
@@ -134,7 +197,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_not_visible' });
       return true;
     }
-    json(res, 200, item);
+    json(res, 200, sanitizeAgentForApi(item));
     return true;
   }
 
@@ -170,6 +233,48 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_notebook_endpoint_required' });
       return true;
     }
+    const requestedMode = raw.mode === 'internal' || raw.mode === 'external'
+      ? raw.mode
+      : existing.mode;
+    if (requestedMode === 'internal') {
+      if (!deps.internalAgentPodManager) {
+        json(res, 422, { error_code: 'AGENT_SANDBOX_NOT_CONFIGURED', message: 'agent_sandbox_not_configured' });
+        return true;
+      }
+      const config = raw.config !== undefined ? raw.config : existing.config;
+      if (!readInternalImage(config)) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_internal_image_required' });
+        return true;
+      }
+    }
+    const existingConfig = readObject(existing.config) ?? {};
+    const incomingConfig = readObject(raw.config);
+    let mergedConfig = incomingConfig
+      ? {
+        ...existingConfig,
+        ...incomingConfig,
+      }
+      : undefined;
+    if (requestedMode === 'internal') {
+      const currentRawKey = typeof existingConfig._internal_raw_key === 'string'
+        ? existingConfig._internal_raw_key
+        : '';
+      const nextRawKey = typeof mergedConfig?._internal_raw_key === 'string'
+        ? mergedConfig._internal_raw_key
+        : currentRawKey;
+      if (!nextRawKey) {
+        const createdKey = await deps.agentResourceService.createAgentKey(
+          route.workspaceId,
+          route.projectId,
+          route.agentId,
+        );
+        mergedConfig = {
+          ...(mergedConfig ?? existingConfig),
+          _internal_key_id: createdKey.record.id,
+          _internal_raw_key: createdKey.key,
+        };
+      }
+    }
     const updated = await deps.agentResourceService.updateAgent(route.workspaceId, route.projectId, route.agentId, {
       name: typeof raw.name === 'string' ? raw.name : undefined,
       description: typeof raw.description === 'string' ? raw.description : undefined,
@@ -189,6 +294,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
           ? raw.visibility
           : undefined,
       runtime_preferences_json: runtimePreferences,
+      config: mergedConfig as never,
       capabilities:
         typeof raw.capabilities === 'object' && raw.capabilities !== null
           ? (raw.capabilities as Record<string, unknown>) as never
@@ -198,7 +304,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    json(res, 200, updated);
+    json(res, 200, sanitizeAgentForApi(updated));
     return true;
   }
 

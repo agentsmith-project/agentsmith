@@ -38,6 +38,7 @@ import type { ChatResourceService } from './chat-resource-service.js';
 import type { EndpointResourceService } from './endpoint-resource-service.js';
 import type { AgentResourceService } from './agent-resource-service.js';
 import type { AgentRuntimeService } from './agent-runtime-service.js';
+import type { InternalAgentPodManager } from './internal-agent-pod-manager.js';
 import type { UsageReportRunnerController } from './usage-report-runner.js';
 import type { ReleaseGateRunnerController } from './release-gate-runner.js';
 
@@ -51,6 +52,7 @@ export interface NodeApiDeps {
   endpointResourceService: EndpointResourceService;
   agentResourceService: AgentResourceService;
   agentRuntimeService: AgentRuntimeService;
+  internalAgentPodManager?: InternalAgentPodManager;
   sourceBucket: string;
   aiReadyJobQueue: InMemoryJobQueue;
   createAIReadyJobUseCase: CreateAIReadyJobUseCase;

@@ -33,6 +33,7 @@ import {
   resolveChatInputsFromAttachmentIndex,
   toChatAttachmentSnapshots,
 } from './chat-input-refs.js';
+import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -62,6 +63,12 @@ class AgentStreamRouteError extends Error {
 
 function mapAgentDispatchError(error: unknown): AgentStreamRouteError {
   if (error instanceof AgentStreamRouteError) return error;
+  const codeCandidate = error && typeof error === 'object'
+    ? (error as { code?: unknown }).code
+    : undefined;
+  if (typeof codeCandidate === 'string' && codeCandidate.startsWith('AGENT_SANDBOX_')) {
+    return new AgentStreamRouteError(codeCandidate, codeCandidate.toLowerCase());
+  }
   const message = error instanceof Error ? error.message : 'agent_stream_error';
   if (message === 'agent_offline') {
     return new AgentStreamRouteError('AGENT_OFFLINE', 'agent_offline');
@@ -720,6 +727,24 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       if (!rawBearerToken) {
         throw new AgentStreamRouteError('UNAUTHORIZED', 'user_token_missing');
       }
+      const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
+      if (agent?.mode === 'internal') {
+        if (!deps.internalAgentPodManager) {
+          throw new AgentStreamRouteError('AGENT_SANDBOX_NOT_CONFIGURED', 'agent_sandbox_not_configured');
+        }
+        const workloadId = sanitizeWorkloadId(route.sessionId);
+        await deps.internalAgentPodManager.ensureAgentReady({
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          workloadId,
+          agent,
+        });
+        await deps.internalAgentPodManager.keepalive(
+          route.workspaceId,
+          route.projectId,
+          workloadId,
+        ).catch(() => undefined);
+      }
       const dispatched = await deps.agentRuntimeService.dispatchStreamingRequest({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -1019,7 +1044,9 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         },
       );
       if (!res.headersSent) {
-        const statusCode = mappedError.code === 'UNAUTHORIZED' ? 401 : 502;
+        const statusCode = mappedError.code === 'UNAUTHORIZED'
+          ? 401
+          : (mappedError.code.startsWith('AGENT_SANDBOX_') ? 422 : 502);
         json(res, statusCode, { error_code: mappedError.code, message: mappedError.message });
       } else if (isWritable(res)) {
         broadcast(streamId, 'error', {

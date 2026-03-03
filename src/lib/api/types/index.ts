@@ -147,6 +147,13 @@ export interface Agent {
 export interface AgentConfig {
   image?: string;
   env?: Record<string, string>;
+  endpoint_id?: string;
+  cpu_request?: string;
+  cpu_limit?: string;
+  memory_request?: string;
+  memory_limit?: string;
+  idle_timeout_sec?: number;
+  max_lifetime_sec?: number;
   max_concurrent_sessions_override?: number;
 }
 

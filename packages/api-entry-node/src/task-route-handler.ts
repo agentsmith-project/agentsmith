@@ -30,6 +30,7 @@ import { resolveNotebookTaskInputDetails, type NotebookTaskInputRefRecord as Sha
 import { runNotebookTaskWithExternalAgent } from './notebook-runtime-orchestrator.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
+import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 
 interface TaskRecord {
   id: string;
@@ -353,6 +354,22 @@ function getTaskArtifacts(taskId: string): TaskArtifactRecord[] {
   return existing;
 }
 
+async function maybeReleaseInternalAgentWorkload(
+  deps: NodeApiDeps,
+  workspaceId: string,
+  projectId: string,
+  task: TaskRecord,
+): Promise<void> {
+  if (!deps.internalAgentPodManager) return;
+  const agent = await deps.agentResourceService.getAgent(workspaceId, projectId, task.agent_id);
+  if (!agent || agent.mode !== 'internal') return;
+  await deps.internalAgentPodManager.releasePod(
+    workspaceId,
+    projectId,
+    sanitizeWorkloadId(task.id),
+  ).catch(() => undefined);
+}
+
 async function createTaskArtifactRecord(
   deps: NodeApiDeps,
   args: {
@@ -573,6 +590,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     const body = asObject(await readBody(req));
+    const previousStatus = task.status;
     if (typeof body.title === 'string' && body.title.trim()) {
       task.title = body.title.trim();
     }
@@ -581,6 +599,12 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     task.updated_at = nowIso();
     await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+    if (
+      previousStatus === 'active'
+      && (task.status === 'closed' || task.status === 'archived')
+    ) {
+      await maybeReleaseInternalAgentWorkload(deps, route.workspaceId, route.projectId, task);
+    }
     json(res, 200, task);
     return true;
   }
@@ -593,7 +617,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
-    tasks.splice(index, 1);
+    const [removedTask] = tasks.splice(index, 1);
     ACTIVE_RUNS_BY_TASK.delete(route.taskId);
     clearNotebookTaskEventState(route.taskId);
     MESSAGES_BY_TASK.delete(route.taskId);
@@ -603,6 +627,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     await deleteTaskMessages(deps, route.taskId);
     await deleteTaskArtifacts(deps, route.taskId);
     await deleteTaskTraceEvents(deps, route.taskId);
+    if (removedTask) {
+      await maybeReleaseInternalAgentWorkload(deps, route.workspaceId, route.projectId, removedTask);
+    }
     json(res, 200, { success: true });
     return true;
   }

@@ -53,6 +53,13 @@ export function EditAgentDialog({
   const [externalMaxTotalBytes, setExternalMaxTotalBytes] = React.useState('');
   const [notebookEndpointId, setNotebookEndpointId] = React.useState('');
   const [visibility, setVisibility] = React.useState<'private' | 'public'>('private');
+  const [image, setImage] = React.useState('');
+  const [cpuRequest, setCpuRequest] = React.useState('500m');
+  const [cpuLimit, setCpuLimit] = React.useState('2');
+  const [memoryRequest, setMemoryRequest] = React.useState('512Mi');
+  const [memoryLimit, setMemoryLimit] = React.useState('4Gi');
+  const [idleTimeoutSec, setIdleTimeoutSec] = React.useState('1800');
+  const [maxLifetimeSec, setMaxLifetimeSec] = React.useState('86400');
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
 
@@ -80,6 +87,14 @@ export function EditAgentDialog({
       const runtimePrefs = (agent.runtime_preferences_json as Record<string, unknown> | undefined) ?? {};
       const notebook = (runtimePrefs.notebook as Record<string, unknown> | undefined) ?? {};
       setNotebookEndpointId(typeof notebook.endpoint_id === 'string' ? notebook.endpoint_id : '');
+      const config = (agent.config as Record<string, unknown> | undefined) ?? {};
+      setImage(typeof config.image === 'string' ? config.image : '');
+      setCpuRequest(typeof config.cpu_request === 'string' ? config.cpu_request : '500m');
+      setCpuLimit(typeof config.cpu_limit === 'string' ? config.cpu_limit : '2');
+      setMemoryRequest(typeof config.memory_request === 'string' ? config.memory_request : '512Mi');
+      setMemoryLimit(typeof config.memory_limit === 'string' ? config.memory_limit : '4Gi');
+      setIdleTimeoutSec(typeof config.idle_timeout_sec === 'number' ? String(config.idle_timeout_sec) : '1800');
+      setMaxLifetimeSec(typeof config.max_lifetime_sec === 'number' ? String(config.max_lifetime_sec) : '86400');
       setExternalMultimodal(agent.capabilities?.multimodal_completion ?? false);
       setExternalAcceptedMimeTypes((agent.capabilities?.accepted_mime_types ?? []).join(','));
       setExternalMaxFileCount(
@@ -108,7 +123,7 @@ export function EditAgentDialog({
         const nextPreferences: Record<string, unknown> = {
           ...(runtimePreferences as Record<string, unknown>),
         };
-        if (agent.mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both')) {
+        if (interactionMode === 'notebook' || interactionMode === 'both' || agent.mode === 'internal') {
           if (!notebookEndpointId.trim()) {
             return undefined;
           }
@@ -124,6 +139,22 @@ export function EditAgentDialog({
         }
         return Object.keys(nextPreferences).length > 0 ? nextPreferences : undefined;
       })(),
+      config: agent.mode === 'internal'
+        ? {
+          image: image.trim() || undefined,
+          endpoint_id: notebookEndpointId.trim() || undefined,
+          cpu_request: cpuRequest.trim() || undefined,
+          cpu_limit: cpuLimit.trim() || undefined,
+          memory_request: memoryRequest.trim() || undefined,
+          memory_limit: memoryLimit.trim() || undefined,
+          idle_timeout_sec: Number.isFinite(Number.parseInt(idleTimeoutSec, 10))
+            ? Number.parseInt(idleTimeoutSec, 10)
+            : undefined,
+          max_lifetime_sec: Number.isFinite(Number.parseInt(maxLifetimeSec, 10))
+            ? Number.parseInt(maxLifetimeSec, 10)
+            : undefined,
+        }
+        : undefined,
       capabilities: agent.mode === 'external'
         ? {
           streaming_completion: true,
@@ -143,8 +174,15 @@ export function EditAgentDialog({
       visibility: canSetVisibility ? visibility : undefined,
     };
 
-    if (agent.mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both') && !notebookEndpointId.trim()) {
+    if (
+      (interactionMode === 'notebook' || interactionMode === 'both' || agent.mode === 'internal')
+      && !notebookEndpointId.trim()
+    ) {
       toast.error(t('create_dialog.notebook_endpoint_required'));
+      return;
+    }
+    if (agent.mode === 'internal' && !image.trim()) {
+      toast.error(t('create_dialog.image_required'));
       return;
     }
 
@@ -289,6 +327,51 @@ export function EditAgentDialog({
                     onChange={(event) => setExternalMaxTotalBytes(event.target.value)}
                     disabled={updateMutation.isPending}
                   />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {agent.mode === 'internal' && (
+            <div className="space-y-4 p-4 rounded-sm border border-subtle bg-surface-low">
+              <h4 className="text-sm font-medium text-foreground">{t('create_dialog.config_title')}</h4>
+              <div className="space-y-2">
+                <label className="text-sm text-primary">{t('create_dialog.image')}</label>
+                <Input value={image} onChange={(event) => setImage(event.target.value)} disabled={updateMutation.isPending} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm text-primary">{t('create_dialog.notebook_endpoint_id')}</label>
+                <Input
+                  value={notebookEndpointId}
+                  onChange={(event) => setNotebookEndpointId(event.target.value)}
+                  placeholder="ep_xxx"
+                  disabled={updateMutation.isPending}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.cpu_request')}</label>
+                  <Input value={cpuRequest} onChange={(event) => setCpuRequest(event.target.value)} disabled={updateMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.cpu_limit')}</label>
+                  <Input value={cpuLimit} onChange={(event) => setCpuLimit(event.target.value)} disabled={updateMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.memory_request')}</label>
+                  <Input value={memoryRequest} onChange={(event) => setMemoryRequest(event.target.value)} disabled={updateMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.memory_limit')}</label>
+                  <Input value={memoryLimit} onChange={(event) => setMemoryLimit(event.target.value)} disabled={updateMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.idle_timeout_sec')}</label>
+                  <Input type="number" min={60} value={idleTimeoutSec} onChange={(event) => setIdleTimeoutSec(event.target.value)} disabled={updateMutation.isPending} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-primary">{t('create_dialog.max_lifetime_sec')}</label>
+                  <Input type="number" min={600} value={maxLifetimeSec} onChange={(event) => setMaxLifetimeSec(event.target.value)} disabled={updateMutation.isPending} />
                 </div>
               </div>
             </div>

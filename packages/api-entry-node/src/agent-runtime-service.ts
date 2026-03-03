@@ -520,7 +520,14 @@ export class AgentRuntimeService {
     }
     this.socketsByAgentId.delete(agentId);
     this.agentResourceService.markAgentDisconnected(agentId);
-    void this.agentResourceService.touchAgentPresence(socket.workspaceId, socket.projectId, agentId, 'offline');
+    void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, agentId).then((agent) => (
+      this.agentResourceService.touchAgentPresence(
+        socket.workspaceId,
+        socket.projectId,
+        agentId,
+        agent?.mode === 'internal' ? 'managed' : 'offline',
+      )
+    ));
   }
 
   private handleAgentMessage(agentId: string, raw: RawData): void {

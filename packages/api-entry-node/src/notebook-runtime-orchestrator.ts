@@ -10,6 +10,7 @@ import {
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { buildNotebookRuntimeTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
+import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
 import {
   checkAndConsumeProjectResourceRateLimitsForUser,
@@ -116,6 +117,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
   let terminalErrorCode: string | undefined;
   let usageTokensTotal: number | undefined;
   let runtimeRequestId: string | undefined;
+  let keepaliveTimer: NodeJS.Timeout | undefined;
 
   try {
     const agent = await deps.agentResourceService.getAgent(task.workspace_id, task.project_id, agentId);
@@ -228,6 +230,29 @@ export async function runNotebookTaskWithExternalAgent(input: {
       ? notebookPreferences.model.trim()
       : '';
     const model = explicitModel || endpoint.openai_model || 'gpt-5-codex';
+    if (agent.mode === 'internal') {
+      if (!deps.internalAgentPodManager) {
+        throw Object.assign(new Error('agent_sandbox_not_configured'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
+      }
+      emitTaskEvent(taskId, {
+        type: 'trace_event',
+        data: buildSandboxStartingEvent(),
+      });
+      const workloadId = sanitizeWorkloadId(task.id);
+      await deps.internalAgentPodManager.ensureAgentReady({
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        workloadId,
+        agent,
+      });
+      keepaliveTimer = setInterval(() => {
+        void deps.internalAgentPodManager?.keepalive(
+          task.workspace_id,
+          task.project_id,
+          workloadId,
+        ).catch(() => undefined);
+      }, 60_000);
+    }
     const wireApi = notebookPreferences.wire_api === 'responses' ? 'responses' : 'chat';
     const userHandle = buildProxyUsername(user);
     const taskInputs = await buildNotebookRuntimeTaskInputs({
@@ -396,6 +421,9 @@ export async function runNotebookTaskWithExternalAgent(input: {
       },
     });
   } finally {
+    if (keepaliveTimer) {
+      clearInterval(keepaliveTimer);
+    }
     if (!reachedTerminal) {
       terminalResult = 'error';
       terminalErrorCode = terminalErrorCode ?? 'AGENT_STREAM_TERMINAL_MISSING';

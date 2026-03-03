@@ -14,8 +14,20 @@ export type ProjectWithMembership = ValidationProjectWithMembership;
 
 const EMPTY_PERMISSIONS: readonly string[] = Object.freeze([]);
 
+const PERMISSION_ALIASES: Record<string, readonly string[]> = {
+  'project:endpoint:invoke': ['project:endpoint:use'],
+  'project:endpoint:use': ['project:endpoint:invoke'],
+  'project:agent:create': ['project:agent:manage'],
+  'project:agent:manage': ['project:agent:create'],
+  'project:agent:publish': ['project:agent:public'],
+  'project:agent:public': ['project:agent:publish'],
+};
+
 function permissionMatches(granted: readonly string[], required: string): boolean {
-  return granted.includes(required);
+  if (granted.includes(required)) return true;
+  const aliases = PERMISSION_ALIASES[required];
+  if (!aliases || aliases.length === 0) return false;
+  return aliases.some((alias) => granted.includes(alias));
 }
 
 export function useIsAuthenticated(): boolean {

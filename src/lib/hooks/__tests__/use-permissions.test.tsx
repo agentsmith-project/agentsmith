@@ -184,6 +184,72 @@ describe('use-permissions hooks', () => {
 
       expect(result.current).toBe(false);
     });
+
+    it('should support endpoint invoke/use permission aliases', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:endpoint:use'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useHasPermission('project:endpoint:invoke'), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+
+    it('should support agent manage/create permission aliases', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:agent:manage'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useHasPermission('project:agent:create'), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+
+    it('should support agent public/publish permission aliases', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:agent:public'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useHasPermission('project:agent:publish'), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
   });
 
   describe('chat/notebook access hooks', () => {
@@ -225,6 +291,28 @@ describe('use-permissions hooks', () => {
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
       const { result } = renderHook(() => useCanAccessNotebook(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+
+    it('useCanAccessChat should also accept project:endpoint:use', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:endpoint:use'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanAccessChat(), {
         wrapper: createWrapper(),
       });
 

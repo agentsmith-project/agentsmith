@@ -7,9 +7,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    pool: 'threads',
-    maxWorkers: 2,
+    // Use a single fork worker to avoid intermittent OOM in large jsdom suites.
+    pool: 'forks',
+    maxWorkers: 1,
     minWorkers: 1,
+    // Recycle process between files to avoid heap growth across large suites.
+    singleFork: false,
     setupFiles: ['./src/test/setup.ts'],
     env: {
       NEXT_PUBLIC_USE_MSW: 'true',

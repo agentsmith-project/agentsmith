@@ -54,41 +54,44 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 }));
 
 const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
+const STABLE_MEMBERS = [
+  {
+    id: 'user_123',
+    email: 'user123@example.com',
+    name: 'User 123',
+    role: 'developer',
+    permissions: [],
+    status: 'active',
+    joined_at: '2026-02-01T00:00:00Z',
+  },
+];
+const STABLE_GROUPS = [
+  {
+    id: 'group_001',
+    project_id: 'prj_1',
+    name: 'Ops Team',
+    permission_template_id: 'developer',
+    member_ids: [],
+    created_at: '2026-02-01T00:00:00Z',
+    updated_at: '2026-02-01T00:00:00Z',
+  },
+];
+const STABLE_RESOURCE_POLICY = {
+  resource_type: 'endpoint',
+  resource_id: 'ep_1',
+  access_mode: 'allow_all_members',
+  allowed_subjects: [],
+  quota_limits: { rules: [{ key: 'endpoint.daily_token_limit', value: 100000, window: 'day' }] },
+};
 vi.mock('@/lib/hooks/use-members', () => ({
   useMembers: vi.fn(() => ({
-    data: [
-      {
-        id: 'user_123',
-        email: 'user123@example.com',
-        name: 'User 123',
-        role: 'developer',
-        permissions: [],
-        status: 'active',
-        joined_at: '2026-02-01T00:00:00Z',
-      },
-    ],
+    data: STABLE_MEMBERS,
   })),
   useProjectGroups: vi.fn(() => ({
-    data: [
-      {
-        id: 'group_001',
-        project_id: 'prj_1',
-        name: 'Ops Team',
-        permission_template_id: 'developer',
-        member_ids: [],
-        created_at: '2026-02-01T00:00:00Z',
-        updated_at: '2026-02-01T00:00:00Z',
-      },
-    ],
+    data: STABLE_GROUPS,
   })),
   useResourcePolicy: vi.fn(() => ({
-    data: {
-      resource_type: 'endpoint',
-      resource_id: 'ep_1',
-      access_mode: 'allow_all_members',
-      allowed_subjects: [],
-      quota_limits: { rules: [{ key: 'endpoint.daily_token_limit', value: 100000, window: 'day' }] },
-    },
+    data: STABLE_RESOURCE_POLICY,
     isLoading: false,
   })),
   useUpdateResourcePolicy: vi.fn(() => ({

@@ -6,6 +6,8 @@ import AlertsPage from '../page';
 const mockHasPermission = vi.fn((_permission?: string) => true);
 const mockListRules = vi.fn(async () => []);
 const mockListNotifications = vi.fn(async () => []);
+const STABLE_RULES: never[] = [];
+const STABLE_NOTIFICATIONS: never[] = [];
 
 vi.mock('@/components/alerts/AlertCenterPage', () => ({
   AlertCenterPage: () => <div data-testid="alerts__center" />,
@@ -37,7 +39,16 @@ vi.mock('@tanstack/react-query', async () => {
   const actual = await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
   return {
     ...actual,
-    useQuery: vi.fn(() => ({ data: [], isLoading: false, error: null })),
+    useQuery: vi.fn((options?: { queryKey?: unknown[] }) => {
+      const key = options?.queryKey?.[0];
+      if (key === 'alert-rules') {
+        return { data: STABLE_RULES, isLoading: false, error: null };
+      }
+      if (key === 'alert-notifications') {
+        return { data: STABLE_NOTIFICATIONS, isLoading: false, error: null };
+      }
+      return { data: STABLE_RULES, isLoading: false, error: null };
+    }),
     useQueryClient: () => ({ invalidateQueries: vi.fn() }),
   };
 });

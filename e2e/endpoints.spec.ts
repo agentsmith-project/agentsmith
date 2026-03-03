@@ -175,9 +175,8 @@ test.describe('Endpoints Page', () => {
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
 
-    // Fill in required text fields
+    // Fill name only; model/base_url are derived from provider catalog selection.
     await dialog.locator('#endpoint-name').fill('E2E Test Endpoint');
-    await dialog.getByRole('textbox', { name: /model id/i }).fill('gpt-4o-test');
 
     const noCredentialHint = dialog.getByText(/no credentials|create credential first|请先创建凭据/i).first();
     if (await noCredentialHint.isVisible().catch(() => false)) {
@@ -187,7 +186,6 @@ test.describe('Endpoints Page', () => {
 
     const credentialPicked = await pickSelectOption(dialog, authedPage, /OpenAI API Key|Anthropic API Key/i);
     expect(credentialPicked).toBe(true);
-    await dialog.getByRole('textbox', { name: /model id/i }).fill('gpt-4o-test');
 
     // Submit the form
     const submitBtn = dialog.getByRole('button', { name: /create/i });
@@ -231,58 +229,14 @@ test.describe('Endpoints Page', () => {
     expect(payload.status === 'active' || payload.status === 'disabled').toBeTruthy();
   });
 
-  test('create custom endpoint requires base URL and sends limits payload', async ({ authedPage }) => {
+  test('open custom endpoint wizard from create dialog', async ({ authedPage }) => {
     await ensureCredentialExists(authedPage);
     await authedPage.getByTestId('endpoints__create-btn').click();
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
 
-    await dialog.locator('#endpoint-name').fill('E2E Custom Endpoint');
-    await dialog.getByRole('textbox', { name: /model id/i }).fill('custom-model-v1');
-
-    const noCredentialHint = dialog.getByText(/no credentials|create credential first|请先创建凭据/i).first();
-    if (await noCredentialHint.isVisible().catch(() => false)) {
-      await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled();
-      return;
-    }
-
-    const providerPicked = await pickSelectOption(dialog, authedPage, /custom/i);
-    expect(providerPicked).toBe(true);
-    await dialog.getByRole('textbox', { name: /model id/i }).fill('custom-model-v1');
-
-    const submitBtn = dialog.getByRole('button', { name: /^create$/i });
-    await expect(submitBtn).toBeDisabled();
-
-    await dialog.locator('#endpoint-base-url').fill('https://custom.example.com/v1');
-
-    const credentialPicked = await pickSelectOption(dialog, authedPage, /OpenAI API Key|Anthropic API Key/i);
-    expect(credentialPicked).toBe(true);
-    await dialog.getByRole('textbox', { name: /model id/i }).fill('custom-model-v1');
-
-    // Expand limits and fill both values
-    await dialog.getByRole('button', { name: /limits/i }).click();
-    await dialog.locator('#endpoint-rpm').fill('120');
-    await dialog.locator('#endpoint-timeout').fill('45');
-
-    const createRequestPromise = authedPage.waitForRequest((req) => {
-      return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/endpoints$/.test(req.url());
-    });
-    if (!(await submitBtn.isEnabled().catch(() => false))) {
-      await expect(submitBtn).toBeDisabled();
-      return;
-    }
-    await submitBtn.click();
-
-    const request = await createRequestPromise;
-    const payload = request.postDataJSON() as {
-      type?: string;
-      base_url?: string;
-      limits?: { max_requests_per_minute?: number; timeout_seconds?: number };
-    };
-    expect(payload.type).toBe('custom');
-    expect(payload.base_url).toBe('https://custom.example.com/v1');
-    expect(payload.limits?.max_requests_per_minute).toBe(120);
-    expect(payload.limits?.timeout_seconds).toBe(45);
+    await dialog.getByRole('button', { name: /Open Wizard/i }).click();
+    await expect(authedPage.getByTestId('endpoints__custom-wizard')).toBeVisible({ timeout: 5000 });
   });
 
   test('create dialog shows name uniqueness hint and prevents duplicate names', async ({ authedPage }) => {
@@ -295,13 +249,11 @@ test.describe('Endpoints Page', () => {
     await dialog.locator('#endpoint-name').fill('OpenAI Main');
     await expect(dialog.getByText(/model alias|模型别名/i)).toBeVisible();
     await expect(dialog.getByText(/already exists|已存在同名端点/i)).toBeVisible();
-
-    await dialog.getByRole('textbox', { name: /model id|模型 ID/i }).fill('dup-model-id');
     await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled();
   });
 
   test.describe('Custom Endpoint Wizard', () => {
-    test('opens wizard when custom provider is selected', async ({ authedPage }) => {
+    test('opens wizard from external custom entry button', async ({ authedPage }) => {
       await ensureCredentialExists(authedPage);
       await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
 
@@ -310,11 +262,6 @@ test.describe('Endpoints Page', () => {
 
       const dialog = authedPage.getByTestId('endpoints__create-dialog');
       await expect(dialog).toBeVisible();
-
-      // Select custom provider
-      await pickSelectOption(dialog, authedPage, /Custom/i);
-
-      // Verify wizard button is shown
       await expect(dialog.getByRole('button', { name: /Open Wizard/i })).toBeVisible();
     });
 

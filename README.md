@@ -95,6 +95,21 @@ NEXT_PUBLIC_KEYCLOAK_REALM=mbos
 NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 ```
 
+## Permission Token Naming
+
+Use canonical project tokens in all new code:
+
+- `project:endpoint:use`
+- `project:agent:manage`
+- `project:agent:public`
+- `project:manage`
+
+Deprecated aliases are still accepted only for compatibility:
+
+- `project:endpoint:invoke` -> `project:endpoint:use`
+- `project:agent:create` -> `project:agent:manage`
+- `project:agent:publish` -> `project:agent:public`
+
 ## Project Structure
 
 ```

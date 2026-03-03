@@ -16,7 +16,8 @@ export const PLATFORM_PERMISSIONS = {
     'project:agent:manage',
     'project:agent:public',
     'project:manage',
-    // Legacy aliases kept for gate compatibility during migration
+    // Deprecated legacy aliases (read-only compatibility bridge).
+    // Removal target: after all issuers emit canonical tokens only.
     'project:endpoint:invoke',
     'project:agent:create',
     'project:agent:publish',
@@ -78,6 +79,8 @@ export const LEGACY_PERMISSION_ALIASES: Record<string, string> = {
   'project:agent:create': 'project:agent:manage',
   'project:agent:publish': 'project:agent:public',
 };
+
+export const LEGACY_PERMISSION_ALIAS_REMOVAL_TARGET = 'post-mvp-canonical-token-cutover';
 
 export type PlatformPermission = (typeof ALL_PLATFORM_PERMISSIONS)[number];
 export type GroupTemplate = keyof typeof GROUP_TEMPLATES;

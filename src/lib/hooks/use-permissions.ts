@@ -14,6 +14,8 @@ export type ProjectWithMembership = ValidationProjectWithMembership;
 
 const EMPTY_PERMISSIONS: readonly string[] = Object.freeze([]);
 
+// Deprecated alias bridge for mixed-token environments.
+// New gates must use canonical tokens: endpoint:use / agent:manage / agent:public.
 const PERMISSION_ALIASES: Record<string, readonly string[]> = {
   'project:endpoint:invoke': ['project:endpoint:use'],
   'project:endpoint:use': ['project:endpoint:invoke'],
